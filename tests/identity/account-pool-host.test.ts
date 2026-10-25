@@ -380,6 +380,57 @@ test("native image routes retain Host/thread affinity and independent image quot
   } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("native hosted MCP uses broker auth and the calling Thread account without replaying tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-native-mcp-pool-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  try {
+    for (const [id, priority] of [["a", 1], ["b", 2]] as const) pool.addAccount({
+      id, provider: "codex", label: id, upstreamAccountId: id, priority, enabled: true,
+    }, { accessToken: `oauth-${id}`, refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local-codex");
+    const launch = createCodexAccountPoolLaunch({ baseUrl: "http://127.0.0.1:43123", hostToken: token });
+    const calls: { path: string; account: string | null; headers: Headers }[] = [];
+    let status = 200;
+    const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://codex.example.test/backend-api/codex",
+      fetch: async (url, init) => {
+        const headers = new Headers(init?.headers);
+        calls.push({ path: String(url), account: headers.get("chatgpt-account-id"), headers });
+        return Response.json({ result: { tools: [] } }, { status });
+      } });
+    const inference = (thread: string) => proxy.handle(new Request("http://127.0.0.1:43123/v1/responses", {
+      method: "POST", headers: { "x-opencraft-account-pool-token": token, "thread-id": thread }, body: "{}",
+    }));
+    const mcp = (bearer: string, thread?: string) => proxy.handle(new Request("http://127.0.0.1:43123/api/codex/ps/mcp", {
+      method: "POST", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json",
+        "mcp-protocol-version": "2025-06-18", "x-openai-product-sku": "codex" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: thread ? "tools/call" : "tools/list",
+        params: thread ? { name: "fixture", _meta: { threadId: thread } } : {} }),
+    }));
+    assert.equal((await mcp("forged")).status, 401);
+    const wrongAudience = createCodexAccountPoolLaunch({ baseUrl: "http://127.0.0.1:43124", hostToken: token });
+    assert.equal((await mcp(wrongAudience.auth.accessToken)).status, 401);
+    assert.equal(calls.length, 0);
+    await inference("thread-a");
+    assert.equal((await mcp(launch.auth.accessToken)).status, 200);
+    await inference("thread-b");
+    assert.equal((await mcp(launch.auth.accessToken, "thread-a")).status, 200);
+    assert.equal(calls.at(-1)!.account, "a");
+    assert.equal(calls.at(-1)!.path, "https://codex.example.test/backend-api/ps/mcp");
+    assert.equal(calls.at(-1)!.headers.get("authorization"), "Bearer oauth-a");
+    assert.equal(calls.at(-1)!.headers.get("x-opencraft-account-pool-token"), null);
+    assert.equal(calls.at(-1)!.headers.get("mcp-protocol-version"), "2025-06-18");
+    assert.equal(calls.at(-1)!.headers.get("x-openai-product-sku"), "codex");
+    assert.equal((await mcp(launch.auth.accessToken, "thread-b")).status, 200);
+    assert.equal(calls.at(-1)!.account, "b");
+    status = 429;
+    const before = calls.length;
+    assert.equal((await mcp(launch.auth.accessToken, "thread-a")).status, 429);
+    assert.equal(calls.length, before + 1);
+    assert.equal(calls.at(-1)!.account, "a");
+    assert.equal((await proxy.handle(new Request("http://127.0.0.1:43123/api/codex/arbitrary", { method: "POST" }))).status, 404);
+  } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("Codex proxy authenticates the Host and injects only the selected account credentials", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-"));
   try {
@@ -552,6 +603,33 @@ test("a pre-success quota rejection advances to the next account and pins it", a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("a body-only usage rejection switches accounts but temporary rate limiting does not", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-quota-body-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  try {
+    for (const [id, priority] of [["a", 1], ["b", 2]] as const) pool.addAccount({
+      id, provider: "codex", label: id, upstreamAccountId: id, priority, enabled: true,
+    }, { accessToken: `oauth-${id}`, refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local");
+    let errorType = "rate_limit_exceeded";
+    const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://codex.example.test/backend-api/codex",
+      fetch: async (_url, init) => new Headers(init?.headers).get("chatgpt-account-id") === "a"
+        ? Response.json({ error: { type: errorType } }, { status: 429 })
+        : Response.json({ account: "b" }) });
+    const request = () => proxy.handle(new Request("http://127.0.0.1/v1/responses", {
+      method: "POST", headers: { "x-opencraft-account-pool-token": token, "thread-id": "same-thread" }, body: "{}",
+    }));
+    const temporary = await request();
+    assert.equal(temporary.status, 429);
+    assert.deepEqual(await temporary.json(), { error: { type: "rate_limit_exceeded" } });
+    errorType = "usage_limit_reached";
+    const exhausted = await request();
+    assert.equal(exhausted.status, 200);
+    assert.deepEqual(await exhausted.json(), { account: "b" });
+    assert.deepEqual(await (await request()).json(), { account: "b" });
+  } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("a pre-header transport timeout is surfaced without replaying the request", async () => {
