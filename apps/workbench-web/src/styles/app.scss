@@ -4701,8 +4701,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     opacity: 1;
     pointer-events: auto;
   }
-  &:hover {
-    @include controls.hover-capable {
+  @include controls.hover-capable {
+    &:hover {
       .thread-user-message__actions button {
         opacity: 1;
         pointer-events: auto;
