@@ -1021,34 +1021,57 @@ export function createAppServerWorkbenchRuntime(
     let navigation: ConversationNavigationController | null = null;
     try {
       await replica.prepare();
-      const afterAuthoritativeBaseline = async <T>(operation: () => Promise<T>, requiresCapabilities = false): Promise<T> => {
+      const afterAuthoritativeBaseline = async <T>(operation: (canDispatch: () => boolean) => Promise<T>, requiresCapabilities = false): Promise<T> => {
         const owner = bindings.get(threadId);
-        if (owner === undefined || owner.disposed) {
-          throw new Error(`Thread ${threadId} is unavailable`);
+        if (!owner) throw new Error(`Thread ${threadId} is unavailable`);
+        const assertOwner = () => {
+          if (owner.disposed || bindings.get(threadId) !== owner)
+            throw new Error(`Thread ${threadId} is unavailable`);
+        };
+        assertOwner();
+        for (;;) {
+          const revision = connectionRevision;
+          let awaitedHistory: Promise<void> | null = null;
+          try {
+            if (phase !== "ready") await runtime.connect();
+            assertOwner();
+            if (!owner.runtime.getSnapshot().authoritative) {
+              awaitedHistory = hydrateBinding(owner, false);
+              await awaitedHistory;
+              awaitedHistory = null;
+            }
+            if (connectionRevision !== revision || !owner.runtime.getSnapshot().authoritative) continue;
+            if (requiresCapabilities) {
+              await requireSession().resume.activate({ threadId, retryRejected: true });
+              if (connectionRevision !== revision || !owner.runtime.getSnapshot().authoritative) continue;
+              await ensureBindingCapabilities(owner);
+            }
+          } catch (cause) {
+            // Only preparation has run. Following a superseded local read is
+            // safe; a command already passed to its port is never retried here.
+            const replacedRead = awaitedHistory !== null && owner.hydrationOperation !== awaitedHistory;
+            if ((connectionRevision !== revision || replacedRead) && !owner.disposed && bindings.get(threadId) === owner
+              && cause instanceof AppServerClientError && cause.code === "ABORTED") continue;
+            throw cause;
+          }
+          assertOwner();
+          const dispatchClient = requireClient(), generation = dispatchClient.connectionGeneration;
+          const canDispatch = () => !owner.disposed && bindings.get(threadId) === owner
+            && phase === "ready" && connection.snapshot.phase === "usable"
+            && client === dispatchClient && generation === dispatchClient.connectionGeneration
+            && connectionRevision === revision && dispatchClient.status.state === "open"
+            && owner.runtime.getSnapshot().authoritative;
+          if (!canDispatch()) continue;
+          return operation(canDispatch);
         }
-        // A local optimistic Item may paint immediately, but no AppServer
-        // mutation may overtake the Thread's initial read baseline. Otherwise a
-        // concurrently completing snapshot and the live notification stream
-        // can each publish the first user message, and a backend such as
-        // Hermes cannot reconcile them because durable history has no client
-        // message identity. Session owns the baseline: Read for persisted
-        // threads, adopted fork response for ephemeral side conversations.
-        if (!owner.runtime.getSnapshot().authoritative) {
-          await hydrateBinding(owner, false);
-        }
-        if (requiresCapabilities) {
-          await requireSession().resume.resume({ threadId, retryRejected: true });
-          await ensureBindingCapabilities(owner);
-        }
-        return operation();
       };
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
-        submit: (intent, options) => afterAuthoritativeBaseline(() => {
+        submit: (intent, options) => afterAuthoritativeBaseline(canDispatch => {
           const followUp = executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up");
           const dispatched = intent.target.type === "enqueue-follow-up" && followUp?.queue === false
             ? { ...intent, target: { type: "existing-thread" as const, key: intent.target.key } } : intent;
-          return currentCommandPort.submit(dispatched, options);
+          return currentCommandPort.submit(dispatched, { ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch() });
         }, true),
         interrupt: (key, turnId, provenance) => afterAuthoritativeBaseline(
           () => currentCommandPort.interrupt(key, turnId, provenance),

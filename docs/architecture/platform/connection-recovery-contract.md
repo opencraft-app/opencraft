@@ -350,3 +350,45 @@ View/observer keeps a shared read alive. Local ABORTED retirement does not becom
 a cached history error; genuine read failures retain their existing error behavior.
 A released lease cannot start another optional read. This is local cancellation,
 not remote execution cancellation or an automatic write retry.
+
+
+## Execution activation and current presentation
+
+User execution preparation uses `ThreadResumeCoordinatorService.activate`, an
+independently owned metadata-only Resume (`excludeTurns: true`). It neither
+allocates a history strategy/preview/buffer nor replaces the transcript source.
+A same-generation logical reconnect may complete its current readonly baseline
+while that activation ACK remains held. Full historical `resume` retains its
+combined contract and same-kind coalescing; message-window compatibility still
+uses that path. Physical connection loss and disposal retire activation waits;
+View release alone does not cancel a pending user command.
+
+The accepted ACK changes execution fields and stream ownership, never the current
+history body or cursor. Observed execution-field revisions preserve live settings
+received after activation began, including explicitly supplied unchanged fields.
+Readonly metadata seeds fields without overriding accepted activation or observed
+live settings. These are local ordering guards, not a server sequence protocol.
+
+Workbench rechecks binding identity, route revision, client generation and current
+baseline after every execution-preparation wait. Replacement reads may be followed
+only during preparation. The actual command runs once outside that retry loop.
+Composer checks dispatch again at the first mutation's synchronous client-local
+`beforeSend`, after lifecycle observers and serialization. Local rejection retains
+the original policy error and sends no frame. This function is not a wire field or
+a transport/bridge option. A creation/fork ACK followed by a disconnected Turn RPC
+has partial effects and must never be classified wholly unsent. Unknown outcomes
+remain ineligible for automatic replay. Other control operations retain their own
+admission rules; this is not a universal replacement for server authorization.
+
+`ActivationHistory.tla` separately checks read progress without old activation or
+old-history fairness, current-buffer/request conservation, original-intent
+preservation and write admission. Execution progress additionally assumes fair
+activation and dispatch. Its finite states are independent of TypeScript.
+Hydration generator version 2 exercises real Workbench/Session/client composition
+with explicit user intents, held activation ACKs, current reads and queued/started
+observer reconnects. Its two-stage healthy suffix first makes only current reads
+fair, then activation completion. Only a proven-unsent attempt may retry with its
+original identity; an unknown write never retries. Negative controls couple
+activation to historical Resume or omit final client admission, and preserve the
+exact violated invariant during shrinking and replay. This suite does not model
+all server permissions, settings notifications, physical sockets or phone timing.

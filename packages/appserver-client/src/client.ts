@@ -34,6 +34,13 @@ export interface AppServerClientClock {
   clearTimeout(timerId: ReturnType<typeof globalThis.setTimeout>): void;
 }
 
+/** Client-local admission; callbacks are never part of protocol/bridge options. */
+export interface AppServerClientRequestOptions extends AppServerRequestOptions {
+  /** Synchronous final check after lifecycle observers and serialization.
+   * Throw to reject before transport admission; the original error is preserved. */
+  beforeSend?(): void;
+}
+
 export interface AppServerClientConfig {
   hostId: string;
   transport: DuplexTransport;
@@ -189,12 +196,12 @@ export interface AppServerClient {
   request<TMethod extends AppServerMethod>(
     method: TMethod,
     params: AppServerMethodParams<TMethod>,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<AppServerMethodResult<TMethod>>;
   requestRaw<TResult = unknown>(
     method: string,
     params: unknown,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<TResult>;
   subscribeNotification(listener: (notification: AppServerNotification) => void): () => void;
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void;
@@ -325,7 +332,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   request<TMethod extends AppServerMethod>(
     method: TMethod,
     params: AppServerMethodParams<TMethod>,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<AppServerMethodResult<TMethod>> {
     return this.requestRaw<AppServerMethodResult<TMethod>>(method, params, options);
   }
@@ -333,7 +340,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   requestRaw<TResult = unknown>(
     method: string,
     params: unknown,
-    options: AppServerRequestOptions = {},
+    options: AppServerClientRequestOptions = {},
   ): Promise<TResult> {
     if (this.closed) return Promise.reject(new AppServerClientError("CLOSED", "AppServer client is closed"));
     if (this.transport.status.state !== "open") {
@@ -424,6 +431,14 @@ export class JsonRpcAppServerClient implements AppServerClient {
       };
       try {
         const frame = encodeJsonRpcMessage(request);
+        if (this.pending.get(id) !== pending) return;
+        try { options.beforeSend?.(); }
+        catch (cause) {
+          if (this.pending.get(id) === pending) this.rejectPending(id,
+            cause instanceof Error ? cause : new Error("AppServer request admission failed", { cause }), "failed");
+          return;
+        }
+        // Admission itself can synchronously cancel/dispose or admit a successor.
         if (this.pending.get(id) !== pending) return;
         void Promise.resolve(this.transport.send(frame, pending.controller.signal)).catch(fail);
       } catch (error) { fail(error); }

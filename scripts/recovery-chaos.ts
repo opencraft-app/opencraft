@@ -13,19 +13,19 @@ const seed=integer(values.seed!,"seed",0xffffffff),cases=integer(values.cases!,"
 const replay=values.replay?JSON.parse(await readFile(values.replay,"utf8")):null;
 const suite=replay?.suite??values.suite??"host";
 if(!["host","history","hydration"].includes(suite) || (replay?.suite && values.suite && values.suite!==replay.suite))throw Error("Invalid or conflicting chaos suite");
-if(values.mutant && !(suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:["sticky-read"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
+if(values.mutant && !(suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:["sticky-read","coupled-activation","early-dispatch"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
 const hostOptions=values.mutant?{mutant:values.mutant as "sticky-initialize" | "replay-mutation" | "wall-clock-budget"}:{};
-const hydrationOptions=values.mutant?{mutant:"sticky-read" as const}:{};
+const hydrationOptions=values.mutant?{mutant:values.mutant as "sticky-read" | "coupled-activation" | "early-dispatch"}:{};
 const historyOptions=values.mutant?{mutant:"lost-admission" as const}:{};
 const output=path.resolve(values.output??path.join(process.env.TMPDIR??"/tmp",`opencraft-recovery-chaos-${process.pid}`));
 await mkdir(output,{recursive:true});
 const started=Date.now(),coverage:Record<string,number>={};let events=0,wires=0,ready=0,historyRuns=0,historyCompleted=0;
 const sourcePaths=["scripts/recovery-chaos.ts", "tests/protocol/fixtures/recovery-chaos.ts", "packages/workbench-runtime/src/recovery-clock.ts", "packages/appserver-client/src/clock.ts",
-  ...(suite==="hydration"?["tests/protocol/fixtures/hydration-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/recovery-policy.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/history-strategies.ts","packages/appserver-client/src/client.ts"]:suite==="history"?["tests/protocol/fixtures/history-recovery-chaos.ts","packages/workbench-runtime/src/recovery-policy.ts"]:
+  ...(suite==="hydration"?["tests/protocol/fixtures/hydration-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/recovery-policy.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/history-strategies.ts","packages/appserver-session/src/projectors.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/replica-adapter.ts","packages/composer-appserver/src/command-port.ts","packages/chat-runtime/src/replica-conversation-runtime.ts","packages/appserver-client/src/client.ts"]:suite==="history"?["tests/protocol/fixtures/history-recovery-chaos.ts","packages/workbench-runtime/src/recovery-policy.ts"]:
     ["packages/appserver-client/src/client.ts","packages/appserver-client/src/transport.ts","packages/workbench-runtime/src/connection-lifecycle.ts"])];
 const sourceSha256=Object.fromEntries(await Promise.all(sourcePaths.map(async file=>[file,
   createHash("sha256").update(await readFile(new URL(`../${file}`,import.meta.url))).digest("hex")])));
-const provenance={suite,generatorVersion:suite==="host"?3:1,sourceSha256};
+const provenance={suite,generatorVersion:suite==="host"?3:suite==="hydration"?2:1,sourceSha256};
 const replaySeed=replay?.seed===undefined?seed:integer(String(replay.seed),"replay seed",0xffffffff);
 const count=replay?1:cases;
 if(count===0)throw Error("At least one case is required");

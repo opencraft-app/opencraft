@@ -21,3 +21,15 @@ test("hydration generation/replay is deterministic and rejects unknown Threads",
   assert.deepEqual(parseHydrationTrace(JSON.parse(JSON.stringify(handoff))), handoff);
   assert.throws(() => parseHydrationTrace([{ type: "retry", thread: "other" }]), /TRACE_SCHEMA/);
 });
+
+for (const mutant of ["coupled-activation", "early-dispatch"] as const) test(`${mutant} fails its invariant and its minimized trace replays`, async () => {
+  const events: HydrationChaosEvent[] = mutant === "coupled-activation"
+    ? [{ type: "acquire", thread: "a" }, { type: "reply", thread: "a" }, { type: "submit", thread: "a" }, { type: "reconnect" }]
+    : [{ type: "acquire", thread: "a" }, { type: "reply", thread: "a" }, { type: "dispatch-reconnect", thread: "a", stage: "queued" }, { type: "submit", thread: "a" }, { type: "activation-reply", thread: "a" }];
+  const rule = mutant === "coupled-activation" ? "HYDRATION_HANDOFF" : "COMMAND_ADMISSION";
+  const run = (trace: readonly HydrationChaosEvent[]) => simulateHydrationRecovery(trace, { mutant });
+  await assert.rejects(run(events), error => error instanceof ChaosViolation && error.rule === rule);
+  const reduced = await shrinkChaosFailure(events, rule, run);
+  await assert.rejects(run(parseHydrationTrace(JSON.parse(JSON.stringify(reduced)))), error => error instanceof ChaosViolation && error.rule === rule);
+  await simulateHydrationRecovery(reduced);
+});
