@@ -271,7 +271,7 @@ export class PiDurableSession {
       const receipt = await tx.submissionByRequest(this.root.id, item.id);
       const entry = receipt?.entry === undefined ? undefined : await tx.entry(receipt.entry);
       const inbox = await tx.doc(InboxDoc, this.root.id);
-      const previous = pending ?? entry?.data ?? inbox.items.find(candidate => candidate.id === receipt?.id)?.entry?.data as PiQueuedInput | undefined;
+      const previous = (pending ?? entry?.data ?? inbox.items.find(candidate => candidate.id === receipt?.id)?.entry?.data) as PiQueuedInput | undefined;
       if (previous && (!isDeepStrictEqual(previous.input, item.input)
         || !isDeepStrictEqual(previous.additionalContext ?? null, item.additionalContext)))
         throw new Error("Client message identity already belongs to different input");

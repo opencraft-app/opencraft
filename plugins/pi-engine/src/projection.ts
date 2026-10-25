@@ -49,9 +49,9 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     const status = state === "queued" || state === "placed" ? "inProgress" : state === "unanswered"
       ? submission?.reason === "aborted" ? "interrupted" : "failed" : "completed";
     const createdAt = metadata.createdAtMs ?? message.timestamp;
-    const result: PiTurn = { id, items: [{ type: metadata.steerTurnId ? "steeringUserMessage" : "userMessage", id: `${id}:user`,
+    const result: PiTurn = { id, items: [{ type: "userMessage", id: `${id}:user`,
       clientId: metadata.clientId ?? (id.startsWith(`${session.id}:turn:client:`) ? id.slice(`${session.id}:turn:client:`.length) : null),
-      ...(metadata.steerTurnId ? { status: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
+      ...(metadata.steerTurnId ? { __opencraftMessageKind: "steering", __opencraftSteeringStatus: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
       content: metadata.input ?? [{ type: "text", text: textOf(message.content), text_elements: [] }] }],
       itemsView: "complete", status, error: status === "failed" ? errorOf(String(submission?.detail ?? submission?.reason ?? "Pi input failed")) : null,
       startedAt: typeof createdAt === "number" ? Math.floor(createdAt / 1000) : null, completedAt: null, durationMs: null };

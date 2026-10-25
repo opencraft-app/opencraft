@@ -1026,7 +1026,11 @@ function mergeOptimisticSubmissions(
         const acknowledgementIndex = steeringAcknowledgementIndex(target, state);
         // A durable native steering item owns pending/accepted/cancelled truth.
         // A transport receipt cannot overwrite it with optimistic "accepted".
-        if (acknowledgementIndex >= 0 && target.items[acknowledgementIndex]?.type === "steeringUserMessage") continue;
+        if (acknowledgementIndex >= 0) {
+          const native = target.items[acknowledgementIndex]!;
+          if (native.type === "steeringUserMessage" || isRecord(native.payload) && native.payload.__opencraftMessageKind === "steering"
+            && ["pending", "accepted", "cancelled", "declined"].includes(String(native.payload.__opencraftSteeringStatus))) continue;
+        }
         const nextItems = [...target.items];
         if (acknowledgementIndex < 0) nextItems.push(item);
         else nextItems.splice(acknowledgementIndex, 0, item);

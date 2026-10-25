@@ -896,14 +896,14 @@ test("Pi durable queue edits, reorders, withdraws and atomically steers without 
   const pending=await f.engine.request("thread/read",{threadId:thread.id,includeTurns:true},owner);
   assert.equal(pending.thread.turns.length,1);
   const input=pending.thread.turns[0].items.find((item:any)=>item.clientId==="steer-me");
-  assert.equal(input.type,"steeringUserMessage");assert.equal(input.status,"pending");assert.equal(input.content[0].text,"edited instruction");
+  assert.equal(input.type,"userMessage");assert.equal(input.__opencraftSteeringStatus,"pending");assert.equal(input.content[0].text,"edited instruction");
   release();
   for(let i=0;i<400&&completedTurns.length<2;i++)await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(completedTurns.length,2);assert.ok(completedTurns.every(turn=>turn.status==="completed"));
   assert.equal(f.faux.state.callCount,3);assert.equal((await list()).data.length,0);
   const read=await f.engine.request("thread/read",{threadId:thread.id,includeTurns:true},owner);
   assert.equal(read.thread.turns.length,2);
-  assert.equal(read.thread.turns[0].items.find((item:any)=>item.clientId==="steer-me").status,"accepted");
+  assert.equal(read.thread.turns[0].items.find((item:any)=>item.clientId==="steer-me").__opencraftSteeringStatus,"accepted");
   assert.equal(read.thread.turns[1].id,c.id);
   assert.equal((await f.engine.request("thread/queue/steer",steer,owner)).turnId,root.turn.id);
 });
