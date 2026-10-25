@@ -12,3 +12,5 @@
 - [实施计划](task_plan.md)、[发现](findings.md)、[进度](progress.md)：迁移账本，不能当成已经完成的能力。
 
 修改上述边界时，同一变更必须更新对应不变量及其验证；状态只能用“已实现/已测试/实机已验证/待实现”明确区分。
+
+- [线程编排 Spec](thread-orchestration-spec.md) 与 [架构](thread-orchestration-architecture.md)：Stage 0 只读历史与可重建缓存；后续编排为未来设计。
