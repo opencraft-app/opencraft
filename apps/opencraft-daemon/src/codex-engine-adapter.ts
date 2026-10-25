@@ -70,6 +70,7 @@ import {
   AccountCredentialRefreshManager,
   CodexDeviceLoginService,
   CodexSubscriptionService,
+  CodexResetCreditService,
   createCodexAccountPoolLaunch,
   createCodexMaintenanceClient,
   createManagedCodexRefresh,
@@ -301,6 +302,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private login: CodexDeviceLoginService | null = null;
   private refresh: AccountCredentialRefreshManager | null = null;
   private subscriptions: CodexSubscriptionService | null = null;
+  private resetCreditService: CodexResetCreditService | null = null;
   private poolAuth: ReturnType<typeof createCodexAccountPoolLaunch>["auth"] | null = null;
   private stderrTail = "";
   private closeOperation: Promise<void> | null = null;
@@ -544,6 +546,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       fetch: this.options.fetch,
     });
     this.subscriptions = subscriptions;
+    this.resetCreditService = new CodexResetCreditService({ store, fetch: this.options.fetch,
+      resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+      refreshUsage: accountId => subscriptions.refreshAccount(accountId) });
     this.login = new CodexDeviceLoginService({
       store,
       loginRoot: join(dataRoot, "login"),
@@ -1015,8 +1020,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.rejectInternalRequests(new Error("Codex AppServer closed"));
       await this.login?.dispose().catch(() => undefined);
       this.login = null;
+      await this.resetCreditService?.dispose();
       await this.subscriptions?.dispose();
       this.subscriptions = null;
+      this.resetCreditService = null;
       if (child !== null && child.exitCode === null && child.signalCode === null) {
         await new Promise<void>(resolve => {
           const timer = setTimeout(() => { child.kill("SIGKILL"); }, 2_000);
@@ -1707,6 +1714,15 @@ export class CodexEngineAdapter implements DuplexTransport {
       const params = record(message.params);
       let result: unknown;
       switch (message.method) {
+        case "opencraft/codex/accounts/resetCredits/list":
+          if (!this.resetCreditService) throw new Error("Reset credits are unavailable");
+          result = await this.resetCreditService.list(string(params.accountId)); break;
+        case "opencraft/codex/accounts/resetCredits/consume": {
+          if (!this.resetCreditService) throw new Error("Reset credits are unavailable");
+          const consumed = await this.resetCreditService.consume({ accountId: string(params.accountId), creditId: string(params.creditId),
+            idempotencyKey: string(params.idempotencyKey), confirmed: params.confirmed });
+          result = { ...consumed, accounts: this.accountViews(store) }; break;
+        }
         case "opencraft/codex/accounts/list": result = { accounts: this.accountViews(store) }; break;
         case "opencraft/codex/accounts/setEnabled":
           store.setEnabled(string(params.accountId), params.enabled === true);
@@ -1767,6 +1783,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         subscriptionType: state.subscriptionType,
         rateLimitTier: state.rateLimitTier,
         resetCredits: state.resetCredits,
+        resetCreditActions: true,
         status: state.status,
         observedAt: state.observedAt,
         heldUntil: state.heldUntil,
