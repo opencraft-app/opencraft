@@ -230,20 +230,6 @@ export function createWebTimelineViewportPort(
     // browser's native fixed plane. Commit capacity before measuring that plane;
     // otherwise the origin describes the previous layout for a painted frame.
     applyTimelineViewportDocumentExtent(root, next, policy);
-    if (policy.tracksVisualViewport) {
-      // Installed iOS documents can report a status-excluded clientHeight even
-      // when the visible viewport extends under the status bar. Use the actual
-      // window/visual extent for the canvas, not that layout reference or a
-      // requested overlay policy. Keep the last unzoomed extent during pinch.
-      const property = "--timeline-visible-viewport-height";
-      if (Math.abs(next.scale - 1) <= 0.01 || !root.style.getPropertyValue(property)) {
-        const innerHeight = windowObject.innerHeight;
-        const visualHeight = Math.abs(next.scale - 1) <= 0.01 ? windowObject.visualViewport?.height : undefined;
-        const heights = [innerHeight, visualHeight].filter((height): height is number =>
-          typeof height === "number" && Number.isFinite(height) && height > 0);
-        if (heights.length) setViewportProperty(root, property, Math.min(...heights));
-      }
-    }
     const fixed = readFixedFrameOffset(); // independent read also flushes layout
     const document = readDocumentFrameOffset();
     applyTimelineViewportDocumentOrigin(root, next, policy, fixed, document);

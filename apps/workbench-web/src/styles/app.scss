@@ -145,7 +145,7 @@ body {
 // The installed overlay is a document-flow canvas. Fixed document roots can
 // clip native painting even when their reported border boxes are full-height.
 html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) {
-  &, body { position: static; inset: auto; height: var(--timeline-visible-viewport-height, 100%); }
+  &, body { position: static; inset: auto; height: 100vh; }
   body { position: relative; }
   .app-shell-root { position: relative; }
   .app-shell-floating-overlay-root { position: absolute; }
@@ -284,9 +284,14 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   top: var(--timeline-available-viewport-top, 0px);
   left: var(--timeline-available-viewport-left, 0px);
   width: var(--timeline-available-viewport-width, 100%);
-  // The same viewport owner measures the visible canvas at rest and during
-  // contraction. A status-bar overlay request does not establish its extent.
-  height: var(--timeline-visible-viewport-height, var(--timeline-available-viewport-height, 100%));
+  height: var(--timeline-available-viewport-height, 100%);
+}
+
+// At rest an installed overlay keeps its full CSS canvas. Native layout/visual
+// metrics can exclude the status strip without describing a keyboard. Actual
+// contraction still uses the existing viewport owner, including after blur.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  height: 100vh;
 }
 
 .app-shell-row {

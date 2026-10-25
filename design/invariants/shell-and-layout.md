@@ -28,16 +28,17 @@ Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
 Requested standalone/fullscreen browser overlay documents keep html/body and the
-main Shell in document flow. The existing Web viewport owner sizes the canvas
-from the positive minimum of observed `innerHeight` and unzoomed VisualViewport
-height, retaining the last unzoomed extent during pinch. A requested overlay
-is not proof of native acceptance; status-excluded `clientHeight` is not the
-visible canvas bound.
+main Shell in document flow. At rest, CSS `100vh` owns the complete canvas;
+status-excluded `innerHeight`, `clientHeight` or VisualViewport reports must not
+replace that resting extent. The existing viewport owner signals actual geometric
+contraction separately from keyboard focus; only the contracted Shell uses its
+available height. Pinch alone does not contract the canvas, and blur does not end
+an observed contraction. No second measured-canvas variable is introduced.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
-document roots or main Shell: a full CSS rectangle can still be clipped by the
-native fixed viewport. SafeLayout allocates the main content bottom once; independent
-drawer action surfaces keep their own allocation. Do not add a CSS/client metric
-difference as padding; size document and foreground from measured visibility.
+document roots or main Shell. SafeLayout allocates the main content bottom once;
+independent drawer action surfaces keep their own allocation. Do not add a
+CSS/client metric difference as padding or subtract a status strip from the full
+canvas. Native overlay acceptance and physical pixels still require device evidence.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for
