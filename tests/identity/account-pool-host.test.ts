@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 import { createServer, type Server } from "node:http";
 import { mkdtemp, readdir, rm, stat, readFile, writeFile, rename, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -325,6 +325,7 @@ test("native external auth uses only an ephemeral local broker credential", () =
   const launch = createCodexAccountPoolLaunch({ baseUrl: "http://127.0.0.1:43123", hostToken: "local-host-secret" });
   assert.equal(launch.auth.type, "chatgptAuthTokens");
   assert.equal(launch.auth.chatgptAccountId, "opencraft-account-pool");
+  assert.equal(launch.env.CODEX_CONNECTORS_TOKEN, launch.auth.accessToken);
   const [header, body, signature] = launch.auth.accessToken.split(".");
   assert.deepEqual(JSON.parse(Buffer.from(header!, "base64url").toString()), { alg: "HS256", typ: "JWT" });
   assert.deepEqual(JSON.parse(Buffer.from(body!, "base64url").toString()), {
@@ -429,6 +430,44 @@ test("native hosted MCP uses broker auth and the calling Thread account without 
     assert.equal(calls.at(-1)!.account, "a");
     assert.equal((await proxy.handle(new Request("http://127.0.0.1:43123/api/codex/arbitrary", { method: "POST" }))).status, 404);
   } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("compressed upstream MCP and Responses bodies remain readable through the HTTP proxy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-compressed-pool-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const mcpBody = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-03-26" } });
+  const responseBody = 'data: {"type":"response.completed"}\n\n';
+  let encoding = "br";
+  const upstream = await startLocalServer(createServer((request, response) => {
+    request.resume();
+    const mcp = request.url === "/backend-api/ps/mcp";
+    const body = Buffer.from(mcp ? mcpBody : responseBody);
+    const compressed = encoding === "br" ? brotliCompressSync(body) : gzipSync(body);
+    response.writeHead(200, { "content-type": mcp ? "application/json" : "text/event-stream",
+      "content-encoding": encoding, "content-length": compressed.length });
+    response.end(compressed);
+  }));
+  let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  try {
+    pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+      { accessToken: "fixture-oauth", refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local-codex");
+    const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: `${upstream.url}/backend-api/codex` });
+    server = await startCodexAccountPoolServer({ proxy });
+    const launch = createCodexAccountPoolLaunch({ baseUrl: server.url, hostToken: token });
+    for (encoding of ["br", "gzip"]) {
+      for (const route of ["/api/codex/ps/mcp", "/v1/responses"]) {
+        const mcp = route === "/api/codex/ps/mcp";
+        const response = await fetch(`${server.url}${route}`, { method: "POST", headers: {
+          "content-type": "application/json", authorization: `Bearer ${launch.auth.accessToken}`,
+          "x-opencraft-account-pool-token": token,
+        }, body: "{}" });
+        assert.equal(response.status, 200);
+        assert.equal(await response.text(), mcp ? mcpBody : responseBody);
+        assert.equal(response.headers.get("content-encoding"), null);
+      }
+    }
+  } finally { await server?.close(); await upstream.close(); pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("Codex proxy authenticates the Host and injects only the selected account credentials", async () => {

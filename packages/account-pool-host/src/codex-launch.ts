@@ -41,6 +41,7 @@ export function createCodexAccountPoolLaunch(input: {
       "-c", "model_providers.opencraft-account-pool.supports_websockets=false",
       "-c", `model_providers.opencraft-account-pool.env_http_headers.x-opencraft-account-pool-token=${JSON.stringify(OPENCRAFT_CODEX_POOL_AUTH_TOKEN_ENV)}`,
     ],
-    env: { [OPENCRAFT_CODEX_POOL_AUTH_TOKEN_ENV]: input.hostToken },
+    // Native hosted MCP resolves its bearer separately from external account auth.
+    env: { [OPENCRAFT_CODEX_POOL_AUTH_TOKEN_ENV]: input.hostToken, CODEX_CONNECTORS_TOKEN: accessToken },
   };
 }

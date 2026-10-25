@@ -95,9 +95,10 @@ function requestHeaders(inbound: Headers, accessToken: string, upstreamAccountId
 
 function responseHeaders(upstream: Headers): Headers {
   const headers = new Headers();
+  // Fetch decodes upstream compression before exposing the response body.
   for (const [name, value] of upstream) {
     const lower = name.toLowerCase();
-    if (["content-type", "content-encoding", "cache-control", "retry-after", "mcp-session-id", "mcp-protocol-version"].includes(lower) || lower.startsWith("x-codex-")) {
+    if (["content-type", "cache-control", "retry-after", "mcp-session-id", "mcp-protocol-version"].includes(lower) || lower.startsWith("x-codex-")) {
       headers.set(lower, value);
     }
   }
