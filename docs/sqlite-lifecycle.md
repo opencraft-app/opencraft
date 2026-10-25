@@ -503,14 +503,87 @@ It never deletes the former sources. After deployment verify sourceRevision,
 health, new source-archive progress, unchanged old token-source rows and query
 results. Authenticated employee dashboard validation is separate evidence.
 
-For rollback set `OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` in the existing managed
+For retained legacy projection rows, set `OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` in the existing managed
 Headless environment and restart through its normal installation transaction.
 This restores the former collector/query composition and its normal native
 replay, retaining participant facts written after cutover. Keep all three data
 files; never restore an old database over newer participation, and never delete
 the retained archive to roll back. Re-enabling derived mode can rebuild its
 projection from the retained events and existing receipts. No schema downgrade,
-forced Git update or change to account/queue ownership is required.
+forced Git update or change to account/queue ownership is required. Stopping
+legacy maintenance persistently marks its projection stale on the first affected
+turn. This applies even when no offline retirement has run. Ledger mode rebuilds
+all turns from retained source facts/current participants in bounded batches and
+clears that marker only on completion; queries remain unavailable while it does
+so. A stale `ready=1` cannot expose previous shares after participants change.
+
+### Durable metadata off the forwarding loop
+
+Packaged physical Hosts use the existing query-worker entry with an isolated
+metadata-writer role and a second connection to the same participation store.
+The physical Host remains its sole owner; the worker never accepts native input,
+Renderer identities or token counts. It receives only copied trusted identity,
+input/attempt IDs, dispatch mode, timestamps and native outcome/admission metadata.
+It uses the existing ledger transactions and SQLite durability, with a bounded
+10,000-job queue and asynchronous contention retry (a 1,500ms budget from ingress, including queue
+wait, so a stalled predecessor cannot multiply that delay for later requests).
+Attempts are acknowledged only after commit. Native forwarding awaits that
+acknowledgement, then rechecks authority, client/physical generation and cancellation.
+The asynchronous wait is included in forwarding latency, not hidden as synchronous
+CPU time. Statistics faults retain the existing partial-coverage behavior and
+never cancel or resend native input.
+
+Outcomes and confirmed admissions use the same ordered writer, avoiding competing
+source transactions from native acknowledgements. Only the physical owner recovers
+pending attempts at startup; opening/restarting its connection worker never marks
+live attempts unknown. Shutdown stops new attempts, drains acknowledgements and
+resulting outcomes, then closes the worker before the shared store. Embeddings
+without a packaged worker entry retain the direct ledger adapter. Neither path
+changes the confirmed-participation authority or `equal-turn-v1` allocation.
+
+### Retiring legacy token projections
+
+Derived mode stops maintaining the former source store's allocations, model
+buckets, daily/actor aggregates and per-turn contribution rows. Sources, turns,
+confirmed/pending participation, attempts, submissions, admissions, coverage,
+terminals and both replay cursors remain. Existing projection rows can be retired
+offline with `scripts/retire-token-usage-projections.ts`; source history is never
+pruned. This is an explicit maintenance operation, not an automatic archive policy.
+Stop **both** the Headless query owner and its physical Host using their normal
+managed lifecycle before running it. The CLI acquires the existing physical and
+overlay writer leases; do not run it alongside another query/retained owner.
+
+1. Run the CLI with `--data-dir DIR --server-id ID --native-home HOME` to prove
+   a fresh cache reconstructed from retained events and trusted receipts matches
+   every turn, input, allocation, model bucket, day and actor aggregate. It also
+   compares gap identities/reasons/open status. Query revisions, signed cursors
+   and wall-clock gap timestamps are generation metadata and are excluded.
+2. Repeat with `--apply --archive /retained-backups/projections.jsonl.gz`.
+   The operation repeats the proof, streams every scoped row of all seven legacy
+   projection tables to a typed lossless gzip JSONL file, fsyncs it, reads it back
+   and verifies table counts/hashes, then atomically installs the backup. It never
+   overwrites or prunes this archive. Only afterward does one transaction delete
+   those same verified projection rows and write a retirement receipt containing
+   the archive's SHA-256. Checkpoint/VACUUM releases their pages; no source table
+   or native rollout file is deleted or rewritten. A failure retains the archive.
+3. Recheck a fresh derived rebuild and checkpointed sizes of the source, cache and
+   retained databases, including indexes. The NF-07 1GiB limit applies to the fixed
+   100k-turn/1m-source corpus; native history and retained backups are excluded.
+   Report growth during the 60-minute append workload separately.
+
+To roll back a retired source projection, keep both owners stopped and use the
+**current compatible binary/tool** with `--data-dir DIR --server-id ID --restore
+--archive /retained-backups/projections.jsonl.gz`. The tool verifies the exact
+archive against its retirement receipt and schema, restores all projection rows,
+verifies all restored rows against the archive hashes, then recomputes every
+turn from the still-preserved source facts and current
+confirmed participation in bounded batches. Its marker remains until completion;
+interruption can safely restart restoration. Only after success select
+`OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` and restart the managed owners. Queries on
+a retired source fail unavailable until restoration instead of returning empty
+history. Never restore an entire old database over newer participants, drop the
+archive, rewind either replay cursor, or downgrade the source schema. Returning
+to derived mode retains the restored facts and archive and can rebuild its cache.
 
 ### Query cost and worker initialization
 

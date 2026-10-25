@@ -1357,9 +1357,41 @@ test("native auth rejection fails initialization before a logical client becomes
 
 
 
+test("native input waits for the durable usage attempt",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"oc-usage-durable-forward-")),frames:Array<Record<string,unknown>>=[];
+ const adapter=createRoutingAdapter(root,frames);let release!:()=>void,entered!:()=>void;
+ const started=new Promise<void>(resolve=>{entered=resolve;});
+ const durable=new Promise<void>(resolve=>{release=resolve;});
+ const request=async(id:string,method:string,params:Record<string,unknown>)=>{
+  await adapter.send(JSON.stringify({id,method,params,[LOGICAL_CLIENT_FIELD]:"writer"}));return await waitFor(frames,f=>f.id===id) as any;
+ };
+ try{
+  await adapter.connect();await initializeClient(adapter,frames,"writer");
+  const threadId=(await request("durable-thread","thread/start",{testNoServerRequest:true})).result.thread.id;
+  const runtime=(adapter as any).tokenUsage,original=runtime.attempt.bind(runtime);
+  runtime.attempt=(...args:any[])=>{entered();return durable.then(()=>original(...args));};
+  const sending=adapter.send(JSON.stringify({id:"durable-input",method:"turn/start",params:{threadId,clientUserMessageId:"durable-input",input:[{type:"text",text:"synthetic"}]},[LOGICAL_CLIENT_FIELD]:"writer"}));
+  await started;await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal((await request("before-durable","test/readAcceptedInputs",{})).result.data.length,0);
+  release();await sending;
+  assert.ok((await waitFor(frames,f=>f.id==="durable-input") as any).result);
+  assert.equal((await request("after-durable","test/readAcceptedInputs",{})).result.data.length,1);
+  const retiredThread=(await request("retire-thread","thread/start",{testNoServerRequest:true})).result.thread.id;
+  let releaseRetired!:()=>void,enteredRetired!:()=>void;
+  const retiredEntered=new Promise<void>(resolve=>{enteredRetired=resolve;});
+  runtime.attempt=(...args:any[])=>{enteredRetired();return new Promise<void>(resolve=>{releaseRetired=()=>{original(...args);resolve();};});};
+  const retired=adapter.send(JSON.stringify({id:"retired-input",method:"turn/start",params:{threadId:retiredThread,clientUserMessageId:"retired-input",input:[{type:"text",text:"synthetic"}]},[LOGICAL_CLIENT_FIELD]:"writer"}));
+  await Promise.race([retiredEntered,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Retired input did not reach usage attempt")),2000))]);(adapter as any).disconnectClient("writer");releaseRetired();await retired;
+  await initializeClient(adapter,frames,"observer");
+  await adapter.send(JSON.stringify({id:"after-retired",method:"test/readAcceptedInputs",params:{},[LOGICAL_CLIENT_FIELD]:"observer"}));
+  assert.equal((await waitFor(frames,f=>f.id==="after-retired") as any).result.data.length,1);
+  assert.equal(runtime.ledger.state.database.prepare("SELECT outcome FROM token_usage_attempts WHERE input_id='retired-input'").get().outcome,"rejected");
+ }finally{release?.();await adapter.close();await rm(root,{recursive:true,force:true});}
+});
+
 test("usage attempts follow the actual queue dispatcher and retain definitive rejection outcomes",async()=>{
  const root=await mkdtemp(join(tmpdir(),"oc-usage-attempt-host-")),frames:Array<Record<string,unknown>>=[];
- const adapter=createRoutingAdapter(root,frames,0,undefined,undefined,undefined,false,{serverId:"fixture",actor:context=>({id:context.actorId,kind:"human"}),submission:(threadId,inputId)=>inputId.startsWith("queued-")?{threadId,inputId,actorId:"A",actorKind:"human",mode:"start",sourceKind:"human",submittedAt:1000}:null});
+ const adapter=createRoutingAdapter(root,frames,0,undefined,undefined,undefined,false,{serverId:"fixture",queryWorkerEntry:new URL("../../apps/opencraft-daemon/src/token-usage-query-worker.ts",import.meta.url).pathname,actor:context=>({id:context.actorId,kind:"human"}),submission:(threadId,inputId)=>inputId.startsWith("queued-")?{threadId,inputId,actorId:"A",actorKind:"human",mode:"start",sourceKind:"human",submittedAt:1000}:null});
  let seq=0;
  const request=async(actorId:string,method:string,params:Record<string,unknown>)=>{
   const id="usage-attempt:"+(++seq);

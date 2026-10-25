@@ -1,3 +1,4 @@
+import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
 import { TranscriptReadCache } from "@opencraft/native-history-node";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
@@ -292,6 +293,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private schedules: ConversationSchedules | null = null;
   private hostState: OpenCraftHostStateDatabase | null = null;
   private tokenUsageState: TokenUsageStateDatabase | null = null;
+  private tokenUsageAttemptWriter: TokenUsageAttemptWriter | null = null;
   private tokenUsageStorageUnavailable = false;
   private tokenUsage: CodexTokenUsageRuntime | null = null;
   private tokenUsageQueries: TokenUsageQueryService | null = null;
@@ -530,11 +532,13 @@ export class CodexEngineAdapter implements DuplexTransport {
     try {
       const telemetry=new TokenUsageTelemetry();
       this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
-      this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry), {
+      if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageAttemptWriter=new TokenUsageAttemptWriter({entry:this.options.tokenUsage.queryWorkerEntry,directory:dataRoot,serverId:this.options.tokenUsage.serverId,projectLegacy:this.options.tokenUsage.derivedQueries?false:undefined});
+      this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry,{projectLegacy:this.options.tokenUsage?.derivedQueries?false:undefined}), {
         request:(method,params)=>this.requestPhysical(method,params,5000),
         submission:this.options.tokenUsage?.submission,
         diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
         derived:this.options.tokenUsage?.derivedQueries,
+        writes:this.tokenUsageAttemptWriter??undefined,
       });
       if(this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries=this.options.tokenUsage.derivedQueries;
       else if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageQueries=new TokenUsageQueryService({entry:this.options.tokenUsage.queryWorkerEntry,databasePath:join(dataRoot,"token-usage.sqlite"),serverId:this.options.tokenUsage.serverId,telemetry});
@@ -1072,14 +1076,19 @@ export class CodexEngineAdapter implements DuplexTransport {
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
         if (message.method === "turn/start" || message.method === "turn/steer") {
           const inputId = string(params.clientUserMessageId);
+          const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
           try {
             const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
             const trusted=this.options.tokenUsage?.submission?.(string(params.threadId),inputId);
             pending.usageAttemptId=randomUUID();
-            this.tokenUsage?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:actor?.id??trusted?.actorId??null,
+            await usageRuntime?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:actor?.id??trusted?.actorId??null,
               actorKind:actor?.kind??trusted?.actorKind??"unknown",mode:message.method === "turn/start" ? "start":"steer",
               sourceKind:actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()});
           } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); }
+          if(!this.initializedClients.has(clientId)||this.clientEpoch(clientId)!==requestClientEpoch||this.statusValue.state!=="open"||physicalGeneration!==this.sessionMcpGeneration){
+            if(pending.usageAttemptId)usageRuntime?.attemptOutcome(pending.usageAttemptId,"rejected");return;
+          }
+          try{this.validateSubmissionContext(context);}catch(error){if(pending.usageAttemptId)usageRuntime?.attemptOutcome(pending.usageAttemptId,"rejected");throw error;}
         }
         // Native fork has no fixed deadline in Workbench. Preserve that
         // contract; its ledger is still bounded by the admission limit and
@@ -1182,6 +1191,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.queue = null;
       this.identity?.close();
       this.identity = null;
+      await this.tokenUsageAttemptWriter?.close();this.tokenUsageAttemptWriter=null;
       this.tokenUsageState?.close();this.tokenUsageState=null;this.tokenUsageStorageUnavailable=false;
       this.hostState?.close();
       this.hostState = null;
@@ -2020,15 +2030,20 @@ export class CodexEngineAdapter implements DuplexTransport {
     throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
   }
 
-  private requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
+  private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
-    if(usageAttemptId)this.tokenUsage?.attempt(usageAttemptId,string(params.threadId),string(params.clientUserMessageId),method==="turn/start"?"start":"steer",usageIdentity);
-    const unknown=()=>{if(usageAttemptId)this.tokenUsage?.attemptOutcome(usageAttemptId,"unknown");};
+    const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
+    if(usageAttemptId)await usageRuntime?.attempt(usageAttemptId,string(params.threadId),string(params.clientUserMessageId),method==="turn/start"?"start":"steer",usageIdentity);
+    if(signal?.aborted||this.statusValue.state!=="open"||!this.physicalAvailable||physicalGeneration!==this.sessionMcpGeneration){
+      if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"rejected");
+      throw new RecoveryNotSubmitted("Codex request retired before native submission");
+    }
+    const unknown=()=>{if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"unknown");};
     return new Promise((resolve, reject) => {
       const cleanup = () => signal?.removeEventListener("abort", cancel);
       const cancel = () => {

@@ -1,7 +1,10 @@
+import { runTokenUsageAttemptWorker } from "./token-usage-attempt-worker.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import { TokenUsageQuery, TokenUsageQueryError, type TokenUsageAuthority } from "./token-usage-query.js";
 import { RolloutDerivedTokenUsage } from "./token-usage-derived.js";
+if(workerData.role==="attempt-writer")runTokenUsageAttemptWorker();
+else {
 // The Host opens/migrates the file first. This projection worker never migrates,
 // creates files or writes facts; it owns and closes only its read-only handle.
 const derived=workerData.rollout ? new RolloutDerivedTokenUsage({databasePath:workerData.databasePath,serverId:workerData.serverId,...workerData.rollout}) : null;
@@ -31,3 +34,5 @@ parentPort!.on("message",async(message:{id:number;params:unknown;authority:Token
   catch(error){parentPort!.postMessage({id:message.id,error:error instanceof TokenUsageQueryError?error.code:"unavailable"});}
 });
 parentPort!.on("close",()=>{closed=true;if(timer)clearTimeout(timer);if(derived)derived.close();else database.close();});
+
+}
