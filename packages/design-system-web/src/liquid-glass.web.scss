@@ -7,10 +7,6 @@
   border-radius: inherit;
   pointer-events: none;
   z-index: -1;
-  // Filter the live backdrop at the material plane itself. A nested filtered
-  // pseudo-element adds a second compositing boundary inside the tinted plane.
-  -webkit-backdrop-filter: var(--material-liquid-filter);
-  backdrop-filter: var(--material-liquid-lens, var(--material-liquid-filter));
   background: var(--material-liquid-background);
   box-shadow: var(--material-liquid-shadow);
   &::before {
@@ -18,6 +14,8 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
+    -webkit-backdrop-filter: var(--material-liquid-filter);
+    backdrop-filter: var(--material-liquid-lens, var(--material-liquid-filter));
     background: var(--material-liquid-reflection);
     box-shadow: var(--material-liquid-rim);
   }
@@ -25,7 +23,7 @@
 .ui-liquid-glass__filters { position: absolute; pointer-events: none; }
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  .ui-liquid-glass {
+  .ui-liquid-glass::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

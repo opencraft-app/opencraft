@@ -46,7 +46,7 @@ try {
  assert.equal(await lenses.count(),2,'one circular lens and one shared trailing lens');
  const group=page.locator('.app-shell-header__end-slot .app-shell-header__action-group');
  assert.equal(await group.locator('button').count(),2);
- const optics=await lenses.evaluateAll(es=>es.map(e=>{const b=e.getBoundingClientRect(),s=getComputedStyle(e);return {width:b.width,height:b.height,filter:s.backdropFilter,rim:getComputedStyle(e,'::before').boxShadow,map:!!e.querySelector('feDisplacementMap')}}));
+ const optics=await lenses.evaluateAll(es=>es.map(e=>{const b=e.getBoundingClientRect(),s=getComputedStyle(e,'::before');return {width:b.width,height:b.height,filter:s.backdropFilter,rim:s.boxShadow,map:!!e.querySelector('feDisplacementMap')}}));
  for(const lens of optics){assert.ok(lens.width>=44&&lens.height>=44);assert.notEqual(lens.filter,'none');assert.notEqual(lens.rim,'none');}
  assert.ok(optics.some(lens=>lens.width>lens.height*1.8),'trailing actions share one capsule');
 
@@ -88,11 +88,11 @@ try {
  if(width===390){
   const cdp=await context.newCDPSession(page);
   await cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-transparency',value:'reduce'}]});
-  assert.ok((await lenses.evaluateAll(es=>es.map(e=>getComputedStyle(e).backdropFilter))).every(v=>v==='none'));
+  assert.ok((await lenses.evaluateAll(es=>es.map(e=>getComputedStyle(e,'::before').backdropFilter))).every(v=>v==='none'));
   await cdp.send('Emulation.setEmulatedMedia',{features:[]});await cdp.detach();
  }
 
- if(width===390){await page.emulateMedia({forcedColors:'active'});assert.ok((await lenses.evaluateAll(es=>es.map(e=>getComputedStyle(e).backdropFilter))).every(v=>v==='none'));await page.emulateMedia({forcedColors:'none'});}
+ if(width===390){await page.emulateMedia({forcedColors:'active'});assert.ok((await lenses.evaluateAll(es=>es.map(e=>getComputedStyle(e,'::before').backdropFilter))).every(v=>v==='none'));await page.emulateMedia({forcedColors:'none'});}
 
  await page.evaluate(()=>document.documentElement.dataset.touchNewera='off');assert.equal(await page.locator('.thread-header-title').isVisible(),true);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
  await trigger.click();assert.equal(await page.getByRole('menuitem',{name:'Open preview panel',exact:true}).count(),0);await page.keyboard.press('Escape');
@@ -152,7 +152,7 @@ try {
   const samples=[];
   for(const selector of ['.sidebar-new-chat:visible','.shell-navigation__entrance[data-surface=settings]:visible']){
    const action=page.locator(selector);const lens=action.locator('.ui-liquid-glass');assert.equal(await lens.evaluate(e=>getComputedStyle(e).overflow),'visible','the optical background is not an ellipsis label');
-   const softened=await action.screenshot();const remove=await page.addStyleTag({content:'.ui-liquid-glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});const clear=await action.screenshot();await remove.evaluate(e=>e.remove());
+   const softened=await action.screenshot();const remove=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});const clear=await action.screenshot();await remove.evaluate(e=>e.remove());
    const before=await energy(clear),after=await energy(softened);assert(before>5);assert(after<before*.1,JSON.stringify({selector,before,after}));if(materialPath==='lens'){
     const frost=lens.locator('feGaussianBlur[result=frosted-glass]');assert.equal(Number(await frost.getAttribute('stdDeviation')),12);
     await frost.evaluate(e=>e.setAttribute('stdDeviation','0'));const oldEnergy=await energy(await action.screenshot());await frost.evaluate(e=>e.setAttribute('stdDeviation','12'));assert(oldEnergy>before*.1,'removing SVG frost restores the nearly clear transmission');assert(oldEnergy>after*2);samples.push({selector,before,after,oldEnergy});
@@ -171,15 +171,17 @@ try {
   // Sample actual list paint inside its scrolling/compositing ancestors.
   // An independent overlay does not exercise this backdrop source.
   await page.locator('.shell-sidebar__scroll').evaluate(e=>e.scrollTop=350);
-  const listPattern=await page.addStyleTag({content:'.shell-sidebar__scroll .sidebar-activity-list{background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 16px)}.shell-sidebar__scroll .sidebar-activity-item{background:transparent!important}.shell-sidebar__floating-action .sidebar-new-chat > :not(.ui-liquid-glass),.shell-sidebar__rail-footer [data-surface=settings] > :not(.ui-liquid-glass){visibility:hidden!important}'});
+  const listPattern=await page.addStyleTag({content:'.shell-sidebar__scroll .sidebar-activity-row{background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 16px)}.shell-sidebar__scroll .sidebar-activity-item{background:transparent!important}.shell-sidebar__floating-action .sidebar-new-chat > :not(.ui-liquid-glass),.shell-sidebar__rail-footer [data-surface=settings] > :not(.ui-liquid-glass){visibility:hidden!important}'});
   const scrollingSamples=[];
   for(const selector of ['.sidebar-new-chat:visible','.shell-navigation__entrance[data-surface=settings]:visible']){
    const action=page.locator(selector),lens=action.locator('.ui-liquid-glass');
-   assert.equal(await lens.evaluate(e=>getComputedStyle(e,'::before').backdropFilter),'none','reflection must not filter another backdrop');
+   assert.equal(await page.locator('.app-shell-floating-left-panel').evaluate(e=>getComputedStyle(e).willChange),'transform','settled drawer must not create an opacity backdrop root');
    const frosted=await energy(await action.screenshot());
-   const noBlur=await page.addStyleTag({content:'.ui-liquid-glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});
+   const oldHint=await page.addStyleTag({content:'.app-shell-floating-left-panel{will-change:transform,opacity!important}'});
+   const isolated=await energy(await action.screenshot());await oldHint.evaluate(e=>e.remove());
+   const noBlur=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});
    const clear=await energy(await action.screenshot());await noBlur.evaluate(e=>e.remove());
-   assert(clear>5,JSON.stringify({selector,clear}));assert(frosted<clear*.1,JSON.stringify({selector,frosted,clear}));scrollingSamples.push({selector,frosted,clear});
+   assert(clear>5,JSON.stringify({selector,clear}));assert(frosted<clear*.1,JSON.stringify({selector,frosted,clear}));assert(isolated>clear*.5,JSON.stringify({selector,frosted,isolated,clear}));scrollingSamples.push({selector,frosted,isolated,clear});
   }
   await listPattern.evaluate(e=>e.remove());
   await page.screenshot({path:output+'/sidebar-'+theme+'-'+materialPath+'-scrolling-text.png'});
@@ -209,7 +211,7 @@ try {
  const fallbackPage=await fallbackContext.newPage();await fallbackPage.goto(vite.resolvedUrls!.local[0]!);await fallbackPage.getByLabel('Draft').waitFor({timeout:60000});
  await fallbackPage.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on'});
  const fallbackLenses=fallbackPage.locator('.app-shell-header .ui-liquid-glass:visible, .app-shell-touch-sidebar-toggle .ui-liquid-glass:visible');
- const fallback=await fallbackLenses.evaluateAll(es=>es.map(e=>({map:!!e.querySelector('feImage'),filter:getComputedStyle(e).backdropFilter,shadow:getComputedStyle(e).boxShadow,rim:getComputedStyle(e,'::before').boxShadow})));
+ const fallback=await fallbackLenses.evaluateAll(es=>es.map(e=>({map:!!e.querySelector('feImage'),filter:getComputedStyle(e,'::before').backdropFilter,shadow:getComputedStyle(e).boxShadow,rim:getComputedStyle(e,'::before').boxShadow})));
  assert.equal(fallback.length,2);assert.ok(fallback.every(e=>!e.map&&e.filter.includes('blur(12px)')&&!e.filter.includes('url(')),'syntax-only URL engines must retain the working CSS fallback');
  assert.ok(fallback.every(e=>e.shadow!=='none'&&e.rim!=='none'),'CSS approximation keeps directional edge light and a soft contact shadow');
  await fallbackPage.screenshot({path:output+'/syntax-only-engine-fallback.png'});evidence.push({simulatedPrefixedEngineFallback:fallback});await fallbackContext.close();

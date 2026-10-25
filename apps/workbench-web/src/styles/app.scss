@@ -12356,7 +12356,10 @@ html[data-window-host="browser"] body {
   @media (prefers-reduced-motion: no-preference) {
     // This owner exists only for floating presence. Keep its changing scale on
     // a composited layer rather than re-rasterizing it at every scale value.
-    .app-shell-floating-left-panel { will-change: transform, opacity; }
+    // A persistent opacity hint creates a backdrop root even at opacity:1.
+    // Promoted list rows then escape the glass filter's backdrop capture.
+    // Retain scale/translation promotion without isolating the settled backdrop.
+    .app-shell-floating-left-panel { will-change: transform; }
   }
   .app-shell-mobile-sidebar-wash {
     position: absolute;

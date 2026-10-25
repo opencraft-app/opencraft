@@ -567,10 +567,10 @@ All paths retain the same readable frost beneath the optical enhancement: the
 theme's floating veil and shared liquid blur also apply after a supported SVG
 lens. The SVG graph consumes the same CSS scattering length after refraction and contrast tint, with a
 three-sigma sampling outset; appending a CSS blur function after a URL filter is not its authority.
-The backdrop filter belongs directly to the glass background span; its pseudo-element
-only paints reflection and rim light. Keep the foreground icon/label outside that
-filtered span. Verify scrolling list content itself, in addition to an overlaid
-contrast probe, so extra compositor layers cannot hide a missing blur.
+The mobile drawer retains transform promotion for presence, but must not keep
+`will-change: opacity` after settling: that creates a backdrop root which can
+exclude composited list rows from the floating controls' blur. Verify actual row
+paint beneath the controls, alongside any independent contrast probe.
 A lens must not replace scattering with a nearly clear transmission. Mobile
 footer styles own geometry only; label truncation must exclude the backdrop span.
 
