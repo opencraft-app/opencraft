@@ -12,6 +12,10 @@
 
 ## Loading and cache
 
+- Production Web HTML emits hints from the final build graph: mandatory entry modules and critical CSS are discovered before the dynamic bootstrap reaches them. Fonts remain CSS-demand-loaded: a font declaration does not prove that the current theme needs it, and unconditional Inter preload added about 48KB to a system-font first screen. Hints do not execute modules or change compatibility setup order. Electron and embedded documents retain their existing resource owners.
+- Settings entrances declare a resource intent. The document runtime warms at most 12 noncritical JS/CSS files and 512KB of uncompressed build output, with two low-priority HTTP requests at a time. Hover/focus/touch does not import or activate Settings; hidden pages, Save-Data and 2G defer work, and disposal aborts it. No background polling or API/preview prefetch is added. Browser HTTP eviction remains authoritative; this is not an offline guarantee.
+- Initial plugin favicon/touch icons have immutable content-addressed aliases. Original declared URLs and installed manifests remain valid. Static GET/HEAD handles weak/list/wildcard If-None-Match with a bodyless 304; HTML and version.json remain no-store. ETag and Vary follow the selected compressed representation.
+
 - 管理页面、连接器目录/详情与低频 parser 保持在动态边之后；连接器图标用 `?no-inline` 生成独立哈希资源，列表的 lazy image 才能实际节省传输。
 - 稳定 React runtime 和图标库独立成组，共享 packages 按入口集合分组并合并小于4KB的邻近组，不把全部可选供应商塞成一个启动 vendor 包。此策略减少应用改动污染共享运行时，但不保证业务 Shell 的每次部署零失效。
 - `node scripts/compare-startup-resources.mjs <before.json> <after.json>` 按文件 URL 与模块归属报告关键缓存失效字节；合法代码变化和仅依赖哈希传播分别审查。不能把相同 chunk 数量当作缓存稳定证据。可加 `--max-invalidated-js <bytes>` 作为指定场景的硬门禁。
