@@ -384,3 +384,44 @@ test("repeat shared grants reuse capacity and HTTP/HTTPS cookies remain origin-b
   assert.equal(await grant(httpsOrigin, cookies), httpsCookie);
   assert.deepEqual(f.calls, [], "grant renewal performs no SSH execution");
 });
+
+
+test("new conversation visibility persists in legacy JSON records without resetting an open connection", async context => {
+  const f = await fixture(context);
+  await f.unlock(); const row = await f.add();
+  const before = f.management.store.binding(row.serverId);
+  const result = await f.request(`connections/${row.serverId}`, "PUT", { revision: row.revision,
+    input: { ...input, password: undefined, hideFromNewChat: true } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.value.hideFromNewChat, true);
+  assert.deepEqual(f.resets, [], "display preference must leave the physical connection and existing executions alone");
+  const views = (await f.request("connections")).value;
+  assert.equal(views[0].hideFromNewChat, true);
+  assert.equal(f.management.store.binding(row.serverId).descriptor.hideFromNewChat, true);
+  // A legacy editor omits this field; its unrelated edit cannot erase the setting.
+  const legacy = f.management.store.save(row.serverId, result.value.revision, { ...input, password: undefined, displayName: "renamed" });
+  assert.equal(legacy.hideFromNewChat, true);
+  assert.equal(await (f.management.store.binding(row.serverId).connection.authentication as any).resolvePassword(), input.password);
+  assert.equal(before.descriptor.serverId, legacy.serverId);
+  assert.throws(() => parseSshConnectionInput({ ...input, hideFromNewChat: "true" }));
+  const unhidden = await f.request(`connections/${row.serverId}`, "PUT", { revision: legacy.revision,
+    input: { ...input, password: undefined, displayName: "renamed", hideFromNewChat: false } });
+  assert.equal(unhidden.value.hideFromNewChat, false);
+  assert.deepEqual(f.resets, []);
+});
+
+test("new conversation visibility survives reopening pre-existing SSH storage", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-ssh-visibility-"));
+  let store = new SshConnectionStore(directory);
+  const row = store.save(null, 0, input, key());
+  store.close();
+  store = new SshConnectionStore(directory);
+  assert.equal(store.get(row.serverId).hideFromNewChat, undefined);
+  store.save(row.serverId, row.revision, { ...input, password: undefined, hideFromNewChat: true });
+  store.close();
+  store = new SshConnectionStore(directory);
+  try {
+    assert.equal(store.get(row.serverId).hideFromNewChat, true);
+    assert.equal(await (store.binding(row.serverId).connection.authentication as any).resolvePassword(), input.password);
+  } finally { store.close(); }
+});

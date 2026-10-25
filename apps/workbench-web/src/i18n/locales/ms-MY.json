@@ -910,6 +910,8 @@
   "imageEditor.gestureHint": "Gunakan dua jari untuk zum dan alih.",
   "im.channels.back": "Saluran IM",
   "im.route.customize": "Sesuaikan laluan ini",
+  "sshConnections.hideFromNewChat": "Sembunyikan daripada perbualan baharu",
+  "sshConnections.hideFromNewChatDescription": "Sembunyikan sambungan ini apabila memulakan perbualan baharu. Perbualan sedia ada kekal tersedia.",
   "sshConnections.removeDescription": "Mengalih keluar sambungan ini tidak memadamkan fail jauh atau menghentikan perkhidmatan jauh.",
   "developerMode.enabled": "Internal developer mode enabled",
   "developerMode.disabled": "Internal developer mode disabled",

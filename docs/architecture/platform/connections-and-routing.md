@@ -406,3 +406,22 @@ real process/network/browser composition with synthetic protocol data; it does
 not claim live-user, real-model or physical-mobile acceptance.
 
 The Electron Main and Preload bundled together use `opencraft:get-window-fullscreen`, `opencraft:window-fullscreen-changed` and `opencraft:set-window-appearance` for internal window projection. The renderer methods, payloads, admission checks and window lifecycle are unchanged; these channel names do not alter persisted identities or the AppHost transport.
+
+### Remote Host visibility for new conversations
+
+A remote recipe may set `hideFromNewChat` in its existing server-owned JSON
+configuration. The remote connection editor saves this Host-level setting with
+its normal revision check; older records omit it and remain visible. An older
+editor omitting the field preserves a previously saved value. The management
+and authenticated catalog projections carry the preference to the live profile
+overlay; it is not copied into a second writable browser preference.
+
+New-conversation machine/Agent choices and automatic fallback exclude hidden
+Hosts, including a remembered selection with no existing Thread to restore.
+Starting a new conversation from a hidden Host chooses an eligible Host and does
+not carry the old Host's filesystem/project identity. Existing conversations,
+retained drafts, history catalogs, management Connect and execution admission
+remain available. Changing only this presentation setting does not reset the
+physical connection or interrupt executions. If no eligible target exists, the
+client exposes its existing hostless/management surface instead of silently
+selecting a hidden Host. Visibility is not an authorization policy.

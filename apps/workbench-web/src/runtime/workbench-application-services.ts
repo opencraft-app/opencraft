@@ -1,6 +1,6 @@
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 import { serverStorageKey, serverUrl, serverEndpointNeedsRefresh } from "./server-context";
-import { TurnCompletionObserver } from "@opencraft/workbench-runtime";
+import { chooseNewConversationHost, isNewConversationHost, TurnCompletionObserver } from "@opencraft/workbench-runtime";
 import { FULL_WORKBENCH_PRESENTATION, type WorkbenchPresentationPolicy } from "../workbench-presentation-policy";
 import { ApplicationBrandingRegistry } from "./application-branding";
 import { BrowserThreadAttention } from "./browser-thread-attention";
@@ -701,7 +701,7 @@ export function createWebWorkbenchCommands(input: {
       const epoch = ++hostSelectionEpoch;
       const origin = input.navigation.getSnapshot().revision;
       input.activation.cancelPending();
-      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && profile.enabled)) throw new Error("此环境当前不可连接，请刷新环境目录。");
+      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) throw new Error("此连接当前不可用于新建聊天。");
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
@@ -720,6 +720,7 @@ export function createWebWorkbenchCommands(input: {
         if (resolved === null) return;
         workspace = resolved;
       }
+      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) return;
       if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
         || input.scopes.getActiveDraft()?.id !== activeDraft?.id
         || input.scopes.getActiveDraft()?.target !== activeDraft?.target) return;
@@ -782,19 +783,29 @@ export function createWebWorkbenchCommands(input: {
     },
     navigateToHome(options) {
       assertTarget(options.execution.hostId);
+      let execution = options.execution;
+      if (presentation.executionSelection === "selectable" && !options.draftId) {
+        const target = chooseNewConversationHost(input.hostProfiles.getSnapshot().profiles, execution.hostId);
+        if (!target) throw new Error("没有可用于新建聊天的连接。");
+        // A different Host cannot inherit a remote filesystem/project identity.
+        if (target.hostId !== execution.hostId) {
+          const cwd = target.workspaceBrowseRoots[0] ?? null;
+          execution = { hostId: asHostId(target.hostId), workspace: { cwd, runtimeWorkspaceRoots: cwd ? [cwd] : [] } };
+        }
+      }
       ++hostSelectionEpoch;
       const draft = input.scopes.openDraft({
-        execution: options.execution,
+        execution,
         draftId: options.draftId,
         entrypoint: options.entrypoint,
       });
-      const location = createWorkbenchDraftLocation(options.execution.hostId, draft.id);
+      const location = createWorkbenchDraftLocation(execution.hostId, draft.id);
       try {
         const activated = input.navigation.navigateToHome(location, options.mode);
         if (!activated) throw new Error(`Draft ${draft.id} activation was superseded`);
-        input.coordinator.setSelectedHostId(options.execution.hostId);
-        if (presentation.executionSelection === "selectable") setLocalPreference(currentProductStorageKey("opencraft.active-host-id"), options.execution.hostId);
-        setLocalPreference(activeThreadStorageKey(options.execution.hostId, input.threadMemoryScope?.()), null);
+        input.coordinator.setSelectedHostId(execution.hostId);
+        if (presentation.executionSelection === "selectable") setLocalPreference(currentProductStorageKey("opencraft.active-host-id"), execution.hostId);
+        setLocalPreference(activeThreadStorageKey(execution.hostId, input.threadMemoryScope?.()), null);
         return location;
       } catch (error) {
         input.scopes.dismissDraft(draft.id);

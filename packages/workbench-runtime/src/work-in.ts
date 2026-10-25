@@ -72,3 +72,15 @@ export function workInAgentHosts(machine: WorkInMachine | undefined, activeHostI
   }
   return result;
 }
+
+/** New conversation eligibility is independent of catalog/history visibility. */
+export function isNewConversationHost(host: HostConnectionProfile): boolean {
+  return host.enabled && host.hideFromNewChat !== true;
+}
+
+export function chooseNewConversationHost(profiles: readonly HostConnectionProfile[], preferredHostId?: string | null): HostConnectionProfile | undefined {
+  const visible = profiles.filter(isNewConversationHost);
+  return visible.find(host => host.hostId === preferredHostId)
+    ?? visible.find(host => host.hostId === "local")
+    ?? visible.find(host => host.hostKind === "local" || host.hostKind === "durable") ?? visible[0];
+}

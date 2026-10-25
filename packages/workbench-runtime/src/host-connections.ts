@@ -279,6 +279,8 @@ export interface HostConnectionProfile {
   readonly enabled: boolean;
   readonly autoConnect: boolean;
   readonly includeInSidebar: boolean;
+  /** Excluded from new-conversation choices, never from existing Thread access. */
+  readonly hideFromNewChat?: boolean;
   readonly credentialRef: string | null;
   readonly transportEndpoint: string | null;
   readonly executionLocation: string | null;
@@ -404,6 +406,7 @@ export function normalizeHostConnectionProfile(value: unknown): HostConnectionPr
     enabled: requiredBoolean("enabled"),
     autoConnect: requiredBoolean("autoConnect"),
     includeInSidebar: requiredBoolean("includeInSidebar"),
+    ...(candidate.hideFromNewChat === undefined ? {} : { hideFromNewChat: requiredBoolean("hideFromNewChat") }),
     credentialRef: optionalString("credentialRef"),
     transportEndpoint: optionalString("transportEndpoint"),
     executionLocation: optionalString("executionLocation"),

@@ -67,7 +67,7 @@ import type {
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
-import { workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
+import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
@@ -372,7 +372,8 @@ export function App({
     hostCatalog.hosts[0]!;
   const machines = useMemo(() => groupWorkInMachines(hostCatalog.profiles, environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
   const activeMachine = machines.find(machine => machine.hosts.some(host => host.hostId === snapshot.hostId));
-  const composerHostOptions = useMemo(() => machines.map(machine => ({
+  const newConversationMachines = useMemo(() => groupNewConversationMachines(hostCatalog.profiles.filter(host => host.hideFromNewChat !== true), environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
+  const composerHostOptions = useMemo(() => newConversationMachines.map(machine => ({
     id: machine.id,
     hostIds: machine.hosts.map(host => host.hostId),
     label: machineName(machine, extensionPlatform, intl),
@@ -381,8 +382,8 @@ export function App({
     resource: machine.resource,
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
-  })), [machines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).map(host => host.hostId), snapshot.hostId);
+  })), [newConversationMachines, extensionPlatform, intl]);
+  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId);
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -2027,7 +2028,7 @@ export function App({
             connectionPhase={activeHostConnectionPhase}
             onSelectHost={async (machineId) => {
               setWorkspacePickerOpen(false);
-              const machine = machines.find(machine => machine.id === machineId);
+              const machine = newConversationMachines.find(machine => machine.id === machineId);
               if (!machine) return;
               const currentAgent = hostCatalog.profiles.find(host => host.hostId === snapshot.hostId)?.agent;
               const target = chooseWorkInHost(machine, currentAgent, snapshot.hostId);

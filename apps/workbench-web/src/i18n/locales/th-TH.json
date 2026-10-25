@@ -910,6 +910,8 @@
   "imageEditor.gestureHint": "ใช้สองนิ้วเพื่อซูมและเลื่อนภาพ",
   "im.channels.back": "ช่องทาง IM",
   "im.route.customize": "ปรับแต่งเส้นทางนี้",
+  "sshConnections.hideFromNewChat": "ซ่อนจากการสนทนาใหม่",
+  "sshConnections.hideFromNewChatDescription": "ซ่อนการเชื่อมต่อนี้เมื่อเริ่มการสนทนาใหม่ การสนทนาที่มีอยู่ยังคงใช้งานได้",
   "sshConnections.removeDescription": "การลบการเชื่อมต่อนี้จะไม่ลบไฟล์หรือหยุดบริการบนเครื่องปลายทาง",
   "developerMode.enabled": "Internal developer mode enabled",
   "developerMode.disabled": "Internal developer mode disabled",

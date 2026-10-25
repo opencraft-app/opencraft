@@ -145,7 +145,7 @@ export class SshManagement {
   authorized(request: IncomingMessage): boolean { return this.sameOrigin(request, false) && this.session(request) !== null; }
   catalog(request: IncomingMessage): readonly SshServerDescriptor[] {
     if (!this.authorized(request)) return [];
-    return this.store.list().filter(row => row.enabled).map(({ serverId, displayName, workspaceBrowseRoots }) => ({ serverId, displayName, workspaceBrowseRoots }));
+    return this.store.list().filter(row => row.enabled).map(({ serverId, displayName, workspaceBrowseRoots, hideFromNewChat }) => ({ serverId, displayName, workspaceBrowseRoots, ...(hideFromNewChat === undefined ? {} : { hideFromNewChat }) }));
   }
   onRevocation(listener: () => void) { this.revocations.add(listener); return () => this.revocations.delete(listener); }
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
@@ -244,9 +244,14 @@ export class SshManagement {
         if (!challenge || challenge.session !== session || challenge.expiresAt <= Date.now() || challenge.hostname !== input.hostname || challenge.port !== input.port || data.fingerprint !== challenge.fingerprint) throw new SshManagementError("trust", 409);
         hostKey = challenge.key;
       }
+      const previous = id ? this.store.get(id) : null;
       const row = this.store.save(id, Number(data.revision), input, hostKey);
       if (typeof data.challengeId === "string") this.challenges.delete(data.challengeId);
-      if (id) await this.options.resetConnection(id);
+      // A visibility-only edit must not interrupt existing executions.
+      if (id && (input.password !== undefined || hostKey !== undefined || previous!.displayName !== row.displayName
+        || previous!.enabled !== row.enabled || JSON.stringify(previous!.workspaceBrowseRoots) !== JSON.stringify(row.workspaceBrowseRoots))) {
+        await this.options.resetConnection(id);
+      }
       json(response, 200, row); return true;
     } catch (error) {
       // Never send raw spawn/crypto/SQLite error or submitted data to browser/logs.

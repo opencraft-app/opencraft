@@ -222,12 +222,39 @@ try {
     assert.equal(await editor.getByRole("textbox", { name: "地址", exact: true }).isEnabled(), false);
     const box = await editor.boundingBox(); const width = touch ? 390 : 1280;
     assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= (touch ? 844 : 900));
+    const hide = editor.getByRole("switch", { name: "Hide from new conversations", exact: true });
+    assert.equal(await hide.getAttribute("aria-checked"), "false");
+    await hide.click();
+    if (process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR) await page.screenshot({ path: join(process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR, `ssh-visibility-${touch ? "touch" : "desktop"}-${colorScheme}.png`) });
+    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await editor.waitFor({ state: "hidden" });
+    assert.equal(management.store.get(serverId).hideFromNewChat, true);
+    assert.equal(appHost.hostState(serverId), "open", "visibility cannot reset the physical connection");
+    await page.evaluate((id: string) => {
+      localStorage.setItem("opencraft.active-host-id", id);
+      localStorage.removeItem(`opencraft.active-thread-id:${id}`);
+    }, serverId);
+    await page.goto(origin);
+    const newTarget = page.getByRole("button", { name: "Work in", exact: true });
+    await newTarget.waitFor();
+    assert.doesNotMatch(await newTarget.innerText(), new RegExp(name), "cold startup cannot inherit a hidden Host");
+    await newTarget.click();
+    assert.equal(await page.locator(".new-thread-host-menu").getByRole("menuitem").filter({ hasText: name }).count(), 0);
+    await page.keyboard.press("Escape");
+    await showSidebar();
+    await page.waitForFunction(() => [...document.querySelectorAll('.sidebar-tasks')].some(sidebar => sidebar.textContent?.includes("Remote history fixture")), null, { timeout: 30000 });
+    await page.goto(`${origin}/settings/opencraft.server-connections.ssh`);
+    await menu.click(); await page.getByRole("menuitem", { name: "设置", exact: true }).click();
+    await editor.waitFor();
+    assert.equal(await hide.getAttribute("aria-checked"), "true", "saved preference must survive a full reload");
+    await hide.click();
     await editor.getByRole("textbox", { name: "名称", exact: true }).fill(`${name} renamed`);
     await editor.getByRole("button", { name: "保存", exact: true }).click(); await editor.waitFor({ state: "hidden" });
     await page.getByRole("switch", { name: `启用连接：${name} renamed`, exact: true }).click();
     await page.waitForFunction(name => document.querySelector(`[aria-label="启用连接：${name} renamed"]`)?.getAttribute("aria-checked") === "false", name);
     await page.getByRole("switch", { name: `启用连接：${name} renamed`, exact: true }).click();
     await page.waitForFunction(name => document.querySelector(`[aria-label="启用连接：${name} renamed"]`)?.getAttribute("aria-checked") === "true", name);
+    await page.locator('.ssh-connections [role="switch"]').evaluateAll(async (buttons: Element[]) => { await Promise.all(buttons.flatMap(button => button.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)))); });
     const tracks = await page.locator('.ssh-connections [role="switch"]').evaluateAll((buttons: Element[]) => buttons.map(button => ({ enabled: button.getAttribute("aria-checked") === "true", background: getComputedStyle(button).backgroundColor })));
     assert.notEqual(tracks.find(track => track.enabled)?.background, "rgba(0, 0, 0, 0)");
     assert.notEqual(tracks.find(track => track.enabled)?.background, tracks.find(track => !track.enabled)?.background);
@@ -264,7 +291,7 @@ try {
   assert.deepEqual(errors, []);
   assert.equal(calls.some(call => ["turn/start", "turn/steer", "thread/start", "fs/writeFile"].includes(call.method)), false);
   assert.equal(management.store.list().length, 1); assert.equal(management.store.get(second.serverId).displayName, "Second fixture");
-  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, sharedAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, discoveryRecoveryWithoutSettings: ["automatic", "retry", "online"], recoveryDoesNotDial: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, remoteWrites: false }));
+  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, sharedAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, discoveryRecoveryWithoutSettings: ["automatic", "retry", "online"], recoveryDoesNotDial: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, newConversationVisibility: true, remoteWrites: false }));
 } catch (error) {
   console.error("Synthetic SSH management UI failure", await activePage?.locator("body").innerText().catch(() => "unavailable"));
   throw error;

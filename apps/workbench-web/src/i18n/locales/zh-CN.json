@@ -932,6 +932,8 @@
   "imageEditor.gestureHint": "双指缩放和移动图片。",
   "im.channels.back": "IM 渠道",
   "im.route.customize": "在此基础上自定义",
+  "sshConnections.hideFromNewChat": "不在新建连接中显示",
+  "sshConnections.hideFromNewChatDescription": "新建聊天时不显示此连接，已有会话仍可使用。",
   "sshConnections.removeDescription": "仅移除这个连接，远端文件和服务不会删除或停止。",
   "developerMode.enabled": "内部开发者模式已开启",
   "developerMode.disabled": "内部开发者模式已关闭",
