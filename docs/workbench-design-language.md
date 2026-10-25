@@ -587,3 +587,11 @@ shared spring with measured icon/aperture geometry; reduced motion is immediate.
 Supply no store ratings, downloads, promotional rows or placeholder apps. The first catalog
 contains Scheduled tasks. Catalog/launch ownership and the retained Chat lifecycle
 are defined in [Shell navigation](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
+
+
+Touch conversation reading extends to the page top beneath floating chrome. The
+safe top inset is initial scrollable spacing, so a new task keeps its welcome
+breathing room and the first transcript content starts below the controls; after
+scrolling, real text continues behind the status area. A non-interactive masked
+blur and theme veil soften the upper edge without creating a solid toolbar.
+Controls remain inside safe bounds and no scroll-driven layout switch is used.

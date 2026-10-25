@@ -46,6 +46,20 @@ their fixed geometry. No screen arithmetic, fixed cutout size or new observation
 clock is used. DOM dimensions and browser simulation do not prove physical native
 painting; device acceptance remains explicit.
 
+### Touch conversation scroll-under
+
+For the floating touch conversation header, the reading surface may bleed upward
+by the row's allocated top inset. That exact CSS inset is added to the transcript's
+initial content padding (and the new-task layout's top reserve), not subtracted
+from the scrollport. At scroll start the first content remains clear of system
+and app controls; on scroll, the same mounted text can pass behind the status
+area. The existing Shell top fade becomes a masked theme veil/backdrop blur over
+this full area and accepts no input. The header hit targets retain their original
+safe position. No scroll threshold, duplicate transcript, screen arithmetic,
+viewport owner or resize/scroll observer is introduced. Settings, other routes,
+Sidecar and native desktop keep their existing allocations. Device status-bar
+compositing still requires physical acceptance.
+
 ### Shared safe layout container
 
 `@opencraft/design-system-web/safe-layout` owns device inset consumption inside

@@ -12760,8 +12760,20 @@ html[data-ui-density="touch"] body {
   .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"]) {
     .main-content-frame {
       --app-shell-main-content-frame-top-offset: 0px;
-      --thread-content-top-inset: calc(var(--height-toolbar) + var(--spacing) * 12);
+      --thread-content-top-inset: calc(var(--shell-conversation-top-bleed, 0px) + var(--height-toolbar) + var(--spacing) * 12);
       border-top: 0;
+    }
+  }
+
+  // The row retains its safe layout for Sidecar and other routes. Only this
+  // reading surface bleeds into that allocation; the same amount becomes
+  // scrollable initial spacing, so scrolling needs no layout/state transition.
+  .app-shell-root.has-browser-safe-layout
+    .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"]) {
+    --shell-conversation-top-bleed: var(--shell-mobile-safe-top);
+    margin-block-start: calc(0px - var(--shell-conversation-top-bleed));
+    .new-thread-draft-layout {
+      --draft-block-start: calc(var(--spacing) * 6 + var(--shell-conversation-top-bleed));
     }
   }
 
@@ -12770,9 +12782,18 @@ html[data-ui-density="touch"] body {
   .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"])
     .main-content-top-fade {
     display: block;
-    height: calc(var(--height-toolbar) + var(--spacing) * 4);
+    height: calc(var(--shell-conversation-top-bleed, 0px) + var(--height-toolbar) + var(--spacing) * 4);
     opacity: 1;
-    background-image: linear-gradient(to bottom, var(--color-surface), transparent);
+    background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-surface) 65%, transparent), transparent);
+    backdrop-filter: blur(var(--material-liquid-blur));
+    -webkit-backdrop-filter: blur(var(--material-liquid-blur));
+    mask-image: linear-gradient(to bottom, black, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background-image: linear-gradient(to bottom, var(--color-surface), transparent);
+    }
   }
 }
 
