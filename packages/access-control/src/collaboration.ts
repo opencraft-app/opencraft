@@ -6,6 +6,7 @@ import { openManagedDatabase, createSchemaValidator } from '@opencraft/sqlite-no
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
+import { ORCHESTRATION_SCHEMA, ThreadOrchestrationLedger } from './orchestration-ledger.js';
 
 export const ACTOR_INPUT_PREFIX = 'actor-input:';
 export type InputMode = 'queue' | 'steer';
@@ -55,6 +56,8 @@ CREATE TABLE conversation_turn_authorities(thread_id TEXT NOT NULL,turn_id TEXT 
 CREATE TABLE conversation_tool_budget(authority_id TEXT PRIMARY KEY, sent INTEGER NOT NULL) STRICT;
 `;
 
+export const COLLABORATION_MIGRATIONS = [{ version: 1, name: 'actor-collaboration', sql: SCHEMA }, { version: 2, name: 'conversation-resources', sql: V2 }, { version: 3, name: 'thread-orchestration', sql: ORCHESTRATION_SCHEMA }];
+
 type Row = Record<string, unknown>;
 // Only pre-existing nullable request rows use this historical identity.
 const legacyRequestHostId = 'local-codex';
@@ -85,6 +88,7 @@ export class Collaboration {
   private readonly database: DatabaseSync;
   readonly #unregisterAuthority: () => void;
   readonly outcome;
+  readonly orchestration: ThreadOrchestrationLedger;
   #closed = false;
   #cursor = 0;
   #pump: Promise<void> | null = null;
@@ -92,8 +96,9 @@ export class Collaboration {
   #timer: ReturnType<typeof setInterval> | null = null;
   constructor(path: string, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: [{ version: 1, name: 'actor-collaboration', sql: SCHEMA }, { version: 2, name: 'conversation-resources', sql: V2 }], validateSchema: createSchemaValidator(SCHEMA + V2) });
+    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: COLLABORATION_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + V2 + ORCHESTRATION_SCHEMA) });
     this.database = managed.database; this.outcome = managed.outcome;
+    this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.#unregisterAuthority = actors.registerResourceAuthority(resource => { const ref = parseConversationRef(resource); return !!ref && this.#owns(ref.serverId); });
   }
   #transaction<T>(operation: () => T): T {

@@ -87,3 +87,26 @@ Session bearer 仍被旧共享 HTTP / WebSocket 入口拒绝。自然人原有�
 
 
 会话资源使用同一核心服务，新增版本2迁移保留旧消息与回执。原Actor HTTP路由仍为渠道适配；初始化Host的`opencraft/collaboration`命令及服务端工具共用会话资源授权、幂等与交接。稳定引用、读取边界和实际能力见[会话互通](architecture/conversation-interoperability.md)。
+
+## Thread orchestration control ledger
+
+The collaboration owner appends schema v3 to `actor-collaboration.sqlite`. Its
+`ThreadOrchestrationLedger` stores immutable parent/lifecycle/owner relationships,
+root-Turn runtime projection, tool intent and result receipts, wait subscriptions
+and parent notification batches. Existing v1/v2 migrations and communication data
+are preserved. This ledger does not create a second native input queue or own an
+engine connection.
+
+Tool intents bind a stable tool call key, delegation, source, arguments fingerprint
+and optional source-scoped idempotency key before execution. A committed result is
+immutable; a pending intent alone does not prove whether a native mutation was
+accepted. The Broker must reconcile that case with the execution owner. Wait
+subscriptions outlive the short polling call and retain their original expiration.
+Notifications retain per-root outcome deduplication after delivery; pending batches
+coalesce for two seconds with a five-second maximum deadline and preserve direct
+user intervention. A gateway restart reloads remaining deadlines from the ledger.
+
+This storage increment supplies no model tools or HTTP endpoint by itself. The
+Broker, Engine Host reconnect/replay and recovery integration remain separate
+Stage 1 increments; the target design is in
+[the orchestration specification](../design/thread-orchestration-spec.md).
