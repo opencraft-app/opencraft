@@ -114,6 +114,7 @@ try {
       }
       await page.setViewportSize({ width: 390, height: 480 });
       await settleMobileViewport(page);
+      const ordinarySlotMargin = await page.locator('.browser-panel[data-mobile-browser="true"] .browser-viewport-slot').evaluate(e=>getComputedStyle(e).marginBottom);
       await page.evaluate(() => { document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'); });
       await page.waitForFunction(() => {
         const dock = document.querySelector('.browser-mobile-dock');
@@ -123,8 +124,18 @@ try {
       await writeFile(output + '/safe-geometry-' + theme + '.json', JSON.stringify(safeGeometry, null, 2));
       await page.screenshot({ path: output + '/safe-' + theme + '.png' });
       assert.equal(await dock.evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight-34),true);
-      await page.evaluate(() => { document.documentElement.dataset.timelineKeyboardOpen='true'; });
+      assert.equal(safeGeometry.panel!.bottom, safeGeometry.height - 34, 'Shell owns the device inset once');
+      assert.equal(safeGeometry.rect.bottom, safeGeometry.panel!.bottom - 8, 'dock keeps its ordinary 8px gap inside protected content');
+      assert.equal(await page.locator('.browser-panel[data-mobile-browser="true"] .browser-viewport-slot').evaluate(e=>getComputedStyle(e).marginBottom), ordinarySlotMargin, 'guest viewport does not subtract the device inset again');
+      // The real viewport port's nonzero-inset lifecycle is covered by
+      // smoke-composer-safe-bottom; this fixture checks the browser consumer.
+      await page.evaluate(()=>{document.documentElement.dataset.timelineKeyboardOpen='true';});
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom==='0px');
       assert.equal(await dock.locator('.browser-mobile-dock__actions').isVisible(),false);
+      assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingBottom),'0px','keyboard projection drops the real 34px inset');
+      await page.evaluate(()=>{delete document.documentElement.dataset.timelineKeyboardOpen;});
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom==='34px');
+      assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingBottom),'34px','keyboard projection restores the one device inset');
       await page.evaluate(() => { delete document.documentElement.dataset.timelineKeyboardOpen; document.documentElement.style.removeProperty('--safe-layout-inset-bottom'); });
       await page.setViewportSize({ width: 390, height: 844 });
       await settleMobileViewport(page);
@@ -135,6 +146,10 @@ try {
       await dock.locator('button:has-text("Agent")').tap();
       await page.locator('.browser-agent-sheet__header').waitFor();
       await editor.fill('Keep this mobile draft');
+      await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'));
+      const browserComposerPadding=page.locator('.thread-composer-overlay-host[data-mobile-browser="true"] .thread-composer-overlay__padding');
+      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px','body portal measures the protected Shell anchor and keeps only its ordinary gap');
+      await page.evaluate(() => document.documentElement.style.removeProperty('--safe-layout-inset-bottom'));
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
       await page.screenshot({ path: output + '/mobile-' + theme + '-agent.png' });
       await page.getByRole('button', { name: 'Close Agent', exact: true }).tap();

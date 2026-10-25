@@ -5,8 +5,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      /* OPENCRAFT_BOOTSTRAP_APPEARANCE */
+    </script>
     <link rel="icon" href="/opencraft-icon.svg" />
     <title>OpenCraft</title>
     <script>
@@ -45,6 +49,10 @@
       }
       html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
         position: relative;
+      }
+      html[data-window-host="browser"],
+      html[data-window-host="browser"] body {
+        background-color: var(--shell-window-edge-background);
       }
       #opencraft-host-edge-color { display: none; }
       @supports (-webkit-touch-callout: none) and (background-clip: text) {
@@ -250,7 +258,7 @@
           }
         }, 15000);
 
-        /* OPENCRAFT_BOOTSTRAP_APPEARANCE */
+
       })();
     </script>
   </head>

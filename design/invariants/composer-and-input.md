@@ -181,7 +181,10 @@ The overlay PWA uses the CSS large viewport for its unoccluded document-flow
 Shell. Its reported native height can exclude the status area; that difference
 is paint-only capacity reserved once in the Shell row, so Composer content
 remains inside the measured native visible frame. It is not a device safe inset.
-SafeLayout and the existing route bottom spacing consume safe insets once.
+Shell SafeLayout consumes the main content bottom inset once. Existing, draft
+and overlay Composer paths keep ordinary spacing inside that protected frame;
+body-level browser portals measure the same Shell anchor. They do not claim
+`safe-area-inset-bottom` independently.
 The existing viewport owner publishes geometric contraction separately from
 editable keyboard inference. A reduced visual viewport stays authoritative
 through blur, theme changes and navigation. Document frames consume page-origin

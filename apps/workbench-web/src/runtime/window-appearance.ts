@@ -63,6 +63,7 @@ export function projectWindowAppearance(
   if (presentation.host !== "electron") root.style.backgroundColor = requested.edgeBackgroundColor;
   if (presentation.appearanceControl !== "host-owned") {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", requested.edgeBackgroundColor);
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", requested.resolvedTheme);
   }
   if (presentation.appearanceControl === "native-bridge") {
     const bridge = document.defaultView as (Window & { opencraftDesktop?: { setWindowAppearance?: (value: ThemeWindowAppearance) => void } }) | null;

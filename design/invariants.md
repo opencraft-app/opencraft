@@ -263,3 +263,14 @@ paint reaches the bottom while floating action hosts own its safe inset.
 Only existing size/density/grouping differ; commands, placement, icons, labels and
 focus remain with controls. Dialog/form/menu content buttons keep their semantic
 surfaces. See [shared Shell material](../docs/workbench-design-language.md#shared-shell-action-material).
+
+
+### PWA content and appearance allocation
+
+Browser Shell SafeLayout allocates main-content top/bottom once, including its
+paint-only capacity reserve. Composer routes retain ordinary gaps; independent
+drawer/modal surfaces keep their own explicit edges. The generated early head
+and live appearance projector share catalog, mode, document background and color
+hints. See [Shell layout](invariants/shell-and-layout.md) and
+[appearance](invariants/appearance-and-controls.md). Native status pixels still
+require device acceptance.

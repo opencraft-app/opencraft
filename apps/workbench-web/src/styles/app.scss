@@ -293,7 +293,7 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
 html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] {
   :is(.app-shell-root, .app-shell-floating-overlay-root) { height: 100vh; }
   .app-shell-root > .app-shell-row {
-    padding-bottom: max(0px, calc(100vh - var(--timeline-available-viewport-height, 100vh)));
+    --shell-paint-only-bottom: max(0px, calc(100vh - var(--timeline-available-viewport-height, 100vh)));
   }
 }
 
@@ -3743,11 +3743,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   gap: 8px;
 }
 
-:root[data-ui-density="touch"]:not([data-timeline-keyboard-open="true"]) .new-thread-draft-layout {
-  // The draft route owns the same device inset before a conversation exists.
-  --draft-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
-}
-
 // Mobile input has the same bottom anchor before and after thread promotion.
 // The welcome region yields spare space. Its title has a stable block-start
 // inset instead of recentering after focus expansion or keyboard resize.
@@ -4242,7 +4237,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   width: 100%;
   flex: 0 0 auto;
   margin-top: auto;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: 16px;
 
   // Desktop cuts off transcript paint before the shell's lower corner arcs.
   // Touch keeps the Composer floating, including its surrounding safe area.
@@ -4252,7 +4247,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     z-index: 0;
     inset-inline: 0;
     bottom: 0;
-    height: calc(max(16px, env(safe-area-inset-bottom, 0px)) + var(--radius-composer-shell));
+    height: calc(16px + var(--radius-composer-shell));
     background: var(--color-surface);
     pointer-events: none;
   }
@@ -4262,13 +4257,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   content: none;
 }
 
-:root[data-ui-density="touch"] .thread-scroll-footer {
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-}
-html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll-footer {
-  padding-bottom: 16px;
-}
-
+// Shell allocates the device inset once; routes keep their ordinary gap.
 .thread-scroll-footer__gradient {
   position: absolute;
   z-index: 0;
@@ -12283,9 +12272,18 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
   --shell-mobile-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
   --shell-mobile-safe-left: var(--safe-layout-inset-left, env(safe-area-inset-left, 0px));
   --shell-mobile-safe-right: var(--safe-layout-inset-right, env(safe-area-inset-right, 0px));
+  --shell-content-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
-html[data-ui-density="touch"],
-html[data-ui-density="touch"] body {
+html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
+  --shell-content-safe-bottom: 0px;
+}
+.app-shell-root.has-browser-safe-layout > .app-shell-row {
+  // SafeLayout applies this combined budget once inside the full-bleed box.
+  // Sidebar action surfaces are outside this row and retain their own edge.
+  --safe-layout-inset-bottom: calc(var(--shell-content-safe-bottom) + var(--shell-paint-only-bottom, 0px));
+}
+html[data-window-host="browser"],
+html[data-window-host="browser"] body {
   // Document fallback behind Shell paint; native system pixels remain host-owned.
   background-color: var(--shell-window-edge-background, var(--color-surface));
 }
