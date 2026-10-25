@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { TokenUsageStateDatabase } from "../../apps/opencraft-daemon/src/token-usage-state-database.js";
 import { OpenCraftTokenUsageLedger } from "../../apps/opencraft-daemon/src/token-usage-ledger.js";
@@ -12,7 +12,7 @@ import { TokenUsageQueryError } from "../../apps/opencraft-daemon/src/token-usag
 const entry=fileURLToPath(new URL("../../apps/opencraft-daemon/src/token-usage-query-worker.ts",import.meta.url));
 const parameters={from:"2026-10-21",through:"2026-10-21"};
 const A=()=>({actorId:"A",administrator:false});
-async function fixture(body:(service:TokenUsageQueryService,state:TokenUsageStateDatabase)=>Promise<void>,bundled=false){
+async function fixture(body:(service:TokenUsageQueryService,state:TokenUsageStateDatabase)=>Promise<void>,bundled=false,initializationMs=0){
  const directory=await mkdtemp(join(tmpdir(),"oc-query-worker-")),state=new TokenUsageStateDatabase(directory);
  const ledger=new OpenCraftTokenUsageLedger(state,"server",()=>Date.parse("2026-10-20T16:00:00Z"));
  const key={threadId:"thread",turnId:"turn"};ledger.startTurn(key,Date.parse("2026-10-20T16:00:00Z"),"human",true);
@@ -20,12 +20,23 @@ async function fixture(body:(service:TokenUsageQueryService,state:TokenUsageStat
  ledger.recordSource({...key,lineage:"epoch",sourceId:"r",version:0,kind:"response",provider:null,model:null,counts:{totalTokens:"9007199254740993123456789"}});
  let workerEntry=entry;
  if(bundled){workerEntry=join(directory,"query.mjs");await build({entryPoints:[entry],outfile:workerEntry,bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"silent"});}
+ if(initializationMs){const slow=join(directory,"initializing.mjs");await writeFile(slow,`await new Promise(resolve=>setTimeout(resolve,${initializationMs}));await import(${JSON.stringify(pathToFileURL(workerEntry).href)});`);workerEntry=slow;}
  const service=new TokenUsageQueryService({entry:workerEntry,databasePath:join(directory,"token-usage.sqlite"),serverId:"server"});
  try{await body(service,state);}finally{service.close();state.close();await rm(directory,{recursive:true,force:true});}
 }
 test("source worker opens the existing ledger read-only and keeps arbitrary precision",()=>fixture(async service=>{
  const response=await service.read(parameters,A);assert.equal(response.summary.tokens,"9007199254740993123456789");
 }));
+test("a read timeout during slow initialization leaves the owner able to finish and serve later queries",()=>fixture(async service=>{
+ const started=performance.now();await assert.rejects(service.read(parameters,A),/unavailable/);
+ assert.ok(performance.now()-started<2000,'initialization must not make requests wait indefinitely');
+ await new Promise(resolve=>setTimeout(resolve,750));
+ assert.equal((await service.read(parameters,A)).summary.tokens,"9007199254740993123456789");
+},true,1900));
+test("initialization captures each read's parameters before callers can mutate them",()=>fixture(async service=>{
+ const request={...parameters,scope:'self'};const pending=service.read(request,A);request.scope='team';
+ const response=await pending;assert.equal(response.scope,'self');assert.equal(response.summary.tokens,"9007199254740993123456789");
+},true,200));
 test("packaged worker uses its compiled module and rejects authority revoked during I/O",()=>fixture(async service=>{
  let valid=true;const request=service.read(parameters,()=>valid?A():null);valid=false;
  await assert.rejects(request,error=>error instanceof TokenUsageQueryError&&error.code==="unauthorized");

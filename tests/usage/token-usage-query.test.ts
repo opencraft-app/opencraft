@@ -208,3 +208,21 @@ test("coverage and summary expose settledTurns, lastSourceSuccessAt and openGapI
   assert.equal(typeof teamResult.coverage.lastSourceSuccessAt,"number");
   assert.ok(teamResult.coverage.lastSourceSuccessAt! >= at);
 }));
+
+test("coverage counts retain global and per-thread reasons while isolating actor admissions, dates and deployments",()=>fixture((ledger,state)=>{
+ const add=(threadId:string,turnId:string,actorId:string,startedAt=at,kind:'human'|'session'='human',admission:'confirmed'|'pending'='confirmed')=>{
+  const key={threadId,turnId};ledger.startTurn(key,startedAt,'human',true);ledger.recordInput(key,{inputId:turnId+actorId,actorId,actorKind:kind,mode:'start',admission});
+ };
+ add('visible','today','A');add('visible','again','A');add('foreign','old-A','A',at-1);add('foreign','today-B','B');
+ add('session','today-session','A',at,'session');add('pending','pending-A','A',at,'human','pending');add('old','old','A',at-1);
+ ledger.noteGap({id:'global',reason:'source-offline'});
+ for(const [id,threadId,reason]of [['a1','visible','unreplayable'],['a2','visible','unreplayable'],['a3','visible','invalid-source'],['b','foreign','unreplayable'],['s','session','unreplayable'],['p','pending','unreplayable'],['old','old','unreplayable'],['gone','visible','source-offline']]as const)ledger.noteGap({id,threadId,reason});
+ ledger.resolveGap('gone');new OpenCraftTokenUsageLedger(state,'other',()=>at).noteGap({id:'other-global',reason:'source-offline'});
+ for(const view of ['turns','threads']){
+  const a=ledger.query({...params,view},A).coverage,b=ledger.query({...params,view},B).coverage;
+  assert.equal(a.openGaps,5);assert.equal(a.openGapIncidents,4);
+  assert.equal(b.openGaps,2);assert.equal(b.openGapIncidents,2);
+ }
+ const team=ledger.query({...params,scope:'team'},admin).coverage;assert.equal(team.openGaps,7);assert.equal(team.openGapIncidents,6);
+ assert.equal(ledger.query({...params,threadId:'no-turn',modelKey:'no-model'},A).coverage.openGaps,5,'coverage remains period-scoped, including when details are filtered away');
+}));

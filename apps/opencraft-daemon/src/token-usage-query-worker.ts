@@ -9,6 +9,7 @@ const database=derived?.database??new DatabaseSync(workerData.databasePath,{read
 if(!derived)database.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=0");
 const query=new TokenUsageQuery({database},workerData.serverId,workerData.timezone,Date.now,workerData.secret);
 let closed=false,working=false,timer:ReturnType<typeof setTimeout>|null=null;
+parentPort!.postMessage({ready:true});
 async function refresh(){
   if(!derived||closed||working)return;
   working=true;

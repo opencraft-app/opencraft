@@ -191,7 +191,7 @@ test("a late error revises more than one batch of settled history across restart
 
 test("the preceding cache schema upgrades without changing derived usage or retained source evidence",()=>fixture(async f=>{
  await writeFile(f.path,start()+count('11','11')+line('event_msg',{type:'task_complete',turn_id:turn},2));let d=f.open();await drain(d);const expected=values(d);d.close();
- const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX derived_usage_gaps_thread; DELETE FROM schema_migrations WHERE version>=4');cache.close();
+ const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX token_usage_sources_observed_query; DROP INDEX derived_usage_gaps_thread; DELETE FROM schema_migrations WHERE version>=4');cache.close();
  d=f.open();await drain(d);assert.deepEqual(values(d),expected);
 }));
 
@@ -201,7 +201,7 @@ test("retained history reports one source incident per thread and upgrades prior
  let d=f.open();await drain(d);const expected=values(d);assert.equal(snapshot(d).summary.tokens,'100');assert.equal(snapshot(d).coverage.openGapIncidents,2);d.close();
  const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.prepare("DELETE FROM token_usage_gaps WHERE gap_key=?").run('retained:'+thread);
  for(const id of [turn,'second'])cache.prepare('INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL)').run('server','retained:'+thread+':'+id,thread,null,'unreplayable',at);
- cache.exec('DELETE FROM schema_migrations WHERE version>=5');cache.close();
+ cache.exec('DROP INDEX token_usage_sources_observed_query; DELETE FROM schema_migrations WHERE version>=5');cache.close();
  d=f.open();await drain(d);assert.deepEqual(values(d),expected);assert.equal(snapshot(d).coverage.openGaps,2);assert.equal(snapshot(d).coverage.openGapIncidents,2);
 }));
 
@@ -226,3 +226,15 @@ test("a deployment without a usage source can start collection later and answer 
   assert.equal((await service.read(params,admin)).summary.tokens,'77');
  }finally{service.close();source?.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test("v6 cache upgrades its recency index without discarding ready projections or renumbering migrations",()=>fixture(async f=>{
+ await writeFile(f.path,start()+count('11','11')+line('event_msg',{type:'task_complete',turn_id:turn},2));let d=f.open();await drain(d);
+ const expected=values(d),position=d.database.prepare('SELECT seq FROM usage_position').get()!.seq;
+ const history=d.database.prepare('SELECT * FROM schema_migrations WHERE version<=6 ORDER BY version').all();d.close();
+ const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX token_usage_sources_observed_query; DELETE FROM schema_migrations WHERE version=7');cache.close();
+ d=f.open();
+ assert.equal(d.database.prepare('SELECT seq FROM usage_position').get()!.seq,position,'ready cache was not reset');
+ assert.deepEqual(d.database.prepare('SELECT * FROM schema_migrations WHERE version<=6 ORDER BY version').all(),history);
+ assert.equal(d.database.prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version,7);
+ assert.deepEqual(values(d),expected);await drain(d);assert.deepEqual(values(d),expected);
+}));

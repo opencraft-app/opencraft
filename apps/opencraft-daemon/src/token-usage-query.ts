@@ -176,16 +176,25 @@ export class TokenUsageQuery {
       const current=authorize();
       if(!current) throw new TokenUsageQueryError("unauthorized");
       if(current.actorId!==authority.actorId||current.administrator!==authority.administrator) throw new TokenUsageQueryError("forbidden");
-      const gapScope=actorId===undefined?"":" AND EXISTS(SELECT 1 FROM token_usage_inputs i WHERE i.server_id=t.server_id AND i.thread_id=t.thread_id AND i.turn_id=t.turn_id AND i.actor_id=? AND i.admission='confirmed')";
-      const gapParams: (string|number)[]=[this.serverId,start,end];if(actorId!==undefined)gapParams.push(actorId);
-      const gaps=Number(this.statement(`SELECT count(*) AS count FROM token_usage_gaps g WHERE g.server_id=? AND ends_ms IS NULL AND (thread_id IS NULL OR EXISTS(SELECT 1 FROM token_usage_turns t WHERE t.server_id=g.server_id AND t.thread_id=g.thread_id AND t.started_ms>=? AND t.started_ms<?${gapScope}))`).get(...gapParams)!.count);
-      const openGapIncidents=Number(this.statement(`SELECT count(*) AS count FROM (
-        SELECT COALESCE(g.thread_id,g.gap_key) AS incident,g.reason
-        FROM token_usage_gaps g
-        WHERE g.server_id=? AND g.ends_ms IS NULL
-          AND (g.thread_id IS NULL OR EXISTS(SELECT 1 FROM token_usage_turns t WHERE t.server_id=g.server_id AND t.thread_id=g.thread_id AND t.started_ms>=? AND t.started_ms<?${gapScope}))
-        GROUP BY incident,g.reason
-      )`).get(...gapParams)!.count);
+      // Resolve an actor's visible threads once, rather than probing their
+      // admissions for every turn of every unrelated coverage incident.
+      const gapPrefix=actorId===undefined?"":`WITH visible_threads AS MATERIALIZED (
+        SELECT DISTINCT i.thread_id FROM token_usage_inputs i INDEXED BY token_usage_inputs_actor_query CROSS JOIN token_usage_turns t
+          ON t.server_id=i.server_id AND t.thread_id=i.thread_id AND t.turn_id=i.turn_id
+        WHERE i.server_id=? AND i.actor_id=? AND i.admission='confirmed'
+          AND t.started_ms>=? AND t.started_ms<?
+      ) `;
+      const gapScope=actorId===undefined
+        ? "EXISTS(SELECT 1 FROM token_usage_turns t WHERE t.server_id=g.server_id AND t.thread_id=g.thread_id AND t.started_ms>=? AND t.started_ms<?)"
+        : "g.thread_id IN (SELECT thread_id FROM visible_threads)";
+      const gapParams: (string|number)[]=actorId===undefined
+        ? [this.serverId,start,end] : [this.serverId,actorId,start,end,this.serverId];
+      const gapCounts=this.statement(`${gapPrefix}SELECT coalesce(sum(records),0) AS gaps,count(*) AS incidents FROM (
+        SELECT count(*) AS records FROM token_usage_gaps g
+        WHERE g.server_id=? AND g.ends_ms IS NULL AND (g.thread_id IS NULL OR ${gapScope})
+        GROUP BY coalesce(g.thread_id,g.gap_key),g.reason
+      )`).get(...gapParams)!;
+      const gaps=Number(gapCounts.gaps),openGapIncidents=Number(gapCounts.incidents);
       const lastSource = this.statement("SELECT max(observed_ms) AS at FROM token_usage_sources WHERE server_id=?").get(this.serverId)?.at;
       const lastSourceSuccessAt = lastSource == null || Number(lastSource) === 0 ? null : Number(lastSource);
       return {serverId:this.serverId,canQueryTeam:authority.administrator,canConfigure:authority.administrator,scope,actorId:actorId??null,asOf:this.now(),snapshotRevision:revision,timezone:this.timezone,policyVersion:"equal-turn-v1",view,

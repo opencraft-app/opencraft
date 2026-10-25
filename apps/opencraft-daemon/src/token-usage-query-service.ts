@@ -8,12 +8,13 @@ import type { TokenUsageSnapshot } from "@opencraft/appserver-protocol/token-usa
  * reductions stay off the execution loop; ingress owns current authorization. */
 export class TokenUsageQueryService {
   private worker: Worker|null=null;
+  private ready=false;
   private readonly secret=randomBytes(32);
   private sequence=0;
   private closed=false;
   private waiters=0;
   private readonly inFlight=new Map<string,Promise<TokenUsageSnapshot>>();
-  private readonly pending=new Map<number,{resolve:(value:TokenUsageSnapshot)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
+  private readonly pending=new Map<number,{resolve:(value:TokenUsageSnapshot)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>;send:()=>void}>();
   constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry;rollout?:{nativeHome:string;directory?:string}}) {
     if (options.rollout&&existsSync(options.databasePath)) this.start();
   }
@@ -27,9 +28,10 @@ export class TokenUsageQueryService {
       if(workerData.entry.endsWith('.ts')) {require('tsx/cjs');require(workerData.entry);}
       else {import(require('node:url').pathToFileURL(workerData.entry).href).catch(()=>process.exit(1));}`,
       {eval:true,resourceLimits:{maxOldGenerationSizeMb:64,maxYoungGenerationSizeMb:4},workerData:{entry:this.options.entry,databasePath:this.options.databasePath,serverId:this.options.serverId,timezone:"Asia/Shanghai",secret:this.secret,rollout:this.options.rollout}});
-    this.worker=worker;
+    this.worker=worker;this.ready=false;
     worker.on("message",message=>{
       if(this.worker!==worker)return;
+      if(message.ready){this.ready=true;for(const request of this.pending.values())request.send();return;}
       const request=this.pending.get(message.id);if(!request)return;
       this.pending.delete(message.id);clearTimeout(request.timer);if(!this.pending.size)worker.unref();
       if(message.error)request.reject(["unauthorized","forbidden","invalid-query","stale-snapshot"].includes(message.error)?new TokenUsageQueryError(message.error):new Error("Usage query unavailable"));
@@ -40,18 +42,25 @@ export class TokenUsageQueryService {
   }
   private fail(worker:Worker|null){
     if(this.worker!==worker)return;
-    this.worker=null;
+    this.worker=null;this.ready=false;
     for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(new Error("Usage query unavailable"));}this.pending.clear();
     if(worker)void worker.terminate();
   }
   private request(params:unknown,authority:TokenUsageAuthority):Promise<TokenUsageSnapshot>{
     const worker=this.start(),id=++this.sequence;
     return new Promise<TokenUsageSnapshot>((resolve,reject)=>{
-      // Timeout terminates the running scan and its queued work, preventing
-      // hidden backlog. The next request can lazily open a new read worker.
-      const timer=setTimeout(()=>this.fail(worker),1500);timer.unref();
-      worker.ref();this.pending.set(id,{resolve,reject,timer});
-      try{worker.postMessage({id,params,authority});}catch{this.fail(worker);}
+      // Keep the same request deadline during initialization, but let a slow
+      // migration finish. Otherwise every retry kills and restarts that work.
+      // Only the bounded, still-live requests are sent when the owner is ready.
+      const payload={id,params:structuredClone(params),authority:{...authority}};
+      const timer=setTimeout(()=>{
+        if(this.worker!==worker)return;
+        if(this.ready)this.fail(worker);
+        else{this.pending.delete(id);reject(new Error("Usage query unavailable"));if(!this.pending.size)worker.unref();}
+      },1500);timer.unref();
+      const send=()=>{try{worker.postMessage(payload);}catch{this.fail(worker);}};
+      worker.ref();this.pending.set(id,{resolve,reject,timer,send});
+      if(this.ready)send();
     });
   }
   async read(params:unknown,authorize:()=>TokenUsageAuthority|null):Promise<TokenUsageSnapshot>{
