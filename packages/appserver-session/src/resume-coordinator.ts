@@ -227,6 +227,13 @@ export class ThreadResumeCoordinatorService extends Service {
 
   /** A fresh baseline revokes the previous source's derived readers even
    * when the physical client generation is unchanged. Cached paint survives. */
+  /** End optional presentation waits without releasing the cached baseline or
+   * execution stream. Snapshot first: cancellation observers may admit new work. */
+  cancelDerivedHistory(threadId: string): void {
+    const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId)];
+    for (const operation of retired) operation?.cancel();
+  }
+
   private retireHistoryContext(threadId: string): void {
     this.readContexts.delete(threadId);
     this.historyContexts.delete(threadId);

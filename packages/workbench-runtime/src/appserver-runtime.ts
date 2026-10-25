@@ -537,6 +537,7 @@ export function createAppServerWorkbenchRuntime(
   const unlistedForks = new Map<string, ProtocolThread>();
   const forkOperations = new Map<string, Promise<ProtocolThread>>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
+  const pendingViewAcquires = new Map<string, number>();
   const detachOperations = new Map<string, Promise<void>>();
   const failedReadDetaches = new Map<string, { client: AppServerClient; generation: number }>();
   let detachRetryTimer: unknown | null = null;
@@ -651,6 +652,7 @@ export function createAppServerWorkbenchRuntime(
   const hasHardResidencyReason = (binding: ConversationBinding): boolean => {
     const activity = bindingActivity(binding);
     return (
+      (pendingViewAcquires.get(binding.threadId) ?? 0) > 0 ||
       binding.retainCount > 0 ||
       binding.subscriberCount > 0 ||
       binding.runtime.getSnapshot().queuedSubmissions.some(item => item.local) ||
@@ -946,6 +948,15 @@ export function createAppServerWorkbenchRuntime(
     return operation;
   };
 
+  // Optional reads cannot create their own residency demand. A retained View or
+  // observer may still use them after another lease leaves; execution has its
+  // separate command/accepted-Turn/stream owners.
+  const retireUnobservedHistory = (binding: ConversationBinding) => {
+    if (binding.retainCount === 0 && binding.subscriberCount === 0
+      && (pendingViewAcquires.get(binding.threadId) ?? 0) === 0)
+      session?.resume.cancelDerivedHistory(binding.threadId);
+  };
+
   const runBindingCommand = async <T>(
     binding: ConversationBinding,
     operation: () => Promise<T>,
@@ -1073,7 +1084,12 @@ export function createAppServerWorkbenchRuntime(
         commands: baselineGatedCommands,
         history: {
           loadOlder: async () => {
-            await currentSession.resume.loadOlder(threadId);
+            try { await currentSession.resume.loadOlder(threadId); }
+            catch (error) {
+              // Local history retirement is normal navigation/recovery, not a
+              // cached history failure for the next View.
+              if (!(error instanceof AppServerClientError && error.code === "ABORTED")) throw error;
+            }
           },
         },
       });
@@ -1462,6 +1478,7 @@ export function createAppServerWorkbenchRuntime(
     if (binding.visibleCount > 0) return "visible";
     const activity = bindingActivity(binding);
     return binding.runtime.getSnapshot().queuedSubmissions.some(item => item.local)
+        || (pendingViewAcquires.get(binding.threadId) ?? 0) > 0
         || binding.retainCount > 0 || binding.pendingCommandCount > 0 || binding.acceptedTurnIds.size > 0
         || activity.activeStreamCount > 0 || activity.pendingInteractionCount > 0 ? "open" : "cache";
   };
@@ -2195,9 +2212,20 @@ export function createAppServerWorkbenchRuntime(
     reconnect() { return connection.connect(true); },
     async acquireThread(nextThreadId) {
       const threadId = requireThreadId(nextThreadId);
-      await runtime.connect();
-      const binding = await createBinding(threadId);
-      binding.retainCount += 1;
+      // Reserve View demand before any asynchronous binding publication. Queue
+      // observers may prune a newly published binding before this await resumes.
+      pendingViewAcquires.set(threadId, (pendingViewAcquires.get(threadId) ?? 0) + 1);
+      let binding: ConversationBinding;
+      try {
+        await runtime.connect();
+        binding = await createBinding(threadId);
+        if (disposed || binding.disposed) throw new Error(`Thread ${threadId} is disposed`);
+        binding.retainCount += 1;
+      } finally {
+        const remaining = (pendingViewAcquires.get(threadId) ?? 1) - 1;
+        if (remaining > 0) pendingViewAcquires.set(threadId, remaining);
+        else pendingViewAcquires.delete(threadId);
+      }
       touchBinding(binding);
       binding.phase =
         binding.hydrationOperation === null ? "resident" : binding.phase;
@@ -2255,6 +2283,7 @@ export function createAppServerWorkbenchRuntime(
             removed = true;
             remove();
             binding.subscriberCount = Math.max(0, binding.subscriberCount - 1);
+            retireUnobservedHistory(binding);
             touchBinding(binding);
             pruneInactiveBindings();
             publish();
@@ -2333,14 +2362,17 @@ export function createAppServerWorkbenchRuntime(
             retainAcceptedTurn(binding, turnId);
             return turnId;
           }),
-        loadOlder: () =>
-          runBindingCommand(binding, () => binding.runtime.loadOlder()),
+        loadOlder: () => {
+          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+          return binding.runtime.loadOlder();
+        },
         getNavigation: () => binding.navigation,
         release() {
           if (released) return;
           released = true;
           if (visible) binding.visibleCount = Math.max(0, binding.visibleCount - 1);
           binding.retainCount = Math.max(0, binding.retainCount - 1);
+          retireUnobservedHistory(binding);
           if (recoveryDemand(binding) === "cache") { recovery.remove(binding); binding.cancelHydration?.(); }
           touchBinding(binding);
           pruneInactiveBindings();
