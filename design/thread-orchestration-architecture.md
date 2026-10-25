@@ -1,12 +1,12 @@
 # OpenCraft 跨会话编排、3+1 引擎驱动与可重建读取缓存架构
 
-> 状态：Stage 0 实施中，Stage 1–3 为未来设计（`opencraft/docs/` 仅记录已实现事实，故本架构与 Spec 均置于 `opencraft/design/`）  
+> 状态：Stage 0 与 Codex Stage 1 已实现；Stage 2–3 及统一异构驱动仍为后续设计。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准，本文件保留整体目标架构。
 > 适用范围：`opencraft/apps/opencraft-daemon`、`opencraft/apps/local-agent-host`、`opencraft/packages/appserver-protocol`、`opencraft/packages/chat-core`  
 > 关联契约：[执行所有权](../docs/execution-ownership.md)、[平台架构](../docs/platform-architecture.md)、[SQLite 生命周期](../docs/sqlite-lifecycle.md)、[实施 Spec](thread-orchestration-spec.md)
 
 ## 1. 结论与核心目标
 
-OpenCraft 计划在远景阶段（排在执行侧平滑升级前两步与 Token 统计Codex rollout 派生 Token 改造之后）引入完备的跨会话消息通信与父子会话编排（Subagents），并同步解决“下游异构 Coding Agent 接入维护重”和“点击打开会话慢”两个结构性问题。
+OpenCraft 已实现 Stage 0 读取缓存与 Codex Stage 1 跨会话消息、父子编排、独立宿主回调重放、恢复协同和有界授权。以下架构继续定义后续 UI 与异构引擎的共同目标；各引擎只有接通独立 Host 和实际能力后才声明可用。
 
 核心架构原则如下：
 
