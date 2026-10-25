@@ -98,12 +98,13 @@ for (const shared of [false, true]) test(`hung failed transport cleanup cannot h
 test('uncooperative transport dial is revoked by deadline and successor does not inherit it', {timeout:10_000}, async()=>{
  const dial=gate(),entered=gate(),old=new Physical(),next=new Physical();let created=0;
  old.connect=async()=>{entered.resolve();await dial.promise;old.publish({state:'open'});};
+ let now=0;
  const timers=new Set<{callback():void;delay:number}>();
  const runtime=createAppServerWorkbenchRuntime({hostId:'deadline',createTransport:()=>created++===0?old:next,
-  clock:{setTimeout(callback,delay){const timer={callback,delay};timers.add(timer);return timer;},clearTimeout(timer){timers.delete(timer as any);}}});
+  clock:{now:()=>now,setTimeout(callback,delay){const timer={callback,delay};timers.add(timer);return timer;},clearTimeout(timer){timers.delete(timer as any);}}});
  try{
   const pending=runtime.connect(),failed=assert.rejects(pending,/timed out/);await entered.promise;
-  const deadline=[...timers].find(timer=>timer.delay===45_000)!;assert.ok(deadline);timers.delete(deadline);deadline.callback();await failed;await turn();
+  const deadline=[...timers].find(timer=>timer.delay===45_000)!;assert.ok(deadline);timers.delete(deadline);now+=deadline.delay;deadline.callback();await failed;await turn();
   await runtime.reconnect();assert.equal(runtime.getSnapshot().phase,'ready');
   dial.resolve();await turn();assert.equal(runtime.getSnapshot().phase,'ready');assert.equal(created,2);
  }finally{dial.resolve();await runtime.dispose();}

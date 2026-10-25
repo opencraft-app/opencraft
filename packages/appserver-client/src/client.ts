@@ -227,7 +227,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private closed = false;
   private initialized: AppServerInitializeResponse | null = null;
   private initializationSignal: AbortSignal | undefined;
-  private initializePromise: Promise<AppServerInitializeResponse> | null = null;
+  private initialization: { readonly promise: Promise<AppServerInitializeResponse>; cancel(cause: unknown): void } | null = null;
 
   constructor(config: AppServerClientConfig) {
     this.hostId = config.hostId;
@@ -262,38 +262,55 @@ export class JsonRpcAppServerClient implements AppServerClient {
     assertCurrent?: () => void,
   ): Promise<AppServerInitializeResponse> {
     if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
+    if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
+    assertCurrent?.();
     const initialized = this.initializeResult;
     if (this.transport.status.state === "open" && initialized !== null) return initialized;
-    if (this.initializePromise !== null) return this.initializePromise;
-    // Transport status observers may synchronously call connect again.
-    // Own the shared initialization before entering any transport code.
-    const operation = Promise.resolve().then(async () => {
-      if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
-      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
-      await this.transport.connect(signal);
+    if (this.initialization !== null) return this.initialization.promise;
+    let resolve!: (result: AppServerInitializeResponse) => void, reject!: (cause: unknown) => void;
+    const promise = new Promise<AppServerInitializeResponse>((done, fail) => { resolve = done; reject = fail; });
+    void promise.catch(() => undefined);
+    const controller = new AbortController();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const attempt = { promise, cancel: (cause: unknown) => {
+      if (this.initialization !== attempt) return;
+      // Release this LOCAL slot before lower-layer abort/status observers reenter.
+      this.initialization = null;
+      cleanup();
+      reject(cause);
+      controller.abort(cause);
+    } };
+    const abort = () => attempt.cancel(new AppServerClientError("ABORTED", "AppServer connection was aborted"));
+    this.initialization = attempt;
+    signal?.addEventListener("abort", abort, { once: true });
+    const check = () => {
+      if (this.closed || this.initialization !== attempt || controller.signal.aborted)
+        throw controller.signal.reason ?? new AppServerClientError("CLOSED", "AppServer initialization was revoked");
       assertCurrent?.();
-      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
+    };
+    // Uncooperative lower-layer work may finish later; it cannot retain the local
+    // operation or publish through its successor. Physical barriers stay below.
+    void Promise.resolve().then(async () => {
+      check();
+      await this.transport.connect(controller.signal);
+      check();
       const revision = this.transportRevision;
-      const result = await this.request("initialize", params, { signal, priority: "user-blocking" });
+      const result = await this.request("initialize", params, { signal: controller.signal, priority: "user-blocking" });
       if (this.closed || revision !== this.transportRevision || this.transport.status.state !== "open") {
         throw new AppServerClientError("TRANSPORT_ERROR", "AppServer initialization belongs to a lost connection");
       }
       // A resumed page must validate its owner deadline before caching readiness.
-      assertCurrent?.();
-      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
+      check();
       // The owner may still revoke its handoff after this Promise resolves.
       // Ordinary callers' completed connect cancellation remains a no-op.
       this.initializationSignal = assertCurrent ? signal : undefined;
       this.initialized = result;
       this.generation += 1;
-      return result;
-    });
-    this.initializePromise = operation;
-    try {
-      return await operation;
-    } finally {
-      if (this.initializePromise === operation) this.initializePromise = null;
-    }
+      this.initialization = null;
+      cleanup();
+      resolve(result);
+    }).catch(cause => attempt.cancel(cause));
+    return promise;
   }
 
   request<TMethod extends AppServerMethod>(
@@ -454,6 +471,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     if (this.closed) return;
     this.closed = true;
     this.initialized = null;
+    this.initialization?.cancel(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.rejectAllPending(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.invalidateServerRequests(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.removeMessageListener();
@@ -670,6 +688,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     this.transportRevision += 1;
     this.initialized = null;
     const reason = status.reason == null ? "AppServer transport closed" : `AppServer transport closed: ${status.reason}`;
+    this.initialization?.cancel(new AppServerClientError("TRANSPORT_ERROR", reason));
     this.rejectAllPending(new AppServerClientError("TRANSPORT_ERROR", reason), "failed");
     this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", reason));
   }

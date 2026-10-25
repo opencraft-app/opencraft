@@ -118,7 +118,8 @@ export class DeferredDuplexTransport implements DuplexTransport {
   private readonly statuses = new Set<(status: TransportStatus) => void>();
   private readonly recovery = new Set<() => void>();
   private delegate: DuplexTransport | null = null;
-  private pending: Promise<void> | null = null;
+  private attempt: { readonly promise: Promise<void>; cancel(cause: unknown): void } | null = null;
+  private closeBarrier: Promise<void> = Promise.resolve();
   private closing: Promise<void> | null = null;
   private releases: (() => void)[] = [];
   constructor(private readonly create: (signal: AbortSignal) => Promise<DuplexTransport>) {}
@@ -128,54 +129,78 @@ export class DeferredDuplexTransport implements DuplexTransport {
     this.current = status;
     for (const listener of this.statuses) listener(status);
   }
+  private retireDelegate(): void {
+    this.releases.splice(0).forEach(release => release());
+    const previous = this.delegate;
+    this.delegate = null;
+    if (previous) this.closeBarrier = this.closeBarrier.then(() => previous.close()).catch(() => undefined);
+  }
   connect(signal?: AbortSignal): Promise<void> {
     if (this.owner.signal.aborted) return Promise.reject(connectionAbort(undefined, "Transport closed"));
     if (signal?.aborted) return Promise.reject(connectionAbort(signal));
-    if (this.pending) return this.pending;
+    if (this.attempt) return this.attempt.promise;
     if (this.current.state === "open") return Promise.resolve();
-    const attempt = new AbortController();
-    const cancelled = () => this.owner.signal.aborted ? connectionAbort(undefined, "Transport closed") : connectionAbort(signal);
-    const abort = () => attempt.abort();
-    signal?.addEventListener("abort", abort, { once: true });
-    this.owner.signal.addEventListener("abort", abort, { once: true });
-    const operation = new Promise<void>((resolve, reject) => {
-      const stop = () => reject(cancelled());
-      attempt.signal.addEventListener("abort", stop, { once: true });
-      void Promise.resolve().then(() => {
-        if (attempt.signal.aborted) throw cancelled();
-        return this.delegate ?? this.create(attempt.signal);
-      }).then(async transport => {
-        if (attempt.signal.aborted) { await transport.close(); throw cancelled(); }
-        if (this.delegate !== transport) {
-          this.delegate = transport;
-          this.releases = [
-          transport.subscribeMessage(frame => { for (const listener of this.messages) listener(frame); }),
-          transport.subscribeStatus(status => { if (!this.owner.signal.aborted) this.publish(status); }),
-          ...(transport.subscribeRecoveryHint ? [transport.subscribeRecoveryHint(() => { for (const listener of this.recovery) listener(); })] : []),
-          ];
-        }
-        await transport.connect(attempt.signal);
-        if (attempt.signal.aborted) throw cancelled();
-        this.publish(transport.status);
-      }).then(resolve, reject).finally(() => attempt.signal.removeEventListener("abort", stop));
-    }).catch(async error => {
-      if (!this.owner.signal.aborted) {
-        const failure = this.delegate?.status.failure;
-        this.publish({ state: "failed", reason: error instanceof Error ? error.message : "Connection unavailable", ...(failure ? { failure } : {}) });
-      }
-      this.releases.splice(0).forEach(release => release());
-      const transport = this.delegate;
-      this.delegate = null;
-      await transport?.close();
-      throw error;
-    }).finally(() => {
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    void promise.catch(() => undefined);
+    const controller = new AbortController();
+    const cleanup = () => {
       signal?.removeEventListener("abort", abort);
       this.owner.signal.removeEventListener("abort", abort);
-      if (this.pending === operation) this.pending = null;
-    });
-    this.pending = operation;
+    };
+    const attempt = { promise, cancel: (cause: unknown) => {
+      if (this.attempt !== attempt) return;
+      const failure = this.delegate?.status.failure;
+      this.attempt = null;
+      cleanup();
+      // Retired local operations settle independently of physical close. Install
+      // the barrier and detach old callbacks before abort observers can reenter.
+      this.retireDelegate();
+      reject(cause);
+      controller.abort(cause);
+      if (!this.owner.signal.aborted && this.attempt === null)
+        this.publish({ state: "failed", reason: cause instanceof Error ? cause.message : "Connection unavailable", ...(failure ? { failure } : {}) });
+    } };
+    const abort = () => attempt.cancel(this.owner.signal.aborted
+      ? connectionAbort(undefined, "Transport closed") : connectionAbort(signal));
+    this.attempt = attempt;
+    signal?.addEventListener("abort", abort, { once: true });
+    this.owner.signal.addEventListener("abort", abort, { once: true });
+    const current = () => this.attempt === attempt && !controller.signal.aborted && !this.owner.signal.aborted;
+    const check = () => { if (!current()) throw controller.signal.reason ?? connectionAbort(signal); };
+    const revoked = new Promise<never>((_, fail) => controller.signal.addEventListener("abort", () => fail(controller.signal.reason), { once: true }));
+    void revoked.catch(() => undefined);
+    const wait = async <T>(operation: Promise<T>): Promise<T> => {
+      const result = await Promise.race([operation, revoked]); check(); return result;
+    };
+    void Promise.resolve().then(async () => {
+      check();
+      await wait(this.closeBarrier);
+      const acquired = this.delegate ? Promise.resolve(this.delegate) : this.create(controller.signal);
+      const transport = await wait(acquired.then(value => {
+        // A late import only owns its dormant result, never the new delegate.
+        if (!current() && value !== this.delegate) void value.close().catch(() => undefined);
+        return value;
+      }));
+      check();
+      if (this.delegate !== transport) {
+        this.delegate = transport;
+        this.releases = [
+          transport.subscribeMessage(frame => { if (this.delegate === transport) for (const listener of this.messages) listener(frame); }),
+          transport.subscribeStatus(status => { if (this.delegate === transport && !this.owner.signal.aborted) this.publish(status); }),
+          ...(transport.subscribeRecoveryHint ? [transport.subscribeRecoveryHint(() => { if (this.delegate === transport) for (const listener of this.recovery) listener(); })] : []),
+        ];
+      }
+      check();
+      await wait(transport.connect(controller.signal));
+      this.publish(transport.status);
+      check();
+      this.attempt = null;
+      cleanup();
+      resolve();
+    }).catch(cause => attempt.cancel(cause));
     this.publish({ state: "connecting" });
-    return operation;
+    return promise;
   }
   async send(frame: string, signal?: AbortSignal): Promise<void> {
     if (!this.delegate || this.current.state !== "open") throw new Error("Transport is not connected");
@@ -192,10 +217,8 @@ export class DeferredDuplexTransport implements DuplexTransport {
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.owner.abort();
-    this.releases.splice(0).forEach(release => release());
-    const transport = this.delegate;
-    this.delegate = null;
-    this.closing = Promise.resolve().then(() => transport?.close());
+    this.retireDelegate();
+    this.closing = this.closeBarrier;
     this.publish({ state: "closed" });
     this.messages.clear(); this.statuses.clear(); this.recovery.clear();
     return this.closing;

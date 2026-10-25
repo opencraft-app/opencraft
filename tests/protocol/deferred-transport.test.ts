@@ -27,7 +27,7 @@ test("registration is dormant; connect shares acquisition and forwards context, 
   transport.subscribeMessage(value => messages.push(value)); transport.subscribeStatus(value => statuses.push(value.state)); transport.subscribeRecoveryHint(() => recoveries++);
   assert.equal(loads, 0);
   const connecting = transport.connect(); assert.equal(transport.connect(), connecting);
-  await Promise.resolve(); assert.equal(loads, 1);
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(loads, 1);
   gate.resolve(real.transport); await connecting;
   await transport.connect(); assert.equal(loads, 1, "an open connection must not be replaced");
   (real.transport as { status: TransportStatus }).status = { state: "closed" };
@@ -43,7 +43,7 @@ test("registration is dormant; connect shares acquisition and forwards context, 
 test("close during a held import rejects promptly and closes a late transport without attaching", async () => {
   const real = fixture(), gate = deferred<DuplexTransport>();
   const transport = new DeferredDuplexTransport(() => gate.promise);
-  const connecting = transport.connect(); await Promise.resolve();
+  const connecting = transport.connect(); await new Promise(resolve => setImmediate(resolve));
   const rejected = assert.rejects(connecting, /closed/);
   await transport.close(); await rejected;
   gate.resolve(real.transport); await new Promise(resolve => setImmediate(resolve));
@@ -53,7 +53,7 @@ test("aborted acquisition cannot attach after a retry, and a failed import remai
   const gate = deferred<DuplexTransport>(), stale = fixture(), current = fixture(); let attempt = 0;
   const transport = new DeferredDuplexTransport(async () => { attempt++; if (attempt === 1) throw Error("offline"); if (attempt === 2) return gate.promise; return current.transport; });
   await assert.rejects(transport.connect(), /offline/);
-  const owner = new AbortController(); const connecting = transport.connect(owner.signal); await Promise.resolve();
+  const owner = new AbortController(); const connecting = transport.connect(owner.signal); await new Promise(resolve => setImmediate(resolve));
   owner.abort(new Error("cancelled")); await assert.rejects(connecting, /cancelled/);
   await transport.connect(); gate.resolve(stale.transport); await new Promise(resolve => setImmediate(resolve));
   assert.equal(stale.closed, 1); assert.equal(transport.status.state, "open"); assert.equal(current.closed, 0);

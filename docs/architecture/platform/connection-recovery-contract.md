@@ -1,14 +1,15 @@
 # Connection recovery transition contract
 
 Status: implemented for foreground wake conservation, stage/absolute expiry,
-revocable Web admission waits and initialization commit fencing. The tables
+revocable Web/client/Deferred waits, elapsed-time deadlines and initialization commit fencing. The tables
 also express environmental constraints abstracted by the independent model;
 they are not an implementation refinement proof or a phone latency guarantee.
 
 The [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
 cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
-Safety and conditional liveness are checked separately, including deliberate
-negative controls and an explicit reachability witness.
+Safety and conditional recurring liveness are checked separately, including
+arbitrary logical losses before eventual stabilization, deliberate negative
+controls and an explicit reachability witness.
 
 ## Ownership and observations
 
@@ -41,7 +42,7 @@ session assembly. History still has its own resource owner.
 | idle / demand to connect | physical admission permitted | Start one attempt with an absolute deadline. |
 | attempting / foreground or online hint | stage and total budgets remain valid | Keep the attempt; retain a coalesced wake signal. Do not start a second dial. |
 | attempting / meaningful progress | current identity; neither deadline elapsed | Advance stage and stage progress time; retain the original total deadline. |
-| attempting / hint, tick or expiry | stage idle budget or total budget elapsed | Revoke local ownership; evaluate the retained signal and admission constraints for a successor. |
+| attempting / explicit connect, hint, tick or expiry | stage idle budget or total budget elapsed | Revoke local ownership; evaluate the retained signal and admission constraints for a successor. |
 | attempting / retryable failure | current identity | Revoke ownership, advance retry history; consume an eligible retained signal for one timely validation. Otherwise wait for the next eligible admission. |
 | backoff / hint | visible demand, validation budget available, server restriction and physical barrier permit | Start one validation without clearing retry escalation. |
 | backoff / repeated hints | validation or server budget unavailable | Coalesce the signal; an eventual budget tick re-evaluates it. Do not spin. |
@@ -49,7 +50,7 @@ session assembly. History still has its own resource owner.
 | usable / foreground hint | validation budget available | Probe the route; never infer Thread authority from the probe. |
 | usable / current authoritative Thread baseline | baseline belongs to the current generation | Grant that baseline's authority. Cached paint and probes cannot do so. |
 | any live state / manual rejection | current identity | Revoke authority and remain blocked across automatic hints. Explicit retry may re-evaluate admission. |
-| any / old completion, failure or timeout | retired identity | Cannot commit or revoke current ownership. Wall-clock expiry of the current attempt is still independently enforced. |
+| any / old completion, failure or timeout | retired identity | Cannot commit or revoke current ownership. Elapsed-time expiry of the current attempt is still independently enforced. |
 | any / dispose | owner alive | Revoke ownership and stop recovery permanently. |
 
 Hidden demand suspends new validation admission; retained signals can be
@@ -146,3 +147,52 @@ node --import tsx --test tests/protocol/appserver-connection-lifecycle.test.ts
 The normal suite also verifies immediate wake during backoff and preservation of
 failure escalation. No model check here claims to reproduce a particular user's
 phone incident or prove unbounded multi-outage implementation liveness.
+
+## Repeated recovery, cancellation layers and elapsed time
+
+Each new loss creates a fresh recovery obligation. A previous successful Host
+lease or Thread baseline cannot satisfy a later obligation. The finite model
+uses reusable local admission slots, explicit ordinary retry eligibility and
+recurring progress under eventual environmental stabilization. Disposal is a
+terminal invariant, including faults arriving after disposal. Ordinary retries
+can still recover without a hint; a counterfactual configuration disables them
+to verify the causal role of a retained lifecycle wake.
+
+There are distinct Runtime attempt, client initialization, transport attempt and
+physical release owners. Cancelling initialization releases its local shared slot
+and settles callers even if an acquired provider ignores cancellation. Old
+continuations check operation identity before sending initialize or caching its
+reply. Closing/failing a client also revokes its initialization. Sharing a live
+operation retains its initiating owner's cancellation policy; a revoked operation
+is never shared with a successor. Successful ordinary callers keep their existing
+completed-connect cancellation semantics.
+
+Deferred transport cancellation detaches old callbacks, installs the physical
+release barrier and releases the local slot before notifying abort/status
+observers. A successor waits on that barrier using its own cancellable operation;
+a late import closes only its dormant result. Factories must return dormant
+transports: creation does not itself admit a physical connection. Physical close
+may remain pending forever; local cancellation is still prompt, but progress is
+conditional on actual release. No cancellation fabricates successful cleanup.
+
+Every explicit connect/reconnect checks expired ownership before joining an
+existing operation, including when a page resumes before overdue callbacks.
+Reentrant disposal or successor admission during expiry retains precedence.
+
+Default recovery budgets use nondecreasing performance elapsed time, separate
+from diagnostic wall timestamps. Date edits cannot extend those deadlines.
+Custom `RecoveryClock.now` must be nondecreasing and include simulated suspension;
+manual test timers must advance that clock when fired. The wall-clock fallback
+rebases on reversal instead of waiting for its previous value to return, but a
+platform without an elapsed source cannot reconstruct unsampled elapsed time
+across a clock edit. OS sleep behavior of the platform elapsed source remains an
+environmental boundary; browser JS freezing and wall-clock reversal are covered
+by deterministic tests, not claimed as physical iPhone sleep verification.
+
+The [chaos simulator](../../../tests/protocol/fixtures/recovery-chaos.ts) checks
+real owners/client/Deferred composition and recovery after a healthy suffix.
+It records effective fault coverage, deterministic seeds, replayable failure
+files and bounded delta reduction. It samples shared route availability rather
+than replacing the real multiplexed Web adapter or Thread baseline owner.
+See the [model README](../../../packages/workbench-runtime/spec/README.md#deterministic-implementation-chaos)
+for commands, normalized budgets and proof limits.

@@ -8,15 +8,18 @@ implementation refinement proof. The target contract is documented in
 
 The state space contains two Hosts (`a`, `b`), one shared socket, two connection
 epochs, one representative Thread baseline, and one already accepted command.
-It models one outage and a stable successor. Failed physical dials before that
-successor are abstracted into the socket-open action; arbitrary repeated outages,
-unbounded attempt counts and continuous-time latency are outside this model.
+It models an initial socket outage and arbitrary repeated logical lease losses
+on its successor route. A weakly fair `Stabilize` action eventually stops those
+faults. Retired admission slots are reusable; an earlier successful lease or
+baseline cannot discharge the obligation to recover after a later loss. Repeated
+physical socket epochs and continuous-time latency remain outside this finite
+model; they are exercised at the isolated physical boundary by the chaos runner.
 Old logical admission may never finish. Actual physical startup/close barriers
 are separate and must eventually settle for conditional recovery to apply.
 
 `SafetySpec` makes no fairness assumptions. `FairSpec` adds weak fairness for
 network recovery, physical barrier release, socket completion, timeout/retirement,
-current admission and Thread catch-up. Permanent manual rejection or disposal
+ordinary retry budget ticks, current admission, environmental stabilization and Thread catch-up. Permanent manual rejection or disposal
 removes that Host from the conditional progress obligation. The clock is a finite
 old-attempt expiry abstraction; precise stage/total/validation budgets remain in
 the earlier executable specification. Duplicate hints are represented by one
@@ -24,8 +27,10 @@ coalesced signal per Host. This model does not prove real retry-rate bounds.
 
 Safety includes current-epoch authority, at most one lease per Host, preserved
 wake signals, manual blocking, baseline authority, no duplicate command, physical
-barrier admission and Host isolation. Conditional liveness requires eventual
-current Host leases and the current Thread baseline. A final stuttering trace
+barrier admission and Host isolation. Conditional liveness uses `[]<>` for current Host leases and the current Thread
+baseline, under eventually stable eligibility. Disposal is an invariant terminal
+state. Scheduler admission requires a retained wake or two normalized ordinary
+retry ticks, so it is not assumed unconditionally enabled. A final stuttering trace
 with a healthy socket but a retired lower-layer gate is a liveness violation.
 
 ## Reproduce
@@ -40,10 +45,14 @@ does not add Java or TLC to runtime dependencies.
 npm run test:recovery-formal -- --jar /path/to/tla2tools.jar --output /tmp/recovery-formal
 ```
 
-Two positive configurations check safety alone and safety plus temporal
-properties. Six mutants must fail at the exact invariant or temporal property:
+Three positive configurations check safety alone and safety plus temporal
+properties. Nine mutants must fail at the exact invariant or temporal property:
 dropping hints, retaining old logical gates, accepting old grants, cross-Host
-revocation, replaying a command, and bypassing a physical barrier. A deliberately
+revocation, replaying a command, bypassing a physical barrier, retaining a retired admission
+across another loss, reviving disposal and dropping the only wake when ordinary
+retries are disabled. `WakeFairSpec` assumes eventual lifecycle delivery for this
+last counterfactual pair; the normal model does not assume such hints. A lost
+wake can delay a normal retry without preventing eventual ordinary recovery. A deliberately
 false witness invariant demonstrates that both healthy Host leases and the Thread
 baseline are reachable. Removing fairness must break the temporal claim, showing
 that progress was not established without scheduling assumptions.
@@ -76,3 +85,39 @@ reentry, physical close serialization and initialization commit fencing. The
 formal specification remains independent: passing TLC and these regressions
 is not a full refinement proof. See the [runtime contract](../../../docs/architecture/platform/connection-recovery-contract.md)
 for production stage observations, budgets and environmental limits.
+
+## Deterministic implementation chaos
+
+The [chaos simulator](../../../tests/protocol/fixtures/recovery-chaos.ts) drives the
+actual connection owner, JSON-RPC client and Deferred transport against isolated
+physical leases. It controls two Hosts sharing route availability, admission,
+dial/initialize/close completion, frozen timer delivery, stale frames, cancelled
+timers, manual blocks and disposal. It does not connect to a live service.
+
+```sh
+npm run test:recovery-chaos -- --seed 20261025 --cases 1000 --steps 160 --output /tmp/recovery-chaos
+npm run test:recovery-chaos -- --replay /tmp/recovery-chaos/failure-minimal.json --output /tmp/replay
+npm run test:recovery-chaos:unit
+```
+
+Every event checks current initialization authority, physical lease serialization,
+local cancellation settlement, timer bounds, terminal disposal, manual blocking
+and Host isolation. Each trace has a 300ms **virtual**, healthy suffix, with
+25ms stages, 60ms attempts and 1/2/4/8ms backoff, to test recovery after faults stop.
+These normalized test values are not production latency commitments. The hint
+budget retains its actual 5s policy. Failures save the seed, explicit events and
+a delta-reduced trace preserving the same violated rule (at most 100 shrink
+trials). A reduced trace is not guaranteed globally shortest. Replay rejects
+invalid event types, Hosts, boundaries and elapsed values.
+
+Use `--mutant sticky-initialize` as a negative control: it retains the first client
+operation, must exit nonzero and saves a replayable failure. Add that flag when
+reproducing the mutant, omit it when verifying the fix against its trace. Coverage
+includes effective held boundaries and physical opens, not just generated fault
+requests. Normal recovery tests include a fixed seed corpus and shrink/replay
+checks. Wider runs are explicit, reproducible and need no runtime dependency.
+
+This is finite fault sampling, not a refinement proof, a real phone or an actual
+multiplexed socket implementation. Existing Web/AppHost tests exercise the real
+shared-socket adapter. The synthetic send oracle permits initialization only;
+it does not establish exactly-once semantics for a lost mutation acknowledgment.
