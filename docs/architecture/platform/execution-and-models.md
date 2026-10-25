@@ -92,14 +92,20 @@ Initialization waits for native auth before releasing logical clients.
 
 The native hosted MCP route `/api/codex/ps/mcp` maps to ChatGPT's
 `/backend-api/ps/mcp`, outside the Codex Responses prefix. It authenticates the
-loopback broker bearer before injecting an account credential. Tool calls use
+loopback broker bearer before injecting an account credential. Native launch
+also supplies that synthetic bearer through `CODEX_CONNECTORS_TOKEN`, which the
+implicit hosted MCP client resolves separately from external account login.
+Neither value is an upstream OAuth credential. Tool calls use
 native `params._meta.threadId` for Host-scoped affinity; initialization and
 catalog requests do not reserve a conversation or advance the cursor. Hosted
 tool failures retain their upstream status and never replay on another account
 or change text quota. This is not an unrestricted ChatGPT API proxy.
 
 The loopback bridge preserves request bytes, including native compressed Responses
-bodies, without a UTF-8 round trip. The proxy also allows POST `/v1/images/generations` and `/v1/images/edits`.
+bodies, without a UTF-8 round trip. Upstream Fetch decodes response compression;
+the bridge omits its stale `Content-Encoding` and compressed length so clients
+consume the decoded JSON or event stream once.
+The proxy also allows POST `/v1/images/generations` and `/v1/images/edits`.
 Native image turn IDs resolve through a bounded, Host-scoped map populated by
 Responses turn metadata to the same thread affinity. Unknown or cross-Host turns
 are rejected. Native image requests run once and retain their backend status and
