@@ -4701,10 +4701,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     opacity: 1;
     pointer-events: auto;
   }
-  @include controls.hover-capable {
-    &:hover &__actions button {
-      opacity: 1;
-      pointer-events: auto;
+  &:hover {
+    @include controls.hover-capable {
+      .thread-user-message__actions button {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
   }
 
