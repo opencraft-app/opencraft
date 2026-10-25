@@ -145,9 +145,9 @@ try {
   // Both the CSS approximation and live optics must soften background detail.
   const stripes=await page.addStyleTag({content:'.shell-sidebar__column[data-navigation-layout=mobile]{position:relative}.glass-backdrop-probe{position:absolute;bottom:0;inset-inline:0;height:150px;z-index:1;pointer-events:none;background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 16px)}'});
   await page.evaluate(()=>{const e=document.createElement('div');e.className='glass-backdrop-probe';document.querySelector('.shell-sidebar__column[data-navigation-layout=mobile]')!.append(e)});
-  const energy=async(data:Buffer)=>page.evaluate(async url=>{
-   const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d')!;ctx.drawImage(image,0,0);const {data:p}=ctx.getImageData(0,0,image.width,image.height);let sum=0,count=0;for(let y=8;y<14;y++)for(let x=15;x<image.width-15;x++){const i=(y*image.width+x)*4,j=i-4;sum+=Math.abs(p[i]!-p[j]!);count++}return sum/count;
-  },'data:image/png;base64,'+data.toString('base64'));
+  const energy=async(data:Buffer,full=false)=>page.evaluate(async ({url,full})=>{
+   const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d')!;ctx.drawImage(image,0,0);const {data:p}=ctx.getImageData(0,0,image.width,image.height);let sum=0,count=0;for(let y=8;y<(full?image.height-8:14);y++)for(let x=15;x<image.width-15;x++){const i=(y*image.width+x)*4,j=i-4;sum+=Math.abs(p[i]!-p[j]!);count++}return sum/count;
+  },{url:'data:image/png;base64,'+data.toString('base64'),full});
   const hideForeground=await page.addStyleTag({content:'.shell-sidebar__floating-action .sidebar-new-chat > :not(.ui-liquid-glass), .shell-sidebar__rail-footer [data-surface=settings] > :not(.ui-liquid-glass){visibility:hidden!important}'});
   const samples=[];
   for(const selector of ['.sidebar-new-chat:visible','.shell-navigation__entrance[data-surface=settings]:visible']){
@@ -177,16 +177,32 @@ try {
    const action=page.locator(selector),lens=action.locator('.ui-liquid-glass');
    assert.equal(await page.locator('.app-shell-floating-left-panel').evaluate(e=>getComputedStyle(e).willChange),'transform','settled drawer must not create an opacity backdrop root');
    const frosted=await energy(await action.screenshot());
-   const oldHint=await page.addStyleTag({content:'.app-shell-floating-left-panel{will-change:transform,opacity!important}'});
-   const isolated=await energy(await action.screenshot());await oldHint.evaluate(e=>e.remove());
    const noBlur=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});
    const clear=await energy(await action.screenshot());await noBlur.evaluate(e=>e.remove());
-   assert(clear>5,JSON.stringify({selector,clear}));assert(frosted<clear*.1,JSON.stringify({selector,frosted,clear}));assert(isolated>clear*.5,JSON.stringify({selector,frosted,isolated,clear}));scrollingSamples.push({selector,frosted,isolated,clear});
+   assert(clear>5,JSON.stringify({selector,clear}));assert(frosted<clear*.1,JSON.stringify({selector,frosted,clear}));scrollingSamples.push({selector,frosted,clear});
   }
   await listPattern.evaluate(e=>e.remove());
+  // Glyph paint can escape the capture even when row/background patterns
+  // pass. Align a real title under New chat and sample its full interior.
+  await page.locator('.shell-sidebar__scroll').evaluate(async e=>{
+   const action=document.querySelector('.sidebar-new-chat')!.getBoundingClientRect();
+   const titles=[...e.querySelectorAll('.sidebar-activity-item__title')];
+   const title=titles.find(t=>{const r=t.getBoundingClientRect();return r.height>0&&r.top>=action.top-70&&r.top<=action.bottom+70})!;
+   const r=title.getBoundingClientRect();e.scrollTop+=r.top+r.height/2-action.top-action.height/2;
+   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  });
+  const hideTextForeground=await page.addStyleTag({content:'.sidebar-new-chat > :not(.ui-liquid-glass){visibility:hidden!important}'});
+  const textAction=page.locator('.sidebar-new-chat:visible');
+  const textFrosted=await energy(await textAction.screenshot(),true);
+  const oldHint=await page.addStyleTag({content:'.app-shell-floating-left-panel{will-change:transform,opacity!important}'});
+  const textIsolated=await energy(await textAction.screenshot(),true);await oldHint.evaluate(e=>e.remove());
+  const noTextFilter=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});
+  const textClear=await energy(await textAction.screenshot(),true);await noTextFilter.evaluate(e=>e.remove());
+  assert(textClear>1,JSON.stringify({textClear}));assert(textFrosted<textClear*.1,JSON.stringify({textFrosted,textClear}));assert(textIsolated>textClear*.5,JSON.stringify({textFrosted,textIsolated,textClear}));
+  await hideTextForeground.evaluate(e=>e.remove());
   await page.screenshot({path:output+'/sidebar-'+theme+'-'+materialPath+'-scrolling-text.png'});
   const end=await page.locator('.shell-sidebar__scroll').evaluate(async e=>{e.scrollTop=e.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const row=[...e.querySelectorAll('.sidebar-activity-item')].pop()!;return{rowBottom:row.getBoundingClientRect().bottom,newTop:document.querySelector('.sidebar-new-chat')!.getBoundingClientRect().top}});assert(end.rowBottom<=end.newTop,JSON.stringify(end));
-  await page.screenshot({path:output+'/sidebar-'+theme+'-'+materialPath+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,materialPath,geometry,samples,scrollingSamples,end}});await context.close();
+  await page.screenshot({path:output+'/sidebar-'+theme+'-'+materialPath+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,materialPath,geometry,samples,scrollingSamples,actualText:{textFrosted,textIsolated,textClear},end}});await context.close();
  }
  // Initial spacing is scrollable content, not a clipped system-area band.
  for(const theme of ['light','dark']){
