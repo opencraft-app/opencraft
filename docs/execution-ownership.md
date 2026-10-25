@@ -133,6 +133,8 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 恢复已有会话时，历史读取独立完成并呈现；capability 声明可在后台准备。失败不清空已恢复历史、不删除已有 Thread。用户执行时重试所需准备，并在提交位置呈现失败。
 
+用户命令的 metadata-only `activate` 与只读历史恢复分别持有等待；旧激活 ACK 不阻塞新的 readonly baseline。激活 ACK 只提交 execution/stream 字段，保留当前历史 source、cursor 和其间观测到的 live settings。准备 await 后重新核对当前 baseline，并在首个写入发送前复核本地资格；创建/fork 已确认后的失败属于部分效果，不能归类为全未发送。完整 historical Resume 与 legacy message-window 保留原组合契约。详见[恢复契约](architecture/platform/connection-recovery-contract.md#execution-activation-and-current-presentation)。
+
 执行准入必须保证检查与提交之间绑定没有变化。Capability 替换和执行准入复用 Host 的 ThreadLifecycle 队列；引擎执行权继续由 execution authority 管理。不能只在 `await validate` 前检查“当前没有执行”，随后无条件卸载工具。
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。

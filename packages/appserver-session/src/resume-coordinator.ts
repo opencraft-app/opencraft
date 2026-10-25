@@ -8,7 +8,7 @@ import type { DerivedHistoryPorts, DerivedReadContext } from "./derived-history"
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
 import { hydrateReadTurnItems, readTurnsPage } from "./history-strategies";
 import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow, reconcileRecoveryWindow } from "./merge-turns";
-import type { ThreadStreamRole, ThreadView } from "./models";
+import type { ThreadExecutionProjection, ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
 import type { ThreadViewFrameScheduler } from "./view-store";
 
@@ -146,6 +146,10 @@ export class ThreadResumeCoordinatorService extends Service {
   private readonly readClock: ElapsedClock;
   private readonly drainTailHistory: boolean;
   private readonly inFlight = new Map<string, HistoryOperation>();
+  private readonly activations = new Map<string, HistoryOperation<void>>();
+  private readonly activatedGenerations = new Map<string, number>();
+  private executionNotificationRevision = 0;
+  private readonly executionFieldRevisions = new Map<string, Map<keyof ThreadExecutionProjection, number>>();
   private readonly reads = new Map<string, HistoryOperation>();
   private readonly readContexts = new Map<string, DerivedReadContext>();
   private readonly rejectedResumes = new Map<string, { generation: number; error: AppServerRpcError }>();
@@ -184,7 +188,11 @@ export class ThreadResumeCoordinatorService extends Service {
         }));
         return;
       }
-      const project = (current: ThreadView) => ctx.threadNotificationProjectors.project(current, notification);
+      const project = (current: ThreadView) => {
+        const projected = ctx.threadNotificationProjectors.project(current, notification);
+        this.noteExecutionNotification(threadId, current.execution, projected.execution, notification.method, notification.params);
+        return projected;
+      };
       const params = notification.params as Record<string, unknown> | null;
       if (TEXT_DELTA_METHODS.has(notification.method) && typeof params?.delta === "string") {
         ctx.threadViews.queueProjection(threadId, this.client.connectionGeneration, project, params.delta.length * 2);
@@ -195,9 +203,11 @@ export class ThreadResumeCoordinatorService extends Service {
     });
     const removeStatus = this.client.subscribeStatus((status) => {
       if (status.state !== "closed" && status.state !== "failed") return;
-      for (const operation of [...this.inFlight.values(), ...this.reads.values()]) operation.cancel();
+      for (const operation of [...this.inFlight.values(), ...this.reads.values(), ...this.activations.values()]) operation.cancel();
       for (const threadId of new Set([...this.readContexts.keys(), ...this.historyContexts.keys()])) this.retireHistoryContext(threadId);
       this.rejectedResumes.clear();
+      this.activatedGenerations.clear();
+      this.executionFieldRevisions.clear();
       ctx.threadStreamOwnership.resetAfterReconnect();
       for (const view of ctx.threadViews.getAll()) {
         ctx.threadViews.update(view.threadId, (current) => ({
@@ -211,9 +221,12 @@ export class ThreadResumeCoordinatorService extends Service {
       this.disposed = true;
       removeNotification();
       removeStatus();
-      for (const operation of [...this.inFlight.values(), ...this.reads.values()]) operation.cancel();
+      for (const operation of [...this.inFlight.values(), ...this.reads.values(), ...this.activations.values()]) operation.cancel();
       this.inFlight.clear();
       this.reads.clear();
+      this.activations.clear();
+      this.activatedGenerations.clear();
+      this.executionFieldRevisions.clear();
       this.readContexts.clear();
       this.rejectedResumes.clear();
       this.historyContexts.clear();
@@ -336,17 +349,77 @@ export class ThreadResumeCoordinatorService extends Service {
     return promise;
   }
 
-  resume(options: ResumeThreadOptions): Promise<ThreadView> {
-    if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
-    const existing = this.baselineOperation(options.threadId);
-    if (existing?.kind === "read") return waitForHistory(existing.operation.promise, options.signal).then(() => this.resume(options));
-    if (existing) return waitForHistory(existing.operation.promise, options.signal);
+  private noteExecutionNotification(threadId: string, before: ThreadExecutionProjection, after: ThreadExecutionProjection, method: string, params: unknown): void {
+    const settings = method === "thread/settings/updated" && isRecord(params) && isRecord(params.threadSettings) ? params.threadSettings : null;
+    const keys = (Object.keys(after) as (keyof ThreadExecutionProjection)[]).filter(key => {
+      const input = key === "reasoningEffort" ? "effort" : key === "sandbox" ? "sandboxPolicy" : key;
+      return before[key] !== after[key] || (settings !== null && Object.hasOwn(settings, input) && Object.is(after[key], settings[input]));
+    });
+    if (keys.length === 0) return;
+    const revisions = this.executionFieldRevisions.get(threadId) ?? new Map<keyof ThreadExecutionProjection, number>();
+    const revision = ++this.executionNotificationRevision;
+    for (const key of keys) revisions.set(key, revision);
+    this.executionFieldRevisions.set(threadId, revisions);
+  }
+
+  private executionFromRead(threadId: string, generation: number, metadata: AppServerThread, current: ThreadExecutionProjection): ThreadExecutionProjection {
+    if (this.activatedGenerations.get(threadId) === generation && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner") return current;
+    const observed = this.executionFieldRevisions.get(threadId);
+    return { ...current,
+      model: observed?.has("model") ? current.model : typeof metadata.model === "string" ? metadata.model : current.model,
+      modelProvider: observed?.has("modelProvider") ? current.modelProvider : typeof metadata.modelProvider === "string" ? metadata.modelProvider : current.modelProvider,
+      cwd: observed?.has("cwd") ? current.cwd : metadata.cwd ?? current.cwd,
+      reasoningEffort: observed?.has("reasoningEffort") ? current.reasoningEffort : metadata.reasoningEffort ?? current.reasoningEffort,
+    };
+  }
+
+  private resumeRejection(options: Pick<ResumeThreadOptions, "threadId" | "retryRejected">): Error | undefined {
     if (options.retryRejected) this.rejectedResumes.delete(options.threadId);
     else {
       const rejected = this.rejectedResumes.get(options.threadId);
-      if (rejected?.generation === this.client.connectionGeneration) return Promise.reject(rejected.error);
+      if (rejected?.generation === this.client.connectionGeneration) return rejected.error;
       if (rejected !== undefined) this.rejectedResumes.delete(options.threadId);
     }
+  }
+
+  /** Prepare execution only. History Read keeps its own owner and source;
+   * activation does not allocate a preview, buffer or hydration strategy. */
+  activate(options: Pick<ResumeThreadOptions, "threadId" | "signal" | "retryRejected">): Promise<void> {
+    if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
+    for (;;) {
+      const existing = this.activations.get(options.threadId);
+      if (existing) {
+        if (existing.current()) return waitForHistory(existing.promise, options.signal);
+        existing.cancel(); continue;
+      }
+      const historical = this.inFlight.get(options.threadId);
+      if (historical) {
+        if (historical.current()) return waitForHistory(historical.promise, options.signal).then(() => undefined);
+        historical.cancel(); continue;
+      }
+      break;
+    }
+    const rejected = this.resumeRejection(options);
+    if (rejected) return Promise.reject(rejected);
+    return this.startHistoryOperation(this.activations, options.threadId, options.signal,
+      async operation => { await this.resumeOnce(options, operation, "execution"); });
+  }
+
+  resume(options: ResumeThreadOptions): Promise<ThreadView> {
+    if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
+    for (;;) {
+      const existing = this.baselineOperation(options.threadId);
+      if (existing?.kind === "read") return waitForHistory(existing.operation.promise, options.signal).then(() => this.resume(options));
+      if (existing) return waitForHistory(existing.operation.promise, options.signal);
+      const activation = this.activations.get(options.threadId);
+      if (activation) {
+        if (activation.current()) return waitForHistory(activation.promise, options.signal).then(() => this.resume(options));
+        activation.cancel(); continue;
+      }
+      break;
+    }
+    const rejected = this.resumeRejection(options);
+    if (rejected) return Promise.reject(rejected);
     return this.startHistoryOperation(this.inFlight, options.threadId, options.signal,
       operation => this.resumeOnce(options, operation), true);
   }
@@ -432,11 +505,7 @@ export class ThreadResumeCoordinatorService extends Service {
       tailHydrationComplete: recovery && recovery.mode !== "replace" ? initial.tailHydrationComplete : page?.nextCursor == null,
       turnsPagination: recovery && recovery.mode !== "replace" ? initial.turnsPagination : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
         hasLoadedOldest: page?.nextCursor == null, isLoadingOlder: false },
-      execution: { ...current.execution,
-        model: typeof metadata.model === "string" ? metadata.model : current.execution.model,
-        modelProvider: typeof metadata.modelProvider === "string" ? metadata.modelProvider : current.execution.modelProvider,
-        cwd: metadata.cwd ?? current.execution.cwd,
-        reasoningEffort: metadata.reasoningEffort ?? current.execution.reasoningEffort },
+      execution: this.executionFromRead(threadId, generation, metadata, current.execution),
       resumeError: null, historyError: null,
     }));
   }
@@ -461,10 +530,13 @@ export class ThreadResumeCoordinatorService extends Service {
       historyError: null,
     }));
     this.ctx.resumeNotificationBuffer.release(thread.id);
+    this.activatedGenerations.set(thread.id, generation);
     return view;
   }
 
   setStreamRole(threadId: string, role: ThreadStreamRole | null): ThreadView {
+    // An ownership notification alone does not provide execution metadata.
+    this.activatedGenerations.delete(threadId);
     this.ctx.threadStreamOwnership.set(threadId, role);
     return this.ctx.threadViews.update(threadId, (current) => ({ ...current, streamRole: role }));
   }
@@ -486,7 +558,9 @@ export class ThreadResumeCoordinatorService extends Service {
    * Background history checks its operation identity before publishing, so
    * deleting it also fences an old drain from recreating an evicted View. */
   release(threadId: string): void {
-    if (this.inFlight.has(threadId) || this.reads.has(threadId)) throw new Error("Cannot release a loading Thread");
+    if (this.inFlight.has(threadId) || this.reads.has(threadId) || this.activations.has(threadId)) throw new Error("Cannot release a loading Thread");
+    this.activatedGenerations.delete(threadId);
+    this.executionFieldRevisions.delete(threadId);
     this.retireHistoryContext(threadId);
     this.previewTokens.delete(threadId);
     this.ctx.resumeNotificationBuffer.discard(threadId);
@@ -560,26 +634,31 @@ export class ThreadResumeCoordinatorService extends Service {
     });
   }
 
-  private async resumeOnce(options: ResumeThreadOptions, operation: HistoryOperation): Promise<ThreadView> {
+  private async resumeOnce<T>(options: ResumeThreadOptions, operation: HistoryOperation<T>, purpose: "history" | "execution" = "history"): Promise<ThreadView> {
     operation.assertCurrent();
-    const threadId = options.threadId;
-    const initial = this.ctx.threadViews.getOrCreate(threadId);
+    const threadId = options.threadId, presentation = purpose === "history";
+    const executionRevision = this.executionNotificationRevision;
+    const initial = presentation ? this.ctx.threadViews.getOrCreate(threadId) : this.ctx.threadViews.get(threadId);
+    if (!initial) throw new Error(`Thread ${threadId} has no loaded baseline for execution activation`);
     operation.assertCurrent();
     const currentRole = this.ctx.threadStreamOwnership.get(threadId);
-    if (!options.force && initial.resumeState === "resumed"
-      && initial.connectionGeneration === this.client.connectionGeneration
-      && currentRole !== null) return initial;
+    if (!options.force && currentRole !== null && (presentation
+      ? initial.resumeState === "resumed" && initial.connectionGeneration === this.client.connectionGeneration
+      : currentRole.role === "follower" || this.activatedGenerations.get(threadId) === this.client.connectionGeneration)) return initial;
 
-    this.retireHistoryContext(threadId);
-    let provisionalOwner = false;
-    operation.onCancel = () => {
-      if (provisionalOwner && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner")
+    if (presentation) this.retireHistoryContext(threadId);
+    let provisionalRole: ThreadStreamRole | null = null;
+    const revokeProvisionalRole = () => {
+      if (provisionalRole && this.ctx.threadStreamOwnership.get(threadId) === provisionalRole)
         this.ctx.threadStreamOwnership.set(threadId, null);
-      if (!this.disposed) this.ctx.threadViews.update(threadId, current => ({
-        ...current, resumeState: "needs_resume", streamRole: this.ctx.threadStreamOwnership.get(threadId),
+    };
+    operation.onCancel = () => {
+      revokeProvisionalRole();
+      if (!this.disposed && this.ctx.threadViews.get(threadId)) this.ctx.threadViews.update(threadId, current => ({
+        ...current, ...(presentation ? { resumeState: "needs_resume" as const } : {}), streamRole: this.ctx.threadStreamOwnership.get(threadId),
       }));
     };
-    this.ctx.threadViews.update(threadId, (current) => ({
+    if (presentation) this.ctx.threadViews.update(threadId, (current) => ({
       ...current,
       resumeState: "resuming",
       streamRole: currentRole,
@@ -587,7 +666,7 @@ export class ThreadResumeCoordinatorService extends Service {
       historyError: null,
     }));
     operation.assertCurrent();
-    this.ctx.resumeNotificationBuffer.begin(threadId);
+    if (presentation) this.ctx.resumeNotificationBuffer.begin(threadId);
     const generation = this.client.connectionGeneration;
     let metadata: AppServerThread | null = initial.thread;
     try {
@@ -607,6 +686,7 @@ export class ThreadResumeCoordinatorService extends Service {
       operation.assertCurrent();
       const roleAfterRead = this.ctx.threadStreamOwnership.get(threadId);
       if (roleAfterRead?.role === "follower") {
+        if (!presentation) return this.ctx.threadViews.get(threadId) ?? initial;
         const followerView = this.ctx.threadViews.update(threadId, (current) => ({
           ...current,
           thread: metadata ?? current.thread,
@@ -621,8 +701,8 @@ export class ThreadResumeCoordinatorService extends Service {
       }
 
       if (roleAfterRead === null) {
-        provisionalOwner = true;
         this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
+        provisionalRole = this.ctx.threadStreamOwnership.get(threadId);
       }
 
       const engineHistory = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_RESUME_HISTORY_EXTENSION);
@@ -636,15 +716,15 @@ export class ThreadResumeCoordinatorService extends Service {
         version?: unknown; initialTurnsPage?: unknown; boundedRecovery?: unknown;
       } | undefined;
       const supportsMergedPage = capability?.version === 1 && capability.initialTurnsPage === true;
-      const supportsBoundedRecovery = supportsMergedPage && capability?.boundedRecovery === true;
+      const supportsBoundedRecovery = presentation && supportsMergedPage && capability?.boundedRecovery === true;
       const requestedCheckpoint = options.historyCheckpoint === undefined
         ? initial.historyCheckpoint : options.historyCheckpoint ?? undefined;
-      const historyRequest = buildResumeHistoryRequest({
+      const historyRequest: ReturnType<typeof buildResumeHistoryRequest> = presentation ? buildResumeHistoryRequest({
         useTailHydration: this.useTailHydration,
         isDurableHost,
         supportsPaginatedHistory,
         supportsInitialTurnsPage: supportsMergedPage,
-      });
+      }) : { excludeTurns: true };
       const {
         threadId: _ignoredThreadId,
         history: _ignoredHistory,
@@ -679,7 +759,7 @@ export class ThreadResumeCoordinatorService extends Service {
         ...historyRequest,
         ...(supportsBoundedRecovery && requestedCheckpoint
           ? { historyCheckpoint: requestedCheckpoint } : {}),
-        ...(historyMode === "message-window" ? {
+        ...(presentation && historyMode === "message-window" ? {
           historyPreviewToken: `${generation}:${++this.previewSequence}`,
         } : {}),
       };
@@ -704,6 +784,27 @@ export class ThreadResumeCoordinatorService extends Service {
       }
       const response = requireResumeResponse(resumed, threadId);
       operation.assertCurrent();
+      if (!presentation) {
+        const current = this.ctx.threadViews.get(threadId);
+        const execution = current ? this.ctx.threadResumeProjectors.project(current, { metadata: response.thread, response }).execution : null;
+        operation.assertCurrent();
+        // The ACK grants execution readiness, not authority over a newer read.
+        // Apply only execution fields to the current View; never revive a View.
+        this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
+        if (execution && this.ctx.threadViews.get(threadId)) this.ctx.threadViews.update(threadId, view => ({
+          ...view,
+          execution: Object.fromEntries(Object.entries(execution).map(([key, value]) => [key,
+            (this.executionFieldRevisions.get(threadId)?.get(key as keyof ThreadExecutionProjection) ?? 0) > executionRevision
+              ? view.execution[key as keyof ThreadExecutionProjection] : value,
+          ])) as unknown as ThreadExecutionProjection,
+          resumeState: "resumed", streamRole: this.ctx.threadStreamOwnership.get(threadId),
+        }));
+        operation.assertCurrent();
+        provisionalRole = null;
+        this.activatedGenerations.set(threadId, generation);
+        this.rejectedResumes.delete(threadId);
+        return this.ctx.threadViews.get(threadId) ?? initial;
+      }
       const recovery = supportsBoundedRecovery ? response.historyRecovery : undefined;
       if (recovery && (typeof recovery.checkpoint?.epoch !== "string" || !Number.isSafeInteger(recovery.checkpoint.nextSeq)
         || recovery.checkpoint.nextSeq < 0 || !["unchanged", "append", "replace"].includes(recovery.mode))) {
@@ -776,8 +877,9 @@ export class ThreadResumeCoordinatorService extends Service {
         };
       });
       operation.assertCurrent();
-      provisionalOwner = false;
+      provisionalRole = null;
       this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
+      this.activatedGenerations.set(threadId, generation);
       this.rejectedResumes.delete(threadId);
       this.ctx.resumeNotificationBuffer.release(threadId);
       operation.assertCurrent();
@@ -794,19 +896,16 @@ export class ThreadResumeCoordinatorService extends Service {
         && !isRetryableAppServerRpcError(failure)) {
         this.rejectedResumes.set(threadId, { generation, error: failure });
       }
-      if (provisionalOwner && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner") {
-        this.ctx.threadStreamOwnership.set(threadId, null);
-      }
-      this.ctx.threadViews.update(threadId, (current) => ({
+      revokeProvisionalRole();
+      if (this.ctx.threadViews.get(threadId)) this.ctx.threadViews.update(threadId, (current) => ({
         ...current,
-        resumeState: "needs_resume",
+        ...(presentation ? { resumeState: "needs_resume" as const, resumeError: failure } : {}),
         streamRole: this.ctx.threadStreamOwnership.get(threadId),
-        resumeError: failure,
       }));
-      if (operation.current()) this.ctx.resumeNotificationBuffer.release(threadId);
+      if (presentation && operation.current()) this.ctx.resumeNotificationBuffer.release(threadId);
       throw failure;
     } finally {
-      if (operation.current()) this.previewTokens.delete(threadId);
+      if (presentation && operation.current()) this.previewTokens.delete(threadId);
     }
   }
 

@@ -59,6 +59,17 @@ CASES = [
     ('ViewReadLease-Peer', 'PeerReadPreserved'),
     ('ViewReadLease-Baseline', 'CachedBaseline'),
     ('ViewReadLease-NoFairness', 'temporal:AcquireProgress'),
+    ('ActivationHistory', None),
+    ('ActivationHistory-ExecutionFair', None),
+    ('ActivationHistory-StrategyGate', 'temporal:CommandProgress'),
+    ('ActivationHistory-Gate', 'temporal:ReadRecovery'),
+    ('ActivationHistory-Commit', 'CurrentHistory'),
+    ('ActivationHistory-Buffer', 'BufferOwner'),
+    ('ActivationHistory-Requests', 'RequestConserved'),
+    ('ActivationHistory-Dispatch', 'CommandAdmission'),
+    ('ActivationHistory-Replay', 'NoReplay'),
+    ('ActivationHistory-Cancel', 'IntentPreserved'),
+    ('ActivationHistory-NoFairness', 'temporal:ReadRecovery'),
 ]
 
 
@@ -106,6 +117,15 @@ def main():
             ok = ok and terminal["net"] and terminal["socket"] == 2 and terminal["barrier"]["a"]
             ok = ok and terminal["phase"]["a"] == "dial" and terminal["token"]["a"] == 2
             ok = ok and terminal["gate"]["a"] == 1 and terminal["baseline"] == 0
+        if config == "ActivationHistory-Gate" and trace.is_file():
+            terminal = json.loads(trace.read_text())["counterexample"]["state"][-1][1]["s"]
+            ok = ok and terminal["epoch"] == 1 and not terminal["readDone"]
+            ok = ok and terminal["activation"] == "pending" and terminal["intent"]
+        if config == "ActivationHistory-StrategyGate" and trace.is_file():
+            terminal = json.loads(trace.read_text())["counterexample"]["state"][-1][1]["s"]
+            ok = ok and terminal["epoch"] == 1 and terminal["readDone"]
+            ok = ok and terminal["activation"] == "ready" and not terminal["oldHistory"]
+            ok = ok and terminal["sends"] == 0 and terminal["intent"]
         counts = re.findall(r"([\d,]+) states generated, ([\d,]+) distinct states found", log)
         result = {"config": config, "exit": code, "passed": ok, "expectedViolation": violation}
         if counts:

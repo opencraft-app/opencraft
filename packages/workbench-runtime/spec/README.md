@@ -144,7 +144,7 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 49 configurations,
+stale request and missing fairness. The total suite has 60 configurations,
 including the history and hydration checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
@@ -311,3 +311,31 @@ exercise zero-cache cold admission, concurrent/replacement Views, final observer
 release and cancellation before module I/O. Session regressions hold all three
 derived strategy kinds while retaining baseline authority. Existing seeded chaos
 retains its advertised scope; this model does not prove implementation refinement.
+
+
+## Execution activation and current presentation
+
+`ActivationHistory.tla` starts with a valid read baseline and one user intent
+waiting for execution activation. A logical reconnect can occur before the ACK
+or after it while the old history strategy is pending. Current read completion
+has weak fairness; the retired activation ACK, history strategy and cleanup do
+not. Read recovery must therefore progress independently. A second positive
+configuration adds fair activation/dispatch and requires the original intent to
+be sent once. Still-current history work retains its fairness and must finish
+before its command can dispatch; retirement does not erase that initial barrier.
+
+Nine controls include two temporal gate mutants (ACK and retired strategy), stale
+history commit, stale buffer cleanup, lost buffered request, premature dispatch,
+write replay, cancelled original intent and absent current-read fairness. The
+verifier checks the exact property and causal terminal state for both gate
+mutants. There is one representative buffered request and one intent with a
+second possible send to expose replay. This finite independent model does not
+cover all metadata, permissions, failures or server execution deduplication.
+
+The implementation contract separates metadata-only execution activation from
+historical Resume. A command's activation uses the existing `excludeTurns` field;
+it must preserve the read source and buffered projection. The final dispatch
+still requires the current baseline after every preparation await. Legacy and
+explicit historical Resume retain their combined history contract. Real Session
+and Workbench held-ACK regressions and seeded composition must substantiate that
+mapping; the normative specification alone is not TypeScript refinement.

@@ -1,4 +1,4 @@
-import { AppServerClientError, AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
+import { AppServerClientError, AppServerRpcError, type AppServerClient, type AppServerClientRequestOptions } from "@opencraft/appserver-client";
 import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
   AppServerMethod,
@@ -161,6 +161,7 @@ export function createAppServerConversationCommandPort(
     clientUserMessageId: string,
     input: readonly UserInput[],
     additionalContext?: NonNullable<ReturnType<typeof compileSubmitIntent>["additionalContext"]>,
+    requestOptions?: AppServerClientRequestOptions,
   ) => {
     const request = (turnId: string) => config.client.request("turn/steer", {
       threadId,
@@ -168,7 +169,7 @@ export function createAppServerConversationCommandPort(
       clientUserMessageId,
       input: [...input],
       ...(additionalContext === undefined ? {} : { additionalContext }),
-    });
+    }, requestOptions);
     try {
       return await request(expectedTurnId);
     } catch (error) {
@@ -181,6 +182,7 @@ export function createAppServerConversationCommandPort(
   const execute = async (
     intent: SubmitIntent,
     options?: { readonly canDispatch: () => boolean },
+    onAdmission?: () => void,
   ): Promise<SubmissionReceipt> => {
     const method = intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
       : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start";
@@ -193,6 +195,10 @@ export function createAppServerConversationCommandPort(
       );
     }
     const compiled = await compile(intent);
+    const requestOptions = options ? { beforeSend: () => {
+      if (!options.canDispatch()) throw new SubmissionNotDispatchedError();
+      onAdmission?.();
+    } } : undefined;
     if (options?.canDispatch() === false) throw new SubmissionNotDispatchedError();
     for (const diagnostic of compiled.diagnostics)
       config.onDiagnostic?.(diagnostic, intent);
@@ -216,7 +222,8 @@ export function createAppServerConversationCommandPort(
           ...(intent.target.execution.workspace.projectId == null
             ? {}
             : { projectId: intent.target.execution.workspace.projectId }),
-        });
+        }, requestOptions);
+        onAdmission?.();
         threadId = started.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -235,7 +242,8 @@ export function createAppServerConversationCommandPort(
           threadId: intent.target.key.threadId,
           lastTurnId: intent.target.fromTurnId,
           ...forkOptions(compiled.threadOptions),
-        });
+        }, requestOptions);
+        onAdmission?.();
         threadId = forked.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -259,7 +267,7 @@ export function createAppServerConversationCommandPort(
             ? {}
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
-        });
+        }, requestOptions);
         turnId = turn.turn.id;
         break;
       }
@@ -271,6 +279,7 @@ export function createAppServerConversationCommandPort(
           intent.clientMessageId,
           compiled.input,
           compiled.additionalContext ?? undefined,
+          requestOptions,
         );
         disposition = turn.disposition === "queued" ? "queue" : undefined;
         turnId = disposition === "queue" ? null : turn.turnId;
@@ -282,7 +291,7 @@ export function createAppServerConversationCommandPort(
           threadId,
           input: [...compiled.input],
           clientUserMessageId: intent.clientMessageId,
-        });
+        }, requestOptions);
         turnId = null;
         break;
       }
@@ -344,9 +353,14 @@ export function createAppServerConversationCommandPort(
   return {
     createThread,
     async submit(intent, options) {
-      try { return await execute(intent, options); }
+      let admitted = false;
+      try { return await execute(intent, options, () => { admitted = true; }); }
       catch (cause) {
-        if (options && cause instanceof AppServerClientError && cause.code === "NOT_CONNECTED") throw new SubmissionNotDispatchedError();
+        if (cause instanceof AppServerClientError && cause.code === "NOT_CONNECTED") {
+          // A later RPC may be unsent after an earlier creation already committed.
+          if (admitted) throw new SubmissionOutcomeUnknownError({ cause });
+          if (options) throw new SubmissionNotDispatchedError();
+        }
         const hermesCode = cause instanceof AppServerRpcError
           ? (cause.data as { hermesCode?: unknown } | undefined)?.hermesCode : undefined;
         if ((cause instanceof AppServerClientError && ["TIMEOUT", "TRANSPORT_ERROR", "ABORTED"].includes(cause.code))
