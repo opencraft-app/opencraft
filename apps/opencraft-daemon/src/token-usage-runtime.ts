@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { stat, realpath } from "node:fs/promises";
 import { OpenCraftTokenUsageLedger, normalizeUsageCounts, type UsageSource, type UsageSubmission, type UsageTurnKey, type UsageExecutionState } from "./token-usage-ledger.js";
 import { replayRolloutUsage, readTurnIdentity, type RolloutTurnIdentity } from "./token-usage-rollout.js";
+import type { NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
@@ -90,6 +91,7 @@ export class CodexTokenUsageRuntime {
     readonly submission?: (threadId: string, inputId: string) => UsageSubmission | null;
     readonly diagnostic: (category: string) => void;
     readonly derived?: { invalidate(threadId:string,path?:string):void };
+    readonly source?: (threadId: string, path: string) => Promise<NativeRolloutSource>;
     readonly writes?: {
       record(attemptId:string,input:UsageSubmission):Promise<void>;
       outcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null):Promise<string|null>;
@@ -100,8 +102,10 @@ export class CodexTokenUsageRuntime {
 
   initialize(value: unknown): void {
     const home = text(record(value).codexHome);
-    if (!home || this.nativeHome || this.abort.signal.aborted) return;
+    if (!home || this.abort.signal.aborted) return;
+    const initialized = this.nativeHome !== null;
     this.nativeHome = home;
+    if (initialized) return;
     this.seedGaps();
     this.timer = setInterval(() => { this.scheduleProjection(); for (const thread of new Set([...this.active,...this.settling.keys()])) this.schedule(thread); this.retryGaps(); }, 2000);
     this.timer.unref();
@@ -268,6 +272,8 @@ export class CodexTokenUsageRuntime {
     signal.throwIfAborted();
     const path = text(thread.path);
     if (!path) { this.missing(threadId, "unreplayable"); return; }
+    const source = await this.port.source?.(threadId, path);
+    signal.throwIfAborted();
     let canonical: string;
     try { canonical = await realpath(path); }
     catch { this.missing(threadId, "source-replaced"); return; }
@@ -304,7 +310,7 @@ export class CodexTokenUsageRuntime {
       identity = await readTurnIdentity(canonical, replayCursor) ?? undefined;
       if (identity) this.identities.set(threadId, identity);
     }
-    const replay = await replayRolloutUsage({ path: canonical, nativeHome:this.nativeHome!,threadId,ledger:this.ledger,cursor:replayCursor,maxFacts:32,excludedTurnIds:excluded,signal,
+    const replay = await replayRolloutUsage({ path: canonical, nativeHome:this.nativeHome!,source,threadId,ledger:this.ledger,cursor:replayCursor,maxFacts:32,excludedTurnIds:excluded,signal,
       identity,counts:!this.port.derived,
       onAdmission: fact => {
         if (!ensure(fact.turnId)) return;

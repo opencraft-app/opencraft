@@ -9,6 +9,7 @@ import { OpenCraftTokenUsageLedger } from "../../apps/opencraft-daemon/src/token
 import { RolloutDerivedTokenUsage, DERIVED_CACHE_VERSION } from "../../apps/opencraft-daemon/src/token-usage-derived.js";
 import { TokenUsageQuery } from "../../apps/opencraft-daemon/src/token-usage-query.js";
 import { emptyUsageParserState, parseUsageEvent, retainUsageEvent } from "../../apps/opencraft-daemon/src/token-usage-derived-source.js";
+import { CodexNativeStorage } from "../../apps/opencraft-daemon/src/codex-native-storage.js";
 
 const thread="019a0000-0000-7000-8000-000000000001",turn="019a0000-0001-7000-8000-000000000001";
 const at=Date.parse("2026-10-24T00:00:00Z"),params={from:"2026-10-24",through:"2026-10-24",scope:"team"};
@@ -41,6 +42,28 @@ test("rollout totals/models, duplicate counters, live provisional use the same e
  assert.deepEqual(d.ledger.readAllocations({threadId:thread,turnId:turn}).map(x=>[x.model,x.actorId,x.tokens]),[["model-a","A","3"],["model-a","B","2"],["model-b","A","2"],["model-b","B","3"]]);
  assert.equal(snapshot(d,{actorId:"A"}).summary.tokens,"5");
  assert.equal(f.source.database.prepare("SELECT count(*) AS n FROM token_usage_sources").get()!.n,0);
+}));
+
+test("discovery and replay cover both registered HOMEs across a default switch without recounting",()=>fixture(async f=>{
+ const second="019a0000-0000-7000-8000-000000000002",secondTurn="019a0000-0001-7000-8000-000000000002";
+ const home=join(f.directory,"new-home");await mkdir(join(home,"archived_sessions"),{recursive:true});
+ const path=join(home,"archived_sessions",`rollout-2026-10-24-${second}.jsonl`);
+ await writeFile(f.path,start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2));
+ await writeFile(path,line("session_meta",{id:second,model_provider:"provider"})+line("event_msg",{type:"task_started",turn_id:secondTurn})+line("turn_context",{turn_id:secondTurn,model:"model-a"})+count("9","9")+line("event_msg",{type:"task_complete",turn_id:secondTurn},2));
+ f.ledger.startTurn({threadId:second,turnId:secondTurn},at,"human",true);
+ f.ledger.recordInput({threadId:second,turnId:secondTurn},{inputId:"B",actorId:"B",actorKind:"human",mode:"start",admission:"confirmed"});
+ let epoch=1;
+ const storage=new CodexNativeStorage({async generationDirectory(id?:string){return {protocolVersion:1,routingEpoch:"owner",admissionEpoch:epoch,
+  homes:[{generationId:"old",codexHome:f.home,incarnation:1},{generationId:"new",codexHome:home,incarnation:1}],
+  // Archived file discovery is valid before the execution router learns it.
+  route:id===second?{threadId:id,generationId:"new"}:null};}},()=>f.home);
+ const derived=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
+  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>storage.resolve(id,path,true)});
+ try{
+  await derived.discover();await drain(derived);assert.equal(snapshot(derived).summary.tokens,"14");
+  epoch++;await derived.discover();await drain(derived);assert.equal(snapshot(derived).summary.tokens,"14");
+  assert.equal(snapshot(derived,{actorId:"B"}).summary.tokens,"9");
+ }finally{derived.close();}
 }));
 
 test("cache deletion and cache semantic/schema mismatch rebuild exactly from retained rollout and trusted receipts",()=>fixture(async f=>{

@@ -1,9 +1,8 @@
-import { open, realpath } from "node:fs/promises";
-import { relative, isAbsolute } from "node:path";
+import { open } from "node:fs/promises";
 import { nativeUsageFact, nativeAcceptedInputFact, type NativeAcceptedInputFact } from "./token-usage-native-facts.js";
 import type { OpenCraftTokenUsageLedger } from "./token-usage-ledger.js";
 
-import { findNextNewline, OversizedRolloutLineError } from "@opencraft/native-history-node/codex-rollout-reader";
+import { canonicalRolloutPath, findNextNewline, OversizedRolloutLineError, RolloutOutsideHomeError, type NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 export { findNextNewline, OversizedRolloutLineError } from "@opencraft/native-history-node/codex-rollout-reader";
 
 export interface RolloutTurnIdentity {
@@ -160,6 +159,7 @@ export interface RolloutUsageResult {
 export async function replayRolloutUsage(options: {
   readonly path: string;
   readonly nativeHome: string;
+  readonly source?: NativeRolloutSource;
   readonly threadId: string;
   readonly ledger: OpenCraftTokenUsageLedger;
   readonly cursor?: number;
@@ -178,10 +178,9 @@ export async function replayRolloutUsage(options: {
   readonly counts?: boolean;
 }): Promise<RolloutUsageResult> {
   options.signal?.throwIfAborted();
-  const root = await realpath(options.nativeHome);
-  const path = await realpath(options.path);
-  const child = relative(root, path);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Usage rollout is outside native storage");
+  let path: string;
+  try { path = await canonicalRolloutPath(options.path, options.source?.nativeHome ?? options.nativeHome); }
+  catch (error) { if (error instanceof RolloutOutsideHomeError) throw new Error("Usage rollout is outside native storage"); throw error; }
   const file = await open(path, "r");
   try {
     const stat = await file.stat();
@@ -203,6 +202,8 @@ export async function replayRolloutUsage(options: {
       skipTo = await findNextNewline(file, cursor, 64 * 1024 * 1024);
     }
 
+    await options.source?.validate();
+    options.signal?.throwIfAborted();
     return options.ledger.commitReplayBatch(() => {
       const finish = (result: Omit<RolloutUsageResult, "skipped" | "oversizedFact"> & { skipped?: number; oversizedFact?: boolean }): RolloutUsageResult => {
         const full: RolloutUsageResult = { skipped: 0, oversizedFact: false, ...result };

@@ -8,6 +8,24 @@ export class OversizedRolloutLineError extends Error {
   }
 }
 
+/** Trusted Host-side binding. RPC callers never supply a native HOME. */
+export interface NativeRolloutSource {
+  readonly nativeHome: string;
+  readonly key: string;
+  /** Reject a read whose routing owner or runtime incarnation was replaced. */
+  validate(): Promise<void>;
+}
+
+export class RolloutOutsideHomeError extends Error {
+  constructor() { super("Rollout source outside native home"); }
+}
+
+export async function canonicalRolloutPath(path: string, nativeHome: string): Promise<string> {
+  const root = await realpath(nativeHome), canonical = await realpath(path), child = relative(root, canonical);
+  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new RolloutOutsideHomeError();
+  return canonical;
+}
+
 export async function findNextNewline(
   file: import("node:fs/promises").FileHandle,
   from: number,
@@ -32,6 +50,7 @@ export async function findNextNewline(
 export interface RolloutReadOptions<T> {
   path: string;
   nativeHome: string;
+  source?: NativeRolloutSource;
   cursor: number;
   identity: string | null;
   select(head: string): boolean;
@@ -48,8 +67,7 @@ export interface RolloutReadOptions<T> {
 export async function readRolloutIncrement<T>(options: RolloutReadOptions<T>): Promise<{
   cursor: number; identity: string; events: T[]; missing: boolean; more: boolean; bytes: number;
 }> {
-  const root = await realpath(options.nativeHome), path = await realpath(options.path), child = relative(root, path);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Rollout source outside native home");
+  const path = await canonicalRolloutPath(options.path, options.source?.nativeHome ?? options.nativeHome);
   const file = await open(path, "r");
   try {
     const stat = await file.stat(), identity = `${stat.dev}:${stat.ino}`;
@@ -78,6 +96,7 @@ export async function readRolloutIncrement<T>(options: RolloutReadOptions<T>): P
         cursor = end;
       }
     }
+    await options.source?.validate();
     return { cursor, identity, events, missing, more: cursor < stat.size, bytes: bytesRead };
   } finally { await file.close(); }
 }

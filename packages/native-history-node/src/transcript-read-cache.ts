@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { AppServerThread, AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
-import { readRolloutIncrement } from "./codex-rollout-reader.js";
+import { canonicalRolloutPath, readRolloutIncrement, type NativeRolloutSource } from "./codex-rollout-reader.js";
 
 export const TRANSCRIPT_PROJECTION_SCHEMA = 1;
 const OUTPUT_FIELDS = ["aggregatedOutput", "output", "result", "structuredResult", "contentItems", "results"] as const;
@@ -23,6 +23,7 @@ type Row = Record<string, any>;
 type NativePage = { data: AppServerTurn[]; nextCursor: string | null };
 export interface NativeTranscriptPort {
   nativeHome?: string;
+  resolveSource?(threadId: string, path: string): Promise<NativeRolloutSource>;
   readThread(threadId: string): Promise<AppServerThread>;
   listTurns(threadId: string, cursor: string | null, limit: number): Promise<NativePage>;
 }
@@ -140,18 +141,25 @@ export class TranscriptReadCache {
         if (cursor?.startsWith("transcript:")) throw new InvalidTranscriptCursor();
         return this.port.listTurns(threadId, cursor, limit);
       }
+      const source = this.port.resolveSource ? await this.port.resolveSource(threadId, thread.path)
+        : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
+      // Cache hits must obey the same path boundary as incremental reads.
+      const path = await canonicalRolloutPath(thread.path, source.nativeHome);
+      ensureCurrent();
       for (let attempt = 0; attempt < 2; attempt++) {
-        const started = performance.now(), observed = await this.reconcile(threadId, typeof thread.path === "string" ? thread.path : threadId);
+        const started = performance.now(), observed = await this.reconcile(threadId, path, source);
         ensureCurrent();
+        let page: ThreadTurnsListResponse;
         try {
-          const page = this.readPage(threadId, cursor, limit, itemsView);
-          this.measured?.({ ...observed, ms: performance.now() - started });
-          return page;
+          page = this.readPage(threadId, cursor, limit, itemsView);
         }
         catch (error) {
           if (error instanceof InvalidTranscriptCursor || attempt === 1) throw error;
-          this.drop(threadId);
+          this.drop(threadId); continue;
         }
+        await source.validate(); ensureCurrent();
+        this.measured?.({ ...observed, ms: performance.now() - started });
+        return page;
       }
       throw new Error("Transcript rebuild failed");
     });
@@ -237,14 +245,18 @@ export class TranscriptReadCache {
     for (const blob of old) if (!db.prepare("SELECT 1 FROM opencraft_cache_blobs WHERE thread_id=? AND blob_sha256=? LIMIT 1").get(threadId, blob.blob_sha256))
       rmSync(join(paths.blobs, `${blob.blob_sha256}.blob`), { force: true });
   }
-  private async reconcile(threadId: string, path: string): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
+  private async reconcile(threadId: string, path: string, source: NativeRolloutSource): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
     const db = this.database(), native = stamp(path);
+    native.watermark = JSON.stringify([source.key, native.watermark]);
     let meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId) as Row | undefined;
     if (meta?.projection_schema_version === this.schema && meta.source_path === path
       && meta.native_watermark === native.watermark && existsSync(this.paths(threadId).turns)) {
       return { kind: "hit", nativeBytes: 0 };
     }
+    let sameSource = false;
+    try { sameSource = JSON.parse(meta?.native_watermark ?? "null")?.[0] === source.key; } catch { /* legacy watermark */ }
     let rebuild = !meta || meta.projection_schema_version !== this.schema || meta.source_path !== path
+      || !sameSource
       || meta.source_identity !== native.identity || meta.source_cursor > native.position
       || !existsSync(this.paths(threadId).turns);
     // Same-size edits cannot be explained by an append cursor.
@@ -252,7 +264,7 @@ export class TranscriptReadCache {
     let cursor = rebuild ? 0 : Number(meta!.source_cursor), identity: string | null = rebuild ? null : meta!.source_identity;
     const dirty = new Set<string>(); let bytes = 0;
     while (cursor < native.position) {
-      const read = await readRolloutIncrement({ path, nativeHome: this.port.nativeHome!, cursor, identity,
+      const read = await readRolloutIncrement({ path, nativeHome: source.nativeHome, source, cursor, identity,
         select: head => /"type"\s*:\s*"(?:event_msg|turn_context|compacted)"/.test(head),
         retain: (row: any) => {
           const p = object(row.payload);
@@ -308,7 +320,7 @@ export class TranscriptReadCache {
     if (!rebuild) {
       // A missing boundary implies a native rewrite. Start fresh next read and
       // never publish this suffix against stale older rows.
-      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path); }
+      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path, source); }
       let next = Number(max.seq ?? -1) + 1;
       transaction(db, () => { for (const turn of fresh.reverse()) {
         const row = db.prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId, turn.id) as Row | undefined;

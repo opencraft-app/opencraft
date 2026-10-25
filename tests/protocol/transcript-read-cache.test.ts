@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { TranscriptReadCache } from "@opencraft/native-history-node";
+import { TranscriptReadCache, type NativeTranscriptPort } from "@opencraft/native-history-node";
 import { readUsageIncrement } from "../../apps/opencraft-daemon/src/token-usage-derived-source.js";
+import { CodexNativeStorage } from "../../apps/opencraft-daemon/src/codex-native-storage.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
 
 const id = "thread-large";
@@ -186,4 +187,60 @@ test("invalidating during a native rebuild fences its result and leaves no deriv
   assert.equal((await f.query("SELECT count(*) AS n FROM opencraft_cache_meta"))[0]!.n, 0);
   await assert.rejects(stat(join(f.cache.directory, `${id}.turns.jsonl`)), { code: "ENOENT" });
   assert.deepEqual(await readFile(f.path), original);
+});
+
+test("history in two registered HOMEs stays readable after default activation and cache restart", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-transcript-generations-"));
+  const entries = new Map<string, { home: string; path: string; turns: AppServerTurn[] }>();
+  for (const [threadId, count] of [["old-thread", 3], ["new-thread", 4]] as const) {
+    const home = join(root, threadId); await mkdir(home);
+    const path = join(home, "rollout.jsonl"), turns = Array.from({ length: count }, (_, i) => turn(i));
+    await writeFile(path, turns.map(t => line(t.id)).join("")); entries.set(threadId, { home, path, turns });
+  }
+  let epoch = 1;
+  const storage = new CodexNativeStorage({ async generationDirectory(threadId?: string) {
+    return { protocolVersion: 1, routingEpoch: "owner", admissionEpoch: epoch,
+      homes: [...entries].map(([generationId, entry]) => ({ generationId, codexHome: entry.home, incarnation: 1 })),
+      route: threadId && entries.has(threadId) ? { threadId, generationId: threadId } : null };
+  } }, () => entries.get("old-thread")!.home);
+  const port: NativeTranscriptPort = {
+    nativeHome: entries.get("old-thread")!.home,
+    resolveSource: (threadId, path) => storage.resolve(threadId, path),
+    readThread: async threadId => ({ id: threadId, path: entries.get(threadId)!.path, turns: [] }),
+    listTurns: async (threadId, cursor, limit) => {
+      const turns = entries.get(threadId)!.turns.slice().reverse(), start = Number(cursor ?? 0);
+      return { data: turns.slice(start, start + limit), nextCursor: start + limit < turns.length ? String(start + limit) : null };
+    },
+  };
+  let cache = new TranscriptReadCache(root, port);
+  t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
+  for (const [threadId, entry] of entries) assert.deepEqual((await cache.read(threadId)).initialTurnsPage.data, entry.turns.slice().reverse());
+  epoch++;
+  await cache.close(); cache = new TranscriptReadCache(root, port);
+  for (const [threadId, entry] of entries) assert.deepEqual((await cache.read(threadId)).initialTurnsPage.data, entry.turns.slice().reverse());
+});
+
+test("a warm cache never bypasses a changed HOME boundary", async t => {
+  const f = await fixture(t, 3); await f.cache.read(id);
+  f.port.nativeHome = join(f.root, "other"); await mkdir(f.port.nativeHome);
+  await assert.rejects(f.cache.read(id), /outside native home/);
+});
+
+test("late cached replies are rejected after routing owner replacement", async t => {
+  const f = await fixture(t, 20); let epoch = 1, held = false;
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
+  (f.port as NativeTranscriptPort).resolveSource = async () => {
+    const captured = epoch;
+    return { nativeHome: f.home, key: String(captured), validate: async () => {
+      if (held) { enter(); await gate; }
+      if (epoch !== captured) throw new Error("Native storage owner changed during read");
+    } };
+  };
+  const first = await f.cache.read(id); held = true;
+  const reading = f.cache.read(id), rejected = assert.rejects(reading, /owner changed/);
+  await entered; epoch++; held = false; release(); await rejected;
+  f.source.push(turn(20)); await appendFile(f.path, line("turn-20"));
+  await assert.rejects(f.cache.page(id, first.initialTurnsPage.nextCursor), /expired/);
+  assert.deepEqual((await f.cache.read(id)).initialTurnsPage.data, f.source.slice(-10).reverse());
 });
