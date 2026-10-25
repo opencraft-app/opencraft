@@ -23,6 +23,7 @@
 | 本机项目目录选择 | `npm run test:projects` | `npm run smoke:project-picker`：显式提供已签名预览的 `OPENCRAFT_PROJECT_PICKER_EXECUTABLE`，使用隔离项目/profile；系统点击取消单独人工验收 |
 | Mac 语音输入 | `npm run test:native-speech`；构建native helper后运行 `npm run test:native-speech:lifecycle`；`npm run gate` | `npm run smoke:native-speech`、`npm run smoke:dictation-interaction`：显式设置 `OPENCRAFT_NATIVE_SPEECH_EXECUTABLE`，隔离profile的真实无录音probe与合成多片段helper验证原草稿/选区不变、final-only一次插入、取消/换草稿/设置持久化；真实权限、识别与task音频交接须另获授权，不能用合成结果冒充 |
 | 自适应面板 | `npm run test:adaptive-navigation` | 实际容器缩窄、内部 Back、重挂载后的草稿/滚动/焦点 |
+| Newera 手机浏览器工具栏、Agent 和标签页 | `npm run test:shell-space` | `npm run smoke:workspace-presentation`；`OPENCRAFT_SMOKE_BROWSER=webkit npm run smoke:workspace-presentation` 使用已安装的匹配 WebKit，验证真实组件触屏布局、尺寸收敛、安全区和原草稿/页面保留。键盘端口为模拟能力，不能证明 iPhone/Android 的系统弹盘 |
 | 听写写入所有权 | `npm run test:native-speech` | `npm run smoke:dictation-ownership` 使用真实Core/OpenCraftComposer/Voice组件，只替换ASR边界，验证旧选区不被替换、内容代次失效、reservation丢失/reentrant写入拒绝不发送；再以独立签名桌面跑正常链路 |
 | 协议/Host/会话 | `npm run check:boundaries`；按边界选择 `test:appserver`、`test:dsh-bridge`、`test:chat` | 相应运行时或回放路径；断线重连、晚到帧、宿主/会话切换 |
 | Terminal 字符网格/排版 | `npx tsx --test tests/shell/workbench-terminal.test.ts`（含真实 PTY） | `npm run smoke:terminal-geometry`（需已安装 agent-browser）：真实 Panel/xterm，旧继承负例、DPR 1/2、字距/宽字符/resize/字体/显隐；再量当前 Electron 的字符 Range、光标、screen/host，不向用户 shell 发送测试命令 |
