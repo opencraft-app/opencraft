@@ -160,6 +160,9 @@ try {
   const activateAt = Date.now(); await admin("activate", { id: "new", expectedEpoch: 1 }); await writeFile(markers.barrier, "switched");
   const fresh = await turn("NEW-THREAD"); await completed(fresh);
   const routes = (await admin()).fences.routes;
+  const homeDirectory = await control.generationDirectory(fresh.threadId);
+  assert.equal(homeDirectory!.route!.generationId, "new");
+  assert.deepEqual(new Set(homeDirectory!.homes.map(home => home.codexHome)), new Set([join(definition("old", executionOldCli).runtimeDataDirectory, "runtime"), join(definition("new", executionNewCli).runtimeDataDirectory, "runtime")]));
   assert.equal(routes.find((r: any) => r.threadId === fresh.threadId).generationId, "new");
   assert.ok([stream, shell].every(ids => routes.find((r: any) => r.threadId === ids.threadId).generationId === "old"));
   // Default rollback preserves all new-generation writes and leaves old running tasks intact.

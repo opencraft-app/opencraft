@@ -344,6 +344,7 @@ test("core owns accounts and PID across independent daemon clients and zero conn
   const f = await fixture();
   try {
     const before = await f.control.health();
+    assert.equal(await f.control.generationDirectory("legacy-thread"), null, "combined Core needs no new endpoint for legacy compatibility");
     assert.equal((await stat(f.core.endpoint)).mode & 0o777, 0o600);
     assert.equal((await stat(before.nativeSocket)).mode & 0o777, 0o600);
     await assert.rejects(new CodexCoreControlClient(f.core.endpoint, "wrong").health(), /authentication failed/);

@@ -2,7 +2,7 @@ import { canonicalGenerationPath } from "./generation-files.js";
 import { randomUUID } from "node:crypto";
 import { realpath, readFile, stat } from "node:fs/promises";
 import { join, sep, dirname } from "node:path";
-import type { CodexAppServerHealth, CodexGenerationHostUsage, CodexGenerationFenceState } from "@opencraft/account-pool-host";
+import type { CodexAppServerHealth, CodexGenerationHostUsage, CodexGenerationFenceState, CodexGenerationDirectory } from "@opencraft/account-pool-host";
 import { CodexGenerationRegistry, type GenerationDefinition, type GenerationRecord, type GenerationTicket } from "./generation-registry.js";
 import { GenerationPeer, NativeGenerationError, rpcRecord, type RpcRecord } from "./generation-peer.js";
 import type { GenerationRuntimeDirectory } from "./generation-router.js";
@@ -38,6 +38,13 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
   }
   private now(): number { return this.options.now?.() ?? Date.now(); }
+  directory(threadId?: string): CodexGenerationDirectory {
+    const generations = this.registry.list().filter(generation => generation.state !== "discarded");
+    const route = threadId === undefined ? null : this.registry.route(threadId);
+    return { protocolVersion: 1, routingEpoch: this.registry.ownerEpoch, admissionEpoch: this.registry.epoch(),
+      homes: generations.map(generation => ({ generationId: generation.id, codexHome: join(generation.runtimeDataDirectory, "runtime"), incarnation: generation.incarnation })),
+      route: route ? { threadId: threadId!, generationId: route.generationId } : null };
+  }
   async prepare(definition: GenerationDefinition, legacy = false): Promise<GenerationRecord> {
     if (this.closed) throw new Error("Generation runtime is closing");
     const executionUid = this.options.executionUid ?? process.getuid!(), executionGid = this.options.executionGid ?? process.getgid!();

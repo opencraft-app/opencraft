@@ -47,6 +47,15 @@ export interface CodexGenerationFenceState {
   readonly routes?: readonly { threadId: string; generationId: string }[];
 }
 
+/** Trusted native-storage locations, owned by the routing registry, without file contents. */
+export interface CodexGenerationDirectory {
+  readonly protocolVersion: typeof CODEX_CORE_PROTOCOL_VERSION;
+  readonly routingEpoch: string;
+  readonly admissionEpoch: number;
+  readonly homes: readonly { generationId: string; codexHome: string; incarnation: number }[];
+  readonly route: { threadId: string; generationId: string } | null;
+}
+
 /** Temporary control-plane outage; callers may wait before starting execution. */
 export class CodexCoreUnavailableError extends Error {}
 
@@ -98,6 +107,24 @@ export class CodexCoreControlClient {
   }
   publishGenerationHost(value: CodexGenerationHostUsage, signal?: AbortSignal): Promise<CodexGenerationFenceState> {
     return this.request("POST", "/generation-host", { operation: "state", params: value }, signal) as Promise<CodexGenerationFenceState>;
+  }
+
+  /** A read never claims the Host lease or starts a retired native HOME. Legacy owners return null. */
+  async generationDirectory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
+    const health = await this.health(signal);
+    if (!health.routingEpoch) return null;
+    const path = "/generation-directory" + (threadId === undefined ? "" : `?threadId=${encodeURIComponent(threadId)}`);
+    const value = await this.request("GET", path, undefined, signal) as CodexGenerationDirectory | null;
+    if (value?.routingEpoch !== health.routingEpoch) throw new CodexCoreUnavailableError("Codex routing owner changed during directory read");
+    if (value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION || !Number.isSafeInteger(value.admissionEpoch) || value.admissionEpoch < 1
+      || !Array.isArray(value.homes) || !value.homes.every(home => home && typeof home.generationId === "string"
+        && typeof home.codexHome === "string" && isAbsolute(home.codexHome) && Number.isSafeInteger(home.incarnation) && home.incarnation >= 0)
+      || new Set(value.homes.map(home => home.generationId)).size !== value.homes.length
+      || new Set(value.homes.map(home => home.codexHome)).size !== value.homes.length
+      || (value.route !== null && (!value.route || value.route.threadId !== threadId || !value.homes.some(home => home.generationId === value.route!.generationId)))) {
+      throw new Error("Incompatible Codex generation directory");
+    }
+    return value;
   }
 
   private request(method: string, path: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {

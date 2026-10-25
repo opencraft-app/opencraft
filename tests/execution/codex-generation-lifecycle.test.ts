@@ -8,6 +8,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { CodexGenerationRuntime } from "../../apps/codex-core/src/generation-runtime.js";
 import type { GenerationSupervisor, GenerationProcessIdentity } from "../../apps/codex-core/src/generation-supervisor.js";
 import type { GenerationRecord } from "../../apps/codex-core/src/generation-registry.js";
+import { CodexCoreControlClient, CodexCoreUnavailableError } from "@opencraft/account-pool-host";
+import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-life-"));
@@ -63,6 +65,37 @@ test("Host queue and Native goal keep the old owner serving without installing a
     f.publish(); f.native.get("old")!.goal = true;
     assert.deepEqual((await f.runtime.retire("old")).reasons, ["native-goal"]); assert.deepEqual(f.runtime.fences().fencedGenerationIds, []);
   } finally { await f.close(); }
+});
+
+test("native HOME directory resolves old and new Threads without waking retired writers or taking the Host lease", async () => {
+  const f = await fixture();
+  try {
+    f.runtime.registry.discover("new-thread", "new");
+    const old = f.runtime.directory("old-thread"), current = f.runtime.directory("new-thread");
+    assert.equal(old.routingEpoch, f.runtime.registry.ownerEpoch); assert.equal(old.admissionEpoch, 2);
+    assert.deepEqual(old.route, { threadId: "old-thread", generationId: "old" });
+    assert.deepEqual(current.route, { threadId: "new-thread", generationId: "new" });
+    assert.equal(new Set(old.homes.map(home => home.codexHome)).size, 2);
+    const leaseBefore = f.runtime.registry.metadata("host-usage");
+    const retiring = f.runtime.retire("old"); await f.waitFence(); f.publish(); await retiring;
+    const leaseAfterRetirement = f.runtime.registry.metadata("host-usage");
+    assert.equal(f.running.has("old"), false);
+    assert.equal(f.runtime.directory("old-thread").homes.find(home => home.generationId === "old")!.codexHome,
+      old.homes.find(home => home.generationId === "old")!.codexHome);
+    assert.equal(f.running.has("old"), false, "a directory read cannot cold-open an old HOME");
+    assert.deepEqual(f.runtime.registry.metadata("host-usage"), leaseAfterRetirement, "readers cannot replace the Host lease");
+    assert.equal((leaseBefore as any).lease, (leaseAfterRetirement as any).lease);
+    assert.equal(f.runtime.directory("unknown-thread").route, null);
+  } finally { await f.close(); }
+});
+
+test("a native HOME directory from a replacement routing owner cannot satisfy an earlier read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-directory-epoch-")), token = "synthetic-directory-token".repeat(3), endpoint = join(root, "control.sock");
+  const control = await startControlServer(endpoint, token, async request => ({ status: 200, value: request.url === "/health"
+    ? { protocolVersion: 1, pid: 1, codexPid: 2, nativeSocket: join(root, "native.sock"), routingEpoch: "before" }
+    : { protocolVersion: 1, routingEpoch: "replacement", admissionEpoch: 2, homes: [{ generationId: "new", codexHome: "/native/new/runtime", incarnation: 1 }], route: null } }));
+  try { await assert.rejects(new CodexCoreControlClient(endpoint, token).generationDirectory("old-thread"), CodexCoreUnavailableError); }
+  finally { await control.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("work accepted before a Host fence is visible in the acknowledgement and prevents retirement", async () => {
