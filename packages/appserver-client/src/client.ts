@@ -88,6 +88,7 @@ interface PendingRequest {
   resolve(value: unknown): void;
   reject(error: Error): void;
   timerId: ReturnType<typeof globalThis.setTimeout> | null;
+  timerTicket: number;
   removeAbortListener(): void;
 }
 
@@ -372,18 +373,13 @@ export class JsonRpcAppServerClient implements AppServerClient {
         timeoutMs,
         resolve: (value) => resolve(value as TResult),
         reject,
-        timerId: timeoutMs > 0
-          ? this.clock.setTimeout(() => {
-              this.rejectPending(
-                id,
-                new AppServerClientError("TIMEOUT", `AppServer request ${method} timed out after ${timeoutMs} ms`),
-                "timed-out",
-              );
-            }, timeoutMs)
-          : null,
+        timerId: null,
+        timerTicket: 0,
         removeAbortListener: () => options.signal?.removeEventListener("abort", abort),
       };
       this.pending.set(id, pending);
+      if (timeoutMs > 0) this.armRequestTimeout(pending, timeoutMs,
+        `AppServer request ${method} timed out after ${timeoutMs} ms`);
       this.emitRequestLifecycle({
         type: "queued",
         hostId: this.hostId,
@@ -710,10 +706,20 @@ export class JsonRpcAppServerClient implements AppServerClient {
       // the matching thread and never beyond a bounded absolute deadline.
       const remaining = Math.max(0, pending.startedAtMs + Math.max(pending.timeoutMs, 180_000) - this.clock.now());
       const delay = started ? remaining : Math.min(remaining, pending.timeoutMs);
-      if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
-      pending.timerId = this.clock.setTimeout(() => this.rejectPending(pending.id,
-        new AppServerClientError("TIMEOUT", `AppServer request ${pending.method} timed out during context preparation`), "timed-out"), delay);
+      this.armRequestTimeout(pending, delay,
+        `AppServer request ${pending.method} timed out during context preparation`);
     }
+  }
+
+  private armRequestTimeout(pending: PendingRequest, delayMs: number, message: string): void {
+    // Fence even clock adapters that may deliver retired callbacks. The request
+    // object and its timer revision must both still own the timeout decision.
+    const ticket = ++pending.timerTicket;
+    if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
+    pending.timerId = this.clock.setTimeout(() => {
+      if (this.pending.get(pending.id) !== pending || pending.timerTicket !== ticket) return;
+      this.rejectPending(pending.id, new AppServerClientError("TIMEOUT", message), "timed-out");
+    }, delayMs);
   }
 
   private rejectPending(
@@ -741,6 +747,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
 
   private cleanupPending(id: JsonRpcId, pending: PendingRequest): void {
     this.pending.delete(id);
+    ++pending.timerTicket;
     if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
     pending.removeAbortListener();
   }

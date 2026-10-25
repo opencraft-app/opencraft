@@ -16,6 +16,37 @@ const cancellation: ChaosEvent[] = [
   {type:"late",host:"a"},
   {type:"heal"},
 ];
+test("chaos: queued obsolete RPC timeout cannot end context preparation",async()=>{
+  const result=await simulateRecovery([
+    {type:"hold",host:"a",boundary:"response",value:true},
+    {type:"request",host:"a"},{type:"preparing",host:"a"},{type:"freeze",ms:31},{type:"stale-timer"},
+  ]);
+  assert.equal(result.coverage["mutation-applied"],1);
+  assert.equal(result.coverage["mutation-ack"],1);
+});
+test("chaos: applied mutation with a lost ACK is never replayed during reconnection",async()=>{
+  const result=await simulateRecovery([
+    {type:"hold",host:"a",boundary:"response",value:true},{type:"request",host:"a"},
+    {type:"network",up:false},{type:"network",up:true},{type:"heal"},{type:"late",host:"a"},
+    {type:"request",host:"a"},
+  ]);
+  assert.equal(result.coverage["mutation-applied"],2);
+  assert.equal(result.coverage["mutation-ack-lost"],1);
+  assert.equal(result.coverage["mutation-ack"],1);
+});
+test("chaos: a mutation replay mutant is detected against real request traffic",async()=>{
+  const events:ChaosEvent[]=[{type:"request",host:"a"}];
+  await assert.rejects(simulateRecovery(events,{mutant:"replay-mutation"}),error=>error instanceof ChaosViolation && error.rule==="NO_REPLAY");
+  await simulateRecovery(events);
+});
+test("chaos: cancellation and late ACK do not change a subsequent request",async()=>{
+  const result=await simulateRecovery([
+    {type:"hold",host:"a",boundary:"response",value:true},{type:"request",host:"a"},
+    {type:"cancel-request",host:"a"},{type:"request",host:"a"},
+    {type:"preparing",host:"a"},{type:"prepared",host:"a"},{type:"stale-timer"},
+  ]);
+  assert.equal(result.coverage["mutation-applied"],2);
+});
 test("chaos: reduced cancelled-initialization regression does not wait for held close",async()=>{
   await simulateRecovery([
     {type:"network",up:false},

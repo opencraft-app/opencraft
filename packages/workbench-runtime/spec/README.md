@@ -91,7 +91,7 @@ for production stage observations, budgets and environmental limits.
 The [chaos simulator](../../../tests/protocol/fixtures/recovery-chaos.ts) drives the
 actual connection owner, JSON-RPC client and Deferred transport against isolated
 physical leases. It controls two Hosts sharing route availability, admission,
-dial/initialize/close completion, frozen timer delivery, stale frames, cancelled
+dial/initialize/response/close completion, frozen timer delivery, stale frames, cancelled
 timers, manual blocks and disposal. It does not connect to a live service.
 
 ```sh
@@ -110,14 +110,43 @@ a delta-reduced trace preserving the same violated rule (at most 100 shrink
 trials). A reduced trace is not guaranteed globally shortest. Replay rejects
 invalid event types, Hosts, boundaries and elapsed values.
 
+`request`, `cancel-request`, `preparing` and `prepared` events drive real client
+RPC handling with synthetic `turn/start` intents and context-compaction
+notifications. The server applies each explicit intent on receipt, while
+`hold response` delays its ACK independently. A network loss can therefore leave
+an applied write with no received ACK. The oracle forbids a second send for that
+intent, correlates replies and checks that a superseded timeout cannot reject a
+request before its current deadline. The fault clock deliberately permits
+retired callbacks; standard browser timers check cancellation themselves, so
+this is adapter hardening rather than a reproduced browser race. Stale delivery requires its original
+due time to have elapsed. Generated event counts and effective boundary coverage
+are separate. Generator version 2 and source hashes accompany CLI artifacts;
+explicit event traces remain replayable independently of generator changes.
+
 Use `--mutant sticky-initialize` as a negative control: it retains the first client
 operation, must exit nonzero and saves a replayable failure. Add that flag when
 reproducing the mutant, omit it when verifying the fix against its trace. Coverage
 includes effective held boundaries and physical opens, not just generated fault
 requests. Normal recovery tests include a fixed seed corpus and shrink/replay
 checks. Wider runs are explicit, reproducible and need no runtime dependency.
+`--mutant replay-mutation` deliberately sends a user intent twice and must fail
+with `NO_REPLAY`; replay its events without the flag to verify normal behavior.
 
 This is finite fault sampling, not a refinement proof, a real phone or an actual
 multiplexed socket implementation. Existing Web/AppHost tests exercise the real
-shared-socket adapter. The synthetic send oracle permits initialization only;
-it does not establish exactly-once semantics for a lost mutation acknowledgment.
+shared-socket adapter. The send oracle admits initialization and explicitly
+recorded synthetic writes. At-most-one send by this
+client is not end-to-end exactly-once execution or safe retry of an uncertain write.
+
+## RPC timer ownership
+
+`RequestTimers.tla` separately models two request incarnations, extension and
+shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
+Only due callbacks can run. The ordinary verifier also runs its positive
+safety/liveness specification and three exact negative controls: stale timer,
+stale request and missing fairness. The total suite has 18 configurations.
+This small model is independent of `Recovery.tla` and is not a composition or
+implementation refinement proof. The executable reduced regression holds an ACK,
+starts context preparation, freezes past the original 30ms deadline and delivers
+that retired timer; the earlier client rejects before the new 180s deadline under
+this adversarial clock. It does not reproduce the phone's original slowdown.
