@@ -40,7 +40,7 @@ export interface HydratedThreadHistory {
   complete: boolean;
   olderCursor: string | null;
   itemsPaginationByTurnId: Readonly<Record<string, ThreadItemsPagination>>;
-  drainRemaining?: () => Promise<readonly AppServerTurn[]>;
+  drainRemaining?: (signal?: AbortSignal) => Promise<readonly AppServerTurn[]>;
 }
 
 export interface ThreadHistoryStrategy {
@@ -460,7 +460,7 @@ export function registerBuiltinThreadHistoryStrategies(ctx: Context): () => void
           olderCursor,
           itemsPaginationByTurnId: {},
           ...(olderCursor === null ? {} : {
-            drainRemaining: () => drainTailHistory(context, olderCursor),
+            drainRemaining: signal => drainTailHistory({ ...context, signal: signal ?? context.signal }, olderCursor),
           }),
         };
       },

@@ -1273,6 +1273,7 @@ export function createAppServerWorkbenchRuntime(
       binding.cancelHydration?.();
       binding.phase = "error";
       binding.replica.disconnect();
+      session?.resume.markNeedsResume(threadId);
       binding.replica.reportSyncFailure(failure);
     }
     for (const listener of unavailableListeners) {

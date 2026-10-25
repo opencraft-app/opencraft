@@ -49,3 +49,32 @@ test("logical Host reconnect reads a fresh baseline before a retired same-genera
   a.release();b.release();
  }finally{firstReply?.();await runtime.dispose();}
 });
+
+test("Thread archival retires a pending older-page wait without reconnecting its Host", { timeout: 5000 }, async () => {
+  let reply: (() => void) | undefined;
+  let peer: import("@opencraft/appserver-transport-memory").InMemoryAppServerPeer | undefined;
+  let closes = 0;
+  const transport = new MemoryTransport({ receive(frame, currentPeer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    peer = currentPeer;
+    const send = (value: unknown) => currentPeer.send(encodeJsonRpcMessage({ id: request.id, result: value }));
+    if (request.method === "initialize") send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "archive-reader" });
+    else if (request.method === "thread/read") { const page = result("a", "current"); send({ ...page, initialTurnsPage: { ...page.initialTurnsPage, nextCursor: "older" } }); }
+    else if (request.method === "thread/turns/list") reply = () => send({ data: result("a", "retired-older").initialTurnsPage.data, nextCursor: null });
+    else send(request.method.endsWith("/list") ? { data: [], nextCursor: null } : {});
+  } });
+  const close = transport.close.bind(transport); transport.close = async () => { closes++; await close(); };
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "archive-reader", transport, autoReconnect: false, requestTimeoutMs: 60_000, onRecoveryEvent() {} });
+  try {
+    await runtime.connect(); const a = await runtime.acquireThread("a"); a.setRecoveryVisibility(true);
+    for (let i = 0; i < 20 && !a.getSnapshot().authoritative; i++) await flush(); assert.equal(a.getSnapshot().authoritative, true);
+    let settled = false;
+    const loading = a.loadOlder().then(() => { settled = true; }, () => { settled = true; });
+    for (let i = 0; i < 20 && !reply; i++) await flush(); assert.ok(reply); assert.ok(peer);
+    peer.send(encodeJsonRpcMessage({ method: "thread/archived", params: { threadId: "a" } }));
+    for (let i = 0; i < 8; i++) await flush();
+    assert.equal(settled, true, "unavailable Thread must settle its retired local page wait before the remote reply");
+    assert.equal(a.getSnapshot().authoritative, false); assert.equal(runtime.getSnapshot().phase, "ready"); assert.equal(closes, 0);
+    await loading; a.release();
+  } finally { reply?.(); await runtime.dispose(); }
+});

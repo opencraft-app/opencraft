@@ -43,6 +43,12 @@ CASES = [
     ('HydrationHandoff-Cleanup', 'SuccessorSlots'),
     ('HydrationHandoff-Settlement', 'CancelledWaiterSettles'),
     ('HydrationHandoff-NoFairness', 'temporal:HydrationRecovery'),
+    ('DerivedHistory', None),
+    ('DerivedHistory-Dependency', 'NoFutureDependency'),
+    ('DerivedHistory-Settlement', 'RetiredSettles'),
+    ('DerivedHistory-Cleanup', 'CurrentSlots'),
+    ('DerivedHistory-Intent', 'IndependentIntent'),
+    ('DerivedHistory-NoFairness', 'temporal:DerivedTermination'),
 ]
 
 

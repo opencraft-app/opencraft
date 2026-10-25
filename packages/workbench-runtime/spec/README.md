@@ -144,7 +144,7 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 33 configurations,
+stale request and missing fairness. The total suite has 39 configurations,
 including the history and hydration checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
@@ -197,7 +197,7 @@ server cancellation of a read.
 | --- | --- | --- |
 | Host admission and initialization | Recovery model, real Web/AppHost regressions, Host/client/Deferred chaos | Full seeded chaos through the actual shared-socket adapter |
 | RPC deadline replacement and uncertain writes | RequestTimers model, real client and synthetic ACK-loss oracle | Server execution deduplication / end-to-end exactly-once are outside this proof |
-| History scheduling and reentry | HistoryReentry model, owner chaos, Runtime regressions; revocable read/resume handoff below | Prompt cancellation of independent older-page/refresh operations |
+| History scheduling and reentry | HistoryReentry/DerivedHistory models; owner chaos; real Session derived cancellation regressions | Randomized derived strategy/observer faults beyond the targeted regressions |
 | Thread baseline authority | Recovery/HydrationHandoff abstractions; seeded actual Workbench/Session/Replica baseline composition | Randomized notification/projection interleavings and provider-specific live data |
 | Browser suspension | Installed full Web freeze/restart/draft smoke | Physical iPhone lifecycle and network behavior |
 
@@ -236,3 +236,26 @@ randomize all notification/projection actions or replace the actual shared-socke
 adapter. Read/resume regressions also cover ignored cancellation, strategy late
 success/failure, buffer isolation, abort reentry, joining-wait cancellation,
 preflight cancellation and retirement of older/background history contexts.
+
+
+## Derived history dependency order
+
+`DerivedHistory.tla` models three operations alternating older/refresh kinds.
+Admission reserves a per-kind slot before asynchronous preparation, and captures
+only an existing predecessor. Same-kind work coalesces. The dependency must always
+point to an earlier admission; recording it after an await can introduce a cycle.
+Cancellation settles local callers and releases only their own slot. A retired
+RPC/strategy may never reply, while fair current work can continue after its
+predecessor settles. The next independently requested operation does not inherit
+that predecessor's cancellation. Five controls introduce a future dependency,
+silent local retirement, stale slot cleanup, inherited cancellation or missing
+fairness. Each must fail at its named invariant/temporal property.
+
+Real Session tests hold cooperative RPCs and deliberately uncooperative strategies,
+then exercise baseline replacement, needs-resume, release, disposal, initiating
+and joining signals, queued cancellation, same-source successors, late failures
+and peer Thread isolation. The optional derived projection module is checked
+outside the startup graph; a full built Web smoke opens a real conversation,
+loads older history, preserves its draft and sends no execution writes. These
+finite models and deterministic counterexamples do not extend existing seeded
+chaos coverage to every notification, provider or physical device behavior.

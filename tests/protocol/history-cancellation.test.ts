@@ -158,7 +158,7 @@ for (const older of [false, true]) test(`fresh Read retires an old Resume ${olde
     loadOlder: () => new Promise(done => { release = done; }) });
   try {
     await h.session.resume.resume({ threadId: "a" });
-    const pending = older ? h.session.resume.loadOlder("a") : h.session.resume.waitForBackgroundHistory("a");
+    const pending = older ? h.session.resume.loadOlder("a").catch(error => { assert.equal(aborted(error), true); }) : h.session.resume.waitForBackgroundHistory("a");
     await flush();
     await h.session.resume.read("a");
     const stale = { id: "retired-turn", status: "completed", items: [{ id: "retired-item", type: "agentMessage", text: "retired-older-body" }] };
