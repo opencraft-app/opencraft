@@ -27,20 +27,24 @@ try{
   await page.addInitScript('window.__name=value=>value');await page.goto(origin+'/?push=1');
   await page.waitForFunction(()=>!!(window as any).__turnNotificationFixture);
   await page.evaluate(mode=>(window as any).__turnNotificationFixture.theme(mode),scheme);
-  const toggle=page.getByRole('switch',{name:'后台轮次通知',exact:true});await toggle.waitFor();
-  await page.waitForFunction(()=>!document.querySelector('[aria-label="后台轮次通知"]')?.hasAttribute('disabled'));
-  assert.equal(await toggle.getAttribute('aria-checked'),'false');await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="后台轮次通知"]')?.getAttribute('aria-checked')==='true');
+  const toggle=page.getByRole('switch',{name:'轮次结束提醒',exact:true});await toggle.waitFor();
+  assert.equal(await toggle.count(),1);assert.equal(await page.getByRole('switch',{name:'后台轮次通知',exact:true}).count(),0);
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="轮次结束提醒"]')?.hasAttribute('disabled'));
+  assert.equal(await toggle.getAttribute('aria-checked'),'false');await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='true');
   assert.equal(calls.find(c=>c.operation==='subscribe').messages.completed,'OpenCraft · 本轮已完成');
   await page.getByRole('button',{name:'发送测试通知',exact:true}).click();await page.getByText('测试通知已提交推送服务，请查看设备通知。').waitFor();
   assert.equal(calls.filter(c=>c.operation==='test').length,1);
   await page.screenshot({path:join(artifacts,`${width}-${scheme}-enabled.png`),fullPage:true});
-  await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="后台轮次通知"]')?.getAttribute('aria-checked')==='false');assert.equal(enabled,false);
+  await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='false');assert.equal(enabled,false);
   fail=true;await toggle.click();await page.getByText('未能更新推送通知。请检查网络连接和通知权限后重试。').waitFor();assert.equal(await toggle.getAttribute('aria-checked'),'false');
-  fail=false;await page.getByRole('button',{name:'重新连接',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[aria-label="后台轮次通知"]')?.hasAttribute('disabled'));
+  fail=false;await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='true');
+  await page.reload();await toggle.waitFor();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='true');
+  await page.waitForFunction(()=>(window as any).__turnNotificationFixture.notificationSettings().delivery==='background');
+  assert.equal(await toggle.count(),1);await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='false');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.deepEqual(errors,[]);await context.close();
  }
- const ordinary=await browser.newContext();const ordinaryPage=await ordinary.newPage();await ordinaryPage.addInitScript('window.__name=value=>value');await ordinaryPage.goto(origin);await ordinaryPage.getByRole('switch',{name:'轮次结束提醒',exact:true}).waitFor();assert.equal(await ordinaryPage.getByRole('switch',{name:'后台轮次通知',exact:true}).count(),0);await ordinary.close();
- await writeFile(join(artifacts,'evidence.json'),JSON.stringify({result:'pass',widths:[390,1200],deviceAndPushService:'synthetic boundaries',real:['ChatSettings','IntlRuntime','PwaTurnPushController','preferences','DOM','touch context'],physicalIPhone:false},null,2));
+ const ordinary=await browser.newContext();const ordinaryPage=await ordinary.newPage();await ordinaryPage.addInitScript('window.__name=value=>value');await ordinaryPage.goto(origin);await ordinaryPage.getByRole('switch',{name:'轮次结束提醒',exact:true}).waitFor();assert.equal(await ordinaryPage.getByRole('switch',{name:'后台轮次通知',exact:true}).count(),0);assert.equal(await ordinaryPage.getByRole('switch',{name:'轮次结束提醒',exact:true}).count(),1);await ordinary.close();
+ await writeFile(join(artifacts,'evidence.json'),JSON.stringify({result:'pass',widths:[390,1200],deviceAndPushService:'synthetic boundaries',real:['ChatSettings','IntlRuntime','TurnNotificationController','PwaTurnPushController','preferences','DOM','touch context'],physicalIPhone:false},null,2));
  console.log(`PASS PWA push settings: enrollment, localized payload, test acknowledgement, unsubscribe, failure/retry, ordinary-browser exclusion and responsive layout. ${artifacts}`);
 }finally{await browser?.close();await vite.close();}

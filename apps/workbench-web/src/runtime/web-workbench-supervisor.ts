@@ -14,7 +14,7 @@ import { TurnCompletionObserver, WORKBENCH_RESOURCE_POLICIES } from "@opencraft/
 import { ApplicationBrandingRegistry } from "./application-branding";
 import { createApplicationDisposer, disposeOwnedSteps } from "./application-disposal";
 import { BrowserThreadAttention } from "./browser-thread-attention";
-import { BrowserTurnNotifications } from "./browser-turn-notifications";
+import { TurnNotificationController } from "./turn-notification-controller";
 import { FixedHostProfileStore } from "./fixed-host-profile-store";
 import { ImageEditorContributionRegistry } from "./image-editor-contributions";
 import { IdentityAvatarContributionRegistry } from "./identity-avatar-contributions";
@@ -173,7 +173,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => appServerRegistry.dispose());
     const turnCompletions = new TurnCompletionObserver(appServerRegistry.clients);
     startupRollback.push(() => turnCompletions.dispose());
-    const turnNotifications = new BrowserTurnNotifications(undefined, options.pushDevice);
+    const turnNotifications = new TurnNotificationController(options.pushDevice);
     startupRollback.push(() => turnNotifications.dispose());
     const agentRuntimes = new AgentRuntimeDirectory();
     const botConversations = await createCordisBotConversationRuntime(cordis);

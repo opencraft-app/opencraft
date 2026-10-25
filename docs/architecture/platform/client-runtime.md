@@ -64,8 +64,11 @@ Screen document exposing notification/push APIs. Ordinary Web, Electron,
 embedded/native-container and other installed-app hosts expose no such port in
 this implementation. The port owns browser permission and subscription mechanics;
 its disposal releases document ownership without cancelling persistent consent.
-PwaTurnPushController belongs to the Application and coordinates the current
-server/Actor registration. React consumes its snapshot and invokes explicit
-user actions. The server alone observes execution and owns notification delivery.
+TurnNotificationController belongs to the Application and owns the one notification
+feature exposed in Settings. It composes the page display adapter and
+PwaTurnPushController, which coordinates current server/Actor registration.
+The existing preference store remains its owner; the controller projects effective
+consent, permission, delivery and pending/error state. React consumes that unified
+snapshot and invokes one explicit enable/disable action. The server alone observes execution and owns notification delivery.
 See [Web Push](../../web-push.md) for the subscription, authorization and outbox
 contract. Runtime or DOM identity never authorizes a push subscription on the server.

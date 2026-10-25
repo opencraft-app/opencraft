@@ -25,6 +25,7 @@ export class PwaTurnPushController {
   constructor(private readonly device: PushDevicePort, private readonly fetcher: typeof fetch=serverFetch) {}
   getSnapshot=()=>this.snapshot;
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
+  available() {return this.configuration !== null;}
   handles(hostId:string) {return this.snapshot.enabled && this.configuration?.hosts.includes(hostId)===true;}
   private publish(phase:TurnPushSnapshot['phase'],enabled=this.snapshot.enabled,testSent=false) {
     if(this.disposed)return;this.snapshot={phase,enabled,testSent};
@@ -44,7 +45,10 @@ export class PwaTurnPushController {
     try {
       const response=await this.fetcher('/__opencraft_push',{credentials:'same-origin',signal:AbortSignal.timeout(10000)});
       if(this.disposed || generation!==this.generation)return;
-      if(!response.ok){this.configuration=null;this.publish('unavailable',false);return;}
+      if(!response.ok){
+        if(response.status>=500){this.publish('error');return;}
+        this.configuration=null;this.publish('unavailable',false);return;
+      }
       const value=await response.json();
       if(this.disposed || generation!==this.generation)return;
       if(value.available!==true || typeof value.publicKey!=='string' || typeof value.actorId!=='string' || !Array.isArray(value.hosts) || value.hosts.some((h:unknown)=>typeof h!=='string'))throw new Error('Invalid push configuration');
@@ -64,7 +68,7 @@ export class PwaTurnPushController {
         if(this.disposed || generation!==this.generation)return;
       }
       this.publish(result.enabled?'enabled':'disabled',result.enabled===true);
-    } catch {if(generation===this.generation)this.publish('error',false);}
+    } catch {if(generation===this.generation)this.publish('error');}
   };
   async enable() {
     if(this.disposed || this.busy || !this.configuration || !this.messages)return;
@@ -78,26 +82,30 @@ export class PwaTurnPushController {
       if(this.disposed || generation!==this.generation){if(this.revoking)await this.device.unsubscribe();return;}
       this.subscription=subscription;
       await this.operation('subscribe',subscription);
-      if(generation===this.generation)this.publish('enabled',true);
+      if(generation===this.generation){this.publish('enabled',true);return true;}
     } catch {if(generation===this.generation)this.publish('error',false);}
-    finally {this.busy=false;}
+    finally {if(generation===this.generation)this.busy=false;}
   }
   async disable() {
-    if(this.disposed || this.busy)return;
-    this.busy=true;++this.generation;this.publish('disabling');
+    if(this.disposed)return;
+    this.revoking=true;this.busy=true;const generation=++this.generation;this.publish('disabling');
     try {
       const subscription=this.subscription??await this.device.getSubscription();
-      if(subscription)await this.operation('unsubscribe',subscription);
-      await this.device.unsubscribe();this.subscription=null;this.publish('disabled',false);
-    } catch {this.publish('error');}
-    finally {this.busy=false;}
+      try {if(subscription)await this.operation('unsubscribe',subscription);} catch { /* Always revoke at the device as well. */ }
+      await this.device.unsubscribe();this.subscription=null;
+      if(generation===this.generation)this.publish('disabled',false);
+      // OS revocation is sufficient to stop delivery even if the server is offline.
+      return true;
+    } catch {if(generation===this.generation)this.publish('error');}
+    finally {if(generation===this.generation)this.busy=false;}
   }
   async beforeSignOut() {
-    this.revoking=true;this.busy=true;++this.generation;this.publish('disabling');
+    this.revoking=true;this.busy=true;const generation=++this.generation;this.publish('disabling');
     try {
       try {if(this.subscription)await this.operation('unsubscribe',this.subscription);} catch { /* Device revocation still prevents further delivery. */ }
-      await this.device.unsubscribe(); this.subscription=null; this.publish('disabled',false);
-    } finally {this.busy=false;}
+      await this.device.unsubscribe(); this.subscription=null;
+      if(generation===this.generation)this.publish('disabled',false);
+    } finally {if(generation===this.generation)this.busy=false;}
   }
   async test() {
     if(this.disposed || this.busy || !this.subscription || !this.snapshot.enabled)return;
@@ -105,7 +113,7 @@ export class PwaTurnPushController {
     this.publish('testing');
     try {await this.operation('test',this.subscription);if(generation===this.generation)this.publish('enabled',true,true);}
     catch {if(generation===this.generation)this.publish('error');}
-    finally {this.busy=false;}
+    finally {if(generation===this.generation)this.busy=false;}
   }
   dispose() {this.disposed=true;++this.generation;this.listeners.clear();}
 }

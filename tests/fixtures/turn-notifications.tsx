@@ -10,7 +10,7 @@ import { ChatSettings } from "../../apps/workbench-web/src/components/chat-setti
 import { AsyncNoticesProvider } from "../../apps/workbench-web/src/components/async-notices";
 import { UiPreferencesProvider } from "../../apps/workbench-web/src/runtime/ui-preferences-runtime";
 import { IndexedDbUiPreferenceStore } from "../../apps/workbench-web/src/runtime/indexeddb-ui-preference-store";
-import { BrowserTurnNotifications } from "../../apps/workbench-web/src/runtime/browser-turn-notifications";
+import { TurnNotificationController } from "../../apps/workbench-web/src/runtime/turn-notification-controller";
 import { TurnNotificationsProvider } from "../../apps/workbench-web/src/runtime/turn-notifications-context";
 import { WorkbenchLocaleController, WorkbenchIntlProvider } from "../../apps/workbench-web/src/i18n/workbench-locale";
 import "../../apps/workbench-web/src/styles/app.scss";
@@ -24,12 +24,14 @@ await locale.initialize();
 const registry = new AppServerClientRegistry();
 const source = new TurnCompletionObserver(registry);
 const pushFixture = new URLSearchParams(location.search).has("push");
-let pushSubscription: any = null;
-const notifications = new BrowserTurnNotifications(undefined, pushFixture ? {
+let pushSubscription: any = (new URLSearchParams(location.search).has("enrolled") || localStorage.getItem("fixture-push-subscribed") === "true")
+  ? { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } } : null;
+if (new URLSearchParams(location.search).has("online")) await preferences.set("chat.turnNotifications", true);
+const notifications = new TurnNotificationController(pushFixture ? {
   supported: true, permission: () => "granted",
   getSubscription: async () => pushSubscription,
-  subscribe: async () => (pushSubscription = { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } }),
-  unsubscribe: async () => { pushSubscription = null; }, dispose() {},
+  subscribe: async () => { localStorage.setItem("fixture-push-subscribed", "true"); return (pushSubscription = { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } }); },
+  unsubscribe: async () => { localStorage.removeItem("fixture-push-subscribed"); pushSubscription = null; }, dispose() {},
 } : undefined);
 const clients = new Map<string, any>();
 const threads = new Map<string, { id: string; name: string; preview: string; turns: unknown[] }>();
@@ -76,6 +78,8 @@ function Probe() {
   notificationState: notifications.getSnapshot,
   theme: (mode: "light" | "dark", id?: string) => { setThemePreference(mode); if (id) setAppearanceThemeId(id); },
   preference: () => preferences.get("chat.turnNotifications"),
+  notificationSettings: notifications.getSnapshot,
+  setPreference: (value: boolean) => preferences.set("chat.turnNotifications", value),
   opened,
 };
 createRoot(document.getElementById("root")!).render(<StrictMode><Probe /></StrictMode>);

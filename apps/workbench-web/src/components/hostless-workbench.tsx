@@ -331,7 +331,7 @@ export function HostlessWorkbench({
             onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
             onRefresh: extensionProjection.account.provider.refresh,
             onSignOut: extensionProjection.account.provider.signOut ? async () => {
-                await turnNotifications?.push?.beforeSignOut();
+                await turnNotifications?.beforeSignOut();
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
           },
