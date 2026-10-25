@@ -38,7 +38,7 @@ export class RuntimeErrorBoundary extends Component<
             <h1>暂时无法打开工作台</h1>
             <p>{error.reason === "unavailable"
               ? "浏览器暂时无法读取已保存的配置，请重新加载后重试。"
-              : "请关闭此站点的其他标签页或应用窗口，然后重新加载。如果仍无法打开，请完全退出浏览器后重试。"}</p>
+              : "请关闭此站点的其他标签页或窗口，然后重新加载。"}</p>
             <p>已保存的配置会保留。</p>
             <button type="button" onClick={() => window.location.reload()}>重新加载</button>
           </section>
