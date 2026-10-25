@@ -151,6 +151,8 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 `apps/codex-core/src/generation-bin.ts` 构建为独立 `generations.cjs`。它持有稳定 native socket 和唯一 `codex-generations.sqlite` writer；各代 APP 服务由 systemd sibling unit 监督。重启账号 Core 不停止 routing owner 或 APP；重启 routing owner 不停止 APP/native，但前端连接、订阅和连接私有 PTY lease 会丢失，维护路由进程本身仍须先排空这些 lease。CLI 代次升级保持 routing owner，不切换其连接。
 
+共享 socket 父目录由 routing service 显式创建，不设为路由 unit 的 `RuntimeDirectory`：systemd 停止或重启路由 unit 时不能递归删除仍属于 sibling APP 的 socket，也不能递归改写执行 UID 的目录。路由只清理自己的 facade/control socket，各代只清理自己的入口。系统重启后由各服务重新创建 `/run` 路径。
+
 registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、Thread 归属、未知创建提交、runtime incarnation 与维护回执。独立 SQLite EXCLUSIVE lease 拒绝第二 routing writer。每代使用私有 socket 目录与独立可写 HOME，拒绝别名与嵌套 HOME。固定 bundle、CLI、node 的绝对路径不得指向自动更新链接；unit MainPID/start ticks、执行 UID 与 native 二进制 hash 经核对后才 ready，不隐式提升既有执行身份。初始 bootstrap 注册后中断会在 epoch=0 时继续就绪与首次激活；已建立的默认代不覆盖。
 
 执行 UID/GID 固定为账号数据目录的 owner，注册定义不能改变该身份；systemd 显式传入两者，接入既有 external unit 时同时核对 APP/native 的身份，不要求它与具有 unit 管理权限的 routing owner 相同。跨 UID 启动只继承基本语言/PATH 环境和 Core 提供的合成 broker，不继承 routing owner 的私有 HOME 或凭据环境。registry 放在 routing owner 的可信目录（模板为 `/var/lib/opencraft-codex-routing`），不能放在执行用户可替换的父目录中。
@@ -161,7 +163,7 @@ registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、
 
 `thread/start` 在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
 
-旧代先转 `draining`，继续接既有会话工作。退休先检查 Native 已加载 Thread 的实际状态、goal、未决 RPC/审批与 OS 子进程。Host 以认证 `/generation-host` 报告同一 routing epoch 下的 queue、goal、schedule、恢复意图、标题工作、在途接纳及未知工作；唯一 Host lease 与单调序号拒绝旧回执。Host 初始化/goal 目录扫描未完成、观测超时或未知工作均保留旧代。
+旧代先转 `draining`，继续接既有会话工作。退休先检查 Native 已加载 Thread 的实际状态、goal、未决 RPC/审批与 OS 子进程。Host 以认证 `/generation-host` 报告同一 routing epoch 下的 queue、goal、schedule、恢复意图、标题工作、在途接纳及未知工作；唯一 Host lease 与单调序号拒绝旧回执。Host 初始化/goal 目录扫描未完成、观测超时或未知工作均保留旧代。只有已核对为原生透传、没有 Host overlay writer 的部署才显式使用 `--native-only`，此时 Native/RPC/OS 仍全部参与排空。具有 Host queue/goal/recovery 数据的 Headless 部署必须保留 Host ACK，不能用该选项跳过未知工作。
 
 退休用两阶段握手避免“读到空闲后又接纳”：routing owner 提交代次 fence；Host 同步拒绝该代新执行并以新 fence epoch 报告此前已接纳的全部工作，取消/暂停与读取仍可用。ACK 仍忙则撤 fence，继续原任务。ACK 空后才同步关闭该 runtime 准入，再核 Native、Host、RPC 与所有 Linux worker task 的子进程（含后台 shell）；持久记 `retiring` 后停止已验证的 unit，确认退出后记 `retired`。stop 失败保留 fence 与当前数据，重启继续该交接，不在旧 writer 尚活时打开 HOME。长期 goal/queue/schedule/unknown 不强制退休；新代继续接新 Thread。
 
@@ -175,6 +177,7 @@ registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、
 `scripts/smoke/execution/smoke-codex-generations.ts`，显式设置
 `OPENCRAFT_GENERATION_DRILL_ISOLATED=1`、`OPENCRAFT_CODEX_OLD_EXECUTABLE`、
 `OPENCRAFT_CODEX_NEW_EXECUTABLE` 与可选私有 `OPENCRAFT_CORE_DRILL_ROOT`。
+设置 `OPENCRAFT_DRILL_ROUTING_UNIT=1` 可验证真实 systemd routing unit 的崩溃重启，同时保留各代 APP/native 与 socket。
 需要 Linux/systemd 与创建独立 unit/mount namespace 的权限。脚本只用合成账号、
 私有 HOME 与 loopback 假模型，使用两个不同真实 CLI；覆盖长流/shell 跨切代、
 默认路由回退、旧 HOME 退休/原路径冷验证、routing owner 重启及单代崩溃。

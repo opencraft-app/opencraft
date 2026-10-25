@@ -92,11 +92,31 @@ async function wait(check: () => unknown | Promise<unknown>, label: string, time
 const definition = (id: string, executable: string) => ({ id, endpoint: join(root, "routing", id, "control.sock"), runtimeDataDirectory: adopting && id === "old" ? dataDirectory : join(root, id, "data"), executable, bundle: executionBundle, node: executionNode, cwd: root, executionUid, executionGid });
 const bootstrap: { generation: import("../../../apps/codex-core/src/generation-registry.js").GenerationDefinition; legacy?: boolean } = { generation: definition("old", executionOldCli), ...(adopting ? { legacy: true } : {}) };
 const options = { endpoint: routerEndpoint, coreEndpoint: endpoint, tokenFile, token, dataDirectory, registryDirectory: process.env.OPENCRAFT_DRILL_REGISTRY_DIRECTORY ?? join(evidence, "registry"), systemdScope: "system" as const, requireHostUsage: false, bootstrap };
+const routingUnit = `opencraft-generation-router-drill-${createHash("sha256").update(options.registryDirectory).digest("hex").slice(0, 12)}.service`;
+const routingUnderSystemd = process.env.OPENCRAFT_DRILL_ROUTING_UNIT === "1";
 async function startRoutingOwner() {
   const bootstrapFile = join(root, "bootstrap.json"); await writeFile(bootstrapFile, JSON.stringify(bootstrap), { mode: 0o600 });
-  const child = spawn(process.execPath, [join(cwd, "apps/codex-core/dist/generations.cjs"), "--endpoint", routerEndpoint, "--core-endpoint", endpoint,
+  const args = [join(cwd, "apps/codex-core/dist/generations.cjs"), "--endpoint", routerEndpoint, "--core-endpoint", endpoint,
     "--token-file", tokenFile, "--data-directory", dataDirectory, "--registry-directory", options.registryDirectory,
-    "--systemd-scope", "system", "--native-only", "--bootstrap-file", bootstrapFile], { cwd, env: { ...process.env, HOME: join(root, "home"), TMPDIR: root }, stdio: ["ignore", "pipe", "pipe"] });
+    "--systemd-scope", "system", "--native-only", "--bootstrap-file", bootstrapFile];
+  if (routingUnderSystemd) {
+    const loaded = execFileSync("systemctl", ["show", routingUnit, "-p", "LoadState", "--value"], { encoding: "utf8" }).trim();
+    if (loaded === "not-found") execFileSync("systemd-run", ["--quiet", "--collect", "--service-type=exec", `--unit=${routingUnit}`,
+      "--property=Restart=on-failure", "--property=RestartSec=1", "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity",
+      `--working-directory=${cwd}`, `--setenv=HOME=${join(root, "home")}`, `--setenv=TMPDIR=${root}`, "--", process.execPath, ...args]);
+    else execFileSync("systemctl", ["start", routingUnit]);
+    await wait(() => new CodexCoreControlClient(routerEndpoint, token).appServerHealth(), "routing systemd owner starts/recover bootstrap");
+    const pid = Number(execFileSync("systemctl", ["show", routingUnit, "-p", "MainPID", "--value"], { encoding: "utf8" }).trim());
+    assert.ok(pid > 0);
+    assert.equal(execFileSync("systemctl", ["show", routingUnit, "-p", "RuntimeDirectory", "--value"], { encoding: "utf8" }).trim(), "", "routing unit must not own sibling socket-directory cleanup");
+    return { pid, nativeSocket: join(root, "routing/native.sock"), async close(signal: NodeJS.Signals = "SIGTERM") {
+      if (signal === "SIGKILL") {
+        execFileSync("systemctl", ["kill", "--kill-whom=main", "--signal=SIGKILL", routingUnit]);
+        await wait(() => readFile(`/proc/${pid}/stat`).then(() => false, () => true), "routing unit crashed");
+      } else execFileSync("systemctl", ["stop", routingUnit]);
+    } };
+  }
+  const child = spawn(process.execPath, args, { cwd, env: { ...process.env, HOME: join(root, "home"), TMPDIR: root }, stdio: ["ignore", "pipe", "pipe"] });
   let output = "", errors = ""; child.stdout!.on("data", data => { output += data; }); child.stderr!.on("data", data => { errors += data; });
   child.once("exit", () => { void writeFile(join(root, `router-${child.pid}.log`), errors); });
   await wait(() => output.includes("codex-routing-owner-ready") || child.exitCode !== null, "routing owner starts/recover bootstrap");
@@ -107,7 +127,7 @@ async function admin(operation?: string, params?: object) {
   const { request } = await import("node:http");
   return new Promise<any>((resolve, reject) => { const req = request({ socketPath: routerEndpoint, path: "/generations", method: operation ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" } }, res => { const chunks: Buffer[] = []; res.on("data", c => chunks.push(c)); res.on("end", () => { const value = JSON.parse(Buffer.concat(chunks).toString()); res.statusCode === 200 ? resolve(value) : reject(new Error(JSON.stringify(value))); }); }); req.on("error", reject); req.end(operation ? JSON.stringify({ operation, params }) : undefined); });
 }
-const report: any = { root, evidence, versions, executionUid, executionGid, adopting, scenarios: [] };
+const report: any = { root, evidence, versions, executionUid, executionGid, adopting, routingUnderSystemd, scenarios: [] };
 try {
   // Reproduce a first bootstrap crash immediately after durable registration.
   core = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", "core", config], { cwd, env: { PATH: process.env.PATH, HOME: join(root, "home"), TMPDIR: root, LANG: "C.UTF-8", RUST_LOG: "error" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -187,6 +207,11 @@ try {
 } catch (reason) { report.status = "failed"; report.error = reason instanceof Error ? reason.stack : String(reason); throw reason; }
 finally {
   socket?.terminate(); await service?.close();
+  if (routingUnderSystemd) {
+    try {
+      if (execFileSync("systemctl", ["show", routingUnit, "-p", "LoadState", "--value"], { encoding: "utf8" }).trim() !== "not-found") execFileSync("systemctl", ["stop", routingUnit]);
+    } catch (reason) { report.routingCleanupError = String(reason); }
+  }
   try { const { CodexGenerationRegistry } = await import("../../../apps/codex-core/src/generation-registry.js"); const registry = new CodexGenerationRegistry(options.registryDirectory); const { SystemdGenerationSupervisor } = await import("../../../apps/codex-core/src/generation-supervisor.js"); const supervisor = new SystemdGenerationSupervisor({ registryDirectory: process.env.OPENCRAFT_DRILL_REGISTRY_DIRECTORY ?? options.registryDirectory, coreEndpoint: endpoint, dataDirectory, tokenFile, token, scope: "system" }); for (const g of registry.list()) { const identity = registry.metadata(`runtime:${g.id}`); if (identity && g.state !== "retired") await supervisor.stop(g, identity as any); else if (g.state === "candidate") await supervisor.discardUnready(g); } registry.close(); } catch (reason) { report.cleanupError = String(reason); }
   // Fixture-only fallback also cleans an owned unit that failed before registry registration.
   try {
