@@ -24,11 +24,12 @@ await locale.initialize();
 const registry = new AppServerClientRegistry();
 const source = new TurnCompletionObserver(registry);
 const pushFixture = new URLSearchParams(location.search).has("push");
+let pushPermission: NotificationPermission = new URLSearchParams(location.search).has("denied") ? "denied" : "granted";
 let pushSubscription: any = (new URLSearchParams(location.search).has("enrolled") || localStorage.getItem("fixture-push-subscribed") === "true")
   ? { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } } : null;
 if (new URLSearchParams(location.search).has("online")) await preferences.set("chat.turnNotifications", true);
 const notifications = new TurnNotificationController(pushFixture ? {
-  supported: true, permission: () => "granted",
+  supported: true, permission: () => pushPermission,
   getSubscription: async () => pushSubscription,
   subscribe: async () => { localStorage.setItem("fixture-push-subscribed", "true"); return (pushSubscription = { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } }); },
   unsubscribe: async () => { localStorage.removeItem("fixture-push-subscribed"); pushSubscription = null; }, dispose() {},
@@ -79,6 +80,7 @@ function Probe() {
   theme: (mode: "light" | "dark", id?: string) => { setThemePreference(mode); if (id) setAppearanceThemeId(id); },
   preference: () => preferences.get("chat.turnNotifications"),
   notificationSettings: notifications.getSnapshot,
+  permission: (value: NotificationPermission) => { pushPermission = value; },
   setPreference: (value: boolean) => preferences.set("chat.turnNotifications", value),
   opened,
 };

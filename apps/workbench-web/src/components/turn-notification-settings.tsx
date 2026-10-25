@@ -15,6 +15,7 @@ export function TurnNotificationSettings() {
   const intl = useIntl(), notices = useAsyncNotices(), controller = useTurnNotifications();
   const state = useSyncExternalStore(controller?.subscribe ?? noSubscription,
     controller?.getSnapshot ?? getUnavailable, controller?.getSnapshot ?? getUnavailable);
+  useEffect(() => { void controller?.refresh(); }, [controller]);
   const label = intl.formatMessage({ id: 'settings.chat.turnNotifications', defaultMessage: 'Notify when a response ends' });
   useEffect(() => {
     if (state.error) {
@@ -42,7 +43,7 @@ export function TurnNotificationSettings() {
   return <SettingsGroup>
     <SettingsRow label={label} description={description} controlWidth="compact">
       <SettingsSwitch label={label} checked={state.enabled}
-        disabled={state.busy || !state.supported || (state.permission === 'denied' && !state.enabled)}
+        disabled={state.busy || !state.supported}
         onCheckedChange={enabled => { void controller?.setEnabled(enabled); }} />
     </SettingsRow>
     {state.enabled && state.delivery === 'background' ? <SettingsRow label={intl.formatMessage({ id: 'settings.push.testLabel', defaultMessage: 'Check notification delivery' })} controlWidth="compact">
