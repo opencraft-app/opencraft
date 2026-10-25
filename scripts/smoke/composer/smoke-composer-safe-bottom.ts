@@ -46,6 +46,14 @@ try {
                 await page.evaluate(() => { Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: 874 }); Object.assign(window.visualViewport!, { height: 874 }); window.visualViewport!.dispatchEvent(new Event('resize')); });
                 await page.waitForTimeout(100);
                 assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e => e.getBoundingClientRect().bottom), 874 - inset - 16, 'matching paint/visible capacity retains the original layout');
+                await page.evaluate(()=>{Object.assign(window.visualViewport!,{height:500});window.visualViewport!.dispatchEvent(new Event('resize'));});
+                await page.locator('.opencraft-composer-editor').focus();
+                await page.waitForFunction(()=>document.documentElement.dataset.timelineKeyboardOpen==='true'&&getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom==='0px');
+                assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e=>e.getBoundingClientRect().bottom),484,'ordinary gap remains above keyboard with nonzero device inset');
+                await page.locator('.opencraft-composer-editor').evaluate(e=>(e as HTMLElement).blur());
+                await page.evaluate(()=>{Object.assign(window.visualViewport!,{height:874});window.visualViewport!.dispatchEvent(new Event('resize'));});
+                await page.waitForFunction(inset=>document.documentElement.dataset.timelineKeyboardOpen==='false'&&getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom===`${inset}px`,inset);
+                assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e=>e.getBoundingClientRect().bottom),874-inset-16,'keyboard close restores one inset and ordinary gap');
                 await page.close();
             }
     console.log('PASS: full-screen native frame, 390/402, light/dark, 0/34px, original gutter');
