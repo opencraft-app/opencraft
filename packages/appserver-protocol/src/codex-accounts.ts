@@ -19,6 +19,8 @@ export interface CodexAccountView {
   readonly rateLimitTier: string | null;
   /** Absent on older Hosts; null when the service has not reported a count. */
   readonly resetCredits?: { readonly availableCount: number; readonly observedAt: number } | null;
+  /** Only present when the account owner implements both explicit credit methods. */
+  readonly resetCreditActions?: boolean;
   readonly status: "disabled" | "ready" | "held" | "exhausted" | "error";
   readonly observedAt: number | null;
   readonly heldUntil: number | null;
@@ -26,6 +28,27 @@ export interface CodexAccountView {
   readonly lastUsedHostId: string | null;
   readonly limitWindows: readonly CodexAccountLimitWindowView[];
 }
+
+export interface CodexResetCreditView {
+  readonly id: string;
+  readonly title: string | null;
+  readonly status: "available" | "redeeming" | "redeemed" | "unknown";
+  readonly resetType: string;
+  readonly supportedByPlan: boolean;
+  readonly grantedAt: number | null;
+  /** Milliseconds, unlike the raw HTTP endpoint's ISO string. */
+  readonly expiresAt: number | null;
+  /** Distinguishes explicit no-expiry from absent or malformed expiry metadata. */
+  readonly expiryKnown: boolean;
+}
+
+export interface CodexResetCreditsView {
+  readonly availableCount: number | null;
+  readonly observedAt: number;
+  readonly credits: readonly CodexResetCreditView[];
+}
+
+export type CodexResetCreditOutcome = "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed" | "unknown";
 
 export interface CodexDeviceLoginView {
   readonly sessionId: string;
@@ -40,6 +63,19 @@ export type CodexDeviceLoginPollView =
   | { readonly status: "error"; readonly message: string };
 
 export interface AppServerCodexAccountMethodMap {
+  "opencraft/codex/accounts/resetCredits/list": {
+    params: { readonly accountId: string };
+    result: CodexResetCreditsView;
+  };
+  "opencraft/codex/accounts/resetCredits/consume": {
+    params: { readonly accountId: string; readonly creditId: string; readonly idempotencyKey: string; readonly confirmed: true };
+    result: {
+      readonly outcome: CodexResetCreditOutcome;
+      readonly credits: CodexResetCreditsView | null;
+      readonly usageRefreshed: boolean;
+      readonly accounts: readonly CodexAccountView[];
+    };
+  };
   "opencraft/codex/accounts/list": {
     params: Record<string, never>;
     result: { readonly accounts: readonly CodexAccountView[] };

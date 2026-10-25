@@ -5,6 +5,7 @@ import type {
   CodexAccountView,
   CodexDeviceLoginPollView,
   CodexDeviceLoginView,
+  CodexResetCreditsView,
 } from "@opencraft/appserver-protocol";
 
 import type { HostProtocolRequest } from "../local-agent-settings-service.js";
@@ -23,6 +24,7 @@ export class CodexAccountsService {
   private readonly listeners = new Set<() => void>();
   private generation = 0;
   private disposed = false;
+  private readonly resetAttempts = new Map<string, string>();
   private resumeOperation: Promise<void> | null = null;
   private pollOperation: { sessionId: string; result: Promise<CodexDeviceLoginPollView> } | null = null;
 
@@ -63,6 +65,26 @@ export class CodexAccountsService {
 
   async refreshAccount(accountId: string): Promise<void> {
     await this.update("opencraft/codex/accounts/refresh", { accountId });
+  }
+
+  listResetCredits(accountId: string): Promise<CodexResetCreditsView> {
+    if (this.disposed) return Promise.reject(new Error("Account service is closed"));
+    return this.request("opencraft/codex/accounts/resetCredits/list", { accountId });
+  }
+
+  async consumeResetCredit(accountId: string, creditId: string) {
+    if (this.disposed) throw new Error("Account service is closed");
+    const identity = JSON.stringify([accountId, creditId]);
+    let idempotencyKey = this.resetAttempts.get(identity);
+    if (!idempotencyKey) { idempotencyKey = crypto.randomUUID(); this.resetAttempts.set(identity, idempotencyKey); }
+    const generation = ++this.generation;
+    const result = await this.request("opencraft/codex/accounts/resetCredits/consume", { accountId, creditId, idempotencyKey, confirmed: true });
+    if (result.outcome !== "unknown") this.resetAttempts.delete(identity);
+    if (!this.disposed && generation === this.generation) {
+      this.generation += 1;
+      this.publish({ ...this.snapshot, phase: "ready", accounts: result.accounts, error: null });
+    }
+    return result;
   }
 
   async importLocalLogin(): Promise<void> {

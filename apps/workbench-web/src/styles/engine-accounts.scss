@@ -367,3 +367,24 @@
   grid-template-columns: minmax(0, 1fr) auto;
   .settings-control-row__value { width: auto; justify-content: flex-end; }
 }
+
+.engine-reset-credits {
+  margin-block-start: calc(3 * var(--spacing));
+  min-width: 0;
+
+  .settings-control-list-item__copy > small,
+  .settings-control-list-item__copy > span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.engine-reset-credits__metadata {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+}

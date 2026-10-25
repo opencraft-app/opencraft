@@ -48,9 +48,31 @@ Codex subscription maintenance also retains the backend-issued reset-credit coun
 and its own last-successful observation time. Only a nonnegative safe integer in
 `rate_limit_reset_credits.available_count` is a known count; missing or invalid
 metadata is unknown, including on older Hosts. A failed refresh preserves the
-previous observation. The existing account Settings row renders the count without
-collecting per-credit details or redeeming a credit. This metadata never affects
-account selection, affinity, or inferred recovery from a blocked quota.
+previous observation. This metadata never affects account selection, affinity,
+or inferred recovery from a blocked quota.
+
+Hosts with `resetCreditActions` expose on-demand credit details and explicit
+redemption through the same account owner in Core and the embedded adapter.
+Settings keeps this action hidden for older Hosts. Detail reads never redeem a
+credit. Only credit metadata reaches the Renderer: ID, title, status, supported
+plan, issue/expiry times and observation time; profile identities and OAuth
+credentials do not. Raw HTTP ISO times are normalized to milliseconds. Unknown
+expiry is distinct from explicit no-expiry, and the backend total is independent
+of the possibly capped detail list.
+
+Redemption requires a confirmation for one account and one credit. The Host
+re-reads details and rejects unavailable, expired, unsupported or unrecognized
+credits before POST. It binds `credit_id` and `redeem_request_id`, coalesces
+duplicate attempts and rejects concurrent attempts for the same account. An
+uncertain network, HTTP or payload result never reports success or automatically
+replays POST. Settings requires a fresh detail read before a further explicit
+confirmation and retains the same retry key for an unresolved attempt during the
+application service's lifetime. This in-memory tracking is not a durable queue
+or a cross-client guarantee; upstream credit identity/idempotency remains the
+redemption authority. No fallback selects a different credit. The original
+quota/count owners are refreshed afterward; a successful reset followed by a
+failed usage read remains a successful reset with a refresh-needed notice.
+Closing the account owner drains its credit requests before closing storage.
 
 Codex AppServer connects to one synthetic Responses provider on a loopback-only
 HTTP proxy. Each AppServer child receives only the proxy URL and a Host-scoped
