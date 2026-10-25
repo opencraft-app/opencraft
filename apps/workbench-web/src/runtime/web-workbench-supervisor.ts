@@ -317,6 +317,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       databaseName: currentProductDatabaseName("opencraft-sidebar-layout-v2"),
       formerDatabaseName: currentProductDatabaseName("vela-sidebar-layout-v2"),
     });
+    startupRollback.push(() => sidebarLayoutStorage.close());
     const sidebarLayout = await SidebarLayoutStore.open(sidebarLayoutStorage);
     const stopSidebarLayoutPersistReporting = bindSidebarLayoutPersistReporting(sidebarLayout);
     startupRollback.push(() => sidebarLayout.close());

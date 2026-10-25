@@ -45,7 +45,13 @@ migration dispositions, not claims that every optional engine is initialized.
 See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
 recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
 for payload migration. This retains node:sqlite without Drizzle; Web retains
-IndexedDB and its existing adapter-specific upgrade coordination gaps.
+IndexedDB. Known database identity handoffs wait for other windows to release
+connections within a bounded deadline; the Sidebar adapter closes on versionchange
+and startup rollback owns its handle before loading layout rows. Expired migration
+opens retain late-handle cleanup and abort late upgrades. Both bootstrap recovery
+surfaces classify identity migration failures as local storage failures, preserve
+the original databases and offer closing other windows/restarting the browser;
+release cache recovery must not run for these errors.
 Client-local and Host-owned data have separate authorities; engine-private
 databases retain their owners. Code rollback does not restore database backups
 or promise N-1 binary compatibility.

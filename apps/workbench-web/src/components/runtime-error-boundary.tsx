@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { reportRuntimeError } from "../runtime-error-reporting";
-import { BrowserStorageError } from "../runtime/browser-storage-error";
+import { isBrowserStorageFailure } from "../runtime/browser-storage-error";
 
 interface RuntimeErrorBoundaryProps {
   children: ReactNode;
@@ -31,7 +31,7 @@ export class RuntimeErrorBoundary extends Component<
       return this.props.children;
     }
 
-    if (error instanceof BrowserStorageError) {
+    if (isBrowserStorageFailure(error)) {
       return (
         <main className="runtime-error" role="alert">
           <section className="runtime-error__card">
