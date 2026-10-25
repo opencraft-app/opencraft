@@ -28,12 +28,16 @@ Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
 Requested standalone/fullscreen browser overlay documents keep html/body and the
-main Shell in document flow, sized by the CSS large viewport (`100vh`) at rest.
+main Shell in document flow. The existing Web viewport owner sizes the canvas
+from the positive minimum of observed `innerHeight` and unzoomed VisualViewport
+height, retaining the last unzoomed extent during pinch. A requested overlay
+is not proof of native acceptance; status-excluded `clientHeight` is not the
+visible canvas bound.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
 document roots or main Shell: a full CSS rectangle can still be clipped by the
 native fixed viewport. SafeLayout allocates the main content bottom once; independent
-drawer action surfaces keep their own allocation. A CSS/native height difference
-is not an extra bottom inset and does not reduce the content frame at rest.
+drawer action surfaces keep their own allocation. Do not add a CSS/client metric
+difference as padding; size document and foreground from measured visibility.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for

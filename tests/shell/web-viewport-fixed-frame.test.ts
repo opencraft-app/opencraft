@@ -267,3 +267,31 @@ test("document-origin changes publish even when fixed-client geometry stays unch
     assert.equal(f.port.getSnapshot().revision,revision+1);
   } finally { f.close(); }
 });
+
+test("mobile canvas follows observed A/B visibility independently of clientHeight and overlay request", () => {
+  const f = fixture();
+  try {
+    const root = f.win.document.documentElement;
+    const visible = () => root.style.getPropertyValue("--timeline-visible-viewport-height");
+    Object.assign(root.dataset, { windowHost: "browser", windowDisplayMode: "standalone", windowEdgeStrategy: "legacy-overlay-requested" });
+    for (const height of [812, 874, 812]) {
+      Object.defineProperty(f.win, "innerHeight", { configurable: true, value: height });
+      f.visual.height = height;
+      f.visual.dispatchEvent(new f.win.Event("resize"));
+      assert.equal(visible(), `${height}px`, "clientHeight remains 688 and cannot cap visible canvas");
+    }
+    Object.defineProperty(f.win, "innerHeight", { configurable: true, value: 874 });
+    f.visual.height = 874; f.visual.dispatchEvent(new f.win.Event("resize"));
+    f.input.focus(); f.input.setSelectionRange(2, 2);
+    f.visual.height = 440; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(visible(), "440px", "visual contraction wins before innerHeight updates");
+    assert.equal(root.dataset.timelineKeyboardOpen, "true");
+    f.input.blur(); f.frame(20);
+    assert.equal(visible(), "440px", "blur retains remaining contraction");
+    f.visual.height = 874; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(visible(), "874px");
+    f.visual.scale = 2; f.visual.height = 437; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(visible(), "874px", "pinch retains last unzoomed canvas");
+    assert.equal(f.input.value, "preserve draft"); assert.equal(f.input.selectionStart, 2);
+  } finally { f.close(); }
+});
