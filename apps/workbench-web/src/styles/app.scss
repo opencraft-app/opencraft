@@ -12270,7 +12270,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
   --shell-content-safe-bottom: 0px;
 }
 .app-shell-root.has-browser-safe-layout > .app-shell-row {
-  // SafeLayout applies this combined budget once inside the full-bleed box.
+  // SafeLayout allocates the device inset once inside the measured canvas.
   // Sidebar action surfaces are outside this row and retain their own edge.
   --safe-layout-inset-bottom: var(--shell-content-safe-bottom);
 }

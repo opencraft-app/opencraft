@@ -894,9 +894,10 @@ try {
         assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
         await drag(80,width-50);await opened();
         const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-        await panel.getByRole('button',{name:'Settings',exact:true}).tap();await page.waitForTimeout(650);await opened();
+        await panel.getByRole('button',{name:'Settings',exact:true}).tap();await page.waitForTimeout(650);await closed();
+        await drag(80,width-50);await opened();
         await panel.getByRole('navigation',{name:'Settings sections'}).waitFor({state:'visible'});
-        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings'],'one settings entrance intent, drawer retained for categories');
+        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings'],'one settings entrance intent; destination dismisses the drawer');
         assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'});
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-settings-categories.png`});
         const category=width===320?'Appearance':'Chat';
@@ -914,7 +915,8 @@ try {
       const standaloneSettings=panel.getByRole('button',{name:'Settings',exact:true});
       await standaloneSettings.waitFor({state:'visible'});
       const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-      await standaloneSettings.tap();await page.waitForTimeout(650);await opened();
+      await standaloneSettings.tap();await page.waitForTimeout(650);await closed();
+      await drag(80,340);await opened();
       assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings']);
       await panel.getByRole('button',{name:'Appearance',exact:true}).tap();await page.waitForTimeout(650);await closed();
       assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'},'choosing already selected category still dismisses');
