@@ -24,7 +24,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => this.messages.delete(listener); }
   subscribeStatus(listener: (status: TransportStatus) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   connect(signal?: AbortSignal): Promise<void> { return this.connection.connect(signal); }
-  resetConnection(): void { this.connection.reset(); }
+  resetConnection(): void { this.reads.reset(); this.connection.reset(); }
   async send(frame: string): Promise<void> {
     const message = JSON.parse(frame);
     if (isIsolatedCoreRead(message)) {

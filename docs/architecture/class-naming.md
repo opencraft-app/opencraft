@@ -46,7 +46,7 @@ this naming does not add another provider.
 | `CodexNativeCoreTransport` | Opens native Codex connections through the independent core. |
 | `CodexCoreSocket` | Connects to the Codex core socket and its connection protocol. |
 | `CodexCoreBridge` | Bridges logical clients to the Codex core service. |
-| `CodexCoreReadIsolation` | Opens bounded native Codex core sockets for stateless history reads, separately from subscriptions and execution. |
+| `CodexCoreReadIsolation` | Owns a bounded reusable native history socket pool, with one RPC per socket and failures isolated from peer reads, subscriptions and execution. |
 | `CodexTokenUsageRuntime` | Collects Codex native events, UUIDv7 Turn identity and rollout files from codexHome. |
 | `SshCodexTransport` | Runs the actual Codex app-server proxy and tunnels its protocol. |
 | `CodexAccountsService` | Client service for Codex account and device-login RPCs. |
