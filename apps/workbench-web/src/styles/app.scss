@@ -13074,7 +13074,6 @@ html[data-window-host="browser"] body {
 }
 
 @include controls.touch-input {
-  .thread-user-message__actions button,
   .thread-generated-image-edit,
   .thread-shell-output__copy,
   .thread-tool-details__raw { opacity: 1; }
