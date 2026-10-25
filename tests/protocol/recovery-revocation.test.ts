@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
+import { JsonRpcAppServerClient, type AppServerClientClock } from "@opencraft/appserver-client";
 import { DeferredDuplexTransport, type DuplexTransport } from "@opencraft/appserver-client/transport";
 import { MemoryTransport } from "@opencraft/appserver-transport-memory";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
@@ -10,6 +10,33 @@ import { ConversationRecoveryOwner } from "../../packages/workbench-runtime/src/
 const flush=()=>new Promise<void>(resolve=>setImmediate(resolve));
 const params={clientInfo:{name:"revocation",version:"1"}};
 const initialized={codexHome:"/fixture",userAgent:"fixture",platformFamily:"unix",platformOs:"linux"};
+test("RPC timer replacement fences queued callbacks while the current shortened deadline still expires",async()=>{
+  let elapsed=0,sequence=0;
+  const timers=new Map<number,{callback():void;at:number}>();
+  const clock={now:()=>elapsed,setTimeout(callback:()=>void,ms:number){const id=++sequence;timers.set(id,{callback,at:elapsed+ms});return id;},clearTimeout(id:unknown){timers.delete(id as number);}};
+  let notify!:(frame:string)=>void;
+  const transport=new MemoryTransport({schedule:fn=>fn(),server:{receive(frame,peer){
+    notify=frame=>peer.send(frame);
+    const request=parseJsonRpcMessage(frame);
+    if(isJsonRpcRequest(request)&&request.method==="initialize")peer.send(encodeJsonRpcMessage({id:request.id,result:initialized}));
+  }}});
+  const client=new JsonRpcAppServerClient({hostId:"timer-revision",transport,requestTimeoutMs:30,clock:clock as unknown as AppServerClientClock});
+  try {
+    await client.connect(params);
+    const request=client.requestRaw("turn/start",{threadId:"thread",input:[]});
+    const rejection=assert.rejects(request,{code:"TIMEOUT"});
+    const initial=[...timers.values()][0]!;
+    notify(encodeJsonRpcMessage({method:"item/started",params:{threadId:"thread",turnId:"preparation",item:{type:"contextCompaction"}}}));
+    const extended=[...timers.values()][0]!;assert.equal(extended.at,180_000);
+    elapsed=20;
+    notify(encodeJsonRpcMessage({method:"turn/completed",params:{threadId:"thread",turn:{id:"preparation"}}}));
+    const shortened=[...timers.values()][0]!;assert.equal(shortened.at,50);
+    elapsed=30;initial.callback();assert.equal(client.getPendingRequestCount(),1);
+    elapsed=50;shortened.callback();await rejection;
+    elapsed=180_000;extended.callback();
+    assert.equal(client.getPendingRequestCount(),0);assert.equal(timers.size,0);
+  } finally {await client.close();}
+});
 function gate<T>() {let resolve!:(v:T)=>void,reject!:(e:Error)=>void;const promise=new Promise<T>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 function memory() {
   return new MemoryTransport({receive(frame,peer){const request=parseJsonRpcMessage(frame);if(isJsonRpcRequest(request)&&request.method==="initialize")peer.send(encodeJsonRpcMessage({id:request.id,result:initialized}));}});

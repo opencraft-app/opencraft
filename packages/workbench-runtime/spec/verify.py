@@ -24,6 +24,10 @@ CASES = [
     ("Recovery-Revive", "DisposedTerminal"),
     ("Recovery-WakeOnly", None),
     ("Recovery-WakeLiveness", "temporal:ThreadRecovery"),
+    ("RequestTimers", None),
+    ("RequestTimers-StaleTimer", "NoEarlyTimeout"),
+    ("RequestTimers-StaleRequest", "TimeoutOwnership"),
+    ("RequestTimers-NoFairness", "temporal:RequestTermination"),
 ]
 
 
@@ -49,7 +53,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="recovery-tlc-") as temporary:
             command = ["java", "-Xmx512m", "-XX:+UseParallelGC", "-cp", str(jar), "tlc2.TLC",
                 "-workers", "1", "-fp", "0", "-noGenerateSpecTE", "-metadir", temporary,
-                "-dumpTrace", "json", str(trace), "-config", config + ".cfg", "Recovery.tla"]
+                "-dumpTrace", "json", str(trace), "-config", config + ".cfg", config.split("-")[0] + ".tla"]
             try:
                 run = subprocess.run(command, cwd=spec, capture_output=True, text=True, timeout=120)
                 log, code = run.stdout + run.stderr, run.returncode

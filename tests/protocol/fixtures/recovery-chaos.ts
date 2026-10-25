@@ -5,9 +5,9 @@ import { ConnectionLifecycleOwner, type ConnectionAttempt } from "../../../packa
 import { createRecoveryNow } from "../../../packages/workbench-runtime/src/recovery-clock";
 
 export type Host = "a" | "b";
-export type Boundary = "acquire" | "dial" | "initialize" | "close";
+export type Boundary = "acquire" | "dial" | "initialize" | "response" | "close";
 export type ChaosEvent =
-  | { type: "connect" | "hint" | "loss" | "manual" | "dispose" | "late"; host: Host }
+  | { type: "connect" | "hint" | "loss" | "manual" | "dispose" | "late" | "request" | "cancel-request" | "preparing" | "prepared"; host: Host }
   | { type: "hold"; host: Host; boundary: Boundary; value: boolean }
   | { type: "network"; up: boolean }
   | { type: "tick" | "freeze"; ms: number }
@@ -30,19 +30,19 @@ class Clock {
   readonly now = createRecoveryNow(() => this.raw);
   private sequence = 0;
   readonly timers = new Map<number, { at: number; fn(): void }>();
-  readonly retired: Array<() => void> = [];
+  readonly retired: Array<{at:number;fn():void}> = [];
   setTimeout = (fn: () => void, ms: number) => {
     const id = ++this.sequence; this.timers.set(id, {at: this.now() + ms, fn}); return id;
   };
   clearTimeout = (value: unknown) => {
     const timer = this.timers.get(value as number);
-    if (timer) { this.retired.push(timer.fn); this.timers.delete(value as number); }
+    if (timer) { this.retired.push(timer); this.timers.delete(value as number); }
   };
   advance(ms: number, timers: boolean) {
     this.raw += ms;
     const now = this.now();
     if (timers) for (const [id, entry] of [...this.timers]) if (entry.at <= now) {
-      this.timers.delete(id); this.retired.push(entry.fn); entry.fn();
+      this.timers.delete(id); this.retired.push(entry); entry.fn();
     }
   }
 }
@@ -61,7 +61,7 @@ class Wire implements DuplexTransport {
   closing = false;
   closed = false;
   open = false;
-  readonly requests: Array<{id: string | number; done: boolean}> = [];
+  readonly requests: Array<{id: string | number; done: boolean; ackLost?: boolean; operation?: Mutation}> = [];
   constructor(readonly world: World, readonly host: Host, readonly id: number) {}
   get tag() { return `chaos-${this.id}`; }
   connect(_signal?: AbortSignal) {
@@ -73,8 +73,18 @@ class Wire implements DuplexTransport {
   }
   async send(frame: string) {
     const request = parseJsonRpcMessage(frame);
-    requireThat(isJsonRpcRequest(request) && request.method === "initialize", "NO_REPLAY", "recovery sent a mutation or unexpected frame");
-    this.requests.push({id:request.id,done:false});
+    requireThat(isJsonRpcRequest(request), "NO_REPLAY", "recovery sent an unexpected frame");
+    let operation: Mutation | undefined;
+    if (request.method !== "initialize") {
+      const id=(request.params as {operationId?: unknown})?.operationId;
+      operation=this.world.mutations.find(item=>item.id===id && item.host===this.host);
+      requireThat(request.method==="turn/start" && operation, "NO_REPLAY", "recovery sent a mutation without user intent");
+      requireThat(++operation.sent===1,"NO_REPLAY",`intent ${operation.id} was sent again`);
+      // The synthetic server applies the mutation on receipt; ACK delivery is
+      // independently held/lost. Recovery cannot infer that it was never applied.
+      this.world.coverage["mutation-applied"]=(this.world.coverage["mutation-applied"]??0)+1;
+    }
+    this.requests.push({id:request.id,done:false,...(operation?{operation}:{})});
   }
   publish(status: TransportStatus) { this.status = status; for (const fn of this.statuses) fn(status); }
   subscribeMessage(fn: (frame: string) => void) { this.messages.add(fn); this.oldMessages.push(fn); return () => {this.messages.delete(fn);}; }
@@ -85,12 +95,17 @@ class Wire implements DuplexTransport {
     // Captured callbacks represent deliveries already queued before unsubscribe.
     for (const fn of this.oldStatuses) fn({state:"failed",reason:"retired channel"});
     for (const request of this.requests) for (const fn of this.oldMessages)
-      fn(encodeJsonRpcMessage({id:request.id,result:this.response()}));
+      fn(encodeJsonRpcMessage({id:request.id,result:request.operation?{operationId:request.operation.id}:this.response()}));
   }
   response() { return {codexHome:"/synthetic",platformFamily:"unix",platformOs:"linux",userAgent:this.tag}; }
 }
 interface Binding { readonly generation: number; readonly tag: string }
 interface Operation { readonly signal: AbortSignal; settled: boolean }
+interface Mutation {
+  readonly id: number; readonly host: Host; readonly controller: AbortController;
+  readonly startedAt: number; deadline: number; preparing: boolean; sent: number;
+  settled: boolean; error?: string;
+}
 interface HostState {
   owner: ConnectionLifecycleOwner<Binding>;
   client: AppServerClient;
@@ -103,26 +118,35 @@ export interface ChaosOptions {
   createClient?: (config: AppServerClientConfig) => AppServerClient;
   createTransport?: (create: (signal: AbortSignal) => Promise<DuplexTransport>) => DuplexTransport;
   /** Negative control: simulate a client that never releases its first operation. */
-  mutant?: "sticky-initialize";
+  mutant?: "sticky-initialize" | "replay-mutation";
 }
 class World {
   readonly clock = new Clock();
   readonly hosts = {} as Record<Host,HostState>;
   readonly wires: Wire[] = [];
+  readonly mutations: Mutation[] = [];
   network = true;
   private sequence = 0;
   readonly coverage: Record<string,number> = {};
   constructor(options: ChaosOptions) {
     for (const host of ["a","b"] as const) {
-      const holds = {acquire:false,dial:false,initialize:false,close:false};
+      const holds = {acquire:false,dial:false,initialize:false,response:false,close:false};
       const transport = (options.createTransport ?? (create => new DeferredDuplexTransport(create)))(async () => {
         const wire = new Wire(this, host, ++this.sequence); this.wires.push(wire);
         this.coverage["lease-created"]=(this.coverage["lease-created"]??0)+1;
         return wire.acquired.promise;
       });
+      if(options.mutant==="replay-mutation") {
+        const send=transport.send.bind(transport);
+        transport.send=async(frame,signal)=>{
+          await send(frame,signal);
+          const request=parseJsonRpcMessage(frame);
+          if(isJsonRpcRequest(request) && request.method==="turn/start")await send(frame,signal);
+        };
+      }
       const client = (options.createClient ?? (config => new JsonRpcAppServerClient(config)))({hostId:host,transport,
         requestTimeoutMs:30,clock:this.clock as unknown as AppServerClientConfig["clock"]});
-      if (options.mutant) {
+      if (options.mutant==="sticky-initialize") {
         const original = client.connect.bind(client);
         let stuck: ReturnType<typeof client.connect> | undefined;
         client.connect = (...args) => stuck ??= original(...args);
@@ -173,16 +197,25 @@ class World {
       }
       if (wire.requested && wire.status.state === "connecting" && holds.dial) observe("held-dial");
       if (wire.open && holds.initialize && wire.requests.some(request=>!request.done)) observe("held-initialize");
-      if (wire.open && this.network && !holds.initialize) for (const request of wire.requests) if (!request.done) {
+      if (wire.open && this.network) for (const request of wire.requests) if (!request.done) {
+        if(!request.operation && holds.initialize)continue;
+        if (request.operation && holds.response) {observe("held-response");continue;}
         request.done=true;
-        const frame=encodeJsonRpcMessage({id:request.id,result:wire.response()});
+        if(request.operation)this.coverage["mutation-ack"]=(this.coverage["mutation-ack"]??0)+1;
+        const frame=encodeJsonRpcMessage({id:request.id,result:request.operation?{operationId:request.operation.id}:wire.response()});
         for (const fn of wire.messages) fn(frame);
       }
     }
   }
   async settle() { for (let i=0;i<4;i++) {this.pump();await flush();} this.check(); }
   check() {
-    requireThat(this.clock.timers.size<=6,"TIMER_BOUND",`active timers ${this.clock.timers.size}`);
+    requireThat(this.clock.timers.size<=8,"TIMER_BOUND",`active timers ${this.clock.timers.size}`);
+    for(const operation of this.mutations) {
+      requireThat(operation.sent<=1,"NO_REPLAY",`intent ${operation.id} duplicated`);
+      requireThat(operation.error!=="EARLY_TIMEOUT","RPC_DEADLINE",`intent ${operation.id} timed out before its current deadline`);
+      requireThat(operation.error!=="WRONG_RESPONSE","RPC_CORRELATION",`intent ${operation.id} received another intent's response`);
+      if(operation.controller.signal.aborted)requireThat(operation.settled,"LOCAL_CANCELLATION",`intent ${operation.id} did not settle on cancellation`);
+    }
     for (const host of ["a","b"] as const) {
       const state=this.hosts[host],snapshot=state.owner.snapshot;
       const physical=this.wires.filter(w=>w.host===host && w.open && !w.closed);
@@ -201,17 +234,55 @@ class World {
     if (event.type==="tick" || event.type==="freeze") this.clock.advance(event.ms,event.type==="tick");
     else if (event.type==="network") {
       this.network=event.up;
-      if (!event.up) for (const wire of this.wires) if (wire.requested) wire.fail();
+      if (!event.up) for (const wire of this.wires) if (wire.requested) {
+        for(const request of wire.requests)if(request.operation && !request.done && !request.ackLost) {
+          request.ackLost=true;
+          this.coverage["mutation-ack-lost"]=(this.coverage["mutation-ack-lost"]??0)+1;
+        }
+        wire.fail();
+      }
     } else if (event.type==="hold") this.hosts[event.host].holds[event.boundary]=event.value;
-    else if (event.type==="stale-timer") this.clock.retired.at(-1)?.();
+    else if (event.type==="stale-timer") {
+      const queued=[...this.clock.retired].reverse().find(timer=>timer.at<=this.clock.now());
+      if(queued) {this.coverage["queued-timer-delivered"]=(this.coverage["queued-timer-delivered"]??0)+1;queued.fn();}
+    }
     else if (event.type==="heal") {
       this.network=true;
-      for (const state of Object.values(this.hosts)) for (const boundary of ["acquire","dial","initialize","close"] as const) state.holds[boundary]=false;
+      for (const state of Object.values(this.hosts)) for (const boundary of ["acquire","dial","initialize","response","close"] as const) state.holds[boundary]=false;
       for (let i=0;i<30;i++) {this.clock.advance(10,true);await this.settle();}
       for (const [host,state] of Object.entries(this.hosts)) if (!["blocked","disposed"].includes(state.owner.snapshot.phase))
         requireThat(state.owner.snapshot.phase==="usable","EVENTUAL_RECOVERY",`${host} did not recover in 300 virtual ms after faults stopped`);
     } else if ("host" in event) {
       const state=this.hosts[event.host];
+      const mutation=[...this.mutations].reverse().find(item=>item.host===event.host && !item.settled);
+      if(event.type==="request" && !mutation && state.owner.snapshot.phase==="usable") {
+        const operation:Mutation={id:this.mutations.length+1,host:event.host,controller:new AbortController(),startedAt:this.clock.now(),
+          deadline:this.clock.now()+30,preparing:false,sent:0,settled:false};
+        this.mutations.push(operation);
+        void state.client.requestRaw("turn/start",{threadId:`chaos-thread-${event.host}`,input:[],operationId:operation.id},{signal:operation.controller.signal})
+          .then(result=>{
+            operation.settled=true;
+            if((result as {operationId?: unknown})?.operationId!==operation.id)operation.error="WRONG_RESPONSE";
+          },error=>{
+            operation.settled=true;
+            operation.error=error?.code==="TIMEOUT" && this.clock.now()<operation.deadline?"EARLY_TIMEOUT":String(error?.code);
+          });
+      }
+      if(event.type==="cancel-request")mutation?.controller.abort();
+      if((event.type==="preparing" || event.type==="prepared") && mutation) {
+        if(event.type==="preparing" && !mutation.preparing) {
+          mutation.preparing=true;mutation.deadline=mutation.startedAt+180_000;
+          this.coverage["rpc-deadline-extended"]=(this.coverage["rpc-deadline-extended"]??0)+1;
+        } else if(event.type==="prepared" && mutation.preparing) {
+          mutation.deadline=Math.min(mutation.startedAt+180_000,this.clock.now()+30);
+          this.coverage["rpc-deadline-shortened"]=(this.coverage["rpc-deadline-shortened"]??0)+1;
+        }
+        const notification=event.type==="preparing"
+          ? {method:"item/started",params:{threadId:`chaos-thread-${event.host}`,turnId:`prepare-${mutation.id}`,item:{type:"contextCompaction"}}}
+          : {method:"turn/completed",params:{threadId:`chaos-thread-${event.host}`,turn:{id:`prepare-${mutation.id}`}}};
+        for(const wire of this.wires)if(wire.host===event.host && wire.open && !wire.closing)
+          for(const fn of wire.messages)fn(encodeJsonRpcMessage(notification));
+      }
       if (event.type==="connect") void state.owner.connect(true).catch(()=>undefined);
       if (event.type==="hint" && state.owner.admitRecoveryHint()) void state.owner.connect(true).catch(()=>undefined);
       if (event.type==="loss" || event.type==="manual") state.owner.lost(new Error("synthetic host failure"),event.type==="manual");
@@ -229,12 +300,13 @@ class World {
   }
   async close() {
     for (const state of Object.values(this.hosts)) {
-      for (const boundary of ["acquire","dial","initialize","close"] as const) state.holds[boundary]=false;
+      for (const boundary of ["acquire","dial","initialize","response","close"] as const) state.holds[boundary]=false;
       state.owner.dispose();void state.client.close().catch(()=>undefined);
     }
     for (let i=0;i<4;i++) {this.pump();await flush();}
     requireThat(this.clock.timers.size===0,"CLEANUP",`${this.clock.timers.size} leaked timers`);
     requireThat(this.wires.every(wire=>wire.closed),"CLEANUP","a retired physical lease was not released");
+    requireThat(this.mutations.every(item=>item.settled),"CLEANUP","an issued mutation still owns its local Promise");
   }
 }
 export interface ChaosResult { events: number; wires: number; ready: number; coverage: Record<string,number> }
@@ -257,9 +329,9 @@ export function generateRecoveryChaos(seed: number,steps=120): ChaosEvent[] {
   const events:ChaosEvent[]=[];
   for (let i=0;i<steps;i++) {
     const host=pick(["a","b"] as const);
-    const type=pick(["connect","hint","loss","late","hold","hold","tick","freeze","network","stale-timer","manual","dispose"] as const);
+    const type=pick(["connect","hint","loss","late","hold","hold","tick","freeze","network","stale-timer","manual","dispose","request","request","cancel-request","preparing","prepared"] as const);
     if (i%32===31) events.push({type:"heal"});
-    if (type==="hold") events.push({type,host,boundary:pick(["acquire","dial","initialize","close"] as const),value:rng()<0.6});
+    if (type==="hold") events.push({type,host,boundary:pick(["acquire","dial","initialize","response","close"] as const),value:rng()<0.6});
     else if(type==="tick" || type==="freeze") events.push({type,ms:pick([0,1,10,26,61,5_001])});
     else if(type==="network") events.push({type,up:rng()<0.6});
     else if(type==="stale-timer") events.push({type});
@@ -289,11 +361,11 @@ export function parseRecoveryTrace(value:unknown):ChaosEvent[] {
   for(const event of value) {
     requireThat(typeof event==="object" && event!==null,"TRACE_SCHEMA","invalid event");
     const e=event as Record<string,unknown>;
-    requireThat(["connect","hint","loss","manual","dispose","late","hold","network","tick","freeze","stale-timer","heal"].includes(String(e.type)),"TRACE_SCHEMA","unknown event type");
-    if(["connect","hint","loss","manual","dispose","late","hold"].includes(String(e.type))) requireThat(e.host==="a" || e.host==="b","TRACE_SCHEMA","invalid host");
+    requireThat(["connect","hint","loss","manual","dispose","late","hold","network","tick","freeze","stale-timer","heal","request","cancel-request","preparing","prepared"].includes(String(e.type)),"TRACE_SCHEMA","unknown event type");
+    if(["connect","hint","loss","manual","dispose","late","hold","request","cancel-request","preparing","prepared"].includes(String(e.type))) requireThat(e.host==="a" || e.host==="b","TRACE_SCHEMA","invalid host");
     if(e.type==="tick" || e.type==="freeze") requireThat(typeof e.ms==="number" && Number.isFinite(e.ms) && e.ms>=0 && e.ms<=86_400_000,"TRACE_SCHEMA","invalid elapsed time");
     if(e.type==="network") requireThat(typeof e.up==="boolean","TRACE_SCHEMA","invalid network flag");
-    if(e.type==="hold") requireThat(["acquire","dial","initialize","close"].includes(String(e.boundary)) && typeof e.value==="boolean","TRACE_SCHEMA","invalid hold boundary");
+    if(e.type==="hold") requireThat(["acquire","dial","initialize","response","close"].includes(String(e.boundary)) && typeof e.value==="boolean","TRACE_SCHEMA","invalid hold boundary");
   }
   return value as ChaosEvent[];
 }

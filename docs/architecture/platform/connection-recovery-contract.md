@@ -112,6 +112,23 @@ invent a new server Retry-After protocol or bypass the existing physical owner.
 
 ## Executable evidence
 
+RPC deadlines have a second ownership level: a pending request owns its current
+timer revision. Context preparation can extend `turn/start` / `thread/resume`
+waiting, and preparation completion can shorten it again. The adversarial clock
+contract permits retired callbacks to be delivered after cancellation. Such a
+callback must check both the pending request object and timer revision before
+rejecting anything. This is defense against an uncooperative adapter: standard
+browser timers themselves check cancellation before invoking their handlers.
+It is not evidence of a default-browser timeout race. The guard preserves the existing 180s
+absolute preparation budget and ordinary request timeout policy.
+
+The separate finite `RequestTimers` model checks replacement and completion
+across two request incarnations, including adversarial due callbacks retained after clear.
+Its positive specification checks timeout ownership, no premature timeout and
+termination under fair clock/callback delivery. Negative controls remove each
+ownership check or fairness. This is a timer contract, independent of the Host
+model; it does not prove that every runtime request refines the specification.
+
 The independent [test specification](../../../tests/protocol/fixtures/recovery-specification.ts)
 uses normalized logical budgets (stage 10, total 25, validation 5). They express
 ordering and expiry, **not proposed production timeout values**. Production
