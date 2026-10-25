@@ -12772,6 +12772,12 @@ html[data-ui-density="touch"] body {
     .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"]) {
     --shell-conversation-top-bleed: var(--shell-mobile-safe-top);
     margin-block-start: calc(0px - var(--shell-conversation-top-bleed));
+    // Preview tools are controls, not transcript content. Retain their existing
+    // safe origin/capacity while only the reading plane scrolls under the edge.
+    .app-shell-right-panel {
+      margin-block-start: var(--shell-conversation-top-bleed);
+      height: calc(100% - var(--shell-conversation-top-bleed));
+    }
     .new-thread-draft-layout {
       --draft-block-start: calc(var(--spacing) * 6 + var(--shell-conversation-top-bleed));
     }

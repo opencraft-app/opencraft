@@ -183,6 +183,8 @@ try {
   await page.screenshot({path:output+'/immersive-top-'+theme+'.png'});
   const old=await page.addStyleTag({content:'.app-shell-root.has-browser-safe-layout .main-content-surface{margin-block-start:0!important}'});assert.equal((await read()).scrollTop,62,'old outer allocation clips the top');await old.evaluate(e=>e.remove());
   await page.locator('[data-scroll]').evaluate(e=>e.scrollTop=0);assert.equal((await read()).firstTop,start.firstTop);assert(await editor!.evaluate(e=>e===document.querySelector('input')));assert.equal(await page.getByLabel('Draft').inputValue(),'Keep scroll-under draft');
+  await page.getByRole('button',{name:'Open preview panel',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.app-shell-right-panel')?.getAttribute('aria-hidden')==='false');
+  const preview=await page.locator('.app-shell-right-panel').evaluate(e=>({top:e.getBoundingClientRect().top,bottom:e.getBoundingClientRect().bottom}));assert.equal(preview.top,62);assert.equal(preview.bottom,844);await page.getByRole('button',{name:'Close preview panel',exact:true}).click();
   await page.evaluate(()=>document.documentElement.style.setProperty('--safe-layout-inset-top','47px'));const resized=await read();assert.equal(resized.scrollTop,0);assert.equal(resized.headerTop,47);assert.equal(resized.firstTop,start.firstTop-15);assert.equal(resized.bottom,844);
   await page.evaluate(()=>(window as any).fixture.setConversation(false));const ordinary=await read();assert.equal(ordinary.mainTop,47,'non-conversation routes keep the normal safe frame');assert(ordinary.scrollTop>=ordinary.mainTop);
   evidence.push({immersiveTop:{theme,start,scrolled,resized,ordinary}});await context.close();

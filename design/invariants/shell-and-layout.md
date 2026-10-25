@@ -55,7 +55,9 @@ from the scrollport. At scroll start the first content remains clear of system
 and app controls; on scroll, the same mounted text can pass behind the status
 area. The existing Shell top fade becomes a masked theme veil/backdrop blur over
 this full area and accepts no input. The header hit targets retain their original
-safe position. No scroll threshold, duplicate transcript, screen arithmetic,
+safe position. Adjacent preview tools retain that safe origin and the original
+remaining height; only the reading plane extends under the edge. No scroll
+threshold, duplicate transcript, screen arithmetic,
 viewport owner or resize/scroll observer is introduced. Settings, other routes,
 Sidecar and native desktop keep their existing allocations. Device status-bar
 compositing still requires physical acceptance.
