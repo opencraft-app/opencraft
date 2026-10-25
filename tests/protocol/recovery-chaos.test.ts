@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ChaosViolation, generateRecoveryChaos, parseRecoveryTrace, shrinkRecoveryFailure, simulateRecovery, type ChaosEvent } from "./fixtures/recovery-chaos";
 
 const cancellation: ChaosEvent[] = [
@@ -62,6 +67,18 @@ test("chaos: generator and replay schema are deterministic and reject invalid ti
   assert.throws(()=>parseRecoveryTrace([{type:"tick",ms:-1}]),/TRACE_SCHEMA/);
   assert.throws(()=>parseRecoveryTrace([{type:"connect",host:"unknown"}]),/TRACE_SCHEMA/);
   assert.throws(()=>parseRecoveryTrace([{type:"hold",host:"a",boundary:"arbitrary",value:true}]),/TRACE_SCHEMA/);
+});
+test("chaos CLI: replay reports the artifact seed, including zero, rather than its generator default",async()=>{
+  const directory=await mkdtemp(path.join(tmpdir(),"recovery-replay-"));
+  try {
+    const trace=path.join(directory,"trace.json"),output=path.join(directory,"output");
+    await writeFile(trace,JSON.stringify({seed:0,events:[]}));
+    execFileSync(process.execPath,["--import","tsx","scripts/recovery-chaos.ts","--replay",trace,"--output",output],{
+      cwd:fileURLToPath(new URL("../../",import.meta.url)),stdio:"pipe",timeout:10_000,
+    });
+    const result=JSON.parse(await readFile(path.join(output,"results.json"),"utf8"));
+    assert.equal(result.seed,0);assert.equal(result.cases,1);assert.equal(result.passed,true);
+  } finally {await rm(directory,{recursive:true,force:true});}
 });
 test("chaos: a sticky initialization mutant is detected, shrunk and replayed with the same rule",async()=>{
   const trace=[{type:"hint",host:"b"} as const,...cancellation,{type:"tick",ms:1} as const];
