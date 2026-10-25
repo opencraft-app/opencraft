@@ -119,7 +119,9 @@ try {
   await page.evaluate(()=>{delete document.documentElement.dataset.touchInteraction});await page.mouse.move(700,450);
   const group=page.locator('.app-shell-header__end-slot .app-shell-header__action-group > .ui-liquid-glass');
   assert.equal((await group.boundingBox())?.height,28,'the backdrop must fit compact actions without moving the header group');
-  await toggle.click();await page.waitForTimeout(400);const current=page.locator('.shell-sidebar-navigation [data-action-id="shell.home"]:visible');assert.equal(await current.getAttribute('aria-current'),'page');assert.notEqual(await current.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','current navigation remains distinguishable above glass');
+  await toggle.click();await page.waitForTimeout(400);const current=page.locator('.shell-sidebar-navigation [data-action-id="shell.home"]:visible');assert.equal(await current.getAttribute('aria-current'),'page');assert.notEqual(await current.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','flat current navigation remains distinguishable');
+  assert.equal(await current.locator('.ui-liquid-glass').count(),0,'application navigation must not become a glass action');
+  assert.notEqual(await current.evaluate(e=>getComputedStyle(e).borderRadius),'9999px','navigation retains its own geometry');
   const account=page.locator('.shell-sidebar__rail-footer [data-surface="account"]:visible');await account.click();
   assert.equal(await account.getAttribute('data-state'),'open');await page.waitForFunction((e:HTMLElement)=>getComputedStyle(e).backgroundColor!=='rgba(0, 0, 0, 0)',await account.elementHandle());assert.notEqual(await account.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','open account entrance remains distinguishable above glass');await page.keyboard.press('Escape');
   await page.screenshot({path:output+'/1440-'+theme+'-desktop.png'});

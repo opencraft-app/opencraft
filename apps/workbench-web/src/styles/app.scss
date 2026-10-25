@@ -13083,7 +13083,7 @@ html[data-window-host="browser"] body {
 
 // Shell actions share one material across pointer, touch, Web and Electron.
 // Existing owners retain dimensions, placement, focus and interaction behavior.
-$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes, .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button)';
+$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes)';
 :root[data-ui-density] #{$shell-liquid-actions} {
   @include material.liquid;
   color: var(--color-text);
