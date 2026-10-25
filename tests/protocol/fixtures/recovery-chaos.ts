@@ -13,9 +13,10 @@ export type ChaosEvent =
   | { type: "tick" | "freeze"; ms: number }
   | { type: "stale-timer" | "heal" };
 export class ChaosViolation extends Error {
+  cleanupFailure?:string;
   constructor(readonly rule: string, detail: string) { super(`${rule}: ${detail}`); }
 }
-function requireThat(ok: unknown, rule: string, detail: string): asserts ok {
+export function requireThat(ok: unknown, rule: string, detail: string): asserts ok {
   if (!ok) throw new ChaosViolation(rule, detail);
 }
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -312,20 +313,27 @@ class World {
 export interface ChaosResult { events: number; wires: number; ready: number; coverage: Record<string,number> }
 export async function simulateRecovery(events: readonly ChaosEvent[],options: ChaosOptions={}): Promise<ChaosResult> {
   const world=new World(options);
+  let failure:unknown;
   try {
     await world.settle();
     for (const event of events) await world.apply(event);
     // Every trace ends with an explicit quiescent suffix, even when fuzz omits it.
     await world.apply({type:"heal"});
     return {events:events.length,wires:world.wires.length,ready:Object.values(world.hosts).reduce((n,s)=>n+s.ready,0),coverage:world.coverage};
-  } finally { await world.close(); }
+  } catch(error) {failure=error;throw error;}
+  finally {
+    try {await world.close();}catch(error){
+      if(failure===undefined)throw error;
+      if(failure instanceof ChaosViolation)failure.cleanupFailure=error instanceof Error?error.message:String(error);
+    }
+  }
 }
-function random(seed: number) {
+export function recoveryChaosRandom(seed: number) {
   let value=seed>>>0;
   return () => {value=(value+0x6D2B79F5)>>>0;let t=Math.imul(value^(value>>>15),1|value);t^=t+Math.imul(t^(t>>>7),61|t);return ((t^(t>>>14))>>>0)/4294967296;};
 }
 export function generateRecoveryChaos(seed: number,steps=120): ChaosEvent[] {
-  const rng=random(seed),pick=<T>(values:readonly T[]):T=>values[Math.floor(rng()*values.length)]!;
+  const rng=recoveryChaosRandom(seed),pick=<T>(values:readonly T[]):T=>values[Math.floor(rng()*values.length)]!;
   const events:ChaosEvent[]=[];
   for (let i=0;i<steps;i++) {
     const host=pick(["a","b"] as const);
@@ -343,12 +351,15 @@ export function generateRecoveryChaos(seed: number,steps=120): ChaosEvent[] {
 }
 /** Delta debugging preserves the SAME rule and a replayable explicit event list. */
 export async function shrinkRecoveryFailure(events: readonly ChaosEvent[],rule:string,options:ChaosOptions={},limit=100):Promise<ChaosEvent[]> {
+  return shrinkChaosFailure(events,rule,trace=>simulateRecovery(trace,options),limit);
+}
+export async function shrinkChaosFailure<T>(events:readonly T[],rule:string,run:(events:readonly T[])=>Promise<unknown>,limit=100):Promise<T[]> {
   let current=[...events],size=Math.max(1,Math.floor(current.length/2)),attempts=0;
   while(size>=1 && attempts<limit) {
     let removed=false;
     for(let i=0;i<current.length && attempts<limit;i+=size) {
       const candidate=[...current.slice(0,i),...current.slice(i+size)];attempts++;
-      try {await simulateRecovery(candidate,options);} catch(error) {
+      try {await run(candidate);} catch(error) {
         if(error instanceof ChaosViolation && error.rule===rule){current=candidate;removed=true;break;}
       }
     }

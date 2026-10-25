@@ -6,6 +6,38 @@ import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const thread = (id: string) => ({ id, sessionId: id, name: id, cwd: "/workspace", path: `/rollouts/${id}`, historyMode: "paginated", status: { type: "idle" }, turns: [] });
 
+for(const stage of ["queued","history"] as const)test(`Runtime subscriber disposal during ${stage} releases retryRestore without another read`,async()=>{
+  const requests:string[]=[];
+  const transport=new MemoryTransport({receive(frame,peer){
+    const message=JSON.parse(frame);if(message.id===undefined)return;requests.push(message.method);
+    const result=message.method==="initialize"?{codexHome:"/fixture",platformFamily:"unix",platformOs:"linux",userAgent:"subscriber"}:
+      message.method==="thread/read"?{thread:thread("thread-created")}:
+      message.method.endsWith("/list")?{data:[],nextCursor:null}:{};
+    peer.send(JSON.stringify({id:message.id,result}));
+  }});
+  const runtime=createAppServerWorkbenchRuntime({hostId:"subscriber-dispose",transport,autoReconnect:false});
+  let remove:()=>void=()=>undefined;
+  try {
+    await runtime.connect();const lease=await runtime.acquireThread("thread-created");
+    for(let i=0;i<20 && !lease.getSnapshot().authoritative;i++)await tick();assert.equal(lease.getSnapshot().authoritative,true);
+    await tick();
+    const reads=requests.filter(method=>method==="thread/read").length;
+    let disposal:Promise<void>|undefined,settled=false;
+    remove=runtime.subscribe(()=>{
+      if(!disposal && runtime.getSnapshot().residentThreads.find(value=>value.threadId==="thread-created")?.recovery?.stage===stage) {
+        // Set the guard before dispose synchronously publishes its own state.
+        remove();disposal=runtime.dispose();
+      }
+    });
+    let retry!:Promise<void>;
+    assert.doesNotThrow(()=>{retry=lease.retryRestore().then(()=>{settled=true;});});
+    await tick();assert.ok(disposal);await disposal;await tick();
+    assert.equal(settled,true,"public retry caller cannot remain pending after Runtime disposal");
+    assert.equal(requests.filter(method=>method==="thread/read").length,reads);
+    await retry;
+  }finally{remove();await runtime.dispose();}
+});
+
 test("Host and active Thread recover independently of a rejected Thread and stalled watch", async () => {
   let peer!: InMemoryAppServerPeer;
   let recovering = false;
