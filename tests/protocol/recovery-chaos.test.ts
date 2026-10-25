@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DeferredDuplexTransport } from "@opencraft/appserver-client/transport";
 import { ChaosViolation, generateRecoveryChaos, parseRecoveryTrace, shrinkRecoveryFailure, simulateRecovery, type ChaosEvent } from "./fixtures/recovery-chaos";
 
 const cancellation: ChaosEvent[] = [
@@ -16,6 +17,13 @@ const cancellation: ChaosEvent[] = [
   {type:"late",host:"a"},
   {type:"heal"},
 ];
+test("chaos: cleanup failure is reported without replacing the causal invariant",async()=>{
+ await assert.rejects(simulateRecovery(cancellation,{mutant:"sticky-initialize",createTransport:create=>{
+  const transport=new DeferredDuplexTransport(create);
+  transport.close=()=>Promise.reject(new Error("synthetic cleanup failure"));
+  return transport;
+ }}),error=>error instanceof ChaosViolation && error.rule==="EVENTUAL_RECOVERY" && /CLEANUP/.test(error.cleanupFailure??""));
+});
 test("chaos: queued obsolete RPC timeout cannot end context preparation",async()=>{
   const result=await simulateRecovery([
     {type:"hold",host:"a",boundary:"response",value:true},

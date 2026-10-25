@@ -144,9 +144,61 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 18 configurations.
+stale request and missing fairness. The total suite has 26 configurations,
+including the history checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
 starts context preparation, freezes past the original 30ms deadline and delivers
 that retired timer; the earlier client rejects before the new 180s deadline under
 this adversarial clock. It does not reproduce the phone's original slowdown.
+
+## History work and observer reentry
+
+`HistoryReentry.tla` independently explores two work identities at admission,
+history-start, commit, invalidation and retry-decision boundaries. Observers can
+remove, dispose, invalidate/replace, join or retry; a retained retry can predate
+failure. Fair work completion is an environmental assumption. Six deliberate
+mutants separately defer admission, read retired progress, commit through a
+retired owner, clear successor reservations, lose retry intent or release a
+successor during old cleanup. A seventh control removes fairness. These finite
+transactions do not model full history payloads or prove composition with the
+other two specifications.
+
+The same CLI also runs a history suite against the actual scheduler:
+
+```sh
+npm run test:recovery-chaos -- --suite history --seed 20261026 --cases 1000 --steps 180 --output /tmp/history-chaos
+npm run test:recovery-chaos -- --replay /tmp/history-chaos/failure-minimal.json --output /tmp/history-replay
+npm run test:recovery-chaos -- --suite history --mutant lost-admission --seed 42
+```
+
+History artifacts carry their suite, generator version 1 and relevant source
+hashes. Replay selects that suite automatically and rejects a conflicting
+explicit selection. Old artifacts without a suite still select the Host suite.
+`lost-admission` intentionally loses the returned local Promise and must fail;
+omit the mutant when checking its reduced events against the normal owner.
+Shrinking preserves the primary rule; secondary cleanup failures are recorded
+without replacing it.
+
+The history fixture has two resource keys, normalized 1/2/4/8ms retry delays,
+controlled read completions and one-shot synchronous observer reactions. Its
+healthy suffix completes reads and advances timers. It checks prompt local
+settlement on cancellation, current read budgets, same-key coalescing, explicit
+retry conservation, terminal disposal and eventual caller settlement. Physical
+retired I/O is allowed to complete later and is counted separately; it cannot
+claim current authority or release a successor's reservation. Effective observer
+reactions and late replies with a live successor are recorded separately from
+generated events. This suite does not exercise an actual Thread baseline or
+server cancellation of a read.
+
+## Remaining integration boundaries
+
+| Boundary | Current executable evidence | Remaining coverage |
+| --- | --- | --- |
+| Host admission and initialization | Recovery model, real Web/AppHost regressions, Host/client/Deferred chaos | Full seeded chaos through the actual shared-socket adapter |
+| RPC deadline replacement and uncertain writes | RequestTimers model, real client and synthetic ACK-loss oracle | Server execution deduplication / end-to-end exactly-once are outside this proof |
+| History scheduling and reentry | HistoryReentry model, actual owner chaos, real Runtime subscriber regression | Underlying read cancellation and pending hydration handoff |
+| Thread baseline authority | Independent Recovery baseline abstraction and Runtime/Replica regressions | Seeded chaos through complete baseline/notification/projection composition |
+| Browser suspension | Installed full Web freeze/restart/draft smoke | Physical iPhone lifecycle and network behavior |
+
+An accepted implementation increment does not close these broader audit items.

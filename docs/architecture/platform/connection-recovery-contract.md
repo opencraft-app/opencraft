@@ -110,6 +110,45 @@ ordinary retry scheduling in hidden pages. Server not-before and demand gates in
 the abstract specification are environmental constraints; this owner does not
 invent a new server Retry-After protocol or bypass the existing physical owner.
 
+## History recovery transactions and observer reentry
+
+History scheduling has its own work identity and logical reservations. A work
+item is registered before episode/queue observations can call back into the
+owner. It becomes schedulable when its queued observation is installed. A
+reentrant recover can join that item; remove, invalidate and dispose can already
+settle its caller. Invalidation retires active reservations before notifying
+observers. Every continuation rechecks work identity and generation after a
+success, failure or retry observation.
+
+Active reservations belong to work objects, not reusable Thread keys. Cleanup is
+installed before history-start notifications. Removing a work item releases its
+logical reservation, so an abandoned history cannot hold another Thread's
+admission. A retired completion can release only its own reservation and cannot
+clear a successor, including replacement under the same connection generation.
+This does not claim that remote read I/O stopped: the hydration owner still
+checks binding/revision authority, RPC capacity remains separate, and physical
+transport close barriers are unchanged. Best-effort cancellation of underlying
+reads and binding hydration's pending-operation handoff remain separate audit
+boundaries.
+
+Explicit retry joins an active read and retains one retry intent. Success covers
+that intent; failure admits one successor without inheriting the old backoff.
+The retry ticket is captured at actual read invocation, so a request already
+covered by that read is not replayed. Retry observers cannot install an obsolete
+timer after explicit retry, removal or invalidation. Removal/disposal takes
+precedence over retained retry demand. Current logical reads remain bounded by
+the scheduler's concurrency policy; retired remote I/O is not counted as current
+authority or claimed to obey that local bound.
+
+The independent `HistoryReentry` model checks two work identities at five
+representative observer boundaries, with optional retained retry demand, six
+ownership/order mutants and a missing-fairness control. The executable history
+chaos suite drives the actual `ConversationRecoveryOwner` across two resources,
+including one-shot observer reactions, late reads, demand, retry and cancellation.
+A real Workbench subscriber regression also disposes Runtime during history
+admission. These cover scheduling transactions, not a complete Thread baseline
+or model-to-implementation refinement proof.
+
 ## Executable evidence
 
 RPC deadlines have a second ownership level: a pending request owns its current

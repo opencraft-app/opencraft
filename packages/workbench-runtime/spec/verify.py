@@ -28,6 +28,14 @@ CASES = [
     ("RequestTimers-StaleTimer", "NoEarlyTimeout"),
     ("RequestTimers-StaleRequest", "TimeoutOwnership"),
     ("RequestTimers-NoFairness", "temporal:RequestTermination"),
+    ("HistoryReentry", None),
+    ("HistoryReentry-Admission", "DisposalSettles"),
+    ("HistoryReentry-Progress", "SafeProgressRead"),
+    ("HistoryReentry-Commit", "SuccessorWorkOwner"),
+    ("HistoryReentry-Slot", "SuccessorSlotOwner"),
+    ("HistoryReentry-Backoff", "ImmediateRetry"),
+    ("HistoryReentry-Cleanup", "SuccessorSlotOwner"),
+    ("HistoryReentry-NoFairness", "temporal:HistoryTermination"),
 ]
 
 
