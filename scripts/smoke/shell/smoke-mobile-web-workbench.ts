@@ -50,7 +50,16 @@ try {
     const websocketRequests: string[] = [];
     // This fixture has no live server or paid model. It validates document,
     // navigation and drafts independently of the server protocol handshake.
-    await context.routeWebSocket("wss://preview.example.test/**", () => {});
+    await context.routeWebSocket("wss://preview.example.test/**", route => {
+      route.onMessage(raw => {
+        const request = JSON.parse(String(raw));
+        // Saving uses the real disposable initialize preflight. Other sessions
+        // remain intentionally unready; this fixture does not model a server.
+        if (request.method === "initialize" && request.params?.clientInfo?.name === "opencraft-connection-preflight") {
+          route.send(JSON.stringify({ id: request.id, result: { userAgent: "mobile-preflight-fixture" } }));
+        }
+      });
+    });
     await context.exposeBinding("__readMobileResource", async (_source, id: string) => {
       assert(packagedIds.has(id), "native must reject unknown package IDs");
       resourceReads.push(id);
