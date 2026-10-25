@@ -5,6 +5,12 @@ production connection owner**. Existing timeout, retry and readiness behavior
 remains as described in [connections and routing](connections-and-routing.md).
 This contract makes the recovery decision reviewable before runtime changes.
 
+The subsequent [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
+cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
+Safety and conditional liveness are checked separately, including deliberate
+negative controls and an explicit reachability witness. This adds formal evidence
+for the target contract; production recovery remains unchanged.
+
 ## Ownership and observations
 
 One Host connection owner makes admission and retry decisions. The Web adapter
@@ -89,14 +95,17 @@ against the actual `ConnectionLifecycleOwner`:
 | RECOVERY-GAP-01 | connect pending; hint at 5s; retryable loss | The hint remains available for one immediate eligible successor. |
 | RECOVERY-GAP-02 | connect pending; clock frozen past 60s; foreground arrives before timer callbacks | Recheck absolute expiry and retire the expired attempt on wake. |
 | RECOVERY-GAP-03 | opaque attempt reports no progress for 30s; foreground arrives; total budget is 60s | A stage-specific idle policy can retire the stalled attempt before aggregate expiry. The 30s probe is an investigative bound, not a chosen production threshold. |
+| RECOVERY-GAP-04 | actual renewable Web transport aborts while `beforeConnect` never settles | Retire the local wait promptly without declaring the external operation complete. |
+| RECOVERY-GAP-05 | the next `connect()` arrives after the prior caller aborts | The successor must not join the revoked `connectOperation` or inherit its rejection. |
 
-These three assertions currently execute as TODOs so the normal suite can carry
+The first three assertions and the two additional Web transport assertions execute as TODOs so the normal suite can carry
 known gaps without describing them as successes. A strict run makes the same
 assertions fail normally:
 
 ```bash
 npm run test:recovery-contract
 OPENCRAFT_RECOVERY_CONTRACT_STRICT=1 npm run test:recovery-contract
+OPENCRAFT_RECOVERY_CONTRACT_STRICT=1 node --import tsx --test tests/protocol/websocket-app-host.test.ts
 ```
 
 The normal suite also verifies the already-working immediate wake during backoff
