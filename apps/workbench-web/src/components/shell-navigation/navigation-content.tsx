@@ -1,4 +1,3 @@
-import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { GaugeIcon as Gauge, LoginIcon as LogIn, LogoutIcon as LogOut, PersonIcon as User } from "@opencraft/design-system-web/action-icons";
@@ -81,7 +80,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
       const badge = action.badge === undefined ? null : <small className="shell-navigation__beta">{action.badge}</small>;
       return <Tooltip.Root key={action.id}><Tooltip.Trigger asChild><button type="button"
         data-action-id={action.id} aria-label={title} aria-current={action.active ? "page" : undefined} onClick={() => onInvoke(action.onInvoke)}>
-        <LiquidGlassBackdrop /><NavigationIcon name={action.icon} selected={action.active} />
+        <NavigationIcon name={action.icon} selected={action.active} />
         <span className="shell-navigation__item-label">
           {config.layout === "unified" ? <>
             <span className="shell-navigation__item-label--short">{short}</span>

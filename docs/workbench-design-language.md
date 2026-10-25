@@ -536,9 +536,12 @@ and curved highlights. Icons, focus rings and portalled menus are unfiltered.
 ### Shared shell action material
 
 Phone, tablet, wide Web and Electron Shell actions share `LiquidGlassBackdrop`,
-`material.liquid` and the same `material-liquid-*` tokens. Sidebar top/compact rail
-icons, New chat, footer Settings/account/update entrances and navigation controls
-use one backdrop per independent action. The header trailing group keeps one
+`material.liquid` and the same `material-liquid-*` tokens. Sidebar toggle and top
+actions, New chat, footer Settings/account/update entrances and header controls
+use one backdrop per independent action. Application navigation rows, including
+the compact icon rail, retain the flat `application-navigation-control` style:
+no per-row glass backdrop or pill material; only neutral hover, press and current
+state fills. A navigation destination is distinct from an independent Shell action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
