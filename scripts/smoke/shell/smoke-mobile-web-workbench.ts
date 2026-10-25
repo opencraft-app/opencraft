@@ -148,6 +148,12 @@ try {
     assert.equal(new URL(page.url()).pathname, "/");
     await page.screenshot({ path: path.join(output, `${label}.png`) });
     evidence.push({ width, configured, errors, executableRequests, websocketRequests, hasEditor, startupModules, startupModuleBytes, loadedModules: resourceReads.length, totalModules: packagedIds.size, resourcePolicy, messages: await page.evaluate(() => (window as any).__mobileMessages.map((message: any) => message.type)), text: (await page.locator("body").innerText()).slice(0, 1200) });
+    if (!configured) {
+      await page.getByRole("button", { name: "Connect a server", exact: true }).click();
+      await page.getByRole("textbox", { name: "Secure WebSocket address" }).fill("wss://preview.example.test/appserver");
+      await page.locator("form").getByRole("button", { name: "Connect a server", exact: true }).click();
+      await page.waitForFunction(() => (window as any).__mobileMessages.some((message: any) => message.type === "reload"));
+    }
     await context.close();
   }
 } finally {

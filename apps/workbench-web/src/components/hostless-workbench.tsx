@@ -110,7 +110,7 @@ export function HostlessWorkbench({
   const environmentSnapshot = useSyncExternalStore(supervisor.environmentDirectory.subscribe, supervisor.environmentDirectory.getSnapshot, supervisor.environmentDirectory.getSnapshot);
   const machines = useMemo(() => groupWorkInMachines(profileSnapshot.profiles, environmentSnapshot.entries), [profileSnapshot.profiles, environmentSnapshot.entries]);
   useEffect(() => {
-    if (profileSnapshot.profiles.some((profile) => profile.enabled && profile.hideFromNewChat !== true)) window.location.reload();
+    if (profileSnapshot.profiles.some((profile) => profile.enabled && profile.hideFromNewChat !== true) && !reloadMobileWorkbench()) window.location.reload();
   }, [profileSnapshot]);
 
   useLayoutEffect(() => {
