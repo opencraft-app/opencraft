@@ -4,7 +4,6 @@ import { useIntl } from "@opencraft/i18n/react";
 import type { ThreadRecoveryResource } from "@opencraft/workbench-runtime";
 
 const messages = defineMessages({
-  continued: { id: "turnRecovery.continued", defaultMessage: "Automatically continued after a service restart ({attempts}/{limit})." },
   exhausted: { id: "turnRecovery.exhausted", defaultMessage: "Automatic continuation stopped after {limit} attempts. Send a message to continue." },
   unconfirmed: { id: "turnRecovery.unconfirmed", defaultMessage: "Automatic continuation could not be confirmed. Check this conversation before continuing." },
 });
@@ -14,9 +13,9 @@ export function ThreadRecoveryNotice({ threadId, resource, children }: { threadI
   const read = useCallback(() => threadId ? resource.getSnapshot(threadId) : null, [resource, threadId]);
   const notice = useSyncExternalStore(subscribe, read, read);
   useEffect(() => { if (threadId) void resource.refresh(threadId); }, [resource, threadId]);
-  const content = notice ? <p className="thread-recovery-notice ui-text--metadata" role="status" data-state={notice.state}
+  const content = notice && notice.state !== "continued" ? <p className="thread-recovery-notice ui-text--metadata" role="status" data-state={notice.state}
     style={{ margin: 0, padding: "calc(var(--spacing) * 2) calc(var(--spacing) * 3)", overflowWrap: "anywhere",
-      color: notice.state === "continued" ? "var(--color-text-secondary)" : "var(--color-text-warning)" }}>
+      color: "var(--color-text-warning)" }}>
     {intl.formatMessage(messages[notice.state], { attempts: notice.attempts, limit: notice.limit })}
   </p> : null;
   return children ? children(content) : content;
