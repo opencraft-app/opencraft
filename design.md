@@ -116,6 +116,20 @@ Feature-specific composition can remain local. Preserve drafts, selection, focus
 and scroll through theme, size and presentation changes. Follow [UI ownership](AGENTS.md#ui-与设计系统)
 and [workspace invariants](design/invariants.md) for stable asynchronous feedback.
 
+## Keep automatic recovery quiet
+
+Successful background recovery needs no user-facing acknowledgement. Reconnection,
+resynchronization and automatic continuation after a service restart must not add
+banners, toasts, timeline entries, Composer attachments or screen-reader status
+announcements when no user action is needed. Keep attempt counts and technical
+recovery details in their diagnostic owner; continue to show ordinary task progress.
+
+Show recovery feedback only when the user needs to make a decision or act, such as
+an exhausted continuation budget, an unconfirmed result that requires inspection,
+or a required client update. Use the existing contextual slot and explain the next
+action. Preserve drafts, focus, selection, scrolling and Composer identity across
+recovery; a silent success must leave no empty panel or reserved space.
+
 ## Microinteractions and interaction motion
 
 A microinteraction is a complete loop: trigger, state change, feedback, and a
