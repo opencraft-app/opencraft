@@ -5,7 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
-import { nativeReady, removeStaleSocket, nativeSocketRelay } from "./native-process.js";
+import { nativeReady, removeStaleSocket } from "./native-process.js";
+import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
 
 export interface CodexAppServerOptions {
   readonly endpoint: string;
@@ -30,8 +31,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
   if (!isAbsolute(runtimeDataDirectory)) throw new Error("Codex runtime directory must be absolute");
   const release = await acquireCodexWriter(runtimeDataDirectory, "runtime");
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
-  const nativeListener = options.runtimeDataDirectory ? join(dirname(options.endpoint), "native-internal.sock") : nativeSocket;
-  let relay: Awaited<ReturnType<typeof nativeSocketRelay>> | undefined;
+  const nativeListener = join(dirname(options.endpoint), "native-internal.sock");
+  let relay: Awaited<ReturnType<typeof startOrchestrationCallbackRelay>> | undefined;
   let child: ChildProcessWithoutNullStreams | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let authSocket: Awaited<ReturnType<typeof nativeReady>> | undefined;
@@ -73,7 +74,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       status: request.method === "GET" && request.url === "/health" && !failed && ready ? 200 : 503,
       value: request.method === "GET" && request.url === "/health" && !failed && ready
         ? { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
-          dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl } satisfies CodexAppServerHealth
+          dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
+          callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: "Codex AppServer unavailable" },
     }));
     if (nativeSocket === options.endpoint) throw new Error("AppServer control endpoint must differ from native.sock");
@@ -91,7 +93,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     child.once("error", failure);
     child.once("close", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));
     authSocket = await nativeReady(nativeListener, child, launch.auth);
-    if (nativeListener !== nativeSocket) relay = await nativeSocketRelay(nativeSocket, nativeListener);
+    relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");
     await chmod(nativeSocket, 0o600);

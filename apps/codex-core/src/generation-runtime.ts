@@ -71,11 +71,11 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     }
     await this.ensure(generation.id); return this.registry.get(generation.id)!;
   }
-  async ensure(id: string, preserveRetiredPayload = false): Promise<CodexAppServerHealth> {
+  async ensure(id: string, preserveRetiredPayload = false, refresh = false): Promise<CodexAppServerHealth> {
     if (this.closed || this.retiring.has(id) || this.registry.get(id)?.state === "retiring") throw paused();
     const pending = this.starting.get(id); if (pending) return pending;
     const cached = this.cached.get(id);
-    if (cached && this.now() - cached.at < 1_000) return cached.health;
+    if (!refresh && cached && this.now() - cached.at < 1_000) return cached.health;
     const operation = this.open(id, preserveRetiredPayload); this.starting.set(id, operation);
     try { return await operation; } finally { if (this.starting.get(id) === operation) this.starting.delete(id); }
   }
@@ -181,6 +181,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     state.peer = connection.peer; this.probes.set(generation.id, state); return state;
   }
   private async nativeReasons(generation: GenerationRecord, health: CodexAppServerHealth): Promise<string[]> {
+    if ((health.pendingCallbacks ?? 0) > 0 || (health.pendingOrchestrationMutations ?? 0) > 0) return ["native-orchestration-callback"];
     const check = await this.probe(generation, health), loaded = rpcRecord(await check.peer.call("thread/loaded/list", {}));
     if (!Array.isArray(loaded.data)) throw new Error("Invalid native drain response");
     for (const threadId of loaded.data) {
@@ -218,7 +219,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       }
       let reasons = [...this.hostReasons(id), ...this.acceptedReasons(id)];
       if (reasons.length) return { retired: false, reasons };
-      const health = await this.ensure(id), generation = this.registry.get(id)!;
+      const health = await this.ensure(id, false, true), generation = this.registry.get(id)!;
       reasons = await this.nativeReasons(generation, health);
       if (reasons.length) return { retired: false, reasons };
       if (this.options.requireHostUsage) {
@@ -234,8 +235,10 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       }
       // The Host has frozen new admissions and reported all admissions preceding the fence.
       // Existing queued/goal work never gets frozen while waiting for that acknowledgement.
+      const latestHealth = await this.ensure(id, false, true);
+      if(this.registry.get(id)!.incarnation!==generation.incarnation)return {retired:false,reasons:["native-incarnation-changed"]};
       this.retiring.add(id);
-      reasons = [...await this.nativeReasons(generation, health), ...this.acceptedReasons(id), ...this.hostReasons(id)];
+      reasons = [...await this.nativeReasons(generation, latestHealth), ...this.acceptedReasons(id), ...this.hostReasons(id)];
       if (reasons.length) return { retired: false, reasons };
       const identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
       if (!await this.options.supervisor.processesQuiet(identity)) return { retired: false, reasons: ["native-process"] };

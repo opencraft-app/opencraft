@@ -170,3 +170,37 @@ flowchart TB
 | **Stage 1（远景）：基于现有 `collaboration` 扩展父子会话与持久通知** | 排在**执行连续性改造（平滑升级前两步：拆 AppServer 常驻 + 自动续跑）**与**Token 统计（Token 改造）**完成之后 | 1. 在既有 `actor-collaboration.sqlite` 上扩展 `parentThreadId / lifecycleOwnerThreadId` 与持久 `parent_notification_batches`<br/>2. 对接 `@opencraft/host-recovery`，实现续跑期间抑制假中断通知、终态 2s 有界合并汇报与 `hasDirectUserInput` 保护<br/>3. 在长驻 Codex Core / AppServer Host 上打通跨网关重启不丢回执的 `thread_spawn / tell / inspect / wait` | 此时常驻宿主拆分与自动续跑已就绪，不会出现网关重启打断子会话或重复发送中断通知的问题 |
 | **Stage 2（远景）：UI 协作卡片三态分离与侧边栏会话树** | 依赖 Stage 1 | 1. 修复 `chat-core` 的 `SubagentTimelineBlock`（分离工具调用状态、投递状态与子会话真实运行状态，解决 `wait` 完成误标 `done`）<br/>2. 侧边栏支持父子会话树状缩进、`hidden` 后台会话过滤与点击跳转 | 纯客户端与共享投影层升级，消费 Stage 1 的权威状态 |
 | **Stage 3（远景）：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host 稳定运行 | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp` + 多代排空）、Claude/ACP Host 上接入统一 `AgentDriverContract` 与工具回调重放<br/>2. 打通跨异构引擎的父子派发与双向 `tell`（按有界用户委托校验权限，系统 Token 单列统计） | 完成最终的多引擎统一编排目标 |
+
+
+## Stage 1 Codex implementation boundary
+
+`ThreadOrchestrationBroker` and `ThreadOrchestrationLedger` share the existing
+collaboration database owner and native Host input queue. The Codex APP Host owns
+`orchestration-callback-lane.ts`; the gateway merely attaches, replays and
+acknowledges stable callbacks. The generation registry remains the only writer
+of Thread ownership and admission epochs. Both single APP and generation routing
+use capability discovery; a gateway upgrade alone cannot advertise the four
+orchestration tools against an older execution Host.
+
+The execution port prepares and persists effective source settings before a
+Native create. Explicit creation receipts are retained until the Broker commits
+and acknowledges its result. Unknown outcomes after Host replacement are fenced
+instead of creating another child. A child first becomes durable after its first
+accepted Turn on the supported Native protocol; the spawn result reports
+`pending_first_turn` until that acceptance rather than claiming immediate storage.
+
+The recovery owner supplies explicit root snapshots. Broker notifications use
+those snapshots, not the absence of a UI recovery notice. Authority, continuation
+aliases and exact system input provenance are durable schema-v4 control facts;
+transcript caches remain rebuildable. Stage 2 UI and non-Codex Stage 3 driver
+integration are separate increments. The supported Native protocol cannot replace
+an existing Thread dynamic-tool set during resume; new tools attach at creation,
+and per-generation capability filtering keeps older APP payloads compatible.
+
+
+Delegated Codex child creation follows the source Thread's registered generation,
+using the source callback Host incarnation captured in immutable prepared settings.
+This is an explicit exception to ordinary root creation on the current default.
+Only the trusted Hub supplies this metadata; the router resolves the owner and
+checks admission/retirement fences before Native submission. Default rollback
+cannot move a pending or new delegated child to an incompatible APP payload.

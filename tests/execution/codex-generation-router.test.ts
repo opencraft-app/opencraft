@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
+import {startOrchestrationCallbackRelay} from '../../apps/codex-core/src/orchestration-callback-lane';
 import { CodexGenerationRegistry, type GenerationTicket } from "../../apps/codex-core/src/generation-registry.js";
 import { CodexGenerationRouter, startGenerationSocket, type GenerationRuntimeDirectory } from "../../apps/codex-core/src/generation-router.js";
 
-async function fixture() {
+async function fixture(callbacks:Record<string,boolean>={},replay=false) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-router-")), registry = new CodexGenerationRegistry(root);
   const servers: WebSocketServer[] = [], sockets: WebSocket[] = [];
+  const relays=new Map<string,Awaited<ReturnType<typeof startOrchestrationCallbackRelay>>>(),fenced=new Set<string>();
   const threads = new Map<string, Map<string, any>>(), calls: { generation: string; method: string; params: any }[] = [];
   const holds = new Map<string, { method: string; entered: Promise<void>; release(): void }>();
   const replies: { generation: string; id: unknown; result: unknown }[] = [];
@@ -27,6 +29,7 @@ async function fixture() {
       const gate = holds.get(id);
       if (gate?.method === m.method) { (gate as any).enteredResolve(); await (gate as any).done; holds.delete(id); }
       let result: any = {};
+      if(m.method==='thread/start'&&params.fixtureRejectCreation){ws.send(JSON.stringify({id:m.id,error:{code:-32602,message:'Native creation rejected'}}));return;}
       if (m.method === "initialize") result = { userAgent: id };
       else if (m.method === "thread/start" || m.method === "thread/fork") {
         const tid = `${id}-${table.size + 1}`; const thread = { id: tid, createdAt: table.size + (id === "old" ? 1 : 100), updatedAt: table.size + (id === "old" ? 1 : 100), status: { type: "idle" }, turns: [] }; table.set(tid, thread); result = { thread }; ws.send(JSON.stringify({ method: "thread/started", params: { thread } }));
@@ -45,14 +48,15 @@ async function fixture() {
       ws.send(JSON.stringify({ id: m.id, result }));
     }); });
     (server as any).closeHttp = () => new Promise<void>(resolve => http.close(() => resolve()));
+    if(replay&&callbacks[id])relays.set(id,await startOrchestrationCallbackRelay(join(directory,'callback.sock'),nativeSocket));
     registry.register({ id, endpoint: join(directory, "control.sock"), runtimeDataDirectory: join(directory, "data"), executable: join(directory, "codex"), bundle: join(directory, "app-server.cjs"), node: process.execPath, cwd: root }); registry.ready(id);
   }
   registry.activate("old", 0);
   const runtime: GenerationRuntimeDirectory = { registry,
-    async ensure(id) { return { protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, "native.sock") }; },
-    admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true); return () => {}; }, observe() {}, };
+    async ensure(id) { return { protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
+    admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true);if(fenced.has(ticket.generationId))throw Error('Generation retirement fenced');return () => {}; }, observe() {}, };
   const router = new CodexGenerationRouter(runtime), listener = await startGenerationSocket(join(root, "router.sock"), router);
-  const client = new WebSocket(`ws+unix://${join(root, "router.sock")}:/`), messages: any[] = [];
+  let client = new WebSocket(`ws+unix://${join(root, "router.sock")}:/${replay?'?opencraftLane=fixture-gateway':''}`);const messages: any[] = [];
   client.on("message", raw => messages.push(JSON.parse(String(raw)))); await new Promise<void>(resolve => client.once("open", resolve));
   let sequence = 0;
   async function rpc(method: string, params: unknown = {}) {
@@ -61,13 +65,15 @@ async function fixture() {
     throw new Error("fixture RPC timeout");
   }
   await rpc("initialize", { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } });
-  return { registry, client, messages, calls, replies, threads, rpc, crash(id: string) { for (const ws of servers[id === "old" ? 0 : 1]!.clients) ws.terminate(); },
+  return { registry, get client(){return client;}, messages, calls, replies, threads, rpc, relays,fence(id:string){fenced.add(id);},
+    async reconnect(){client.terminate();await new Promise<void>(resolve=>client.once('close',()=>resolve()));client=new WebSocket(`ws+unix://${join(root,'router.sock')}:/?opencraftLane=fixture-gateway`);client.on('message',raw=>messages.push(JSON.parse(String(raw))));await new Promise<void>(resolve=>client.once('open',resolve));await rpc('initialize',{clientInfo:{name:'test',version:'1'},capabilities:{experimentalApi:true}});},
+    crash(id: string) { for (const ws of servers[id === "old" ? 0 : 1]!.clients) ws.terminate(); },
     hold(id: string, method: string) {
       let enteredResolve!: () => void, finish!: () => void;
       const entered = new Promise<void>(resolve => { enteredResolve = resolve; }), done = new Promise<void>(resolve => { finish = resolve; });
       const value = { method, entered, enteredResolve, done, release: finish }; holds.set(id, value); return value;
     },
-    async close() { for (const gate of holds.values()) gate.release(); client.terminate(); await listener.close(); for (const socket of sockets) socket.terminate(); for (const server of servers) { server.close(); await (server as any).closeHttp(); } registry.close(); await rm(root, { recursive: true, force: true }); } };
+    async close() { for (const gate of holds.values()) gate.release(); client.terminate(); await listener.close();for(const relay of relays.values())await relay.close(); for (const socket of sockets) socket.terminate(); for (const server of servers) { server.close(); await (server as any).closeHttp(); } registry.close(); await rm(root, { recursive: true, force: true }); } };
 }
 
 test("native routing keeps old work and accepted creations on their generation across atomic activation", async () => {
@@ -225,4 +231,41 @@ test("successful delete without a notification removes only the cold-history req
     const thread = await f.rpc("thread/start"); await f.rpc("thread/delete", { threadId: thread.thread.id });
     assert.equal(f.registry.route(thread.thread.id)!.generationId, "old"); assert.equal(f.registry.durableThreadIds("old").includes(thread.thread.id), false);
   } finally { await f.close(); }
+});
+
+
+test("mixed APP capabilities filter new tools and private metadata for legacy Threads",async()=>{
+  const f=await fixture({new:true});
+  try{
+    const tools=[{name:"read_thread"},{name:"thread_spawn"},{name:"thread_tell"},{name:"thread_inspect"},{name:"thread_wait"}];
+    await f.rpc("thread/start",{dynamicTools:tools});
+    assert.deepEqual(f.calls.filter(call=>call.method==="thread/start").at(-1)!.params.dynamicTools,[{name:"read_thread"}]);
+    f.registry.activate("new",1);await f.rpc("thread/start",{dynamicTools:tools});
+    assert.equal(f.calls.filter(call=>call.method==="thread/start").at(-1)!.params.dynamicTools.length,5);
+    await f.rpc("turn/start",{threadId:"old-1",__opencraftDelegationId:"private",input:[]});
+    assert.equal(f.calls.filter(call=>call.method==="turn/start").at(-1)!.params.__opencraftDelegationId,undefined);
+  }finally{await f.close();}
+});
+
+
+test("a Native rejected creation replays its original failure after Gateway death before Broker finish",async()=>{
+  const f=await fixture({old:true},true);
+  try{
+    const params={__opencraftOrchestrationOperation:"rejected",fixtureRejectCreation:true};
+    await assert.rejects(f.rpc("thread/start",params),/Native creation rejected/);await f.reconnect();await assert.rejects(f.rpc("thread/start",params),/Native creation rejected/);
+    assert.equal(f.calls.filter(call=>call.method==="thread/start").length,1);
+    assert.equal((await f.rpc("opencraft/orchestration/ack",{operationId:"rejected"})).acknowledged,true);assert.equal(f.relays.get("old")!.pendingMutations,0);
+  }finally{await f.close();}
+});
+
+test("delegated spawn follows its capable source across legacy default rollback and rejects forged or fenced source",async()=>{
+  const f=await fixture({new:true},true);
+  try{
+    f.registry.activate("new",1);const source=(await f.rpc("thread/start")).thread;f.registry.activate("old",2);
+    const params={__opencraftOrchestrationOperation:"delegated",__opencraftOrchestrationSourceThreadId:source.id,__opencraftOrchestrationIncarnation:f.relays.get("new")!.incarnation,dynamicTools:[{name:"thread_spawn"},{name:"thread_tell"}]};
+    const child=(await f.rpc("thread/start",params)).thread;assert.equal(f.registry.route(child.id)!.generationId,"new");assert.equal(f.calls.filter(call=>call.method==="thread/start").at(-1)!.params.dynamicTools.length,2);
+    await assert.rejects(f.rpc("thread/start",{...params,__opencraftOrchestrationOperation:"forged",__opencraftOrchestrationIncarnation:undefined}),/source callback identity/);
+    f.fence("new");await assert.rejects(f.rpc("thread/start",{...params,__opencraftOrchestrationOperation:"fenced"}),/unconfirmed/);
+    assert.equal(f.calls.filter(call=>call.method==="thread/start").length,2);
+  }finally{await f.close();}
 });

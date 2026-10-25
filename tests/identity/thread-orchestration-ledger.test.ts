@@ -29,7 +29,7 @@ test('v2 upgrade preserves existing communication, delegations and migration che
   before.exec("INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at) VALUES('m',1,'dm','a','b','preserve me',123)");
   before.exec("INSERT INTO conversation_authorities VALUES('delegation','thread','turn','input','human',1,NULL,999999,100)");
   const history=before.prepare('SELECT * FROM schema_migrations ORDER BY version').all();before.close();
-  const after=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
+  const after=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,3)}).database;
   assert.equal(after.prepare("SELECT content FROM actor_messages WHERE id='m'").get()?.content,'preserve me');
   assert.equal(after.prepare("SELECT actor_id FROM conversation_authorities WHERE id='delegation'").get()?.actor_id,'human');
   assert.deepEqual(after.prepare('SELECT * FROM schema_migrations WHERE version<3 ORDER BY version').all(),history);

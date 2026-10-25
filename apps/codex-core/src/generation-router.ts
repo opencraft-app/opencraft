@@ -28,8 +28,8 @@ export interface GenerationRuntimeDirectory {
 export class CodexGenerationRouter {
   private readonly sessions = new Set<RoutingSession>();
   constructor(readonly runtime: GenerationRuntimeDirectory) {}
-  attach(socket: WebSocket): void {
-    const session = new RoutingSession(this, socket);
+  attach(socket: WebSocket, callbackLaneId?: string): void {
+    const session = new RoutingSession(this, socket, callbackLaneId);
     this.sessions.add(session); socket.once("close", () => { this.sessions.delete(session); session.close(); });
   }
   routesUpdated(): void { for (const session of this.sessions) session.flushStarts(); }
@@ -39,15 +39,15 @@ export class CodexGenerationRouter {
 
 class RoutingSession {
   private readonly epoch = randomUUID();
-  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean }>();
+  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean }>();
   private readonly pendingStarts = new Map<string, () => void>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean }>();
   private initializeParams: RpcRecord | null = null;
   private initialized = false;
   private closed = false;
-  constructor(private readonly router: CodexGenerationRouter, private readonly socket: WebSocket) {
+  constructor(private readonly router: CodexGenerationRouter, private readonly socket: WebSocket, private readonly callbackLaneId?: string) {
     socket.on("error", () => this.close());
     socket.on("message", frame => {
       let message: RpcRecord;
@@ -60,7 +60,7 @@ class RoutingSession {
   }
   private get registry() { return this.router.runtime.registry; }
   private emit(message: RpcRecord): void { if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
-  private async peer(id: string): Promise<{ peer: GenerationPeer; result: RpcRecord }> {
+  private async peer(id: string): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
     const health = await this.router.runtime.ensure(id), generation = this.registry.get(id)!;
     const existing = this.peers.get(id);
     if (existing?.incarnation === generation.incarnation) return existing.operation;
@@ -124,7 +124,7 @@ class RoutingSession {
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
       },
-    });
+    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
     void operation.then(value => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
     this.peers.set(id, { incarnation, operation });
     try { return await operation; }
@@ -167,6 +167,14 @@ class RoutingSession {
       if (this.registry.valid(pending.ticket)) { pending.answered = true; (await pending.operation).peer.notify({ ...message, id: pending.nativeId }); }
       return;
     }
+    if (method === "opencraft/orchestration/ack") {
+      const operationId = text(params.operationId), creationId = text(params.creationOperationId) || operationId;
+      if (operationId !== creationId && operationId !== `${creationId}:title`) throw error("Invalid orchestration acknowledgement");
+      let ticket:GenerationTicket|null;try{ticket = this.registry.creationTicket(creationId,true);}catch{this.emit({id,result:{acknowledged:true}});return;}
+      if (!ticket || !this.registry.valid(ticket)) { this.emit({ id, result: { acknowledged: true } }); return; }
+      const { peer } = await this.peer(ticket.generationId);
+      this.emit({ id, result: await peer.call(method, params) }); return;
+    }
     if (method === "thread/list") { this.emit({ id, result: await this.listThreads(params) }); return; }
     if (method === "thread/loaded/list") {
       const data = new Set<string>();
@@ -196,14 +204,22 @@ class RoutingSession {
     }
     const existing = tid ? await this.findThread(tid) : null;
     const creation = method === "thread/start" || method === "thread/fork";
-    const ticket = creation ? this.registry.acceptCreation(existing?.generationId)
+    const delegatedSource=text(params.__opencraftOrchestrationSourceThreadId);
+    if(delegatedSource&&(!text(params.__opencraftOrchestrationOperation)||method!=='thread/start'||!text(params.__opencraftOrchestrationIncarnation)))throw error('Trusted source callback identity is required');
+    const source=delegatedSource?await this.findThread(delegatedSource):null;
+    const ticket = creation ? this.registry.acceptCreation(source?.generationId??existing?.generationId, text(params.__opencraftOrchestrationOperation) || undefined)
       : existing ?? (command && !executing ? command.ticket : null) ?? (process && !spawning ? process.ticket : null) ?? { ownerEpoch: this.registry.ownerEpoch, generationId: this.registry.current().generation.id,
         incarnation: this.registry.current().generation.incarnation, admissionEpoch: this.registry.epoch() };
     if (executing && processId) { command = { ticket, active: true }; this.commands.set(processId, command); }
     if (spawning) { process = { ticket, active: true, pending: true }; this.processes.set(processHandle, process); }
     let release: (() => void) | undefined, sent = false;
     try {
-      const { peer } = await this.peer(ticket.generationId);
+      const { peer, supportsOrchestration } = await this.peer(ticket.generationId);
+      if(!supportsOrchestration){
+        if(params.__opencraftOrchestrationOperation)throw error('This Engine Host does not support orchestration replay');
+        delete params.__opencraftDelegationId;
+        if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
+      }
       release = this.router.runtime.admit(ticket);
       if (id === undefined) { peer.notify(message); return; }
       const result = await peer.call(method, params, () => { sent = true; if (creation) this.registry.markSent(ticket); }, null);
@@ -303,7 +319,11 @@ export async function startGenerationSocket(path: string, router: CodexGeneratio
   if (((await stat(dirname(path))).mode & 0o077) !== 0) throw new Error("Routing socket directory must be private");
   await removeStaleSocket(path);
   const server = createServer(), sockets = new WebSocketServer({ server });
-  sockets.on("connection", socket => router.attach(socket));
+  sockets.on("connection", (socket, request) => {
+    const lane = new URL(request.url ?? "/", "http://local.invalid").searchParams.get("opencraftLane");
+    if (lane !== null && !/^[a-zA-Z0-9:_-]{1,256}$/u.test(lane)) { socket.close(1008); return; }
+    router.attach(socket, lane ?? undefined);
+  });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => { server.off("error", reject); resolve(); }); });
   await chmod(path, 0o600);
   return { async close() { router.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve())); await unlink(path).catch(() => {}); } };

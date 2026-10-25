@@ -12,6 +12,9 @@ export interface TransportSubmissionContext {
   readonly validUntil?: number;
   /** Headless-owned collaboration admission. Never decoded from a wire frame. */
   readonly collaborationRequestId?: string;
+  /** Trusted Hub orchestration only; never parsed from a client frame. */
+  readonly orchestrationOperationId?: string;
+  readonly orchestrationCanAdmit?: () => boolean;
 }
 
 export type TransportState =
