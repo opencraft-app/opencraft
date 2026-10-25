@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AppServerRpcError, JsonRpcAppServerClient } from "@opencraft/appserver-client";
+import { AppServerClientError, AppServerRpcError, JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import {
   createCordisThreadSessionRuntime,
   createThreadViewReplicaSource,
@@ -1548,9 +1548,11 @@ test("releasing a Thread fences a late history page and later notifications", as
   try {
     await harness.runtime.resume.resume({ threadId: "thread-one" });
     const loading = harness.runtime.resume.loadOlder("thread-one");
+    const cancelled = assert.rejects(loading, error => error instanceof AppServerClientError && error.code === "ABORTED");
     await captured;
     harness.runtime.resume.release("thread-one");
-    release(); await loading;
+    await cancelled; // Local release settles before the held page replies.
+    release();
     await harness.emit("item/agentMessage/delta", { threadId: "thread-one", turnId: "tail", itemId: "reply", delta: "late" });
     assert.equal(harness.runtime.views.get("thread-one"), null);
     assert.equal(harness.runtime.views.getAll().length, 0);

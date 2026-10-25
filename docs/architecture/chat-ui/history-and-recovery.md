@@ -445,3 +445,15 @@ survive this handoff, while authoritative presentation waits for the new cut.
 A new baseline also retires old background/pagination context identities so an
 old same-generation reader cannot append after replacement. Cancellation is
 local ownership revocation, not a claim that remote execution stopped.
+
+
+Derived older-page, refresh and tail-drain requests own cancellable local waits.
+A new baseline, needs-resume transition, release or disposal settles those waits
+without waiting for a provider that ignores cancellation. Cancellation retains
+cached paint and clears the older-page loading indicator when its source is still
+current. Older/refresh requests share their initiating owner; a joining signal
+cancels only that caller's wait. Refresh cancellation returns false; older-page
+cancellation rejects with ABORTED. A queued independent intent waits for a previous
+operation to settle, including failure/cancellation, rather than inheriting its
+outcome. Their projection code loads on demand after admission and checks ownership
+again after module loading, so it is outside the mandatory startup graph.

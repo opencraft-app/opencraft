@@ -282,8 +282,21 @@ A fresh baseline also retires the previous source's history contexts, background
 drain, refresh and pagination identities, including on an unchanged client
 generation. Their late results cannot append to the new baseline. Cached paint
 survives; current authority still requires the new baseline. Independent older
-page/refresh waits do not acquire this baseline's signal: their prompt cancellation
-is a separate boundary from the identity checks preventing stale publication.
+page, refresh and background waits have their own revocable owners. Replacing a
+baseline, marking it needs-resume, releasing the Thread or disposing the Session
+clears those slots and settles callers before aborting their children. Cancelling
+one derived read preserves the current baseline and unrelated Threads. A cancelled
+refresh returns false, a cancelled older-page request rejects with ABORTED, and a
+background wait ends without a history error. Joining callers may stop waiting
+without revoking the initiating owner.
+
+Older-page and refresh work capture only an already admitted predecessor, after
+checking for their own existing owner. Their dependency graph follows admission
+order; settlement, including cancellation or failure, releases the next independent
+intent. It does not require the predecessor to succeed. Optional derived history
+projection is demand-loaded after installing the local owner; every module/strategy
+await checks current ownership before using Session services. Tail history drains
+accept an optional local AbortSignal; provider code may still ignore it.
 
 `HydrationHandoff.tla` checks two Threads and two logical revisions with separate
 Binding and Session gates. Old replies have no fairness assumption, while current
@@ -295,3 +308,13 @@ with held replies, release/reacquisition, retries and logical reconnects. Its
 healthy suffix completes only newly issued requests before releasing retired
 replies. Physical iPhone behavior and full shared-socket seeded faults remain
 outside this suite.
+
+
+`DerivedHistory.tla` separately models three admitted operations alternating
+older/refresh kinds. Exact controls introduce a future dependency, silent local
+retirement, stale slot cleanup, inherited predecessor cancellation or absent
+fairness. Current I/O needs scheduling/completion fairness; retired replies do
+not. The finite model and targeted real-Session held-strategy regressions are
+independent evidence, not a full implementation refinement proof. Existing Host,
+history and hydration chaos suites retain their own advertised scopes; they do
+not claim randomized coverage of every derived-history callback.
