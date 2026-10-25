@@ -52,7 +52,7 @@ export function deriveUserMessageWebLayout(block: UserMessageTimelineBlock): Use
     }
   }
   const hasText = block.message.trim().length > 0;
-  const hasStatus = block.goal || block.hookFeedback || block.reviewMode
+  const hasStatus = (block.messageKind === "steering" && block.steeringStatus !== null) || block.goal || block.hookFeedback || block.reviewMode
     || block.pullRequestFixMode || block.autoResolveSync || block.commentCount > 0
     || block.deliveryStatus === "not-sent" || block.deliveryStatus === "failed"
     || block.deliveryStatus === "unknown";

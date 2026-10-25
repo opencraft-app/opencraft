@@ -18,7 +18,7 @@ const vite = await createServer({
       server.middlewares.use((request, response, next) => {
         if (request.url?.split("?")[0] !== "/") return next();
         response.setHeader("content-type", "text/html");
-        response.end('<!doctype html><html><body><div id="root"></div><script type="module" src="/tests/fixtures/user-message-semantics.tsx"></script></body></html>');
+        response.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/user-message-semantics.tsx"></script></body></html>');
       });
     },
   }],
@@ -63,6 +63,16 @@ try {
     await page.waitForFunction(() => document.documentElement.dataset.opened === "file:///skills/review/SKILL.md");
     assert.equal(await example("failed").locator("[data-status-kind=failed]").count(), 1);
     assert.equal(await example("sending").locator("[data-status-kind]").count(), 0);
+    assert.match(await example("steer-pending").innerText(), /Waiting for the current step to finish/);
+    assert.match(await example("steer-accepted").innerText(), /Added to the current response/);
+    assert.match(await example("steer-cancelled").innerText(), /Cancelled/);
+    for (const state of ["pending", "accepted", "cancelled"]) {
+      const row = example(`steer-${state}`).locator(`[data-status-kind="steer-${state}"]`);
+      assert.equal(await row.count(), 1);
+      assert.ok(await row.isVisible());
+      const rect=await row.boundingBox(); await page.screenshot({path:`/tmp/opencraft-user-message-steer-${width}-${theme}.png`,fullPage:true});
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= width, JSON.stringify({width,theme,state,rect}));
+    }
     assert.match(await example("comment").innerText(), /1 comment/);
     assert.equal(await example("audio").locator("audio").count(), 1);
     await example("image").locator("[data-user-message-image-row] button").click();

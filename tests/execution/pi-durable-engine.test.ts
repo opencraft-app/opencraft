@@ -211,7 +211,7 @@ test("workspace first submission accepts native full access and retains project 
   assert.equal((await reopened.request("thread/read", { threadId: created.thread.id, includeTurns: true }, noTools)).thread.turns.length, 1);
 });
 
-test("Pi workspace outbox drains after baseline and waits for native completion before follow-up", async t => {
+test("Pi workspace outbox drains after baseline into the durable server queue", async t => {
   const { createAppServerWorkbenchRuntime } = await import("../../packages/workbench-runtime/src/appserver-runtime.js");
   const { WebSocketTransport } = await import("../../packages/appserver-transport-websocket/src/index.js");
   const f = await fixture(t, [fauxAssistantMessage("workspace outbox replied ".repeat(10)), fauxAssistantMessage("queued follow-up replied")], 100);
@@ -250,16 +250,17 @@ test("Pi workspace outbox drains after baseline and waits for native completion 
     options: { autoContext: true }, createdAt: 1 });
   await partial;
   await lease.submit({ commandId: "second-workspace-command", clientMessageId: "second-workspace-client",
-    target: { type: "existing-thread", key: lease.getSnapshot().key },
+    target: { type: "enqueue-follow-up", key: lease.getSnapshot().key },
     document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "second workspace input" }] }] },
     attachments: [], context: [], selections: { model: piModel("faux", "faux-1"), permissionProfile: "opencraft:permission-mode:full" },
     options: { autoContext: true }, createdAt: 2 });
-  assert.equal(rows.length, 1, "follow-up stays local while the native Pi turn is active");
+  assert.equal(rows.length, 0, "the server retains follow-up custody after ACK");
   await done;
   for (let i = 0; i < 100 && (lease.getSnapshot().threadStatus as any)?.type !== "idle"; i++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal((lease.getSnapshot().threadStatus as any)?.type, "idle");
-  assert.ok(methods.includes("runtime/capabilities/register")); assert.ok(methods.includes("turn/start"));
-  assert.ok(!methods.includes("thread/queue/add"));
+  assert.ok(methods.includes("runtime/capabilities/register"));
+  assert.equal(methods.filter(method => method === "thread/queue/add").length, 2);
+  assert.ok(methods.includes("thread/queue/add"));
   const restored = await f.engine.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
   assert.equal(restored.thread.projectId, "first-message-project");
   assert.equal(restored.thread.turns.length, 2);
@@ -770,7 +771,7 @@ test("Pi steer stays on the active Turn across tool and final boundaries, retrie
   read = await reopened.request("thread/read", { threadId, includeTurns: true }, owner);
   assert.equal(read.thread.turns.length, 1);
   const turn = read.thread.turns[0]; assert.equal(turn.id, started.turn.id); assert.equal(turn.status, "completed");
-  assert.deepEqual(turn.items.filter((item: any) => item.type === "userMessage").map((item: any) => item.clientId), [null, "correction", "last"]);
+  assert.deepEqual(turn.items.filter((item: any) => item.type === "userMessage" || item.type === "steeringUserMessage").map((item: any) => item.clientId), [null, "correction", "last"]);
   assert.equal(new Set(turn.items.map((item: any) => item.id)).size, turn.items.length);
   assert.equal(turn.items.at(-1).text, "steered answer");
   assert.deepEqual(await reopened.request("turn/steer", steer, owner), { turnId: started.turn.id });
@@ -860,4 +861,208 @@ test("Workbench sends Pi steer over the durable Host WebSocket and retains one T
   assert.equal(result.thread.turns.length, 1);
   assert.equal(result.thread.turns[0].items.filter((item: any) => item.clientId === "steer-client").length, 1);
   assert.equal(result.thread.turns[0].items.at(-1).text, "client steer accepted");
+});
+
+test("Pi durable queue edits, reorders, withdraws and atomically steers without double execution", async t => {
+  let entered!: () => void, release!: () => void;
+  const toolEntered = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
+  const f = await fixture(t, [
+    fauxAssistantMessage([fauxToolCall("opencraft_0_wait", {}, { id: "queue-wait" })], { stopReason: "toolUse" }),
+    context => { const text=JSON.stringify(context.messages); assert.match(text,/edited instruction/); assert.doesNotMatch(text,/deleted instruction/); return fauxAssistantMessage("steered root finished"); },
+    context => { assert.match(JSON.stringify(context.messages),/last queued instruction/); return fauxAssistantMessage("queued turn finished"); },
+  ]);
+  const owner: ExecutionEngineClient = {notify(){}, async request(){entered();await gate;return {success:true,contentItems:[{type:"inputText",text:"tool finished"}]};}};
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1"),dynamicTools:[{type:"function",name:"wait",description:"Wait",inputSchema:{type:"object"}}]},owner);
+  const completedTurns:any[]=[];f.engine.subscribe((method,params)=>{if(method==="turn/completed")completedTurns.push(params.turn)});
+  const root=await f.engine.request("turn/start",{threadId:thread.id,input:[{type:"text",text:"root"}]},owner);await toolEntered;
+  const add=async(id:string,text:string)=>(await f.engine.request("thread/queue/add",{threadId:thread.id,clientUserMessageId:id,input:[{type:"text",text}]},owner)).queuedSubmission;
+  const a=await add("delete-me","deleted instruction"),b=await add("steer-me","original instruction"),c=await add("later","last queued instruction");
+  const list=()=>f.engine.request("thread/queue/list",{threadId:thread.id},owner);
+  assert.equal((await list()).data.length,3);
+  await f.engine.request("thread/queue/update",{threadId:thread.id,queuedSubmissionId:b.id,input:[{type:"text",text:"edited instruction"}]},owner);
+  await f.engine.request("thread/queue/reorder",{threadId:thread.id,queuedSubmissionIds:[c.id,b.id,a.id]},owner);
+  assert.deepEqual((await list()).data.map((x:any)=>x.id),[c.id,b.id,a.id]);
+  await assert.rejects(f.engine.request("thread/queue/reorder",{threadId:thread.id,queuedSubmissionIds:[c.id,c.id,a.id]},owner),/order changed/);
+  assert.equal((await f.engine.request("thread/queue/delete",{threadId:thread.id,queuedSubmissionId:a.id},owner)).deleted,true);
+  await add("delete-me","deleted instruction"); // A lost delete/add ACK cannot resurrect discarded work.
+  assert.deepEqual((await list()).data.map((x:any)=>x.id),[c.id,b.id]);
+  const steer={threadId:thread.id,queuedSubmissionId:b.id,expectedTurnId:root.turn.id};
+  await assert.rejects(f.engine.request("thread/queue/steer",{...steer,expectedTurnId:"stale"},owner),/identity changed/);
+  assert.equal((await list()).data.length,2);
+  const replies=await Promise.all([f.engine.request("thread/queue/steer",steer,owner),f.engine.request("thread/queue/steer",steer,noTools)]);
+  assert.ok(replies.every(reply=>reply.turnId===root.turn.id));
+  const waiting=await list();assert.equal(waiting.data.length,1);assert.equal(waiting.steering.length,1);
+  const pending=await f.engine.request("thread/read",{threadId:thread.id,includeTurns:true},owner);
+  assert.equal(pending.thread.turns.length,1);
+  const input=pending.thread.turns[0].items.find((item:any)=>item.clientId==="steer-me");
+  assert.equal(input.type,"userMessage");assert.equal(input.__opencraftSteeringStatus,"pending");assert.equal(input.content[0].text,"edited instruction");
+  release();
+  for(let i=0;i<400&&completedTurns.length<2;i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(completedTurns.length,2);assert.ok(completedTurns.every(turn=>turn.status==="completed"));
+  assert.equal(f.faux.state.callCount,3);assert.equal((await list()).data.length,0);
+  const read=await f.engine.request("thread/read",{threadId:thread.id,includeTurns:true},owner);
+  assert.equal(read.thread.turns.length,2);
+  assert.equal(read.thread.turns[0].items.find((item:any)=>item.clientId==="steer-me").__opencraftSteeringStatus,"accepted");
+  assert.equal(read.thread.turns[1].id,c.id);
+  assert.equal((await f.engine.request("thread/queue/steer",steer,owner)).turnId,root.turn.id);
+});
+
+test("Pi stop preserves paused queued input across restart; explicit start resumes it once", async t => {
+  const f=await fixture(t,[fauxAssistantMessage("long running response ".repeat(30))],30);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  const partial=new Promise<void>(resolve=>{const off=f.engine.subscribe(method=>{if(method==="item/agentMessage/delta"){off();resolve();}})});
+  const started=await f.engine.request("turn/start",{threadId:thread.id,input:[{type:"text",text:"root"}]},noTools);await partial;
+  const queued=await f.engine.request("thread/queue/add",{threadId:thread.id,clientUserMessageId:"paused",input:[{type:"text",text:"preserved next task"}]},noTools);
+  const stopped=completed(f.engine);await f.engine.request("turn/interrupt",{threadId:thread.id,turnId:started.turn.id},noTools);assert.equal((await stopped).status,"interrupted");
+  assert.equal((await f.engine.request("thread/queue/list",{threadId:thread.id},noTools)).data[0].pausedReason,"user-stopped");
+  await f.engine.close();
+  const models=fixtureModels([context=>{assert.match(JSON.stringify(context.messages),/preserved next task/);return fauxAssistantMessage("resumed next task");}]);
+  const reopened=new PiEngine({directory:f.directory,cwd:f.directory,models:models.models});t.after(()=>reopened.close());await reopened.start();
+  const list=await reopened.request("thread/queue/list",{threadId:thread.id},noTools);assert.equal(list.data.length,1);assert.equal(models.faux.state.callCount,0);
+  const done=completed(reopened);
+  await reopened.request("thread/queue/start",{threadId:thread.id,queuedSubmissionId:queued.queuedSubmission.id},noTools);
+  assert.equal((await done).status,"completed");assert.equal(models.faux.state.callCount,1);
+  await reopened.request("thread/queue/add",{threadId:thread.id,clientUserMessageId:"paused",input:[{type:"text",text:"preserved next task"}]},noTools);
+  assert.equal((await reopened.request("thread/queue/list",{threadId:thread.id},noTools)).data.length,0);
+  assert.equal(models.faux.state.callCount,1);
+});
+
+test("Pi queue reconciles a lost native submission ACK rather than replaying its input", async t => {
+  const f=await fixture(t,[fauxAssistantMessage("one native execution")]);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  const native=(f.engine as any).sessions.get(thread.id).native;
+  const submit=native.submit.bind(native);let admissions=0;
+  native.submit=async(...args:any[])=>{admissions++;await submit(...args);throw new Error("Simulated lost native ACK");};
+  const done=completed(f.engine);
+  await f.engine.request("thread/queue/add",{threadId:thread.id,clientUserMessageId:"lost-ack",input:[{type:"text",text:"once"}]},noTools);
+  assert.equal((await done).status,"completed");
+  assert.equal(admissions,1);assert.equal(f.faux.state.callCount,1);
+  assert.equal((await f.engine.request("thread/queue/list",{threadId:thread.id},noTools)).data.length,0);
+});
+
+test("Workbench preserves Pi queue preference and atomically steers the queued message with native status", async t => {
+  const {createAppServerWorkbenchRuntime}=await import("../../packages/workbench-runtime/src/appserver-runtime.js");
+  const {WebSocketTransport}=await import("../../packages/appserver-transport-websocket/src/index.js");
+  let entered!:()=>void,release!:()=>void;
+  const generating=new Promise<void>(resolve=>{entered=resolve});const gate=new Promise<void>(resolve=>{release=resolve});t.after(()=>release());
+  const f=await fixture(t,[async()=>{entered();await gate;return fauxAssistantMessage("first answer")},context=>{
+    assert.match(JSON.stringify(context.messages),/queued correction/);return fauxAssistantMessage("steered answer");
+  }]);
+  const host=await startEngineHost({providers:[f.engine],defaultEngine:"pi"});t.after(()=>host.close());
+  let rows:any[]=[];const sent:string[]=[];
+  const runtime=createAppServerWorkbenchRuntime({hostId:"pi-parity",hostKind:"durable",
+    outbox:{read:()=>rows,write:(_key,next)=>{rows=[...next]},subscribe:()=>()=>{}},
+    createTransport:()=>{const transport=new WebSocketTransport(host.websocketUrl),send=transport.send.bind(transport);transport.send=frame=>{sent.push(JSON.parse(frame).method);return send(frame)};return transport},
+  });t.after(()=>runtime.dispose());await runtime.connect();
+  const thread=await runtime.resources.threads.start({model:piModel("faux","faux-1"),cwd:f.directory});
+  const lease=await runtime.acquireThread(thread.id);t.after(()=>lease.release());
+  for(let i=0;i<200&&!lease.getSnapshot().authoritative;i++)await new Promise(resolve=>setTimeout(resolve,10));
+  const intent={commandId:"first",clientMessageId:"first",target:{type:"existing-thread" as const,key:lease.getSnapshot().key},
+    document:{version:1 as const,blocks:[{type:"paragraph" as const,children:[{type:"text" as const,text:"first"}]}]},attachments:[],context:[],
+    selections:{model:piModel("faux","faux-1"),permissionProfile:null},options:{autoContext:true},createdAt:1};
+  await lease.submit(intent);await generating;
+  await lease.submit({...intent,commandId:"correction",clientMessageId:"correction",target:{type:"enqueue-follow-up",key:lease.getSnapshot().key},
+    document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"queued correction"}]}]}});
+  for(let i=0;i<200&&!lease.getSnapshot().queuedSubmissions.some(item=>item.serverSubmissionId!==null);i++)await new Promise(resolve=>setTimeout(resolve,10));
+  const queued=lease.getSnapshot().queuedSubmissions.find(item=>item.serverSubmissionId!==null)!;assert.ok(queued);assert.equal(rows.length,0);
+  const done=completed(f.engine);
+  const turnId=await lease.steerQueuedSubmission(queued.serverSubmissionId!);
+  const correction=()=>lease.getSnapshot().timeline.frames.flatMap(frame=>frame.blocks).filter((block:any)=>block.type==="user-message"&&block.clientId==="correction") as any[];
+  for(let i=0;i<200&&correction()[0]?.steeringStatus!=="pending";i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(correction().length,1);assert.equal(correction()[0].steeringStatus,"pending");
+  assert.equal(correction()[0].deliveryStatus,"sent");
+  assert.ok(sent.includes("thread/queue/add"));assert.ok(sent.includes("thread/queue/steer"));
+  release();assert.equal((await done).id,turnId);
+  for(let i=0;i<200&&correction()[0]?.steeringStatus!=="accepted";i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(correction().length,1);assert.equal(correction()[0].steeringStatus,"accepted");assert.equal(f.faux.state.callCount,2);
+});
+
+test("Pi cold owner reconciles claimed queue custody from native receipts and drains the next input", async t => {
+  const f=await fixture(t,[fauxAssistantMessage("already delivered")]);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  const requestId=`${thread.id}:turn:client:delivered`;
+  const done=completed(f.engine);
+  await f.engine.request("turn/start",{threadId:thread.id,clientUserMessageId:"delivered",input:[{type:"text",text:"delivered"}]},noTools);await done;
+  const {PiQueueDoc}=await import("../../plugins/pi-engine/src/queue.js");
+  const {BACKGROUND_CONTEXT}=await import("@earendil-works/chord/context");
+  const session=(f.engine as any).sessions.get(thread.id);
+  // A crashed dispatcher can leave custody after native admission. Suppress
+  // the old gateway's drain while constructing exactly that durable state.
+  (f.engine as any).queueDrains.add(thread.id);
+  await session.native.root.commit(async(tx:any)=>{
+    const queue=await tx.doc(PiQueueDoc,session.native.root.id);
+    queue.items.push({id:requestId,clientId:"delivered",input:[{type:"text",text:"delivered"}],content:[{type:"text",text:"delivered"}],additionalContext:null,createdAtMs:1,state:"dispatching"});
+    queue.items.push({id:`${thread.id}:turn:client:next`,clientId:"next",input:[{type:"text",text:"next input"}],content:[{type:"text",text:"next input"}],additionalContext:null,createdAtMs:2,state:"queued"});
+  },BACKGROUND_CONTEXT);
+  session.pendingRecovery=true;await (f.engine as any).save(session);await f.engine.close();
+  const models=fixtureModels([context=>{const text=JSON.stringify(context.messages);assert.match(text,/next input/);return fauxAssistantMessage("next delivered") }]);
+  const reopened=new PiEngine({directory:f.directory,cwd:f.directory,models:models.models});t.after(()=>reopened.close());
+  const nextDone=completed(reopened);await reopened.start();assert.equal((await nextDone).status,"completed");
+  assert.equal(models.faux.state.callCount,1);
+  const read=await reopened.request("thread/read",{threadId:thread.id,includeTurns:true},noTools);assert.equal(read.thread.turns.length,2);
+  assert.equal(read.thread.turns.filter((turn:any)=>turn.id===requestId).length,1);
+  assert.equal((await reopened.request("thread/queue/list",{threadId:thread.id},noTools)).data.length,0);
+});
+
+test("Pi queue survives an actual dropped WebSocket ACK and reconnecting clients steer it only once", async t => {
+  const {WebSocketServer}=await import("ws");
+  let entered!:()=>void,release!:()=>void;
+  const generating=new Promise<void>(resolve=>{entered=resolve}),gate=new Promise<void>(resolve=>{release=resolve});t.after(()=>release());
+  const f=await fixture(t,[async()=>{entered();await gate;return fauxAssistantMessage("first result")},context=>{
+    assert.match(JSON.stringify(context.messages),/network correction/);return fauxAssistantMessage("correction applied");
+  }]);
+  const host=await startEngineHost({providers:[f.engine],defaultEngine:"pi"});t.after(()=>host.close());
+  const proxy=new WebSocketServer({host:"127.0.0.1",port:0});await new Promise<void>(resolve=>proxy.once("listening",resolve));
+  const upstreams=new Set<WebSocket>();let dropped=false;
+  proxy.on("connection",downstream=>{
+    const upstream=new WebSocket(host.websocketUrl);upstreams.add(upstream);let droppedId:any=null;const waiting:WebSocket.RawData[]=[];
+    downstream.on("message",raw=>{const frame=JSON.parse(raw.toString());if(frame.method==="thread/queue/add")droppedId=frame.id;if(upstream.readyState===WebSocket.OPEN)upstream.send(raw);else waiting.push(raw)});
+    upstream.on("open",()=>{for(const raw of waiting)upstream.send(raw)});
+    upstream.on("message",raw=>{const frame=JSON.parse(raw.toString());
+      if(!frame.method&&frame.id===droppedId){dropped=true;downstream.close(1012,"Synthetic ACK loss");upstream.close();return}
+      if(downstream.readyState===WebSocket.OPEN)downstream.send(raw);
+    });
+    downstream.on("close",()=>upstream.close());upstream.on("close",()=>upstreams.delete(upstream));
+  });
+  t.after(async()=>{for(const ws of proxy.clients)ws.terminate();for(const ws of upstreams)ws.terminate();await new Promise<void>(resolve=>proxy.close(()=>resolve()))});
+  const open=async(url:string)=>{const ws=new WebSocket(url);await new Promise<void>((resolve,reject)=>{ws.once("open",resolve);ws.once("error",reject)});t.after(()=>ws.terminate());return ws};
+  let counter=0;
+  const call=(ws:WebSocket,method:string,params:any={})=>new Promise<any>((resolve,reject)=>{
+    const id=++counter;
+    const cleanup=()=>{clearTimeout(timer);ws.off("message",receive);ws.off("close",closed)};
+    const receive=(raw:WebSocket.RawData)=>{const frame=JSON.parse(raw.toString());if(frame.method||frame.id!==id)return;cleanup();frame.error?reject(new Error(frame.error.message)):resolve(frame.result)};
+    const closed=()=>{cleanup();reject(new Error("WebSocket closed before ACK"))};
+    const timer=setTimeout(()=>{cleanup();reject(new Error("RPC timed out"))},5000);
+    ws.on("message",receive);ws.once("close",closed);ws.send(JSON.stringify({jsonrpc:"2.0",id,method,params}));
+  });
+  const a=await open(`ws://127.0.0.1:${(proxy.address() as any).port}`);await call(a,"initialize");
+  const {thread}=await call(a,"thread/start",{model:piModel("faux","faux-1"),cwd:f.directory});
+  const root=await call(a,"turn/start",{threadId:thread.id,input:[{type:"text",text:"root"}]});await generating;
+  const add={threadId:thread.id,clientUserMessageId:"network-correction",input:[{type:"text",text:"network correction"}]};
+  await assert.rejects(call(a,"thread/queue/add",add),/closed before ACK/);assert.equal(dropped,true);
+  const b=await open(host.websocketUrl);await call(b,"initialize");await call(b,"thread/resume",{threadId:thread.id});
+  const queue=await call(b,"thread/queue/list",{threadId:thread.id});assert.equal(queue.data.length,1);
+  const steer={threadId:thread.id,queuedSubmissionId:queue.data[0].id,expectedTurnId:root.turn.id};
+  assert.equal((await call(b,"thread/queue/steer",steer)).turnId,root.turn.id);
+  assert.equal((await call(b,"thread/queue/steer",steer)).turnId,root.turn.id);
+  await call(b,"thread/queue/add",add);
+  await assert.rejects(call(b,"thread/queue/add",{...add,input:[{type:"text",text:"conflicting retry"}]}),/different input/);
+  assert.equal((await call(b,"thread/queue/list",{threadId:thread.id})).data.length,0);
+  const done=completed(f.engine);release();assert.equal((await done).status,"completed");
+  assert.equal(f.faux.state.callCount,2);
+  const read=await call(b,"thread/read",{threadId:thread.id,includeTurns:true});assert.equal(read.thread.turns.length,1);
+  assert.equal(read.thread.turns[0].items.filter((item:any)=>item.clientId==="network-correction").length,1);
+});
+
+test("Pi queued first input binds live platform tools and updates the conversation preview", async t => {
+  const f=await fixture(t,[fauxAssistantMessage([fauxToolCall("opencraft_0_lookup",{}, {id:"queued-tool"})],{stopReason:"toolUse"}),fauxAssistantMessage("tool done")]);
+  let calls=0;const owner:ExecutionEngineClient={notify(){},async request(){calls++;return {success:true,contentItems:[{type:"inputText",text:"looked up"}]}}};
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1"),dynamicTools:[{type:"function",name:"lookup",description:"Lookup",inputSchema:{type:"object"}}]},owner);
+  const done=completed(f.engine);
+  await f.engine.request("thread/queue/add",{threadId:thread.id,clientUserMessageId:"first-queued",input:[{type:"text",text:"queued first request"}]},owner);
+  assert.equal((await done).status,"completed");assert.equal(calls,1);
+  const read=await f.engine.request("thread/read",{threadId:thread.id,includeTurns:true},owner);
+  assert.equal(read.thread.preview,"queued first request");
+  assert.equal(read.thread.turns[0].items.find((item:any)=>item.type==="dynamicToolCall").status,"completed");
 });

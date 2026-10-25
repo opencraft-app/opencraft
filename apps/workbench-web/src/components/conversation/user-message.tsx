@@ -317,12 +317,20 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   else if (block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
   else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
   else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookFeedback" defaultMessage="Hook feedback" /></span>);
+  if (block.messageKind === "steering" && !["failed", "unknown", "not-sent"].includes(block.deliveryStatus ?? "")) {
+    const status = block.steeringStatus;
+    if (block.deliveryStatus === "sending") chips.push(<span data-status-kind="steer-sending" key="steer-sending"><FormattedMessage id="chat.steer.sending" defaultMessage="Sending…" /></span>);
+    else if (status === "pending") chips.push(<span data-status-kind="steer-pending" key="steer-pending"><FormattedMessage id="chat.steer.waiting" defaultMessage="Waiting for the current step to finish" /></span>);
+    else if (status === "accepted") chips.push(<span data-status-kind="steer-accepted" key="steer-accepted"><FormattedMessage id="chat.steer.accepted" defaultMessage="Added to the current response" /></span>);
+    else if (status === "cancelled") chips.push(<span data-status-kind="steer-cancelled" key="steer-cancelled"><FormattedMessage id="chat.steer.cancelled" defaultMessage="Cancelled" /></span>);
+    else if (status === "declined") chips.push(<span data-status-kind="steer-declined" key="steer-declined"><FormattedMessage id="chat.steer.declined" defaultMessage="Not added" /></span>);
+  }
   if (block.reviewMode) chips.push(<span key="review"><FormattedMessage id="chat.message.reviewMode" defaultMessage="Review mode" /></span>);
   if (block.pullRequestFixMode) chips.push(<span key="pr-fix"><FormattedMessage id="chat.message.prFix" defaultMessage="PR fix" /></span>);
   if (block.autoResolveSync) chips.push(<span key="auto-resolve"><FormattedMessage id="chat.message.autoResolve" defaultMessage="Auto resolve conflicts" /></span>);
   if (block.commentCount > 0) chips.push(<span key="comments"><FormattedMessage id="chat.message.comments" defaultMessage="{count, plural, one {# comment} other {# comments}}" values={{ count: block.commentCount }} /></span>);
   if (chips.length === 0 && hookStatsAccessory === undefined) return null;
-  return <div className="thread-user-message__status-row">{chips}{hookStatsAccessory}</div>;
+  return <div className="thread-user-message__status-row" aria-live={block.messageKind === "steering" ? "polite" : undefined}>{chips}{hookStatsAccessory}</div>;
 }
 
 export function UserMessageBlock({ block, hookStatsAccessory }: {

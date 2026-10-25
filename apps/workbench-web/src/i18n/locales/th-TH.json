@@ -997,5 +997,12 @@
   "mobile.connection.failed": "บันทึกการเชื่อมต่อไม่ได้ ตรวจสอบที่อยู่แล้วลองอีกครั้ง",
   "page.shareLink": "แชร์ลิงก์",
   "page.linkCopied": "คัดลอกลิงก์แล้ว",
-  "page.shareFailed": "ไม่สามารถแชร์ลิงก์ได้ โปรดลองอีกครั้ง"
+  "page.shareFailed": "ไม่สามารถแชร์ลิงก์ได้ โปรดลองอีกครั้ง",
+  "chat.steer.sending": "กำลังส่ง…",
+  "chat.steer.waiting": "รอขั้นตอนปัจจุบันเสร็จสิ้น",
+  "chat.steer.accepted": "เพิ่มในการตอบกลับปัจจุบันแล้ว",
+  "chat.steer.cancelled": "ยกเลิกแล้ว",
+  "chat.steer.declined": "ไม่ได้เพิ่ม",
+  "chat.queue.pausedAfterStop": "หยุดชั่วคราวหลังจากหยุดงาน กดดำเนินการต่อเมื่อพร้อม",
+  "chat.queue.pausedAfterFailure": "ยังไม่ได้ส่งข้อความ กดดำเนินการต่อเพื่อลองอีกครั้ง"
 }

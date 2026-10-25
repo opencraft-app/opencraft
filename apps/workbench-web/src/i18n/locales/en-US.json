@@ -995,5 +995,12 @@
   "mobile.connection.failed": "The connection could not be saved. Check the address and try again.",
   "page.shareLink": "Share link",
   "page.linkCopied": "Link copied",
-  "page.shareFailed": "Could not share the link. Try again."
+  "page.shareFailed": "Could not share the link. Try again.",
+  "chat.steer.sending": "Sending…",
+  "chat.steer.waiting": "Waiting for the current step to finish",
+  "chat.steer.accepted": "Added to the current response",
+  "chat.steer.cancelled": "Cancelled",
+  "chat.steer.declined": "Not added",
+  "chat.queue.pausedAfterStop": "Paused after stopping. Resume when ready.",
+  "chat.queue.pausedAfterFailure": "Message not sent. Resume to try again."
 }

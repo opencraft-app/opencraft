@@ -252,3 +252,13 @@ test("singleton Host display spans retain the acknowledged content", () => {
   const result = normalize({ params: { input: { type: "text", text: "request" }, clientUserMessageId: "c" }, items: [user("server", content, { clientId: "c" })] });
   assert.deepEqual(payload(result.items[0]).content, content);
 });
+
+test("native steering metadata preserves actual placement before any assistant output", () => {
+  for (const status of ["pending", "accepted", "cancelled"] as const) {
+    const item=user("native-steer",text("correction"),{clientId:"steer",__opencraftMessageKind:"steering",__opencraftSteeringStatus:status,deliveryStatus:"sent"});
+    const result=normalize({items:[user("root",text("root")),item]});
+    assert.equal(result.items.length,2);
+    assert.equal(payload(result.items[1]).__opencraftMessageKind,"steering");
+    assert.equal(payload(result.items[1]).__opencraftSteeringStatus,status);
+  }
+});

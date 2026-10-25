@@ -197,7 +197,9 @@ export function normalizeTurnUserMessages(turn: TimelineSourceTurn): TimelineSou
     }
     const data = record(item.payload);
     const serverClient = clientOf(data);
-    if (leading) items.push({ ...item, payload: { ...projectionPayload(data), __opencraftMessageKind: "user" } });
+    if (data.__opencraftMessageKind === "steering" && ["pending", "accepted", "cancelled", "declined"].includes(String(data.__opencraftSteeringStatus))) {
+      items.push({ ...item, payload: projectionPayload(data) });
+    } else if (leading) items.push({ ...item, payload: { ...projectionPayload(data), __opencraftMessageKind: "user" } });
     else if (turn.preserveServerUserMessages === true || (serverClient !== null && !(client !== null && client === serverClient))) {
       items.push({ ...item, payload: { ...projectionPayload(data), __opencraftMessageKind: "steering", __opencraftSteeringStatus: "accepted" } });
     } else hidden.add(item.id);
