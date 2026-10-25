@@ -1,6 +1,7 @@
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
 import { TranscriptReadCache } from "@opencraft/native-history-node";
+import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -486,8 +487,11 @@ export class CodexEngineAdapter implements DuplexTransport {
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     this.hostState = new OpenCraftHostStateDatabase(dataRoot);
     const adapter = this;
+    const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
+      () => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
     this.transcriptCache = new TranscriptReadCache(dataRoot, {
-      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || dataRoot; },
+      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
+      resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
       readThread: async threadId => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread as AppServerThread,
       listTurns: async (threadId, cursor, limit) => {
         const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
@@ -535,6 +539,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageAttemptWriter=new TokenUsageAttemptWriter({entry:this.options.tokenUsage.queryWorkerEntry,directory:dataRoot,serverId:this.options.tokenUsage.serverId,projectLegacy:this.options.tokenUsage.derivedQueries?false:undefined});
       this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry,{projectLegacy:this.options.tokenUsage?.derivedQueries?false:undefined}), {
         request:(method,params)=>this.requestPhysical(method,params,5000),
+        source:(threadId,path)=>nativeStorage.resolve(threadId,path),
         submission:this.options.tokenUsage?.submission,
         diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
         derived:this.options.tokenUsage?.derivedQueries,

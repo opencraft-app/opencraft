@@ -15,7 +15,7 @@ export class TokenUsageQueryService {
   private waiters=0;
   private readonly inFlight=new Map<string,Promise<TokenUsageSnapshot>>();
   private readonly pending=new Map<number,{resolve:(value:TokenUsageSnapshot)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>;send:()=>void}>();
-  constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry;rollout?:{nativeHome:string;directory?:string}}) {
+  constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry;rollout?:{nativeHome:string;directory?:string;coreEndpoint?:string;coreAuthToken?:string}}) {
     if (options.rollout&&existsSync(options.databasePath)) this.start();
   }
   invalidate(threadId:string,path?:string):void {

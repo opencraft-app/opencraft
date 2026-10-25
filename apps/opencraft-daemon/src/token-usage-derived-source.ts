@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { normalizeUsageCounts, type UsageCounts } from "./token-usage-ledger.js";
-import { readRolloutIncrement } from "@opencraft/native-history-node/codex-rollout-reader";
+import { readRolloutIncrement, type NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 type Counts = readonly (string | null)[];
 export type RetainedUsageEvent =
@@ -74,7 +74,7 @@ export function parseUsageEvent(state: UsageParserState, event: RetainedUsageEve
 
 export interface RetainedRead { cursor: number; identity: string; events: { key: string; at: number; event: RetainedUsageEvent }[]; missing: boolean; more: boolean; bytes: number }
 /** At most one MiB plus a bounded newline search. A partial tail is retried. */
-export async function readUsageIncrement(options: { path: string; nativeHome: string; threadId: string; cursor: number; identity: string | null }): Promise<RetainedRead> {
+export async function readUsageIncrement(options: { path: string; nativeHome: string; source?: NativeRolloutSource; threadId: string; cursor: number; identity: string | null }): Promise<RetainedRead> {
   const selected = (head: string): boolean => {
     const tag = head.match(/"type"\s*:\s*"([^"]+)"/)?.[1];
     if (!tag || !["session_meta", "turn_context", "token_usage_record", "event_msg"].includes(tag)) return false;

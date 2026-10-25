@@ -8,6 +8,7 @@ import { TOKEN_USAGE_STATE_MIGRATIONS, TOKEN_USAGE_RECENCY_INDEX } from "./token
 import { OpenCraftTokenUsageLedger, type UsageCounts } from "./token-usage-ledger.js";
 import { tokenModelKey } from "./token-usage-allocation.js";
 import { emptyUsageParserState, parseUsageEvent, readUsageIncrement, type RetainedUsageEvent, type UsageParserState } from "./token-usage-derived-source.js";
+import type { NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 // Retained source evidence has its own immutable migration history. Only the
 // derived file may be discarded; neither receipts nor retained events are caches.
@@ -94,7 +95,9 @@ export class RolloutDerivedTokenUsage {
     const stmt = db.prepare(sql); if (this.statements.size >= 128) this.statements.delete(this.statements.keys().next().value!);
     this.statements.set(key, stmt); return stmt;
   }
-  constructor(readonly options: { databasePath: string; nativeHome: string; serverId: string; directory?: string }) {
+  constructor(readonly options: { databasePath: string; nativeHome: string; serverId: string; directory?: string;
+    nativeHomes?: () => Promise<readonly NativeRolloutSource[]>;
+    resolveSource?: (threadId: string, path: string) => Promise<NativeRolloutSource> }) {
     const directory = options.directory ?? dirname(options.databasePath);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.source = new DatabaseSync(options.databasePath, { readOnly: true });
@@ -153,7 +156,11 @@ export class RolloutDerivedTokenUsage {
       }
       await new Promise<void>(resolve => setImmediate(resolve));
     };
-    for (const folder of ["sessions", "archived_sessions"]) await visit(join(this.options.nativeHome, folder), 3);
+    const sources = this.options.nativeHomes ? await this.options.nativeHomes() : null;
+    for (const home of sources ?? [{ nativeHome: this.options.nativeHome }]) {
+      for (const folder of ["sessions", "archived_sessions"]) await visit(join(home.nativeHome, folder), 3);
+    }
+    for (const source of sources ?? []) await source.validate();
   }
   private gap(id: string, thread: string | null, reason: string) {
     this.ledger.commitReplayBatch(()=>{
@@ -310,7 +317,8 @@ export class RolloutDerivedTokenUsage {
       if (!file) { this.fileAfter = "";const more=this.roundProgress||this.dirty.size>0||!!this.statement(this.database,"SELECT 1 FROM usage_reproject LIMIT 1").get();this.roundProgress=false;if(!more){this.clearGap("building");this.clearGap("refresh-failed");}return more; }
       const thread = String(file.thread_id); this.fileAfter = thread;
       try {
-        const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
+        const source = await this.options.resolveSource?.(thread, String(file.path));
+        const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, source, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
         if (this.closed) return false;
         if(result.events.some(row=>row.event.kind==="session"&&row.event.data[0]!==thread))throw new Error("Usage session identity mismatch");
         const recoveredAvailability=file.error==="source-replaced"&&!result.more&&!result.missing;

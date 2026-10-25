@@ -768,6 +768,14 @@ this derived data. Source stat and committed newline byte cursors reconcile
 append-only changes, including incomplete native tails.
 
 Token statistics and transcript reconciliation use `codex-rollout-reader.ts`.
+The Host resolves each Thread through the authenticated Core generation directory.
+A trusted source scope binds the registered HOME, routing owner and runtime
+incarnation; canonical paths remain inside that HOME even on cache hits. Read
+completion validates the scope before publishing a page or committing usage and
+its byte cursor. Derived usage discovery visits registered HOMEs separately; an
+unavailable directory or missing registered HOME is unavailable/partial coverage,
+never a complete empty result. Existing evidence and counting/allocation rules
+remain unchanged. Combined/single-APP mode retains its original HOME boundary.
 The native AppServer read-only paginator owns Turn projection semantics; the
 shared reader identifies the dirty suffix, so there is no second Codex message
 or tool parser. Warm reads use the native file stat and indexed positional reads.

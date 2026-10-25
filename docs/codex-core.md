@@ -163,7 +163,9 @@ registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、
 
 原生文件读取者用账号 Core 的认证 `GET /generation-directory?threadId=…`（`CodexCoreControlClient.generationDirectory`）取得版本 1 的 `routingEpoch`、接纳 epoch、登记的 `{generationId,codexHome,incarnation}` 及所查 Thread 的归属；不传 Thread 时只返回 HOME 目录，不扫描全部 Thread。未发现的 Thread 返回空归属，不能据此宣称无用量。查询不取得 Host lease、不启动退休 HOME、不返回文件内容；combined/单 APP 返回 `null`。读取期间 owner epoch 改变时明确重试，缓存缺少 Thread 时也要重查，因为新 Thread 不会推进默认接纳 epoch。
 
-启用多代前，所有原生文件消费者必须消费这份 HOME 归属。Headless 的既有用量查询 worker 仍固定到 `data/codex/runtime`，collector 也只记首次 initialize 的 HOME；实际新代 rollout 会被单 HOME 路径边界拒绝。共享历史读取器及 adapter 的 `nativeHome` getter 也沿用首次 initialize 的单 HOME。两类消费者适配独立于此 Core 接口，尚未完成时不能把启用多代写成 Headless 生产验收通过。不可用共同父目录放宽路径边界，也不可复制 rollout 到旧 HOME；统计规则与 ledger 唯一 owner 保持不变。
+共享文件读取使用可信 Host 解析出的 `NativeRolloutSource`，包含 HOME、owner/generation/incarnation 标识与读完后的有效性检查；RPC 客户端不能提交 HOME。历史缓存每次按 Thread 取得来源，即使命中也核验 canonical 路径及 owner，有效性变化会拒绝迟到页并使旧游标失效。默认代切换不改变旧 Thread 的来源；combined/单 APP 继续受原 HOME 边界约束。来源目录和文件读取不会取得 Host lease 或启动原生；缓存的 canonical history 投影继续由既有 Native 只读端口提供。
+
+所有原生文件消费者消费同一份 HOME 归属。历史缓存与实时 collector 按 Thread 解析来源；Headless 用量 worker 只枚举 registry 已登记的 HOME，并对每个 rollout 按 Thread 复核来源，历史文件尚无执行路由时也只允许登记 HOME 内的原生 session identity。读后 owner/incarnation 复核通过才提交计量或缓存水位；默认接纳 epoch 的 CAS 不改变旧 Thread 的来源。目录不可用、登记 HOME 丢失或来源变化明确返回不可用/部分覆盖，保留既有证据，不能报告完整零用量。combined/单 APP 的 null 目录仍沿原单 HOME 边界；collector 后续 initialize 可更新兼容 HOME。不可用共同父目录放宽路径边界，也不可复制 rollout 到旧 HOME；统计规则、计量 writer 和异步 attempt writer 保持不变。
 
 `thread/start` 在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
 

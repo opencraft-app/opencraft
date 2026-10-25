@@ -12,6 +12,9 @@ import { AccountPoolStore, CodexCoreControlClient } from "@opencraft/account-poo
 import { SystemdGenerationSupervisor } from "../../../apps/codex-core/src/generation-supervisor.js";
 import { generationCopyOwner, generationDirectory } from "../../../apps/codex-core/src/generation-files.js";
 import { CodexGenerationRegistry } from "../../../apps/codex-core/src/generation-registry.js";
+import { CodexNativeStorage } from "../../../apps/opencraft-daemon/src/codex-native-storage.js";
+import { readUsageIncrement } from "../../../apps/opencraft-daemon/src/token-usage-derived-source.js";
+import { TranscriptReadCache } from "@opencraft/native-history-node";
 
 // Run with a clean environment. Only synthetic accounts and loopback model traffic.
 const oldCli = process.env.OPENCRAFT_CODEX_OLD_EXECUTABLE, newCli = process.env.OPENCRAFT_CODEX_NEW_EXECUTABLE;
@@ -165,12 +168,16 @@ try {
   assert.deepEqual(new Set(homeDirectory!.homes.map(home => home.codexHome)), new Set([join(definition("old", executionOldCli).runtimeDataDirectory, "runtime"), join(definition("new", executionNewCli).runtimeDataDirectory, "runtime")]));
   assert.equal(routes.find((r: any) => r.threadId === fresh.threadId).generationId, "new");
   assert.ok([stream, shell].every(ids => routes.find((r: any) => r.threadId === ids.threadId).generationId === "old"));
+  const storage = new CodexNativeStorage(control, () => join(dataDirectory, "runtime"));
+  const freshPath = (await rpc("thread/read", { threadId: fresh.threadId })).thread.path;
+  const freshSource = await storage.resolve(fresh.threadId, freshPath);
   // Default rollback preserves all new-generation writes and leaves old running tasks intact.
   await admin("activate", { id: "old", expectedEpoch: 2 });
   const rollback = await turn("AFTER-ROLLBACK"); await completed(rollback);
   assert.equal((await admin()).fences.routes.find((r: any) => r.threadId === rollback.threadId).generationId, "old");
   assert.equal((await rpc("thread/read", { threadId: fresh.threadId })).thread.id, fresh.threadId);
   await admin("activate", { id: "new", expectedEpoch: 3 });
+  await freshSource.validate();
   report.scenarios.push({ name: "atomic default rollback preserves current writes in both HOMEs", rollback, fresh });
   const again = await turn("OLD-AGAIN", oldIdle); await completed(again);
   const directory = await rpc("thread/list", { limit: 100 }); assert.ok([stream, shell, fresh].every(ids => directory.data.some((t: any) => t.id === ids.threadId)));
@@ -178,6 +185,31 @@ try {
   assert.equal((await stat(markers.shell)).uid, executionUid, "shell retains the fixed execution UID");
   const after = await admin(); assert.deepEqual(after.generations.find((g: any) => g.id === "old").runtime, oldBefore);
   report.scenarios.push({ name: "two real CLI versions, stream and shell cross activation", stream, shell, fresh, activateAt, durationSeconds: 36, shellStarts: 1, shellCompletions: 1, oldIdentityUnchanged: true, sharedAccountCore: true });
+  const cache = new TranscriptReadCache(join(root, "reader-cache"), {
+    resolveSource: (threadId, path) => storage.resolve(threadId, path),
+    readThread: async threadId => (await rpc("thread/read", { threadId })).thread,
+    // The fixture uses the native canonical projection, never a rollout parser
+    // to reconstruct message/tool semantics. Both real CLI versions are read.
+    listTurns: async (threadId, cursor, limit) => {
+      const turns = (await rpc("thread/read", { threadId, includeTurns: true })).thread.turns.slice().reverse();
+      const offset = Number(cursor ?? 0);
+      return { data: turns.slice(offset, offset + limit), nextCursor: offset + limit < turns.length ? String(offset + limit) : null };
+    },
+  });
+  try {
+    const homes = new Set<string>();
+    for (const ids of [shell, fresh]) {
+      const path = (await rpc("thread/read", { threadId: ids.threadId })).thread.path;
+      const source = await storage.resolve(ids.threadId, path); homes.add(source.nativeHome);
+      const usage = await readUsageIncrement({ path, nativeHome: "/unregistered-home", source, threadId: ids.threadId, cursor: 0, identity: null });
+      assert.ok(usage.cursor > 0 && usage.events.some(row => row.event.kind === "count" || row.event.kind === "response"));
+      const history = await cache.read(ids.threadId), warm = await cache.read(ids.threadId);
+      assert.ok(history.initialTurnsPage.data.some(turn => turn.id === ids.turnId));
+      assert.deepEqual(warm.initialTurnsPage, history.initialTurnsPage);
+    }
+    assert.equal(homes.size, 2);
+    report.scenarios.push({ name: "both real CLI HOMEs supply scoped usage and canonical cached history after default CAS", separateHomes: 2, warmHistoryValidated: true });
+  } finally { await cache.close(); }
   // Same old Thread remains on its original HOME after the default switch.
   const oldState = (await admin()).generations.find((g: any) => g.id === "old"); assert.equal(oldState.runtime.cliVersion, versions[0]);
   // Let the monitor retire the genuinely idle old generation, then reopen its HOME with current CLI.
