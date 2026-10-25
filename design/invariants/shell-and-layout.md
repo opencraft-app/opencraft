@@ -99,10 +99,19 @@ available Composer height subtracts that same inset once.
 The explicit public Expo Web-container entry packages the same complete Web
 Workbench application/UI graph. Native owns safe area, lifecycle, back and
 external navigation only; it must not duplicate Scope/View, drafts, navigation
-or panel state. Viewport changes retain the mounted document. RN remains the
-default until device/capability acceptance; downstream product assembly is
-independent. Packaging, bridge and acceptance boundaries are owned by
+or panel state. Viewport changes retain the mounted document. The packaged Web
+container is the public default; the separate RN workbench has been retired.
+Downstream product assembly remains independent. Packaged modules load lazily
+through a fixed native asset registry, never an arbitrary file or remote-code
+reader. The built-in ready surface uses the full safe-area viewport; source
+selection lives in Web settings with independent native startup/error recovery. Packaging, bridge and acceptance boundaries are owned by
 [Mobile Workbench container](../../docs/mobile-workbench-container.md).
+
+A Settings destination invoked from the floating applications drawer uses the
+same Shell `onInvoke` dismissal as other destinations. Do not leave the former
+drawer covering the new controls on narrow displays. Category navigation remains
+available through the ordinary sidebar action; no feature-owned overlay or
+second navigation state is added.
 
 ## Internal projection metadata identity
 

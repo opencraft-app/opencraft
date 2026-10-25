@@ -16,3 +16,7 @@ expo-env.d.ts
 assets/mobile-workbench.html
 public/mobile-workbench.html
 .cache/
+assets/mobile-resources/
+assets/mobile-resources.cjs
+assets/mobile-resources.json
+public/mobile-resources/

@@ -3,6 +3,8 @@ import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
+import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
+import { mobileConnectionMessages } from "./mobile-connection-settings";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";
@@ -108,7 +110,7 @@ export function HostlessWorkbench({
   const environmentSnapshot = useSyncExternalStore(supervisor.environmentDirectory.subscribe, supervisor.environmentDirectory.getSnapshot, supervisor.environmentDirectory.getSnapshot);
   const machines = useMemo(() => groupWorkInMachines(profileSnapshot.profiles, environmentSnapshot.entries), [profileSnapshot.profiles, environmentSnapshot.entries]);
   useEffect(() => {
-    if (profileSnapshot.profiles.some((profile) => profile.enabled && profile.hideFromNewChat !== true)) window.location.reload();
+    if (profileSnapshot.profiles.some((profile) => profile.enabled && profile.hideFromNewChat !== true) && !reloadMobileWorkbench()) window.location.reload();
   }, [profileSnapshot]);
 
   useLayoutEffect(() => {
@@ -392,9 +394,18 @@ export function HostlessWorkbench({
             ) : (
               <div className="hostless-workbench__empty-stage">
                 {extensionProjection.emptyWorkbenchNode ?? <section className="hostless-empty-view">
-                  <h1>暂无可用 Agent</h1>
-                  <p>你仍可以调整 OpenCraft 的设备设置。</p>
-                  <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                  {mobileContainer() ? <>
+                    <h1>{intl.formatMessage(mobileConnectionMessages.title)}</h1>
+                    <p>{intl.formatMessage(mobileConnectionMessages.description)}</p>
+                    <div className="hostless-empty-view__connection-actions">
+                      <Button variant="primary" onClick={() => openSettings("mobile-connection")}>{intl.formatMessage(mobileConnectionMessages.title)}</Button>
+                      <Button variant="secondary" onClick={() => openSettings()}>{intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}</Button>
+                    </div>
+                  </> : <>
+                    <h1>暂无可用 Agent</h1>
+                    <p>你仍可以调整 OpenCraft 的设备设置。</p>
+                    <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                  </>}
                 </section>}
               </div>
             )}

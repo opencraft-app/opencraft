@@ -15,6 +15,8 @@ import { HubNetworkSettings } from "./hub-network-settings";
 import { ServerSelectionSettings } from "./server-selection-settings";
 import { browserServerContext } from "../runtime/server-context";
 import { ExtensionLibrary } from "./extensions/extension-library";
+import { mobileContainer, openMobileSourceSettings } from "../runtime/mobile-container";
+import { MobileConnectionSettings, mobileConnectionMessages } from "./mobile-connection-settings";
 
 const appearanceMessages = defineMessages({
   light: { id: "settings.light", defaultMessage: "Light" },
@@ -237,6 +239,9 @@ export function SettingsNavigation({
         </button> : null}
         <div className="settings-page__navigation-heading"><FormattedMessage id="settings.groups.application" defaultMessage="Application" /></div>
         <div className="settings-page__navigation-list">
+          {mobileContainer() && <button type="button" aria-current={section === "mobile-connection" ? "page" : undefined} onClick={() => onSectionChange("mobile-connection")}>
+            <Server size={16} /><span>{intl.formatMessage(mobileConnectionMessages.title)}</span>
+          </button>}
           <button
             type="button"
             aria-current={section === "chat" ? "page" : undefined}
@@ -459,7 +464,8 @@ export function SettingsContent({
     <MachineConnectionsAvailable.Provider value={observeMachineConnections}><div className="settings-page__viewport" data-selection="chrome" data-layout={selectedExtensionPage?.layout ?? "document"}>
             <div className="settings-page__content">
               {configurationMachine !== null ? <SettingsMachineIdentity machine={configurationMachine} platform={platform} onSectionChange={onSectionChange} /> : null}
-              {section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} />
+              {section === "mobile-connection" && mobileContainer() ? <MobileConnectionSettings onProvisionHost={onProvisionHost} />
+              : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} />
               : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} />
               : section === "servers" && platform === "web" && browserServerContext() ? <ServerSelectionSettings />
               : section === 'hub-network' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <HubNetworkSettings />
@@ -508,6 +514,14 @@ export function SettingsContent({
                     <SettingsGroup>
                       <LanguageSetting />
                       <TouchDensitySetting />
+                      {mobileContainer() && <SettingsRow
+                        label={intl.formatMessage({ id: "mobile.source", defaultMessage: "Workspace source" })}
+                        description={intl.formatMessage({ id: "mobile.description", defaultMessage: "Use the built-in workspace or open your own OpenCraft website." })}
+                        layout="stacked"
+                        controlWidth="compact"
+                      >
+                        <SettingsButton onClick={() => openMobileSourceSettings()}>{intl.formatMessage({ id: "mobile.source", defaultMessage: "Workspace source" })}</SettingsButton>
+                      </SettingsRow>}
                       <SettingsRow
                         label={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })}
                         description={intl.formatMessage({ id: "settings.appearance.follow", defaultMessage: "Follow the system or keep one appearance." })}

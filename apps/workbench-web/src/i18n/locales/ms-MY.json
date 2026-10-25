@@ -990,5 +990,9 @@
   "codex.resetCredits.noCredit": "Kredit ini tidak lagi tersedia. Muat semula butirannya.",
   "codex.resetCredits.alreadyRedeemed": "Kredit ini telah ditebus.",
   "codex.resetCredits.unknown": "Keputusan tidak dapat disahkan. Muat semula butiran kredit sebelum meneruskan; permintaan tidak dicuba semula secara automatik.",
-  "codex.resetCredits.refreshNeeded": "Kuota telah ditetapkan semula, tetapi penggunaan terkini tidak dapat dimuatkan. Muat semula penggunaan akaun."
+  "codex.resetCredits.refreshNeeded": "Kuota telah ditetapkan semula, tetapi penggunaan terkini tidak dapat dimuatkan. Muat semula penggunaan akaun.",
+  "mobile.connection.title": "Sambungkan pelayan",
+  "mobile.connection.description": "Sambungkan pelayan OpenCraft anda untuk mula bekerja. Pelayan anda mengurus log masuk dan akses.",
+  "mobile.connection.address": "Alamat WebSocket selamat",
+  "mobile.connection.failed": "Sambungan tidak dapat disimpan. Semak alamat dan cuba lagi."
 }

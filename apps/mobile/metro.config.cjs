@@ -14,7 +14,7 @@ const config = withUniwindConfig(nativeConfig, {
   cssEntryFile: productStyles ? path.relative(__dirname, productStyles) : "./global.css",
   dtsFile: "./src/uniwind-types.d.ts",
 });
-config.resolver.assetExts.push("html");
+config.resolver.assetExts.push("html", "ocasset");
 // Adapt only HeroUI's Web theme reader; keep Uniwind's existing resolver chain.
 const resolveThemeRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
