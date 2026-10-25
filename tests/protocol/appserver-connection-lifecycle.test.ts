@@ -272,3 +272,35 @@ test("owner expiry before initialization commit cannot poison cached readiness f
     assert.equal(requests, 2); assert.equal(client.connectionGeneration, 1);
   } finally { await client.close(); }
 });
+
+test("revocation between client readiness and owner commit invalidates the cached initialization", async () => {
+  let requests = 0;
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame);
+    if (isJsonRpcRequest(request) && request.method === "initialize") {
+      requests++; peer.send(encodeJsonRpcMessage({ id: request.id, result: initialized }));
+    }
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "cached-commit-guard", transport });
+  const old = new AbortController();
+  try {
+    await client.connect(params, old.signal, () => old.signal.throwIfAborted());
+    assert.notEqual(client.initializeResult, null);
+    old.abort(new Error("owner deadline before its commit"));
+    assert.equal(transport.status.state, "open", "local retirement does not close a healthy physical channel");
+    assert.equal(client.initializeResult, null);
+    await client.connect(params, new AbortController().signal);
+    assert.equal(requests, 2, "the successor cannot inherit the revoked owner's readiness cache");
+    assert.equal(client.connectionGeneration, 2);
+  } finally { await client.close(); }
+});
+
+test("ordinary completed connect cancellation keeps its established initialization", async () => {
+  const f = fixture(), abort = new AbortController();
+  try {
+    await f.client.connect(params, abort.signal);
+    abort.abort();
+    assert.notEqual(f.client.initializeResult, null);
+    assert.equal(f.client.status.state, "open");
+  } finally { await f.client.close(); }
+});

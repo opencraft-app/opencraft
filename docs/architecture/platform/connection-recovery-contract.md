@@ -96,6 +96,9 @@ outage counter. Only continuous usable time resets it under the existing policy.
 
 `assertCurrent` also runs before the AppServer client caches an initialization
 response: a late response after page freeze cannot seed readiness for a successor.
+That cached result also retains the owning attempt's signal until its handoff;
+revocation between client and owner commits invalidates it immediately. Generic
+callers without an owner guard keep completed-connect cancellation semantics.
 Local Web cancellation rejects and releases its Promise synchronously before
 status observers can reenter. Old external admission can remain pending forever;
 a successor performs its own admission while still waiting for actual prior
