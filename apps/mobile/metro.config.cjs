@@ -8,7 +8,8 @@ const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, 
 // nodeModulesPaths overrides so Metro and npm resolve one graph. An explicit
 // downstream entry adds only its own directory to the watched graph.
 const productStyles = resolveProductStyles(__dirname);
-const config = withUniwindConfig(getDefaultConfig(__dirname), {
+const nativeConfig = getDefaultConfig(__dirname);
+const config = withUniwindConfig(nativeConfig, {
   // Uniwind joins this input with cwd; an absolute path bypasses its CSS transformer.
   cssEntryFile: productStyles ? path.relative(__dirname, productStyles) : "./global.css",
   dtsFile: "./src/uniwind-types.d.ts",
@@ -17,6 +18,14 @@ config.resolver.assetExts.push("html");
 // Adapt only HeroUI's Web theme reader; keep Uniwind's existing resolver chain.
 const resolveThemeRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // expo-asset needs RN's public AssetRegistry, added in RN 0.88. Uniwind's
+  // component facade does not export it; SDK resource code needs the actual
+  // native module, while UI consumers keep the existing styling resolver.
+  if (platform !== "web" && moduleName === "react-native"
+    && /[/\\]node_modules[/\\]expo-asset[/\\]/.test(context.originModulePath)) {
+    const resolveNative = nativeConfig.resolver.resolveRequest ?? context.resolveRequest;
+    return resolveNative(context, moduleName, platform);
+  }
   // Shared ESM source uses .js specifiers for NodeNext. Metro consumes the
   // TypeScript source directly; translate only missing local files in our i18n owner.
   const i18nRoot = path.resolve(__dirname, "../../packages/i18n/src") + path.sep;

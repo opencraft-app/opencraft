@@ -28,17 +28,18 @@ export function WorkspaceSurface({ source: content, dark, onAppearance }: { sour
     active.current = true; ready.current = false; canGoBack.current = false; setFailed(false); setHtml(null);
     let current = true;
     if (bundled) {
-      const packaged = Asset.fromModule(require("../../assets/mobile-workbench.html") as number);
-      const uri = Constants.executionEnvironment === ExecutionEnvironment.StoreClient && !packaged.localUri
-        ? mobilePreviewAssetUri(packaged.uri, Constants.experienceUrl) : packaged.uri;
-      const asset = uri === packaged.uri ? packaged : new Asset({
-        name: packaged.name, type: packaged.type, hash: packaged.hash, uri,
-      });
-      void asset.downloadAsync().then(async () => {
+      void (async () => {
+        const packaged = Asset.fromModule(require("../../assets/mobile-workbench.html") as number);
+        const uri = Constants.executionEnvironment === ExecutionEnvironment.StoreClient && !packaged.localUri
+          ? mobilePreviewAssetUri(packaged.uri, Constants.experienceUrl) : packaged.uri;
+        const asset = uri === packaged.uri ? packaged : new Asset({
+          name: packaged.name, type: packaged.type, hash: packaged.hash, uri,
+        });
+        await asset.downloadAsync();
         if (!asset.localUri) throw new Error("asset.missing");
         const document = await new File(asset.localUri).text();
         if (current) setHtml(document.replace("/*OPENCRAFT_MOBILE_IDENTITY*/", `window.opencraftMobile=${JSON.stringify({ version: MOBILE_CONTAINER_VERSION, runtimeId })};`));
-      }).catch(() => { if (current) setFailed(true); });
+      })().catch(() => { if (current) setFailed(true); });
     }
     return () => { current = false; active.current = false; ready.current = false; };
   }, [bundled, runtimeId]);
