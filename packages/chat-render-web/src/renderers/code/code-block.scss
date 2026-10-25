@@ -117,6 +117,9 @@
   overflow: auto;
   outline: none;
   font-family: var(--font-family-mono);
+  // Streaming and syntax-only DOM updates keep the shared reading size.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   // Small monospace tokens remain reserved for metadata and terminal chrome.
   font-size: var(--opencraft-chat-font-size);
   line-height: var(--typography-prose-code-line-height);
