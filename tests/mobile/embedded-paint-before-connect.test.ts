@@ -5,7 +5,10 @@ import { isEmbeddedConversationPainted } from "../../apps/workbench-web/src/embe
 
 Object.defineProperty(globalThis, "window", {
   configurable: true,
-  value: { location: { href: "https://ui.example/", protocol: "https:" } },
+  value: {
+    location: { href: "https://ui.example/", protocol: "https:", search: "" },
+    history: { replaceState() {} },
+  },
 });
 const { activeThreadStorageKey, rememberedThreadId } = await import(
   "../../apps/workbench-web/src/runtime/appserver-runtime-context"
