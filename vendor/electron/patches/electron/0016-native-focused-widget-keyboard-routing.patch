@@ -1,0 +1,24 @@
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -51,6 +51,7 @@
+ #include "content/browser/renderer_host/navigation_controller_impl.h"  // nogncheck
+ #include "content/browser/renderer_host/render_frame_host_impl.h"  // nogncheck
+ #include "content/browser/renderer_host/render_frame_host_manager.h"  // nogncheck
++#include "content/browser/renderer_host/render_widget_host_delegate.h"  // nogncheck
+ #include "content/browser/renderer_host/render_widget_host_impl.h"  // nogncheck
+ #include "content/browser/renderer_host/render_widget_host_view_base.h"  // nogncheck
+ #include "content/browser/renderer_host/text_input_manager.h"  // nogncheck
+@@ -4120,7 +4121,12 @@
+       // For backwards compatibility, convert `kKeyDown` to `kRawKeyDown`.
+       if (keyboard_event.GetType() == blink::WebKeyboardEvent::Type::kKeyDown)
+         keyboard_event.SetType(blink::WebKeyboardEvent::Type::kRawKeyDown);
+-      rwh->ForwardKeyboardEvent(keyboard_event);
++      auto* widget = static_cast<content::RenderWidgetHostImpl*>(rwh);
++      auto* delegate = widget->delegate();
++      auto* focused_widget =
++          delegate ? delegate->GetFocusedRenderWidgetHost(widget) : nullptr;
++      if (focused_widget)
++        focused_widget->ForwardKeyboardEvent(keyboard_event);
+       return;
+     }
+   } else if (type == blink::WebInputEvent::Type::kMouseWheel) {

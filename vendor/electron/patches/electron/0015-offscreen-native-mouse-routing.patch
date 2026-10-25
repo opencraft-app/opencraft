@@ -1,0 +1,23 @@
+--- a/shell/browser/osr/osr_render_widget_host_view.cc
++++ b/shell/browser/osr/osr_render_widget_host_view.cc
+@@ -19,6 +19,7 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/time/time.h"
+ #include "components/input/cursor_manager.h"
++#include "components/input/render_widget_host_input_event_router.h"
+ #include "components/viz/common/features.h"
+ #include "components/viz/common/frame_sinks/begin_frame_args.h"
+ #include "components/viz/common/frame_sinks/copy_output_request.h"
+@@ -794,6 +795,12 @@
+ 
+   if (!render_widget_host_)
+     return;
++  auto* delegate = render_widget_host_->delegate();
++  if (!IsPopupWidget() && delegate && delegate->GetInputEventRouter()) {
++    delegate->GetInputEventRouter()->RouteMouseEvent(this, &event,
++                                                   ui::LatencyInfo());
++    return;
++  }
+   render_widget_host_->ForwardMouseEvent(event);
+ }
+ 

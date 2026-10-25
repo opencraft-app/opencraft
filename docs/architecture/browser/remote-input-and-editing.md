@@ -202,3 +202,17 @@ Fixture-only DOM assertions verify child coordinates and native target-bound
 Chinese input. This does not remove the unknown-first-focus protocol fence or
 prove a physical mobile keyboard. Retained native owners keep their immutable
 runtime until their logical pages are explicitly closed.
+
+
+### Electron mouse and keyboard injection routes
+
+Native compositor coordinate support alone does not route Electron's ordinary
+`sendInputEvent` mouse API: the OSR adapter must call the input router, preserving
+its proxy and popup branches. This lets Chromium own hit testing and capture
+without adding a per-move JavaScript/CDP round trip.
+
+Keyboard injection uses Chromium's focused-widget delegate, including its
+crashed/external-focus rejection. Sending all keys to the root widget loses
+OOPIF key listeners and native editing shortcuts. Target-bound IME tokens and
+remote control/document generations still authorize their own operations;
+keyboard routing does not grant a new lease or replay rejected input.
