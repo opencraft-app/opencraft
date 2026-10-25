@@ -1,4 +1,5 @@
 import { uploadAttachmentChunks } from "@opencraft/workbench-runtime";
+import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_LEGACY_MAX_BYTES } from "@opencraft/appserver-protocol";
 import type { ComposerAttachment } from "@opencraft/composer-core";
 import type { ImageProcessingService } from "@opencraft/image-processing";
@@ -66,6 +67,80 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 const hostFileUri = (path: string): string =>
   `file://${path.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
+
+type AttachmentHost = Pick<AppServerWorkbenchRuntime, "getSnapshot" | "subscribe">
+  & { readonly resources: Pick<AppServerWorkbenchRuntime["resources"], "attachments"> };
+
+const hostReady = (host: AttachmentHost): boolean => {
+  const snapshot = host.getSnapshot();
+  return snapshot.phase === "ready" && snapshot.transport.state === "open";
+};
+
+function waitForAttachmentHost(host: AttachmentHost, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let unsubscribe = () => {};
+    const finish = (error?: unknown) => {
+      unsubscribe();
+      signal?.removeEventListener("abort", aborted);
+      if (error !== undefined) reject(error); else resolve();
+    };
+    const aborted = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    const check = () => {
+      if (signal?.aborted) return aborted();
+      const snapshot = host.getSnapshot();
+      if (snapshot.phase === "disposed" || snapshot.phase === "error") {
+        return finish(snapshot.error ?? new BrowserAttachmentError(
+          "HOST_FILE_STAGING_UNAVAILABLE", "The selected Host is not ready to receive file attachments",
+        ));
+      }
+      if (hostReady(host)) finish();
+    };
+    unsubscribe = host.subscribe(check);
+    signal?.addEventListener("abort", aborted, { once: true });
+    check();
+  });
+}
+
+/** Keep the original File bound to its Host while that Host reconnects. */
+export async function resolveBrowserAttachmentForHost(
+  host: AttachmentHost,
+  file: File,
+  pending: ComposerAttachment,
+  images?: Pick<ImageProcessingService, "compress">,
+  signal?: AbortSignal,
+): Promise<ComposerAttachment> {
+  // Inline image preparation has no Host dependency, including HEIC conversion.
+  if (file.type.startsWith("image/") || ((file.type === "" || file.type === "application/octet-stream") && /\.hei[cf]$/iu.test(file.name))) {
+    return resolveBrowserAttachment(file, pending, undefined, images, signal);
+  }
+  for (;;) {
+    await waitForAttachmentHost(host, signal);
+    signal?.throwIfAborted();
+    const generation = host.getSnapshot().connectionGeneration;
+    let interrupted = false;
+    const unsubscribe = host.subscribe(() => {
+      if (!hostReady(host) || host.getSnapshot().connectionGeneration !== generation) interrupted = true;
+    });
+    try {
+      const attachments = host.resources.attachments;
+      const capability = attachments.capabilities();
+      return await resolveBrowserAttachment(file, pending, {
+        maxBytes: capability?.maxBytes,
+        chunkBytes: capability?.chunkBytes,
+        uploadChunk: capability?.chunkBytes ? params => attachments.uploadChunk(params) : undefined,
+        uploadCancel: capability?.chunkBytes ? id => attachments.uploadCancel(id) : undefined,
+        stage: capability?.sources.includes("client-bytes") ? (params, requestSignal) => attachments.stage(params, requestSignal) : null,
+      }, images, signal);
+    } catch (error) {
+      signal?.throwIfAborted();
+      // Staging is idempotent by clientAttachmentId and content. Restart a lost
+      // upload only after a connection transition; stable Host errors stay errors.
+      if (!interrupted && hostReady(host) && host.getSnapshot().connectionGeneration === generation) throw error;
+    } finally {
+      unsubscribe();
+    }
+  }
+}
 
 /**
  * Resolves a browser-owned File into an inline image or Host-staged attachment.

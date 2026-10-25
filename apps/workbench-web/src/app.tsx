@@ -186,7 +186,7 @@ import {
   setThemePreference,
   useAppearanceTheme,
 } from "./appearance-theme";
-import { resolveBrowserAttachment } from "./runtime/browser-attachment-resolver";
+import { resolveBrowserAttachmentForHost } from "./runtime/browser-attachment-resolver";
 import { createAppServerMediaSourceLoader } from "./runtime/appserver-media-loader";
 import { useBlobResources, useImageProcessing } from "./runtime/appserver-runtime-context";
 import {
@@ -392,20 +392,8 @@ export function App({
     [blobs, runtime, snapshot.hostId],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: Parameters<typeof resolveBrowserAttachment>[1], signal?: AbortSignal) => {
-      const capability = runtime.resources.attachments.capabilities();
-      return resolveBrowserAttachment(file, pending, {
-        maxBytes: capability?.maxBytes,
-        chunkBytes: capability?.chunkBytes,
-        uploadChunk: capability?.chunkBytes ? params => runtime.resources.attachments.uploadChunk(params) : undefined,
-        uploadCancel: capability?.chunkBytes ? id => runtime.resources.attachments.uploadCancel(id) : undefined,
-        stage:
-          runtime.resources.attachments.capabilities()?.sources.includes("client-bytes") === true
-            ? (request, requestSignal) =>
-                runtime.resources.attachments.stage(request, requestSignal)
-            : null,
-      }, images, signal);
-    },
+    (file: File, pending: ComposerAttachment, signal?: AbortSignal) =>
+      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal),
     [runtime, images],
   );
   const removeActiveHostAttachment = useCallback(
