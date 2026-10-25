@@ -116,6 +116,71 @@ Feature-specific composition can remain local. Preserve drafts, selection, focus
 and scroll through theme, size and presentation changes. Follow [UI ownership](AGENTS.md#ui-与设计系统)
 and [workspace invariants](design/invariants.md) for stable asynchronous feedback.
 
+## Microinteractions and interaction motion
+
+A microinteraction is a complete loop: trigger, state change, feedback, and a
+clear completion or cancellation. Interaction motion expresses that loop over
+time. Treat this as part of functional quality: a library, a transition, or an
+attractive still frame alone does not establish a polished interaction.
+
+Before implementation, describe the states and transitions that actually apply,
+their owner, and when a choice is previewed, committed, acknowledged or cancelled.
+Keep the domain value, transient gesture preview and visual progress distinct.
+A visual animation must not become a second authority for a selection, request
+result or layout. Use the existing component and platform lifecycle; a simple
+interaction does not need a new application state machine.
+
+### Share mechanisms; tune the interaction
+
+Reuse existing motion primitives, gesture controls and semantic presets. Extend
+shared owners for reusable behavior; keep a control's special choreography at
+that control. Do not duplicate an animation engine or spread unrelated timing
+literals across consumers. Shared infrastructure does not imply one duration or
+curve for every effect, and adopting a library does not supply interaction design.
+No particular animation library is required.
+
+Choose parameters by purpose: response latency, distance, visual weight and input
+method. Distinguish press feedback, direct manipulation, discrete snapping and
+release. Use direct following, easing or a spring where each serves the intended
+behavior. A drag must remain responsive; decorative interpolation must not delay
+the effective value, live layout or hit target. For a spring, tune stiffness,
+damping and mass together for the intended settling behavior. Record a reusable
+preset's purpose at its owner rather than presenting arbitrary values as universal
+standards.
+
+Coordinate thumb, fill, ticks, value label and surrounding surface around the
+same state and progress where appropriate. A label can update immediately for
+clarity while its visual transition remains subordinate. Keep feedback in stable
+slots; changing a label or entering a second view must not accidentally shift
+adjacent controls. Interrupt and reverse from the current rendered position,
+stop superseded writers, and prevent stale completions from restoring old state.
+Animation completion is not business confirmation.
+
+For example, a discrete selector needs a coherent press → held preview → release
+or cancel sequence: show the candidate while held, commit at the control's defined
+boundary, restore the authoritative choice on cancel, and coordinate its visual
+settling. An asynchronous acknowledgement is a separate event. Apply the actual
+control contract rather than forcing all selectors to commit at the same moment.
+
+### Judge the complete experience
+
+Polish comes from hierarchy, timing and continuity. Add glow, particles or an
+endpoint celebration only when they communicate a real state and serve an
+explicit design purpose. Keep resting controls quiet and reading uninterrupted.
+Reduced motion must retain the same actions, clear feedback and final state;
+keyboard, touch, disabled, cancellation and disposal paths remain complete.
+Preserve drafts, focus, selection, scroll and business component identity.
+
+Review the actual consumer during the affected sequence, including a held input,
+crossing a stop or boundary, release, cancellation, rapid reversal/repetition and
+interruption where applicable. Inspect both feedback latency and settling, stale
+callbacks, hit targets and layout continuity. Check relevant input methods,
+reduced motion, themes and narrow containers. Use frame samples or a short capture
+when timing is hard to judge, and record what was actually observed. Final-state
+screenshots, parameter inspection and passing tests support that review but do
+not replace it. Scope checks to the changed interaction and its shared consumers;
+this is a design quality requirement, not an additional approval step.
+
 ## Generated Apps have a different delivery boundary
 
 Repository UI consumes an initialized design system. A generated MCP App is an
