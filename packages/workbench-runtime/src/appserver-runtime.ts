@@ -1060,8 +1060,10 @@ export function createAppServerWorkbenchRuntime(
       };
       conversation = createReplicaConversationRuntime({
         outbox: config.outbox,
-        canDispatchOutbox: () => phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
-          && (executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false || !conversation?.getSnapshot().activeTurn),
+        canDispatchOutbox: (intent) => phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
+          && (intent?.target.type === "steer-active-turn"
+            || executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false
+            || !conversation?.getSnapshot().activeTurn),
         canAutoContinueCapacity: () => currentClient.initializeResult?.capabilities?.extensions?.["opencraft/capacity-retry"] === undefined,
         getSubmissionSender: config.getSubmissionSender,
         key: createConversationKey(hostId, threadId),
