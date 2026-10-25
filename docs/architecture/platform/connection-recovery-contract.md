@@ -338,3 +338,15 @@ not. The finite model and targeted real-Session held-strategy regressions are
 independent evidence, not a full implementation refinement proof. Existing Host,
 history and hydration chaos suites retain their own advertised scopes; they do
 not claim randomized coverage of every derived-history callback.
+
+
+Pending View acquisition reserves residency demand before asynchronous binding
+publication. A queue/view observer cannot evict that binding before its lease is
+admitted, including with zero inactive-cache allowance. Optional older-history
+reads do not count as execution commands. The last retained View and observer
+leaving retires derived read waits while preserving the cached baseline, history
+source, execution work and healthy Host. A pending replacement acquisition or peer
+View/observer keeps a shared read alive. Local ABORTED retirement does not become
+a cached history error; genuine read failures retain their existing error behavior.
+A released lease cannot start another optional read. This is local cancellation,
+not remote execution cancellation or an automatic write retry.

@@ -40,7 +40,7 @@ async function fixture(kind: "older" | "refresh" | "background") {
   return { session, client, finish, fail, entered: () => entered, async close() { finish(); await session.dispose(); await client.close(); } };
 }
 
-for (const kind of ["older", "refresh", "background"] as const) for (const revoke of ["baseline", "release", "dispose", "needs-resume"] as const) {
+for (const kind of ["older", "refresh", "background"] as const) for (const revoke of ["baseline", "release", "dispose", "needs-resume", "presentation"] as const) {
   test(`${kind} local wait settles on ${revoke} while its old strategy remains held`, { timeout: 3000 }, async () => {
     const f = await fixture(kind); let settled = false;
     try {
@@ -50,10 +50,15 @@ for (const kind of ["older", "refresh", "background"] as const) for (const revok
       if (revoke === "baseline") await f.session.resume.read("a");
       else if (revoke === "release") f.session.resume.release("a");
       else if (revoke === "needs-resume") f.session.resume.markNeedsResume("a");
+      else if (revoke === "presentation") f.session.resume.cancelDerivedHistory("a");
       else await f.session.dispose();
       for (let i = 0; i < 5; i++) await flush();
       assert.equal(settled, true, "revocation must settle the local caller before the retired strategy completes");
       await observed;
+      if (revoke === "presentation") {
+        assert.equal(f.session.views.get("a")?.resumeState, "resumed", "optional cancellation retains baseline authority");
+        assert.equal(f.session.views.get("a")?.historyError, null);
+      }
     } finally { await f.close(); }
   });
 }

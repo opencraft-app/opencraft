@@ -354,3 +354,15 @@ gap: ordinary output remains a skipped non-fact, possible facts retain the
 existing missing-source reconciliation, and the committed cursor resumes after
 the complete line. The observer has one typed call shape, never a second
 object-shaped compatibility invocation.
+
+
+Pending View acquisition reserves residency demand before asynchronous binding
+publication. A queue/view observer cannot evict that binding before its lease is
+admitted, including with zero inactive-cache allowance. Optional older-history
+reads do not count as execution commands. The last retained View and observer
+leaving retires derived read waits while preserving the cached baseline, history
+source, execution work and healthy Host. A pending replacement acquisition or peer
+View/observer keeps a shared read alive. Local ABORTED retirement does not become
+a cached history error; genuine read failures retain their existing error behavior.
+A released lease cannot start another optional read. This is local cancellation,
+not remote execution cancellation or an automatic write retry.

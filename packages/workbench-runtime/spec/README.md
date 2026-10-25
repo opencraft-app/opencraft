@@ -144,7 +144,7 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 43 configurations,
+stale request and missing fairness. The total suite has 49 configurations,
 including the history and hydration checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
@@ -289,3 +289,25 @@ probe expiry before timer delivery and synchronously admit a successor during
 child abort. The healthy initial pagination and explicit-zero controls preserve
 the existing allowance. These targeted Session regressions do not extend Host
 chaos to every Session timer/notification interleaving.
+
+
+## View demand and optional read residency
+
+`ViewReadLease.tla` separates a pending View acquisition, admitted Views,
+observers, optional history reads, cached baseline and execution commands. View
+demand is reserved before publishing a binding to observers. The last View and
+observer leaving revokes optional reads; a read cannot manufacture command demand
+to pin itself. A pending replacement acquisition and peer View/observer protect
+shared work. Cancelling a read preserves a cached baseline and execution owners;
+ordinary cache eviction can still remove an unowned baseline.
+
+The finite model checks five safety properties and acquisition progress with
+fair binding publication and lease admission. Four exact mutants remove pending
+acquisition protection, let a read pin itself, cancel a peer's read, or clear the
+baseline during optional cancellation; the fifth control removes fairness.
+Pending-acquisition failure, physical server effects and the full Runtime are
+outside this independent abstraction. Real Runtime regressions hold old replies,
+exercise zero-cache cold admission, concurrent/replacement Views, final observer
+release and cancellation before module I/O. Session regressions hold all three
+derived strategy kinds while retaining baseline authority. Existing seeded chaos
+retains its advertised scope; this model does not prove implementation refinement.

@@ -53,6 +53,12 @@ CASES = [
     ('ClockDomains-Backward', 'NoExtension'),
     ('ClockDomains-Forward', 'NoEarly'),
     ('ClockDomains-NoFairness', 'temporal:BudgetTermination'),
+    ('ViewReadLease', None),
+    ('ViewReadLease-Acquire', 'AcquireProtected'),
+    ('ViewReadLease-SelfPin', 'ReadHasDemand'),
+    ('ViewReadLease-Peer', 'PeerReadPreserved'),
+    ('ViewReadLease-Baseline', 'CachedBaseline'),
+    ('ViewReadLease-NoFairness', 'temporal:AcquireProgress'),
 ]
 
 
