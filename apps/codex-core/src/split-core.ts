@@ -29,6 +29,10 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     accounts = await CodexAccountService.start(options);
     const runtime = new CodexCoreControlClient(options.appServerEndpoint!, options.authToken);
     control = await startControlServer(options.endpoint, options.authToken, async request => {
+      if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
+        const query = new URL(request.url, "http://local.invalid");
+        return { status: 200, value: await runtime.generationDirectory(query.searchParams.get("threadId") ?? undefined) };
+      }
       if (request.method === "GET" && request.url === "/launch") {
         return { status: 200, value: { dataDirectory, launch: accounts!.launch() } };
       }

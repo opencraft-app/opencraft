@@ -141,11 +141,11 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 固定路由协调 owner 单写 `threadId → generationId` 及接纳 epoch；独立 APP Server generation 只拥有自己的 native `CODEX_HOME`、socket 和固定 CLI/payload。所有 generation 共用**同一个**账号 Core loopback 代理，通过现有 Host token 与 thread affinity 选账号，不让它们打开 account-pool 或 secrets；配额、刷新和账户亲和性保持单写。
 
-候选 ready 后原子切换新建 Thread 默认 generation。既有会话的读取、resume、输入、工具回复、queue/goal 和取消继续去其原 generation，目录查询聚合去重；客户端重连不改变归属。迟到响应同时校验 Thread、generation、Turn 与连接 epoch。旧 generation 停接新建 Thread，现有任务自然排完再退，不能以超时杀进程完成退休。已加载但空闲的 Thread 不要求旧二进制永久驻留：退役事务先关闭该 runtime 的新执行准入（未接纳请求明确可重试，未知送达先对账），最后核实无 Turn/工具/queue/goal/审批后关闭 native，保留原 HOME 的绝对路径。以后该 HOME 中的 Thread 再被访问时，由当前版本对同一 HOME 独占冷启动，兼容性/备份验证通过并更新 registry 的 runtime incarnation 后再接纳输入；新建 Thread 仍进新的 HOME。这样无需把运行中的原生 SQLite/rollout 挪到别处，也能退出旧版本。对不同 HOME 合库或逐 Thread 搬迁仍需另验原生导入/导出，首版不依赖此能力。当前同版本隔离回退已经验证“旧 native 退出→同 HOME 新 owner→原 Thread/Turn 历史恢复”，不替代未来跨 CLI 版本的兼容演练。
+候选 ready 后原子切换新建 Thread 默认 generation。既有会话的读取、resume、输入、工具回复、queue/goal 和取消继续去其原 generation，目录查询聚合去重；客户端重连不改变归属。迟到响应同时校验 Thread、generation、Turn 与连接 epoch。旧 generation 停接新建 Thread，现有任务自然排完再退，不能以超时杀进程完成退休。已加载但空闲的 Thread 不要求旧二进制永久驻留：退役事务先关闭该 runtime 的新执行准入（未接纳请求明确可重试，未知送达先对账），最后核实无 Turn/工具/queue/goal/审批后关闭 native，保留原 HOME 的绝对路径。以后该 HOME 中的 Thread 再被访问时，由当前版本对同一 HOME 独占冷启动，兼容性/备份验证通过并更新 registry 的 runtime incarnation 后再接纳输入；新建 Thread 仍进新的 HOME。这样无需把运行中的原生 SQLite/rollout 挪到别处，也能退出旧版本。对不同 HOME 合库或逐 Thread 搬迁仍需另验原生导入/导出，首版不依赖此能力。本节双版本隔离演练已验证 0.162.0→0.162.1 的原 HOME 冷启动；其它版本仍须分别验证兼容性。
 
 **不能让新旧 APP Server 共用同一个可写 CODEX_HOME。** 固定 0.162.0 隔离实验中，第二进程能启动同一 HOME，但 resume 第一个进程已加载的 Thread 被原生拒绝为 `already has an active writer`。SQLite 可打开并不表示会话可跨进程任意接管，跨版本日志、auth/config 和 loaded-thread 状态也不是可共享无状态资源。第 1 步的两个 owner 锁明确区分账号与运行时；第 3 步将 runtime 锁按代次目录实例化，保留账号锁。单 APP 模式继续只允许一个 runtime；显式多代模式新增独立 routing owner 与 registry，各 runtime 锁按独立目录实例化。账号服务不搬回 APP Server，代理地址保持固定。
 
-共享 Host overlay 库仍只有一个 owner，generation 只提供原生帧。账号 Core、Host overlay 和未来 registry 的写权限不得复制到每代。旧代包/CLI/目录被活动映射引用时不能被版本清理删去。新代失败只撤回新建路由，已有新代写入保留；数据兼容不足时前向修复或保留该代，不恢复旧快照。长期 goal/queue/schedule、待审批或 unknown 保持旧代与明确诊断；不自动暂停、取消或批准来制造空闲。
+共享 Host overlay 库仍只有一个 owner，generation 只提供原生帧。账号 Core、Host overlay 和 registry 的写权限不得复制到每代。旧代包/CLI/目录被活动映射引用时不能被版本清理删去。新代失败只撤回新建路由，已有新代写入保留；数据兼容不足时前向修复或保留该代，不恢复旧快照。长期 goal/queue/schedule、待审批或 unknown 保持旧代与明确诊断；不自动暂停、取消或批准来制造空闲。
 
 #### 路由、监督与退休协议
 
@@ -160,6 +160,10 @@ registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、
 每代 unit 使用 `PrivateTmp=yes` 及 HOME 内的 TMPDIR。Codex 0.162 的 Unix 入口会链接到 `/tmp/codex-daemon-<uid>`，所以显式 generation APP 在自己的 namespace 内连接原生入口，再在共享 `/run` 目录暴露一个 0600 的真实 Unix socket，透明转发字节；不解析或重放 RPC。原来未指定独立 runtime 根的单 APP 保持原入口。固定 node、bundle、完整 CLI vendor、cwd、数据与 control/socket 路径必须位于 `/tmp` 以外，避免 namespace 隐藏它们。冷验证 socket 也位于配置的路由 socket 父目录；路径须满足 Unix socket 长度限制。
 
 私有认证 control 的 `POST /generations` 接收 `{operation,params}`：`prepare` 校验并启动候选；`activate` 用 `expectedEpoch` CAS 原子切默认代；`retire` 尝试自然退休；`discard` 只停止从未 ready/接纳工作的失败候选，保留 HOME。`GET /generations` 返回状态与有限诊断。bootstrap 文件在尚未完成首次接纳时继续建立默认代，进程重启不覆盖已建立的持久默认代。此接口只面向受信维护进程，不加入用户菜单或公开 HTTP 路由。
+
+原生文件读取者用账号 Core 的认证 `GET /generation-directory?threadId=…`（`CodexCoreControlClient.generationDirectory`）取得版本 1 的 `routingEpoch`、接纳 epoch、登记的 `{generationId,codexHome,incarnation}` 及所查 Thread 的归属；不传 Thread 时只返回 HOME 目录，不扫描全部 Thread。未发现的 Thread 返回空归属，不能据此宣称无用量。查询不取得 Host lease、不启动退休 HOME、不返回文件内容；combined/单 APP 返回 `null`。读取期间 owner epoch 改变时明确重试，缓存缺少 Thread 时也要重查，因为新 Thread 不会推进默认接纳 epoch。
+
+启用多代前，所有原生文件消费者必须消费这份 HOME 归属。Headless 的既有用量查询 worker 仍固定到 `data/codex/runtime`，collector 也只记首次 initialize 的 HOME；实际新代 rollout 会被单 HOME 路径边界拒绝。共享历史读取器及 adapter 的 `nativeHome` getter 也沿用首次 initialize 的单 HOME。两类消费者适配独立于此 Core 接口，尚未完成时不能把启用多代写成 Headless 生产验收通过。不可用共同父目录放宽路径边界，也不可复制 rollout 到旧 HOME；统计规则与 ledger 唯一 owner 保持不变。
 
 `thread/start` 在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
 

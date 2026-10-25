@@ -66,6 +66,10 @@ export async function startCodexGenerationService(options: {
     socket = await startGenerationSocket(nativeSocket, router);
     await chown(nativeSocket, execution.uid, execution.gid);
     control = await startControlServer(options.endpoint, options.token, async request => {
+      if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
+        const query = new URL(request.url, "http://local.invalid");
+        return { status: 200, value: runtime.directory(query.searchParams.get("threadId") ?? undefined) };
+      }
       if (request.method === "GET" && request.url === "/health") {
         const current = runtime.registry.current(), execution = await runtime.ensure(current.generation.id);
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
