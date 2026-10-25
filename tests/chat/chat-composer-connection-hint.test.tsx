@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { registerHooks } from "node:module";
 
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -7,7 +8,16 @@ import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import { createConversationKey } from "@opencraft/chat-core";
 import { createComposerController } from "@opencraft/composer-core";
-import { OpenCraftComposer, groupComposerModels } from "@opencraft/composer-editor";
+// This Node suite renders markup; browser styles are exercised by smoke tests.
+const styles = registerHooks({
+  load(url, context, nextLoad) {
+    return /\.(?:css|scss)$/u.test(new URL(url).pathname)
+      ? { format: "module", source: "export default {};", shortCircuit: true }
+      : nextLoad(url, context);
+  },
+});
+const { OpenCraftComposer, groupComposerModels } = await import("@opencraft/composer-editor");
+styles.deregister();
 import { embeddedLocaleCatalogs } from "../../apps/workbench-web/src/i18n/catalogs";
 
 // tsx compiles package sources with the classic JSX runtime.
@@ -32,6 +42,7 @@ async function render(options: { text: string; submissionDisabled: boolean; loca
         modelError: options.modelError,
         isFetching: options.isFetching,
       } as never}
+      effectiveSelections={options.noModels ? undefined : { model: "m" }}
       modelSelectionPolicy={options.modelSelectionPolicy} />
   </IntlRuntimeProvider>);
 }
