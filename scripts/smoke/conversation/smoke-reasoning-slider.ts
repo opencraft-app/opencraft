@@ -19,14 +19,14 @@ const controller=createComposerController({type:'existing-thread',key:{hostId:'f
 const counts=[6,3,1,0,3],values=['low','medium','high','xhigh','max','ultra'];
 const models=counts.map((count,i)=>({id:'model'+i,value:'model'+i,label:i===0?'GPT-6.1-Sol':'Model '+i,description:null,isDefault:i===0,defaultEffort:count&&i!==4?values[Math.min(1,count-1)]:null,serviceTiers:i===0?[{id:'fast',name:'Fast',description:'Host-declared fast tier'}]:[],efforts:values.slice(0,count).map(value=>({value,label:value[0].toUpperCase()+value.slice(1),description:null}))}));
 window.fixture={controller,remembered:[]};
-function App(){const [frame,setFrame]=useState(0);window.fixture.rerender=()=>setFrame(f=>f+1);return <main data-frame={frame} style={{padding:16,paddingTop:200,maxWidth:800,margin:'auto'}}><OpenCraftComposer controller={controller} effectiveSelections={{model:"model0",effort:"medium"}} selectionCatalog={{models,permissionProfiles:[],onRememberModelDefaults:value=>window.fixture.remembered.push(value)}} onSubmit={()=>false} onCancel={()=>{}} /></main>}
+function App(){const [frame,setFrame]=useState(0);window.fixture.rerender=()=>setFrame(f=>f+1);return <main data-frame={frame} style={{padding:16,paddingTop:200,maxWidth:800,margin:'auto'}}><OpenCraftComposer controller={controller} effectiveSelections={{model:params.has("no-effort")?"model3":"model0",effort:params.has("no-effort")?undefined:"medium"}} selectionCatalog={{models,permissionProfiles:[],onRememberModelDefaults:value=>window.fixture.remembered.push(value)}} onSubmit={()=>false} onCancel={()=>{}} /></main>}
 createIntlTestRoot(document.getElementById('root'),undefined,'zh-CN').render(<App/>);`;
 const workbenchOptimizeDeps=createWorkbenchWebConfig({mode:'development',command:'serve'},{pluginBranding:false}).optimizeDeps;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',cacheDir:'node_modules/.vite-reasoning-slider',optimizeDeps:{...workbenchOptimizeDeps,entries:[],exclude:[...(workbenchOptimizeDeps?.exclude??[]),'@opencraft/composer-editor','@opencraft/design-system-web/discrete-slider']},resolve:{dedupe:['react','react-dom']},esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0},plugins:[{name:'fixture',resolveId:id=>id==='/reasoning-slider.tsx'?id:null,load:id=>id==='/reasoning-slider.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url?.startsWith('/?'))return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/reasoning-slider.tsx"></script>');});}}]});
 await mkdir('.local/reasoning-slider',{recursive:true});await vite.listen();
 const browser=await chromium.launch({executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});const results=[];
 try {
- for(const palette of ['opencraftNeutral','lavender']) for(const mode of ['light','dark']) for(const touch of [false,true]){
+ if(!process.env.OPENCRAFT_SMOKE_FIRST_OPEN_ONLY) for(const palette of ['opencraftNeutral','lavender']) for(const mode of ['light','dark']) for(const touch of [false,true]){
   const context=await browser.newContext({viewport:{width:touch?390:1280,height:844},hasTouch:touch,isMobile:touch,deviceScaleFactor:touch?2:1,reducedMotion:"no-preference"});
   const page=await context.newPage(),errors:string[]=[];page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(90000);page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript('window.__name=v=>v');
@@ -237,5 +237,24 @@ try {
   await page.keyboard.press('Escape');await menu.waitFor({state:'hidden'});assert.deepEqual(errors,[]);
   results.push({palette,mode,touch,popup,metrics,geometry});await context.close();
  }
- await writeFile('.local/reasoning-slider/results.json',JSON.stringify(results,null,2));console.log('PASS '+results.length+' real Composer slider scenes: held drag/commit, touch focus/selection, cancel, keys, dynamic 6/3/1/0 options, themes, per-stop fill/thumb geometry and draft.');
+ const cold=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+ try{
+  const page=await cold.newPage();await page.addInitScript('window.__name=v=>v');
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/composer-model-panel.tsx*',async route=>{await held;await route.continue();});
+  await page.goto(vite.resolvedUrls!.local[0]+'?mode=light&palette=opencraftNeutral&touch&no-effort');
+  const editor=page.locator('.opencraft-composer-editor');await editor.fill('First opening keeps this draft');
+  await page.evaluate(()=>document.fonts.ready);
+  await page.locator('.opencraft-composer-mode--intelligence').tap();
+  const menu=page.locator('.opencraft-composer-model-quick');await menu.waitFor();
+  const pending=(await menu.boundingBox())!;assert.equal(await menu.getByRole('menuitem').count(),0,'loading choices are not interactive');
+  release();await menu.getByRole('menuitem',{name:'Model 3',exact:true}).waitFor();
+  const ready=(await menu.boundingBox())!;
+  assert(Math.abs(pending.height-ready.height)<1,'a model without effort keeps the first-open surface height: '+JSON.stringify({pending,ready}));
+  assert.equal(await menu.getByRole('slider').count(),0,'loading never invents unsupported effort');
+  assert(await editor.evaluate(el=>el===document.activeElement),'deferred touch opening keeps editor focus');
+  assert.equal(await editor.innerText(),'First opening keeps this draft');
+  await writeFile('.local/reasoning-slider/first-open.json',JSON.stringify({pending,ready,focusRetained:true},null,2));
+ }finally{await cold.close();}
+ if(results.length)await writeFile('.local/reasoning-slider/results.json',JSON.stringify(results,null,2));console.log('PASS '+results.length+' real Composer slider scenes: held drag/commit, touch focus/selection, cancel, keys, dynamic 6/3/1/0 options, themes, per-stop fill/thumb geometry and draft; deferred first-open geometry/focus.');
 }finally{await browser.close();await vite.close();}

@@ -100,7 +100,7 @@ export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel,
             <div className="opencraft-composer-model-quick__header">
               <div className="opencraft-composer-model-quick__action-slot" />
               <div className="opencraft-composer-model-quick__labels">
-                <div className="opencraft-composer-model-quick__effort">{effortLabel}</div>
+                {effortLabel ? <div className="opencraft-composer-model-quick__effort">{effortLabel}</div> : null}
                 <span className="opencraft-composer-model-quick__title">{modelLabel}</span>
               </div>
               <div className="opencraft-composer-model-quick__action-slot" />
