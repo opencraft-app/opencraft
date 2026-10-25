@@ -457,3 +457,12 @@ cancellation rejects with ABORTED. A queued independent intent waits for a previ
 operation to settle, including failure/cancellation, rather than inheriting its
 outcome. Their projection code loads on demand after admission and checks ownership
 again after module loading, so it is outside the mandatory startup graph.
+
+
+Canonical rereads after overlapping deltas have a local elapsed deadline from
+the initial read start. Expiry settles the caller with a retryable TIMEOUT before
+any held old reply arrives, then revokes children and fences their late data.
+A new request checks expiry before joining, including before queued timer delivery;
+synchronous abort observers may already have admitted its successor. Initial quiet
+pagination keeps its per-RPC allowance, and explicit zero disables the configured
+deadline. Wall-clock corrections affect diagnostic timestamps, not these budgets.

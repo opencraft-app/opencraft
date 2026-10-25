@@ -131,3 +131,16 @@ test("chaos: a sticky initialization mutant is detected, shrunk and replayed wit
   await assert.rejects(simulateRecovery(minimal,{mutant:"sticky-initialize"}),error=>error instanceof ChaosViolation && error.rule===rule);
   await simulateRecovery(minimal);
 });
+
+for (const ms of [-1_000_000, 1_000_000]) test(`chaos: wall jump ${ms} cannot change an active RPC's elapsed cap`, async () => {
+  const trace: ChaosEvent[] = [{ type: "hold", host: "a", boundary: "response", value: true }, { type: "request", host: "a" },
+    { type: "wall-jump", ms }, { type: "preparing", host: "a" }, { type: "tick", ms: 1 }];
+  const result = await simulateRecovery(trace);
+  assert.ok(result.coverage[ms < 0 ? "wall-backward-with-live-rpc" : "wall-forward-with-live-rpc"]);
+  await assert.rejects(simulateRecovery(trace, { mutant: "wall-clock-budget" }), error => error instanceof ChaosViolation
+    && error.rule === (ms < 0 ? "RPC_DEADLINE_BOUND" : "RPC_DEADLINE"));
+});
+test("chaos: wall-jump replay schema allows bounded signed changes only", () => {
+  assert.deepEqual(parseRecoveryTrace([{ type: "wall-jump", ms: -1000 }]), [{ type: "wall-jump", ms: -1000 }]);
+  for (const ms of [NaN, Infinity, 86_400_001]) assert.throws(() => parseRecoveryTrace([{ type: "wall-jump", ms }]), /TRACE_SCHEMA/);
+});

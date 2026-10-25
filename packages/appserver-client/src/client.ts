@@ -21,11 +21,15 @@ import {
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 
+import { elapsedNow } from "./clock";
 import { AppServerClientError, AppServerRpcError } from "./errors";
 import type { DuplexTransport, TransportStatus } from "./transport";
 
 export interface AppServerClientClock {
+  /** Absolute diagnostic timestamps. Legacy single-clock adapters also supply elapsed time here. */
   now(): number;
+  /** Nondecreasing elapsed time for budgets and durations; includes simulated suspension. */
+  elapsedNow?(): number;
   setTimeout(callback: () => void, delayMs: number): ReturnType<typeof globalThis.setTimeout>;
   clearTimeout(timerId: ReturnType<typeof globalThis.setTimeout>): void;
 }
@@ -81,7 +85,9 @@ interface PendingRequest {
   method: string;
   priority: AppServerRequestOptions["priority"];
   queuedAtMs: number;
+  queuedElapsedAtMs: number;
   startedAtMs: number;
+  startedElapsedAtMs: number;
   params: unknown;
   timeoutMs: number;
   preparationTurnId?: string;
@@ -136,6 +142,7 @@ function utf8ResponseBytes(frame: string): number {
 let clientIncarnationSequence = 0;
 const systemClock: AppServerClientClock = {
   now: () => Date.now(),
+  elapsedNow,
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (timerId) => globalThis.clearTimeout(timerId),
 };
@@ -210,6 +217,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly transport: DuplexTransport;
   private readonly requestTimeoutMs: number;
   private readonly clock: AppServerClientClock;
+  private elapsedTime() { return this.clock.elapsedNow?.() ?? this.clock.now(); }
   private readonly createRequestId: () => JsonRpcId;
   private readonly maxPendingRequests: number;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
@@ -351,6 +359,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const request: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
     const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
     const queuedAtMs = this.clock.now();
+    const queuedElapsedAtMs = this.elapsedTime();
 
     return new Promise<TResult>((resolve, reject) => {
       const abort = () => {
@@ -368,7 +377,9 @@ export class JsonRpcAppServerClient implements AppServerClient {
         method,
         priority: options.priority,
         queuedAtMs,
+        queuedElapsedAtMs,
         startedAtMs: queuedAtMs,
+        startedElapsedAtMs: queuedElapsedAtMs,
         params,
         timeoutMs,
         resolve: (value) => resolve(value as TResult),
@@ -390,6 +401,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       });
       if (this.pending.get(id) !== pending) return;
       pending.startedAtMs = this.clock.now();
+      pending.startedElapsedAtMs = this.elapsedTime();
       this.emitRequestLifecycle({
         type: "started",
         hostId: this.hostId,
@@ -397,7 +409,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         method,
         priority: options.priority,
         startedAtMs: pending.startedAtMs,
-        queueWaitMs: pending.startedAtMs - pending.queuedAtMs,
+        queueWaitMs: Math.max(0, pending.startedElapsedAtMs - pending.queuedElapsedAtMs),
         params,
         timeoutMs,
       });
@@ -540,7 +552,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         ...this.lifecycleBase(pending),
         type: "failed",
         endedAtMs,
-        durationMs: endedAtMs - pending.startedAtMs,
+        durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         error,
         get responseBytes() { return utf8ResponseBytes(frame); },
       });
@@ -550,7 +562,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         ...this.lifecycleBase(pending),
         type: "completed",
         endedAtMs,
-        durationMs: endedAtMs - pending.startedAtMs,
+        durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         result: message.result,
         get responseBytes() { return utf8ResponseBytes(frame); },
       });
@@ -703,8 +715,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
         pending.preparationTurnId = params.turnId as string;
       } else if (pending.preparationTurnId === undefined || pending.preparationTurnId !== params.turn?.id) continue;
       // Context preparation is model work, not a stalled RPC. Extend only for
-      // the matching thread and never beyond a bounded absolute deadline.
-      const remaining = Math.max(0, pending.startedAtMs + Math.max(pending.timeoutMs, 180_000) - this.clock.now());
+      // the matching thread and never beyond a bounded elapsed deadline.
+      const remaining = Math.max(0, pending.startedElapsedAtMs + Math.max(pending.timeoutMs, 180_000) - this.elapsedTime());
       const delay = started ? remaining : Math.min(remaining, pending.timeoutMs);
       this.armRequestTimeout(pending, delay,
         `AppServer request ${pending.method} timed out during context preparation`);
@@ -740,7 +752,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       ...this.lifecycleBase(pending),
       type,
       endedAtMs,
-      durationMs: endedAtMs - pending.startedAtMs,
+      durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
       error,
     });
   }

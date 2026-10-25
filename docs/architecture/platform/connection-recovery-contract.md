@@ -245,6 +245,26 @@ across a clock edit. OS sleep behavior of the platform elapsed source remains an
 environmental boundary; browser JS freezing and wall-clock reversal are covered
 by deterministic tests, not claimed as physical iPhone sleep verification.
 
+Client context-preparation caps, queue waits and RPC durations use the same
+shared elapsed source. Absolute queued/started/ended timestamps remain wall-clock
+diagnostics. Custom `AppServerClientClock.elapsedNow` separates those domains;
+legacy adapters without it must supply elapsed semantics through `now` as well.
+Changing the wall clock cannot extend the 180s preparation cap or end it early.
+This does not change ordinary request timeouts or preparation-completion policy.
+
+A read that overlaps native history deltas needs another canonical cut. That
+retry phase has an elapsed deadline measured from initial read admission. Its
+local owner settles with TIMEOUT and aborts child waits when the deadline expires,
+even if an in-progress reread ignores cancellation. Joining/continuing also checks
+expiry before overdue timer delivery. Initial quiet pagination retains its
+existing per-RPC progress allowance; this is not a new blanket timeout on a
+healthy multi-page initial read. Explicit zero disables both configured client
+budgets. Custom Session `readClock` must use elapsed time and coherent timers.
+Timer tickets fence retired callbacks, and opaque handles are retained even when
+the adapter returns undefined. Expiry clears only its own slot before child abort;
+if synchronous callbacks admit a successor, the triggering caller rechecks the
+slots and joins that successor rather than overwriting it.
+
 The [chaos simulator](../../../tests/protocol/fixtures/recovery-chaos.ts) checks
 real owners/client/Deferred composition and recovery after a healthy suffix.
 It records effective fault coverage, deterministic seeds, replayable failure

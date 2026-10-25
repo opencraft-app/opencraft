@@ -10,7 +10,7 @@ export type ChaosEvent =
   | { type: "connect" | "hint" | "loss" | "manual" | "dispose" | "late" | "request" | "cancel-request" | "preparing" | "prepared"; host: Host }
   | { type: "hold"; host: Host; boundary: Boundary; value: boolean }
   | { type: "network"; up: boolean }
-  | { type: "tick" | "freeze"; ms: number }
+  | { type: "tick" | "freeze" | "wall-jump"; ms: number }
   | { type: "stale-timer" | "heal" };
 export class ChaosViolation extends Error {
   cleanupFailure?:string;
@@ -28,6 +28,9 @@ function deferred<T>() {
 /** Timers and elapsed time are controlled independently, as on a frozen page. */
 class Clock {
   private raw = 0;
+  private wallOffset = 1_000_000;
+  wallNow = () => this.wallOffset + this.now();
+  jumpWall(ms: number) { this.wallOffset += ms; }
   readonly now = createRecoveryNow(() => this.raw);
   private sequence = 0;
   readonly timers = new Map<number, { at: number; fn(): void }>();
@@ -114,12 +117,13 @@ interface HostState {
   holds: Record<Boundary, boolean>;
   runs: Operation[];
   ready: number;
+  clientTimers: Set<number>;
 }
 export interface ChaosOptions {
   createClient?: (config: AppServerClientConfig) => AppServerClient;
   createTransport?: (create: (signal: AbortSignal) => Promise<DuplexTransport>) => DuplexTransport;
-  /** Negative control: simulate a client that never releases its first operation. */
-  mutant?: "sticky-initialize" | "replay-mutation";
+  /** Deliberate faults used to validate the corresponding recovery oracle. */
+  mutant?: "sticky-initialize" | "replay-mutation" | "wall-clock-budget";
 }
 class World {
   readonly clock = new Clock();
@@ -145,8 +149,15 @@ class World {
           if(isJsonRpcRequest(request) && request.method==="turn/start")await send(frame,signal);
         };
       }
+      const clientTimers = new Set<number>();
+      const requestClock = {
+        now: () => this.clock.wallNow(),
+        ...(options.mutant === "wall-clock-budget" ? {} : { elapsedNow: () => this.clock.now() }),
+        setTimeout: (run: () => void, ms: number) => { const id = this.clock.setTimeout(run, ms); clientTimers.add(id); return id; },
+        clearTimeout: (id: unknown) => { clientTimers.delete(id as number); this.clock.clearTimeout(id); },
+      };
       const client = (options.createClient ?? (config => new JsonRpcAppServerClient(config)))({hostId:host,transport,
-        requestTimeoutMs:30,clock:this.clock as unknown as AppServerClientConfig["clock"]});
+        requestTimeoutMs:30,clock:requestClock as unknown as AppServerClientConfig["clock"]});
       if (options.mutant==="sticky-initialize") {
         const original = client.connect.bind(client);
         let stuck: ReturnType<typeof client.connect> | undefined;
@@ -168,7 +179,7 @@ class World {
           this.coverage["ready-commit"]=(this.coverage["ready-commit"]??0)+1;
         },manual:()=>false,backoff() {},
       });
-      state = {owner,client,transport,holds,runs:[],ready:0};this.hosts[host]=state;
+      state = {owner,client,transport,holds,runs:[],ready:0,clientTimers};this.hosts[host]=state;
       transport.subscribeStatus(status => {
         if (status.state === "failed" || status.state === "closed") owner.lost(new Error("synthetic transport loss"));
       });
@@ -214,6 +225,10 @@ class World {
     for(const operation of this.mutations) {
       requireThat(operation.sent<=1,"NO_REPLAY",`intent ${operation.id} duplicated`);
       requireThat(operation.error!=="EARLY_TIMEOUT","RPC_DEADLINE",`intent ${operation.id} timed out before its current deadline`);
+      if (!operation.settled && operation.sent === 1) for (const id of this.hosts[operation.host].clientTimers) {
+        const timer = this.clock.timers.get(id);
+        if (timer) requireThat(timer.at <= Math.max(this.clock.now(), operation.deadline), "RPC_DEADLINE_BOUND", `intent ${operation.id} extended beyond its elapsed cap`);
+      }
       requireThat(operation.error!=="WRONG_RESPONSE","RPC_CORRELATION",`intent ${operation.id} received another intent's response`);
       if(operation.controller.signal.aborted)requireThat(operation.settled,"LOCAL_CANCELLATION",`intent ${operation.id} did not settle on cancellation`);
     }
@@ -233,6 +248,13 @@ class World {
     this.coverage[event.type]=(this.coverage[event.type]??0)+1;
     const previous=Object.fromEntries((["a","b"] as const).map(h=>[h,this.hosts[h].owner.snapshot]));
     if (event.type==="tick" || event.type==="freeze") this.clock.advance(event.ms,event.type==="tick");
+    else if (event.type === "wall-jump") {
+      this.clock.jumpWall(event.ms);
+      if (this.mutations.some(operation => !operation.settled && operation.sent === 1)) {
+        const key = event.ms < 0 ? "wall-backward-with-live-rpc" : "wall-forward-with-live-rpc";
+        this.coverage[key] = (this.coverage[key] ?? 0) + 1;
+      }
+    }
     else if (event.type==="network") {
       this.network=event.up;
       if (!event.up) for (const wire of this.wires) if (wire.requested) {
@@ -337,10 +359,11 @@ export function generateRecoveryChaos(seed: number,steps=120): ChaosEvent[] {
   const events:ChaosEvent[]=[];
   for (let i=0;i<steps;i++) {
     const host=pick(["a","b"] as const);
-    const type=pick(["connect","hint","loss","late","hold","hold","tick","freeze","network","stale-timer","manual","dispose","request","request","cancel-request","preparing","prepared"] as const);
+    const type=pick(["connect","hint","loss","late","hold","hold","tick","freeze","network","stale-timer","manual","dispose","request","request","cancel-request","preparing","prepared","wall-jump"] as const);
     if (i%32===31) events.push({type:"heal"});
     if (type==="hold") events.push({type,host,boundary:pick(["acquire","dial","initialize","response","close"] as const),value:rng()<0.6});
     else if(type==="tick" || type==="freeze") events.push({type,ms:pick([0,1,10,26,61,5_001])});
+    else if(type==="wall-jump") events.push({type,ms:pick([-1_000_000,1_000_000,-1_000,1_000])});
     else if(type==="network") events.push({type,up:rng()<0.6});
     else if(type==="stale-timer") events.push({type});
     // Terminal disposal is sampled late so repeated recovery remains exercised.
@@ -372,9 +395,10 @@ export function parseRecoveryTrace(value:unknown):ChaosEvent[] {
   for(const event of value) {
     requireThat(typeof event==="object" && event!==null,"TRACE_SCHEMA","invalid event");
     const e=event as Record<string,unknown>;
-    requireThat(["connect","hint","loss","manual","dispose","late","hold","network","tick","freeze","stale-timer","heal","request","cancel-request","preparing","prepared"].includes(String(e.type)),"TRACE_SCHEMA","unknown event type");
+    requireThat(["connect","hint","loss","manual","dispose","late","hold","network","tick","freeze","stale-timer","heal","request","cancel-request","preparing","prepared","wall-jump"].includes(String(e.type)),"TRACE_SCHEMA","unknown event type");
     if(["connect","hint","loss","manual","dispose","late","hold","request","cancel-request","preparing","prepared"].includes(String(e.type))) requireThat(e.host==="a" || e.host==="b","TRACE_SCHEMA","invalid host");
     if(e.type==="tick" || e.type==="freeze") requireThat(typeof e.ms==="number" && Number.isFinite(e.ms) && e.ms>=0 && e.ms<=86_400_000,"TRACE_SCHEMA","invalid elapsed time");
+    if(e.type==="wall-jump") requireThat(typeof e.ms==="number" && Number.isFinite(e.ms) && Math.abs(e.ms)<=86_400_000,"TRACE_SCHEMA","invalid wall-clock jump");
     if(e.type==="network") requireThat(typeof e.up==="boolean","TRACE_SCHEMA","invalid network flag");
     if(e.type==="hold") requireThat(["acquire","dial","initialize","response","close"].includes(String(e.boundary)) && typeof e.value==="boolean","TRACE_SCHEMA","invalid hold boundary");
   }

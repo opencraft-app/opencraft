@@ -1658,6 +1658,8 @@ export function createAppServerWorkbenchRuntime(
       session = await duringAttempt(createCordisThreadSessionRuntime({
         client,
         frameScheduler: config.frameScheduler,
+        readClock: { now: () => clock.now?.() ?? recoveryNow(),
+          setTimeout: (run, ms) => clock.setTimeout(run, ms), clearTimeout: timer => clock.clearTimeout(timer) },
         hostKind:
           config.hostKind ?? (hostId === "durable" ? "durable" : "local"),
         supportsPaginatedHistory: true,
