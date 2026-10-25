@@ -69,7 +69,7 @@ test("old stability callbacks cannot reset a successor outage's backoff", async 
 test("deadline settles callers and revokes hung I/O; dispose remains terminal", async () => {
   const f = fixture(); const start = f.owner.connect(); await tick();
   const rejected = assert.rejects(start, /timed out/);
-  await f.fire(60_000); await rejected;
+  await f.fire(30_000); await rejected;
   assert.equal(f.runs[0]!.signal.aborted, true);
   f.owner.dispose(); f.runs[0]!.resolve({}); await tick();
   assert.equal(f.owner.snapshot.phase, "disposed"); assert.equal(f.timers.size, 0);
@@ -88,7 +88,7 @@ test("default reconnect backoff adds bounded jitter while explicit test schedule
   });
   try {
     await assert.rejects(owner.connect(), /synthetic loss/);
-    assert.deepEqual(scheduled.filter(delay => delay !== 60_000), [400]);
+    assert.deepEqual(scheduled.filter(delay => delay < 1_000), [400]);
     assert.deepEqual(delays, [400]);
   } finally { owner.dispose(); }
   const upper = new ConnectionLifecycleOwner<object>({
@@ -99,6 +99,6 @@ test("default reconnect backoff adds bounded jitter while explicit test schedule
   });
   try {
     await assert.rejects(upper.connect(), /synthetic loss/);
-    assert.equal(scheduled.filter(delay => delay !== 60_000).at(-1), 600);
+    assert.equal(scheduled.filter(delay => delay < 1_000).at(-1), 600);
   } finally { upper.dispose(); }
 });

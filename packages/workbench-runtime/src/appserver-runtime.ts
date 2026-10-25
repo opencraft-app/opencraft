@@ -472,6 +472,7 @@ interface ConversationBinding {
 }
 
 const defaultClock: AppServerRuntimeClock = {
+  now: () => Date.now(),
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (timer) =>
     globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>),
@@ -544,7 +545,7 @@ export function createAppServerWorkbenchRuntime(
   let disposeOperation: Promise<void> | null = null;
   let initializeServicesOperation: Promise<void> | null = null;
   let connectionRevision = 0;
-  let connectionObservation: { client: AppServerClient; revision: number } | null = null;
+  let connectionObservation: { client: AppServerClient; revision: number; attempt?: ConnectionAttempt } | null = null;
   const recovery = new ConversationRecoveryOwner({ hostId, clock,
     delaysMs: config.reconnectDelaysMs,
     jitter: config.clock === undefined,
@@ -714,6 +715,7 @@ export function createAppServerWorkbenchRuntime(
     async run(attempt: ConnectionAttempt) {
       // Assembly settles on revocation. Retired bundles clean only their own
       // resources in the background; they cannot hold a successor's admission.
+      attempt.progress("services");
       if (initializeServicesOperation !== null) await initializeServicesOperation.catch(() => undefined);
       attempt.assertCurrent();
       automaticReconnectBlock = null;
@@ -1407,9 +1409,11 @@ export function createAppServerWorkbenchRuntime(
     const currentClient = requireClient();
     const transport = currentTransport;
     const revision = connectionRevision;
-    connectionObservation = { client: currentClient, revision };
+    connectionObservation = { client: currentClient, revision, attempt };
+    attempt?.progress(transport?.status.state === "open" ? "initialize" : "transport",
+      transport?.status.state === "open" ? Math.max(30_000, config.requestTimeoutMs ?? 30_000) + 5_000 : 45_000);
     if (currentClient.initializeResult === null) recovery.connectionStage(currentTransport?.status.state === "open" ? "initializing" : "connecting");
-    await currentClient.connect(config.initialize ?? defaultInitialize, attempt?.signal);
+    await currentClient.connect(config.initialize ?? defaultInitialize, attempt?.signal, attempt?.assertCurrent);
     ensureLifecycle(generation);
     attempt?.assertCurrent();
     if (currentClient !== client || transport === null || transport !== currentTransport
@@ -1576,6 +1580,16 @@ export function createAppServerWorkbenchRuntime(
       removeTransportListener = observedClient.subscribeStatus((status) => {
         if (disposed || client !== observedClient || connectionObservation?.client !== observedClient
           || connectionObservation.revision !== connectionRevision) return;
+        const attempt = connectionObservation.attempt;
+        if (attempt && !attempt.signal.aborted) {
+          // Observers never throw into the shared socket's frame dispatcher.
+          try {
+            if (status.state === "connecting" && status.connectionStage)
+              attempt.progress(status.connectionStage, status.connectionStage === "bridge" ? 15_000 : 35_000);
+            if (status.state === "open" && observedClient.initializeResult === null)
+              attempt.progress("initialize", Math.max(30_000, config.requestTimeoutMs ?? 30_000) + 5_000);
+          } catch { return; }
+        }
         if (status.state === "open" && observedClient.initializeResult === null) recovery.connectionStage("initializing");
         if (status.state !== "closed" && status.state !== "failed") return;
         if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
@@ -1606,6 +1620,7 @@ export function createAppServerWorkbenchRuntime(
         return capability?.version === 1 && ["legacy", "paginated", "message-window"].includes(String(capability.mode))
           ? capability.mode as "legacy" | "paginated" | "message-window" : null;
       };
+      attempt.progress("session");
       session = await duringAttempt(createCordisThreadSessionRuntime({
         client,
         frameScheduler: config.frameScheduler,

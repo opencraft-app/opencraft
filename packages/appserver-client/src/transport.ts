@@ -45,6 +45,8 @@ export interface TransportFailureDisposition {
 export interface TransportStatus {
   /** Locally generated physical connection correlation; no remote identity. */
   readonly attemptId?: string;
+  /** Local connect boundary, never a claim of Host or Thread readiness. */
+  readonly connectionStage?: "admission" | "release" | "bridge" | "host";
   state: TransportState;
   reason?: string;
   /** Omitted by legacy transports, which remain automatically recoverable. */

@@ -58,18 +58,21 @@ depth bounds that prune liveness paths; the specification itself is finite.
 ## Implementation evidence
 
 The actual Web transport tests replay the old-gate failure as
-`RECOVERY-GAP-04` (abort cannot settle while `beforeConnect` is pending) and
-`RECOVERY-GAP-05` (a successor joins the same revoked `connectOperation`). These
-execute as TODOs; strict mode makes them fail normally. A separate actual shared
+`RECOVERY-GAP-04` (local abort must settle while `beforeConnect` is pending) and
+`RECOVERY-GAP-05` (a successor must own a new operation after revocation). These
+former counterexamples now pass as ordinary assertions after the runtime repair. A separate actual shared
 socket test confirms that one Host's failure and late old-lease frames do not
 revoke a healthy peer or the recovered lease.
 
 ```sh
 npm run test:recovery
-OPENCRAFT_RECOVERY_CONTRACT_STRICT=1 node --import tsx --test tests/protocol/websocket-app-host.test.ts
+node --import tsx --test tests/protocol/websocket-app-host.test.ts
 ```
 
 The reduced admission/abort/successor sequence is a causal reduction of the TLC
 old-gate counterexample, not a claim that TLC proved a globally shortest trace.
-The new gaps are not repaired by adding these tests. Model assumptions, exact
-source and actual multi-layer behavior must all be checked again during repair.
+The implementation also checks late admission success/failure, synchronous
+reentry, physical close serialization and initialization commit fencing. The
+formal specification remains independent: passing TLC and these regressions
+is not a full refinement proof. See the [runtime contract](../../../docs/architecture/platform/connection-recovery-contract.md)
+for production stage observations, budgets and environmental limits.

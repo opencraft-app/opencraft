@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ConnectionLifecycleOwner } from "../../packages/workbench-runtime/src/connection-lifecycle";
+import { ConnectionLifecycleOwner, type ConnectionAttempt } from "../../packages/workbench-runtime/src/connection-lifecycle";
 import { budgets, initialState, transition, type Event, type State } from "./fixtures/recovery-specification";
 
 function specification() {
@@ -170,19 +170,15 @@ test("contract: bounded event enumeration preserves authority and single-attempt
   explore(transition(initialState(), { type: "connect", at: 0 }).state, [], 4);
 });
 
-// These are assertions against the real current owner, not the specification.
-// TODOs execute and fail today. Strict mode makes those gaps fail the command;
-// do not count TODOs (including unexpected TODO passes) as implementation proof.
-const strict = process.env.OPENCRAFT_RECOVERY_CONTRACT_STRICT === "1";
-const gap = (id: string) => strict ? {} : { todo: `${id}: target recovery contract is not implemented` };
+// Assertions below exercise the real owner, independent of the specification.
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 function actual() {
   let now = 0, sequence = 0;
   const timers = new Map<number, { at: number; fn(): void }>();
-  const runs: { resolve(value: object): void; signal: AbortSignal }[] = [];
+  const runs: (ConnectionAttempt & { resolve(value: object): void })[] = [];
   const owner = new ConnectionLifecycleOwner<object>({
     clock: { now: () => now, setTimeout(fn, ms) { const id = ++sequence; timers.set(id, { at: now + ms, fn }); return id; }, clearTimeout(id) { timers.delete(id as number); } },
-    jitter: false, run: attempt => new Promise(resolve => runs.push({ resolve, signal: attempt.signal })),
+    jitter: false, run: attempt => new Promise(resolve => runs.push({ ...attempt, resolve })),
     valid: () => true, invalidate() {}, changed() {}, usable() {}, manual: () => false, backoff() {},
   });
   return { owner, runs,
@@ -204,7 +200,7 @@ test("implementation: foreground during backoff advances retry without clearing 
   } finally { f.owner.dispose(); }
 });
 
-test("RECOVERY-GAP-01: pending hint must survive an attempt failure", gap("RECOVERY-GAP-01"), async () => {
+test("RECOVERY-GAP-01: pending hint must survive an attempt failure", async () => {
   const f = actual();
   try {
     const start = f.owner.connect(); await flush(); await f.advance(5_000);
@@ -214,7 +210,7 @@ test("RECOVERY-GAP-01: pending hint must survive an attempt failure", gap("RECOV
   } finally { f.owner.dispose(); }
 });
 
-test("RECOVERY-GAP-02: foreground must re-evaluate an attempt whose absolute deadline elapsed while frozen", gap("RECOVERY-GAP-02"), async () => {
+test("RECOVERY-GAP-02: foreground must re-evaluate an attempt whose absolute deadline elapsed while frozen", async () => {
   const f = actual();
   try {
     void f.owner.connect(); await flush(); await f.advance(120_000, true);
@@ -224,12 +220,91 @@ test("RECOVERY-GAP-02: foreground must re-evaluate an attempt whose absolute dea
   } finally { f.owner.dispose(); }
 });
 
-test("RECOVERY-GAP-03: a no-progress attempt needs a stage deadline before its aggregate deadline", gap("RECOVERY-GAP-03"), async () => {
+test("RECOVERY-GAP-03: a no-progress attempt needs a stage deadline before its aggregate deadline", async () => {
   const f = actual();
   try {
     void f.owner.connect(); await flush(); await f.advance(30_000);
     f.hint(); await flush();
     assert.equal(f.runs[0]!.signal.aborted, true, "this run produced no progress for 30s; aggregate timeout is still 60s");
     assert.equal(f.runs.length, 2);
+  } finally { f.owner.dispose(); }
+});
+
+test("implementation: distinct progress renews only the stage budget and old progress is fenced", async () => {
+  const f = actual();
+  try {
+    void f.owner.connect(); await flush();
+    await f.advance(20_000, true); f.runs[0]!.progress("bridge");
+    await f.advance(30_000); f.hint(); await flush();
+    assert.equal(f.runs.length, 1); assert.equal(f.runs[0]!.signal.aborted, false);
+    await f.advance(45_000, true); f.runs[0]!.progress("bridge");
+    await f.advance(50_000); await flush();
+    assert.equal(f.runs.length, 2, "the earlier retained hint validates once when the original stage budget expires");
+    assert.throws(() => f.runs[0]!.progress("initialize"));
+    f.runs[0]!.resolve({}); await flush();
+    assert.equal(f.owner.snapshot.phase, "attempting");
+  } finally { f.owner.dispose(); }
+});
+
+test("implementation: late success after total expiry is rejected before readiness even without timer callbacks", async () => {
+  const f = actual();
+  try {
+    const first = f.owner.connect(); await flush();
+    await f.advance(20_000, true); f.runs[0]!.progress("bridge");
+    await f.advance(40_000, true); f.runs[0]!.progress("host");
+    await f.advance(60_000, true); f.runs[0]!.resolve({});
+    await assert.rejects(first, /timed out \(total\)/);
+    assert.equal(f.owner.snapshot.phase, "backoff");
+    assert.equal(f.runs[0]!.signal.aborted, true);
+  } finally { f.owner.dispose(); }
+});
+
+test("implementation: success consumes its earlier hint and manual blocks discard retained wake", async () => {
+  const f = actual();
+  try {
+    const first = f.owner.connect(); await flush(); f.hint(); f.runs[0]!.resolve({}); await first;
+    f.owner.lost(new Error("new loss")); await flush();
+    assert.equal(f.runs.length, 1, "successful initialization covered the old signal");
+    void f.owner.connect(true); await flush(); f.hint(); f.owner.lost(new Error("manual"), true);
+    await f.advance(120_000); f.hint();
+    assert.equal(f.owner.snapshot.phase, "blocked"); assert.equal(f.runs.length, 2);
+  } finally { f.owner.dispose(); }
+});
+
+test("implementation: hint storms conserve one wake until the validation budget replenishes", async () => {
+  const f = actual();
+  try {
+    // Escalate to a long backoff independently of foreground validation.
+    for (let n = 0; n < 7; n++) {
+      void f.owner.connect(true); await flush(); f.owner.lost(new Error("outage"));
+    }
+    f.hint(); await flush(); const count = f.runs.length;
+    await f.advance(1_000);
+    for (let n = 0; n < 100; n++) f.hint();
+    f.owner.lost(new Error("still unavailable")); await flush();
+    assert.equal(f.runs.length, count);
+    await f.advance(4_999); assert.equal(f.runs.length, count);
+    await f.advance(5_000); assert.equal(f.runs.length, count + 1);
+    assert.equal(f.owner.reconnectAttempt, 8, "validation does not erase outage history");
+    f.owner.lost(new Error("another loss")); await flush();
+    await f.advance(6_000); for (let n = 0; n < 100; n++) f.hint();
+    await f.advance(9_999); assert.equal(f.runs.length, count + 1);
+    await f.advance(10_000); assert.equal(f.runs.length, count + 2, "a backoff hint also survives throttling");
+  } finally { f.owner.dispose(); }
+});
+
+for (const reentry of ["dispose", "connect"] as const) test(`implementation: abort observer ${reentry} wins over retired retry accounting`, async () => {
+  const f = actual();
+  try {
+    void f.owner.connect(); await flush();
+    f.runs[0]!.signal.addEventListener("abort", () => {
+      if (reentry === "dispose") f.owner.dispose();
+      else void f.owner.connect(true);
+    }, { once: true });
+    f.owner.lost(new Error("outage")); await flush();
+    assert.equal(f.owner.snapshot.phase, reentry === "dispose" ? "disposed" : "attempting");
+    await f.advance(120_000);
+    if (reentry === "dispose") assert.equal(f.runs.length, 1);
+    else assert.equal(f.runs[1]!.signal.aborted, true, "only the successor's own deadline can revoke it");
   } finally { f.owner.dispose(); }
 });

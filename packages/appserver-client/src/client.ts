@@ -177,7 +177,7 @@ export interface AppServerClient {
   readonly status: TransportStatus;
   readonly initializeResult: AppServerInitializeResponse | null;
   readonly connectionGeneration: number;
-  connect(params: AppServerInitializeParams, signal?: AbortSignal): Promise<AppServerInitializeResponse>;
+  connect(params: AppServerInitializeParams, signal?: AbortSignal, assertCurrent?: () => void): Promise<AppServerInitializeResponse>;
   request<TMethod extends AppServerMethod>(
     method: TMethod,
     params: AppServerMethodParams<TMethod>,
@@ -258,6 +258,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   async connect(
     params: AppServerInitializeParams,
     signal?: AbortSignal,
+    assertCurrent?: () => void,
   ): Promise<AppServerInitializeResponse> {
     if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
     if (this.transport.status.state === "open" && this.initialized !== null) return this.initialized;
@@ -268,11 +269,16 @@ export class JsonRpcAppServerClient implements AppServerClient {
       if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
       if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
       await this.transport.connect(signal);
+      assertCurrent?.();
+      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
       const revision = this.transportRevision;
       const result = await this.request("initialize", params, { signal, priority: "user-blocking" });
       if (this.closed || revision !== this.transportRevision || this.transport.status.state !== "open") {
         throw new AppServerClientError("TRANSPORT_ERROR", "AppServer initialization belongs to a lost connection");
       }
+      // A resumed page must validate its owner deadline before caching readiness.
+      assertCurrent?.();
+      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
       this.initialized = result;
       this.generation += 1;
       return result;

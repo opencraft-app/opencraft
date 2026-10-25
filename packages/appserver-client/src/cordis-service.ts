@@ -51,8 +51,8 @@ export class AppServerClientService extends Service implements AppServerClient {
     return this.client.connectionGeneration;
   }
 
-  connect(params: AppServerInitializeParams, signal?: AbortSignal): Promise<AppServerInitializeResponse> {
-    return this.client.connect(params, signal);
+  connect(params: AppServerInitializeParams, signal?: AbortSignal, assertCurrent?: () => void): Promise<AppServerInitializeResponse> {
+    return this.client.connect(params, signal, assertCurrent);
   }
 
   request<TMethod extends AppServerMethod>(
