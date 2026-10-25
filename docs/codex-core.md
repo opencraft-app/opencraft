@@ -123,7 +123,7 @@ connecting/ready/unavailable，HTTP 的 ok 不代表该 Host 可执行。
 
 `main.cjs` 加 `--app-server-endpoint ABSOLUTE_SOCKET --proxy-port FIXED_PORT` 后只持有账号服务，不 spawn/stop CLI。独立 `app-server.cjs` 通过认证 control `/launch` 获取 synthetic broker 配置，持有 runtime 锁、原生 Unix socket 和认证连接。`/launch` 不返回真实账户凭据，不经过公开网关；同 uid 私有 socket/token 是现有信任边界。
 
-账号地址是固定 `http://127.0.0.1:PORT`；Host token 由现有 secrets owner 持久化，不因 Core 更新重发。计划升级先给账号 Core SIGTERM：先排完 control/account RPC；代理在其他长流排空期间仍接纳现有 runtime 的后续请求，避免并行 shell 完成后被长流维护阻挡。后台登录/配额维护先在代理仍监听时结束；推理自己的凭据刷新仍可完成。只有 active 归零的空闲点才同步关闭代理监听，随后同步关库、释放锁并退出；监听关闭后的启动间隙由原生 CLI 的 Responses 传输重试恢复。Core unit 的停止期限为 infinity，避免 systemd 超时杀掉未排完的流。流永不结束则本次升级等待，不以强杀冒充平滑升级。
+账号地址是固定 `http://127.0.0.1:PORT`；Host token 由现有 secrets owner 持久化，不因 Core 更新重发。计划升级先给账号 Core SIGTERM：先排完 control/account RPC；代理在其他长流排空期间仍接纳现有 runtime 的后续请求，避免并行 shell 完成后被长流维护阻挡。后台登录/配额维护先在代理仍监听时结束；推理自己的凭据刷新仍可完成。只有 active 归零的空闲点才同步关闭代理监听，随后同步关库、释放锁并退出；监听关闭后的启动间隙由原生 CLI 的 Responses 传输重试恢复。Core unit 的停止期限为 infinity，避免 systemd 超时杀掉未排完的流。流永不结束则本次升级等待，不以强杀冒充平滑升级。 关闭等待超过15秒时，结构化诊断区分control、账号RPC、登录、重置券、订阅维护和代理；代理只按固定路由/方法/处理阶段聚合在途数量与最老时长，不记录查询、未知路径、header或body。TCP连接数不等于在途推理或MCP请求，须按这些阶段判断阻塞。
 
 Core 意外崩溃时，已建立的上游流仍会断开；APP Server 不变，依靠原生传输重试，可能增加一次模型请求和延迟。本步骤不重发 `turn/start`，不保证任意长停机、所有外部模型/图片端点都可恢复。恢复期限受固定 CLI 版本的重试预算约束；预算耗尽后的轮次交给第 2 步，不能无限重试结果未知的工具或账户 mutation。图片 turn 的临时关联仍在代理内存，Core crash 后不承诺图片请求恢复；后续如需覆盖必须单独做持久身份设计。
 

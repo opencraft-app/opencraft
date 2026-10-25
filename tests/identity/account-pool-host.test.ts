@@ -1600,3 +1600,46 @@ test("credit policy is account-scoped, persistent and gates bound Threads at 98%
     assert.throws(() => pool.setAllowCredits("missing", true), /Account not found/);
   } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test("shutdown diagnostics describe a waiting stream without exposing request secrets or stopping follow-up requests", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-proxy-drain-diagnostic-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  pool.addAccount({ id: "fixture", provider: "codex", label: "Fixture", upstreamAccountId: "fixture", priority: 1, enabled: true },
+    { accessToken: "upstream-secret-never-log", refreshToken: null, expiresAt: null });
+  const token = pool.issueHostToken("fixture");
+  let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool,
+    upstreamBaseUrl: "https://fixture.test/backend-api/codex", fetch: async url => String(url).endsWith("/models")
+      ? Response.json({ data: [] }) : new Response(new ReadableStream({ start(controller) {
+        stream = controller; controller.enqueue(new TextEncoder().encode("data: pending\n\n"));
+      } }), { headers: { "content-type": "text/event-stream" } }) }) });
+  const warnings: unknown[][] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
+  let closing: Promise<void> | undefined;
+  try {
+    const response = await fetch(`${server.url}/v1/responses?token=query-secret-never-log`, { method: "POST",
+      headers: { "x-opencraft-account-pool-token": token, "thread-id": "thread-secret-never-log" },
+      body: JSON.stringify({ input: "prompt-secret-never-log" }) });
+    const reader = response.body!.getReader(); await reader.read();
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    let closed = false; closing = server.close().then(() => { closed = true; });
+    const followUp = await fetch(`${server.url}/v1/models`, { headers: { "x-opencraft-account-pool-token": token } });
+    assert.deepEqual(await followUp.json(), { data: [] });
+    t.mock.timers.tick(15_000);
+    assert.equal(closed, false);
+    const record = warnings.map(args => JSON.parse(String(args[1]))).find(value => value.event === "shutdown-proxy-wait");
+    assert.equal(record.active, 1);
+    assert.deepEqual(record.requests.map(({ method, route, stage, count }: any) => ({ method, route, stage, count })),
+      [{ method: "POST", route: "/v1/responses", stage: "response-stream", count: 1 }]);
+    const logged = JSON.stringify(warnings);
+    for (const secret of [token, "upstream-secret-never-log", "query-secret-never-log", "thread-secret-never-log", "prompt-secret-never-log"]) {
+      assert.equal(logged.includes(secret), false);
+    }
+    stream!.close(); while (!(await reader.read()).done) { /* Drain the original response. */ }
+    await closing; assert.equal(closed, true);
+    const count = warnings.length; t.mock.timers.tick(15_000); assert.equal(warnings.length, count);
+  } finally {
+    try { stream?.close(); } catch { /* Already closed. */ }
+    await closing; await server.close(); pool.close(); await rm(root, { recursive: true, force: true });
+  }
+});
