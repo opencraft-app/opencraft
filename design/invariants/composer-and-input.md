@@ -437,6 +437,22 @@ by opening. The shared slider capsule variant retains Radix gesture/keyboard
 ownership and previews effort until a completed choice. Desktop uses a compact surface with the shared slider metrics; touch targets keep the density minimum. The right reset commits only a declared model default effort, preserving model/tier/draft and native editor selection; absent defaults disable reset. Embedded session-only
 policy keeps Host-owned reasoning outside its model-only picker.
 
+
+The capsule's visible thumb and fill consume one shared motion progress; Radix
+retains the immediate semantic stop, pointer capture, hit target and keyboard
+focus. Press scale is paint only. Held input previews without persisting; release
+commits once, cancel restores the authoritative selection, and reversal stops the
+old animation before continuing from current paint. Reduced motion snaps position
+and shape while preserving the same choices. A model/depth view switch keeps the
+same overlay and focus owner, measures its natural content height and stops old
+size animations on replacement or disposal. Effort text transitions only inside
+its stable label slot; Fast feedback is finite and theme-derived. No animation
+completion is allowed to write a selection or mutate a default. Open-panel code
+is loaded separately and prefetched on mouse intent or trigger focus. During
+loading, a non-interactive same-size placeholder retains the menu; when keyboard
+focus is still on that menu, loaded choices take it over without taking an editor
+focus lease.
+
 ## Touch Composer content geometry
 
 An empty idle auto-single-line touch Composer is one vertically centered row,

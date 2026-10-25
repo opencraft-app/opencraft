@@ -12902,7 +12902,7 @@ html[data-window-host="browser"] body {
 }
 
 .opencraft-composer-model-quick {
-  @include material.surface(menu);
+  @include menu.surface;
   z-index: 90;
   box-sizing: border-box;
   width: min(288px, calc(100vw - 24px));
@@ -12919,8 +12919,15 @@ html[data-window-host="browser"] body {
 }
 .opencraft-composer-model-quick__action-slot { width: max(32px, var(--size-control-hit-min)); }
 .opencraft-composer-model-quick__labels { min-width: 0; }
+.opencraft-composer-model-quick__placeholder {
+  height: var(--height-discrete-slider-hit);
+  margin-block-start: calc(var(--spacing) * 2);
+  display: flex;
+  align-items: center;
+  &::before { content: ""; width: 100%; height: var(--height-discrete-slider-track); border-radius: var(--radius-full); background: var(--color-discrete-slider-track); }
+}
 .opencraft-composer-model-quick__effort {
-  @include typography.role(control-compact, null);
+  @include typography.role(control, null);
   color: var(--color-text-accent);
   min-height: 20px;
   overflow: hidden;
@@ -12953,6 +12960,30 @@ html[data-window-host="browser"] body {
   &[data-state="checked"] { color: var(--color-icon-accent); }
   &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
   &[data-disabled] { opacity: var(--opacity-control-disabled); cursor: default; }
+  @media (prefers-reduced-motion: no-preference) {
+    transition: color 140ms ease, background-color 140ms ease;
+    > svg { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+    &:active:not([data-disabled]) > svg { transform: scale(0.9); }
+    &.opencraft-composer-model-quick__reset:active:not([data-disabled]) > svg { transform: rotate(-35deg); }
+  }
+}
+.opencraft-composer-model-quick__fast[data-state="checked"] {
+  background: color-mix(in srgb, var(--color-icon-accent) 10%, transparent);
+  @media (prefers-reduced-motion: no-preference) {
+    > svg { animation: composer-fast-enable 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .opencraft-composer-model-quick__value { display: inline-block; animation: composer-effort-change 140ms ease-out; }
+}
+@keyframes composer-effort-change {
+  from { opacity: 0.45; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes composer-fast-enable {
+  from { transform: scale(0.84); }
+  60% { transform: scale(1.08); }
+  to { transform: scale(1); }
 }
 .opencraft-composer-mode__fast { flex: none; color: var(--color-icon-accent); }
 .opencraft-composer-selection-menu--model-select {
@@ -12963,6 +12994,14 @@ html[data-window-host="browser"] body {
   overflow-y: auto;
   .opencraft-composer-intelligence-view { display: block; max-height: none; }
   .opencraft-composer-intelligence-models { overflow: visible; max-height: none; }
+}
+.opencraft-composer-model-surface {
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-2xl);
+  @media (prefers-reduced-motion: no-preference) {
+    transition: width 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
 }
 
 .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: none; }

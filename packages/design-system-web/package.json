@@ -8,6 +8,7 @@
     "./liquid-glass": "./src/liquid-glass.tsx",
     "./progress": "./src/progress.tsx",
     "./discrete-slider": "./src/discrete-slider.tsx",
+    "./animated-content": "./src/animated-content.tsx",
     "./action-icons": "./src/action-icons.tsx",
     "./timeline-icons": "./src/timeline-icons.tsx",
     "./native-controls.web": "./src/native-controls.web.scss",
