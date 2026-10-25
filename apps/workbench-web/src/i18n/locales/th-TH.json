@@ -411,6 +411,7 @@
   "settings.chat.turnNotifications.unsupported": "สภาพแวดล้อมนี้ไม่รองรับการแจ้งเตือน โปรดใช้เบราว์เซอร์ที่รองรับผ่าน HTTPS",
   "settings.chat.turnNotifications.denied": "เบราว์เซอร์บล็อกการแจ้งเตือน โปรดอนุญาตในการตั้งค่าเว็บไซต์แล้วกลับมาที่นี่",
   "settings.chat.turnNotifications.description": "รับการแจ้งเตือนเมื่อแต่ละรอบเสร็จสิ้น ล้มเหลว หรือหยุด แม้ขณะดูหน้านี้ โดยต้องเปิดหน้าเว็บไว้",
+  "settings.chat.turnNotifications.background": "รับการแจ้งเตือนเมื่อการตอบกลับบนเซิร์ฟเวอร์นี้เสร็จสิ้น ล้มเหลว หรือหยุด แม้ปิดแอปแล้ว สำหรับเซิร์ฟเวอร์อื่นต้องเปิดหน้านี้ไว้",
   "settings.chat.turnNotifications.permissionRequired": "ยังไม่ได้รับสิทธิ์แจ้งเตือน คุณสามารถเปิดอีกครั้งภายหลังได้",
   "settings.chat.turnNotifications.showError": "เบราว์เซอร์แสดงการแจ้งเตือนไม่ได้ โปรดตรวจสอบการตั้งค่าการแจ้งเตือนของเบราว์เซอร์และระบบ",
   "notifications.turn.completed": "OpenCraft · ตอบเสร็จแล้ว",

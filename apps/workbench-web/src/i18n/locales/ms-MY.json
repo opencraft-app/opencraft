@@ -411,6 +411,7 @@
   "settings.chat.turnNotifications.unsupported": "Pemberitahuan tidak tersedia di sini. Gunakan pelayar yang menyokongnya melalui HTTPS.",
   "settings.chat.turnNotifications.denied": "Pemberitahuan disekat. Benarkan dalam tetapan laman pelayar, kemudian kembali ke sini.",
   "settings.chat.turnNotifications.description": "Terima pemberitahuan selepas setiap respons selesai, gagal atau dihentikan, termasuk semasa melihat halaman ini. Halaman mesti kekal terbuka.",
+  "settings.chat.turnNotifications.background": "Terima pemberitahuan apabila respons pada pelayan ini selesai, gagal atau berhenti, walaupun selepas menutup aplikasi. Pelayan lain memerlukan halaman ini kekal terbuka.",
   "settings.chat.turnNotifications.permissionRequired": "Kebenaran pemberitahuan belum diberikan. Anda boleh mengaktifkannya semula kemudian.",
   "settings.chat.turnNotifications.showError": "Pelayar tidak dapat memaparkan pemberitahuan. Semak tetapan pemberitahuan pelayar dan sistem.",
   "notifications.turn.completed": "OpenCraft · Respons selesai",

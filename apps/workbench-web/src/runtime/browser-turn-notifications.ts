@@ -1,6 +1,4 @@
 import { turnCompletionKey, type TurnCompletion } from "@opencraft/workbench-runtime";
-import type { PushDevicePort } from "./push-device";
-import { PwaTurnPushController } from "./pwa-turn-push";
 
 export interface BrowserNotificationEnvironment {
   readonly secure: boolean;
@@ -28,7 +26,6 @@ function browserEnvironment(): BrowserNotificationEnvironment {
 
 /** A platform port; it never requests permission in response to a Turn event. */
 export class BrowserTurnNotifications {
-  readonly push: PwaTurnPushController | null;
   private readonly listeners = new Set<() => void>();
   private readonly windows = new Set<Notification>();
   private readonly ownerId: string = globalThis.crypto?.randomUUID?.()
@@ -37,9 +34,8 @@ export class BrowserTurnNotifications {
   private registration: Promise<{ registration: ServiceWorkerRegistration; clientId: string } | null> | null = null;
   private disposed = false;
 
-  constructor(private readonly environment = browserEnvironment(), pushDevice?: PushDevicePort) {
+  constructor(private readonly environment = browserEnvironment()) {
     this.snapshot = this.readSnapshot(false);
-    this.push = pushDevice?.supported ? new PwaTurnPushController(pushDevice) : null;
   }
 
   getSnapshot = (): BrowserNotificationSnapshot => this.snapshot;
@@ -67,7 +63,6 @@ export class BrowserTurnNotifications {
   }
 
   async show(completion: TurnCompletion, title: string, body: string, allowed: () => boolean, onClick: () => void): Promise<void> {
-    if (this.push?.handles(completion.hostId)) return;
     if (!this.canShow(allowed)) return;
     try {
       const worker = await this.prepareWorker();
@@ -109,7 +104,6 @@ export class BrowserTurnNotifications {
 
   dispose(): void {
     this.disposed = true;
-    this.push?.dispose();
     for (const notification of this.windows) notification.close();
     this.windows.clear();
     this.listeners.clear();

@@ -94,7 +94,7 @@
     "publish:web": "node scripts/publish-workbench-web.mjs",
     "serve:web:static": "node scripts/serve-workbench-web-cli.mjs",
     "package:headless:linux:amd64": "node scripts/package-headless-linux.mjs",
-    "test:headless-server": "node --import tsx --test tests/server/web-push.test.ts tests/shell/pwa-turn-push.test.ts tests/usage/token-usage-host-routing.test.ts tests/usage/token-usage-headless-routing.test.ts tests/server/headless-server.test.mjs tests/protocol/websocket-heartbeat.test.mjs tests/server/headless-smoke-process.test.mjs tests/server/headless-composition.test.mjs tests/server/headless-host-readiness.test.mjs tests/identity/server-request-identity.test.mjs tests/server/ssh-http-ingress.test.mjs tests/server/headless-installer.test.mjs tests/shell/join-legacy-fallback.test.ts tests/server/web-crypto-compat.test.ts tests/protocol/websocket-app-host.test.ts tests/execution/host-query-recovery.test.ts tests/chat/chat-workbench-resource-recovery.test.ts tests/resources/web-attachment-upload.test.ts && npm run test:pi-engine && npm run test:im",
+    "test:headless-server": "node --import tsx --test tests/server/web-push.test.ts tests/shell/pwa-turn-push.test.ts tests/shell/turn-notification-controller.test.ts tests/usage/token-usage-host-routing.test.ts tests/usage/token-usage-headless-routing.test.ts tests/server/headless-server.test.mjs tests/protocol/websocket-heartbeat.test.mjs tests/server/headless-smoke-process.test.mjs tests/server/headless-composition.test.mjs tests/server/headless-host-readiness.test.mjs tests/identity/server-request-identity.test.mjs tests/server/ssh-http-ingress.test.mjs tests/server/headless-installer.test.mjs tests/shell/join-legacy-fallback.test.ts tests/server/web-crypto-compat.test.ts tests/protocol/websocket-app-host.test.ts tests/execution/host-query-recovery.test.ts tests/chat/chat-workbench-resource-recovery.test.ts tests/resources/web-attachment-upload.test.ts && npm run test:pi-engine && npm run test:im",
     "smoke:headless:linux": "node scripts/smoke/server/smoke-headless-package.mjs",
     "smoke:headless:source": "node --import tsx scripts/smoke/server/smoke-headless-source.mjs",
     "deploy:web": "npm run build:web:release && npm run publish:web",
@@ -271,7 +271,7 @@
     "test:turn-recovery": "tsx --test tests/execution/interrupted-turn-recovery.test.ts tests/chat/thread-recovery-resource.test.ts",
     "smoke:safe-layout": "tsx scripts/smoke/shell/smoke-safe-layout.ts",
     "smoke:safe-layout-host": "OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY=1 tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts",
-    "test:web-push": "node --import tsx --test tests/server/web-push.test.ts tests/shell/pwa-turn-push.test.ts"
+    "test:web-push": "node --import tsx --test tests/server/web-push.test.ts tests/shell/pwa-turn-push.test.ts tests/shell/turn-notification-controller.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",

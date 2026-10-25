@@ -1,16 +1,19 @@
 # Apple Home Screen response notifications
 
 The secure iOS/iPadOS Home Screen workbench can opt into server-driven response
-notifications in Settings → Chat. Permission is requested only from the explicit
-switch action. The test action reports acceptance by the push service, not proof
-that the OS displayed a notification. This is separate from the existing
-page-online notification preference. An enabled server subscription suppresses
-the online notification path for the same managed Host to prevent duplicate alerts.
+notifications through the single response-notification switch in Settings → Chat. Permission
+is requested only from the explicit switch action. The test action reports acceptance by the push service, not proof
+that the OS displayed a notification. TurnNotificationController owns this feature, combining the existing page preference
+and authenticated persistent subscription. There is no separate background-notification
+switch. Existing page-only consent stays page-only until an explicit enable action;
+existing push-only consent appears enabled and is preserved. Disabling revokes both
+paths, including device revocation when the server is offline. An enabled server
+subscription suppresses the page path for the same managed Host to prevent duplicates.
 
 ## Owners and identity
 
-PwaRuntime owns ApplePwaPushDevice through PushDevicePort. Application-owned
-PwaTurnPushController binds the browser subscription to the authenticated server
+PwaRuntime owns ApplePwaPushDevice through PushDevicePort. Application-owned TurnNotificationController composes the page display adapter
+and PwaTurnPushController. The latter binds the browser subscription to the authenticated server
 Actor and supplies translated notification templates from the existing IntlRuntime.
 TurnPushService and PushStore belong to the Headless server, independently of
 React, document visibility and renderer websocket leases. PushObservationTransport

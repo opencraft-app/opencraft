@@ -4,7 +4,7 @@ import { chooseNewConversationHost, isNewConversationHost, TurnCompletionObserve
 import { FULL_WORKBENCH_PRESENTATION, type WorkbenchPresentationPolicy } from "../workbench-presentation-policy";
 import { ApplicationBrandingRegistry } from "./application-branding";
 import { BrowserThreadAttention } from "./browser-thread-attention";
-import { BrowserTurnNotifications } from "./browser-turn-notifications";
+import { TurnNotificationController } from "./turn-notification-controller";
 import { IdentityAvatarContributionRegistry } from "./identity-avatar-contributions";
 import { createNewThreadGoalFlow } from "./new-thread-goal";
 import { ThreadBadgeContributionRegistry } from "./thread-badge-contributions";
@@ -433,7 +433,7 @@ export interface WebWorkbenchApplicationBase {
   readonly appServerRegistry: CordisAppServerRegistryRuntime;
   readonly turnCompletions: TurnCompletionObserver;
   readonly threadAttention: BrowserThreadAttention;
-  readonly turnNotifications: BrowserTurnNotifications;
+  readonly turnNotifications: TurnNotificationController;
   readonly connectionProviders: CordisHostConnectionProviderRuntime;
   readonly extensions: ExtensionSupervisor;
   readonly extensionManager: ExtensionManager;

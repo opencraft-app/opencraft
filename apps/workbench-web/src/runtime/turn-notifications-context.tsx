@@ -2,15 +2,15 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { createWorkbenchThreadLocation, type TurnCompletionObserver, type TurnCompletion } from "@opencraft/workbench-runtime";
-import { BrowserTurnNotifications } from "./browser-turn-notifications";
+import { TurnNotificationController } from "./turn-notification-controller";
 import { useUiPreferencesRuntime } from "./ui-preferences-runtime";
 
-const TurnNotificationsContext = createContext<BrowserTurnNotifications | null>(null);
+const TurnNotificationsContext = createContext<TurnNotificationController | null>(null);
 
 /** Both standalone and embedded RuntimeProviders consume the same platform port. */
 export function TurnNotificationsProvider({ source, notifications, openConversation, children }: {
   readonly source: TurnCompletionObserver;
-  readonly notifications: BrowserTurnNotifications;
+  readonly notifications: TurnNotificationController;
   readonly openConversation: (location: ReturnType<typeof createWorkbenchThreadLocation>) => Promise<boolean>;
   readonly children: ReactNode;
 }) {
@@ -31,11 +31,10 @@ export function TurnNotificationsProvider({ source, notifications, openConversat
     const body = completion.userMessage
       ? intl.formatMessage({ id: "notifications.turn.userMessage", defaultMessage: "You: {message}" }, { message: completion.userMessage })
       : intl.formatMessage({ id: "notifications.turn.body", defaultMessage: "Click to return to the conversation." });
-    void notifications.show(completion, contextualTitle, body,
-      () => preferences.get("chat.turnNotifications"), () => open(completion));
+    void notifications.show(completion, contextualTitle, body, () => open(completion));
   });
   useEffect(() => {
-    notifications.push?.configure(intl.locale, {
+    notifications.configure(intl.locale, {
       completed: intl.formatMessage({ id: "notifications.turn.completed", defaultMessage: "OpenCraft · Response complete" }),
       failed: intl.formatMessage({ id: "notifications.turn.failed", defaultMessage: "OpenCraft · Response failed" }),
       interrupted: intl.formatMessage({ id: "notifications.turn.interrupted", defaultMessage: "OpenCraft · Response stopped" }),
@@ -44,27 +43,21 @@ export function TurnNotificationsProvider({ source, notifications, openConversat
     });
   }, [notifications, intl]);
   useEffect(() => {
-    const prepare = () => { if (preferences.get("chat.turnNotifications")) notifications.prepare(); };
-    const stopPreferences = preferences.subscribe(prepare);
-    prepare();
+    const stopPreferences = notifications.connect(preferences);
     const stopSource = source.subscribe(completed);
     const stopClicks = notifications.observeClicks(open);
-    window.addEventListener("focus", notifications.refresh);
-    const refreshPush = () => { if (document.visibilityState === 'visible') void notifications.push?.refresh(); };
-    window.addEventListener("focus", refreshPush);
-    document.addEventListener("visibilitychange", refreshPush);
-    document.addEventListener("visibilitychange", notifications.refresh);
+    const refresh = () => { if (document.visibilityState === "visible") void notifications.refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       stopPreferences(); stopSource(); stopClicks();
-      window.removeEventListener("focus", notifications.refresh);
-      window.removeEventListener("focus", refreshPush);
-      document.removeEventListener("visibilitychange", refreshPush);
-      document.removeEventListener("visibilitychange", notifications.refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [source, preferences, notifications, open, completed]);
   return <TurnNotificationsContext.Provider value={notifications}>{children}</TurnNotificationsContext.Provider>;
 }
 
-export function useTurnNotifications(): BrowserTurnNotifications | null {
+export function useTurnNotifications(): TurnNotificationController | null {
   return useContext(TurnNotificationsContext);
 }
