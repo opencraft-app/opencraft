@@ -9,8 +9,8 @@ Wants=opencraft-codex-core.service
 [Service]
 Type=simple
 UMask=0077
-RuntimeDirectory=opencraft-codex-routing
-RuntimeDirectoryMode=0700
+# The service creates its shared socket parent. RuntimeDirectory cleanup would
+# unlink live sibling APP sockets, and recursive ownership changes break other UIDs.
 WorkingDirectory=/srv/opencraft
 # These fixed paths are independently installed; CI must not repoint them.
 ExecStart=/usr/bin/node /opt/opencraft/codex-routing/generations.cjs --endpoint /run/opencraft-codex-routing/control.sock --core-endpoint /run/opencraft-codex-core/control.sock --token-file /var/lib/opencraft/daemon.token --data-directory /var/lib/opencraft/codex --registry-directory /var/lib/opencraft-codex-routing --systemd-scope system --bootstrap-file /etc/opencraft/codex-generation-bootstrap.json
