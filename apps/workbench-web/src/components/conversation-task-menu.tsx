@@ -1,4 +1,6 @@
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil } from "@opencraft/design-system-web/action-icons";
+import { ShareIcon } from "@opencraft/design-system-web/action-icons";
+import { sharePageLink } from "../runtime/share-page-link";
 import { TaskLinkIcon } from "@opencraft/design-system-web/task-link-icon";
 import { ConversationSchedulesPanel } from "./conversation-schedules-panel";
 import type { ConversationSchedulesRequestPort } from "@opencraft/appserver-protocol";
@@ -33,6 +35,7 @@ export interface ConversationTaskMenuProps {
   readonly verifyConversation: () => Promise<void>;
   readonly onOpenTasks: () => void;
   readonly title?: string;
+  readonly shareUrl?: string;
   readonly pinned?: boolean;
   readonly onRename?: (title: string) => Promise<void>;
   readonly onSetPinned?: (pinned: boolean) => Promise<void>;
@@ -170,6 +173,12 @@ export function ConversationTaskMenu(props: Props) {
   const add = (id: string, label: string, icon: ToolbarDockAction["icon"], invoke: () => void, dialog = false, pending = false) =>
     actions.push({ id, label, icon, invoke, dialog, disabled: busy, pending });
   if (props.port) add("link-tasks", intl.formatMessage({ id: "tasks.relation.title", defaultMessage: "Link tasks" }), <TaskLinkIcon size={16} aria-hidden="true" />, () => setPickerOpen(true), true);
+  if (props.shareUrl) add("share-link", intl.formatMessage({ id: "page.shareLink", defaultMessage: "Share link" }), <ShareIcon size={16} aria-hidden="true" />, () => {
+    const key = `share-link:${props.scope}:${props.threadId}`;
+    void sharePageLink({ url: props.shareUrl!, title: props.title }).then(outcome => {
+      if (outcome === "copied") notices.success({ key, message: intl.formatMessage({ id: "page.linkCopied", defaultMessage: "Link copied" }) });
+    }).catch(() => notices.error({ key, message: intl.formatMessage({ id: "page.shareFailed", defaultMessage: "Could not share the link. Try again." }) }));
+  });
   if (props.onRename) add("rename", intl.formatMessage({ id: "common.rename", defaultMessage: "Rename" }), <Pencil size={16} aria-hidden="true" />,
     () => { rename.reset(); setName(props.title ?? ""); setRenameOpen(true); }, true);
   if (props.onSetPinned) add("pin", intl.formatMessage(props.pinned ? { id: "chat.unpin", defaultMessage: "Unpin" } : { id: "chat.pin", defaultMessage: "Pin" }),

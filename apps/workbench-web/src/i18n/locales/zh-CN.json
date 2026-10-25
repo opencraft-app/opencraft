@@ -1016,5 +1016,8 @@
   "mobile.connection.title": "连接服务器",
   "mobile.connection.description": "连接你的 OpenCraft 服务器，开始工作。登录和访问权限由服务器管理。",
   "mobile.connection.address": "安全 WebSocket 地址",
-  "mobile.connection.failed": "连接未能保存，请检查地址后重试。"
+  "mobile.connection.failed": "连接未能保存，请检查地址后重试。",
+  "page.shareLink": "分享链接",
+  "page.linkCopied": "链接已复制",
+  "page.shareFailed": "无法分享链接，请重试。"
 }

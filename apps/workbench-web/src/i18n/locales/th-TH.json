@@ -994,5 +994,8 @@
   "mobile.connection.title": "เชื่อมต่อเซิร์ฟเวอร์",
   "mobile.connection.description": "เชื่อมต่อเซิร์ฟเวอร์ OpenCraft ของคุณเพื่อเริ่มทำงาน เซิร์ฟเวอร์ของคุณเป็นผู้จัดการการลงชื่อเข้าใช้และสิทธิ์การเข้าถึง",
   "mobile.connection.address": "ที่อยู่ WebSocket ที่ปลอดภัย",
-  "mobile.connection.failed": "บันทึกการเชื่อมต่อไม่ได้ ตรวจสอบที่อยู่แล้วลองอีกครั้ง"
+  "mobile.connection.failed": "บันทึกการเชื่อมต่อไม่ได้ ตรวจสอบที่อยู่แล้วลองอีกครั้ง",
+  "page.shareLink": "แชร์ลิงก์",
+  "page.linkCopied": "คัดลอกลิงก์แล้ว",
+  "page.shareFailed": "ไม่สามารถแชร์ลิงก์ได้ โปรดลองอีกครั้ง"
 }

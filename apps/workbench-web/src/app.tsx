@@ -1,6 +1,8 @@
 import { useTurnNotifications } from "./runtime/turn-notifications-context";
 import { resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
 import { ConversationSummaryButton, ConversationSummarySurface, useConversationSummary, useSummaryGoal } from "./components/conversation-summary";
+import { serverUrl } from "./runtime/server-context";
+import { workbenchLocationUrl } from "./runtime/workbench-navigation";
 import { ConversationToolbarSizing } from "./components/toolbar-dock-state";
 import { conversationToolbarActionIds } from "./components/toolbar-dock-model";
 import { useConversationDisplay } from "./runtime/use-conversation-display";
@@ -1713,6 +1715,8 @@ export function App({
     scope: displayScope,
     serverId: legacyDirectServerProjectionFromHost({ hostId: activeHost.hostId, hostKind: activeHost.kind, label: activeHost.label }).serverOrigin.serverId,
     threadId: headerThreadId,
+    shareUrl: !embedded && headerThreadId && ["https:", "http:"].includes(window.location.protocol)
+      ? new URL(serverUrl(workbenchLocationUrl(createWorkbenchThreadLocation(snapshot.hostId, headerThreadId))), window.location.origin).href : undefined,
     title: activeThread?.title ?? pageTitle ?? "",
     pinned: activeThread?.pinned,
     project: activeThread?.project,

@@ -992,5 +992,8 @@
   "mobile.connection.title": "Connect a server",
   "mobile.connection.description": "Connect to your OpenCraft server to start working. Your server manages sign-in and access.",
   "mobile.connection.address": "Secure WebSocket address",
-  "mobile.connection.failed": "The connection could not be saved. Check the address and try again."
+  "mobile.connection.failed": "The connection could not be saved. Check the address and try again.",
+  "page.shareLink": "Share link",
+  "page.linkCopied": "Link copied",
+  "page.shareFailed": "Could not share the link. Try again."
 }
