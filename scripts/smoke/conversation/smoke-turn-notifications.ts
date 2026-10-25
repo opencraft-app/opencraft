@@ -54,6 +54,7 @@ try {
   await page.evaluate(() => (window as any).__turnNotificationFixture.settings());
   await page.locator("[data-conversation]").waitFor();
   await page.evaluate(() => (window as any).__turnNotificationFixture.emit("host-a", "turn-2")); await waitCount(4);
+  assert.ok((await notifications()).some(value => value.data.completion.turnId === "turn-2" && value.title === "#thread · OpenCraft · 本轮已完成"), "missing metadata still identifies the conversation");
   await page.evaluate(() => (window as any).__turnNotificationFixture.settings()); await toggle.waitFor();
   await toggle.click(); await page.waitForFunction(() => (window as any).__turnNotificationFixture.preference() === false);
   await page.evaluate(() => (window as any).__turnNotificationFixture.emit("host-a", "turn-3"));

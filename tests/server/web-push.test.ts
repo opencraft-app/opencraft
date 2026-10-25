@@ -37,8 +37,30 @@ test('exact input attribution outlives pages, rejects old history, deduplicates 
   store.watch('human-a','server-a','local-codex','thread-a','input-a');store.watch('human-a','server-a','local-codex','thread-a','input-b');service=new TurnPushService(store,options);
   await service.tick();assert.equal(sent.length,0,'old completion is unrelated');admitted=true;await service.tick();assert.equal(sent.length,0,'running is not complete');await service.close();
   service=new TurnPushService(new PushStore(f.path),options);status='completed';await service.tick();await service.tick();assert.equal(sent.length,1);
-  assert.equal(sent[0].web_push,8030);assert.equal(sent[0].notification.navigate,'https://workbench.example/servers/one/local/thread-a?hostId=local-codex');assert.equal(sent[0].notification.title,messages.completed);
+  assert.equal(sent[0].web_push,8030);assert.equal(sent[0].notification.navigate,'https://workbench.example/servers/one/local/thread-a?hostId=local-codex');assert.equal(sent[0].notification.title,`#thread-a · ${messages.completed}`);
  }finally{await service?.close();f.remove();}
+});
+test('background notifications identify the exact thread for all terminal states and survive metadata failure',async()=>{
+ const f=fixture(),store=new PushStore(f.path),sent:any[]=[],reads:any[]=[];
+ const metadata:any={a:{id:'a',name:'修复通知文案'},b:{id:'b',name:' ',preview:'检查部署结果'},c:{id:'wrong-thread',name:'其他任务'},d:{id:'d',name:'😀'.repeat(100)}};
+ store.register(authorization,subscription,'https://workbench.example','','zh-CN',messages);
+ const service=new TurnPushService(store,{authenticate:()=>authorization,current:()=>true,trustedOrigin:()=>null,hosts:[],
+  read:async(host,method,params)=>{reads.push({host,method,params});if(params.threadId==='e')throw Error('offline');return {thread:metadata[String(params.threadId)]};},
+  send:async(_,payload)=>{sent.push(JSON.parse(payload).notification);}});
+ try{
+  for(const [thread,status] of [['a','completed'],['b','failed'],['c','interrupted'],['d','completed'],['e','failed']]){
+   store.watch('human-a','server-a','local-codex',thread!,'input');store.finish(store.watches().find(w=>w.threadId===thread)!,'turn',status!);
+  }
+  await service.tick();
+  const titles=new Map(sent.map(n=>[new URL(n.navigate).pathname.split('/').at(-1),n.title]));
+  assert.equal(titles.get('a'),`修复通知文案 · ${messages.completed}`);
+  assert.equal(titles.get('b'),`检查部署结果 · ${messages.failed}`);
+  assert.equal(titles.get('c'),`#c · ${messages.interrupted}`);
+  assert.equal(titles.get('d'),`${'😀'.repeat(80)} · ${messages.completed}`);
+  assert.equal(titles.get('e'),`#e · ${messages.failed}`);
+  assert.equal(reads.length,5);assert.ok(reads.every(r=>r.host==='local-codex' && r.method==='thread/read' && r.params.includeTurns===false));
+  await service.tick();assert.equal(sent.length,5,'metadata lookup does not change terminal deduplication');
+ }finally{await service.close();f.remove();}
 });
 test('expiry prevents delivery, 410 removes subscriptions and transient failure retains retry',async()=>{
  const f=fixture();let allowed=true,code=503,calls=0,now=1_000_000;const store=new PushStore(f.path,()=>now);
