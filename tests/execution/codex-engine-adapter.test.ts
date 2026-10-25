@@ -1408,6 +1408,10 @@ test("usage attempts follow the actual queue dispatcher and retain definitive re
   assert.ok(rejected.error);
   const db=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
   try{
+   // Native ACK presentation and the ordered metadata commit are asynchronous.
+   // Wait for the latest durable outcome before comparing final accounting.
+   const outcomeDeadline=Date.now()+2000;
+   while(Date.now()<outcomeDeadline&&db.prepare("SELECT outcome FROM token_usage_attempts WHERE input_id='rejected-B'").get()?.outcome!=="rejected")await new Promise(resolve=>setTimeout(resolve,5));
    const dispatched=db.prepare("SELECT actor_id,mode,outcome,turn_id FROM token_usage_attempts WHERE input_id='queued-A'").get()!;
    assert.deepEqual({...dispatched},{actor_id:"B",mode:"steer",outcome:"accepted",turn_id:turnId});
    assert.equal(db.prepare("SELECT actor_id FROM token_usage_submissions WHERE input_id='queued-A'").get()!.actor_id,"B");
