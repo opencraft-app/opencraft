@@ -114,3 +114,32 @@ test('storage failure while disabling still revokes persistent delivery and paus
   assert.equal(f.controller.getSnapshot().error, 'save');
   await f.controller.show(f.completion, 'Complete', 'Open', () => {}); assert.equal(f.shown.length, 0); f.controller.dispose();
 });
+
+test('a stalled device read releases the settings switch and its late result cannot undo enrollment', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let release!: (value: typeof subscription | null) => void;
+  let reads = 0, enrolled = false, preference = false;
+  const device = { supported: true, permission: () => 'granted' as const,
+    getSubscription: () => ++reads === 1 ? new Promise<typeof subscription | null>(resolve => { release = resolve; }) : Promise.resolve(null),
+    subscribe: async () => subscription, unsubscribe: async () => { enrolled = false; }, dispose() {} };
+  const fetcher = (async (_url: unknown, init?: RequestInit) => {
+    if (!init?.body) return Response.json({ available: true, publicKey: 'key', actorId: 'human', hosts: ['managed'] });
+    const { operation } = JSON.parse(String(init.body));
+    if (operation === 'subscribe') enrolled = true;
+    return Response.json({ enabled: enrolled });
+  }) as typeof fetch;
+  const push = new PwaTurnPushController(device, fetcher);
+  const controller = new TurnNotificationController(device, undefined, push);
+  controller.connect({ get: () => preference, set: async (_key: string, value: boolean) => { preference = value; }, subscribe: () => () => {} } as any);
+  controller.configure('en-US', messages);
+  await settle(); assert.equal(controller.getSnapshot().busy, true);
+  t.mock.timers.tick(10001); await settle();
+  assert.equal(controller.getSnapshot().busy, false, 'a browser API cannot leave settings disabled indefinitely');
+  assert.equal(controller.getSnapshot().error, 'connection');
+  await controller.setEnabled(true);
+  assert.equal(controller.getSnapshot().delivery, 'background');
+  release(null); await settle();
+  assert.equal(controller.getSnapshot().enabled, true);
+  assert.equal(controller.getSnapshot().delivery, 'background');
+  assert.equal(enrolled, true); controller.dispose();
+});

@@ -42,34 +42,52 @@ export class PwaTurnPushController {
   refresh=async()=>{
     if(this.disposed || this.busy || !this.messages)return;
     const generation=++this.generation;
+    const abort=new AbortController();
+    let timer:ReturnType<typeof setTimeout> | undefined;
+    const deadline=new Promise<never>((_,reject)=>{
+      timer=setTimeout(()=>{abort.abort();reject(new Error('Push initialization timed out'));},10000);
+    });
     try {
-      const response=await this.fetcher('/__opencraft_push',{credentials:'same-origin',signal:AbortSignal.timeout(10000)});
-      if(this.disposed || generation!==this.generation)return;
-      if(!response.ok){
-        if(response.status>=500){this.publish('error');return;}
-        this.configuration=null;this.publish('unavailable',false);return;
-      }
-      const value=await response.json();
-      if(this.disposed || generation!==this.generation)return;
-      if(value.available!==true || typeof value.publicKey!=='string' || typeof value.actorId!=='string' || !Array.isArray(value.hosts) || value.hosts.some((h:unknown)=>typeof h!=='string'))throw new Error('Invalid push configuration');
-      this.configuration=value;
-      const subscription=await this.device.getSubscription();
-      if(this.disposed || generation!==this.generation)return;
-      this.subscription=subscription;
-      if(this.device.permission()!=='granted') {
-        if(subscription) {await this.operation('unsubscribe',subscription);await this.device.unsubscribe();this.subscription=null;}
-        if(generation===this.generation)this.publish(this.device.permission()==='denied'?'blocked':'disabled',false);
-        return;
-      }
-      const result=this.subscription ? await this.operation('status',this.subscription) : {enabled:false};
-      if(this.disposed || generation!==this.generation)return;
-      if (!result.enabled && this.subscription) {
-        await this.device.unsubscribe(); this.subscription=null;
-        if(this.disposed || generation!==this.generation)return;
-      }
-      this.publish(result.enabled?'enabled':'disabled',result.enabled===true);
-    } catch {if(generation===this.generation)this.publish('error');}
+      // Bound browser subscription and response-body reads as well as HTTP.
+      await Promise.race([this.refreshCurrent(generation,abort.signal),deadline]);
+    } catch {
+      if(!this.disposed && generation===this.generation){++this.generation;this.publish('error');}
+    } finally {clearTimeout(timer);}
   };
+  private async refreshCurrent(generation:number,signal:AbortSignal) {
+    const response=await this.fetcher('/__opencraft_push',{credentials:'same-origin',signal});
+    if(this.disposed || generation!==this.generation)return;
+    if(!response.ok){
+      if(response.status>=500){this.publish('error');return;}
+      this.configuration=null;this.publish('unavailable',false);return;
+    }
+    const value=await response.json();
+    if(this.disposed || generation!==this.generation)return;
+    if(value.available!==true || typeof value.publicKey!=='string' || typeof value.actorId!=='string' || !Array.isArray(value.hosts) || value.hosts.some((h:unknown)=>typeof h!=='string'))throw new Error('Invalid push configuration');
+    this.configuration=value;
+    const subscription=await this.device.getSubscription();
+    if(this.disposed || generation!==this.generation)return;
+    this.subscription=subscription;
+    if(this.device.permission()!=='granted') {
+      if(subscription) {
+        await this.operation('unsubscribe',subscription,signal);
+        if(this.disposed || generation!==this.generation)return;
+        await this.device.unsubscribe();
+        if(this.disposed || generation!==this.generation)return;
+        this.subscription=null;
+      }
+      if(generation===this.generation)this.publish(this.device.permission()==='denied'?'blocked':'disabled',false);
+      return;
+    }
+    const result=this.subscription ? await this.operation('status',this.subscription,signal) : {enabled:false};
+    if(this.disposed || generation!==this.generation)return;
+    if (!result.enabled && this.subscription) {
+      await this.device.unsubscribe();
+      if(this.disposed || generation!==this.generation)return;
+      this.subscription=null;
+    }
+    this.publish(result.enabled?'enabled':'disabled',result.enabled===true);
+  }
   async enable() {
     if(this.disposed || this.busy || !this.configuration || !this.messages)return;
     if(this.device.permission()==='denied'){this.publish('blocked',false);return;}

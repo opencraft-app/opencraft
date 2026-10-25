@@ -7,7 +7,14 @@ that the OS displayed a notification. TurnNotificationController owns this featu
 and authenticated persistent subscription. There is no separate background-notification
 switch. Existing page-only consent stays page-only until an explicit enable action;
 existing push-only consent appears enabled and is preserved. Disabling revokes both
-paths, including device revocation when the server is offline. An enabled server
+paths, including device revocation when the server is offline. Opening Settings refreshes the current device permission and subscription. The complete
+initial read, including browser subscription APIs and response-body reads, has a ten-second
+deadline. A stalled read releases the pending state, exposes a connection failure and
+fences late results so they cannot undo a later enrollment. Blocked permission leaves
+the switch actionable for feedback and recovery after the OS permission changes; an
+unsuccessful permission action never stores consent.
+
+An enabled server
 subscription suppresses the page path for the same managed Host to prevent duplicates.
 
 Both delivery paths identify the conversation before the terminal response status.
