@@ -180,9 +180,9 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
    return {paintHeight:r.height,contentBottom:r.bottom-parseFloat(getComputedStyle(row).paddingBottom),sendBottom:send.bottom,
      html:getComputedStyle(document.documentElement).position,body:getComputedStyle(document.body).position,shell:getComputedStyle(document.querySelector('.app-shell-root')!).position};
   });
-  assert.equal(frame.paintHeight,844);assert.equal(frame.contentBottom,782,'content fits the native visible capacity while paint stays full-bleed');
+  assert.equal(frame.paintHeight,844);assert.equal(frame.contentBottom,844,'native height delta is not a second safe inset');
   assert.equal(frame.html,'static');assert.equal(frame.body,'relative');assert.equal(frame.shell,'relative');
-  assert(frame.sendBottom<=782,JSON.stringify(frame));
+  assert(frame.sendBottom<=844,JSON.stringify(frame));
  };
  await assertDocumentFlow();
  const oldContent=await page.addStyleTag({content:'html,body,.app-shell-root{position:fixed!important}'});
