@@ -1,4 +1,5 @@
 import { CodexCoreSocket } from "./codex-core-socket";
+import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexMaintenanceError, isCodexAdmission } from "./codex-maintenance.js";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import {
@@ -37,7 +38,7 @@ export class CodexCoreBridge implements DuplexTransport {
   private initializeResult: unknown | null = null;
   private initializing = false;
 
-  constructor(endpoint: string, token: string) {
+  constructor(endpoint: string, token: string, private readonly maintenance?: () => import("./codex-maintenance.js").CodexMaintenanceSnapshot) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.connection = new CodexCoreSocket({
       health: signal => this.control.health(signal), message: frame => this.receive(frame),
@@ -45,6 +46,9 @@ export class CodexCoreBridge implements DuplexTransport {
     });
   }
   get status(): TransportStatus { return this.connection.status; }
+  get pendingAdmissionKeys(): string[] { return [...this.pending.values()].filter(request => isCodexAdmission(request.method, request.params))
+    .map(request => codexAdmissionKey(request.method, request.params, JSON.stringify([request.clientId, request.originalId]))); }
+  get pendingApprovals(): number { return this.serverRequests.size; }
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => this.messages.delete(listener); }
   subscribeStatus(listener: (status: TransportStatus) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   private emit(message: RpcRecord, clientId?: string): void {
@@ -63,6 +67,14 @@ export class CodexCoreBridge implements DuplexTransport {
     delete message[LOGICAL_CLIENT_FIELD];
     if (message.method === "runtime/client/disconnect") { this.disconnect(clientId); return; }
     const id = idOf(message.id);
+    if (message.method === CODEX_MAINTENANCE_READ && id !== null) {
+      if (!this.initialized.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      this.emit({ id, result: this.maintenance?.() ?? null }, clientId); return;
+    }
+    if (isCodexAdmission(message.method, message.params) && this.maintenance?.().paused) {
+      if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
+      return;
+    }
     if (typeof message.method === "string" && message.method.startsWith("opencraft/codex/accounts/") && id !== null) {
       try { this.emit({ id, result: await this.control.accountRequest(message.method, record(message.params)) }, clientId); }
       catch (error) { this.emit({ id, error: { code: -32020, message: error instanceof Error ? error.message : "Codex account operation failed" } }, clientId); }
@@ -118,6 +130,7 @@ export class CodexCoreBridge implements DuplexTransport {
             const result = record(message.result), capabilities = record(result.capabilities);
             this.initializeResult = { ...result, capabilities: { ...capabilities, extensions: {
               ...record(capabilities.extensions), [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+              ...(this.maintenance ? { [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY } : {}),
             } } };
             message = { ...message, result: this.initializeResult };
             this.write({ method: "initialized", params: {} });

@@ -29,6 +29,7 @@ import { projectThreadMessageResult, projectThreadMessageNotification } from "./
 import { OpenCraftMessageAttachments } from "./opencraft-message-attachments.js";
 import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CodexCoreBridge } from "./codex-core-bridge.js";
+import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexAdmissionPaused, codexMaintenanceError, isCodexAdmission, type CodexMaintenanceSnapshot } from "./codex-maintenance.js";
 import { CodexNativeCoreTransport } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
@@ -332,7 +333,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.nativeTransport = this.nativeCore
       ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore) : this.nativeCore : null;
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
-      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "") : null;
+      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot()) : null;
     if (this.coreBridge) {
       // A core client must not create local stores or a second queue/account writer.
       this.tasks = null;
@@ -608,13 +609,38 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   async send(frame: string): Promise<void> { return this.sendWithContext(frame, { sender: null }); }
 
+  private readonly admissionsInFlight = new Map<number, string>();
+  private maintenanceSequence = 0;
+  private admissionPaused(): boolean { return this.options.kind !== "remote" && codexAdmissionPaused(this.options.dataDirectory); }
+  private maintenanceSnapshot(): CodexMaintenanceSnapshot {
+    const queue = this.queue?.maintenanceCounts();
+    const pending = [...this.pending.values()].filter(request => isCodexAdmission(request.method, request.params))
+      .map(request => codexAdmissionKey(request.method, request.params, JSON.stringify([request.clientId, request.originalId])));
+    const internal = [...this.internalRequests.entries()].filter(([, request]) => isCodexAdmission(request.method, request.params))
+      .map(([id, request]) => codexAdmissionKey(request.method, request.params, id));
+    return { paused: this.admissionPaused(),
+      pendingAdmissions: new Set([...this.admissionsInFlight.values(), ...(this.coreBridge?.pendingAdmissionKeys ?? []),
+        ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
+      queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
+      pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + (this.coreBridge?.pendingApprovals ?? 0),
+      capacityRetries: this.capacityRetries.size };
+  }
+
   async sendWithContext(frame: string, context: TransportSubmissionContext): Promise<void> {
     if (this.coreBridge) {
       if (context.sender !== null) throw new Error("Codex core mode does not support verified sender attribution");
       return this.coreBridge.send(frame);
     }
     if (this.statusValue.state !== "open" || !this.physicalAvailable || this.coreReinitializing) throw new Error("Codex Engine is not connected");
-    let message = record(JSON.parse(frame));
+    const message = record(JSON.parse(frame));
+    const admission = isCodexAdmission(message.method, message.params) ? ++this.maintenanceSequence : null;
+    if (admission !== null) this.admissionsInFlight.set(admission, codexAdmissionKey(String(message.method), message.params,
+      JSON.stringify([message[LOGICAL_CLIENT_FIELD], message.id])));
+    try { await this.sendClientMessage(message, context); }
+    finally { if (admission !== null) this.admissionsInFlight.delete(admission); }
+  }
+
+  private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
@@ -633,6 +659,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    if (id !== null && message.method === CODEX_MAINTENANCE_READ) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      this.emit({ id, result: this.maintenanceSnapshot() }, clientId); return;
+    }
+    if (isCodexAdmission(message.method, message.params) && this.admissionPaused()) {
+      if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
+      return;
+    }
     if (id !== null && message.method === "opencraft/token-usage/configure") {
       if (!this.initializedClients.has(clientId)) {this.emit({id,error:{code:-32600,message:"Client is not initialized"}},clientId);return;}
       if (!this.tokenUsage) {this.emit({id,error:{code:this.tokenUsageStorageUnavailable?-32000:-32601,message:this.tokenUsageStorageUnavailable?"unavailable":"Token statistics are unsupported"}},clientId);return;}
@@ -1158,6 +1192,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
           [TURN_RECOVERY_EXTENSION]: { version: 1 },
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...access.methods, "opencraft/turn-recovery/read"] } } : {}),
+        } } };
+      }
+      if (this.options.kind !== "remote") {
+        const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
+        const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
+          [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
+          ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };
       }
       message = { ...message, result: this.initializeResult };
@@ -2117,7 +2159,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         await this.assertDurableQueueThread(run.threadId);
         if (queue.firstUnsettled(run.threadId) || this.activeTurns.has(run.threadId) || !await this.queueThreadIsIdle(run.threadId)) return { state: "waiting" };
-        if (!canAdmit()) return { state: "waiting" };
+        if (!canAdmit() || this.admissionPaused()) return { state: "waiting" };
         // Scheduled provenance is explicit text, never forged employee credentials.
         const row = queue.add(run.threadId, run.id, [{ type: "text", text: `[Scheduled task]\n${prompt}` }]);
         this.emitQueueChanged(run.threadId);

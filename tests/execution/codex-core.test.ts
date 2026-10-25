@@ -15,6 +15,68 @@ import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine
 
 const token = "synthetic-core-token-".repeat(3);
 
+for (const overlays of [false, true]) test(`maintenance rejects new Codex inputs while existing work and reads continue (overlays=${overlays})`, async () => {
+  const f = await fixture();
+  const a = await f.adapter(overlays);
+  const client = "maintenance";
+  const directory = overlays ? f.options.dataDirectory : join(f.root, "forbidden");
+  const flag = join(directory, "codex-admission.paused");
+  try {
+    const initialized = await a.rpc(client, "initialize");
+    assert.equal(initialized.capabilities.extensions["opencraft.codex-maintenance"].version, 1);
+    const { thread } = await a.rpc(client, "thread/start", {});
+    await a.rpc(client, "turn/start", { threadId: thread.id, clientUserMessageId: "accepted", input: [{ type: "text", text: "finish once" }] });
+    await a.rpc(client, "thread/goal/set", { threadId: thread.id, status: "active" });
+    await mkdir(directory, { recursive: true }); await writeFile(flag, "maintenance\n", { mode: 0o600 });
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).paused, true);
+    for (const method of ["thread/start", "thread/fork", "turn/start", "thread/queue/add", "thread/goal/set", "command/exec", "process/spawn", "thread/shellCommand"]) {
+      await assert.rejects(a.rpc(client, method, { threadId: thread.id, input: [{ type: "text", text: "must not execute" }] }), /temporarily unavailable/);
+    }
+    assert.equal((await a.rpc(client, "thread/goal/set", { threadId: thread.id, status: "paused" })).goal.status, "paused");
+    await assert.rejects(a.rpc(client, "thread/goal/set", { threadId: thread.id, status: "paused", objective: "a different task" }), /temporarily unavailable/);
+    assert.equal((await a.rpc(client, "thread/goal/set", { threadId: thread.id, status: "complete" })).goal.status, "complete");
+    assert.equal((await a.rpc(client, "thread/read", { threadId: thread.id })).thread.turns.length, 1);
+    await a.rpc(client, "fixture/complete", { threadId: thread.id });
+    assert.equal((await a.rpc(client, "thread/read", { threadId: thread.id })).thread.status.type, "idle");
+    await rm(flag);
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).paused, false);
+    await a.rpc(client, "turn/start", { threadId: thread.id, clientUserMessageId: "after", input: [{ type: "text", text: "start after maintenance" }] });
+    assert.equal((await a.rpc(client, "thread/read", { threadId: thread.id })).thread.turns.length, 2);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
+
+test("maintenance observes submissions accepted before the fence and defers new schedule admissions", async () => {
+  const f = await fixture();
+  const a = await f.adapter(true), client = "maintenance";
+  const flag = join(f.options.dataDirectory, "codex-admission.paused");
+  try {
+    await a.rpc(client, "initialize");
+    const { thread } = await a.rpc(client, "thread/start", {});
+    await a.rpc(client, "fixture/holdNextTurn");
+    await a.rpc(client, "fixture/holdNextRead", { untilRelease: true });
+    const admitted = a.rpc(client, "thread/queue/add", { threadId: thread.id, clientUserMessageId: "before-fence", input: [{ type: "text", text: "accepted before maintenance" }] });
+    admitted.catch(() => {});
+    for (let n = 0; n < 100 && !(await a.rpc(client, "fixture/readPending")).count; n++) await delay(5);
+    await writeFile(flag, "maintenance\n", { mode: 0o600 });
+    assert.ok((await a.rpc(client, "opencraft/codex/maintenance/read")).pendingAdmissions > 0);
+    await a.rpc(client, "fixture/releaseReads");
+    await admitted;
+    for (let n = 0; n < 200 && (await a.rpc(client, "thread/read", { threadId: thread.id })).thread.turns.length === 0; n++) await delay(5);
+    assert.equal((await a.rpc(client, "thread/read", { threadId: thread.id })).thread.turns.length, 1);
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).pendingAdmissions, 1);
+    await a.rpc(client, "fixture/releaseTurns");
+    for (let n = 0; n < 200 && (await a.rpc(client, "opencraft/codex/maintenance/read")).pendingAdmissions; n++) await delay(10);
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).pendingAdmissions, 0);
+    await a.rpc(client, "fixture/complete", { threadId: thread.id });
+    const scheduled = await (a.engine as any).scheduleExecutionPort().submit({
+      id: "maintenance-schedule", threadId: thread.id, scheduleId: "paused", scheduledAt: 1,
+      permissions: "opencraft:permission-mode:full", state: "submitting", turnId: null, updatedAt: 1,
+    }, "do not admit during maintenance", () => true);
+    assert.equal(scheduled.state, "waiting");
+    assert.equal((await a.rpc(client, "thread/queue/list", { threadId: thread.id })).data.length, 0);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
+
 test("Core reconnect publishes ready only after the new native initialize finishes", async () => {
   const f = await fixture();
   let hold = false, entered = false, release!: () => void;
