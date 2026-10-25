@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
-const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? 'chromium';
+assert(['chromium', 'webkit'].includes(browserName), 'Select chromium or webkit');
 const mobile = process.argv.includes('--mobile-browser');
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-workspace-presentation";
+async function settleMobileViewport(page: any) {
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.browser-panel[data-mobile-browser="true"]');
+    if (!panel) return false;
+    const bounds = panel.getBoundingClientRect();
+    return Math.abs(bounds.width - innerWidth) < 1 && Math.abs(bounds.height - innerHeight) < 1;
+  }, undefined, { timeout: 5000 });
+}
 const source = `
 import React,{useSyncExternalStore,useState} from 'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{Context}from'@deepseek-ai/cordis';import{WorkbenchPanelService}from'@opencraft/workbench-panels';
@@ -57,7 +67,7 @@ let browser: any;
 const errors: string[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
-  browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] });
+  browser = await playwright[browserName].launch({ headless: true, ...(browserName === 'chromium' ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : {}) });
   if (mobile) {
     for (const theme of ['light', 'dark']) {
       console.log('Mobile browser:',theme);
@@ -86,19 +96,38 @@ try {
       assert(frameNode);
       for (const width of [320, 390, 430]) {
         await page.setViewportSize({ width, height: 844 });
-        await page.waitForTimeout(80);
-        assert.equal(await dock.evaluate(e => { const r=e.getBoundingClientRect(); return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight; }), true);
+        const started = Date.now();
+        await settleMobileViewport(page);
+        console.log('Viewport settled:', browserName, width, Date.now() - started);
+        const geometry = await dock.evaluate(e => {
+          const r = e.getBoundingClientRect();
+          return { dock: r.toJSON(), width: innerWidth, height: innerHeight, viewport: { width: visualViewport?.width, height: visualViewport?.height }, panel: e.closest('.browser-panel')?.getBoundingClientRect().toJSON() };
+        });
+        await writeFile(`${output}/geometry-${theme}-${width}.json`, JSON.stringify(geometry, null, 2));
+        if (!(geometry.dock.left >= 0 && geometry.dock.right <= geometry.width && geometry.dock.bottom <= geometry.height)) {
+          await page.screenshot({ path: `${output}/overflow-${theme}-${width}.png` });
+        }
+        assert.equal(geometry.dock.left >= 0 && geometry.dock.right <= geometry.width && geometry.dock.bottom <= geometry.height, true);
         for (const button of await dock.locator('button:visible').all()) {
           const r = await button.boundingBox(); assert(r && r.width >= 44 && r.height >= 44);
         }
       }
       await page.setViewportSize({ width: 390, height: 480 });
+      await settleMobileViewport(page);
       await page.evaluate(() => { document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'); });
+      await page.waitForFunction(() => {
+        const dock = document.querySelector('.browser-mobile-dock');
+        return dock && dock.getBoundingClientRect().bottom <= innerHeight - 34;
+      }, undefined, { timeout: 5000 });
+      const safeGeometry = await dock.evaluate(e => ({ rect: e.getBoundingClientRect().toJSON(), height: innerHeight, panel: e.closest('.browser-panel')?.getBoundingClientRect().toJSON(), bottom: getComputedStyle(e).bottom, safe: getComputedStyle(e).getPropertyValue('--shell-mobile-safe-bottom') }));
+      await writeFile(output + '/safe-geometry-' + theme + '.json', JSON.stringify(safeGeometry, null, 2));
+      await page.screenshot({ path: output + '/safe-' + theme + '.png' });
       assert.equal(await dock.evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight-34),true);
       await page.evaluate(() => { document.documentElement.dataset.timelineKeyboardOpen='true'; });
       assert.equal(await dock.locator('.browser-mobile-dock__actions').isVisible(),false);
       await page.evaluate(() => { delete document.documentElement.dataset.timelineKeyboardOpen; document.documentElement.style.removeProperty('--safe-layout-inset-bottom'); });
       await page.setViewportSize({ width: 390, height: 844 });
+      await settleMobileViewport(page);
       await dock.getByRole('button', { name: 'Keyboard', exact: true }).tap();
       assert.equal(await page.evaluate(() => (window as any).fixture.keyboardRequests.length), 1);
       assert.equal(await page.evaluate(() => (window as any).fixture.keyboardRequests[0].gesture), true);
@@ -147,7 +176,7 @@ try {
       await page.close();
     }
     assert.deepEqual(errors, []);
-    await writeFile(output + '/mobile-result.json', JSON.stringify({ result: 'passed', themes: ['light','dark'], widths: [320,390,430], originalEditorRetained: true, originalPageRetained: true, keyboardBoundary: 'simulated capability; synchronous gesture verified, no physical OS keyboard proof', errors }, null, 2));
+    await writeFile(output + '/mobile-result.json', JSON.stringify({ result: 'passed', browser: browserName, version: browser.version(), themes: ['light','dark'], widths: [320,390,430], originalEditorRetained: true, originalPageRetained: true, keyboardBoundary: 'simulated capability; synchronous gesture verified, no physical OS keyboard proof', errors }, null, 2));
     console.log('Newera mobile browser actual-consumer smoke passed: ' + output);
   } else {
   const page = await browser.newPage({ viewport: { width: 1280, height: 850 }, reducedMotion: process.env.OPENCRAFT_REDUCED_MOTION === "0" ? "no-preference" : "reduce" });
