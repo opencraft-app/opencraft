@@ -181,7 +181,12 @@ The installed overlay PWA keeps its document-flow canvas at CSS `100vh` while
 unoccluded. Status-excluded window/layout/VisualViewport readings do not reduce
 that resting canvas; actual contraction consumes the existing available capacity
 until native recovery, including after blur. No layout/visual difference becomes
-additional Composer padding or a second canvas-height owner.
+additional Composer padding or a second canvas-height owner. Existing touch
+conversation reading may extend through the Shell's allocated bottom edge while
+the Composer overlay anchor stays inside its original protected rectangle. The
+inline footer carries the same allocation as scrollable end spacing, keeping the
+Composer above the Home indicator. Body-level browser portals keep measuring the
+protected anchor; no independent device-inset lookup is added.
 Shell SafeLayout consumes the main content bottom inset once. Existing, draft
 and overlay Composer paths keep ordinary spacing inside that protected frame;
 body-level browser portals measure the same Shell anchor. They do not claim

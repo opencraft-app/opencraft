@@ -66,6 +66,18 @@ viewport owner or resize/scroll observer is introduced. Settings, other routes,
 Sidecar and native desktop keep their existing allocations. Device status-bar
 compositing still requires physical acceptance.
 
+For existing touch conversations, reading also extends through the row's allocated
+bottom inset. The main surface and reading viewport bleed by that exact CSS
+allocation, while `main-content-body` retains its protected rectangle as the single
+Composer overlay anchor. Its children may paint beyond that rectangle only within
+the full-bleed main surface's clip. Preview tools and body-level browser Composer
+portals retain the same protected geometry. The inline footer places the same
+allocated space inside the expanded scrollport, preserving the Composer's original
+bottom position while transcript paint can continue beneath it. This is not a
+second device-inset lookup or a canvas/client metric tail. New-thread and ordinary
+routes retain their protected frame; keyboard projection still owns when the
+allocation becomes zero. Test full scrollport paint as well as Composer placement.
+
 ### Shared safe layout container
 
 `@opencraft/design-system-web/safe-layout` owns device inset consumption inside

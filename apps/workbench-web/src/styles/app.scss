@@ -12782,6 +12782,24 @@ html[data-window-host="browser"] body {
     .new-thread-draft-layout {
       --draft-block-start: calc(var(--spacing) * 6 + var(--shell-conversation-top-bleed));
     }
+
+    // Reading continues behind the floating Composer through the bottom edge.
+    // Preserve the body's protected rectangle: it is the single overlay anchor,
+    // including browser portals. Only the reading viewport stretches beyond it.
+    &:has(.thread-scroll[data-thread-find-target="conversation"]) {
+      --shell-conversation-bottom-bleed: var(--shell-content-safe-bottom);
+      margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
+      .main-content-body {
+        margin-block-end: var(--shell-conversation-bottom-bleed);
+        overflow: visible;
+      }
+      .main-content-viewport {
+        margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
+      }
+      .thread-scroll-footer {
+        padding-block-end: calc(16px + var(--shell-conversation-bottom-bleed));
+      }
+    }
   }
 
   // Reuse Shell's existing non-interactive fade, including in browser windows.
