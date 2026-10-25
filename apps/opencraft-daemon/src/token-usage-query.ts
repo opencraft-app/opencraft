@@ -81,6 +81,7 @@ export class TokenUsageQuery {
     let bulkIterator:Iterator<Record<string,unknown>>|null=null;
     this.state.database.exec("BEGIN");
     try {
+      if(this.statement("SELECT 1 FROM token_usage_checkpoints WHERE server_id=? AND lineage IN ('legacy-projection-retired-v1','legacy-projection-stale-v1')").get(this.serverId))throw new Error("Legacy usage projections require restoration");
       const coverage=this.statement("SELECT * FROM token_usage_scopes WHERE server_id=?").get(this.serverId);
       if(!coverage) return invalid();
       const revision=Number(coverage.revision);

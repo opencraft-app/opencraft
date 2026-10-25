@@ -90,6 +90,12 @@ export class CodexTokenUsageRuntime {
     readonly submission?: (threadId: string, inputId: string) => UsageSubmission | null;
     readonly diagnostic: (category: string) => void;
     readonly derived?: { invalidate(threadId:string,path?:string):void };
+    readonly writes?: {
+      record(attemptId:string,input:UsageSubmission):Promise<void>;
+      outcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null):Promise<string|null>;
+      admit(key:UsageTurnKey,inputId:string,startedAt:number|null,trusted:UsageSubmission|null):Promise<void>;
+      submission(input:UsageSubmission):Promise<void>;
+    };
   }) {}
 
   initialize(value: unknown): void {
@@ -121,23 +127,35 @@ export class CodexTokenUsageRuntime {
       catch{try{this.port.diagnostic("projection-rebuild");}catch{}}
     });
   }
-  attempt(attemptId:string,threadId:string,inputId:string,mode:UsageSubmission["mode"],identity?:UsageSubmission):void {
+  attempt(attemptId:string,threadId:string,inputId:string,mode:UsageSubmission["mode"],identity?:UsageSubmission):void|Promise<void> {
     if(!this.enabled())return;
     try{
       const trusted=identity??this.port.submission?.(threadId,inputId)??this.ledger.storedSubmission(threadId,inputId);
-      this.ledger.recordAttempt(attemptId,{...(trusted??{threadId,inputId,actorId:null,actorKind:"unknown",sourceKind:"unknown",submittedAt:Date.now()}),mode});
+      const input={...(trusted??{threadId,inputId,actorId:null,actorKind:"unknown" as const,sourceKind:"unknown" as const,submittedAt:Date.now()}),mode};
+      if(this.port.writes?.record)return this.port.writes.record(attemptId,input).catch(()=>{this.missing(threadId,"storage-write");});
+      this.ledger.recordAttempt(attemptId,input);
     }catch{this.missing(threadId,"storage-write");}
   }
   attemptOutcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null=null):void {
+    if(this.port.writes){
+      void this.port.writes.outcome(attemptId,outcome,turnId).then(threadId=>{if(threadId&&outcome==="unknown")this.missing(threadId,"source-offline");})
+        .catch(()=>{try{this.port.diagnostic("attempt-outcome");}catch{}});return;
+    }
     try{const threadId=this.ledger.recordAttemptOutcome(attemptId,outcome,turnId);if(threadId&&outcome==="unknown")this.missing(threadId,"source-offline");}
     catch{try{this.port.diagnostic("attempt-outcome");}catch{}}
   }
   submission(value: UsageSubmission): void {
     if (!this.enabled()) return;
+    if(this.port.writes){void this.port.writes.submission(value).catch(()=>this.missing(value.threadId,"storage-write"));return;}
     try { this.ledger.recordSubmission(value); } catch { this.missing(value.threadId, "storage-write"); }
   }
   admission(key: UsageTurnKey, inputId: string): void {
     if (!inputId || !this.enabled()) return;
+    if(this.port.writes){
+      void this.port.writes.admit(key,inputId,nativeTurnStartedAt(key.turnId),this.port.submission?.(key.threadId,inputId)??null)
+        .then(()=>{this.port.derived?.invalidate(key.threadId);this.schedule(key.threadId);})
+        .catch(()=>this.missing(key.threadId,"storage-write"));return;
+    }
     try {
       const at=nativeTurnStartedAt(key.turnId);
       if (at!==null) this.ledger.startTurn(key,at,"unknown");
