@@ -37,11 +37,15 @@ remain independent; this view never derives or persists a replacement time.
 
 ## User message copy action
 
-Web/Electron keep the existing copy icon visible below every user message with
-text, before hover or focus and on touch input. The action copies the full message
-even when its bubble is collapsed, excluding sender, timestamp and attachment
-metadata. Keyboard activation and localized copied feedback use the existing
-button and clipboard path. Timestamp disclosure keeps its independent policy.
+Web/Electron reserve the existing footer slot but reveal its copy icon only on
+message hover or focus, alongside desktop timestamps. On touch input, a plain-text
+tap focuses the message and reveals copy; tapping elsewhere dismisses it through
+native focus. Links, controls, selection and scrolling keep their own interaction.
+The message is programmatically focusable without adding a Tab stop; the copy
+button remains keyboard reachable. Copied feedback stays visible for its existing
+confirmation interval. The action copies the full message even when its bubble is
+collapsed, excluding sender, timestamp and attachment metadata. Mobile timestamps
+retain their existing visibility policy.
 
 ## User message sender display
 

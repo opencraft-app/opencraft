@@ -345,7 +345,23 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
     }).catch(() => setCopied(false));
   };
   return (
-    <div className="thread-user-message" data-message-kind={block.messageKind}>
+    <div
+      className="thread-user-message"
+      data-message-kind={block.messageKind}
+      tabIndex={layout.hasText ? -1 : undefined}
+      onClick={event => {
+        // Touch has no hover: focus the message after a plain-text tap. Native
+        // focus then owns disclosure and dismissal, including taps elsewhere.
+        const touchInput = document.documentElement.hasAttribute("data-touch-interaction")
+          || window.matchMedia("(any-pointer: coarse), (hover: none)").matches;
+        if (!layout.hasText || !touchInput) return;
+        const target = event.target;
+        if (!(target instanceof Element) || target.closest(USER_MESSAGE_INTERACTIVE_SELECTOR)) return;
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed) return;
+        event.currentTarget.focus({ preventScroll: true });
+      }}
+    >
       <h4 className="thread-role-heading"><FormattedMessage id="chat.message.youSaid" defaultMessage="You said:" /></h4>
       {block.sender?.kind === "employee" && block.sender.loginName ? (
         <div className="thread-user-message__sender"><span className="thread-user-message__sender-avatar" aria-hidden="true"><AvatarImage src={avatars?.resolve(block.sender.kind, block.sender.loginName) ?? null} fallback={<UserRound size={12} />} /></span><span>{block.sender.loginName}</span></div>

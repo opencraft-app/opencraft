@@ -4660,7 +4660,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
 
     button {
-      opacity: 1;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 100ms ease;
       display: inline-flex;
       width: 24px;
       height: 24px;
@@ -4689,6 +4691,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
         box-shadow: 0 0 0 2px var(--color-ring, var(--focus-ring));
       }
       &:disabled {
+        opacity: 1;
         cursor: default;
       }
     }
@@ -4696,10 +4699,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   &:focus-within &__actions button {
     opacity: 1;
+    pointer-events: auto;
   }
   @include controls.hover-capable {
-    &:hover &__actions {
+    &:hover &__actions button {
       opacity: 1;
+      pointer-events: auto;
     }
   }
 
@@ -12085,12 +12090,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   30% {
     opacity: 1;
     transform: translateY(-2px);
-  }
-}
-
-@media (hover: none) {
-  .thread-user-message__actions button {
-    opacity: 1;
   }
 }
 

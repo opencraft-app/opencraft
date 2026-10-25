@@ -46,9 +46,30 @@ try {
     assert.doesNotMatch(await example("goal").innerText(), /private context|My request/);
     assert.equal(await example("goal").locator(".thread-user-message__sender").innerText(), "reviewer");
     const copy = example("goal").getByRole("button", { name: "Copy message", exact: true });
-    assert.equal(await copy.evaluate(element => getComputedStyle(element).opacity), "1", "copy is visible before hover or focus");
-    if (width === 390) await copy.tap();
-    else { await copy.focus(); await page.keyboard.press("Enter"); }
+    const opacity = () => copy.evaluate(element => getComputedStyle(element).opacity);
+    const timestamp = example("goal").locator("time");
+    assert.equal(await opacity(), "0", "copy is hidden before hover or focus");
+    const before = await example("goal").boundingBox();
+    if (width === 390) {
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1", "touch timestamps retain their policy");
+      await example("goal").locator("[data-user-message-bubble]").tap();
+      assert.equal(await opacity(), "1", "touch tap reveals copy");
+      await example("empty").locator(".thread-user-message__no-content").tap();
+      assert.equal(await opacity(), "0", "outside tap dismisses copy");
+      await example("goal").locator("[data-user-message-bubble]").tap();
+      await copy.tap();
+    } else {
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "0");
+      await example("goal").locator("[data-user-message-bubble]").hover();
+      assert.equal(await opacity(), "1", "hover reveals copy");
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1");
+      await example("empty").hover();
+      assert.equal(await opacity(), "0", "leaving hides copy");
+      await copy.focus();
+      assert.equal(await opacity(), "1", "keyboard focus reveals copy");
+      await page.keyboard.press("Enter");
+    }
+    assert.deepEqual(await example("goal").boundingBox(), before, "disclosure preserves footer geometry");
     await page.waitForFunction(() => document.documentElement.dataset.copied === "Ship the release");
     await example("goal").getByRole("button", { name: "Copied", exact: true }).waitFor();
     assert.equal(await example("empty").locator(".thread-user-message__no-content").innerText(), "(No content)");
