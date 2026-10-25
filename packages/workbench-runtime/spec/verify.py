@@ -49,6 +49,10 @@ CASES = [
     ('DerivedHistory-Cleanup', 'CurrentSlots'),
     ('DerivedHistory-Intent', 'IndependentIntent'),
     ('DerivedHistory-NoFairness', 'temporal:DerivedTermination'),
+    ('ClockDomains', None),
+    ('ClockDomains-Backward', 'NoExtension'),
+    ('ClockDomains-Forward', 'NoEarly'),
+    ('ClockDomains-NoFairness', 'temporal:BudgetTermination'),
 ]
 
 

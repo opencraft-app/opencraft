@@ -120,7 +120,7 @@ request before its current deadline. The fault clock deliberately permits
 retired callbacks; standard browser timers check cancellation themselves, so
 this is adapter hardening rather than a reproduced browser race. Stale delivery requires its original
 due time to have elapsed. Generated event counts and effective boundary coverage
-are separate. Generator version 2 and source hashes accompany CLI artifacts;
+are separate. Generator version 3 and source hashes accompany CLI artifacts;
 explicit event traces remain replayable independently of generator changes.
 
 Use `--mutant sticky-initialize` as a negative control: it retains the first client
@@ -144,7 +144,7 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 39 configurations,
+stale request and missing fairness. The total suite has 43 configurations,
 including the history and hydration checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
@@ -259,3 +259,33 @@ outside the startup graph; a full built Web smoke opens a real conversation,
 loads older history, preserves its draft and sends no execution writes. These
 finite models and deterministic counterexamples do not extend existing seeded
 chaos coverage to every notification, provider or physical device behavior.
+
+
+## Elapsed and diagnostic clock domains
+
+`ClockDomains.tla` independently checks one active fixed cap with wall-clock
+jumps and elapsed advancement as separate actions. Its positive configuration
+checks no extension, no early timeout and termination with fair elapsed progress
+and due callback delivery. Three negative controls use wall time after a backward
+jump, use wall time after a forward jump, or remove fairness. Each must violate
+its exact named invariant/temporal property. The normalized cap is two ticks;
+completed context preparation and its return to an ordinary shorter RPC timeout
+are outside this fixed-cap abstraction. This is not a proof of physical OS sleep
+behavior or TypeScript refinement.
+
+Host generator version 3 adds signed `wall-jump` events while elapsed time and
+native timer due times stay independent. The actual client receives both domains.
+The oracle checks that an active preparation timer does not exceed its elapsed
+cap (`RPC_DEADLINE_BOUND`), as well as the existing no-early-timeout rule. Effective
+forward/backward jumps with live RPCs are counted separately. Use
+`--mutant wall-clock-budget` as a negative control: it removes that separation and
+must fail at the exact timer-bound rule; replay the saved explicit events without
+the flag to verify the repair. History and hydration generators remain version 1.
+Existing seed values alone do not preserve an earlier generator's distribution;
+the saved version, source hashes and explicit trace are the replay evidence.
+
+Real default-clock regressions also hold a reread past its local quiet-cut cap,
+probe expiry before timer delivery and synchronously admit a successor during
+child abort. The healthy initial pagination and explicit-zero controls preserve
+the existing allowance. These targeted Session regressions do not extend Host
+chaos to every Session timer/notification interleaving.

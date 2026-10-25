@@ -1,3 +1,4 @@
+import { elapsedClock, type ElapsedClock } from "@opencraft/appserver-client/clock";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AppServerClientError, AppServerRpcError, isRetryableAppServerRpcError, isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
@@ -33,9 +34,12 @@ export interface ThreadResumeCoordinatorConfig {
   useTailHydration?: boolean;
   supportsPaginatedHistory?: boolean;
   pageSize?: number;
+  /** Per-RPC timeout and quiet-cut revalidation cap; zero disables these client budgets. */
   requestTimeoutMs?: number;
   drainTailHistory?: boolean;
   frameScheduler?: ThreadViewFrameScheduler;
+  /** Elapsed clock for the bounded quiet-cut retry phase; RPC/provider budgets stay client-owned. */
+  readClock?: ElapsedClock;
 }
 
 export interface ResumeThreadOptions {
@@ -100,6 +104,7 @@ interface HistoryOperation<T = ThreadView> {
   current(): boolean;
   assertCurrent(): void;
   cancel(): void;
+  limitUntil(deadline: number, error: Error): void;
   onCancel?: () => void;
 }
 
@@ -138,6 +143,7 @@ export class ThreadResumeCoordinatorService extends Service {
   private get historyModeHint() { return this.readHistoryMode(); }
   private readonly pageSize: number;
   private readonly requestTimeoutMs: number;
+  private readonly readClock: ElapsedClock;
   private readonly drainTailHistory: boolean;
   private readonly inFlight = new Map<string, HistoryOperation>();
   private readonly reads = new Map<string, HistoryOperation>();
@@ -161,6 +167,7 @@ export class ThreadResumeCoordinatorService extends Service {
     this.readHistoryMode = typeof hint === "function" ? hint : () => hint ?? null;
     this.pageSize = config.pageSize ?? 5;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 30_000;
+    this.readClock = config.readClock ?? elapsedClock;
     this.drainTailHistory = config.drainTailHistory ?? false;
     if (!Number.isInteger(this.pageSize) || this.pageSize < 1) throw new RangeError("pageSize must be positive");
 
@@ -230,41 +237,81 @@ export class ThreadResumeCoordinatorService extends Service {
     for (const operation of retired) operation?.cancel();
   }
 
-  /** Install the owner before I/O or observers. Revocation releases local
-   * admission and settles callers before aborting potentially reentrant children. */
+  /** Retiring an owner may synchronously admit another through abort/view
+   * observers. Re-read both slots instead of overwriting that successor. */
+  private baselineOperation(threadId: string): { kind: "read" | "resume"; operation: HistoryOperation } | undefined {
+    for (;;) {
+      const reading = this.reads.get(threadId), operation = reading ?? this.inFlight.get(threadId);
+      if (!operation) return;
+      if (operation.current()) return { kind: reading === operation ? "read" : "resume", operation };
+      operation.cancel();
+    }
+  }
+
+  /** Admission precedes observers/I/O. Local retirement and settlement precede
+   * timer cleanup or child abort; late callbacks retain only their own ticket. */
   private startHistoryOperation<T>(
     slots: Map<string, HistoryOperation<T>>, threadId: string, signal: AbortSignal | undefined,
-    run: (operation: HistoryOperation<T>) => Promise<T>,
-    baseline = false,
-    cancelledValue?: () => T,
+    run: (operation: HistoryOperation<T>) => Promise<T>, baseline = false, cancelledValue?: () => T,
   ): Promise<T> {
     if (this.disposed || signal?.aborted) return Promise.reject(historyAborted());
     const generation = this.client.connectionGeneration;
     const controller = new AbortController();
-    let active = true;
+    let active = true, budgetTicket = 0;
+    let deadline: number | undefined, budgetError: Error | undefined, failure: Error | undefined;
+    let timer: { handle: unknown } | null = null;
     let resolve!: (view: T) => void, reject!: (error: unknown) => void;
     const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+    const valid = () => active && !signal?.aborted && !this.disposed && generation === this.client.connectionGeneration
+      && slots.get(threadId) === operation;
     const release = () => {
-      active = false;
+      const owned = slots.get(threadId) === operation, handle = timer;
+      active = false; timer = null; ++budgetTicket;
+      if (owned) slots.delete(threadId);
       signal?.removeEventListener("abort", operation.cancel);
-      if (slots.get(threadId) === operation) slots.delete(threadId);
+      return { owned, handle };
+    };
+    const clear = (scheduled: { handle: unknown } | null) => { if (scheduled) this.readClock.clearTimeout(scheduled.handle); };
+    const retire = (error: Error) => {
+      if (!active) return;
+      const released = release(); failure = error;
+      if (cancelledValue) resolve(cancelledValue()); else reject(error);
+      try {
+        if (released.owned && baseline) {
+          this.retireHistoryContext(threadId);
+          this.previewTokens.delete(threadId);
+          this.ctx.resumeNotificationBuffer.discard(threadId, error);
+        }
+        if (released.owned) operation.onCancel?.();
+      } finally { try { clear(released.handle); } finally { controller.abort(); } }
+    };
+    const arm = () => {
+      if (!valid() || deadline === undefined) return;
+      const ticket = ++budgetTicket;
+      const scheduled = { handle: this.readClock.setTimeout(() => {
+        if (!active || ticket !== budgetTicket) return;
+        timer = null;
+        if (this.readClock.now() >= deadline!) retire(budgetError!);
+        else arm(); // Respect the elapsed deadline if a platform rounds a timer early.
+      }, Math.max(1, Math.ceil(deadline - this.readClock.now()))) };
+      if (active && ticket === budgetTicket) timer = scheduled;
+      else clear(scheduled);
     };
     const operation: HistoryOperation<T> = {
       promise, signal: controller.signal,
-      current: () => active && !signal?.aborted && !this.disposed && generation === this.client.connectionGeneration
-        && slots.get(threadId) === operation,
-      assertCurrent() { if (!this.current()) throw historyAborted(); },
-      cancel: () => {
-        if (!active) return;
-        release();
-        if (cancelledValue) resolve(cancelledValue()); else reject(historyAborted());
-        if (baseline) {
-          this.retireHistoryContext(threadId);
-          this.previewTokens.delete(threadId);
-          this.ctx.resumeNotificationBuffer.discard(threadId, historyAborted());
-        }
-        operation.onCancel?.();
-        controller.abort();
+      current: () => {
+        if (!valid()) return false;
+        if (deadline !== undefined && this.readClock.now() >= deadline) { retire(budgetError!); return false; }
+        return valid();
+      },
+      assertCurrent() { if (!this.current()) throw failure ?? historyAborted(); },
+      cancel: () => retire(historyAborted()),
+      limitUntil: (at, error) => {
+        if (!active || !Number.isFinite(at) || (deadline !== undefined && at >= deadline)) return;
+        deadline = at; budgetError = error;
+        const previous = timer; timer = null; ++budgetTicket;
+        clear(previous);
+        if (operation.current()) arm();
       },
     };
     slots.set(threadId, operation);
@@ -273,23 +320,20 @@ export class ThreadResumeCoordinatorService extends Service {
     void Promise.resolve().then(() => { operation.assertCurrent(); return run(operation); }).then(view => {
       if (!active) return;
       if (!operation.current()) { operation.cancel(); return; }
-      release(); resolve(view);
+      const released = release(); resolve(view); clear(released.handle);
     }, error => {
       if (!active) return;
       if (!operation.current()) { operation.cancel(); return; }
-      release(); reject(error);
+      const released = release(); reject(error); clear(released.handle);
     });
     return promise;
   }
 
   resume(options: ResumeThreadOptions): Promise<ThreadView> {
     if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
-    let reading = this.reads.get(options.threadId);
-    if (reading && !reading.current()) { reading.cancel(); reading = undefined; }
-    if (reading) return waitForHistory(reading.promise, options.signal).then(() => this.resume(options));
-    let existing = this.inFlight.get(options.threadId);
-    if (existing && !existing.current()) { existing.cancel(); existing = undefined; }
-    if (existing !== undefined) return waitForHistory(existing.promise, options.signal);
+    const existing = this.baselineOperation(options.threadId);
+    if (existing?.kind === "read") return waitForHistory(existing.operation.promise, options.signal).then(() => this.resume(options));
+    if (existing) return waitForHistory(existing.operation.promise, options.signal);
     if (options.retryRejected) this.rejectedResumes.delete(options.threadId);
     else {
       const rejected = this.rejectedResumes.get(options.threadId);
@@ -303,20 +347,21 @@ export class ThreadResumeCoordinatorService extends Service {
   /** Open presentation history without acquiring an execution stream or model. */
   read(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds" | "signal"> = {}): Promise<ThreadView> {
     if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
-    let existing = this.reads.get(threadId) ?? this.inFlight.get(threadId);
-    if (existing && !existing.current()) { existing.cancel(); existing = undefined; }
-    if (existing) return waitForHistory(existing.promise, options.signal);
+    const existing = this.baselineOperation(threadId);
+    if (existing) return waitForHistory(existing.operation.promise, options.signal);
     return this.startHistoryOperation(this.reads, threadId, options.signal, async operation => {
       this.retireHistoryContext(threadId);
       this.ctx.resumeNotificationBuffer.begin(threadId);
-      const deadline = Date.now() + this.requestTimeoutMs;
+      const deadline = this.readClock.now() + this.requestTimeoutMs;
       try {
         let view = await this.readOnce(threadId, options, operation);
         // Deltas and native snapshots lack a shared sequence: obtain a quiet
         // canonical cut, preserving admitted requests across rereads.
         operation.assertCurrent();
         while (this.ctx.resumeNotificationBuffer.hasDeltas(threadId)) {
-          if (Date.now() >= deadline) throw new Error("History changed continuously while loading; retry the read");
+          if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
+            new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
+          operation.assertCurrent();
           this.ctx.resumeNotificationBuffer.supersedeNotifications(threadId);
           view = await this.readOnce(threadId, { ...options, historyCheckpoint: null }, operation);
           operation.assertCurrent();
@@ -462,16 +507,21 @@ export class ThreadResumeCoordinatorService extends Service {
   /** Refresh history only; never Resume or reclaim execution. */
   refreshHistory(threadId: string, signal?: AbortSignal): Promise<boolean> {
     if (this.disposed || signal?.aborted) return Promise.resolve(false);
-    let existing = this.historyRefreshes.get(threadId);
-    if (existing && !existing.current()) { existing.cancel(); existing = undefined; }
-    if (existing) {
-      if (!signal) return existing.promise;
-      return waitForHistory(existing.promise, signal).catch(error => {
-        if (error instanceof AppServerClientError && error.code === "ABORTED") return false;
-        throw error;
-      });
+    let older: Promise<ThreadView> | undefined;
+    for (;;) {
+      const existing = this.historyRefreshes.get(threadId);
+      if (existing) {
+        if (!existing.current()) { existing.cancel(); continue; }
+        if (!signal) return existing.promise;
+        return waitForHistory(existing.promise, signal).catch(error => {
+          if (error instanceof AppServerClientError && error.code === "ABORTED") return false;
+          throw error;
+        });
+      }
+      const predecessor = this.olderPageRequests.get(threadId);
+      if (predecessor && !predecessor.current()) { predecessor.cancel(); continue; }
+      older = predecessor?.promise; break;
     }
-    const older = this.olderPageRequests.get(threadId)?.promise;
     return this.startHistoryOperation(this.historyRefreshes, threadId, signal, async operation => {
       await older?.catch(() => undefined);
       operation.assertCurrent();
@@ -483,12 +533,17 @@ export class ThreadResumeCoordinatorService extends Service {
 
   loadOlder(threadId: string, signal?: AbortSignal): Promise<ThreadView> {
     if (this.disposed || signal?.aborted) return Promise.reject(historyAborted());
-    let existing = this.olderPageRequests.get(threadId);
-    if (existing && !existing.current()) { existing.cancel(); existing = undefined; }
-    if (existing) return waitForHistory(existing.promise, signal);
-    // Capture only an already admitted predecessor. Joining our own existing
-    // owner first prevents an older/refresh cycle.
-    const refreshing = this.historyRefreshes.get(threadId)?.promise;
+    let refreshing: Promise<boolean> | undefined;
+    for (;;) {
+      const existing = this.olderPageRequests.get(threadId);
+      if (existing) {
+        if (!existing.current()) { existing.cancel(); continue; }
+        return waitForHistory(existing.promise, signal);
+      }
+      const predecessor = this.historyRefreshes.get(threadId);
+      if (predecessor && !predecessor.current()) { predecessor.cancel(); continue; }
+      refreshing = predecessor?.promise; break;
+    }
     return this.startHistoryOperation(this.olderPageRequests, threadId, signal, async operation => {
       await refreshing?.catch(() => false);
       operation.assertCurrent();
