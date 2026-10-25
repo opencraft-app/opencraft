@@ -41,6 +41,20 @@ Closing a browser tab ends sessionStorage lifetime; this is not cross-device
 or browser-close durable delivery. Reload restores each conversation when its
 Runtime is reacquired; background open conversations remain resident for recovery.
 
+## Attachment staging during reconnect
+
+Browser file preparation (including large pastes converted to `pasted-text.txt`)
+waits for its original Host runtime to be ready with an open transport before
+reading the negotiated staging capability. The existing attachment session keeps
+the File and cancellation signal; no message is sent by this wait. On a staging
+failure accompanied by a connection transition, preparation waits for recovery
+and restarts with the same clientAttachmentId and content, whose staging contract
+is idempotent. Stable capability, permission and format errors remain failures
+with the existing retry action. Removal, cancellation or Host disposal ends the
+wait; it cannot redirect to a replacement Host/account. Inline image processing
+remains independent of Host readiness. This retains bytes within the running
+Application, without changing the refresh persistence limits below.
+
 ## Browser-local input drafts
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
