@@ -431,3 +431,17 @@ event to enter the checkpoint. Hidden geometry retains the previous distance.
 Scroll events from a detached port cannot overwrite the
 retained distance before listener cleanup. Response placement retains its own
 restore position.
+
+### Cancelling a retired baseline
+
+A logical Host reconnect can reuse the initialized client and physical socket.
+Binding hydration and Session read/resume must release their local single-flight
+slots on revocation, rather than await an old response or its deadline. Each
+operation checks its own identity before publishing data, errors, previews or
+notification-buffer cleanup. The scheduler's run signal reaches all initial
+history RPCs and strategies; an uncooperative strategy cannot retain local
+admission or later replace the new baseline. Cached transcript paint and drafts
+survive this handoff, while authoritative presentation waits for the new cut.
+A new baseline also retires old background/pagination context identities so an
+old same-generation reader cannot append after replacement. Cancellation is
+local ownership revocation, not a claim that remote execution stopped.

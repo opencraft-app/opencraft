@@ -122,7 +122,7 @@ function extractItem(entry: ThreadItemsListResponse["data"][number], turnId: str
 }
 
 async function fetchItemsPage(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs">,
+  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
   turnId: string,
   cursor: string | null,
   limit: number,
@@ -133,7 +133,7 @@ async function fetchItemsPage(
     try {
       page = await context.client.request("thread/items/list", {
         threadId: context.threadId, turnId, cursor, limit, sortDirection,
-      }, { timeoutMs: context.requestTimeoutMs, priority: "background" });
+      }, { timeoutMs: context.requestTimeoutMs, priority: "background", signal: context.signal });
       break;
     } catch (error) {
       if (limit <= 1 || !isHistoryResponseTooLargeError(error)) throw error;
@@ -152,7 +152,7 @@ async function fetchItemsPage(
 }
 
 async function fetchAllTurnItems(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs">,
+  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
   turnId: string,
 ): Promise<readonly AppServerThreadItem[]> {
   const items: AppServerThreadItem[] = [];
@@ -179,13 +179,13 @@ async function fetchAllTurnItems(
 /** Full pages may exceed the wire budget; headers retain their native cursor,
  * then the existing adaptive Item reader restores the body without Resume. */
 export async function readTurnsPage(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs">,
+  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
   cursor: string | null,
   limit = 10,
 ): Promise<ThreadTurnsListResponse> {
   const request = (itemsView: "full" | "notLoaded") => context.client.request("thread/turns/list", {
     threadId: context.threadId, cursor, limit, itemsView, sortDirection: "desc",
-  }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible" });
+  }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
   try { return requireTurnsPage(await request("full"), "thread/turns/list"); }
   catch (error) {
     if (!isHistoryResponseTooLargeError(error)) throw error;
@@ -196,7 +196,7 @@ export async function readTurnsPage(
 /** Legacy native paginators can ignore itemsView=full. Read their existing
  * item pages without acquiring an execution stream. */
 export function hydrateReadTurnItems(
-  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs">,
+  context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
   turns: readonly AppServerTurn[],
 ): Promise<readonly AppServerTurn[]> {
   return mapConcurrent(turns, 4, async turn => turn.itemsView === "full"
@@ -309,7 +309,7 @@ async function readFullHistory(context: ResumeHistoryContext): Promise<HydratedT
   const fallback = await context.client.request("thread/read", {
     threadId: context.threadId,
     includeTurns: true,
-  }, { timeoutMs: context.requestTimeoutMs, priority: "background" });
+  }, { timeoutMs: context.requestTimeoutMs, priority: "background", signal: context.signal });
   return {
     source: "thread-read-fallback",
     turns: fallback.thread.turns,

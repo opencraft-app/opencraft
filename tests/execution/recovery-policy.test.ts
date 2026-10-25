@@ -242,3 +242,24 @@ test("default history backoff is jittered within 0.8-1.2 while test schedules st
  f.owner.dispose();
  await done.catch(()=>{});
 });
+
+for (const retire of ["remove", "invalidate", "dispose"] as const) test(`history ${retire} aborts children only after releasing local ownership`, async () => {
+  const f = fixture(), key = {}; let oldSignal: AbortSignal | undefined, newSignal: AbortSignal | undefined;
+  let successor: Promise<void> | undefined, finish!: () => void;
+  try {
+    const old = f.owner.recover({ key, demand: () => "visible", retryable: () => false, run: signal => {
+      oldSignal = signal;
+      signal.addEventListener("abort", () => {
+        successor = f.owner.recover({ key, demand: () => "visible", retryable: () => false, run: next => {
+          newSignal = next; return new Promise<void>(done => { finish = done; });
+        } });
+      });
+      return new Promise<void>(() => {});
+    } });
+    await tick();
+    if (retire === "remove") f.owner.remove(key); else f.owner[retire]();
+    await old; await tick(); assert.equal(oldSignal?.aborted, true);
+    if (retire === "dispose") { assert.equal(newSignal, undefined); await successor; }
+    else { assert.ok(newSignal); assert.equal(newSignal.aborted, false); finish(); await successor; }
+  } finally { finish?.(); f.owner.dispose(); }
+});

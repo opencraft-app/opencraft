@@ -14,11 +14,11 @@ export interface RecoveryClock {
 export interface RecoveryTask {
   readonly key: object;
   demand(): RecoveryDemand;
-  run(): Promise<void>;
+  run(signal: AbortSignal): Promise<void>;
   retryable(error: unknown): boolean;
   readonly propagateFailure?: boolean;
 }
-interface Work { task: RecoveryTask; queued: boolean; attempt: number; retryTicket: number; propagateFailure: boolean; resolve(error?: unknown): void; promise: Promise<void> }
+interface Work { controller?: AbortController; task: RecoveryTask; queued: boolean; attempt: number; retryTicket: number; propagateFailure: boolean; resolve(error?: unknown): void; promise: Promise<void> }
 const rank = { visible: 0, open: 1, cache: 2 } as const;
 const delays = [500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000];
 let episodeSequence = 0;
@@ -118,11 +118,13 @@ export class ConversationRecoveryOwner {
     this.generation++;
     for (const timer of this.timers.values()) this.input.clock.clearTimeout(timer);
     this.timers.clear();
-    for (const work of this.work.values()) work.resolve();
+    const retired = [...this.work.values()];
+    for (const work of retired) work.resolve();
     this.work.clear();
     this.historyProgress = new WeakMap();
     // In-flight operations are fenced by the runtime's connection revision.
     this.active.clear();
+    for (const work of retired) work.controller?.abort();
     this.notify();
   }
   remove(key: object) {
@@ -135,6 +137,7 @@ export class ConversationRecoveryOwner {
     // Retired reads may finish later; their cleanup cannot release a successor.
     if (work !== undefined && this.active.get(key) === work) this.active.delete(key);
     this.historyProgress.delete(key);
+    work?.controller?.abort();
     this.notify();
     this.pump();
   }
@@ -192,13 +195,15 @@ export class ConversationRecoveryOwner {
       const started = this.now(), demand = work.task.demand();
       const current = () => !this.disposed && generation === this.generation && this.work.get(key) === work;
       this.active.set(key, work);
+      const controller = new AbortController();
+      work.controller = controller;
       let runTicket = work.retryTicket;
       // Install cleanup before notifying history observers, including removal
       // before I/O. A retired continuation can release only its own reservation.
       void Promise.resolve().then(() => {
         if (!current()) return;
         runTicket = work.retryTicket;
-        return work.task.run();
+        return work.task.run(controller.signal);
       }).then(() => {
         if (!current()) return;
         this.stage("history-authoritative", { demand, durationMs: this.now() - started });
@@ -233,6 +238,7 @@ export class ConversationRecoveryOwner {
         } else { work.resolve(work.propagateFailure ? error : undefined); this.work.delete(key); }
       }).finally(() => {
         if (generation !== this.generation || this.active.get(key) !== work) return;
+        if (work.controller === controller) work.controller = undefined;
         this.active.delete(key); this.pump();
         this.settle();
       });

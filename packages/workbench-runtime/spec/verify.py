@@ -36,6 +36,13 @@ CASES = [
     ("HistoryReentry-Backoff", "ImmediateRetry"),
     ("HistoryReentry-Cleanup", "SuccessorSlotOwner"),
     ("HistoryReentry-NoFairness", "temporal:HistoryTermination"),
+    ('HydrationHandoff', None),
+    ('HydrationHandoff-Binding', 'temporal:HydrationRecovery'),
+    ('HydrationHandoff-Session', 'temporal:HydrationRecovery'),
+    ('HydrationHandoff-Commit', 'CurrentAuthority'),
+    ('HydrationHandoff-Cleanup', 'SuccessorSlots'),
+    ('HydrationHandoff-Settlement', 'CancelledWaiterSettles'),
+    ('HydrationHandoff-NoFairness', 'temporal:HydrationRecovery'),
 ]
 
 

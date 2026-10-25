@@ -252,3 +252,46 @@ files and bounded delta reduction. It samples shared route availability rather
 than replacing the real multiplexed Web adapter or Thread baseline owner.
 See the [model README](../../../packages/workbench-runtime/spec/README.md#deterministic-implementation-chaos)
 for commands, normalized budgets and proof limits.
+
+### Revocable Thread hydration
+
+Host readiness does not discharge a Thread baseline obligation. A logical Host
+reconnect may retain the same initialized client generation and healthy physical
+transport. Its retired history work must therefore be fenced by operation
+identity as well as connection generation.
+
+The history scheduler passes a per-run `AbortSignal`. Removal, invalidation and
+disposal release their logical reservation and settle local callers before
+aborting children. Binding hydration owns a revocable local Promise and clears
+its slot before aborting Session read/resume. Session installs its own read/resume
+owner before I/O or observers; revocation settles that Promise even when an RPC
+adapter or history strategy ignores cancellation. Late success, failure, preview
+and cleanup cannot commit through a retired owner or clear its successor's slot
+or notification buffer. Preaborted callers cannot join shared work. A joining
+caller's cancellation ends only that caller's wait; the initiating owner retains
+the shared operation's cancellation policy.
+
+Signals reach the initial read, Resume preflight, Resume itself, adaptive window
+fallback, Turn/Item pagination and history strategies. Cancelling local Resume
+ownership does not stop a process-scoped engine activation or roll back remote
+work. Default presentation recovery remains read-only; legacy message-window
+providers retain their explicit Resume path. No cancellation closes a healthy
+shared socket or replays user commands.
+
+A fresh baseline also retires the previous source's history contexts, background
+drain, refresh and pagination identities, including on an unchanged client
+generation. Their late results cannot append to the new baseline. Cached paint
+survives; current authority still requires the new baseline. Independent older
+page/refresh waits do not acquire this baseline's signal: their prompt cancellation
+is a separate boundary from the identity checks preventing stale publication.
+
+`HydrationHandoff.tla` checks two Threads and two logical revisions with separate
+Binding and Session gates. Old replies have no fairness assumption, while current
+work does. Exact negative controls retain either gate, accept old commits, clear
+successor gates, delay local settlement or remove fairness. It is an independent
+finite abstraction, not a refinement proof of the TypeScript implementation.
+The `hydration` chaos suite runs the actual Workbench/Binding/Session/client chain
+with held replies, release/reacquisition, retries and logical reconnects. Its
+healthy suffix completes only newly issued requests before releasing retired
+replies. Physical iPhone behavior and full shared-socket seeded faults remain
+outside this suite.
