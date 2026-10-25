@@ -118,6 +118,15 @@ export class CodexCoreBridge implements DuplexTransport {
   private receive(line: string): void {
     let message: RpcRecord;
     try { message = record(JSON.parse(line)); } catch { return; }
+    delete message.__opencraftGeneration;
+    if (message.method === "opencraft/codex/generation/lost") {
+      const params = record(message.params), ids = Array.isArray(params.threadIds) ? params.threadIds : [];
+      for (const clientId of this.initialized) {
+        const threadIds = ids.filter(id => typeof id === "string" && this.threads.get(id)?.has(clientId));
+        if (threadIds.length) this.emit({ ...message, params: { ...params, threadIds } }, clientId);
+      }
+      return;
+    }
     const id = idOf(message.id);
     if (id !== null) {
       const pending = this.pending.get(String(id));

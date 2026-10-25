@@ -2,7 +2,7 @@ import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
-import { startControlServer } from "./control-server.js";
+import { readControlJson, startControlServer } from "./control-server.js";
 
 /** Account/control owner. It has no child execution process and never stops one. */
 export async function startSplitCodexCore(options: CodexCoreOptions) {
@@ -37,7 +37,18 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
         if (native.dataDirectory !== dataDirectory || native.proxyBaseUrl !== `http://127.0.0.1:${options.proxyPort}`) {
           throw new Error("AppServer identity mismatch");
         }
-        return { status: 200, value: { ...native, pid: process.pid, appServerPid: native.pid } };
+        return { status: 200, value: { ...native, pid: process.pid, appServerPid: native.appServerPid ?? native.pid } };
+      }
+      if (request.method === "POST" && request.url === "/generation-host") {
+        try {
+          const value = await readControlJson(request), params = value.params as Record<string, unknown>;
+          if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Invalid generation Host envelope");
+          if (value.operation === "claim" && typeof params.instanceId === "string" && typeof params.routingEpoch === "string") {
+            return { status: 200, value: await runtime.claimGenerationHost(params.instanceId, params.routingEpoch) };
+          }
+          if (value.operation === "state") return { status: 200, value: await runtime.publishGenerationHost(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
+          throw new Error("Unknown generation Host operation");
+        } catch { return { status: 503, value: { error: "Generation Host receipt unavailable" } }; }
       }
       if (request.method !== "POST" || request.url !== "/accounts") return { status: 404, value: { error: "Unknown operation" } };
       try {

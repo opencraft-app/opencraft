@@ -21,7 +21,7 @@ sockets.on("connection", socket => {
     if (method === "initialized") return;
     if (method === "initialize") { send({ id, result: { serverInfo: { name: "fake", version: "1" } } }); return; }
     if (method === "thread/start") {
-      const thread = { id: `thread-${++sequence}`, createdAt: 1, updatedAt: 1, cwd: params.cwd ?? "/synthetic", historyMode: "legacy", status: { type: "idle" }, turns: [] };
+      const thread = { id: `${process.env.FAKE_CODEX_THREAD_PREFIX ?? "thread"}-${++sequence}`, createdAt: 1, updatedAt: 1, cwd: params.cwd ?? "/synthetic", historyMode: "legacy", status: { type: "idle" }, turns: [] };
       threads.set(thread.id, thread); subscribed.add(thread.id);
       send({ id, result: { thread } }); return;
     }

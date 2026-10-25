@@ -8,6 +8,7 @@
 
 | 资源 | 唯一 owner | 生命周期 |
 |---|---|---|
+| 可选 generation registry、稳定 native socket | 独立 routing owner | 固定 Thread 归属/接纳 epoch；CLI 升级不重启路由进程；路由进程自身维护先排空 PTY lease |
 | 原生 CLI | 兼容 core 或独立 APP Server owner | 网站/Headless 断开不终止原 turn；拆分后账号 Core 重启不停止 native |
 | account-pool、OAuth、账户代理 | 账号 core | 独立单写；拆分升级先排空已接收代理流与凭据写入 |
 | Host queue、sender、企业身份、附件、私有 Tasks、pins 投影 | Headless 的 CodexEngineAdapter | 原生 transport 只提供帧，不绕过 overlay；实例关闭释放存储 |
@@ -19,6 +20,8 @@
 connect/send/subscribe/close。原纯 core bridge 和未选择 core 的默认方式保持独立，不能用
 纯 bridge 的早返回代替 Headless overlay。账户 RPC 单次转发给认证 control socket；原生请求
 由 Host 映射 ID、保留 client epoch、订阅/queue/goal 处理，结果未知不重放。
+
+显式多代模式的 APP/native 每代独立 HOME/socket/固定 CLI，共用账号 Core；Host 仍单写 overlay，并通过私有 generation fence/ACK 协议证明队列、goal、schedule 与恢复工作已排空。单代崩溃只恢复该代 Thread，正常退休保持其它代的连接，见 [多代升级](codex-core.md#第-3-步新旧并行)。
 
 core 的数据目录 guard 与 overlay 的 `host-overlays-owner` guard 独立，均复用内核持有的
 SQLite EXCLUSIVE 锁，进程退出释放。Headless 的安装级 server.lock 仍保护整个数据根。
