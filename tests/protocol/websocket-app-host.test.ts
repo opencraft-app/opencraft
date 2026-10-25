@@ -241,7 +241,7 @@ test("browser AppHost reports a pre-upgrade WebSocket error without exposing the
   const socket = new FakeSocket();
   const diagnostics: Array<Record<string, unknown>> = [];
   const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
-    reportFailure: diagnostic => diagnostics.push(diagnostic),
+    reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
   });
   try {
     const connection = client.createTransport("fixture-host").connect();
@@ -462,6 +462,91 @@ test("private recovery awaits admission and never opens a socket after cancellat
     }
   } finally {
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else delete (globalThis as { window?: unknown }).window;
+  }
+});
+
+test("RECOVERY-GAP-04: revoked local admission must settle without waiting for old external work", {
+  ...(process.env.OPENCRAFT_RECOVERY_CONTRACT_STRICT === "1" ? {} : { todo: "RECOVERY-GAP-04: renewable transport retains an uncancelable admission wait" }),
+}, async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  let release!: () => void, settled = false, sockets = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const client = connectWebSocketAppHost(() => { sockets++; return new FakeSocket() as unknown as WebSocket; }, {
+    reportFailure: () => undefined, beforeConnect: () => gate,
+  });
+  const abort = new AbortController();
+  const pending = client.createTransport("a").connect(abort.signal);
+  void pending.then(() => { settled = true; }, () => { settled = true; });
+  try {
+    await flush(); abort.abort(); await flush();
+    assert.equal(settled, true, "local revocation must not depend on the retired admission promise settling");
+    assert.equal(sockets, 0);
+  } finally {
+    release(); await pending.catch(() => undefined); client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("RECOVERY-GAP-05: a successor cannot join a revoked renewable transport operation", {
+  ...(process.env.OPENCRAFT_RECOVERY_CONTRACT_STRICT === "1" ? {} : { todo: "RECOVERY-GAP-05: connectOperation has no cancellation generation" }),
+}, async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  let release!: () => void, reads = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const client = connectWebSocketAppHost(() => new FakeSocket() as unknown as WebSocket, {
+    reportFailure: () => undefined, beforeConnect: async () => { if (++reads === 1) await gate; },
+  });
+  const transport = client.createTransport("a"), abort = new AbortController();
+  const old = transport.connect(abort.signal); void old.catch(() => undefined);
+  let next: Promise<void> | undefined;
+  try {
+    await flush(); abort.abort(); await flush();
+    next = transport.connect(); void next.catch(() => undefined);
+    await flush();
+    assert.notEqual(next, old, "an aborted attempt must release its logical promise ownership");
+    assert.equal(reads, 2, "the successor must get its own admission check");
+  } finally {
+    release(); client.close(); await Promise.allSettled([old, ...(next ? [next] : [])]);
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("formal trace replay: a failed Host lease and its late frames cannot revoke a healthy peer sharing the socket", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const socket = new FakeSocket(); let sockets = 0;
+  const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, { reportFailure: () => undefined });
+  const frames: string[] = [];
+  const messages = (type: string) => socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === type);
+  const acknowledge = (message: { requestId: string }, result?: unknown) => socket.receive({ type: "response", requestId: message.requestId, ok: true, result });
+  try {
+    const a = client.createTransport("a"), b = client.createTransport("b");
+    const first = a.connect(); await flush(); socket.open();
+    socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"] }); await flush();
+    acknowledge(messages("host/connect").at(-1), { hostId: "a", generation: 10 }); await first;
+    const second = b.connect(); await flush();
+    const oldLease = messages("host/connect").at(-1);
+    acknowledge(oldLease, { hostId: "b", generation: 20 }); await second;
+    b.subscribeMessage(frame => frames.push(frame));
+    socket.receive({ type: "host/status", hostId: "b", generation: 20, status: { state: "failed", reason: "synthetic Host failure" } });
+    assert.equal(a.status.state, "open"); assert.equal(b.status.state, "failed");
+    const recovery = b.connect(); await flush();
+    acknowledge(messages("host/disconnect").at(-1)); await flush();
+    const newLease = messages("host/connect").at(-1);
+    assert.notEqual(newLease.leaseId, oldLease.leaseId);
+    acknowledge(newLease, { hostId: "b", generation: 21 }); await recovery;
+    socket.receive({ type: "host/frame", hostId: "b", generation: 20, leaseId: oldLease.leaseId, frame: "retired" });
+    socket.receive({ type: "host/status", hostId: "b", generation: 20, status: { state: "failed" } });
+    socket.receive({ type: "host/frame", hostId: "b", generation: 21, leaseId: newLease.leaseId, frame: "current" });
+    assert.deepEqual(frames, ["current"]);
+    assert.equal(a.status.state, "open"); assert.equal(b.status.state, "open");
+    assert.equal(a.status.attemptId, b.status.attemptId);
+    assert.equal(sockets, 1); assert.equal(messages("host/send").length, 0);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
   }
 });
 
