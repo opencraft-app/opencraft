@@ -164,14 +164,14 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  assert(Math.abs(geometry.top-180)<=1,`placement cannot feed back from a rendered rectangle: ${JSON.stringify(geometry)}`);
  assert.equal(geometry.height,440);evidence.push({theme,newera,readbackCounterexample:geometry});
  await page.evaluate(()=>{HTMLElement.prototype.getBoundingClientRect=(window as any).readActualRect;(window as any).setViewport(844,0)});
- // An overlay PWA can paint the CSS viewport while native metrics still exclude
- // the status area. Preserve the native raw measurements and test actual boxes.
+ // B class: the visible canvas includes the status area while clientHeight
+ // excludes it. Preserve both raw inputs and test actual boxes.
  await page.evaluate(()=>{
   const root=document.documentElement;
   Object.defineProperty(root,'clientHeight',{configurable:true,value:782});
   root.dataset.windowHost='browser';root.dataset.windowDisplayMode='standalone';
   root.dataset.windowEdgeStrategy='legacy-overlay-requested';
-  (window as any).setViewport(782,0);
+  (window as any).setViewport(844,0);
  });
  await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
  const assertDocumentFlow=async()=>{
@@ -197,12 +197,12 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  await page.waitForFunction(()=>document.documentElement.dataset.timelineKeyboardOpen==='false');
  assert.equal(await page.evaluate(()=>document.documentElement.dataset.timelineViewportOccluded),'true');
  assert.equal(await page.locator('.app-shell-root').evaluate(e=>e.getBoundingClientRect().height),360,'blur cannot expand over a still-reduced visual viewport');
- await page.evaluate(()=>(window as any).setViewport(782,0));
+ await page.evaluate(()=>(window as any).setViewport(844,0));
  await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
  assert.equal(await editor.innerText(),overlayDraft);assert(await overlayEditor!.evaluate(e=>e.isConnected));
  await page.evaluate(()=>{document.documentElement.dataset.windowDisplayMode='tab';document.documentElement.dataset.windowEdgeStrategy='system-color-extension'});
- await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===782);
- evidence.push({theme,newera,overlay:{cssCanvasHeight:844,rawViewportHeight:782,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabExcluded:true}});
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
+ evidence.push({theme,newera,overlay:{cssCanvasHeight:844,clientHeight:782,visibleHeight:844,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabUsesObservedCapacity:true}});
  await context.close();
 
  }

@@ -177,9 +177,11 @@ scroll, focus, selection or editor replacement. A browser reporting incorrect
 native geometry still requires device evidence; synthetic timing is not physical
 iOS/in-app verification.
 
-The overlay PWA uses the CSS large viewport for its unoccluded document-flow
-Shell. Its reported native height can exclude the status area; that difference
-must not become additional Composer padding or a second content-height reduction.
+The PWA keeps its document-flow Shell within observed window/VisualViewport
+visibility, both with accepted and ineffective status-bar overlay requests.
+`clientHeight` may exclude the status area even when the visible frame includes
+it; neither a fixed CSS large viewport nor that client metric defines the
+visible canvas. Their difference must not become additional Composer padding.
 Shell SafeLayout consumes the main content bottom inset once. Existing, draft
 and overlay Composer paths keep ordinary spacing inside that protected frame;
 body-level browser portals measure the same Shell anchor. They do not claim
