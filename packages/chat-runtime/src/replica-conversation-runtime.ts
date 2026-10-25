@@ -51,7 +51,7 @@ type JsonRecord = Readonly<Record<string, ReplicaJsonValue>>;
 export interface ReplicaConversationRuntimeConfig {
   readonly key: ConversationKey;
   readonly outbox?: ConversationOutboxStorage;
-  readonly canDispatchOutbox?: () => boolean;
+  readonly canDispatchOutbox?: (intent?: SubmitIntent) => boolean;
   /** Compatibility retry while a connected Codex Host does not own capacity continuation. */
   readonly canAutoContinueCapacity?: () => boolean;
   readonly replica: ConversationReplicaReader;
@@ -1738,7 +1738,8 @@ export function createReplicaConversationRuntime(
     async submit(intent) {
       assertIntentTarget(config.key, intent);
       resetCapacityRetry();
-      if (outbox && (outbox.hasPending() || !snapshot.authoritative || config.canDispatchOutbox?.() === false))
+      if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
+        || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
         return outbox.admit(intent);
       return submitOnline(intent);
     },

@@ -69,7 +69,7 @@ export class PiEngine {
     "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true },
     [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
     [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
-    "opencraft/thread-follow-up": { version: 1, queue: false, steer: false },
+    "opencraft/thread-follow-up": { version: 1, queue: false, steer: true },
     [TURN_RECOVERY_EXTENSION]: { version: 1 },
   });
   private scheduleService?: ConversationSchedules;
@@ -660,6 +660,23 @@ export class PiEngine {
         await this.refresh(session);
       } catch (error) { if (!(error instanceof ScheduleAdmissionDeferred)) this.fail(session, (error as Error).message); throw error; }
       return { turn: session.turns?.find(turn => turn.id === turnId) ?? turn };
+    }
+    if (method === "turn/steer") {
+      if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId) throw new Error("Pi steer requires expectedTurnId");
+      const clientId = typeof params.clientUserMessageId === "string" && params.clientUserMessageId.length ? params.clientUserMessageId : null;
+      if (clientId && clientId.length > 1000) throw new Error("Client message identity is too long");
+      if (session.archived) throw new Error("Unarchive the Pi thread before executing");
+      assertPiFields(params);
+      const native = await this.native(session);
+      const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+      if (!model) throw new Error("Pi model is unavailable");
+      if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
+      const content = await compilePiInput(params.input, params.additionalContext, session.cwd, model);
+      const requestId = clientId ? `${params.expectedTurnId}:steer:client:${clientId}` : `${params.expectedTurnId}:steer:${randomUUID()}`;
+      await native.steer(content, { turnId: requestId, steerTurnId: params.expectedTurnId, clientId, input: params.input,
+        additionalContext: params.additionalContext ?? null, createdAtMs: Date.now() }, requestId, params.expectedTurnId);
+      await this.refresh(session);
+      return { turnId: params.expectedTurnId };
     }
     if (method === "turn/interrupt") {
       this.recovery?.handled(session.id);

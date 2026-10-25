@@ -348,7 +348,17 @@ holds each session's SQLite database, writer lock, scheduler and model/tool envi
 For providers without a server queue, the browser outbox holds follow-ups while
 the current Turn is active and preserves input identity across baseline recovery.
 Pi publishes native idle status when a Turn settles so waiting local follow-ups
-can be admitted after the current execution completes.
+can be admitted after the current execution completes. Pi also supports `turn/steer`:
+`expectedTurnId` is checked against the native live run in the same transaction
+that admits an input to the native steer inbox. A late or mismatched request is
+rejected without starting a new run. Steers are consumed at native tool/final
+boundaries; current model requests and tools are not interrupted. Client message
+identity deduplicates retries, including after restart and completion. Original
+input blocks, context and the target Turn are preserved in native records; a
+display-only admission entry retains them when stop withdraws an unplaced input.
+All corresponding native submissions project into the same OpenCraft Turn, which
+settles only when every admitted input has settled. This does not enable a
+server-side follow-up queue or replace the connected client's tool lease.
 Closing the owner suspends work; explicit stop aborts it. On startup the owner checks
 recovery hints against native durable records and resumes unfinished inputs. Native
 entries, submissions and committed partials are the history authority; the adjacent

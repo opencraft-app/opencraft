@@ -716,3 +716,148 @@ test("opening Pi native history never creates an execution owner; Resume can con
   assert.equal((await continued).status, "completed");
   assert.equal((await read()).initialTurnsPage.data[0].items.find((item: any) => item.type === "agentMessage").text, "continued reply");
 });
+
+test("Pi steer stays on the active Turn across tool and final boundaries, retries and native restore", async t => {
+  let entered!: () => void, release!: () => void;
+  const toolEntered = new Promise<void>(resolve => { entered = resolve; });
+  const toolGate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  let finalEntered!: () => void, finalRelease!: () => void;
+  const finalStarted = new Promise<void>(resolve => { finalEntered = resolve; });
+  const finalGate = new Promise<void>(resolve => { finalRelease = resolve; });
+  t.after(() => finalRelease());
+  const f = await fixture(t, [
+    fauxAssistantMessage([fauxToolCall("opencraft_0_wait", {}, { id: "wait" })], { stopReason: "toolUse" }),
+    async context => {
+      assert.match(JSON.stringify(context.messages), /change direction/);
+      assert.match(JSON.stringify(context.messages), /quoted steer context/);
+      finalEntered(); await finalGate; return fauxAssistantMessage("intermediate answer");
+    },
+    context => { assert.match(JSON.stringify(context.messages), /one more correction/); return fauxAssistantMessage("steered answer"); },
+  ]);
+  const owner: ExecutionEngineClient = { notify() {}, async request() {
+    entered(); await toolGate; return { success: true, contentItems: [{ type: "inputText", text: "tool result" }] };
+  } };
+  const created = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"),
+    dynamicTools: [{ type: "function", name: "wait", description: "Wait", inputSchema: { type: "object", properties: {} } }] }, owner);
+  const threadId = created.thread.id;
+  assert.equal(f.engine.extensions["opencraft/thread-follow-up"].steer, true);
+  const done = completed(f.engine);
+  const started = await f.engine.request("turn/start", { threadId, input: [{ type: "text", text: "original" }] }, owner);
+  await toolEntered;
+  const steer = { threadId, expectedTurnId: started.turn.id, clientUserMessageId: "correction",
+    input: [{ type: "text", text: "change direction", text_elements: [] }],
+    additionalContext: { selection: { kind: "untrusted", value: "quoted steer context" } } };
+  await assert.rejects(f.engine.request("turn/steer", { ...steer, expectedTurnId: "stale" }, owner), /identity changed/);
+  await assert.rejects(f.engine.request("turn/steer", { ...steer, input: [] }, owner), /must not be empty/);
+  assert.deepEqual(await f.engine.request("turn/steer", steer, owner), { turnId: started.turn.id });
+  assert.deepEqual(await f.engine.request("turn/steer", steer, owner), { turnId: started.turn.id });
+  let read = await f.engine.request("thread/read", { threadId, includeTurns: true }, owner);
+  assert.equal(read.thread.turns.length, 1);
+  assert.equal(read.thread.turns[0].items.filter((item: any) => item.clientId === "correction").length, 1);
+  assert.equal(read.thread.turns[0].status, "inProgress");
+  release(); await finalStarted;
+  await f.engine.request("turn/steer", { threadId, expectedTurnId: started.turn.id, clientUserMessageId: "last",
+    input: [{ type: "text", text: "one more correction" }] }, owner);
+  finalRelease();
+  assert.equal((await done).status, "completed");
+  assert.equal(f.faux.state.callCount, 3);
+  await assert.rejects(f.engine.request("turn/steer", { ...steer, clientUserMessageId: "late" }, owner), /identity changed/);
+  assert.deepEqual(await f.engine.request("turn/steer", steer, owner), { turnId: started.turn.id });
+  await f.engine.close();
+  const reopened = new PiEngine({ directory: f.directory, cwd: f.directory, models: fixtureModels([]).models });
+  t.after(() => reopened.close());
+  read = await reopened.request("thread/read", { threadId, includeTurns: true }, owner);
+  assert.equal(read.thread.turns.length, 1);
+  const turn = read.thread.turns[0]; assert.equal(turn.id, started.turn.id); assert.equal(turn.status, "completed");
+  assert.deepEqual(turn.items.filter((item: any) => item.type === "userMessage").map((item: any) => item.clientId), [null, "correction", "last"]);
+  assert.equal(new Set(turn.items.map((item: any) => item.id)).size, turn.items.length);
+  assert.equal(turn.items.at(-1).text, "steered answer");
+  assert.deepEqual(await reopened.request("turn/steer", steer, owner), { turnId: started.turn.id });
+});
+
+test("Pi stop withdraws pending steer and owner restart recovers pending steer exactly once", async t => {
+  for (const stop of [true, false]) {
+    const f = await fixture(t, [fauxAssistantMessage("partial answer ".repeat(40))], 40);
+    const created = await f.engine.request("thread/start", { model: piModel("faux", "faux-1") }, noTools);
+    const threadId = created.thread.id;
+    const partial = new Promise<void>(resolve => {
+      const off = f.engine.subscribe(method => { if (method === "item/agentMessage/delta") { off(); resolve(); } });
+    });
+    const started = await f.engine.request("turn/start", { threadId, input: [{ type: "text", text: "begin" }] }, noTools);
+    await partial;
+    await f.engine.request("turn/steer", { threadId, expectedTurnId: started.turn.id, clientUserMessageId: "retained-steer",
+      input: [{ type: "text", text: "recover correction" }] }, noTools);
+    if (stop) {
+      const done = completed(f.engine);
+      await f.engine.request("turn/interrupt", { threadId, turnId: started.turn.id }, noTools);
+      assert.equal((await done).status, "interrupted");
+    }
+    await f.engine.close();
+    const models = fixtureModels([fauxAssistantMessage("resumed first"), context => {
+      assert.match(JSON.stringify(context.messages), /recover correction/); return fauxAssistantMessage("resumed correction");
+    }]);
+    const reopened = new PiEngine({ directory: f.directory, cwd: f.directory, models: models.models });
+    t.after(() => reopened.close());
+    const done = stop ? null : completed(reopened);
+    await reopened.request("thread/resume", { threadId }, noTools);
+    if (done) assert.equal((await done).status, "completed");
+    const read = await reopened.request("thread/read", { threadId, includeTurns: true }, noTools);
+    assert.equal(read.thread.turns.length, 1);
+    assert.equal(read.thread.turns[0].status, stop ? "interrupted" : "completed");
+    assert.equal(models.faux.state.callCount, stop ? 0 : 2);
+    assert.equal(read.thread.turns[0].items.filter((item: any) => item.clientId === "retained-steer").length, 1);
+  }
+});
+
+test("Workbench sends Pi steer over the durable Host WebSocket and retains one Turn", async t => {
+  const { createAppServerWorkbenchRuntime } = await import("../../packages/workbench-runtime/src/appserver-runtime.js");
+  const { WebSocketTransport } = await import("../../packages/appserver-transport-websocket/src/index.js");
+  let entered!: () => void, release!: () => void;
+  const generating = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  const f = await fixture(t, [async () => { entered(); await gate; return fauxAssistantMessage("first answer"); }, context => {
+    assert.match(JSON.stringify(context.messages), /client correction/); return fauxAssistantMessage("client steer accepted");
+  }], 200);
+  const host = await startEngineHost({ providers: [f.engine], defaultEngine: "pi" }); t.after(() => host.close());
+  let rows: any[] = []; const sent: string[] = [];
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "pi-steer", hostKind: "durable",
+    outbox: { read: () => rows, write: (_key, next) => { rows = [...next]; }, subscribe: () => () => {} },
+    createTransport: () => {
+      const transport = new WebSocketTransport(host.websocketUrl), send = transport.send.bind(transport);
+      transport.send = frame => { sent.push(JSON.parse(frame).method); return send(frame); }; return transport;
+    },
+  });
+  t.after(() => runtime.dispose()); await runtime.connect();
+  const thread = await runtime.resources.threads.start({ model: piModel("faux", "faux-1"), cwd: f.directory });
+  const lease = await runtime.acquireThread(thread.id); t.after(() => lease.release());
+  for (let i = 0; i < 200 && !lease.getSnapshot().authoritative; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(lease.getSnapshot().authoritative, true);
+  const done = completed(f.engine);
+  const intent = { commandId: "first", clientMessageId: "first-client", target: { type: "existing-thread" as const, key: lease.getSnapshot().key },
+    document: { version: 1 as const, blocks: [{ type: "paragraph" as const, children: [{ type: "text" as const, text: "initial client message" }] }] },
+    attachments: [], context: [], selections: { model: piModel("faux", "faux-1"), permissionProfile: null }, options: { autoContext: true }, createdAt: 1 };
+  await lease.submit(intent); await generating;
+  const read = await f.engine.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
+  const turnId = read.thread.turns[0].id;
+  await lease.submit({ ...intent, commandId: "correction", clientMessageId: "steer-client",
+    target: { type: "steer-active-turn", key: lease.getSnapshot().key, turnId },
+    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "client correction" }] }] } });
+  for (let i = 0; i < 200 && !sent.includes("turn/steer"); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(sent.includes("turn/steer"));
+  // Wait for the native admission, not merely the outbox enqueue/send call.
+  for (let i = 0; i < 200; i++) {
+    const pending = await f.engine.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
+    if (pending.thread.turns[0].items.some((item: any) => item.clientId === "steer-client")) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  release();
+  assert.equal((await done).id, turnId);
+  assert.equal(sent.filter(method => method === "turn/steer").length, 1);
+  assert.equal(sent.filter(method => method === "turn/start").length, 1);
+  const result = await f.engine.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
+  assert.equal(result.thread.turns.length, 1);
+  assert.equal(result.thread.turns[0].items.filter((item: any) => item.clientId === "steer-client").length, 1);
+  assert.equal(result.thread.turns[0].items.at(-1).text, "client steer accepted");
+});

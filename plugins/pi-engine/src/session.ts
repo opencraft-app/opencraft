@@ -211,6 +211,34 @@ export class PiDurableSession {
     this.submissions.set(admitted.id, await admitted.status(context));
     return admitted;
   }
+  /** Guard and enqueue on the native commit line: a late steer must never start an idle run. */
+  async steer(content: any, data: Value, requestId: string, expectedTurnId: string) {
+    const record = await this.root.commit(async tx => {
+      const existing = await tx.submissionByRequest(this.root.id, requestId);
+      if (existing) return existing;
+      const live = await tx.doc(LiveDoc, this.root.id);
+      const inbox = await tx.doc(InboxDoc, this.root.id);
+      let matches = false;
+      for (const id of live.run?.inputs ?? []) {
+        const input = await this.storage.submission(id, context);
+        if (input?.requestId === expectedTurnId) matches = true;
+        if (input?.entry !== undefined) {
+          const entry = await tx.entry(input.entry);
+          if ((entry?.data as Value)?.steerTurnId === expectedTurnId) matches = true;
+        }
+      }
+      if (!matches) throw new Error("Pi turn identity changed");
+      const admitted = await tx.createSubmission({ conversationId: this.root.id, requestId, type: "input", status: "queued" });
+      // Native withdrawal removes the inbox item; retain its presentation metadata
+      // in the same native transaction, without inserting another model message.
+      await tx.appendEntry(this.root.id, { kind: "opencraft.steerAdmission", data });
+      inbox.items.push({ id: admitted.id, mode: "steer", content,
+        entry: { kind: "opencraft.input", data } });
+      return admitted;
+    }, context);
+    this.submissions.set(record.id, record);
+    this.harness.resume();
+  }
   resume() { this.harness.resume(); }
   /** Host-only provenance; no model message and no human sender is fabricated. */
   async recordRecovery(turnId: string, inputId: string) {
