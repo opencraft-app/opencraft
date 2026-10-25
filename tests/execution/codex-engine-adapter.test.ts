@@ -1439,8 +1439,14 @@ test("ambiguous native rejection remains unknown and exposes a recovery gap",asy
  };
  try{
   await adapter.connect();await initializeClient(adapter,frames,"writer");
+  // Keep background replay from opening a source-replaced gap for the fixture's
+  // synthetic rollout path before the ambiguous submission is observed.
+  await request("test/pauseThreadReads",{paused:true});
   const threadId=(await request("thread/start",{testNoServerRequest:true})).result.thread.id;
   const turnId=(await request("turn/start",{threadId,clientUserMessageId:"initial",input:[{type:"text",text:"synthetic"}]})).result.turn.id;
+  const before=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
+  try{assert.equal(before.prepare("SELECT count(*) AS n FROM token_usage_gaps WHERE thread_id=? AND ends_ms IS NULL").get(threadId)!.n,0);}
+  finally{before.close();}
   assert.ok((await request("turn/steer",{threadId,expectedTurnId:turnId,clientUserMessageId:"uncertain",input:[{type:"text",text:"synthetic"}]})).error);
   const db=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
   try{
@@ -1448,6 +1454,7 @@ test("ambiguous native rejection remains unknown and exposes a recovery gap",asy
    assert.equal(db.prepare("SELECT count(*) AS n FROM token_usage_admissions WHERE input_id='uncertain'").get()!.n,0);
    assert.ok(Number(db.prepare("SELECT count(*) AS n FROM token_usage_gaps WHERE thread_id=? AND ends_ms IS NULL").get(threadId)!.n)>0);
   }finally{db.close();}
+  await request("test/pauseThreadReads",{paused:false});
  }finally{await adapter.close();await rm(root,{recursive:true,force:true});}
 });
 

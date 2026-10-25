@@ -22,7 +22,14 @@ const archivedThreads = new Set();
 const threadNames = new Map();
 const titleThreads = new Set();
 let nextTitleThread = 0;
+let threadReadsPaused = false;
+const heldThreadReads = [];
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
+function readThread(message) {
+  const active = turns.get(message.params.threadId);
+  const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
+  send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+}
 input.on("line", line => {
   const message = JSON.parse(line);
   if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
@@ -31,6 +38,11 @@ input.on("line", line => {
     toolResults.push({id:message.id,...testTools.get(String(message.id)),result:message.result,error:message.error});testTools.delete(String(message.id));return;
   }
   if (message.method === "test/readToolResults") {send({id:message.id,result:{data:toolResults}});return;}
+  if (message.method === "test/pauseThreadReads") {
+    threadReadsPaused = message.params.paused;
+    if (!threadReadsPaused) for (const read of heldThreadReads.splice(0)) readThread(read);
+    send({ id: message.id, result: {} }); return;
+  }
   if (message.method === "test/setHistory") {threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
   if (message.method === "test/emitTool") {
     const id=nextServerRequestId++;testTools.set(String(id),message.params);send({id,method:"item/tool/call",params:{...message.params,callId:String(id)}});send({id:message.id,result:{requestId:id}});return;
@@ -84,9 +96,8 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/read") {
-    const active = turns.get(message.params.threadId);
-    const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
-    send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+    if (threadReadsPaused) heldThreadReads.push(message);
+    else readThread(message);
     return;
   }
   if (message.method === "thread/turns/list") {
