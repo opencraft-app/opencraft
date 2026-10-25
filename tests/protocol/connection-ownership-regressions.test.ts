@@ -103,7 +103,7 @@ test('uncooperative transport dial is revoked by deadline and successor does not
   clock:{setTimeout(callback,delay){const timer={callback,delay};timers.add(timer);return timer;},clearTimeout(timer){timers.delete(timer as any);}}});
  try{
   const pending=runtime.connect(),failed=assert.rejects(pending,/timed out/);await entered.promise;
-  const deadline=[...timers].find(timer=>timer.delay===60_000)!;assert.ok(deadline);timers.delete(deadline);deadline.callback();await failed;await turn();
+  const deadline=[...timers].find(timer=>timer.delay===45_000)!;assert.ok(deadline);timers.delete(deadline);deadline.callback();await failed;await turn();
   await runtime.reconnect();assert.equal(runtime.getSnapshot().phase,'ready');
   dial.resolve();await turn();assert.equal(runtime.getSnapshot().phase,'ready');assert.equal(created,2);
  }finally{dial.resolve();await runtime.dispose();}

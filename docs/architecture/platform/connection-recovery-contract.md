@@ -1,15 +1,14 @@
-# Connection recovery: proposed transition contract
+# Connection recovery transition contract
 
-Status: executable design and counterexample tests; **not implemented in the
-production connection owner**. Existing timeout, retry and readiness behavior
-remains as described in [connections and routing](connections-and-routing.md).
-This contract makes the recovery decision reviewable before runtime changes.
+Status: implemented for foreground wake conservation, stage/absolute expiry,
+revocable Web admission waits and initialization commit fencing. The tables
+also express environmental constraints abstracted by the independent model;
+they are not an implementation refinement proof or a phone latency guarantee.
 
-The subsequent [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
+The [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
 cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
 Safety and conditional liveness are checked separately, including deliberate
-negative controls and an explicit reachability witness. This adds formal evidence
-for the target contract; production recovery remains unchanged.
+negative controls and an explicit reachability witness.
 
 ## Ownership and observations
 
@@ -27,10 +26,13 @@ that barrier complete, terminate an execution engine, or authorize another
 physical generation to bypass it.
 
 Meaningful progress is an observed completion advancing the attempt's stage:
-`dial -> bridge -> admission -> initialize`. Repeated lifecycle events,
+`services -> admission -> release -> bridge -> host -> initialize -> session`. Repeated lifecycle events,
 unrelated traffic and repeated reports of the same stage cannot renew deadlines.
-Production integration must select real observations at these boundaries;
-the test model does not manufacture network or Host readiness.
+These local observations report completed boundaries, not network or Host
+readiness. Repeated reports of a previously visited stage are ignored. The Web
+adapter reports admission completion, release completion and bridge `ready`;
+transport `open` begins initialization, and accepted initialization begins
+session assembly. History still has its own resource owner.
 
 ## State transitions
 
@@ -75,12 +77,44 @@ another connection after readiness.
   server admission, stage/total attempt budgets and separate Thread catch-up.
   There is no unconditional recovery-time guarantee for an unavailable server.
 
-## Executable evidence and current gaps
+## Runtime budgets and boundaries
+
+The generic owner starts with a 30s stage budget and a 60s total budget. Runtime
+assembly uses 30s; an opaque transport has 45s; Web admission/release/Host stages
+have 35s, bridge has 15s (its physical handshake retains its own 10s timer), and
+initialization has `max(30s, requestTimeout) + 5s`. The existing Runtime aggregate
+budget remains `max(60s, requestTimeout + 15s)`. Every stage is capped by that
+original aggregate deadline. These are local wait limits, not promises that
+remote work has ended; physical AppHost admission and close keep their own
+barriers and existing server classifications.
+
+The five-second budget limits hint-driven validation, not ordinary retries or
+explicit user retries. An early hint during backoff is retained until the first
+eligible validation or earlier ordinary retry. Success consumes all earlier
+hints; manual rejection/disposal discards them. Wake coalescing never resets the
+outage counter. Only continuous usable time resets it under the existing policy.
+
+`assertCurrent` also runs before the AppServer client caches an initialization
+response: a late response after page freeze cannot seed readiness for a successor.
+That cached result also retains the owning attempt's signal until its handoff;
+revocation between client and owner commits invalidates it immediately. Generic
+callers without an owner guard keep completed-connect cancellation semantics.
+Local Web cancellation rejects and releases its Promise synchronously before
+status observers can reenter. Old external admission can remain pending forever;
+a successor performs its own admission while still waiting for actual prior
+lease release. Cancellation/close never shuts down a shared socket's healthy peer.
+
+The browser emits recovery hints only while visible; this change does not suspend
+ordinary retry scheduling in hidden pages. Server not-before and demand gates in
+the abstract specification are environmental constraints; this owner does not
+invent a new server Retry-After protocol or bypass the existing physical owner.
+
+## Executable evidence
 
 The independent [test specification](../../../tests/protocol/fixtures/recovery-specification.ts)
 uses normalized logical budgets (stage 10, total 25, validation 5). They express
-ordering and expiry, **not proposed production timeout values**. Exact production
-stage thresholds and progress callbacks remain implementation work. The model
+ordering and expiry, **not proposed production timeout values**. Production
+budgets and real boundary observations are described above. The model
 abstracts one Host and one representative Thread baseline, not a full multi-Host,
 shared-socket or UI simulation. A future adapter must replay these same traces
 through real owners; passing the independent model is not implementation conformance.
@@ -98,17 +132,17 @@ against the actual `ConnectionLifecycleOwner`:
 | RECOVERY-GAP-04 | actual renewable Web transport aborts while `beforeConnect` never settles | Retire the local wait promptly without declaring the external operation complete. |
 | RECOVERY-GAP-05 | the next `connect()` arrives after the prior caller aborts | The successor must not join the revoked `connectOperation` or inherit its rejection. |
 
-The first three assertions and the two additional Web transport assertions execute as TODOs so the normal suite can carry
-known gaps without describing them as successes. A strict run makes the same
-assertions fail normally:
+All five former gaps now execute as normal passing assertions. Further real-owner
+regressions cover repeated versus distinct progress, total expiry without timer
+callbacks, hint storms, manual rejection, late initialization caching, cancelled
+admission success/failure, synchronous reentry and retained physical barriers.
 
 ```bash
 npm run test:recovery-contract
-OPENCRAFT_RECOVERY_CONTRACT_STRICT=1 npm run test:recovery-contract
-OPENCRAFT_RECOVERY_CONTRACT_STRICT=1 node --import tsx --test tests/protocol/websocket-app-host.test.ts
+npm run test:recovery
+node --import tsx --test tests/protocol/appserver-connection-lifecycle.test.ts
 ```
 
-The normal suite also verifies the already-working immediate wake during backoff
-and preservation of failure escalation. A TODO that unexpectedly passes must be
-reviewed and promoted to a normal assertion; it is not automatic closure. No
-model check here claims to reproduce a particular user's phone incident.
+The normal suite also verifies immediate wake during backoff and preservation of
+failure escalation. No model check here claims to reproduce a particular user's
+phone incident or prove unbounded multi-outage implementation liveness.

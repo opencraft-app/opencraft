@@ -157,7 +157,12 @@ the successful first-page observation and already available catalog data.
 Short successful connections do not reset retry history: readiness must remain
 continuous for 60s. Visible foreground/online recovery hints can advance an
 already scheduled retry, at most once per five seconds per Host; they retain
-the escalation counter and coalesce with an active connection attempt. Explicit
+the escalation counter and retain one signal during an active connection attempt.
+A successful attempt consumes it; a failed or expired attempt can use it for
+one successor validation. Stage/absolute deadlines are rechecked on page wake
+and before initialization readiness is cached. Retired Web admission waits
+settle locally without releasing physical barriers; late results are fenced.
+Production budgets and executable cases are in the [recovery contract](connection-recovery-contract.md). Explicit
 user retry remains immediate and manual failures remain blocked.
 Protocol incompatibility is a permanent failure for the loaded client. The Web
 bridge sends the existing `fatal` envelope with `APP_HOST_PROTOCOL_MISMATCH` and

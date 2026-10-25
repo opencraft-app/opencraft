@@ -209,7 +209,10 @@ test("bounded lifecycle model enumerates completion/resolution/loss/reconnect/ID
         }
         await turn();
       }
-      const actual = f.frames.map(({ incarnation, message }) => ({ incarnation, id: message.id, owner: "error" in message ? "old" : (message as { result: { owner: string } }).result.owner }));
+      const actual = f.frames.map(({ incarnation, message }) => {
+        assert.ok("id" in message, "only RPC responses are delivered");
+        return { incarnation, id: message.id, owner: "error" in message ? "old" : (message as { result: { owner: string } }).result.owner };
+      });
       assert.deepEqual(actual, expected, `${fails ? "reject" : "resolve"}: ${trace.join(" → ")}`);
     } finally { old.resolve(null); await f.client.close(); }
   }
@@ -229,7 +232,7 @@ test("real WebSocket and browser interceptor discard an old physical connection'
     });
   });
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const transport = new WebSocketTransport({ url: `ws://127.0.0.1:${address.port}`, createSocket: url => new WebSocket(url) });
+  const transport = new WebSocketTransport({ url: `ws://127.0.0.1:${address.port}`, createSocket: url => new WebSocket(url) as unknown as globalThis.WebSocket });
   const client = new JsonRpcAppServerClient({ hostId: "browser-fixture", transport });
   const remove = installBrowserDynamicToolHandler(client, {
     open() { throw new Error("unused"); }, getTabContext() { throw new Error("unused"); },
@@ -249,4 +252,55 @@ test("real WebSocket and browser interceptor discard an old physical connection'
     slow.resolve(null); remove(); await client.close(); for (const socket of sockets) socket.terminate();
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
+});
+
+test("owner expiry before initialization commit cannot poison cached readiness for the successor", async () => {
+  let requests = 0, permit = true;
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame);
+    if (isJsonRpcRequest(request) && request.method === "initialize") {
+      requests++;
+      permit = false; // The reply arrives after the owner's independent deadline.
+      peer.send(encodeJsonRpcMessage({ id: request.id, result: initialized }));
+    }
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "commit-guard", transport });
+  try {
+    await assert.rejects(client.connect(params, undefined, () => { if (!permit) throw Error("owner expired"); }), /owner expired/);
+    assert.equal(client.initializeResult, null); assert.equal(client.connectionGeneration, 0);
+    await client.connect(params);
+    assert.equal(requests, 2); assert.equal(client.connectionGeneration, 1);
+  } finally { await client.close(); }
+});
+
+test("revocation between client readiness and owner commit invalidates the cached initialization", async () => {
+  let requests = 0;
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame);
+    if (isJsonRpcRequest(request) && request.method === "initialize") {
+      requests++; peer.send(encodeJsonRpcMessage({ id: request.id, result: initialized }));
+    }
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "cached-commit-guard", transport });
+  const old = new AbortController();
+  try {
+    await client.connect(params, old.signal, () => old.signal.throwIfAborted());
+    assert.notEqual(client.initializeResult, null);
+    old.abort(new Error("owner deadline before its commit"));
+    assert.equal(transport.status.state, "open", "local retirement does not close a healthy physical channel");
+    assert.equal(client.initializeResult, null);
+    await client.connect(params, new AbortController().signal);
+    assert.equal(requests, 2, "the successor cannot inherit the revoked owner's readiness cache");
+    assert.equal(client.connectionGeneration, 2);
+  } finally { await client.close(); }
+});
+
+test("ordinary completed connect cancellation keeps its established initialization", async () => {
+  const f = fixture(), abort = new AbortController();
+  try {
+    await f.client.connect(params, abort.signal);
+    abort.abort();
+    assert.notEqual(f.client.initializeResult, null);
+    assert.equal(f.client.status.state, "open");
+  } finally { await f.client.close(); }
 });

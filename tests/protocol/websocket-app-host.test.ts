@@ -191,6 +191,7 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
     replacementSocket.receive({ type: "response", requestId: renewedFrame.requestId, ok: true });
     await renewedSend;
     const closing = transport.close();
+    await flush();
     const disconnect = JSON.parse(replacementSocket.sent[3]!);
     assert.equal(disconnect.type, "host/disconnect");
     replacementSocket.receive({ type: "response", requestId: disconnect.requestId, ok: true });
@@ -465,9 +466,7 @@ test("private recovery awaits admission and never opens a socket after cancellat
   }
 });
 
-test("RECOVERY-GAP-04: revoked local admission must settle without waiting for old external work", {
-  ...(process.env.OPENCRAFT_RECOVERY_CONTRACT_STRICT === "1" ? {} : { todo: "RECOVERY-GAP-04: renewable transport retains an uncancelable admission wait" }),
-}, async () => {
+test("RECOVERY-GAP-04: revoked local admission must settle without waiting for old external work", async () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   let release!: () => void, settled = false, sockets = 0;
@@ -488,9 +487,7 @@ test("RECOVERY-GAP-04: revoked local admission must settle without waiting for o
   }
 });
 
-test("RECOVERY-GAP-05: a successor cannot join a revoked renewable transport operation", {
-  ...(process.env.OPENCRAFT_RECOVERY_CONTRACT_STRICT === "1" ? {} : { todo: "RECOVERY-GAP-05: connectOperation has no cancellation generation" }),
-}, async () => {
+test("RECOVERY-GAP-05: a successor cannot join a revoked renewable transport operation", async () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   let release!: () => void, reads = 0;
@@ -587,4 +584,77 @@ test("expired claim saturation renews the shared browser socket and lets its pee
     for (const message of successor.sent.map(frame => JSON.parse(frame)).filter(message => message.type === "host/disconnect")) successor.receive({ type: "response", requestId: message.requestId, ok: true });
     await Promise.all(closes);
   } finally { client.close(); if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window"); }
+});
+
+for (const late of ["resolve", "reject"] as const) test(`retired admission ${late} cannot allocate or fail the connected successor`, async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  let release!: () => void, fail!: (error: Error) => void, reads = 0, sockets = 0;
+  const gate = new Promise<void>((resolve, reject) => { release = resolve; fail = reject; });
+  const socket = new FakeSocket();
+  const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, {
+    reportFailure: () => undefined, beforeConnect: () => ++reads === 1 ? gate : Promise.resolve(),
+  });
+  try {
+    const transport = client.createTransport("a"), abort = new AbortController();
+    const old = transport.connect(abort.signal); const rejected = assert.rejects(old);
+    abort.abort();
+    const next = transport.connect(); // Deliberately before old finally/microtask cleanup.
+    assert.notEqual(next, old); await rejected; await flush();
+    socket.open(); socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"] }); await flush();
+    const request = socket.sent.map(frame => JSON.parse(frame)).find(message => message.type === "host/connect");
+    socket.receive({ type: "response", requestId: request.requestId, ok: true, result: { hostId: "a", generation: 2 } }); await next;
+    if (late === "resolve") release(); else fail(new Error("retired denial"));
+    await flush();
+    assert.equal(transport.status.state, "open"); assert.equal(sockets, 1); assert.equal(reads, 2);
+  } finally {
+    release(); client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("local cancellation releases callers but successors still wait for the physical lease close barrier", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const socket = new FakeSocket();
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { reportFailure: () => undefined });
+  const messages = (type: string) => socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === type);
+  const acknowledge = (message: { requestId: string }, result?: unknown) => socket.receive({ type: "response", requestId: message.requestId, ok: true, result });
+  try {
+    const transport = client.createTransport("a"); const first = transport.connect(); await flush(); socket.open();
+    socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"] }); await flush();
+    acknowledge(messages("host/connect").at(-1), { hostId: "a", generation: 1 }); await first;
+    socket.receive({ type: "host/status", hostId: "a", generation: 1, status: { state: "failed", reason: "synthetic loss" } });
+    const abort = new AbortController(); const second = transport.connect(abort.signal); const rejected = assert.rejects(second);
+    await flush(); assert.equal(messages("host/disconnect").length, 1);
+    abort.abort(); await rejected;
+    const third = transport.connect(); await flush();
+    assert.equal(messages("host/connect").length, 1, "a pending physical release cannot be bypassed by local retirement");
+    acknowledge(messages("host/disconnect").at(-1)); await flush();
+    assert.equal(messages("host/connect").length, 2);
+    acknowledge(messages("host/connect").at(-1), { hostId: "a", generation: 2 }); await third;
+    assert.equal(transport.status.state, "open");
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("synchronous connecting observer can revoke before admission or socket allocation", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  let reads = 0, sockets = 0;
+  const client = connectWebSocketAppHost(() => { sockets++; return new FakeSocket() as unknown as WebSocket; }, {
+    reportFailure: () => undefined, beforeConnect: async () => { reads++; },
+  });
+  try {
+    const transport = client.createTransport("a"), abort = new AbortController(); let shared: Promise<void> | undefined;
+    transport.subscribeStatus(status => { if (status.state === "connecting") { shared = transport.connect(); abort.abort(); } });
+    const pending = transport.connect(abort.signal);
+    assert.equal(shared, pending); await assert.rejects(pending); await flush();
+    assert.equal(reads, 0); assert.equal(sockets, 0);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
 });
