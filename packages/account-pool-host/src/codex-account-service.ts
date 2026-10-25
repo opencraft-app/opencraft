@@ -83,14 +83,22 @@ export class CodexAccountService {
 
   close(): Promise<void> {
     return this.closing ??= (async () => {
-      await Promise.allSettled(this.requests);
-      // Stop background jobs while inference still listens. Inference's own
-      // credential resolver remains available until its idle-point drain ends.
-      await this.login.dispose();
-      await this.resetCreditService.dispose();
-      await this.subscriptions.dispose();
-      await this.server?.close();
-      this.store.close();
+      let phase = "account-requests";
+      const startedAt = Date.now();
+      const timer = setInterval(() => console.warn("[opencraft account-pool]", JSON.stringify({
+        event: "shutdown-account-wait", phase, durationMs: Date.now() - startedAt,
+      })), 15_000);
+      timer.unref();
+      try {
+        await Promise.allSettled(this.requests);
+        // Stop background jobs while inference still listens. Inference's own
+        // credential resolver remains available until its idle-point drain ends.
+        phase = "login"; await this.login.dispose();
+        phase = "reset-credits"; await this.resetCreditService.dispose();
+        phase = "subscriptions"; await this.subscriptions.dispose();
+        phase = "proxy"; await this.server?.close();
+        this.store.close();
+      } finally { clearInterval(timer); }
     })();
   }
 

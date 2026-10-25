@@ -117,10 +117,10 @@ export async function startCodexAccountPoolServer(options: {
   if (host !== "127.0.0.1" && host !== "::1") throw new TypeError("Account Pool server must bind to loopback");
   let consecutiveProxyFailures = 0;
   const upstreamLimiter = createConcurrencyLimiter(16);
-  const active = new Set<Promise<void>>();
-  const handle = async (incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> => {
+  const active = new Map<Promise<void>, { method: string; route: string; startedAt: number; stage: string }>();
+  const handle = async (incoming: IncomingMessage, outgoing: ServerResponse, progress: { stage: string }): Promise<void> => {
     const requestStartedAt = Date.now();
-    let stage = "read-body";
+    progress.stage = "read-body";
     let releaseUpstreamSlot: (() => void) | null = null;
     const abort = new AbortController();
     const onAborted = () => abort.abort(new Error("Account Pool client disconnected"));
@@ -130,7 +130,7 @@ export async function startCodexAccountPoolServer(options: {
     try {
       const body = ["GET", "HEAD"].includes(incoming.method ?? "GET") ? undefined : await requestBody(incoming);
       const authority = incoming.headers.host ?? `${host}:${options.port ?? 0}`;
-      stage = "upstream-queue";
+      progress.stage = "upstream-queue";
       const queueStartedAt = Date.now();
       releaseUpstreamSlot = await upstreamLimiter.acquire(abort.signal);
       const queueWaitMs = Date.now() - queueStartedAt;
@@ -143,7 +143,7 @@ export async function startCodexAccountPoolServer(options: {
           concurrencyLimit: 16,
         }));
       }
-      stage = "proxy-handle";
+      progress.stage = "proxy-handle";
       const response = await options.proxy.handle(new Request(`http://${authority}${incoming.url ?? "/"}`, {
         method: incoming.method ?? "GET",
         headers: requestHeaders(incoming),
@@ -153,7 +153,7 @@ export async function startCodexAccountPoolServer(options: {
       outgoing.statusCode = response.status;
       outgoing.statusMessage = response.statusText;
       for (const [name, value] of response.headers) outgoing.setHeader(name, value);
-      stage = "response-stream";
+      progress.stage = "response-stream";
       if (response.body === null) outgoing.end();
       else await pipeline(
         Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
@@ -166,7 +166,7 @@ export async function startCodexAccountPoolServer(options: {
         consecutiveProxyFailures += 1;
         console.error("[opencraft account-pool]", JSON.stringify({
           event: "proxy-failure",
-          stage,
+          stage: progress.stage,
           method: incoming.method ?? "GET",
           path: (incoming.url ?? "/").split("?", 1)[0],
           durationMs: Date.now() - requestStartedAt,
@@ -191,8 +191,14 @@ export async function startCodexAccountPoolServer(options: {
     }
   };
   const server = createServer((incoming, outgoing) => {
-    const operation = handle(incoming, outgoing);
-    active.add(operation);
+    const path = (incoming.url ?? "/").split("?", 1)[0];
+    const progress = {
+      method: ["GET", "POST", "HEAD", "DELETE"].includes(incoming.method ?? "GET") ? incoming.method ?? "GET" : "other",
+      route: ["/v1/responses", "/v1/models", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(path) ? path : "other",
+      startedAt: Date.now(), stage: "read-body",
+    };
+    const operation = handle(incoming, outgoing, progress);
+    active.set(operation, progress);
     void operation.finally(() => active.delete(operation)).catch(error => {
       if (!outgoing.destroyed) outgoing.destroy(error instanceof Error ? error : new Error(String(error)));
     });
@@ -215,11 +221,27 @@ export async function startCodexAccountPoolServer(options: {
       // Turn is still streaming. Keep accepting until the proxy is idle; then
       // stop listening synchronously at that idle point. Persistent traffic
       // delays this maintenance rather than consuming native retry budgets.
-      while (active.size > 0) await Promise.allSettled([...active]);
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-      // An aborted socket can close before OAuth refresh finishes. Its handler
-      // must finish persisting credentials before the owner closes storage.
-      await Promise.allSettled(active);
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        const now = Date.now();
+        const groups = new Map<string, { method: string; route: string; stage: string; count: number; oldestMs: number }>();
+        for (const request of active.values()) {
+          const key = `${request.method}:${request.route}:${request.stage}`;
+          const group = groups.get(key) ?? { method: request.method, route: request.route, stage: request.stage, count: 0, oldestMs: 0 };
+          group.count += 1; group.oldestMs = Math.max(group.oldestMs, now - request.startedAt);
+          groups.set(key, group);
+        }
+        console.warn("[opencraft account-pool]", JSON.stringify({ event: "shutdown-proxy-wait", durationMs: now - startedAt,
+          active: active.size, requests: [...groups.values()] }));
+      }, 15_000);
+      timer.unref();
+      try {
+        while (active.size > 0) await Promise.allSettled([...active.keys()]);
+        await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        // An aborted socket can close before OAuth refresh finishes. Its handler
+        // must finish persisting credentials before the owner closes storage.
+        await Promise.allSettled(active.keys());
+      } finally { clearInterval(timer); }
     })(),
   };
 }

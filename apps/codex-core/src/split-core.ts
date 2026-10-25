@@ -15,8 +15,14 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let closing: Promise<void> | undefined;
   const close = () => closing ??= (async () => {
-    try { await control?.close(); await accounts?.close(); }
-    finally { release(); }
+    let phase = "control";
+    const startedAt = Date.now();
+    const timer = setInterval(() => console.warn("[opencraft codex-core]", JSON.stringify({
+      event: "shutdown-wait", phase, durationMs: Date.now() - startedAt,
+    })), 15_000);
+    timer.unref();
+    try { await control?.close(); phase = "accounts"; await accounts?.close(); }
+    finally { clearInterval(timer); release(); }
   })();
   try {
     const dataDirectory = await realpath(options.dataDirectory);
