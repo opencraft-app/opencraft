@@ -343,6 +343,14 @@ an ancestor of the native editor/caret. The shell owns layout, border, shadow an
 focus; material variables select ordinary/Newera and opaque accessibility fallbacks.
 Scrolling or keyboard viewport updates must not rewrite the selection, recreate the
 EditorView or blur/refocus it to repair painting.
+The material occupies the shell background plane; editable rows and command boxes
+have explicit foreground ordering. A compact `display:contents` footer has no
+painted box: its actual child boxes retain that ordering. Positioned suggestions,
+voice and recovery decorations keep their existing geometry and overlay owners.
+Native transcript selection does not hide, remount or refocus the Composer.
+The selection-paint smoke checks actual input/command pixels and selection/draft
+continuity across projected viewport transitions; this is not a physical iOS
+callout/compositor reproduction.
 
 Desktop Web keeps the editor opaque while touch editors use glass; queue/goal
 rails use their own theme glass on both, independent of the Newera switch. The

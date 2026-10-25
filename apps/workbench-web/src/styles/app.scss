@@ -9051,13 +9051,24 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     content: "";
     position: absolute;
     inset: 0;
-    z-index: -1;
+    z-index: 0;
     pointer-events: none;
     border-radius: inherit;
     background: var(--composer-surface-background);
     -webkit-backdrop-filter: var(--composer-surface-filter);
     backdrop-filter: var(--composer-surface-filter);
   }
+}
+
+// Give editable content and commands an explicit foreground above the material.
+// The compact footer uses display:contents, so its generated grid items need
+// the same ordering even though the footer itself has no box. Zero specificity
+// leaves positioned suggestions, dictation and recovery decorations in charge
+// of their own geometry and stacking. No transform/filter encloses native input.
+:where(.opencraft-composer-shell) > *,
+:where(.opencraft-composer-footer) > * {
+  position: relative;
+  z-index: 1;
 }
 
 // Shared material rules keep routine loading quieter than reconnect/failure.
