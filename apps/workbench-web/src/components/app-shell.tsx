@@ -879,7 +879,7 @@ export function AppShell({
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
-        <MotionSafeLayout edges={browserSafeLayout ? ["top"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+        <MotionSafeLayout edges={browserSafeLayout ? ["top", "bottom"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
           style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
             className="app-shell-sidecar__footer"

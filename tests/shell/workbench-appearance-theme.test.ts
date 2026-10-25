@@ -224,9 +224,9 @@ test("extension theme selection is root-owned and unload falls back atomically",
           removeProperty: (name: string) => { const old = properties.get(name) ?? ""; properties.delete(name); return old; },
         },
       },
-      querySelector: () => ({
+      querySelector: (selector: string) => selector.includes('name="theme-color"') ? ({
         setAttribute: (_name: string, value: string) => { metaColor = value; },
-      }),
+      }) : null,
     },
   });
   Object.defineProperty(globalThis, "opencraftDesktop", {

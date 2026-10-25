@@ -134,8 +134,15 @@ as runtime. It shares mode resolution and preference-key priority, normalizes ol
 builtin aliases, never writes preferences, and marks unknown/hidden selections as
 fallback. Runtime projection takes over when themes load, including late plugin
 contributions. No persistent palette cache or parallel theme catalog is introduced.
-The legacy Apple status-bar-style meta is omitted; deprecated black-translucent is
-not used to claim arbitrary drawing beneath the status bar.
+The legacy Apple status-bar-style declaration remains the stable
+`black-translucent` overlay request described below; it is not rewritten on theme
+changes and does not prove native drawing capability. A separate early head
+script projects the generated catalog before application/diagnostic startup.
+Browser html/body paint the same opaque edge background before density or runtime
+initialization; live projection updates `theme-color` and `color-scheme` together
+with that background. Explicit modes override system changes; system preference
+continues to use the original media subscription. No new theme/cache owner is
+introduced.
 
 Projection reports requested colors, chosen host strategy and bootstrap/fallback/
 resolved phase. `systemAppearance: unobserved` is deliberate: DOM/meta/bridge writes

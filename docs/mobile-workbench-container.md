@@ -23,6 +23,13 @@ safe area once, without a second keyboard-avoidance transform.
 independent of private Bot/account bridges. Browser/Electron clients without a
 container retain normal startup, navigation and lifecycle behavior.
 
+Response notifications remain one Web Application feature in both connected and
+hostless settings. TurnNotificationController coordinates the existing preference
+owner and available delivery adapters; account sign-out revokes persistent consent
+through that owner before ending the session. Only Apple Home Screen PwaRuntime
+supplies the Web Push device port. Sharing the settings component does not grant
+Expo/WebView that capability or claim native background-notification support.
+
 ## Build and use
 
 From the core workspace:

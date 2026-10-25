@@ -307,6 +307,7 @@
   "settings.chat.turnNotifications": "Notify when a response ends",
   "settings.chat.turnNotifications.denied": "Notifications are blocked. Allow them in your browser's site settings, then return here.",
   "settings.chat.turnNotifications.description": "Receive a browser notification after each response completes, fails or stops, including while viewing this page. The page must remain open.",
+  "settings.chat.turnNotifications.background": "Receive notifications when responses on this server complete, fail or stop, even after closing this app. Other servers require this page to remain open.",
   "settings.chat.turnNotifications.permissionRequired": "Notification permission was not granted. You can enable it again when ready.",
   "settings.chat.turnNotifications.showError": "The browser could not display a notification. Check your browser and system notification settings.",
   "settings.chat.turnNotifications.unsupported": "Browser notifications are unavailable here. Use a supported browser on HTTPS.",

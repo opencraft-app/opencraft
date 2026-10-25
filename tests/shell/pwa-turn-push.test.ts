@@ -71,3 +71,10 @@ test('revoked notification permission clears consent and exposes an OS-settings 
  assert.equal(f.controller.getSnapshot().phase,'blocked');assert.equal(f.controller.getSnapshot().enabled,false);assert.equal(f.has(),false);
  const count=f.order.filter(value=>value==='permission').length;await f.controller.enable();assert.equal(f.order.filter(value=>value==='permission').length,count);f.controller.dispose();
 });
+
+
+test('disabling during a delivery test wins over its late acknowledgement',async()=>{
+ const f=setup();await settle();await f.controller.enable();const release=f.holdTest();
+ const pending=f.controller.test();await f.controller.disable();assert.equal(f.has(),false);
+ release();await pending;assert.equal(f.controller.getSnapshot().enabled,false);assert.equal(f.controller.getSnapshot().testSent,false);f.controller.dispose();
+});

@@ -31,9 +31,9 @@ Requested standalone/fullscreen browser overlay documents keep html/body and the
 main Shell in document flow, sized by the CSS large viewport (`100vh`) at rest.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
 document roots or main Shell: a full CSS rectangle can still be clipped by the
-native fixed viewport. SafeLayout and route/drawer safe spacing remain allocated
-once inside that frame; a CSS/native height difference is not an extra bottom
-inset and does not reduce the content frame at rest.
+native fixed viewport. SafeLayout allocates the main content bottom once; independent
+drawer action surfaces keep their own allocation. A CSS/native height difference
+is not an extra bottom inset and does not reduce the content frame at rest.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for
@@ -72,7 +72,7 @@ extra copy of the device inset. Unselected edges retain consumer styles.
 CSS env is the geometry authority; a host may project `--safe-layout-inset-*`
 at its viewport boundary. The container does not measure screens, guess cutouts,
 observe keyboard geometry, or own theme/scroll/motion state. Shell's stable Motion
-adapter uses the same DOM box. Browser hosts allocate the row's top edge regardless
+adapter uses the same DOM box. Browser hosts allocate the row's top and bottom edges regardless
 of sidebar docking/transient presentation; a zero device inset is not a disabled
 container. The fixed header consumes the same host top source. Electron keeps its
 native window control reservations. Bounded diagnostics report the top-allocation
@@ -83,7 +83,11 @@ hosts allocate the bottom safe edge; moving that inset back to the whole drawer
 would hard-clip the scrolling list above the physical bottom. The existing 16px
 action clearance is retained in the hosts' minimum reserve, not duplicated by
 an ancestor. Fixed header/hit-region offsets consume the same inset source.
-Composer keeps its existing route/keyboard bottom owner. Document geometry and
+The Shell row is the main content bottom owner. It consumes
+`--shell-content-safe-bottom` once through SafeLayout. Routes and their measured body-level Composer portals retain ordinary
+spacing only. The existing viewport keyboard signal makes the content device inset
+zero while the software keyboard occupies the bottom edge. Drawer action surfaces
+remain independent; full-screen modal surfaces allocate their own edges. Document geometry and
 physical host drawing acceptance are separate: this primitive cannot promise
 that an opaque system status strip becomes part of the document viewport.
 
@@ -91,9 +95,9 @@ Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
 adding the Home-indicator inset. The overlay also respects landscape cutouts.
 This padding leaves the timeline visible below the floating touch Composer.
-The new-thread draft route likewise adds its device inset to its existing route
-gap, and uses the original route gap above an open keyboard. Route-owned
-available Composer height subtracts that same inset once.
+The new-thread draft route uses the same Shell-protected content box and retains
+its existing route gap. Its available Composer height measures that reduced
+containing block; it never subtracts the device inset again.
 
 The explicit public Expo Web-container entry packages the same complete Web
 Workbench application/UI graph. Native owns safe area, lifecycle, back and

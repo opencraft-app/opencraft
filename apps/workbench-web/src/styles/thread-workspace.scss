@@ -38,13 +38,13 @@
   width: 100%;
   max-width: var(--thread-content-max-width, 48rem);
   padding: 0 calc(var(--spacing) * 4)
-    max(calc(var(--spacing) * 8), env(safe-area-inset-bottom));
+    calc(var(--spacing) * 8);
   box-sizing: border-box;
 }
 :root[data-ui-density="touch"] .thread-composer-overlay__padding {
-  // Safe-area space is unavailable to controls; preserve the floating gap
-  // above it rather than allowing it to consume that gap.
-  padding-bottom: calc(var(--spacing) * 8 + env(safe-area-inset-bottom, 0px));
+  // The Shell anchor already excludes the device safe area, including the
+  // body-level browser portal measured from that same anchor.
+  padding-bottom: calc(var(--spacing) * 8);
   padding-left: max(calc(var(--spacing) * 4), env(safe-area-inset-left, 0px));
   padding-right: max(calc(var(--spacing) * 4), env(safe-area-inset-right, 0px));
 }

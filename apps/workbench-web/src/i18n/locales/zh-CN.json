@@ -436,6 +436,7 @@
   "settings.chat.turnNotifications.unsupported": "当前环境不支持浏览器通知，请使用支持通知的浏览器并通过 HTTPS 访问。",
   "settings.chat.turnNotifications.denied": "浏览器已阻止通知。请在网站权限中允许通知，再返回这里。",
   "settings.chat.turnNotifications.description": "每轮完成、失败或停止时发送浏览器提醒，正在查看页面时也会提醒。需要保持网页打开。",
+  "settings.chat.turnNotifications.background": "此服务器的回复完成、失败或停止时提醒，关闭应用后仍可收到。其他服务器需要保持页面打开。",
   "settings.chat.turnNotifications.permissionRequired": "尚未获得通知权限，你可以稍后重新开启。",
   "settings.chat.turnNotifications.showError": "浏览器未能显示通知，请检查浏览器和系统的通知设置。",
   "notifications.turn.completed": "OpenCraft · 本轮已完成",
