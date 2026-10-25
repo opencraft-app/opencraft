@@ -157,8 +157,8 @@ export class SshConnectionsController {
     await this.refreshAfterMutation();
   }
   async toggle(row: SshConnectionView, enabled: boolean) {
-    const { displayName, hostname, port, username, workspaceBrowseRoots } = row;
-    await this.save(row, { displayName, hostname, port, username, workspaceBrowseRoots, enabled });
+    const { displayName, hostname, port, username, workspaceBrowseRoots, hideFromNewChat } = row;
+    await this.save(row, { displayName, hostname, port, username, workspaceBrowseRoots, enabled, ...(hideFromNewChat === undefined ? {} : { hideFromNewChat }) });
   }
   async reconnect(row: SshConnectionView) {
     try { await this.request(`connections/${row.serverId}/reconnect`, "POST", { revision: row.revision }); }

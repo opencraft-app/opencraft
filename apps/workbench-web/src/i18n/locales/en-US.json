@@ -908,6 +908,8 @@
   "imageEditor.gestureHint": "Use two fingers to zoom and move.",
   "im.channels.back": "IM channels",
   "im.route.customize": "Customize this route",
+  "sshConnections.hideFromNewChat": "Hide from new conversations",
+  "sshConnections.hideFromNewChatDescription": "Hide this connection when starting a new conversation. Existing conversations remain available.",
   "sshConnections.removeDescription": "Removing this connection does not delete remote files or stop remote services.",
   "developerMode.enabled": "Internal developer mode enabled",
   "developerMode.disabled": "Internal developer mode disabled",

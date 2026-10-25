@@ -14,6 +14,7 @@ export interface SshConnectionRecord {
   port: number;
   username: string;
   enabled: boolean;
+  hideFromNewChat?: boolean;
   workspaceBrowseRoots: string[];
   fingerprint: string;
 }
@@ -23,6 +24,7 @@ export interface SshConnectionInput {
   port: number;
   username: string;
   enabled: boolean;
+  hideFromNewChat?: boolean;
   workspaceBrowseRoots: string[];
   password?: string;
 }
@@ -35,15 +37,16 @@ export class SshManagementError extends Error {
 export function parseSshConnectionInput(value: unknown): SshConnectionInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new SshManagementError("invalid");
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).some(k => !["displayName", "hostname", "port", "username", "enabled", "workspaceBrowseRoots", "password"].includes(k))) throw new SshManagementError("invalid");
-  const { displayName, hostname, port, username, enabled, workspaceBrowseRoots, password } = row;
+  if (Object.keys(row).some(k => !["displayName", "hostname", "port", "username", "enabled", "workspaceBrowseRoots", "password", "hideFromNewChat"].includes(k))) throw new SshManagementError("invalid");
+  const { displayName, hostname, port, username, enabled, workspaceBrowseRoots, password, hideFromNewChat } = row;
   if (typeof displayName !== "string" || !displayName.trim() || displayName.length > 100 || /[\r\n\0]/u.test(displayName)
     || typeof hostname !== "string" || hostname.length > 253 || !/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/u.test(hostname)
     || typeof username !== "string" || !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63}$/u.test(username)
     || !Number.isInteger(port) || Number(port) < 1 || Number(port) > 65535 || typeof enabled !== "boolean"
     || !Array.isArray(workspaceBrowseRoots) || workspaceBrowseRoots.length > 16 || workspaceBrowseRoots.some(p => typeof p !== "string" || !p.startsWith("/") || p.length > 4096 || /[\r\n\0]/u.test(p))
+    || (hideFromNewChat !== undefined && typeof hideFromNewChat !== "boolean")
     || (password !== undefined && (typeof password !== "string" || !password || password.length > 4096 || /[\r\n\0]/u.test(password)))) throw new SshManagementError("invalid");
-  return { displayName: displayName.trim(), hostname, port: Number(port), username, enabled, workspaceBrowseRoots: [...workspaceBrowseRoots] as string[], ...(password === undefined ? {} : { password: password as string }) };
+  return { displayName: displayName.trim(), hostname, port: Number(port), username, enabled, workspaceBrowseRoots: [...workspaceBrowseRoots] as string[], ...(hideFromNewChat === undefined ? {} : { hideFromNewChat: hideFromNewChat as boolean }), ...(password === undefined ? {} : { password: password as string }) };
 }
 
 /** No-follow owner-only reads, including key and legacy credential references. */
@@ -148,6 +151,11 @@ export class SshConnectionStore {
       const host = input.port === 22 ? input.hostname : `[${input.hostname}]:${input.port}`;
       if (hostKey.split(/\s+/u)[0] !== host) throw new SshManagementError("trust");
       const { password, ...configuration } = input;
+      // Older clients may omit the new preference while editing another field.
+      if (configuration.hideFromNewChat === undefined && row) {
+        const previous = this.record(row);
+        if (previous.hideFromNewChat !== undefined) configuration.hideFromNewChat = previous.hideFromNewChat;
+      }
       if (!row && !password) throw new SshManagementError("invalid");
       const credential = password ? this.encrypt(id, password) : row!.credential as Uint8Array;
       this.db.prepare("INSERT INTO ssh_connections(server_id,revision,config_json,host_key,credential) VALUES(?,?,?,?,?) ON CONFLICT(server_id) DO UPDATE SET revision=excluded.revision,config_json=excluded.config_json,host_key=excluded.host_key,credential=excluded.credential")
@@ -181,7 +189,7 @@ export class SshConnectionStore {
       } },
     };
     validateSshConnection(connection);
-    return { descriptor: { serverId, displayName: config.displayName, workspaceBrowseRoots: config.workspaceBrowseRoots }, connection };
+    return { descriptor: { serverId, displayName: config.displayName, workspaceBrowseRoots: config.workspaceBrowseRoots, ...(config.hideFromNewChat === undefined ? {} : { hideFromNewChat: config.hideFromNewChat }) }, connection };
   }
   close() { this.db.close(); this.key.fill(0); }
   private record(row: Record<string, unknown>): SshConnectionRecord {

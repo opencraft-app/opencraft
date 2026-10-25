@@ -3,7 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
 import { GlobeIcon as Globe2, LogoutIcon as LogOut } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FormattedMessage } from "@opencraft/i18n/react";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { SettingsActions, SettingsButton, SettingsGroup, SettingsIconButton, SettingsListItem, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
 import type { SshConnectionEdit, SshConnectionView } from "@opencraft/app-host-protocol";
 import { SshConnectionsController } from "./controller";
@@ -14,7 +14,10 @@ const stateLabels: Record<SshConnectionView["state"], string> = {
 type Editor = { row: SshConnectionView | null; kind: "edit" | "delete" };
 
 function ConnectionEditor({ editor, controller, onClose, returnFocus }: { editor: Editor; controller: SshConnectionsController; onClose(): void; returnFocus(): HTMLElement | null }) {
+  const intl = useIntl();
   const row = editor.row;
+  const [hideFromNewChat, setHideFromNewChat] = useState(row?.hideFromNewChat === true);
+  const hideLabel = intl.formatMessage({ id: "sshConnections.hideFromNewChat", defaultMessage: "Hide from new conversations" });
   const [draft, setDraft] = useState({ displayName: row?.displayName ?? "", hostname: row?.hostname ?? "", port: String(row?.port ?? 22), username: row?.username ?? "root", root: row?.workspaceBrowseRoots[0] ?? "/", password: "" });
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [trust, setTrust] = useState<{ challengeId: string; fingerprint: string } | null>(null), [trusted, setTrusted] = useState(false);
@@ -31,7 +34,7 @@ function ConnectionEditor({ editor, controller, onClose, returnFocus }: { editor
     finally { if (alive.current) setBusy(false); }
   };
   const title = editor.kind === "delete" ? "删除连接" : row ? "连接设置" : "添加远程连接";
-  const input: SshConnectionEdit = { displayName: draft.displayName.trim() || draft.hostname.trim(), hostname: draft.hostname.trim(), port: Number(draft.port), username: draft.username.trim(), enabled: row?.enabled ?? true,
+  const input: SshConnectionEdit = { displayName: draft.displayName.trim() || draft.hostname.trim(), hostname: draft.hostname.trim(), port: Number(draft.port), username: draft.username.trim(), enabled: row?.enabled ?? true, hideFromNewChat,
     workspaceBrowseRoots: draft.root.trim() ? [draft.root.trim(), ...(row?.workspaceBrowseRoots.slice(1) ?? [])] : [], ...(draft.password ? { password: draft.password } : {}) };
   return <Dialog.Root open onOpenChange={open => { if (!open && !busy) onClose(); }}><Dialog.Portal>
     <Dialog.Overlay className="ssh-connections-dialog__overlay" />
@@ -50,6 +53,7 @@ function ConnectionEditor({ editor, controller, onClose, returnFocus }: { editor
           <SettingsRow label="用户名" htmlFor="ssh-user"><SettingsTextInput id="ssh-user" value={draft.username} required disabled={busy || !!row} autoComplete="off" onChange={event => edit("username", event.target.value)} /></SettingsRow>
           <SettingsRow label="密码" htmlFor="ssh-password" description={row ? "留空则保留原密码。" : undefined}><SettingsTextInput id="ssh-password" type="password" value={draft.password} required={!row} disabled={busy} autoComplete="new-password" onChange={event => edit("password", event.target.value)} /></SettingsRow>
           <SettingsRow label="工作目录" htmlFor="ssh-root"><SettingsTextInput id="ssh-root" value={draft.root} placeholder="/" disabled={busy} onChange={event => edit("root", event.target.value)} /></SettingsRow>
+          <SettingsRow label={hideLabel} description={<FormattedMessage id="sshConnections.hideFromNewChatDescription" defaultMessage="Hide this connection when starting a new conversation. Existing conversations remain available." />}><SettingsSwitch label={hideLabel} checked={hideFromNewChat} disabled={busy} onCheckedChange={setHideFromNewChat} /></SettingsRow>
         </SettingsGroup>
         {row ? <details><summary className="ui-native-disclosure">服务器身份</summary><code>{row.fingerprint}</code></details> : <SettingsGroup appearance="plain">
           <SettingsRow label="服务器身份" description="先核对指纹，确认是你信任的服务器。"><SettingsButton type="button" disabled={busy || !draft.hostname || !draft.port} onClick={() => { void run(async () => {

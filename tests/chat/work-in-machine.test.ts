@@ -7,7 +7,7 @@ import { indexedDB } from "fake-indexeddb";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { readDaemonMachineIdentity } from "../../apps/opencraft-daemon/src/machine-identity";
 import { MachineIdentityTransport } from "../../apps/opencraft-daemon/src/machine-transport";
-import { workInAgentHosts, chooseWorkInHost, groupWorkInMachines, workInMachineName, readHostMachineInfo, type HostConnectionProfile, type EnvironmentEntry } from "@opencraft/workbench-runtime";
+import { chooseNewConversationHost, isNewConversationHost, workInAgentHosts, chooseWorkInHost, groupWorkInMachines, workInMachineName, readHostMachineInfo, type HostConnectionProfile, type EnvironmentEntry } from "@opencraft/workbench-runtime";
 import { IndexedDbHostConnectionProfileStore } from "../../apps/workbench-web/src/runtime/indexeddb-host-profile-store";
 
 import { ServerManagedProfileStore } from "../../apps/workbench-web/src/runtime/server-managed-profile-store";
@@ -175,4 +175,26 @@ test("configured unknown-machine labels preserve connection names and never esta
   assert.equal(workInMachineName(machines[0]!, "web", labels), "Unknown machine · ssh:a");
   const known = groupWorkInMachines([profile("ssh:a")])[0]!;
   assert.equal(workInMachineName(known, "web", labels, names), machine.name);
+});
+
+
+test("hidden Hosts cannot be chosen for new conversations, but remain in the history/settings catalog", async () => {
+  const hidden = { ...profile("ssh:old", null), hostKind: "remote-ssh" as const, hideFromNewChat: true };
+  const local = profile("local");
+  const profiles = [hidden, local];
+  assert.equal(chooseNewConversationHost(profiles, hidden.hostId)?.hostId, local.hostId);
+  assert.equal(chooseNewConversationHost([hidden]), undefined, "never fall back to a hidden connection");
+  assert.equal(groupWorkInMachines(profiles).some(machine => machine.hosts.includes(hidden)), true);
+  assert.equal(groupWorkInMachines(profiles.filter(isNewConversationHost)).some(machine => machine.hosts.includes(hidden)), false);
+  assert.equal(chooseNewConversationHost([{ ...hidden, hideFromNewChat: false }])?.hostId, hidden.hostId);
+  const store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: `visibility-${crypto.randomUUID()}`, seed: [hidden] });
+  try { assert.equal(store.getSnapshot().profiles[0]!.hideFromNewChat, true); } finally { store.close(); }
+});
+
+
+test("new conversation fallback prefers the deployment over alphabetically leading remote recipes", () => {
+  const remote = { ...profile("ssh:old", null), displayName: "192.0.2.40", hostKind: "remote-ssh" as const };
+  const server = { ...profile("opencraft-server"), displayName: "Server", hostKind: "durable" as const };
+  assert.equal(chooseNewConversationHost([remote, server])?.hostId, server.hostId);
+  assert.equal(chooseNewConversationHost([remote, server], remote.hostId)?.hostId, remote.hostId, "explicit remembered visible selection still wins");
 });

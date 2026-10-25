@@ -63,6 +63,7 @@ import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
 import { SidebarLayoutStore } from "@opencraft/sidebar-layout";
 import {
+  chooseNewConversationHost,
   AgentRuntimeDirectory,
   asRouteScopeId,
   AUTHENTICATION_PROVIDER_CHANNEL,
@@ -606,7 +607,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...sshManagement!.getSnapshot().legacyServers.map(server => ({ ...server, enabled: true, revision: 1 })),
     ].map(server => ({
         hostId: server.serverId, displayName: server.displayName, providerId: SERVER_CONNECTIONS_ID, providerConfig: {}, providerConfigVersion: 1,
-        hostKind: "remote-ssh", enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
+        hostKind: "remote-ssh", hideFromNewChat: server.hideFromNewChat, enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
         transportEndpoint: null, executionLocation: server.displayName, workspaceBrowseRoots: server.workspaceBrowseRoots, revision: server.revision,
       })))
     : storedHostProfiles;
@@ -671,7 +672,35 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => imageFiber.dispose(),
   ];
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
-  if (profiles.length === 0) {
+  let draftCredentialScope = clientPersistenceScope.getSnapshot().namespace;
+  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`);
+  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+    requestedBootstrapLocation,
+    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
+  );
+  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
+    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
+  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
+    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
+    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
+    ? savedNewTarget : null;
+  const bootstrapLocation = restoredNewTarget
+    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
+    : normalizedBootstrapLocation;
+  const persistedHostId = readLocalPreference(currentProductStorageKey("opencraft.active-host-id"));
+  const requestedHostId = bootstrapLocation?.kind === "thread"
+    ? bootstrapLocation.key.hostId
+    : bootstrapLocation?.hostId;
+  const persistedHasThread = persistedHostId !== null && rememberedThreadId(
+    window.localStorage, persistedHostId, options.hostProfileMode,
+    fixedPresentation ? clientPersistenceScope.getSnapshot().threadMemoryScope : undefined,
+  ) !== null;
+  const initialHostId = requestedHostId !== undefined && profiles.some(host => host.hostId === requestedHostId)
+    ? requestedHostId
+    : profiles.some(host => host.hostId === persistedHostId && (host.hideFromNewChat !== true || persistedHasThread))
+      ? persistedHostId!
+      : chooseNewConversationHost(profiles)?.hostId;
+  if (initialHostId === undefined) {
     const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
@@ -726,7 +755,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  let draftCredentialScope = clientPersistenceScope.getSnapshot().namespace;
   const browserOutbox = createBrowserConversationOutbox({
     get storage() { return window.sessionStorage; },
     scope: () => {
@@ -745,32 +773,6 @@ export async function createWebWorkbenchApplicationSupervisor(
   const stopOutboxRegistry = platformAccounts.subscribe(bindOutboxAccount);
   bindOutboxAccount();
   startupRollback.push(() => { stopOutboxRegistry(); stopOutboxAccount?.(); });
-  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`);
-  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
-    requestedBootstrapLocation,
-    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
-  );
-  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
-    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
-  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
-    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
-    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
-    ? savedNewTarget : null;
-  const bootstrapLocation = restoredNewTarget
-    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
-    : normalizedBootstrapLocation;
-  const persistedHostId = readLocalPreference(currentProductStorageKey("opencraft.active-host-id"));
-  const requestedHostId = bootstrapLocation?.kind === "thread"
-    ? bootstrapLocation.key.hostId
-    : bootstrapLocation?.hostId;
-  const initialHostId = requestedHostId !== undefined
-    && profiles.some((host) => host.hostId === requestedHostId)
-    ? requestedHostId
-    : profiles.some((host) => host.hostId === persistedHostId)
-      ? persistedHostId!
-      : profiles.find((host) => host.hostId === "local")?.hostId
-        ?? profiles.find((host) => host.hostKind === "local" || host.hostKind === "durable")?.hostId
-        ?? profiles[0]!.hostId;
   const initialWorkspaceRoot = profiles.find((host) => host.hostId === initialHostId)
     ?.workspaceBrowseRoots[0] ?? null;
   let forgetUnavailableThread: ((hostId: string, threadId: string) => void) | undefined;
