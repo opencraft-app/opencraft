@@ -68,6 +68,14 @@ and ChatGPT metadata base URL point at loopback; the broker JWT is never sent to
 an external backend. No shared auth file is copied into native runtime state.
 Initialization waits for native auth before releasing logical clients.
 
+The native hosted MCP route `/api/codex/ps/mcp` maps to ChatGPT's
+`/backend-api/ps/mcp`, outside the Codex Responses prefix. It authenticates the
+loopback broker bearer before injecting an account credential. Tool calls use
+native `params._meta.threadId` for Host-scoped affinity; initialization and
+catalog requests do not reserve a conversation or advance the cursor. Hosted
+tool failures retain their upstream status and never replay on another account
+or change text quota. This is not an unrestricted ChatGPT API proxy.
+
 The loopback bridge preserves request bytes, including native compressed Responses
 bodies, without a UTF-8 round trip. The proxy also allows POST `/v1/images/generations` and `/v1/images/edits`.
 Native image turn IDs resolve through a bounded, Host-scoped map populated by
@@ -100,9 +108,14 @@ An eligible bound Thread stays pinned. A short temporary hold returns bounded
 `Retry-After` for that Thread while new Threads may use another account. The
 proxy advances within one request only after an explicit pre-success quota or
 authorization rejection; successful responses, transport failures and
-indeterminate streaming outcomes are never replayed. The provider cursor moves
-to the next eligible account after the current account and wraps in configured
-priority order; recovery of an earlier account does not pull new Threads back.
+indeterminate streaming outcomes are never replayed. HTTP 429 with exhausted
+quota headers or JSON `error.type` equal to `usage_limit_reached` is an explicit
+quota rejection; an ordinary temporary rate limit does not trigger replay.
+A body-only rejection excludes that account for the current request without
+inventing a quota window or reset time; subscription refresh owns durable usage.
+The provider cursor moves to the next eligible account after the current account
+and wraps in configured priority order; recovery of an earlier account does not
+pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.

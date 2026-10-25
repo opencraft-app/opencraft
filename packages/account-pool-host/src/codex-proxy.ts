@@ -14,6 +14,8 @@ const FORWARDED_REQUEST_HEADERS = new Set([
   "accept",
   "content-encoding",
   "content-type",
+  "mcp-protocol-version",
+  "mcp-session-id",
   "openai-beta",
   "originator",
   "session-id",
@@ -22,6 +24,7 @@ const FORWARDED_REQUEST_HEADERS = new Set([
   "user-agent",
   "x-codex-turn-metadata",
   "x-openai-internal-codex-responses-lite",
+  "x-openai-product-sku",
 ]);
 
 function upstreamUrl(base: string, requestUrl: string): string {
@@ -30,7 +33,9 @@ function upstreamUrl(base: string, requestUrl: string): string {
   if (root.username || root.password || root.search || root.hash) throw new TypeError("Invalid Codex upstream URL");
   const request = new URL(requestUrl);
   // Codex's local OpenAI-compatible provider uses /v1; ChatGPT Codex does not.
-  root.pathname = `${root.pathname.replace(/\/+$/u, "")}${request.pathname.replace(/^\/v1(?=\/)/u, "")}`;
+  root.pathname = request.pathname === "/api/codex/ps/mcp"
+    ? `${root.pathname.replace(/\/codex\/?$/u, "")}/ps/mcp`
+    : `${root.pathname.replace(/\/+$/u, "")}${request.pathname.replace(/^\/v1(?=\/)/u, "")}`;
   root.search = request.search;
   return root.toString();
 }
@@ -92,7 +97,7 @@ function responseHeaders(upstream: Headers): Headers {
   const headers = new Headers();
   for (const [name, value] of upstream) {
     const lower = name.toLowerCase();
-    if (["content-type", "content-encoding", "cache-control", "retry-after"].includes(lower) || lower.startsWith("x-codex-")) {
+    if (["content-type", "content-encoding", "cache-control", "retry-after", "mcp-session-id", "mcp-protocol-version"].includes(lower) || lower.startsWith("x-codex-")) {
       headers.set(lower, value);
     }
   }
@@ -141,14 +146,20 @@ function quotaFromHeaders(headers: Headers, now: number, status: number): Accoun
   };
 }
 
-function isQuotaRejection(response: Response): boolean {
+async function isQuotaRejection(response: Response): Promise<boolean> {
   if (response.status !== 429) return false;
-  return ["primary", "secondary"].some(slot => {
+  if (["primary", "secondary"].some(slot => {
     const prefix = `x-codex-${slot}`;
     const used = Number(response.headers.get(`${prefix}-used-percent`));
     return (Number.isFinite(used) && used >= 100)
       || response.headers.get(`${prefix}-over-limit`)?.toLowerCase() === "true";
-  });
+  })) return true;
+  // Native Codex also recognizes an explicit usage rejection without quota
+  // headers. Ordinary burst rate limits must retain the original response.
+  try {
+    const payload = object(await response.clone().json());
+    return object(payload?.error)?.type === "usage_limit_reached";
+  } catch { return false; }
 }
 
 function transportError(error: unknown): { code: string | null; name: string | null; message: string | null } {
@@ -223,14 +234,21 @@ export class CodexAccountPoolProxy {
   async handle(request: Request): Promise<Response> {
     const route = new URL(request.url).pathname;
     const imageRequest = request.method === "POST" && ["/v1/images/generations", "/v1/images/edits"].includes(route);
-    if (!(imageRequest || (route === "/v1/responses" && request.method === "POST") || (route === "/v1/models" && request.method === "GET"))) {
+    const mcpRequest = route === "/api/codex/ps/mcp" && ["GET", "POST", "DELETE"].includes(request.method);
+    if (!(mcpRequest || imageRequest || (route === "/v1/responses" && request.method === "POST") || (route === "/v1/models" && request.method === "GET"))) {
       return Response.json({ error: { message: "Account Pool route not found" } }, { status: 404 });
     }
-    const hostId = this.store.authenticateHostToken(request.headers.get(HOST_TOKEN_HEADER) ?? "");
+    const hostId = mcpRequest
+      ? this.store.authenticateHostToken(request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "", new URL(request.url).origin)
+      : this.store.authenticateHostToken(request.headers.get(HOST_TOKEN_HEADER) ?? "");
     if (hostId === null) return new Response(null, { status: 401 });
     const body = request.method === "GET" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
     if (body.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
     let identity = affinity(request, body);
+    if (mcpRequest) {
+      const metadata = object(object(parseJson(body)?.params)?._meta);
+      identity = { affinityId: text(metadata?.threadId) ?? "catalog", parentAffinityId: null };
+    }
     // Images carry the native turn ID instead of the Responses thread metadata.
     // Never admit an image as a new, unrelated pooled conversation.
     if (imageRequest) {
@@ -258,7 +276,8 @@ export class CodexAccountPoolProxy {
     while (attempted.size < 64) {
       let selection;
       try {
-        selection = this.store.select({ provider: "codex", hostId, ...identity, excludeAccountIds: attempted, purpose: request.method === "GET" ? "metadata" : "conversation" });
+        selection = this.store.select({ provider: "codex", hostId, ...identity, excludeAccountIds: attempted,
+          purpose: request.method === "GET" || (mcpRequest && identity.affinityId === "catalog") ? "metadata" : "conversation" });
       } catch {
         return lastFailure === null
           ? Response.json({ error: { message: "No eligible Codex account" } }, { status: 429 })
@@ -288,7 +307,7 @@ export class CodexAccountPoolProxy {
         upstream = await this.fetch(upstreamUrl(this.upstreamBaseUrl, request.url), {
           method: request.method,
           headers: requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId),
-          ...(request.method === "GET" ? {} : { body }),
+          ...(request.method === "GET" || request.method === "DELETE" ? {} : { body }),
           signal: request.signal,
         });
       } catch (error) {
@@ -312,16 +331,16 @@ export class CodexAccountPoolProxy {
           status: upstream.status,
         }));
       }
-      // Image quota is independent of Codex text quota. Do not rotate accounts or
-      // replay image mutations, and retain native image-specific failure details.
-      if (imageRequest) {
+      // Image and hosted-tool failures do not describe text quota. Never replay
+      // these mutations or mark an inference account unhealthy on their behalf.
+      if (imageRequest || mcpRequest) {
         if (upstream.ok) selection.accept();
         return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText,
           headers: responseHeaders(upstream.headers) });
       }
       const quota = quotaFromHeaders(upstream.headers, this.now(), upstream.status);
       if (quota !== null) this.store.observeQuota(selection.account.id, quota);
-      if (isQuotaRejection(upstream)) {
+      if (await isQuotaRejection(upstream)) {
         lastFailure = { status: 429, message: "Codex account quota exhausted" };
         attempted.add(selection.account.id);
         await upstream.body?.cancel().catch(() => undefined);
