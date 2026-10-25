@@ -129,11 +129,11 @@ try {
           const header = root.querySelector<HTMLElement>('.app-shell-header')!;
           return {mobile:root.classList.contains('has-mobile-sidebar-gestures'), edges:row.dataset.safeLayout,
             rootTop:root.getBoundingClientRect().top,rowTop:row.getBoundingClientRect().top,
-            padding:getComputedStyle(row).paddingTop,headerTop:header.getBoundingClientRect().top};
+            padding:getComputedStyle(row).paddingTop,bottomPadding:getComputedStyle(row).paddingBottom,headerTop:header.getBoundingClientRect().top};
         });
-        assert.equal(geometry.mobile,false); assert.equal(geometry.edges,'top');
+        assert.equal(geometry.mobile,false); assert.equal(geometry.edges,'top bottom');
         assert.equal(geometry.rowTop,geometry.rootTop); assert.equal(geometry.padding,'47px');
-        assert.equal(geometry.headerTop,47);
+        assert.equal(geometry.headerTop,47);assert.equal(geometry.bottomPadding,'34px','one Shell content bottom inset independent of sidebar');
         evidence.push({theme,reducedMotion,width,geometry});
       }
       await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-top','0px'));
@@ -607,7 +607,7 @@ try {
       });
       assert.equal(paintGeometry.top, paintGeometry.rootTop, 'page paint starts at the viewport edge');
       assert.equal(paintGeometry.height, paintGeometry.rootHeight, 'page paint covers the complete viewport');
-      assert.equal(await page.locator('.app-shell-row').getAttribute('data-safe-layout'), 'top');
+      assert.equal(await page.locator('.app-shell-row').getAttribute('data-safe-layout'), 'top bottom');
       assert.equal(paintGeometry.contentInset, '47px', 'safe area insets content, not the page paint');
       assert.ok(paintGeometry.headerTop >= paintGeometry.rootTop + 47, 'controls remain below the safe area');
       const edgePixels = async () => {

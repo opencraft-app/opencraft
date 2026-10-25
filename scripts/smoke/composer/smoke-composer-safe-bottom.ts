@@ -11,7 +11,7 @@ import {OpenCraftComposer} from '@opencraft/composer-editor';
 import {useTimelineViewportHost} from '/apps/workbench-web/src/timeline-viewport.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
-function App(){useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});return <div className='app-shell-root has-browser-safe-layout'><SafeLayout edges={['top']} className='app-shell-row' style={{display:'block'}}><div style={{height:56}}>Header</div><div className='thread-scroll-layout' style={{height:'calc(100% - 56px)'}}><div className='thread-scroll'><div className='thread-scroll-footer'><div className='thread-scroll-footer__content thread-layout-width'><OpenCraftComposer controller={controller} placeholder='Reconnecting…' onSubmit={()=>false} onCancel={()=>{}}/></div></div><div style={{height:1600,flexShrink:0}}>Conversation</div></div></div></SafeLayout></div>};createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
+function App(){useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});return <div className='app-shell-root has-browser-safe-layout'><SafeLayout edges={['top','bottom']} className='app-shell-row' style={{display:'block'}}><div style={{height:56}}>Header</div><div className='thread-scroll-layout' style={{height:'calc(100% - 56px)'}}><div className='thread-scroll'><div className='thread-scroll-footer'><div className='thread-scroll-footer__content thread-layout-width'><OpenCraftComposer controller={controller} placeholder='Reconnecting…' onSubmit={()=>false} onCancel={()=>{}}/></div></div><div style={{height:1600,flexShrink:0}}>Conversation</div></div></div></SafeLayout></div>};createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const server = await createServer({ root: process.cwd(), configFile: false, logLevel: 'error', resolve: { dedupe: ['react', 'react-dom'] }, esbuild: { jsx: 'automatic' }, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'safe-bottom-fixture', enforce: 'pre', transform(code, id) { if (id.endsWith('.scss'))
                 return code.replace(/env\(safe-area-inset-bottom(?:,[^)]*)?\)/g, 'var(--test-safe-bottom, 0px)'); }, resolveId: id => id === '/safe-bottom.tsx' ? id : null, load: id => id === '/safe-bottom.tsx' ? source : null, configureServer(v) { v.middlewares.use((req, res, next) => { if (req.url !== '/')
                 return next(); res.setHeader('content-type', 'text/html'); res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="root"></div><script type="module" src="/safe-bottom.tsx"></script>'); }); } }] });
@@ -34,10 +34,10 @@ try {
                 await page.screenshot({ path: `${output}/${width}-${theme}-${inset}.png` });
                 results.push({ width, theme, inset, ...geometry });
                 await writeFile(`${output}/result.json`, JSON.stringify(results, null, 2));
-                assert.equal(geometry.contentBottom, 812, 'content capacity is independent of canvas height');
+                assert.equal(geometry.contentBottom, 812 - inset, 'content capacity is independent of canvas height');
                 assert.equal(geometry.paintBottom, 874, 'paint still fills the document canvas');
                 assert.equal(geometry.keyboard, 'false');
-                assert.equal(geometry.footerPadding, `${16 + inset}px`);
+                assert.equal(geometry.footerPadding, "16px", "route does not claim the Shell-owned inset again");
                 assert.ok(geometry.composerBottom <= 812 - inset, `Composer enters native safe region: ${JSON.stringify(results.at(-1))}`);
                 assert.equal(geometry.composerBottom, 812 - inset - 16, 'preserve original gutter for 0px and 34px');
                 const oldFrame = await page.addStyleTag({ content: '.app-shell-root > .app-shell-row { padding-bottom: 0 !important; }' });
