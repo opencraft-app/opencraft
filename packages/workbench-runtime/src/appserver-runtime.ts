@@ -1336,16 +1336,25 @@ export function createAppServerWorkbenchRuntime(
             binding.replica.reportPreview(binding.threadId, projectThreadViewForReplica(view));
           }
         });
+        const extensions = requireClient().initializeResult?.capabilities?.extensions;
+        const legacyWindow = executionEngineExtension(extensions, binding.threadId, "opencraft/message-window-history")?.version === 1
+          && executionEngineExtension(extensions, binding.threadId, "opencraft/read-history")?.version !== 1;
         try {
           if (ephemeralThreadIds.has(binding.threadId)) {
             const view = currentSession.views.get(binding.threadId);
             if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
+          } else if (legacyWindow) {
+            // Message-window providers bootstrap their REST preview through
+            // Resume until they explicitly advertise a read-only history path.
+            await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected,
+              unresolvedTurnIds: [...binding.acceptedTurnIds], ...(force ? { historyCheckpoint } : {}) });
           } else {
             await currentSession.resume.read(binding.threadId, { historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
+          if (legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
         } finally { stopPreview(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,

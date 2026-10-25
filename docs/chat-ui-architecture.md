@@ -205,3 +205,10 @@ cut before releasing the buffer; the existing request timeout bounds continuous
 churn. It never appends an ambiguous delta to a snapshot that may include it.
 Oversized full windows and older pages fall back to headers plus adaptive Item
 pages, retaining their native cursor and the lossless full-body result.
+
+Message-window providers without `opencraft/read-history` v1 retain their
+existing Resume bootstrap, early REST preview and history retry semantics.
+Metadata-only `thread/read` does not imply that this provider can bootstrap a
+window without Resume. Explicit read-history support opts that provider into
+read-only opening; Codex paging remains read-only without requiring this legacy
+message-window handshake.
