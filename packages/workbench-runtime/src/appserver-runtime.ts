@@ -460,6 +460,7 @@ interface ConversationBinding {
   visibleCount: number;
   touchedAt: number;
   hydrationOperation: Promise<void> | null;
+  cancelHydration: (() => void) | null;
   hydrationForReconnect: boolean;
   hydrationConnectionRevision: number;
   capabilityRegistrationOperation: Promise<void> | null;
@@ -735,7 +736,7 @@ export function createAppServerWorkbenchRuntime(
       connectionRevision += 1;
       connectionObservation = null;
       // Clear all authority before recovery observers can reenter the Runtime.
-      for (const binding of bindings.values()) binding.replica.disconnect();
+      for (const binding of bindings.values()) { binding.cancelHydration?.(); binding.replica.disconnect(); }
       recovery.invalidate();
     },
     changed() {
@@ -789,6 +790,7 @@ export function createAppServerWorkbenchRuntime(
 
   const disposeBinding = (binding: ConversationBinding) => {
     recovery.remove(binding);
+    binding.cancelHydration?.();
     if (binding.disposed) return;
     binding.phase = "disposing";
     binding.disposed = true;
@@ -1122,6 +1124,7 @@ export function createAppServerWorkbenchRuntime(
         visibleCount: 0,
         touchedAt: ++logicalClock,
         hydrationOperation: null,
+        cancelHydration: null,
         hydrationForReconnect: false,
         hydrationConnectionRevision: connectionRevision,
         capabilityRegistrationOperation: null,
@@ -1267,6 +1270,7 @@ export function createAppServerWorkbenchRuntime(
     const binding = bindings.get(threadId);
     if (binding) {
       recovery.remove(binding);
+      binding.cancelHydration?.();
       binding.phase = "error";
       binding.replica.disconnect();
       binding.replica.reportSyncFailure(failure);
@@ -1299,7 +1303,9 @@ export function createAppServerWorkbenchRuntime(
     force: boolean,
     retryRejected = false,
     checkpointCapture?: ReturnType<typeof captureHistoryCheckpoint>,
+    signal?: AbortSignal,
   ): Promise<void> => {
+    if (signal?.aborted) return Promise.reject(new AppServerClientError("ABORTED", "Thread recovery was superseded"));
     if (binding.disposed)
       return Promise.reject(
         new Error(`Thread ${binding.threadId} is disposed`),
@@ -1312,17 +1318,49 @@ export function createAppServerWorkbenchRuntime(
     if (binding.hydrationOperation !== null) {
       if (binding.hydrationConnectionRevision === connectionRevision && (!force || binding.hydrationForReconnect))
         return binding.hydrationOperation;
-      return binding.hydrationOperation
-        .catch(() => undefined)
-        .then(() => hydrateBinding(binding, true, retryRejected));
+      binding.cancelHydration?.();
     }
     binding.hydrationForReconnect = force;
     const revision = connectionRevision;
     const availabilityRevision = availabilityRevisions.get(binding.threadId) ?? 0;
     binding.hydrationConnectionRevision = revision;
-    const current = () => !disposed && !binding.disposed && revision === connectionRevision
+    let active = true;
+    const controller = new AbortController();
+    let stopPreview: (() => void) | undefined;
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    const result = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    const current = () => active && !disposed && !binding.disposed && revision === connectionRevision
+      && binding.hydrationOperation === operation
       && availabilityRevision === (availabilityRevisions.get(binding.threadId) ?? 0);
-    const operation = Promise.resolve()
+    const cancel = () => {
+      if (!active) return;
+      active = false;
+      if (binding.hydrationOperation === operation) {
+        binding.hydrationOperation = null;
+        binding.hydrationForReconnect = false;
+        binding.cancelHydration = null;
+      }
+      signal?.removeEventListener("abort", cancel);
+      reject(new AppServerClientError("ABORTED", "Thread recovery was superseded"));
+      stopPreview?.();
+      binding.replica.disconnect();
+      controller.abort();
+    };
+    const operation = result.finally(() => {
+      active = false;
+      signal?.removeEventListener("abort", cancel);
+      if (binding.hydrationOperation === operation) {
+        binding.hydrationOperation = null;
+        binding.hydrationForReconnect = false;
+        binding.cancelHydration = null;
+      }
+      if (!binding.disposed && !disposed) { pruneInactiveBindings(); publish(); }
+    });
+    binding.hydrationOperation = operation;
+    binding.cancelHydration = cancel;
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
+    void Promise.resolve()
       .then(async () => {
         if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
         const currentSession = requireSession();
@@ -1337,9 +1375,9 @@ export function createAppServerWorkbenchRuntime(
         publish();
         if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
         if (force) binding.replica.disconnect();
-        const stopPreview = currentSession.views.subscribeThread(binding.threadId, () => {
+        stopPreview = currentSession.views.subscribeThread(binding.threadId, () => {
           const view = currentSession.views.get(binding.threadId);
-          if (!binding.disposed && !disposed && view?.resumeState === "resuming" && view.historySource === "message-window") {
+          if (current() && view?.resumeState === "resuming" && view.historySource === "message-window") {
             binding.replica.reportPreview(binding.threadId, projectThreadViewForReplica(view));
           }
         });
@@ -1355,14 +1393,14 @@ export function createAppServerWorkbenchRuntime(
           } else if (legacyWindow) {
             // Message-window providers bootstrap their REST preview through
             // Resume until they explicitly advertise a read-only history path.
-            await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected,
+            await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected, signal: controller.signal,
               unresolvedTurnIds: [...binding.acceptedTurnIds], ...(force ? { historyCheckpoint } : {}) });
           } else {
-            await currentSession.resume.read(binding.threadId, { historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
+            await currentSession.resume.read(binding.threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           if (legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
-        } finally { stopPreview(); }
+        } finally { stopPreview?.(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
           hostId,
@@ -1391,17 +1429,7 @@ export function createAppServerWorkbenchRuntime(
         }
         throw cause;
       })
-      .finally(() => {
-        if (binding.hydrationOperation === operation) {
-          binding.hydrationOperation = null;
-          binding.hydrationForReconnect = false;
-        }
-        if (!binding.disposed && !disposed) {
-          pruneInactiveBindings();
-          publish();
-        }
-      });
-    binding.hydrationOperation = operation;
+      .then(resolve, reject);
     return operation;
   };
 
@@ -1458,10 +1486,10 @@ export function createAppServerWorkbenchRuntime(
     recovery.begin("resources");
     for (const binding of [...bindings.values()].sort((a, b) => b.visibleCount - a.visibleCount || b.touchedAt - a.touchedAt)) {
       void recovery.recover({ key: binding, demand: () => current() ? recoveryDemand(binding) : "cache",
-        run: async () => {
+        run: async signal => {
           if (!current()) return;
           requireSession().resume.markNeedsResume(binding.threadId);
-          await hydrateBinding(binding, true, true);
+          await hydrateBinding(binding, true, true, undefined, signal);
         },
         retryable: cause => current() && retryableHistoryFailure(cause),
       }).catch(() => undefined);
@@ -1609,7 +1637,7 @@ export function createAppServerWorkbenchRuntime(
           for (const binding of bindings.values()) {
             if (binding.visibleCount === 0 || binding.runtime.getSnapshot().authoritative) continue;
             void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: () => hydrateBinding(binding, true, true), retryable: retryableHistoryFailure,
+              run: signal => hydrateBinding(binding, true, true, undefined, signal), retryable: retryableHistoryFailure,
             }, true).catch(() => undefined);
           }
         }
@@ -2176,7 +2204,7 @@ export function createAppServerWorkbenchRuntime(
         // adapter must publish no persisted Timeline before Resume. The single
         // authoritative promotion happens after Resume + history settle.
         if (client?.status.state === "open") void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-          run: () => hydrateBinding(binding, false, true), retryable: retryableHistoryFailure,
+          run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
         }).catch(() => undefined);
       }
       let released = false;
@@ -2190,7 +2218,7 @@ export function createAppServerWorkbenchRuntime(
             // Promote this binding's pending recovery without revalidating peer
             // Threads or restoring Host resources on ordinary navigation.
             void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: () => hydrateBinding(binding, false, true), retryable: retryableHistoryFailure,
+              run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
             }).catch(() => undefined);
           }
         },
@@ -2201,7 +2229,7 @@ export function createAppServerWorkbenchRuntime(
           binding.replica.reportSyncStarted();
           recovery.begin("revalidate");
           return recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-            run: () => recovery.span("history-authoritative", () => hydrateBinding(binding, true, true, checkpoint)),
+            run: signal => recovery.span("history-authoritative", () => hydrateBinding(binding, true, true, checkpoint, signal)),
             retryable: retryableHistoryFailure, propagateFailure: true,
           }, true);
         },
@@ -2310,6 +2338,7 @@ export function createAppServerWorkbenchRuntime(
           released = true;
           if (visible) binding.visibleCount = Math.max(0, binding.visibleCount - 1);
           binding.retainCount = Math.max(0, binding.retainCount - 1);
+          if (recoveryDemand(binding) === "cache") { recovery.remove(binding); binding.cancelHydration?.(); }
           touchBinding(binding);
           pruneInactiveBindings();
           publish();

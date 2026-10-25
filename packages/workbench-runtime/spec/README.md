@@ -144,8 +144,8 @@ client is not end-to-end exactly-once execution or safe retry of an uncertain wr
 shortening of a deadline, and an adversarial adapter delivering callbacks after cancellation.
 Only due callbacks can run. The ordinary verifier also runs its positive
 safety/liveness specification and three exact negative controls: stale timer,
-stale request and missing fairness. The total suite has 26 configurations,
-including the history checks below.
+stale request and missing fairness. The total suite has 33 configurations,
+including the history and hydration checks below.
 This small model is independent of `Recovery.tla` and is not a composition or
 implementation refinement proof. The executable reduced regression holds an ACK,
 starts context preparation, freezes past the original 30ms deadline and delivers
@@ -197,8 +197,42 @@ server cancellation of a read.
 | --- | --- | --- |
 | Host admission and initialization | Recovery model, real Web/AppHost regressions, Host/client/Deferred chaos | Full seeded chaos through the actual shared-socket adapter |
 | RPC deadline replacement and uncertain writes | RequestTimers model, real client and synthetic ACK-loss oracle | Server execution deduplication / end-to-end exactly-once are outside this proof |
-| History scheduling and reentry | HistoryReentry model, actual owner chaos, real Runtime subscriber regression | Underlying read cancellation and pending hydration handoff |
-| Thread baseline authority | Independent Recovery baseline abstraction and Runtime/Replica regressions | Seeded chaos through complete baseline/notification/projection composition |
+| History scheduling and reentry | HistoryReentry model, owner chaos, Runtime regressions; revocable read/resume handoff below | Prompt cancellation of independent older-page/refresh operations |
+| Thread baseline authority | Recovery/HydrationHandoff abstractions; seeded actual Workbench/Session/Replica baseline composition | Randomized notification/projection interleavings and provider-specific live data |
 | Browser suspension | Installed full Web freeze/restart/draft smoke | Physical iPhone lifecycle and network behavior |
 
 An accepted implementation increment does not close these broader audit items.
+
+## Binding and Session hydration handoff
+
+`HydrationHandoff.tla` checks two Threads and two logical revisions sharing a
+client generation. Binding and Session gates are independent; a healthy current
+request must progress without assuming an old reply ever arrives. Five exact
+mutants retain either gate, accept a stale commit, clear successor slots or defer
+local caller settlement. Removing current-work fairness is a sixth control.
+There is no fairness requirement for old replies. The positive model has 169
+distinct states. This is a finite independent ownership model, not a full
+composition/refinement proof of the other specifications or TypeScript.
+
+The new suite runs actual Workbench/Binding/Session/RPC/Replica composition:
+
+```sh
+npm run test:recovery-chaos -- --suite hydration --seed 20261026 --cases 1000 --steps 100 --output /tmp/hydration-chaos
+npm run test:recovery-chaos -- --suite hydration --mutant sticky-read --seed 42 --output /tmp/hydration-mutant
+npm run test:recovery-chaos -- --replay /tmp/hydration-mutant/failure-minimal.json --output /tmp/hydration-replay
+```
+
+Generator version 1 samples two Threads, acquisition/release, explicit retry,
+logical reconnect and controlled replies. Its healthy suffix responds only to
+new requests, asserts current baseline authority before releasing any held old
+reply, then checks that late replies preserve it. The physical client generation,
+initialization count and transport remain stable. Default reads perform no
+execution writes; a separate regression covers legacy message-window Resume.
+`sticky-read` deliberately removes initiating-signal retirement and memoizes an
+old Session read; it must fail `HYDRATION_HANDOFF`. Replay without that mutant
+checks the reduced input against the normal implementation. The suite records
+source hashes, effective new-before-old and retired-reply counts. It does not
+randomize all notification/projection actions or replace the actual shared-socket
+adapter. Read/resume regressions also cover ignored cancellation, strategy late
+success/failure, buffer isolation, abort reentry, joining-wait cancellation,
+preflight cancellation and retirement of older/background history contexts.
