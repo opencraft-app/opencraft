@@ -138,3 +138,20 @@ test("a newer release marks only the current session identity and reloads once",
   assert.equal(retry.reloads(), 0);
   assert.equal(retry.field("[data-recovery-title]").textContent, "界面资源未能加载");
 });
+
+
+test("identity migration timeout stays in storage recovery even when a new release exists", async () => {
+  const f = fixture({ recoverySupported: true, latestBuildId: "next-build" });
+  await vm.runInContext(`__opencraftRecoverRelease(Object.assign(new Error('Database identity migration timeout'), {
+    name: 'IndexedDbIdentityError', reason: 'timeout', stage: 'opening'
+  }))`, f.context);
+  assert.equal(f.field("[data-recovery-title]").textContent, "暂时无法读取本地配置");
+  assert.match(f.field("[data-recovery-summary]").textContent, /完全退出浏览器/);
+  assert.equal(f.field("[data-release-error]").hidden, true);
+  assert.equal(f.reloads(), 0);
+  assert.deepEqual(f.navigations, []);
+  assert.deepEqual(f.reports.map(report => report.url), ["/__opencraft_runtime_error"]);
+  f.field("button").onclick();
+  assert.equal(f.reloads(), 1);
+  assert.deepEqual(f.navigations, []);
+});

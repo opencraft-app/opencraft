@@ -1,3 +1,5 @@
+import { IndexedDbIdentityError } from "@opencraft/indexeddb-storage";
+
 /** Content-free diagnostics; never include saved profiles, endpoints or credentials. */
 export interface BrowserStorageDiagnostics {
   readonly storage: "host-profiles";
@@ -20,4 +22,9 @@ export class BrowserStorageError extends Error {
     this.name = "BrowserStorageError";
     this.storageDiagnostics = options?.storageDiagnostics;
   }
+}
+
+/** A migration may fail before an adapter can wrap it with owner diagnostics. */
+export function isBrowserStorageFailure(error: unknown): error is BrowserStorageError | IndexedDbIdentityError {
+  return error instanceof BrowserStorageError || error instanceof IndexedDbIdentityError;
 }

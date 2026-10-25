@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
+import { IndexedDbSidebarLayoutStorage } from "../../apps/workbench-web/src/runtime/indexeddb-sidebar-layout-storage";
+import { isBrowserStorageFailure } from "../../apps/workbench-web/src/runtime/browser-storage-error";
 import { IDBFactory } from "fake-indexeddb";
 import { IndexedDbIdentityError, migrateIndexedDbIdentity } from "@opencraft/indexeddb-storage";
 
@@ -53,7 +55,7 @@ test("missing sources are never created and existing current data remains author
 test("an old window blocking handoff fails before destination creation; late upgrade is cancelled and retry preserves data", async () => {
   const factory = new IDBFactory(); await seed(factory, "former-owned");
   const old = await result(factory.open("former-owned", 1));
-  await assert.rejects(migrateIndexedDbIdentity(migration(factory)), error => error instanceof IndexedDbIdentityError && error.reason === "blocked");
+  await assert.rejects(migrateIndexedDbIdentity({ ...migration(factory), timeoutMs: 25 }), error => error instanceof IndexedDbIdentityError && error.reason === "blocked");
   assert.equal((await factory.databases()).some(db => db.name === "opencraft-owned"), false);
   old.close(); await setImmediate(); await setImmediate();
   const unchanged = await result(factory.open("former-owned", 1)); unchanged.close();
@@ -82,4 +84,52 @@ test("concurrent migration callers produce one destination without duplicate rec
   const current = await result(factory.open("opencraft-owned"));
   try { assert.equal(await result(current.transaction("rows").objectStore("rows").count()), 1); }
   finally { current.close(); }
+});
+
+
+test("a blocker released before the deadline allows the original migration to finish", async () => {
+  const factory = new IDBFactory(); await seed(factory, "former-owned");
+  const old = await result(factory.open("former-owned", 1));
+  old.onversionchange = () => { setTimeout(() => old.close(), 10); };
+  try {
+    await migrateIndexedDbIdentity({ ...migration(factory), timeoutMs: 1_000 });
+    const current = await result(factory.open("opencraft-owned"));
+    try { assert.equal((await result(current.transaction("rows").objectStore("rows").get("one"))).value, "remembered"); }
+    finally { current.close(); }
+  } finally { old.close(); }
+});
+
+test("an expired probe closes a late database handle without retaining a lock", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const request = new EventTarget() as IDBOpenDBRequest;
+  let closes = 0;
+  Object.defineProperty(request, "result", { value: { close() { ++closes; } } });
+  const factory = { open: () => request } as unknown as IDBFactory;
+  const opening = migrateIndexedDbIdentity(migration(factory));
+  const rejected = assert.rejects(opening, error => error instanceof IndexedDbIdentityError && error.reason === "timeout");
+  context.mock.timers.tick(10_000);
+  await rejected;
+  request.dispatchEvent(new Event("success"));
+  assert.equal(closes, 1);
+});
+
+
+test("an active Sidebar releases its handle so a newer page can migrate without losing rows", async () => {
+  const factory = new IDBFactory();
+  const sidebar = await IndexedDbSidebarLayoutStorage.open({ factory, databaseName: "former-sidebar" });
+  const document = { schemaVersion: 2 as const, pinnedEntityKeys: ["thread/remembered"], ownership: "user" as const };
+  await sidebar.save("fixture", document);
+  try {
+    await migrateIndexedDbIdentity({ factory, name: "current-sidebar", formerName: "former-sidebar", formerWriterVersion: 1, timeoutMs: 100 });
+    await assert.rejects(sidebar.load("fixture"), /closed/);
+    const reopened = await IndexedDbSidebarLayoutStorage.open({ factory, databaseName: "current-sidebar" });
+    try { assert.deepEqual(await reopened.load("fixture"), document); }
+    finally { reopened.close(); }
+  } finally { sidebar.close(); }
+});
+
+test("React storage recovery recognizes raw identity migration failures", () => {
+  assert.equal(isBrowserStorageFailure(new IndexedDbIdentityError("timeout")), true);
+  assert.equal(isBrowserStorageFailure(new IndexedDbIdentityError("blocked", "upgrading")), true);
+  assert.equal(isBrowserStorageFailure(new Error("broken module evaluation")), false);
 });

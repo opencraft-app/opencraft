@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { reportRuntimeError } from "../runtime-error-reporting";
-import { BrowserStorageError } from "../runtime/browser-storage-error";
+import { isBrowserStorageFailure } from "../runtime/browser-storage-error";
 
 interface RuntimeErrorBoundaryProps {
   children: ReactNode;
@@ -31,14 +31,14 @@ export class RuntimeErrorBoundary extends Component<
       return this.props.children;
     }
 
-    if (error instanceof BrowserStorageError) {
+    if (isBrowserStorageFailure(error)) {
       return (
         <main className="runtime-error" role="alert">
           <section className="runtime-error__card">
             <h1>暂时无法打开工作台</h1>
             <p>{error.reason === "unavailable"
               ? "浏览器暂时无法读取已保存的配置，请重新加载后重试。"
-              : "请关闭此站点的其他标签页或窗口，然后重新加载。"}</p>
+              : "请关闭此站点的其他标签页或应用窗口，然后重新加载。如果仍无法打开，请完全退出浏览器后重试。"}</p>
             <p>已保存的配置会保留。</p>
             <button type="button" onClick={() => window.location.reload()}>重新加载</button>
           </section>

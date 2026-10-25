@@ -25,11 +25,11 @@ function result<T>(request: IDBRequest<T>): Promise<T> {
 function openExisting(factory: IDBFactory, name: string, timeout: number): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
     const request = factory.open(name);
-    let missing = false, settled = false;
+    let missing = false, settled = false, blocked = false;
     const fail = (error: unknown) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } };
-    const timer = setTimeout(() => fail(new IndexedDbIdentityError("timeout")), timeout);
+    const timer = setTimeout(() => fail(new IndexedDbIdentityError(blocked ? "blocked" : "timeout")), timeout);
     request.addEventListener("upgradeneeded", () => { missing = true; request.transaction?.abort(); });
-    request.addEventListener("blocked", () => fail(new IndexedDbIdentityError("blocked")));
+    request.addEventListener("blocked", () => { blocked = true; });
     request.addEventListener("error", () => {
       if (missing && !settled) { settled = true; clearTimeout(timer); resolve(null); }
       else fail(request.error);
@@ -46,8 +46,9 @@ function openExisting(factory: IDBFactory, name: string, timeout: number): Promi
 /**
  * Copy a known versioned owner's database once, before its normal open.
  * The destination is authoritative if present. Upgrade the source to retire
- * its fixed-version writers before taking a snapshot; blocked old windows fail
- * explicitly. All rows/schema are copied in the destination creation transaction.
+ * its fixed-version writers before taking a snapshot; old windows may release
+ * their handles within the deadline. Persisting blockers fail explicitly.
+ * All rows/schema are copied in the destination creation transaction.
  * The historical source remains intact for retry or deliberate recovery.
  */
 export async function migrateIndexedDbIdentity(options: {
@@ -76,10 +77,10 @@ export async function migrateIndexedDbIdentity(options: {
       source.close(); source = null;
       source = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = factory.open(formerName, formerWriterVersion + 1);
-        let settled = false;
+        let settled = false, blocked = false;
         const fail = (error: unknown) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } };
-        const timer = setTimeout(() => fail(new IndexedDbIdentityError("timeout", "upgrading")), timeout);
-        request.onblocked = () => fail(new IndexedDbIdentityError("blocked", "upgrading"));
+        const timer = setTimeout(() => fail(new IndexedDbIdentityError(blocked ? "blocked" : "timeout", "upgrading")), timeout);
+        request.onblocked = () => { blocked = true; };
         request.onupgradeneeded = () => {
           if (settled) { request.transaction?.abort(); return; }
           request.result.createObjectStore(HANDOFF_STORE).put(handoff, "target");
@@ -119,10 +120,10 @@ export async function migrateIndexedDbIdentity(options: {
     source.close(); source = null;
     await new Promise<void>((resolve, reject) => {
       const request = factory.open(name, handoff.sourceVersion);
-      let settled = false, existing = false;
+      let settled = false, existing = false, blocked = false;
       const fail = (error: unknown) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } };
-      const timer = setTimeout(() => { request.transaction?.abort(); fail(new IndexedDbIdentityError("timeout", "upgrading")); }, timeout);
-      request.onblocked = () => fail(new IndexedDbIdentityError("blocked", "upgrading"));
+      const timer = setTimeout(() => { request.transaction?.abort(); fail(new IndexedDbIdentityError(blocked ? "blocked" : "timeout", "upgrading")); }, timeout);
+      request.onblocked = () => { blocked = true; };
       request.onupgradeneeded = event => {
         if (settled) { request.transaction?.abort(); return; }
         // Another current client may have won the creation race. Never merge its data.

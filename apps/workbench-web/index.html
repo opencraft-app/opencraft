@@ -118,7 +118,7 @@
         const describeFailure = (error) => error instanceof Error
           ? { name: error.name, message: error.message, stack: error.stack }
           : { message: String(error ?? "A JavaScript module failed to load") };
-        const isStorageFailure = (error) => error?.name === "BrowserStorageError";
+        const isStorageFailure = (error) => (error?.name === "BrowserStorageError" || error?.name === "IndexedDbIdentityError");
         const retryResources = () => {
           if (document.querySelector('meta[name="opencraft-resource-recovery"]')?.getAttribute("content") !== "supported") {
             location.reload();
@@ -153,7 +153,7 @@
           surface.querySelector("[data-recovery-title]").textContent = storageFailure
             ? "暂时无法读取本地配置" : "界面资源未能加载";
           surface.querySelector("[data-recovery-summary]").textContent = storageFailure
-            ? "请关闭此站点的其他标签页或应用窗口后重新加载。已保存的配置会保留。"
+            ? "请关闭此站点的其他标签页或应用窗口后重新加载。如果仍无法打开，请完全退出浏览器后重试。已保存的配置会保留。"
             : "当前版本可能正在更新，或网络中断。页面没有进入静默白屏。";
           const details = surface.querySelector("[data-release-error]");
           if (details != null) {

@@ -25,7 +25,9 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
 
 export class IndexedDbSidebarLayoutStorage implements SidebarLayoutStorage {
   private closed = false;
-  private constructor(private readonly database: IDBDatabase) {}
+  private constructor(private readonly database: IDBDatabase) {
+    database.addEventListener("versionchange", () => this.close());
+  }
 
   static async open(options: { readonly databaseName?: string; readonly formerDatabaseName?: string; readonly factory?: IDBFactory } = {}) {
     const factory = options.factory ?? indexedDB;
