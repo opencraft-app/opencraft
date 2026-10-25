@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { PiQueueDoc, type PiQueueState, type PiQueuedInput } from "./queue.js";
 import { piSkillsPrompt } from "./skills.js";
 import { ModelRuntime, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
@@ -19,6 +21,7 @@ export interface PiSnapshot {
   live: LiveState;
   usage: UsageState;
   inbox: readonly Value[];
+  queue?: PiQueueState;
 }
 export const createPiModels = (directory: string) => ModelRuntime.create({ allowModelNetwork: false, authPath: `${directory}/auth.json`, modelsPath: `${directory}/models.json` });
 export interface PiForkContext {
@@ -145,6 +148,13 @@ export class PiDurableSession {
       const entries = [...this.entries, ...added];
       const live = JSON.parse(JSON.stringify(await tx.doc(LiveDoc, this.root.id))) as LiveState;
       const inbox = JSON.parse(JSON.stringify(await tx.doc(InboxDoc, this.root.id))).items as Value[];
+      const queueDoc = await tx.doc(PiQueueDoc, this.root.id);
+      // Reconcile a crash between native admission and retiring draft custody.
+      // The stable submission identity is authoritative even when its ACK was lost.
+      for (let index = queueDoc.items.length - 1; index >= 0; index--) {
+        if (await tx.submissionByRequest(this.root.id, queueDoc.items[index]!.id)) queueDoc.items.splice(index, 1);
+      }
+      const queue = JSON.parse(JSON.stringify(queueDoc)) as PiQueueState;
       const agent = JSON.parse(JSON.stringify(await tx.doc(AgentDoc, this.root.id))) as AgentState;
       const usage = JSON.parse(JSON.stringify(await tx.doc(UsageDoc, this.root.id))) as UsageState;
       const submissions = new Map(this.submissions);
@@ -164,7 +174,7 @@ export class PiDurableSession {
         const task = await tx.task(id as any); if (!task) continue;
         tasks.set(id, task); if (task.owner !== undefined && !tasks.has(task.owner)) ids.add(task.owner);
       }
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox };
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);
@@ -212,12 +222,26 @@ export class PiDurableSession {
     return admitted;
   }
   /** Guard and enqueue on the native commit line: a late steer must never start an idle run. */
-  async steer(content: any, data: Value, requestId: string, expectedTurnId: string) {
+  async steer(content: any, data: Value, requestId: string, expectedTurnId: string, queuedId?: string) {
     const record = await this.root.commit(async tx => {
       const existing = await tx.submissionByRequest(this.root.id, requestId);
-      if (existing) return existing;
-      const live = await tx.doc(LiveDoc, this.root.id);
+      const queue = await tx.doc(PiQueueDoc, this.root.id);
       const inbox = await tx.doc(InboxDoc, this.root.id);
+      if (existing) {
+        const entry = existing.entry === undefined ? undefined : await tx.entry(existing.entry);
+        let metadata = entry?.data as Value | undefined;
+        metadata ??= inbox.items.find(item => item.id === existing.id)?.entry?.data as Value | undefined;
+        if (!metadata) metadata = (await this.pages(cursor => tx.scanEntries({ conversationId: this.root.id, order: "descending" }, 100, cursor)))
+          .find(entry => entry.kind === "opencraft.steerAdmission" && (entry.data as Value)?.turnId === requestId)?.data as Value | undefined;
+        if (queuedId === undefined && metadata && (!isDeepStrictEqual(metadata.input, data.input)
+          || !isDeepStrictEqual(metadata.additionalContext ?? null, data.additionalContext ?? null)))
+          throw new Error("Client message identity already belongs to different input");
+        if (metadata?.steerTurnId !== expectedTurnId) throw new Error("Queued input has already been dispatched");
+        return existing;
+      }
+      const queuedIndex = queuedId === undefined ? -1 : queue.items.findIndex(item => item.id === queuedId && item.state === "queued");
+      if (queuedId !== undefined && queuedIndex < 0) throw new Error("Queued input is no longer pending");
+      const live = await tx.doc(LiveDoc, this.root.id);
       let matches = false;
       for (const id of live.run?.inputs ?? []) {
         const input = await this.storage.submission(id, context);
@@ -228,6 +252,7 @@ export class PiDurableSession {
         }
       }
       if (!matches) throw new Error("Pi turn identity changed");
+      if (queuedIndex >= 0) queue.items.splice(queuedIndex, 1);
       const admitted = await tx.createSubmission({ conversationId: this.root.id, requestId, type: "input", status: "queued" });
       // Native withdrawal removes the inbox item; retain its presentation metadata
       // in the same native transaction, without inserting another model message.
@@ -238,6 +263,74 @@ export class PiDurableSession {
     }, context);
     this.submissions.set(record.id, record);
     this.harness.resume();
+  }
+  async enqueue(item: PiQueuedInput) {
+    return this.root.commit(async tx => {
+      const queue = await tx.doc(PiQueueDoc, this.root.id);
+      const pending = queue.items.find(candidate => candidate.id === item.id);
+      const receipt = await tx.submissionByRequest(this.root.id, item.id);
+      const entry = receipt?.entry === undefined ? undefined : await tx.entry(receipt.entry);
+      const inbox = await tx.doc(InboxDoc, this.root.id);
+      const previous = pending ?? entry?.data ?? inbox.items.find(candidate => candidate.id === receipt?.id)?.entry?.data as PiQueuedInput | undefined;
+      if (previous && (!isDeepStrictEqual(previous.input, item.input)
+        || !isDeepStrictEqual(previous.additionalContext ?? null, item.additionalContext)))
+        throw new Error("Client message identity already belongs to different input");
+      if (pending || receipt) return pending ? JSON.parse(JSON.stringify(pending)) as PiQueuedInput : item;
+      if (queue.items.length >= 50) throw new Error("The Pi message queue is full");
+      queue.items.push(item); return item;
+    }, context);
+  }
+  async changeQueue(action: "update" | "delete" | "reorder" | "pause", id?: string, replacement?: PiQueuedInput, order?: string[]) {
+    return this.root.commit(async tx => {
+      const queue = await tx.doc(PiQueueDoc, this.root.id);
+      if (action === "pause") { queue.paused = true; queue.pauseReason = "user-stopped"; return null; }
+      if (action === "reorder") {
+        if (!order || order.length !== queue.items.length || new Set(order).size !== order.length
+          || queue.items.some(item => item.state !== "queued" || !order.includes(item.id))) throw new Error("Pi queue order changed; refresh before reordering");
+        const items = [...queue.items]; queue.items.splice(0, queue.items.length, ...order.map(id => items.find(item => item.id === id)!)); return null;
+      }
+      const index = queue.items.findIndex(item => item.id === id && item.state === "queued");
+      if (index < 0) {
+        if (action === "delete") return false;
+        throw new Error("Queued input is no longer editable");
+      }
+      const item = JSON.parse(JSON.stringify(queue.items[index]!)) as PiQueuedInput;
+      if (action === "update") {
+        if (!replacement) throw new Error("Missing replacement input");
+        queue.items[index] = replacement; return replacement;
+      }
+      // Retain a native idempotency tombstone, without creating a model message.
+      const existing = await tx.submissionByRequest(this.root.id, item.id);
+      if (existing) throw new Error("Queued input has already been dispatched");
+      const entry = await tx.appendEntry(this.root.id, { kind: "opencraft.queueCancelled", data: { ...item, turnId: item.id } });
+      const record = await tx.createSubmission({ conversationId: this.root.id, type: "input", requestId: item.id, status: "placed", entry: entry.id });
+      tx.settleSubmission(record.id, { status: "unanswered", reason: "aborted" });
+      queue.items.splice(index, 1); return true;
+    }, context);
+  }
+  async unpauseQueue() {
+    await this.root.commit(async tx => { const queue = await tx.doc(PiQueueDoc, this.root.id); queue.paused = false; delete queue.pauseReason; }, context);
+  }
+  async claimQueue(id?: string, explicit = false) {
+    return this.root.commit(async tx => {
+      const queue = await tx.doc(PiQueueDoc, this.root.id);
+      const live = await tx.doc(LiveDoc, this.root.id);
+      if (live.run || queue.paused && !explicit) return null;
+      const item = id === undefined ? queue.items[0] : queue.items.find(item => item.id === id);
+      if (!item) return null;
+      if (explicit) { queue.paused = false; delete queue.pauseReason; }
+      item.state = "dispatching";
+      return JSON.parse(JSON.stringify(item)) as PiQueuedInput;
+    }, context);
+  }
+  async settleQueue(id: string, failed = false) {
+    await this.root.commit(async tx => {
+      const queue = await tx.doc(PiQueueDoc, this.root.id);
+      const index = queue.items.findIndex(item => item.id === id);
+      if (index < 0) return;
+      if (failed) { queue.items[index]!.state = "queued"; queue.paused = true; queue.pauseReason = "delivery-failed"; }
+      else queue.items.splice(index, 1);
+    }, context);
   }
   resume() { this.harness.resume(); }
   /** Host-only provenance; no model message and no human sender is fabricated. */

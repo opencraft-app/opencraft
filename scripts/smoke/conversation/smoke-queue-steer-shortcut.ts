@@ -63,7 +63,7 @@ const vite = await createServer({
       server.middlewares.use((req, res, next) => {
         if (req.url !== "/") return next();
         res.setHeader("content-type", "text/html");
-        res.end('<div id="root"></div><script type="module" src="/queue-shortcut.tsx"></script>');
+        res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/queue-shortcut.tsx"></script>');
       });
     },
   }],

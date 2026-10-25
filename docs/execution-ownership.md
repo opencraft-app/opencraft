@@ -345,20 +345,39 @@ The `runtime/engines/list` endpoint describes the enabled engine registry.
 `plugins/pi-engine` embeds the pinned experimental `pi-durable` 1.3.0 SDK in the
 server execution owner. It does not start the legacy Pi CLI RPC process. The owner
 holds each session's SQLite database, writer lock, scheduler and model/tool environment.
-For providers without a server queue, the browser outbox holds follow-ups while
-the current Turn is active and preserves input identity across baseline recovery.
-Pi publishes native idle status when a Turn settles so waiting local follow-ups
-can be admitted after the current execution completes. Pi also supports `turn/steer`:
-`expectedTurnId` is checked against the native live run in the same transaction
-that admits an input to the native steer inbox. A late or mismatched request is
-rejected without starting a new run. Steers are consumed at native tool/final
-boundaries; current model requests and tools are not interrupted. Client message
-identity deduplicates retries, including after restart and completion. Original
-input blocks, context and the target Turn are preserved in native records; a
-display-only admission entry retains them when stop withdraws an unplaced input.
-All corresponding native submissions project into the same OpenCraft Turn, which
-settles only when every admitted input has settled. This does not enable a
-server-side follow-up queue or replace the connected client's tool lease.
+Pi exposes the shared durable queue and atomic queue-to-steer APIs. Pending message
+custody lives in the native conversation's `opencraft.queue` document; native
+submissions remain the sole execution receipts. Queue updates, removal and exact
+reordering are native commits. Atomic queued steer checks the target live run,
+removes custody and admits native steering in one transaction. A stale target or
+already-dispatched input is rejected without changing its destination. Stable
+client identities reconcile admission after lost ACKs or owner restart; a discarded
+message retains a native tombstone and cannot reappear on retry. Reading history or
+the queue does not start a dormant execution owner.
+
+A single per-thread dispatcher claims pending input only when idle. A native receipt
+retires stale claimed custody even if its ACK was lost. Without such a receipt, a
+failed send pauses the queue for an explicit retry. Stop pauses pending messages
+before aborting the active Turn; queued messages survive restart and can be edited,
+removed or explicitly resumed. Successful new direct input resumes normal queue
+processing. Temporary threads cannot own durable queues.
+
+Pi publishes native idle status when a Turn settles and supports `turn/steer`.
+`expectedTurnId` is checked against the native live run in the admission transaction.
+Steers are consumed at native tool/final boundaries; current model requests and
+tools continue under their original owner. Client message identity deduplicates
+retries, including after restart and completion, and rejects conflicting content.
+Original input blocks, context and the target Turn are preserved in native records;
+a display-only admission entry retains them when stop withdraws an unplaced input.
+All corresponding native submissions project into the same OpenCraft Turn.
+
+Native steering projection distinguishes inbox admission (`pending`), actual
+context placement (`accepted`) and withdrawal before placement (`cancelled`). The
+shared timeline defers to that native state rather than treating a transport ACK
+as consumption. The existing message status slot presents these states; queue and
+steer remain separate available actions, preserving the user's sending preference.
+The browser outbox still handles disconnected custody and never replays an unknown
+outcome as a new native execution.
 Closing the owner suspends work; explicit stop aborts it. On startup the owner checks
 recovery hints against native durable records and resumes unfinished inputs. Native
 entries, submissions and committed partials are the history authority; the adjacent

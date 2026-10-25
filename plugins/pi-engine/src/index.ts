@@ -1,3 +1,4 @@
+import { queueProjection, type PiQueuedInput } from "./queue.js";
 import { readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
@@ -69,7 +70,8 @@ export class PiEngine {
     "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true },
     [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
     [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
-    "opencraft/thread-follow-up": { version: 1, queue: false, steer: true },
+    "opencraft/thread-follow-up": { version: 1, queue: true, steer: true },
+    "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: true, perItemPause: false },
     [TURN_RECOVERY_EXTENSION]: { version: 1 },
   });
   private scheduleService?: ConversationSchedules;
@@ -85,6 +87,8 @@ export class PiEngine {
   private closed = false;
   private readonly writes = new Map<string, Promise<void>>();
   private latestPinAt = 0;
+  private readonly queueDrains = new Set<string>();
+  private readonly queueOwners = new Map<string, EngineClient>();
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
@@ -152,7 +156,7 @@ export class PiEngine {
     this.schedules();
     for (const session of this.sessions.values()) {
       if (!session.pendingRecovery || session.archived) continue;
-      try { await this.refresh(session); }
+      try { await this.refresh(session); if (!session.active) { session.needsResume = false; this.scheduleQueue(session); } }
       catch { this.fail(session, "Pi session recovery failed"); }
     }
     this.recovery?.wake();
@@ -269,7 +273,7 @@ export class PiEngine {
     if (!awaitingAdmission) session.active = [...turns].reverse().find(turn => turn.status === "inProgress");
     for (const turn of turns) {
       const before = oldTurns.get(turn.id);
-      if (!before && turn.status === "inProgress" && oldActive?.id !== turn.id) this.notify("turn/started", { threadId: session.id, turn });
+      if (!before && turn.status === "inProgress" && (oldActive?.id !== turn.id || oldActive?._queueAdmission)) this.notify("turn/started", { threadId: session.id, turn });
       if (!before && turn.status !== "inProgress") continue; // Hydration does not replay completed user turns.
       const common = { threadId: session.id, turnId: turn.id };
       const oldItems = new Map<string, Value>((before?.items ?? []).map((item: Value) => [item.id, item]));
@@ -294,9 +298,12 @@ export class PiEngine {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: finished.id, tokenUsage: tokenUsage(snapshot, contextWindow) });
       this.notify("turn/completed", { threadId: session.id, turn: finished });
       this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
-      session.updatedAt = seconds(); session.pendingRecovery = false;
+      session.updatedAt = seconds(); session.pendingRecovery = !!snapshot.queue?.items.length;
       void this.save(session).catch(() => this.notify("warning", { message: "Pi catalog metadata could not be saved" }));
     }
+    if (!same(previousSnapshot?.queue, snapshot.queue) || !same(previousSnapshot?.inbox, snapshot.inbox))
+      this.notify("thread/queue/changed", { threadId: session.id });
+    this.scheduleQueue(session);
     if (session.active) {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: session.active.id,
         tokenUsage: tokenUsage(snapshot, contextWindow) });
@@ -305,6 +312,50 @@ export class PiEngine {
       if (snapshot.live.generation?.deferred && !same(previousSnapshot?.live.generation?.deferred, snapshot.live.generation.deferred))
         this.notify("warning", { threadId: session.id, message: "Pi is waiting for a deferred model response" });
       this.notify("thread/status/changed", { threadId: session.id, status: { type: "active", activeFlags: [] } });
+    }
+  }
+  private scheduleQueue(session: Session) {
+    if (this.closed || session.archived || session.needsResume || session.active || this.queueDrains.has(session.id)
+      || session.snapshot?.queue?.paused || !session.snapshot?.queue?.items.length) return;
+    this.queueDrains.add(session.id);
+    void this.serialize(session.id, () => this.dispatchQueue(session)).catch(() => {
+      this.notify("warning", { threadId: session.id, message: "Pi queued input is paused; review it before continuing" });
+    }).finally(() => { this.queueDrains.delete(session.id); this.scheduleQueue(session); });
+  }
+  private async dispatchQueue(session: Session, id?: string, explicit = false) {
+    const native = await this.native(session);
+    const item = await native.claimQueue(id, explicit);
+    if (!item) {
+      if (!explicit) { await this.refresh(session); return null; }
+      await this.refresh(session);
+      const delivered = id && session.turns?.find(turn => turn.id === id);
+      if (delivered) return delivered;
+      throw new Error("Pi queue changed or the thread is still active");
+    }
+    try {
+      await this.refreshHostTools(session);
+      const owner = this.queueOwners.get(item.id);
+      if (owner) this.attach(session, owner);
+      session.pendingRecovery = true;
+      session.preview ||= textOf(item.content).slice(0, 200); session.updatedAt = seconds();
+      await this.save(session);
+      // Bind platform tools before the scheduler can run. This is private
+      // admission state; only a committed native snapshot announces the Turn.
+      session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
+      await native.submit(item.content, { turnId: item.id, clientId: item.clientId, input: item.input,
+        additionalContext: item.additionalContext, createdAtMs: item.createdAtMs }, item.id);
+      await native.settleQueue(item.id);
+      this.queueOwners.delete(item.id);
+      await this.refresh(session);
+      return session.turns?.find(turn => turn.id === item.id);
+    } catch (error) {
+      // Native receipts, not the gateway ACK, decide whether replay is safe.
+      if (await native.execution(item.id)) await native.settleQueue(item.id);
+      else {
+        if (session.active?.id === item.id && session.active._queueAdmission) session.active = undefined;
+        await native.settleQueue(item.id, true);
+      }
+      await this.refresh(session); throw error;
     }
   }
   private fail(session: Session, message: string) {
@@ -618,6 +669,63 @@ export class PiEngine {
       }
       this.attach(session, client); await this.native(session); return { registered: tools.length };
     }
+    if (method.startsWith("thread/queue/")) {
+      if (session.ephemeral) throw new Error("Temporary Pi threads cannot own a durable message queue");
+      if (method === "thread/queue/list") {
+        const snapshot = session.native ? await session.native.snapshot() : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts"));
+        const cursor = params.cursor == null ? 0 : Number(params.cursor), limit = params.limit ?? 50;
+        if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new Error("Invalid Pi queue page");
+        const queue = snapshot.queue ?? { items: [], paused: false };
+        const data = queue.items.slice(cursor, cursor + Math.min(limit, 100)).map(item => queueProjection(item, queue.paused, queue.pauseReason));
+        return { data, nextCursor: cursor + data.length < queue.items.length ? String(cursor + data.length) : null,
+          ...(cursor === 0 ? { steering: snapshot.inbox.filter(item => item.mode === "steer").map(item => {
+            const metadata = item.entry?.data ?? {};
+            return { id: metadata.turnId, input: metadata.input, clientUserMessageId: metadata.clientId,
+              createdAt: metadata.createdAtMs, pausedReason: null, targetTurnId: metadata.steerTurnId };
+          }) } : {}) };
+      }
+      if (session.archived) throw new Error("Unarchive the Pi thread before changing its queue");
+      const native = await this.native(session);
+      const snapshot = await native.snapshot();
+      const queued = snapshot.queue?.items.find(item => item.id === params.queuedSubmissionId);
+      if (method === "thread/queue/add" || method === "thread/queue/update") {
+        const clientId = method === "thread/queue/update" ? queued?.clientId : params.clientUserMessageId;
+        if (typeof clientId !== "string" || !clientId.length || clientId.length > 1000) throw new Error("Queued input requires a valid client message identity");
+        if (method === "thread/queue/update" && !queued) throw new Error("Queued input is no longer editable");
+        const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+        if (!model) throw new Error("Pi model is unavailable");
+        if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
+        const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
+        const content = await compilePiInput(params.input, additionalContext, session.cwd, model);
+        const item: PiQueuedInput = { id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
+          input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
+        session.pendingRecovery = true; await this.save(session);
+        const result = method === "thread/queue/add" ? await native.enqueue(item) : await native.changeQueue("update", item.id, item);
+        this.queueOwners.set(item.id, client);
+        await this.refresh(session);
+        return { queuedSubmission: queueProjection(result as PiQueuedInput) };
+      }
+      if (method === "thread/queue/delete") {
+        const deleted = await native.changeQueue("delete", params.queuedSubmissionId);
+        this.queueOwners.delete(params.queuedSubmissionId); await this.refresh(session); return { deleted };
+      }
+      if (method === "thread/queue/reorder") {
+        await native.changeQueue("reorder", undefined, undefined, params.queuedSubmissionIds); await this.refresh(session); return {};
+      }
+      if (method === "thread/queue/start") {
+        if (queued) this.queueOwners.set(queued.id, client);
+        return { turn: await this.dispatchQueue(session, params.queuedSubmissionId, true) };
+      }
+      if (method === "thread/queue/steer") {
+        if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId) throw new Error("Pi steer requires expectedTurnId");
+        const id = params.queuedSubmissionId;
+        if (typeof id !== "string" || !id) throw new Error("Pi steer requires a queued input identity");
+        await native.steer(queued?.content ?? [], { turnId: id, steerTurnId: params.expectedTurnId, clientId: queued?.clientId,
+          input: queued?.input, additionalContext: queued?.additionalContext ?? null, createdAtMs: queued?.createdAtMs ?? Date.now() }, id, params.expectedTurnId, id);
+        this.queueOwners.delete(id); await this.refresh(session); return { turnId: params.expectedTurnId };
+      }
+      throw new Error(`Pi does not support ${method}`);
+    }
     if (method === "turn/start") {
       const clientId = typeof params.clientUserMessageId === "string" && params.clientUserMessageId.length ? params.clientUserMessageId : null;
       if (clientId && clientId.length > 1000) throw new Error("Client message identity is too long");
@@ -627,6 +735,13 @@ export class PiEngine {
         await (await this.native(session)).abort(); await this.refresh(session); session.needsResume = false;
       }
       const existing = clientId && session.turns?.find(turn => turn.id === turnId); if (existing) return { turn: existing };
+      const queued = session.snapshot?.queue?.items.find(item => item.id === turnId);
+      if (queued) {
+        if (!isDeepStrictEqual(queued.input, params.input) || !isDeepStrictEqual(queued.additionalContext, params.additionalContext ?? null))
+          throw new Error("Client message identity already belongs to different input");
+        return { turn: await this.dispatchQueue(session, turnId, true) };
+      }
+      if (clientId && await (await this.native(session)).execution(turnId)) throw new Error("This message identity has already been withdrawn");
       if (session.active) throw new Error("Pi thread already has an active turn");
       if (session.archived) throw new Error("Unarchive the Pi thread before executing");
       await this.refreshHostTools(session);
@@ -657,6 +772,7 @@ export class PiEngine {
         this.notify("turn/started", { threadId: session.id, turn });
         await native.submit(content, { turnId, clientId, input: params.input, additionalContext: params.additionalContext ?? null,
           createdAtMs, turnTrigger: params.turnTrigger ?? null }, turnId);
+        await native.unpauseQueue();
         await this.refresh(session);
       } catch (error) { if (!(error instanceof ScheduleAdmissionDeferred)) this.fail(session, (error as Error).message); throw error; }
       return { turn: session.turns?.find(turn => turn.id === turnId) ?? turn };
@@ -681,13 +797,14 @@ export class PiEngine {
     if (method === "turn/interrupt") {
       this.recovery?.handled(session.id);
       if (params.turnId && session.active?.id !== params.turnId) throw new Error("Pi turn identity changed");
-      if (!session.active) return {};
-      await (await this.native(session)).abort(); await this.refresh(session); return {};
+      const native = await this.native(session); await native.changeQueue("pause");
+      if (!session.active) { await this.refresh(session); return {}; }
+      await native.abort(); await this.refresh(session); return {};
     }
     throw new Error(`Pi does not support ${method}`);
   }
   private detach(session: Session) { session.lease?.abort(); session.lease = undefined; session.owner = undefined; }
-  disconnect(client: EngineClient) { for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
+  disconnect(client: EngineClient) { for (const [id, owner] of this.queueOwners) if (owner === client) this.queueOwners.delete(id); for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
   async close() {
     this.closed = true;
     await this.recovery?.close();

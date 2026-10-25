@@ -33,12 +33,16 @@ export function queuedSubmissionPresentation(
   avatars: IdentityAvatarContribution | null = null,
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
-  const localStatus = submission.pausedReason === "outbox-waiting"
+  const statusMessage = submission.pausedReason === "outbox-waiting"
     ? { id: "chat.outbox.waiting", defaultMessage: "Saved in this browser tab · sends automatically after reconnect" }
     : submission.pausedReason === "outbox-unconfirmed"
       ? { id: "chat.outbox.unconfirmed", defaultMessage: "Delivery unconfirmed · check the conversation before sending again" }
       : submission.pausedReason === "outbox-failed"
-        ? { id: "chat.outbox.failed", defaultMessage: "Message not sent · remove it and retry after reconnect" } : null;
+        ? { id: "chat.outbox.failed", defaultMessage: "Message not sent · remove it and retry after reconnect" }
+        : submission.pausedReason === "user-stopped"
+          ? { id: "chat.queue.pausedAfterStop", defaultMessage: "Paused after stopping. Resume when ready." }
+          : submission.pausedReason === "delivery-failed"
+            ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." } : null;
   return {
     sender: queueSenderPresentation(submission.sender, avatars),
     id: submission.serverSubmissionId ?? submission.commandId,
@@ -50,7 +54,7 @@ export function queuedSubmissionPresentation(
     dismissible: (submission.local === true && submission.state !== "submitting") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable,
     editableContent: restoreQueuedInput(submission.input),
-    pausedReason: localStatus ? intl?.formatMessage(localStatus) ?? localStatus.defaultMessage : submission.pausedReason,
+    pausedReason: statusMessage ? intl?.formatMessage(statusMessage) ?? statusMessage.defaultMessage : submission.pausedReason,
     error: submission.error?.message ?? null,
   };
 }

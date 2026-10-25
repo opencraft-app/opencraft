@@ -49,8 +49,9 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     const status = state === "queued" || state === "placed" ? "inProgress" : state === "unanswered"
       ? submission?.reason === "aborted" ? "interrupted" : "failed" : "completed";
     const createdAt = metadata.createdAtMs ?? message.timestamp;
-    const result: PiTurn = { id, items: [{ type: "userMessage", id: `${id}:user`,
+    const result: PiTurn = { id, items: [{ type: metadata.steerTurnId ? "steeringUserMessage" : "userMessage", id: `${id}:user`,
       clientId: metadata.clientId ?? (id.startsWith(`${session.id}:turn:client:`) ? id.slice(`${session.id}:turn:client:`.length) : null),
+      ...(metadata.steerTurnId ? { status: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
       content: metadata.input ?? [{ type: "text", text: textOf(message.content), text_elements: [] }] }],
       itemsView: "complete", status, error: status === "failed" ? errorOf(String(submission?.detail ?? submission?.reason ?? "Pi input failed")) : null,
       startedAt: typeof createdAt === "number" ? Math.floor(createdAt / 1000) : null, completedAt: null, durationMs: null };
@@ -101,14 +102,16 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
   for (const submission of snapshot.submissions) {
     if (submission.type !== "input" || submission.entry !== undefined) continue;
     const queued = snapshot.inbox.find(item => item.id === submission.id);
-    makeTurn(submission, submission.id, { content: queued?.content }, queued?.entry?.data ?? steerMetadata.get(submission.requestId));
+    const metadata = queued?.entry?.data ?? steerMetadata.get(submission.requestId);
+    if (!metadata?.steerTurnId) continue;
+    makeTurn(submission, submission.id, { content: queued?.content }, metadata);
   }
   for (const candidate of turns) {
     const records = states.get(candidate)!;
     if (records.some(record => record.status === "queued" || record.status === "placed")) {
       candidate.status = "inProgress"; candidate.error = null;
     } else {
-      const failed = records.find(record => record.status === "unanswered");
+      const failed = records.find(record => record.status === "unanswered" && (record.requestId === candidate.id || record.entry !== undefined));
       if (failed) {
         candidate.status = failed.reason === "aborted" ? "interrupted" : "failed";
         candidate.error = candidate.status === "failed" ? errorOf(String(failed.detail ?? failed.reason ?? "Pi input failed")) : null;
