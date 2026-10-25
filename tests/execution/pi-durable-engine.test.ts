@@ -686,3 +686,33 @@ test("Pi skill discovery uses native roots, keeps explicit-only entries and reje
   await assert.rejects(runtime.resources.composerCatalog.listSkills({ threadId: "foreign-thread" }), /unavailable/);
   assert.equal(f.faux.state.callCount, 0);
 });
+
+test("opening Pi native history never creates an execution owner; Resume can continue", async t => {
+  const f = await fixture(t, [fauxAssistantMessage("historical reply")]);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const done = completed(f.engine);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "history" }] }, noTools);
+  await done; await f.engine.close();
+  const models = fixtureModels([fauxAssistantMessage("continued reply")]).models;
+  const reopened = new PiEngine({ directory: f.directory, cwd: f.directory, models });
+  t.after(() => reopened.close());
+  const { readFile } = await import("node:fs/promises");
+  const path = join(f.directory, `${thread.id}.sqlite`), original = await readFile(path);
+  const read = () => reopened.request("thread/read", { threadId: thread.id, watch: true, initialTurnsPage: { limit: 10 } }, noTools);
+  const cold = await read(), warm = await read();
+  assert.deepEqual(warm.initialTurnsPage, cold.initialTurnsPage);
+  assert.equal(cold.initialTurnsPage.data[0].items.find((item: any) => item.type === "agentMessage").text, "historical reply");
+  assert.deepEqual(await readFile(path), original);
+  assert.equal((reopened as any).sessions.get(thread.id).native, undefined);
+  assert.equal((reopened as any).sessions.get(thread.id).owner, undefined);
+  const full = await reopened.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
+  assert.deepEqual(full.thread.turns.map((turn: any) => ({ id: turn.id, items: turn.items })), [...cold.initialTurnsPage.data].reverse().map((turn: any) => ({ id: turn.id, items: turn.items })));
+  await rm(join(f.directory, "cache"), { recursive: true });
+  assert.deepEqual((await read()).initialTurnsPage.data, cold.initialTurnsPage.data);
+  assert.equal((reopened as any).sessions.get(thread.id).native, undefined);
+  await reopened.request("thread/resume", { threadId: thread.id }, noTools);
+  const continued = completed(reopened);
+  await reopened.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "continue" }] }, noTools);
+  assert.equal((await continued).status, "completed");
+  assert.equal((await read()).initialTurnsPage.data[0].items.find((item: any) => item.type === "agentMessage").text, "continued reply");
+});

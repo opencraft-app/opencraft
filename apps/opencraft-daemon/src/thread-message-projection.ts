@@ -36,6 +36,10 @@ export function projectThreadMessageResult(
   if (!threadId) return resultValue;
   return {
     ...result,
+    ...(result.initialTurnsPage && Array.isArray(object(result.initialTurnsPage).data) ? {
+      initialTurnsPage: { ...object(result.initialTurnsPage),
+        data: (object(result.initialTurnsPage).data as unknown[]).map(turn => projectTurn(project, threadId, turn)) },
+    } : {}),
     ...(result.thread && typeof result.thread === "object" ? {
       thread: {
         ...thread,

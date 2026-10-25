@@ -85,7 +85,8 @@ export function createHarness(
   let releaseInterrupt = () => undefined;
   let forkPublished = false;
   let activePeer: InMemoryAppServerPeer | null = null;
-  const fixtureThread = (id: string) => ({ ...protocolThread(id), historyMode: declareResumeHistory === "message-window" ? "message-window" : "paginated" });
+  const fixtureThread = (id: string) => ({ ...protocolThread(id), model: "fixture-model", modelProvider: "openai",
+    historyMode: declareResumeHistory === "message-window" ? "message-window" : "paginated" });
   const server: InMemoryAppServer = {
     connected(peer) {
       activePeer = peer;
@@ -139,9 +140,10 @@ export function createHarness(
         });
         if (holdFork) releaseFork = respond;
         else respond();
-      } else if (message.method === "thread/read" && (historyTurns.length > 0 || declareResumeHistory === "message-window")) {
+      } else if (message.method === "thread/read") {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
-        send({ thread: fixtureThread(threadId) });
+        const respond = () => send({ thread: fixtureThread(threadId) });
+        if (delayResume) releaseResume = () => { delayResume = false; respond(); }; else respond();
       } else if (message.method === "thread/start") {
         send({ thread: fixtureThread("thread-created") });
       } else if (message.method === "turn/start") {

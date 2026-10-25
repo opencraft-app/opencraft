@@ -625,3 +625,24 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     assert.equal(history.thread.turns.length, 2); assert.equal(history.thread.turns[1].items[0].clientId, 'actor-input:' + sent.requestId);
   } finally { await headless?.close(); await f.close(); }
 });
+
+for (const overlays of [false, true]) test(`Read-only Core observers receive live events without owning native execution (overlays=${overlays})`, async () => {
+  const f = await fixture();
+  const a = await f.adapter(overlays);
+  try {
+    await a.rpc("writer", "initialize");
+    const initialized = await a.rpc("reader", "initialize");
+    assert.equal(initialized.capabilities.extensions["opencraft/read-history"].version, 1);
+    const { thread } = await a.rpc("writer", "thread/start");
+    await a.rpc("reader", "thread/read", { threadId: thread.id, watch: true, includeTurns: false });
+    await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "observed" });
+    await delay(30);
+    assert.ok(a.frames.some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"));
+    await a.rpc("reader", "thread/unsubscribe", { threadId: thread.id });
+    const start = a.frames.length;
+    await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "writer only" });
+    await delay(30);
+    assert.equal(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"), false);
+    assert.ok(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
+  } finally { await f.close(); }
+});

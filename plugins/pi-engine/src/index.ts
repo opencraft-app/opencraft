@@ -1,3 +1,4 @@
+import { readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -61,6 +62,7 @@ export class PiEngine {
   readonly threadPrefix = "pi_";
   readonly modelPrefix = "pi:";
   readonly extensions = Object.freeze({
+    "opencraft/read-history": { version: 1, initialTurnsPage: true },
     "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
     "opencraft/scoped-model-catalog": { version: 1 },
@@ -86,7 +88,7 @@ export class PiEngine {
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
-  constructor(private readonly options: { directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort }) {
+  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -243,6 +245,10 @@ export class PiEngine {
       } catch (error) { await native.close(); throw error; }
       finally { session.starting = undefined; }
     })();
+  }
+  private async readHistory(session: Session): Promise<PiTurn[]> {
+    if (session.ephemeral) return session.turns ?? [];
+    return projectPiSnapshot(session, await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts")));
   }
   private async refresh(session: Session) { this.accept(session, await (await this.native(session)).snapshot()); return session.turns ?? []; }
   private accept(session: Session, snapshot: PiSnapshot) {
@@ -549,10 +555,17 @@ export class PiEngine {
       } catch (error) { this.sessions.delete(child.id); this.detach(child); await child.native?.close(); throw error; }
     }
     if (params.model && !String(params.model).startsWith("pi:")) throw new Error("This thread belongs to Pi; create a new thread to change engines");
-    if (method === "thread/read") { if (params.includeTurns) await this.refresh(session); return { thread: this.thread(session, params.includeTurns ? session.turns : []) }; }
+    if (method === "thread/read") {
+      if (params.initialTurnsPage) {
+        const turns = await this.readHistory(session);
+        return { thread: this.thread(session), initialTurnsPage: { ...projectedTurnsPage(this.thread(session, turns), {
+          threadId: session.id, limit: params.initialTurnsPage.limit ?? 10, sortDirection: "desc", itemsView: "full",
+        }), itemsPaginationByTurnId: {} } };
+      }
+      return { thread: this.thread(session, params.includeTurns ? await this.readHistory(session) : []) };
+    }
     if (method === "thread/turns/list" || method === "thread/items/list") {
-      await this.refresh(session);
-      const thread = this.thread(session, session.turns);
+      const thread = this.thread(session, await this.readHistory(session));
       return method === "thread/turns/list" ? { ...projectedTurnsPage(thread, { ...params, threadId: session.id }), itemsPaginationByTurnId: {} }
         : projectedItemsPage(thread, { ...params, threadId: session.id });
     }

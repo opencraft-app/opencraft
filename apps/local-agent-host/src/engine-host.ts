@@ -59,7 +59,7 @@ export async function startEngineHost(options: {
     let stopped = false, backend: WebSocket | undefined, backendStarting: Promise<WebSocket> | undefined;
     const internal = new Map<string, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
     const platform = new Map<string, { clientId: string; resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
-    const clients = new Map<string, { owner: ExecutionEngineClient; opened: Set<string> }>();
+    const clients = new Map<string, { owner: ExecutionEngineClient; opened: Set<string>; reading: Set<string> }>();
     const send = (value: Value) => { if (!stopped && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
     const client = (clientId: string) => {
       let state = clients.get(clientId); if (state) return state;
@@ -75,11 +75,11 @@ export async function startEngineHost(options: {
           });
         },
       };
-      state = { owner, opened }; clients.set(clientId, state); return state;
+      state = { owner, opened, reading: new Set() }; clients.set(clientId, state); return state;
     };
     const subscriptions = options.providers.map(provider => provider.subscribe((method, params) => {
       const threadId = params.threadId ?? params.thread?.id;
-      for (const state of clients.values()) if (method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && state.opened.has(threadId)) state.owner.notify(method, params);
+      for (const state of clients.values()) if (method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && (state.opened.has(threadId) || state.reading.has(threadId))) state.owner.notify(method, params);
     }));
     // A frontend connection owns one backend incarnation. Replacing only the
     // backend would lose its connection-scoped Thread attachments while the
@@ -294,10 +294,15 @@ export async function startEngineHost(options: {
             reply(catalog); return;
           }
           if (provider) {
-            if (params.threadId && !["thread/read", "thread/resume", "opencraft/thread-pins/set", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
-            const result = await provider.request(method, params, state.owner);
+            if (params.threadId && !["thread/read", "thread/turns/list", "thread/items/list", "thread/goal/get", "thread/queue/list", "thread/unsubscribe", "thread/resume", "opencraft/thread-pins/set", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
+            const watching = method === "thread/read" && params.watch === true && typeof params.threadId === "string";
+            const wasReading = state.reading.has(params.threadId);
+            if (watching) state.reading.add(params.threadId);
+            let result;
+            try { result = await provider.request(method, params, state.owner); }
+            catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
-            if (method === "thread/unsubscribe") state.opened.delete(params.threadId);
+            if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
             reply(result); return;
           }
           if (params.threadId && options.providers.some(provider => provider.ownsModel(params.model ?? ""))) throw new Error("Create a new conversation to change execution engines");

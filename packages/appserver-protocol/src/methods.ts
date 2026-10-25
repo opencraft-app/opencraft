@@ -182,10 +182,17 @@ export type ThreadResumeResponse = ThreadResumeHistoryResponse<AppServerTurn> & 
 export interface ThreadReadParams {
   threadId: string;
   includeTurns: boolean;
+  /** Passive Host notifications; does not retain a native execution engine. */
+  watch?: boolean;
+  /** Optional opencraft/read-history v1 page. Never resumes execution. */
+  initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
+  historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
 }
 
 export interface ThreadReadResponse {
   thread: AppServerThread;
+  initialTurnsPage?: ThreadTurnsListResponse;
+  historyRecovery?: import("./resume-history").ThreadHistoryRecovery;
 }
 
 export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {

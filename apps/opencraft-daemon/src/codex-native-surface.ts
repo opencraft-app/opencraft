@@ -43,6 +43,7 @@ export function projectSharedNativeCodexInitialize(value: unknown, goalCapabilit
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
+  extensions["opencraft/read-history"] = { version: 1, initialTurnsPage: false };
   for (const extension of [OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION,
     OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_DESKTOP_EXTENSION,
     "opencraft/host-capabilities", "opencraft/loopback-http", "opencraft/browser"]) delete extensions[extension];

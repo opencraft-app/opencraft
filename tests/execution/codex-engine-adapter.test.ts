@@ -947,7 +947,7 @@ test("last viewer leaving preserves background turns and queued work until the H
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.equal(queueDrained, true);
-    const running = await request("client-b", "thread/read", { threadId, includeTurns: false });
+    const running = await request("client-b", "thread/read", { threadId, includeTurns: false, watch: true });
     assert.equal((running.result as any).thread.status.type, "active");
     assert.deepEqual((await request("client-b", "test/emitThreadNotification", { threadId })).result, { nativeSubscribed: true });
     await request("client-b", "test/completeTurn", { threadId });
@@ -1432,5 +1432,50 @@ test("scheduled Codex completion is observed from native events without a histor
     await request("test/completeTurn", { threadId }); await (adapter as any).schedules.tick();
     const done = await request("opencraft/schedules/read", { threadId }); assert.equal(done.runs[0].state, "completed");
     assert.equal(inspections, 0); assert.equal((await request("test/readAcceptedInputs", {})).data.length, 1);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], [true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-read-cache-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sequence = 0;
+  const call = async (method: string, params: object) => {
+    const id = `read-cache-${++sequence}`;
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    const reply = await waitFor(frames, frame => frame.id === id);
+    assert.equal(reply.error, undefined); return reply.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const nativeHome = (frames.find(frame => frame.id === "reader:init")!.result as any).codexHome;
+    const path = join(nativeHome, "history.jsonl"), threadId = "cached-thread";
+    await mkdir(nativeHome, { recursive: true });
+    const turns = Array.from({ length: 12 }, (_, n) => ({ id: `cached-turn-${n}`, status: "completed", items: [{ id: `answer-${n}`, type: "agentMessage", text: `Historical reply ${n}` }] }));
+    await writeFile(path, turns.map(turn => JSON.stringify({ type: "turn_context", payload: { turn_id: turn.id } }) + "\n").join(""));
+    await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget });
+    const read = () => call("thread/read", { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } });
+    const cold = await read(), warm = await read();
+    assert.deepEqual(warm.initialTurnsPage, cold.initialTurnsPage);
+    assert.deepEqual(cold.initialTurnsPage.data.map((t:any) => ({...t,itemsView:undefined})), turns.slice(-10).reverse().map(t=>({...t,itemsView:undefined})));
+    const counts = await call("test/readMethodCounts", {});
+    assert.equal(counts["thread/resume"] ?? 0, 0);
+    assert.equal(counts["model/list"] ?? 0, 0);
+    assert.equal(counts["thread/turns/list"], smallHistoryBudget ? 2 : 1);
+    assert.deepEqual((await call("test/emitThreadNotification", { threadId })).nativeSubscribed, false);
+    await call("thread/resume", { threadId, excludeTurns: true });
+    assert.equal((await call("test/readMethodCounts", {}))["thread/resume"], 1);
+    const rows = () => {
+      const db = new DatabaseSync(join(root, "data", "cache", "transcript-index.sqlite"), { readOnly: true });
+      try { return (db.prepare("SELECT count(*) AS n FROM opencraft_cache_meta").get() as any).n; }
+      finally { db.close(); }
+    };
+    for (const method of ["thread/archived", "thread/deleted"]) {
+      await call("test/emitThreadNotification", { threadId, method });
+      for (let n = 0; n < 100 && rows(); n++) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(rows(), 0);
+      await read();
+    }
+    await call("thread/archive", { threadId });
+    assert.equal(rows(), 0, "successful archive is reported only after derived cleanup");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

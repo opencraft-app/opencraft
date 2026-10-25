@@ -9,8 +9,16 @@ declare module "@deepseek-ai/cordis" {
 }
 
 type BufferedAction =
-  | { type: "notification"; replay(): void }
+  | { type: "notification"; method: string; replay(): void }
   | { type: "request"; replay(): void; reject(error: Error): void };
+
+function isHistoryDelta(method: string): boolean {
+  return method.startsWith("item/") && /(?:\/delta|Delta)$/.test(method);
+}
+function isSnapshotHistoryNotification(method: string): boolean {
+  return isHistoryDelta(method) || ["item/started", "item/completed", "item/fileChange/patchUpdated",
+    "item/reasoning/summaryPartAdded", "turn/started", "turn/completed", "thread/status/changed", "thread/started"].includes(method);
+}
 
 export interface ResumeNotificationBufferConfig {
   client: AppServerClient;
@@ -42,7 +50,7 @@ export class ResumeNotificationBufferService extends Service {
       // Request-scoped paint data is not execution replay. The coordinator
       // checks its token; buffering it would make REST paint wait for Resume.
       if (buffer === undefined || notification.method === "thread/history/preview") next();
-      else buffer.push({ type: "notification", replay: next });
+      else buffer.push({ type: "notification", method: notification.method, replay: next });
     });
     const removeRequest = config.client.interceptServerRequest((request, next) => {
       const threadId = resolveThreadId(request.params);
@@ -69,6 +77,16 @@ export class ResumeNotificationBufferService extends Service {
 
   isBuffering(threadId: string): boolean {
     return this.buffers.has(threadId);
+  }
+
+  hasDeltas(threadId: string): boolean {
+    return this.buffers.get(threadId)?.some(action => action.type === "notification" && isHistoryDelta(action.method)) ?? false;
+  }
+
+  /** A new canonical read supersedes earlier notifications, but never drops requests. */
+  supersedeNotifications(threadId: string): void {
+    const actions = this.buffers.get(threadId);
+    if (actions) this.buffers.set(threadId, actions.filter(action => action.type === "request" || !isSnapshotHistoryNotification(action.method)));
   }
 
   release(threadId: string): number {

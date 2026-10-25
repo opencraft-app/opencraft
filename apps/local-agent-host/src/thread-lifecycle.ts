@@ -12,10 +12,12 @@ export class ThreadLifecycle {
   private readonly closedTemporaryIds = new Set<string>();
   private readonly disconnectedClients = new Set<string>();
   private readonly restoringClients = new Map<string, Set<string>>();
+  private readonly readingClients = new Map<string, Set<string>>();
   /** Deliver observations during Resume; Session buffers them across its baseline. */
   receivesNotifications(clientId: string, threadId: string): boolean {
     return !this.closed && !this.disconnectedClients.has(clientId)
-      && (this.attachments.has(clientId, threadId) || this.restoringClients.get(clientId)?.has(threadId) === true);
+      && (this.attachments.has(clientId, threadId) || this.restoringClients.get(clientId)?.has(threadId) === true
+        || this.readingClients.get(clientId)?.has(threadId) === true);
   }
   constructor(readonly catalog: ThreadCatalog, private readonly release: (id: string) => Promise<{ released: boolean }>,
     private readonly notify: (method: string, params: Params) => void, private readonly graceMs = 30 * 60 * 1000) {}
@@ -72,7 +74,8 @@ export class ThreadLifecycle {
       return { data, nextCursor: offset + data.length < all.length ? `oc:${offset + data.length}` : null };
     }
     if (method === "thread/unsubscribe") {
-      const id = params.threadId, status = this.attachments.detach(clientId, id);
+      const id = params.threadId, read = this.readingClients.get(clientId)?.delete(id);
+      const status = this.attachments.detach(clientId, id);
       if (status === "unsubscribed" && this.attachments.count(id) === 0) {
         if (this.catalog.get(id)?.ephemeral === true) {
           try {
@@ -82,13 +85,14 @@ export class ThreadLifecycle {
           } catch (error) { this.attachments.attach(clientId, id); throw error; }
         } else this.scheduleUnload(id);
       }
-      return { status };
+      return { status: read && status !== "unsubscribed" ? "unsubscribed" : status };
     }
     const savedModel = ["thread/resume", "thread/fork", "turn/start"].includes(method)
       ? this.catalog.configuration(params.threadId).model : undefined;
     const effectiveParams = params.model == null && typeof savedModel === "string" && savedModel !== "" && savedModel !== "dsh"
       ? { ...params, model: savedModel } : params;
-    const restoring = method === "thread/resume" && typeof params.threadId === "string";
+    const reading = method === "thread/read" && params.watch === true;
+    const restoring = (method === "thread/resume" || reading) && typeof params.threadId === "string";
     if (restoring) {
       const threads = this.restoringClients.get(clientId) ?? new Set<string>();
       threads.add(params.threadId); this.restoringClients.set(clientId, threads);
@@ -96,6 +100,10 @@ export class ThreadLifecycle {
     try {
       const reply = await delegate(method, effectiveParams);
       this.assertClient(clientId);
+      if (reading && reply?.thread?.id === params.threadId) {
+        const threads = this.readingClients.get(clientId) ?? new Set<string>();
+        threads.add(params.threadId); this.readingClients.set(clientId, threads);
+      }
       if (reply?.thread && ["thread/start", "thread/resume", "thread/fork"].includes(method)) {
         this.catalog.upsert(reply.thread, {
           ...(method === "thread/fork" ? { ephemeral: params.ephemeral === true, forkedFromId: params.threadId, parentThreadId: null } : {}),
@@ -156,6 +164,7 @@ export class ThreadLifecycle {
   }
   async disconnect(clientId: string): Promise<void> {
     this.disconnectedClients.add(clientId);
+    this.readingClients.delete(clientId);
     if (this.closed) return;
     await Promise.all(this.attachments.disconnect(clientId).map(id => this.enqueue(id, async () => {
       if (this.closed || this.attachments.count(id)) return;
@@ -173,6 +182,7 @@ export class ThreadLifecycle {
     if (this.disconnectedClients.has(clientId)) throw new Error("Thread client has disconnected");
   }
   async close(): Promise<void> {
+    this.readingClients.clear();
     this.closed = true; for (const id of this.timers.keys()) this.cancelTimer(id);
     await Promise.allSettled(this.operations.values()); this.catalog.close();
   }

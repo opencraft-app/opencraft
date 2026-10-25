@@ -1,5 +1,6 @@
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { AppServerThread, AppServerTurn } from "@opencraft/appserver-protocol";
 import { randomUUID } from "node:crypto";
 import { projectedHistoryHeadCursors, projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
 import { homedir } from "node:os";
@@ -236,7 +237,7 @@ function titleFor(summary: DshSessionSummary): string {
   return typeof projected === "string" && projected.trim() !== "" ? projected.trim() : "New chat";
 }
 
-function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): RecordValue {
+function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): AppServerThread {
   const title = titleFor(summary);
   const timestamp = appTimestamp(summary.updatedAt);
   const cwd = summary.cwd ?? homedir();
@@ -267,7 +268,7 @@ function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): 
     agentRole: null,
     gitInfo: null,
     name: title,
-    turns,
+    turns: turns as unknown as AppServerTurn[],
   };
 }
 
@@ -1484,6 +1485,7 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
+              "opencraft/read-history": { version: 1, initialTurnsPage: true, boundedRecovery: true },
               [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true, pin: true },
               [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
               [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: !!this.threadEngine?.goal, usageAccounting: false },
@@ -1529,6 +1531,17 @@ export class DshAppServerAdapter {
       case "thread/read": {
         const sessionId = string(value.threadId);
         const summary = await this.summary(sessionId);
+        if (value.initialTurnsPage != null) {
+          const epoch = this.historyEpoch, request = object(value.initialTurnsPage);
+          const description = await this.threadEngine?.describe?.({ sessionId });
+          const history = await this.recoveryHistory(sessionId, value.historyCheckpoint, number(request.limit, 10), description?.historyHead);
+          if (epoch !== this.historyEpoch || !this.engineReady) throw new DshClientError("DSH_GENERATION_CHANGED", "DSH restarted during history read; retry required", true);
+          const selection = description?.selection;
+          return { thread: { ...makeThread(summary), ...(selection ? {
+            model: encodeModel(selection.provider, selection.model), modelProvider: "dsh", reasoningEffort: selection.reasoningEffort ?? null,
+          } : {}) }, initialTurnsPage: { data: history.pageTurns, nextCursor: history.nextCursor,
+            backwardsCursor: null, itemsPaginationByTurnId: {} }, historyRecovery: history.recovery };
+        }
         const turns = value.includeTurns === true ? await this.fullHistory(sessionId) : [];
         return { thread: makeThread(summary, turns) };
       }

@@ -1,4 +1,6 @@
-import { serializeHistoryReply } from "@opencraft/appserver-client";
+import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
+import { TranscriptReadCache } from "@opencraft/native-history-node";
+import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
@@ -78,6 +80,11 @@ import {
   acquireCodexWriter,
   type CodexMaintenanceClientFactory,
 } from "@opencraft/account-pool-host";
+
+function nativeHistoryTooLarge(error: unknown): boolean {
+  const value = error as { code?: number; data?: { code?: string } } | null;
+  return isHistoryResponseTooLargeError(error) || value?.code === -32072 || value?.data?.code === "HISTORY_RESPONSE_TOO_LARGE";
+}
 
 type RpcRecord = Record<string, unknown>;
 
@@ -251,6 +258,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly initializedClients = new Set<string>();
   private readonly clientEpochs = new Map<string, number>();
   private readonly threadClients = new Map<string, Set<string>>();
+  private readonly historyWatchers = new Map<string, Set<string>>();
   /** The one native stdio connection is not one subscription per logical Client. */
   private readonly nativeSubscribedThreads = new Set<string>();
   private readonly ephemeralThreads = new Set<string>();
@@ -291,6 +299,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly tasks: TasksService | null;
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
+  private transcriptCache: TranscriptReadCache | null = null;
   private readonly nativeTransport: DuplexTransport | null;
   private releaseOverlays: (() => void) | null = null;
   private releaseWriter: (() => void) | null = null;
@@ -456,6 +465,50 @@ export class CodexEngineAdapter implements DuplexTransport {
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     this.hostState = new OpenCraftHostStateDatabase(dataRoot);
+    const adapter = this;
+    this.transcriptCache = new TranscriptReadCache(dataRoot, {
+      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || dataRoot; },
+      readThread: async threadId => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread as AppServerThread,
+      listTurns: async (threadId, cursor, limit) => {
+        const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
+          threadId, cursor, limit, itemsView, sortDirection: "desc",
+        }) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
+        let page;
+        try { page = await request("full"); }
+        catch (error) {
+          if (!nativeHistoryTooLarge(error)) throw error;
+          page = await request("notLoaded");
+        }
+        for (const turn of page.data) if (turn.itemsView === "notLoaded") {
+          const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
+          let itemCursor: string | null = null, budget = 100;
+          const seen = new Set<string>();
+          do {
+            let response: any;
+            for (;;) {
+              try { response = await this.requestPhysical("thread/items/list", { threadId, turnId: turn.id,
+                cursor: itemCursor, limit: budget, sortDirection: "asc" }); break; }
+              catch (error) {
+                if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
+                budget = Math.max(1, Math.floor(budget / 2));
+              }
+            }
+            if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
+              throw new Error("Invalid native Item page");
+            for (const entry of response.data) {
+              const item = record(entry.item ?? entry);
+              if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turn.id)) throw new Error("Invalid native Item");
+              items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
+            }
+            itemCursor = response.nextCursor;
+            if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
+            if (itemCursor !== null) seen.add(itemCursor);
+          } while (itemCursor !== null);
+          turn.items = items; turn.itemsView = "full";
+        }
+        return page;
+      },
+    }, { measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
     try {
       const telemetry=new TokenUsageTelemetry();
       this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
@@ -664,6 +717,31 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    const historyParams = record(message.params);
+    const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
+    const cachedPage = message.method === "thread/turns/list" && historyParams.sortDirection === "desc"
+      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:"));
+    if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
+      try {
+        const limit = cachedRead ? record(historyParams.initialTurnsPage).limit : historyParams.limit;
+        const result = cachedRead ? await this.transcriptCache.read(threadId, typeof limit === "number" ? limit : 10, () => {
+          if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+            this.watchHistory(threadId, clientId);
+        }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full")
+          : await this.transcriptCache.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full");
+        if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
+        if (historyParams.watch === true) this.watchHistory(threadId, clientId);
+        const projected = projectThreadMessageResult(this.projectSender, string(message.method), historyParams, result);
+        this.emit({ id, result: this.messageAttachments
+          ? projectThreadAttachmentResult(this.messageAttachments, string(message.method), historyParams, projected) : projected }, clientId);
+      } catch (error) {
+        if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+          this.emit({ id, error: { code: -32000, message: errorMessage(error) } }, clientId);
+      }
+      return;
+    }
     if (id !== null && message.method === CODEX_MAINTENANCE_READ) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       this.emit({ id, result: this.maintenanceSnapshot() }, clientId); return;
@@ -1005,6 +1083,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.remoteGoalCapability = null;
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
+      await this.transcriptCache?.close(); this.transcriptCache = null;
       this.durableCatalog?.close(); this.durableCatalog = null;
       await this.recovery?.close(); this.recovery = null;
       await this.schedules?.close(); this.schedules = null;
@@ -1057,6 +1136,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.initializedClients.clear();
       this.clientEpochs.clear();
       this.threadClients.clear();
+      this.historyWatchers.clear();
       for (const timer of this.nativeReleaseTimers.values()) clearTimeout(timer);
       this.nativeReleaseTimers.clear();
       this.nativeSubscribedThreads.clear();
@@ -1205,6 +1285,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
+          "opencraft/read-history": { version: 1 },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };
@@ -1320,13 +1401,18 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
         if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
           this.projectSender, pending.method, pending.params, message.result) };
-        if (this.validClientRequest(pending)) this.emit({
+        const emitReply = () => { if (this.validClientRequest(pending)) this.emit({
           ...message,
           ...(this.messageAttachments && "result" in message ? {
             result: projectThreadAttachmentResult(this.messageAttachments, pending.method, pending.params, message.result),
           } : {}),
           id: pending.originalId,
-        }, pending.clientId, pending.method);
+        }, pending.clientId, pending.method); };
+        if ("result" in message && ["thread/archive", "thread/delete"].includes(pending.method) && this.transcriptCache)
+          void this.transcriptCache.invalidate(string(pending.params.threadId)).then(emitReply, () => {
+            if (this.validClientRequest(pending)) this.emit({ id: pending.originalId, error: { code: -32000, message: "Transcript cleanup failed" } }, pending.clientId);
+          });
+        else emitReply();
         if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
           const threadId = pending.method === "thread/start" || pending.method === "thread/fork"
             ? string(record(record(message.result).thread).id) : string(pending.params.threadId);
@@ -1342,7 +1428,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     try { this.tokenUsage?.notification(string(message.method),record(message.params)); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
     if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
     this.durableCatalog?.observe(string(message.method), message.params);
-    if (message.method === "thread/archived" || message.method === "thread/deleted") this.schedules?.suspend(threadId);
+    if (message.method === "thread/archived" || message.method === "thread/deleted") {
+      this.schedules?.suspend(threadId);
+      void this.transcriptCache?.invalidate(threadId).catch(() => this.diagnostic({ event: "thread-cache-cleanup-failed" }));
+    }
     if (message.method === "turn/started" && threadId) {
       const turnId = string(record(record(message.params).turn).id);
       if (turnId) this.activeTurns.set(threadId, turnId);
@@ -1428,6 +1517,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (string(record(record(result).thread).id) !== threadId) return;
       this.subscribeThread(threadId, pending.clientId);
       this.claimInteractionOwner(threadId, pending.clientId);
+    } else if (pending.method === "thread/read" && pending.params.watch === true) {
+      // Reading may observe an already-running stream, but never owns its
+      // execution or pending interactions and never loads a native engine.
+      this.watchHistory(string(pending.params.threadId), pending.clientId);
     } else if (pending.method === "turn/start") {
       this.subscribeThread(string(pending.params.threadId), pending.clientId);
     }
@@ -1515,6 +1608,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private threadTargets(threadId: string): string[] {
     const targets = new Set(this.threadClients.get(threadId) ?? []);
+    for (const id of this.historyWatchers.get(threadId) ?? []) targets.add(id);
     // A join begins before native resume is sent. The Client's resume buffer
     // holds these events until its authoritative snapshot has been committed.
     for (const request of this.pending.values()) {
@@ -1536,6 +1630,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const clients = this.threadClients.get(threadId);
+    const watchers = this.historyWatchers.get(threadId);
+    watchers?.delete(clientId);
+    if (watchers?.size === 0) this.historyWatchers.delete(threadId);
     const wasSubscribed = clients?.delete(clientId) ?? false;
     if (clients?.size === 0) this.threadClients.delete(threadId);
     for (const request of this.pending.values()) {
@@ -1583,7 +1680,10 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private canReleaseNativeSubscription(threadId: string): boolean {
     return this.statusValue.state === "open" && this.nativeSubscribedThreads.has(threadId)
-      && this.threadTargets(threadId).length === 0 && !this.hasHostThreadDemand(threadId);
+      && (this.threadClients.get(threadId)?.size ?? 0) === 0
+      && ![...this.pending.values()].some(request => request.params.threadId === threadId
+        && (request.method === "thread/resume" || request.method === "turn/start") && this.validClientRequest(request))
+      && !this.hasHostThreadDemand(threadId);
   }
 
   private scheduleNativeRelease(threadId: string, minimumDelayMs = 0): void {
@@ -1628,6 +1728,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       });
   }
 
+  private watchHistory(threadId: string, clientId: string): void {
+    if (!threadId) return;
+    let clients = this.historyWatchers.get(threadId);
+    if (!clients) { clients = new Set(); this.historyWatchers.set(threadId, clients); }
+    clients.add(clientId);
+  }
+
   private subscribeThread(threadId: string, clientId: string): void {
     if (!threadId) return;
     this.cancelNativeRelease(threadId);
@@ -1637,6 +1744,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
+    for (const [threadId, clients] of this.historyWatchers) {
+      clients.delete(clientId);
+      if (clients.size === 0) this.historyWatchers.delete(threadId);
+    }
     this.desktopService?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
     this.clientEpochs.delete(clientId);
     this.initializedClients.delete(clientId);

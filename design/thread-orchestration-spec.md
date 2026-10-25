@@ -240,6 +240,8 @@ CREATE TABLE IF NOT EXISTS opencraft_wait_tickets (
 
 ### 4.2 可重建读取缓存（`<dataDirectory>/cache/transcript-index.sqlite` + `.turns.jsonl` + `.blobs/`）
 
+当前 Stage 0 的缓存实现位于 `packages/native-history-node/`，本批只接入 Codex，复用 Token 统计的 rollout 字节增量读取器，并交给原生只读分页器投影 Turn。DSH/Pi 维持只读打开兼容路径，共享磁盘缓存消费留待后续；Pi 只读 SQLite 快照使用原生 Storage，不创建执行 Harness。完整 Item 响应沿用当前 wire contract，磁盘 Blob 在请求该页时还原；单独的预览与 Blob 拉取协议留待后续阶段。
+
 按照 `docs/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
 
 ```sql

@@ -980,7 +980,9 @@ export function useComposerCatalog(
   const modelCatalogOwner = supportsScopedModelCatalog ? threadId : null;
   const queryClient = useQueryClient();
   const options = useMemo(() => composerCapabilitiesOptions(snapshot.hostId, modelCatalogOwner, runtime.resources.composerCatalog), [snapshot.hostId, modelCatalogOwner, runtime]);
-  const capabilities = useQuery({ ...options, enabled });
+  // Historical reading needs the persisted selection, not a model directory.
+  // The existing menu-open action loads choices when the user requests them.
+  const capabilities = useQuery({ ...options, enabled: enabled && threadId === null });
   const connectionGeneration = runtime.resources.host.getConnectionGeneration?.() ?? 0;
   const defaultsKey = useMemo(
     () => ["appserver", snapshot.hostId, "composer-new-thread-defaults", connectionGeneration, cwd] as const,
@@ -1027,7 +1029,7 @@ export function useComposerCatalog(
       const failed = queryClient.getQueryState(options.queryKey)?.error != null;
       void queryClient.fetchQuery({ ...options, ...(failed ? { staleTime: 0 } : {}) }).catch(() => undefined);
     },
-    retryModels: () => { if (enabled) void invalidateComposerCapabilities(queryClient, snapshot.hostId).catch(() => undefined); },
+    retryModels: () => { if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
   }), [enabled, options, queryClient, snapshot.hostId]);
   const permissionProfiles = useInfiniteQuery({
     queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,

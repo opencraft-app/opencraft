@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/native-history-node",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/transcript-read-cache.ts",
+    "./codex-rollout-reader": "./src/codex-rollout-reader.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  }
+}
