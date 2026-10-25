@@ -250,3 +250,31 @@ input value, focus and selection. It does not test a physical phone keyboard.
 ## Nested Chromium patch validation
 
 `manage.py` validates the syntax of Chromium patch files changed by this fork against the resulting Electron tree, before changing a checkout branch or running Chromium hooks. Outer patch SHA/tree verification alone cannot detect corrupt inner hunk counts. This early check is not a substitute for a full clean Chromium patch replay or native compilation.
+
+
+## Offscreen cross-site input transforms
+
+`0014-offscreen-oopif-input-transforms.patch` supplies the offscreen root
+compositor FrameSinkId and delegates cross-view coordinate conversion to the
+native destination view, matching Chromium Aura. The old OSR implementation
+returned false for every other view, so cross-site iframe content could render
+without receiving mouse/touch input. No page-DOM hit testing, iframe-specific
+coordinates or remote focus changes are added to the input bridge.
+
+The native regression requires an actual cross-process child. It checks trusted
+mouse/touch coordinates through ordinary and transformed iframe surfaces, native
+Chinese commit to that child, and child wheel scrolling. DOM reads/writes are
+local fixture setup/assertions. This does not verify physical OS IME or authorize
+binding an unknown first composition to a later focus.
+
+```sh
+vendor/electron/.work/src/out/OpenCraft/electron --no-sandbox \
+  --ozone-platform=headless --ozone-override-screen-size=1920,1080 \
+  --force-device-scale-factor=1 --disable-gpu \
+  vendor/electron/probe-offscreen-oopif-input.cjs
+```
+
+Source replay, an isolated experimental object/link, a complete native build,
+a packaged artifact and actual deployment are separate evidence. Never label an
+experimental executable as a verified shipping artifact or replace retained
+native owners to activate this patch.

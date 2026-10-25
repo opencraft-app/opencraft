@@ -5,7 +5,7 @@
   "version": "44.8.0",
   "revision": "60169b45c12488c6fda237af7f6425526a7ce5f0",
   "chromiumVersion": "152.0.7977.167",
-  "patchDate": "2026-10-21T06:00:00Z",
+  "patchDate": "2026-10-25T05:00:00Z",
   "patches": [
     {
       "path": "patches/electron/0001-observe-native-text-input-state.patch",
@@ -58,6 +58,10 @@
     {
       "path": "patches/electron/0013-native-form-input-identity.patch",
       "sha256": "6504cd7b3409ab36e8f8ec796f9895b980f9cdf6e465e286f18799e6cf0a622b"
+    },
+    {
+      "path": "patches/electron/0014-offscreen-oopif-input-transforms.patch",
+      "sha256": "be85483d5cdc41a9f4267f1002ddc96cd377ce65ce8a170c993d973346f674d9"
     }
   ]
 }
