@@ -149,6 +149,22 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 ## 拆分的首次上线与回退计划
 
+维护准入由连接 Core 的本地 Codex Host 拥有：在该 Host 的 `dataDirectory` 创建
+`codex-admission.paused`，会立即拒绝新的 Thread/fork、Turn、队列输入、goal、独立命令和协作提交；
+移除文件恢复。现有 Turn、已接纳队列、goal 的执行与取消、查询及审批回复继续；只改变
+status 的 goal 暂停/完成仍允许，夹带 objective/budget 修改仍视为新提交。不靠断连接或
+杀进程排空。计划触发器保留 waiting 状态，在恢复准入后重试。该文件不放在
+Core 的临时 RuntimeDirectory，Core 重启不会意外恢复准入；正常 payload 安装不覆盖它。
+
+初始化的 `opencraft.codex-maintenance` capability 提供只读
+`opencraft/codex/maintenance/read`，返回准入状态、在途提交、排队输入、历史 unknown、
+goal、标题任务、待回复请求及容量重试数量；这些数量只属于 Host，不代替原生队列或 goal。
+操作者须同时检查这些 Host 状态及原生
+loaded/Turn/工具状态，不能把私有 Core health 或页面连接数当成排空证明。
+原生独立进程/终端须单独核对，不能由 loaded Thread 为零推断它们已退出。
+历史 unknown 仍是结果未知的持久 fence，维护不得删除或自动重发；不能解释其是否仍
+有在途执行时不得切换。维护探针和新任务被拒绝的回执要在切换前留存。
+
 本实现与模板不自动在任何现有部署启用拆分。首次迁移是一次显式维护，和随后账号 Core 独立更新不同：
 
 1. 固定已验证、已合入的源码/归档；分别安装 Core 与 APP Server owner bundle 到独立不可变目录，CLI 保持原精确版本。核对现有 unit 的 uid、token、数据根、socket、cwd、端口及 systemd 停止传播；备份 unit/bundle 与各 owner 的最新数据并验证恢复副本。

@@ -97,6 +97,13 @@ export class OpenCraftHostQueue {
     return Number(this.db.prepare("SELECT count(*) AS n FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown')").get(threadId)!.n);
   }
 
+  maintenanceCounts(): { queued: number; inFlightKeys: string[]; unknown: number } {
+    const row = this.db.prepare("SELECT sum(state='queued') AS queued, sum(state='unknown') AS unknown FROM opencraft_host_queue").get()!;
+    const sending = this.db.prepare("SELECT thread_id, client_id FROM opencraft_host_queue WHERE state IN ('dispatching','steering')").all();
+    return { queued: Number(row.queued), unknown: Number(row.unknown),
+      inFlightKeys: sending.map(input => JSON.stringify(["input", input.thread_id, input.client_id])) };
+  }
+
   pendingThreads(): string[] {
     return this.db.prepare("SELECT DISTINCT thread_id FROM opencraft_host_queue WHERE state IN ('queued','dispatching','steering','unknown')")
       .all().map(row => requiredText(row.thread_id, "thread id"));
