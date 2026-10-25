@@ -47,26 +47,32 @@ try {
             document.activeElement instanceof HTMLElement && document.activeElement.blur();
             window.visualViewport!.dispatchEvent(new Event('resize'));
         }, { theme, inset, status });
-        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, visibleHeight);
+        // Ordinary non-overlay surfaces retain the existing layout/visual capacity.
+        const canvasHeight = status === 'black-translucent' ? 874 : Math.min(812, visibleHeight);
+        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, canvasHeight);
         const geometry = await page.evaluate(() => {
             const shell = document.querySelector('.app-shell-root')!, row = document.querySelector('.app-shell-row')!, composer = document.querySelector('.opencraft-composer-shell')!;
             return { rootHeight: document.documentElement.getBoundingClientRect().height, paintBottom: shell.getBoundingClientRect().bottom, contentBottom: row.getBoundingClientRect().bottom - parseFloat(getComputedStyle(row).paddingBottom), composerBottom: composer.getBoundingClientRect().bottom, footerPadding: getComputedStyle(document.querySelector('.thread-scroll-footer')!).paddingBottom, keyboard: document.documentElement.dataset.timelineKeyboardOpen, attributes: { ...document.documentElement.dataset } };
         });
-        assert.equal(geometry.contentBottom, visibleHeight - inset);
-        assert.equal(geometry.paintBottom, visibleHeight);
-        if (status === 'black-translucent') assert.equal(geometry.rootHeight, visibleHeight, 'document-flow root uses observed visibility too');
+        assert.equal(geometry.contentBottom, canvasHeight - inset);
+        assert.equal(geometry.paintBottom, canvasHeight);
+        if (status === 'black-translucent') assert.equal(geometry.rootHeight, 874, 'installed document retains its full CSS canvas');
         assert.equal(geometry.keyboard, 'false');
         assert.equal(geometry.footerPadding, '16px');
-        assert.equal(geometry.composerBottom, visibleHeight - inset - 16, 'one device inset, ordinary gutter');
+        assert.equal(geometry.composerBottom, canvasHeight - inset - 16, 'one device inset, ordinary gutter');
         const name = `${width}-${theme}-${inset}-${visibleHeight}-${status}`;
         await page.screenshot({ path: `${output}/${name}.png` });
-        // Both former policies are rejected by the scene for which their premise was false.
-        const wrongHeight = visibleHeight === 812 ? 874 : 812;
+        // A status-excluded native report must not truncate an installed CSS canvas.
+        const wrongHeight = canvasHeight === 874 ? 812 : 874;
         const oldFrame = await page.addStyleTag({ content: `.app-shell-root { height: ${wrongHeight}px !important; }` });
         await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, wrongHeight);
         assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e => e.getBoundingClientRect().bottom), wrongHeight - inset - 16);
         await oldFrame.evaluate(e => e.remove());
-        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, visibleHeight);
+        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, canvasHeight);
+        await page.evaluate(height => { Object.assign(window.visualViewport!, { scale: 2, height: height / 2 }); window.visualViewport!.dispatchEvent(new Event('resize')); }, visibleHeight);
+        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, status === 'black-translucent' ? 874 : 812);
+        await page.evaluate(height => { Object.assign(window.visualViewport!, { scale: 1, height }); window.visualViewport!.dispatchEvent(new Event('resize')); }, visibleHeight);
+        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, canvasHeight);
         await editor.fill('preserve mobile draft');
         const handle = await editor.elementHandle();
         await page.evaluate(() => { Object.assign(window.visualViewport!, { height: 440 }); window.visualViewport!.dispatchEvent(new Event('resize')); });
@@ -78,11 +84,11 @@ try {
         await page.waitForFunction(() => document.documentElement.dataset.timelineKeyboardOpen === 'false');
         assert.equal(await page.locator('.app-shell-root').evaluate(e => e.getBoundingClientRect().height), 440, 'blur preserves remaining contraction');
         await page.evaluate(height => { Object.assign(window.visualViewport!, { height }); window.visualViewport!.dispatchEvent(new Event('resize')); }, visibleHeight);
-        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, visibleHeight);
+        await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, canvasHeight);
         assert.equal(await editor.innerText(), 'preserve mobile draft'); assert.ok(await handle!.evaluate(e => e.isConnected));
-        results.push({ width, theme, inset, visibleHeight, status, ...geometry, keyboardHeight: 440, draftRetained: true });
+        results.push({ width, theme, inset, visibleHeight, canvasHeight, status, ...geometry, keyboardHeight: 440, draftRetained: true });
         await writeFile(`${output}/result.json`, JSON.stringify(results, null, 2));
         await page.close();
     }
-    console.log('PASS: observed A/B mobile visibility, overlay/default, 390/402, light/dark, 0/34px, keyboard/blur/restore and draft');
+    console.log('PASS: CSS-owned installed canvas, status-excluded reports, overlay/default, 390/402, light/dark, 0/34px, keyboard/blur/restore and draft');
 } finally { await browser?.close(); await server.close(); }

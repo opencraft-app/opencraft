@@ -137,6 +137,7 @@ try {
         evidence.push({theme,reducedMotion,width,geometry});
       }
       await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-top','0px'));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingTop==='0px');
       assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingTop),'0px');
       assert.equal(await input.evaluate(e=>e===(window as any).safeDraft),true);
       assert.equal(await input.inputValue(),'Safe layout independent of sidebar');

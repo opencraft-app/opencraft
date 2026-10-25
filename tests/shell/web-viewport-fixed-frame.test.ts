@@ -268,30 +268,31 @@ test("document-origin changes publish even when fixed-client geometry stays unch
   } finally { f.close(); }
 });
 
-test("mobile canvas follows observed A/B visibility independently of clientHeight and overlay request", () => {
+test("resting overlay canvas stays CSS-owned while the existing port projects contraction", () => {
   const f = fixture();
   try {
     const root = f.win.document.documentElement;
-    const visible = () => root.style.getPropertyValue("--timeline-visible-viewport-height");
     Object.assign(root.dataset, { windowHost: "browser", windowDisplayMode: "standalone", windowEdgeStrategy: "legacy-overlay-requested" });
-    for (const height of [812, 874, 812]) {
+    for (const height of [688, 750, 688]) {
       Object.defineProperty(f.win, "innerHeight", { configurable: true, value: height });
-      f.visual.height = height;
-      f.visual.dispatchEvent(new f.win.Event("resize"));
-      assert.equal(visible(), `${height}px`, "clientHeight remains 688 and cannot cap visible canvas");
+      f.visual.height = height; f.visual.dispatchEvent(new f.win.Event("resize"));
+      assert.equal(root.dataset.timelineViewportOccluded, "false");
+      assert.equal(root.dataset.timelineKeyboardOpen, "false");
+      assert.equal(root.style.getPropertyValue("--timeline-visible-viewport-height"), "", "no measurement may replace the resting CSS canvas");
     }
-    Object.defineProperty(f.win, "innerHeight", { configurable: true, value: 874 });
-    f.visual.height = 874; f.visual.dispatchEvent(new f.win.Event("resize"));
     f.input.focus(); f.input.setSelectionRange(2, 2);
-    f.visual.height = 440; f.visual.dispatchEvent(new f.win.Event("resize"));
-    assert.equal(visible(), "440px", "visual contraction wins before innerHeight updates");
+    f.visual.height = 394; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
     assert.equal(root.dataset.timelineKeyboardOpen, "true");
+    assert.equal(root.style.getPropertyValue("--timeline-available-viewport-height"), "394px");
     f.input.blur(); f.frame(20);
-    assert.equal(visible(), "440px", "blur retains remaining contraction");
-    f.visual.height = 874; f.visual.dispatchEvent(new f.win.Event("resize"));
-    assert.equal(visible(), "874px");
-    f.visual.scale = 2; f.visual.height = 437; f.visual.dispatchEvent(new f.win.Event("resize"));
-    assert.equal(visible(), "874px", "pinch retains last unzoomed canvas");
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    assert.equal(root.dataset.timelineViewportOccluded, "true", "blur must not restore CSS capacity before the native frame recovers");
+    f.visual.height = 688; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false");
+    f.visual.scale = 2; f.visual.height = 344; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false", "pinch alone is not keyboard contraction");
+    assert.equal(root.style.getPropertyValue("--timeline-visible-viewport-height"), "");
     assert.equal(f.input.value, "preserve draft"); assert.equal(f.input.selectionStart, 2);
   } finally { f.close(); }
 });
