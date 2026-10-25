@@ -34,6 +34,7 @@ export class CodexThreadTitles {
   constructor(private readonly port: CodexThreadTitlePort, private readonly timeoutMs = 30_000) {}
   owns(threadId: string): boolean { return this.internal.has(threadId); }
   get pendingCount(): number { return this.jobs.size; }
+  pendingThreadIds(): string[] { return [...this.jobs.keys()]; }
 
   observeResult(method: string, params: RpcRecord, result: unknown): void {
     if (this.closed) return;

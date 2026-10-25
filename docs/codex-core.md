@@ -137,15 +137,49 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 第 1 步不会在 Core 重启、health 503 或 native 断连时调用 turn/start/resume mutation；只恢复代理传输。第 2 步必须区分账号 Core outage 与 native runtime replacement，以原生权威读数为依据。第 3 步提供 generation ID/接纳 epoch 后，恢复意图也按该代次查询；旧代任务未完成不能仅因新代 ready 就启动重复执行。具体恢复存储/算法由自动续跑实现的正式契约负责，本页不另建队列或第二个 writer。
 
-### 第 3 步：新旧并行（方案，未实施）
+### 第 3 步：新旧并行
 
 固定路由协调 owner 单写 `threadId → generationId` 及接纳 epoch；独立 APP Server generation 只拥有自己的 native `CODEX_HOME`、socket 和固定 CLI/payload。所有 generation 共用**同一个**账号 Core loopback 代理，通过现有 Host token 与 thread affinity 选账号，不让它们打开 account-pool 或 secrets；配额、刷新和账户亲和性保持单写。
 
 候选 ready 后原子切换新建 Thread 默认 generation。既有会话的读取、resume、输入、工具回复、queue/goal 和取消继续去其原 generation，目录查询聚合去重；客户端重连不改变归属。迟到响应同时校验 Thread、generation、Turn 与连接 epoch。旧 generation 停接新建 Thread，现有任务自然排完再退，不能以超时杀进程完成退休。已加载但空闲的 Thread 不要求旧二进制永久驻留：退役事务先关闭该 runtime 的新执行准入（未接纳请求明确可重试，未知送达先对账），最后核实无 Turn/工具/queue/goal/审批后关闭 native，保留原 HOME 的绝对路径。以后该 HOME 中的 Thread 再被访问时，由当前版本对同一 HOME 独占冷启动，兼容性/备份验证通过并更新 registry 的 runtime incarnation 后再接纳输入；新建 Thread 仍进新的 HOME。这样无需把运行中的原生 SQLite/rollout 挪到别处，也能退出旧版本。对不同 HOME 合库或逐 Thread 搬迁仍需另验原生导入/导出，首版不依赖此能力。当前同版本隔离回退已经验证“旧 native 退出→同 HOME 新 owner→原 Thread/Turn 历史恢复”，不替代未来跨 CLI 版本的兼容演练。
 
-**不能让新旧 APP Server 共用同一个可写 CODEX_HOME。** 固定 0.162.0 隔离实验中，第二进程能启动同一 HOME，但 resume 第一个进程已加载的 Thread 被原生拒绝为 `already has an active writer`。SQLite 可打开并不表示会话可跨进程任意接管，跨版本日志、auth/config 和 loaded-thread 状态也不是可共享无状态资源。第 1 步的两个 owner 锁明确区分账号与运行时；第 3 步将 runtime 锁按代次目录实例化，保留账号锁。当前第 1 步故意只允许一个 runtime，尚无 generation registry；并行阶段需新增 registry、按 Thread 分派、代次目录和退休回执，不需再把账号服务搬回 APP Server，也不依赖全局随机端口/进程内对象。
+**不能让新旧 APP Server 共用同一个可写 CODEX_HOME。** 固定 0.162.0 隔离实验中，第二进程能启动同一 HOME，但 resume 第一个进程已加载的 Thread 被原生拒绝为 `already has an active writer`。SQLite 可打开并不表示会话可跨进程任意接管，跨版本日志、auth/config 和 loaded-thread 状态也不是可共享无状态资源。第 1 步的两个 owner 锁明确区分账号与运行时；第 3 步将 runtime 锁按代次目录实例化，保留账号锁。单 APP 模式继续只允许一个 runtime；显式多代模式新增独立 routing owner 与 registry，各 runtime 锁按独立目录实例化。账号服务不搬回 APP Server，代理地址保持固定。
 
 共享 Host overlay 库仍只有一个 owner，generation 只提供原生帧。账号 Core、Host overlay 和未来 registry 的写权限不得复制到每代。旧代包/CLI/目录被活动映射引用时不能被版本清理删去。新代失败只撤回新建路由，已有新代写入保留；数据兼容不足时前向修复或保留该代，不恢复旧快照。长期 goal/queue/schedule、待审批或 unknown 保持旧代与明确诊断；不自动暂停、取消或批准来制造空闲。
+
+#### 路由、监督与退休协议
+
+`apps/codex-core/src/generation-bin.ts` 构建为独立 `generations.cjs`。它持有稳定 native socket 和唯一 `codex-generations.sqlite` writer；各代 APP 服务由 systemd sibling unit 监督。重启账号 Core 不停止 routing owner 或 APP；重启 routing owner 不停止 APP/native，但前端连接、订阅和连接私有 PTY lease 会丢失，维护路由进程本身仍须先排空这些 lease。CLI 代次升级保持 routing owner，不切换其连接。
+
+registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、Thread 归属、未知创建提交、runtime incarnation 与维护回执。独立 SQLite EXCLUSIVE lease 拒绝第二 routing writer。每代使用私有 socket 目录与独立可写 HOME，拒绝别名与嵌套 HOME。固定 bundle、CLI、node 的绝对路径不得指向自动更新链接；unit MainPID/start ticks、执行 UID 与 native 二进制 hash 经核对后才 ready，不隐式提升既有执行身份。初始 bootstrap 注册后中断会在 epoch=0 时继续就绪与首次激活；已建立的默认代不覆盖。
+
+执行 UID/GID 固定为账号数据目录的 owner，注册定义不能改变该身份；systemd 显式传入两者，接入既有 external unit 时同时核对 APP/native 的身份，不要求它与具有 unit 管理权限的 routing owner 相同。跨 UID 启动只继承基本语言/PATH 环境和 Core 提供的合成 broker，不继承 routing owner 的私有 HOME 或凭据环境。registry 放在 routing owner 的可信目录（模板为 `/var/lib/opencraft-codex-routing`），不能放在执行用户可替换的父目录中。
+
+每代 unit 使用 `PrivateTmp=yes` 及 HOME 内的 TMPDIR。Codex 0.162 的 Unix 入口会链接到 `/tmp/codex-daemon-<uid>`，所以显式 generation APP 在自己的 namespace 内连接原生入口，再在共享 `/run` 目录暴露一个 0600 的真实 Unix socket，透明转发字节；不解析或重放 RPC。原来未指定独立 runtime 根的单 APP 保持原入口。固定 node、bundle、完整 CLI vendor、cwd、数据与 control/socket 路径必须位于 `/tmp` 以外，避免 namespace 隐藏它们。冷验证 socket 也位于配置的路由 socket 父目录；路径须满足 Unix socket 长度限制。
+
+私有认证 control 的 `POST /generations` 接收 `{operation,params}`：`prepare` 校验并启动候选；`activate` 用 `expectedEpoch` CAS 原子切默认代；`retire` 尝试自然退休；`discard` 只停止从未 ready/接纳工作的失败候选，保留 HOME。`GET /generations` 返回状态与有限诊断。bootstrap 文件在尚未完成首次接纳时继续建立默认代，进程重启不覆盖已建立的持久默认代。此接口只面向受信维护进程，不加入用户菜单或公开 HTTP 路由。
+
+`thread/start` 在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
+
+旧代先转 `draining`，继续接既有会话工作。退休先检查 Native 已加载 Thread 的实际状态、goal、未决 RPC/审批与 OS 子进程。Host 以认证 `/generation-host` 报告同一 routing epoch 下的 queue、goal、schedule、恢复意图、标题工作、在途接纳及未知工作；唯一 Host lease 与单调序号拒绝旧回执。Host 初始化/goal 目录扫描未完成、观测超时或未知工作均保留旧代。
+
+退休用两阶段握手避免“读到空闲后又接纳”：routing owner 提交代次 fence；Host 同步拒绝该代新执行并以新 fence epoch 报告此前已接纳的全部工作，取消/暂停与读取仍可用。ACK 仍忙则撤 fence，继续原任务。ACK 空后才同步关闭该 runtime 准入，再核 Native、Host、RPC 与所有 Linux worker task 的子进程（含后台 shell）；持久记 `retiring` 后停止已验证的 unit，确认退出后记 `retired`。stop 失败保留 fence 与当前数据，重启继续该交接，不在旧 writer 尚活时打开 HOME。长期 goal/queue/schedule/unknown 不强制退休；新代继续接新 Thread。
+
+旧 HOME 再被访问时，自动只向前升级可比较的稳定 CLI 版本；默认回退到较旧 CLI 时仍使用该 HOME 原固定 payload，未知版本也不猜测升级次序。先从已经退出的 HOME 制作备份与验证副本，逐 SQLite `quick_check`；验证 unit 启动前原子持久记录其身份，routing owner 重启先完成遗留验证 unit 的清理，失败保留交接记录。用当前 CLI 在私有 mount namespace 将副本绑定到**原绝对 HOME**，只执行 list/read 验证，避免 native 数据中的绝对 rollout 路径误读真实目录。验证成功后才用当前 payload 在原 HOME 独占冷启动并增加 incarnation。验证不执行 resume、Turn 或工具；兼容失败保留原目录/副本，返回不可用，不恢复旧快照。此冷验证目前要求 systemd 路径不含空白、冒号或反斜线。
+
+回退只 CAS 新建默认路由到仍就绪的原代；新代已创建 Thread 与数据继续保留并按其归属服务。原代已退休时，显式 activate 先验证并重开它保留的 payload/HOME。已冷升级的 HOME 不承诺旧 CLI 可读，不做 schema 降级。单代异常只通知 Host 受影响 Thread，沿现有恢复 owner 读实际状态、恢复订阅和必要的后继，不断开其它代、不盲重发 mutation。
+
+#### 并行隔离演练
+
+先 `npm run build --workspace @opencraft/codex-core`。在清空凭据的环境中运行
+`scripts/smoke/execution/smoke-codex-generations.ts`，显式设置
+`OPENCRAFT_GENERATION_DRILL_ISOLATED=1`、`OPENCRAFT_CODEX_OLD_EXECUTABLE`、
+`OPENCRAFT_CODEX_NEW_EXECUTABLE` 与可选私有 `OPENCRAFT_CORE_DRILL_ROOT`。
+需要 Linux/systemd 与创建独立 unit/mount namespace 的权限。脚本只用合成账号、
+私有 HOME 与 loopback 假模型，使用两个不同真实 CLI；覆盖长流/shell 跨切代、
+默认路由回退、旧 HOME 退休/原路径冷验证、routing owner 重启及单代崩溃。
+可设置 `OPENCRAFT_DRILL_EXECUTION_UID/GID` 与 `OPENCRAFT_DRILL_ADOPT_EXTERNAL=1`，验证接入已运行的非 root APP/native 且其 PID/执行身份不变。运行目录默认使用私有 `/run/opencraft-generation-drills` 子目录；固定二进制复制到夹具目录，避免 PrivateTmp 隐藏源码目录。测试会停止自建 units/listeners，保留私有报告；不替代实际账号与外部模型验收。
+
 
 ## 拆分的首次上线与回退计划
 

@@ -1,9 +1,33 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { unlink } from "node:fs/promises";
-import { connect } from "node:net";
+import { connect, createServer, type Socket } from "node:net";
+import { chmod } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
 import type { CodexAccountService } from "@opencraft/account-pool-host";
+
+/** A real socket outside PrivateTmp; native may publish an alias into its own /tmp. */
+export async function nativeSocketRelay(endpoint: string, target: string) {
+  await removeStaleSocket(endpoint);
+  const connections = new Set<Socket>();
+  const server = createServer(client => {
+    const upstream = connect(target);
+    connections.add(client); connections.add(upstream);
+    for (const socket of [client, upstream]) {
+      socket.on("close", () => { connections.delete(socket); client.destroy(); upstream.destroy(); });
+      socket.on("error", () => { client.destroy(); upstream.destroy(); });
+    }
+    client.pipe(upstream).pipe(client);
+  });
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(endpoint, () => { server.off("error", reject); resolve(); }); });
+  try { await chmod(endpoint, 0o600); }
+  catch (reason) { server.close(); await unlink(endpoint).catch(() => {}); throw reason; }
+  return { async close() {
+    for (const socket of connections) socket.destroy();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await unlink(endpoint).catch(() => {});
+  } };
+}
 
 export async function removeStaleSocket(path: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {

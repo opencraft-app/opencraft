@@ -42,3 +42,16 @@ export async function startControlServer(endpoint: string, token: string,
     await unlink(endpoint).catch(() => undefined);
   } };
 }
+
+/** Same bounded JSON envelope used by the private account and generation planes. */
+export async function readControlJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 1024 * 1024) throw new Error("Control request too large");
+    chunks.push(chunk);
+  }
+  const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid control request");
+  return value as Record<string, unknown>;
+}

@@ -10,6 +10,10 @@ export interface CodexCoreHealth {
   readonly nativeSocket: string;
   /** Present only when a separate runtime owner is configured. */
   readonly appServerPid?: number;
+  readonly routingPid?: number;
+  readonly routingEpoch?: string;
+  readonly generationId?: string;
+  readonly admissionEpoch?: number;
 }
 
 export interface CodexAppServerLaunch {
@@ -20,6 +24,27 @@ export interface CodexAppServerLaunch {
 export interface CodexAppServerHealth extends CodexCoreHealth {
   readonly dataDirectory: string;
   readonly proxyBaseUrl: string;
+  readonly runtimeDataDirectory?: string;
+  readonly codexHome?: string;
+}
+
+export interface CodexGenerationHostUsage {
+  readonly routingEpoch: string;
+  readonly lease: string;
+  readonly sequence: number;
+  readonly blockedThreadIds: readonly string[];
+  readonly unscopedBusy: boolean;
+  readonly discoveryComplete: boolean;
+  readonly acknowledgedFenceEpoch: number;
+}
+
+export interface CodexGenerationFenceState {
+  readonly routingEpoch: string;
+  readonly fenceEpoch: number;
+  readonly fencedGenerationIds: readonly string[];
+  readonly legacyGenerationId: string | null;
+  readonly defaultGenerationId: string | null;
+  readonly routes?: readonly { threadId: string; generationId: string }[];
 }
 
 /** Temporary control-plane outage; callers may wait before starting execution. */
@@ -64,6 +89,15 @@ export class CodexCoreControlClient {
       throw new Error("Incompatible Codex AppServer owner");
     }
     return value;
+  }
+
+  async claimGenerationHost(instanceId: string, routingEpoch: string, signal?: AbortSignal): Promise<{ lease: string; routingEpoch: string }> {
+    const value = await this.request("POST", "/generation-host", { operation: "claim", params: { instanceId, routingEpoch } }, signal) as { lease: string; routingEpoch: string };
+    if (!value || typeof value.lease !== "string" || value.routingEpoch !== routingEpoch) throw new Error("Invalid generation Host lease");
+    return value;
+  }
+  publishGenerationHost(value: CodexGenerationHostUsage, signal?: AbortSignal): Promise<CodexGenerationFenceState> {
+    return this.request("POST", "/generation-host", { operation: "state", params: value }, signal) as Promise<CodexGenerationFenceState>;
   }
 
   private request(method: string, path: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {

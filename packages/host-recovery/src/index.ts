@@ -82,6 +82,8 @@ export class InterruptedTurnRecovery {
     if (this.closed) return;
     for (const row of this.pending()) if ((!threadId || row.threadId === threadId) && row.state === "running") this.put({ ...row, state: "interrupted" });
   }
+  /** Read-only lifecycle proof; no change to execution or recovery policy. */
+  pendingThreadIds(): string[] { return [...new Set(this.pending().map(row => row.threadId))]; }
   private pending(): RecoveryTurn[] {
     return (this.managed.database.prepare("SELECT value FROM interrupted_turns").all() as { value: string }[])
       .map(row => JSON.parse(row.value) as RecoveryTurn).filter(row => ["running", "interrupted", "preparing", "dispatching"].includes(row.state));

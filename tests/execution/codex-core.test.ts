@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createServer as createTcpServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import WebSocket from "ws";
 import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src/main.js";
@@ -190,6 +191,50 @@ test("split account Core restarts with stable launch credentials while the indep
     await runtime.close(); runtime = undefined;
     await assert.rejects(client.health(), /unavailable/);
   } finally { await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("two generation runtimes have independent HOME writers and share one account Core", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-core-generations-"));
+  const reservation = createTcpServer();
+  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  const port = (reservation.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "g0/control.sock"),
+    authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "accounts-data"),
+    nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
+  let core = await startCodexCore(options);
+  const runtimes: Awaited<ReturnType<typeof startCodexAppServer>>[] = [];
+  const launch = new CodexCoreControlClient(options.endpoint, token);
+  const create = (id: string, runtimeDataDirectory = join(root, id, "data")) => startCodexAppServer({ ...options,
+    endpoint: join(root, id, "control.sock"), coreEndpoint: options.endpoint, runtimeDataDirectory,
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
+  try {
+    runtimes.push(await create("g0"), await create("g1"));
+    const readers = ["g0", "g1"].map(id => new CodexCoreControlClient(join(root, id, "control.sock"), token));
+    const before = await Promise.all(readers.map(client => client.appServerHealth()));
+    assert.notEqual(before[0]!.codexPid, before[1]!.codexPid);
+    assert.notEqual(before[0]!.codexHome, before[1]!.codexHome);
+    for (const h of before) {
+      assert.equal(h.dataDirectory, options.dataDirectory);
+      assert.equal(h.proxyBaseUrl, `http://127.0.0.1:${port}`);
+      await assert.rejects(acquireCodexWriter(h.runtimeDataDirectory!, "runtime"), /already owned/);
+      assert.ok((await stat(h.nativeSocket)).isSocket(), "public endpoint is a real socket across mount namespaces");
+      const connection = new WebSocket(`ws+unix://${h.nativeSocket}:/`);
+      await new Promise<void>((resolve, reject) => { connection.once("open", resolve); connection.once("error", reject); });
+      const initialized = new Promise<any>(resolve => connection.once("message", raw => resolve(JSON.parse(String(raw)))));
+      connection.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "relay-test", version: "1" } } }));
+      assert.ok((await initialized).result); connection.terminate();
+    }
+    await assert.rejects(create("duplicate", before[0]!.runtimeDataDirectory), /already owned/);
+    const initialLaunch = await launch.appServerLaunch();
+    await core.close();
+    assert.deepEqual(await Promise.all(readers.map(client => client.appServerHealth())), before);
+    core = await startCodexCore(options);
+    assert.deepEqual(await launch.appServerLaunch(), initialLaunch);
+    assert.deepEqual(await launch.accountRequest("opencraft/codex/accounts/list", {}), { accounts: [] });
+  } finally { for (const runtime of runtimes.reverse()) await runtime.close(); await core.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("proxy drain continues serving other Turns until its long response reaches an idle point", async () => {
