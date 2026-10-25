@@ -178,7 +178,7 @@
     "smoke:theme-materials": "tsx scripts/smoke/shell/smoke-theme-materials.ts",
     "smoke:skill-autocomplete": "tsx scripts/smoke/composer/smoke-skill-autocomplete.ts",
     "test:web-release": "node --test tests/server/web-image-optimization.test.mjs tests/server/workbench-web-release.test.mjs tests/tooling/browser-compatibility-lint.test.mjs tests/tooling/browser-compatibility-graph.test.mjs tests/tooling/product-module-resolution.test.mjs && node --test tests/tooling/product-public-assets.test.mjs",
-    "test:shell-space": "tsx --test tests/shell/workspace-pane-geometry.test.ts tests/shell/workbench-shell-space.test.ts tests/shell/floating-sidebar-layout.test.ts tests/shell/context-pane-geometry.test.ts tests/shell/titlebar-surface-geometry.test.ts",
+    "test:shell-space": "tsx --test tests/shell/share-page-link.test.ts tests/shell/workspace-pane-geometry.test.ts tests/shell/workbench-shell-space.test.ts tests/shell/floating-sidebar-layout.test.ts tests/shell/context-pane-geometry.test.ts tests/shell/titlebar-surface-geometry.test.ts",
     "test:workspace-presentation": "tsx --test tests/shell/workbench-workspace-presentation.test.ts",
     "smoke:workspace-presentation": "tsx scripts/smoke/shell/smoke-workspace-presentation.ts && tsx scripts/smoke/shell/smoke-workspace-presentation.ts --mobile-browser",
     "smoke:side-chat-appserver": "tsx scripts/smoke/conversation/smoke-side-chat-appserver.ts",

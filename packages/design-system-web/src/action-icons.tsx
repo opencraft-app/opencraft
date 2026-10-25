@@ -84,6 +84,7 @@ export function ModelIcon(props: ActionIconProps) {
   return <ActionGlyph {...props} kind="model"><BrainArtwork /></ActionGlyph>;
 }
 
+export const ShareIcon = sharedActionIcon("ShareIcon");
 export const CopyIcon = sharedActionIcon("CopyIcon");
 
 export function EditIcon(props: ActionIconProps) {

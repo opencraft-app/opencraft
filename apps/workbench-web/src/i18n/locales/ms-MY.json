@@ -994,5 +994,8 @@
   "mobile.connection.title": "Sambungkan pelayan",
   "mobile.connection.description": "Sambungkan pelayan OpenCraft anda untuk mula bekerja. Pelayan anda mengurus log masuk dan akses.",
   "mobile.connection.address": "Alamat WebSocket selamat",
-  "mobile.connection.failed": "Sambungan tidak dapat disimpan. Semak alamat dan cuba lagi."
+  "mobile.connection.failed": "Sambungan tidak dapat disimpan. Semak alamat dan cuba lagi.",
+  "page.shareLink": "Kongsi pautan",
+  "page.linkCopied": "Pautan disalin",
+  "page.shareFailed": "Tidak dapat berkongsi pautan. Cuba lagi."
 }

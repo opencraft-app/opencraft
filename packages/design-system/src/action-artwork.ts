@@ -9,6 +9,7 @@ export interface ActionArtwork {
 }
 
 export const actionArtwork = {
+  ShareIcon: { kind: "share", shapes: [{ tag: "path", attributes: { d: "M7 9H5.5v11h13V9H17M12 14V3.5m-3.5 4L12 3.5l3.5 4" } }] },
   AddIcon: {"kind": "add","shapes": [{"tag": "path","attributes": {"d": "M12 5v14M5 12h14"}}]},
   AddImageIcon: {"kind": "add-image","shapes": [{"tag": "path","attributes": {"d": "M17 10V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h4M4 14l4-4 4 4"}},{"tag": "circle","attributes": {"cx": 12,"cy": 7.5,"r": 1}},{"tag": "path","attributes": {"d": "M17 13v8m-4-4h8"}}]},
   AgentIcon: {"kind": "agent","shapes": [{"tag": "rect","attributes": {"x": "4","y": "6.5","width": "16","height": "13","rx": "3"}},{"tag": "path","attributes": {"d": "M12 3.5v3M9.5 15.5h5"}},{"tag": "circle","attributes": {"cx": "8.5","cy": "11.5","r": "0.75","fill": "currentColor","stroke": "none"}},{"tag": "circle","attributes": {"cx": "15.5","cy": "11.5","r": "0.75","fill": "currentColor","stroke": "none"}}]},
