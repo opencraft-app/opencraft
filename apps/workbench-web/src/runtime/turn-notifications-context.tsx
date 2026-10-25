@@ -25,9 +25,10 @@ export function TurnNotificationsProvider({ source, notifications, openConversat
       : completion.status === "interrupted"
         ? intl.formatMessage({ id: "notifications.turn.interrupted", defaultMessage: "OpenCraft · Response stopped" })
         : intl.formatMessage({ id: "notifications.turn.completed", defaultMessage: "OpenCraft · Response complete" });
-    const contextualTitle = completion.threadTitle
-      ? intl.formatMessage({ id: "notifications.turn.contextTitle", defaultMessage: "{threadTitle} · {status}" }, { threadTitle: completion.threadTitle, status: title })
-      : title;
+    const contextualTitle = intl.formatMessage(
+      { id: "notifications.turn.contextTitle", defaultMessage: "{threadTitle} · {status}" },
+      { threadTitle: completion.threadTitle || completion.userMessage || `#${completion.threadId}`, status: title },
+    );
     const body = completion.userMessage
       ? intl.formatMessage({ id: "notifications.turn.userMessage", defaultMessage: "You: {message}" }, { message: completion.userMessage })
       : intl.formatMessage({ id: "notifications.turn.body", defaultMessage: "Click to return to the conversation." });

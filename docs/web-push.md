@@ -10,6 +10,15 @@ existing push-only consent appears enabled and is preserved. Disabling revokes b
 paths, including device revocation when the server is offline. An enabled server
 subscription suppresses the page path for the same managed Host to prevent duplicates.
 
+Both delivery paths identify the conversation before the terminal response status.
+Background delivery reads only that outbox entry's exact Host/Thread metadata
+(`thread/read`, `includeTurns: false`), using its name or initial-message preview.
+Whitespace is collapsed and labels are limited to 80 Unicode code points. A missing,
+mismatched or unavailable Thread falls back to its exact ID, never another task or
+the currently selected page. Metadata is read at delivery time, including retries;
+no conversation text is added to the persistent push store. The status describes
+one response ending, not completion of the whole task. Test notifications stay generic.
+
 ## Owners and identity
 
 PwaRuntime owns ApplePwaPushDevice through PushDevicePort. Application-owned TurnNotificationController composes the page display adapter

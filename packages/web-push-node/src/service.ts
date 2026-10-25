@@ -53,9 +53,9 @@ export class TurnPushService {
   private current(device: PushDevice) {
     try { return !this.closed && this.options.current(device.authorization); } catch { return false; }
   }
-  private payload(device: PushDevice, status: string, hostId?: string, threadId?: string, turnId?: string) {
+  private payload(device: PushDevice, status: string, hostId?: string, threadId?: string, turnId?: string, threadTitle?: string) {
     const target = new URL(device.basePath + (threadId ? `/local/${encodeURIComponent(threadId)}?${new URLSearchParams({hostId:hostId!})}` : '/settings/chat'),device.origin);
-    return JSON.stringify({web_push:8030,notification:{title:device.messages[status],body:device.messages.body,
+    return JSON.stringify({web_push:8030,notification:{title:threadTitle ? `${threadTitle} · ${device.messages[status]}` : device.messages[status],body:device.messages.body,
       lang:device.locale,tag:turnId?`opencraft-turn:${createHash('sha256').update(JSON.stringify([hostId,threadId,turnId])).digest('hex')}`:'opencraft-push-test',
       navigate:target.href,silent:false}});
   }
@@ -127,7 +127,18 @@ export class TurnPushService {
       if (this.closed) break;
       if (!this.current(delivery.device)) { this.store.remove(delivery.device.id,delivery.device.actorId); continue; }
       try {
-        await this.send(delivery.device,this.payload(delivery.device,delivery.status,delivery.hostId,delivery.threadId,delivery.turnId));
+        // Resolve only the exact delivery's Thread; never infer identity from the
+        // active page or a recent Thread. A metadata failure must not hide its ID.
+        let threadTitle = `#${delivery.threadId}`;
+        try {
+          const result = object(await read(delivery.hostId,'thread/read',{threadId:delivery.threadId,includeTurns:false}));
+          const thread = object(result.thread);
+          if (thread.id === delivery.threadId) {
+            const label = [thread.name,thread.preview].find(value=>typeof value==='string' && value.trim());
+            if (label) threadTitle = Array.from(label.replace(/\s+/gu,' ').trim()).slice(0,80).join('');
+          }
+        } catch { /* Keep the exact Thread identity when metadata is unavailable. */ }
+        await this.send(delivery.device,this.payload(delivery.device,delivery.status,delivery.hostId,delivery.threadId,delivery.turnId,threadTitle));
         this.store.settled(delivery.id,'sent');
       } catch (error) {
         this.failures++;this.degraded=true;
