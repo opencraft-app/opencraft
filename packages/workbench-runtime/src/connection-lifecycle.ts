@@ -1,4 +1,5 @@
 import type { RecoveryClock } from "./recovery-policy";
+import { recoveryNow } from "./recovery-clock";
 
 export type ConnectionPhase = "idle" | "attempting" | "usable" | "backoff" | "blocked" | "disposed";
 export interface ConnectionState<T> {
@@ -61,7 +62,7 @@ export class ConnectionLifecycleOwner<T> {
   get snapshot(): ConnectionState<T> { return this.state; }
   get pending(): boolean { return this.attempt !== null; }
   get reconnectAttempt(): number { return this.failures; }
-  private now() { return this.input.clock.now?.() ?? Date.now(); }
+  private now() { return this.input.clock.now?.() ?? recoveryNow(); }
   private cancelRetry() {
     ++this.retryTicket;
     if (this.retryTimer !== null) this.input.clock.clearTimeout(this.retryTimer);
@@ -87,6 +88,10 @@ export class ConnectionLifecycleOwner<T> {
   }
   connect(force = false): Promise<void> {
     if (this.state.phase === "disposed") return Promise.reject(new Error("Connection owner is disposed"));
+    // Explicit demand can arrive before overdue timers on a resumed page.
+    // Retiring may synchronously dispose us or admit a successor via observers.
+    if (this.attempt && this.expired(this.attempt)) this.lost(this.timeoutError(this.attempt));
+    if (this.snapshot.phase === "disposed") return Promise.reject(new Error("Connection owner is disposed"));
     if (this.attempt) return this.attempt.promise;
     if (!force && this.state.phase === "usable" && this.state.binding !== null && this.input.valid(this.state.binding)) {
       return Promise.resolve();

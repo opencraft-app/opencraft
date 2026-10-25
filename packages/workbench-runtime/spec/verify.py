@@ -20,6 +20,10 @@ CASES = [
     ("Recovery-Barrier", "PhysicalBarrier"),
     ("Recovery-Witness", "NoHealthyRecoveryWitness"),
     ("Recovery-NoFairness", "temporal:ThreadRecovery"),
+    ("Recovery-RetiredAttempt", "temporal:ThreadRecovery"),
+    ("Recovery-Revive", "DisposedTerminal"),
+    ("Recovery-WakeOnly", None),
+    ("Recovery-WakeLiveness", "temporal:ThreadRecovery"),
 ]
 
 

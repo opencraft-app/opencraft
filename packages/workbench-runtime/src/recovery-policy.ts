@@ -1,11 +1,15 @@
 import { advanceRecoveryProgress, type RecoveryProgress, type RecoveryStage } from "./recovery-observation";
+import { recoveryNow } from "./recovery-clock";
 
 /** Recovery scheduling only. Session/Replica keep data and authority ownership. */
 export type RecoveryDemand = "visible" | "open" | "cache";
 export interface RecoveryClock {
   setTimeout(callback: () => void, delayMs: number): unknown;
   clearTimeout(timer: unknown): void;
+  /** Nondecreasing elapsed time; must advance while JS/timers are suspended. */
   now?(): number;
+  /** Absolute time for read-only diagnostics, never scheduling. */
+  wallNow?(): number;
 }
 export interface RecoveryTask {
   readonly key: object;
@@ -29,9 +33,12 @@ export class ConversationRecoveryOwner {
   }
   private observe(stage: RecoveryStage, key?: object, options: { startAttempt?: boolean; retryAt?: number; error?: unknown } = {}) {
     if (this.disposed) return;
+    const elapsed = this.now();
+    const observedAt = this.input.clock.wallNow?.() ?? (this.input.clock.now ? elapsed : Date.now());
     const value = advanceRecoveryProgress(this.getProgress(key), {
-      recoveryId: this.episode?.id ?? `recovery-${this.now().toString(36)}-${++episodeSequence}`,
-      now: this.now(), stage, ...options,
+      recoveryId: this.episode?.id ?? `recovery-${Math.floor(elapsed).toString(36)}-${++episodeSequence}`,
+      now: observedAt, stage, ...options,
+      ...(options.retryAt === undefined ? {} : { retryAt: observedAt + Math.max(0, options.retryAt - elapsed) }),
     });
     if (key === undefined) this.connectionProgress = value;
     else this.historyProgress.set(key, value);
@@ -62,11 +69,11 @@ export class ConversationRecoveryOwner {
     log?(event: Readonly<Record<string, string | number>>): void;
   }) {}
   get observing() { return this.episode !== null; }
-  private now() { return this.input.clock.now?.() ?? Date.now(); }
+  private now() { return this.input.clock.now?.() ?? recoveryNow(); }
   begin(reason: string) {
     if (["transport-unavailable", "waiting", "connecting", "manual-block"].includes(reason)) this.connected = false;
     if (this.episode === null) this.episode = {
-      id: `recovery-${this.now().toString(36)}-${++episodeSequence}`, start: this.now(),
+      id: `recovery-${Math.floor(this.now()).toString(36)}-${++episodeSequence}`, start: this.now(),
       requests: 0, bytes: 0, projectionMs: 0, extraConversations: new Set(),
     };
     if (reason === "connecting") this.connectionStage("connecting");

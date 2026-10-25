@@ -6,6 +6,7 @@ import type { HostComposerCommandPort } from "./host-composer-commands";
 import { MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
 import type { ConversationOutboxStorage } from "@opencraft/chat-runtime";
 import { ConnectionLifecycleOwner, type ConnectionAttempt } from "./connection-lifecycle";
+import { recoveryNow } from "./recovery-clock";
 import { ConversationRecoveryOwner, type RecoveryDemand } from "./recovery-policy";
 import {
   AppServerClientError,
@@ -180,6 +181,7 @@ export interface AppServerWorkbenchViewSnapshot extends AppServerWorkbenchSnapsh
 }
 
 export interface AppServerRuntimeClock {
+  wallNow?(): number;
   now?(): number;
   setTimeout(callback: () => void, delayMs: number): unknown;
   clearTimeout(timer: unknown): void;
@@ -472,7 +474,8 @@ interface ConversationBinding {
 }
 
 const defaultClock: AppServerRuntimeClock = {
-  now: () => Date.now(),
+  now: recoveryNow,
+  wallNow: () => Date.now(),
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (timer) =>
     globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>),
@@ -550,7 +553,7 @@ export function createAppServerWorkbenchRuntime(
     delaysMs: config.reconnectDelaysMs,
     jitter: config.clock === undefined,
     log: config.onRecoveryEvent ? event => config.onRecoveryEvent!({
-      ...event, generation: client?.connectionGeneration ?? 0, eventAtMs: clock.now?.() ?? Date.now(), ...((currentTransport?.status as {attemptId?:string}|undefined)?.attemptId ? {attemptId:(currentTransport!.status as {attemptId?:string}).attemptId} : {}),
+      ...event, generation: client?.connectionGeneration ?? 0, eventAtMs: clock.wallNow?.() ?? clock.now?.() ?? Date.now(), ...((currentTransport?.status as {attemptId?:string}|undefined)?.attemptId ? {attemptId:(currentTransport!.status as {attemptId?:string}).attemptId} : {}),
     }) : undefined, changed: () => publish(),
   });
   let automaticReconnectBlock: TransportStatus | null = null;

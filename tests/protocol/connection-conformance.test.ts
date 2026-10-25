@@ -15,6 +15,8 @@ class Specification {
     if (this.phase === "disposed") return;
     if (event === "dispose") { this.phase = "disposed"; this.error = false; return; }
     if (event === "connect") {
+      // Explicit demand observes elapsed time too, even before timer callbacks.
+      if (this.phase === "attempting" && this.expired) { this.failures++; this.expired = false; }
       if (this.phase !== "usable" && this.phase !== "attempting") { this.phase = "attempting"; this.error = false; this.expired = false; }
     } else if (event === "freeze" && this.phase === "attempting") this.expired = true;
     else if (event === "ack" && this.phase === "attempting") {
