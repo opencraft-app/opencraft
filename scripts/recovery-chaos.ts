@@ -13,10 +13,11 @@ const output=path.resolve(values.output??path.join(process.env.TMPDIR??"/tmp",`o
 await mkdir(output,{recursive:true});
 const started=Date.now(),coverage:Record<string,number>={};let events=0,wires=0,ready=0;
 const replay=values.replay?JSON.parse(await readFile(values.replay,"utf8")):null;
+const replaySeed=replay?.seed===undefined?seed:integer(String(replay.seed),"replay seed",0xffffffff);
 const count=replay?1:cases;
 if(count===0) throw Error("At least one case is required");
 for(let i=0;i<count;i++) {
-  const caseSeed=replay?.seed===undefined?(seed+i)>>>0:integer(String(replay.seed),"replay seed",0xffffffff);
+  const caseSeed=replay?replaySeed:(seed+i)>>>0;
   const trace=replay?parseRecoveryTrace(replay.events??replay):generateRecoveryChaos(caseSeed,steps);
   try {
     const result=await simulateRecovery(trace,options);events+=result.events;wires+=result.wires;ready+=result.ready;
@@ -32,6 +33,6 @@ for(let i=0;i<count;i++) {
   }
 }
 if(!process.exitCode) {
-  const result={schema:1,passed:true,seed,cases:count,events,wires,ready,coverage,elapsedMs:Date.now()-started};
+  const result={schema:1,passed:true,seed:replay?replaySeed:seed,cases:count,events,wires,ready,coverage,elapsedMs:Date.now()-started};
   await writeFile(path.join(output,"results.json"),JSON.stringify(result,null,2)+"\n");console.log(JSON.stringify({...result,output}));
 }
