@@ -692,3 +692,45 @@ adapter cleanup binding or Promise result observation, respectively. Each must
 fail its exact rule, shrink under that rule and replay normally. They do not mutate
 production classes or claim to defend an arbitrary lying provider. Separate
 unchanged old-class runs establish real regression detection.
+
+
+Replay has two independently checked ownership views. ReplayLifetime bounds an
+old and successor native epoch over a four-position tape: current-frame authority,
+cursor bounds, once-only reservation consumption, same-epoch matching, startup
+retirement, old close completion and local-versus-native cancellation. Positive:
+116 distinct states. Eleven controls remove those guards or current-clock/local
+fairness. Retired clocks need not wake for local retirement or successor progress.
+
+ReplayDrainAdmission bounds a finished empty drain and a new worker. Positive:
+six states. Three controls exercise joining an already finished Promise, old
+cleanup clearing new work, and absent worker fairness. The old completion need
+not run for a newly admitted frame to have a worker. This closes a modeling gap
+found by a real synchronous clock-failure/recovery test after the first model
+passed. These bounded views do not establish their product, TypeScript refinement,
+payload/ID semantics, clock-error handling or physical timer cancellation; actual
+regressions and public Node timer-resource observations cover additional boundaries.
+
+The fourteenth chaos suite, replay, runs actual ReplayTransport with a controlled
+clock. Its independent oracle owns expected native epochs, tape positions,
+reservations, frames and intent outcomes. Saved inputs include old/current clock
+release/rejection, same-stack connect-send, startup and send cancellation, noisy
+observers and message-time close. Heal explicitly connects and completes a matching
+send/reply before releasing old held clocks. A compound event may contain multiple
+API calls; connect/send intent and clock metrics remain separate from event count.
+Empty trace creates no native work. Final cleanup only closes existing operations
+and releases fixture clocks; cleanup has a distinct rule from trace failures.
+
+```
+npm run test:recovery-chaos -- --suite replay --seed 0 --cases 1000 --steps 120 --output /tmp/replay-chaos
+npm run test:recovery-chaos -- --suite replay --mutant cursor-drift --seed 0 --output /tmp/replay-control
+npm run test:recovery-chaos -- --replay /tmp/replay-control/failure-minimal.json --output /tmp/replay-replay
+```
+
+Controls orphan-connect, duplicate-frame and cursor-drift corrupt test observation
+of a result, delivered frame or cursor. They must hit exact rules, shrink under
+the same rule and normally replay. They do not mutate production or claim to
+defend an arbitrary lying clock. Real old-class and retained candidate runs are
+separate evidence, including separately retained teardown failures. Selected
+source/lock hashes bind artifacts. Upper LCG bits select event families so a
+single seed combines clock, cancellation and observer actions instead of retaining
+a low-bit parity split.

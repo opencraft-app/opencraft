@@ -886,3 +886,83 @@ Three adapter controls duplicate a status observation, retarget a cleanup token 
 orphan the observation of an RPC result. They must fail exact rules, shrink under
 the same rule and replay normally; they are distinct from unchanged old-class
 comparisons. Bounded microtask drains assume cooperative controlled callbacks.
+
+
+### Replay native epochs, frame reservations and drain admission
+
+Replay keeps a single ordered tape across close/reconnect. Its wire format has
+sequence, direction, timestamp and payload, with no recorded native epoch markers.
+It cannot infer the origin of every unreserved frame after a reconnect. Native
+retirement consumes and drops only an already admitted delayed server frame,
+exactly once. It neither resets the tape nor implicitly repeats a client mutation.
+
+| Scope | Authority | Retirement boundary |
+|---|---|---|
+| Native connection | Connection instance | Close, startup cancellation or current delivery failure |
+| Server frame | Epoch and reserved cursor position | Commit once or consume/drop once on native retirement |
+| Joinable drain | Running drain instance | Release synchronously when work stops; Promise cleanup retains its own token |
+| Send caller | Its AbortSignal and result observer | Ends local waiting while admitted native traffic continues |
+| Startup caller | Its initiating signal | May retire startup; detached once startup completes |
+| Default timer | Native owner and timer handle | Cleared on retirement; injected clock resources stay provider-owned |
+
+A server frame retains its cursor reservation while recorded timing waits. A
+same-epoch client send cannot skip it and match a later client frame prematurely.
+After close, a successor can resume after that retired claim without waiting for
+an uncooperative old clock. Every old continuation checks native owner, drain
+identity and reserved cursor before writing state or delivering a frame. A
+current clock failure consumes its own claim, rejects its own callers and
+publishes failed; an old clock failure cannot affect a successor. Response ID
+bindings belong to their native owner. Existing JSON-RPC envelope normalization
+and exact domain-parameter matching remain unchanged.
+
+A completed empty drain is no longer joinable, even while its Promise completion
+is queued. The visible drain slot is released synchronously at the stopping
+decision. A later same-stack or microtask send acquires fresh work, and old
+completion only clears its own token. This distinguishes an active worker from a
+settled Promise and prevents accepted frames from being stranded without a drain.
+Closing/failure observers may start a successor before old cleanup returns;
+neither the old closed publication nor old drain cleanup owns that successor.
+
+Message fanout reuses the shared finite registration cut, replacement tokens,
+bare synchronous invocation and per-listener owner predicate. A close in an
+earlier callback stops the old frame before later observers. Finite synchronous
+callback work is assumed; arbitrary external side effects are not controlled.
+Replay's default timer has an actual cancellation handle. Closing clears it,
+rather than only racing away from the sleep Promise. A custom ReplayClock remains
+a trusted external port and may ignore retirement; local settlement still does
+not wait for that clock. Its external resource cleanup is not certified by close.
+
+Two independent bounded models cover different layers. ReplayLifetime bounds
+two native epochs and four tape positions, separating retirement, old/new clock
+wake, close completion, cursor commit and caller cancellation. Its positive has
+116 distinct states and eleven precise controls. Progress assumes fair local work
+and cooperative current clocks, with no fairness requirement for retired clocks.
+ReplayDrainAdmission bounds one finished drain and one new worker: six states,
+three controls for stale join, retargeted completion and absent work fairness.
+New work does not depend on the old Promise completion. These views are not a
+product/refinement proof of TypeScript and do not model arbitrary tape data,
+payloads, clock errors or platform timer handles. Actual tests cover those
+additional failure/reentry and timer-resource boundaries.
+
+The replay chaos suite executes actual ReplayTransport with saved clock
+release/rejection inputs. An independent epoch/cursor/claim/intent oracle checks
+native status, exact tape accounting, one clock request per admission, observer
+frames and caller outcomes. Same-stack connect-send is an explicit compound input.
+Startup abort, local send abort, rejected/mismatched frames, noisy observers,
+message-time close and old clock wake combine within generated traces. Explicit
+heal retires old work, connects and completes a matching send/reply while retired
+clocks remain held. Empty input creates no connection, send or clock wait.
+Metrics distinguish events, actual connect/send intents, observed frame delivery,
+clock waits/releases and retired claims; settlement counts include final local
+cleanup. Teardown closes existing work and then releases fixture clocks, with its
+own failure rule so shrinking cannot substitute hidden cleanup for a trace rule.
+
+Three controls corrupt result observation, observer delivery or a reported cursor,
+rather than production classes. Each must fail its precise rule, shrink under that
+rule and replay normally. Unchanged old-class comparison and the retained first
+candidate separately demonstrate real regressions, including a one-event compound
+connect-send reproducer for the finished-drain gap. Secondary teardown failures
+remain separately recorded. Controlled microtask drains and finite tapes bound
+these tests; they are not arbitrary-network, physical-device or whole-program
+correctness claims. Public Node async_hooks separately checks actual default timer
+creation/destruction without reading or mutating class fields.
