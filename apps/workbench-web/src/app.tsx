@@ -1,3 +1,4 @@
+import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
 import { useTurnNotifications } from "./runtime/turn-notifications-context";
 import { resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
 import { ConversationSummaryButton, ConversationSummarySurface, useConversationSummary, useSummaryGoal } from "./components/conversation-summary";
@@ -730,7 +731,8 @@ export function App({
   const { selection: display, scope: displayScope, hasSubmission } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline);
   const displayHostId = displayKey?.hostId ?? null;
   const displayThreadId = displayKey?.threadId ?? null;
-  const visibleTimeline = display.timeline;
+  const visibleTimeline = useThreadOrchestrationTimeline(display.timeline,runtime.resources.orchestration,
+    displayHostId === snapshot.hostId && snapshot.transport.state === "open");
   const showingDisplayCache = display.source !== "history" && display.source !== "empty";
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);

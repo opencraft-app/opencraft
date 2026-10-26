@@ -1,9 +1,11 @@
+import { useIntl } from "@opencraft/i18n/react";
+import { collaborationMessages, collaborationStateMessage } from "./collaboration-messages";
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import {
   threadToolNavigationTarget, createdThreadToolResult,
-  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation,
+  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation, subagentHeaderCall,
   extractToolCallContentParts, formatThreadHandoffStepLabel, isCodexAppThreadTool,
-  threadHandoffToolResult, visibleThreadHandoffSteps, subagentInlineStatusLabel,
+  threadHandoffToolResult, visibleThreadHandoffSteps,
   type SubagentActivityRenderUnit, type TimelineBlock, type ToolCallContentPart,
   type WebMcpToolSurfaceCall,
 } from "@opencraft/chat-core";
@@ -308,6 +310,13 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
   renderToggle: (props: AgentToggle) => import("react").ReactNode;
 }) {
   const navigation = useContext(SubagentNavigationContext);
+  const intl = useIntl();
+  const toolName = (tool:AgentBlock["tool"]) => intl.formatMessage(tool === "spawnAgent" ? collaborationMessages.create
+    : tool === "sendInput" ? collaborationMessages.send : tool === "resumeAgent" ? collaborationMessages.resume
+    : tool === "wait" ? collaborationMessages.wait : tool === "closeAgent" ? collaborationMessages.close : collaborationMessages.collaborate);
+  const stateName = (state:string) => intl.formatMessage(collaborationStateMessage(state));
+  const deliveryName = (state:AgentBlock["deliveryStatus"]) => intl.formatMessage(state === null ? collaborationMessages.none
+    : collaborationMessages[state]);
   const presentation = grouped ? deriveSubagentActivityGroupPresentation(blocks)
     : deriveSubagentActivityPresentation(blocks[0]!);
   const detailsByThread = new Map<string, { block: AgentBlock; actionLabel: string }>();
@@ -315,6 +324,7 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
     const detail = deriveSubagentActivityPresentation(block);
     for (const agent of detail.agents) detailsByThread.set(agent.threadId, { block, actionLabel: detail.actionLabel });
   }
+  const headerCall = subagentHeaderCall(blocks)!;
   const running = blocks.some(block => block.status === "running" || block.status === "pending");
   const [open, setOpen] = useActivityOpen(running, false, restoreKey);
   const [showAllAgents, setShowAllAgents] = useActivityOpen(false, false,
@@ -327,48 +337,57 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
     const agent = presentation.agents[0]!;
     const canOpen = navigation.open !== null && agent.threadId.length > 0;
     return <button type="button" className="thread-subagent-inline" data-status={agent.displayStatus}
-      disabled={!canOpen} aria-label={canOpen ? "Open " + agent.displayName + " subagent" : undefined}
+      disabled={!canOpen} aria-label={canOpen ? intl.formatMessage(collaborationMessages.open,{name:agent.displayName}) : undefined}
       onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>
-      <Avatar agent={agent} /><span>{subagentInlineStatusLabel(agent)}</span>
+      <Avatar agent={agent} /><span>{intl.formatMessage(collaborationMessages.inline,{name:agent.displayName,status:stateName(agent.statusLabel)})}</span>
     </button>;
   }
-  return <section className="thread-subagent-activity" data-status={blocks.at(-1)?.status} data-open={open || undefined}>
+  return <section className="thread-subagent-activity" data-status={headerCall.toolCallStatus} data-open={open || undefined}>
     <div className="thread-subagent-activity__header">
-      {renderToggle({ label: presentation.actionLabel, open, disabled: !presentation.expandable, onClick: event => {
+      {renderToggle({ label: toolName(headerCall.tool) + " · " + stateName(headerCall.toolCallStatus), open, disabled: !presentation.expandable, onClick: event => {
           reflow.begin(event.currentTarget); setOpen(!open);
         } })}
       <div className="thread-subagent-chips">{visibleAgents.map(agent =>
         <button key={agent.threadId} type="button" className="thread-subagent-chip" data-status={agent.status}
-          title={agent.model ?? undefined} aria-label={"Open " + agent.displayName + " subagent"}
+          title={agent.model ?? undefined} aria-label={intl.formatMessage(collaborationMessages.open,{name:agent.displayName})}
           disabled={navigation.open === null} onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>
           <Avatar agent={agent} /><span>{agent.displayName}</span>{agent.role ? <small>{agent.role}</small> : null}
         </button>)}
         {hiddenAgentCount > 0 ? <button type="button" className="thread-subagent-chips__more"
-          onClick={() => setShowAllAgents(true)}>{hiddenAgentCount} more</button> : null}
+          onClick={() => setShowAllAgents(true)}>{intl.formatMessage(collaborationMessages.more,{count:hiddenAgentCount})}</button> : null}
       </div>
-      <span className="thread-subagent-activity__status">{presentation.groupStatusLabel}</span>
+      <span className="thread-subagent-activity__status" data-child-runtime-status={presentation.groupStatusLabel}>{stateName(presentation.groupStatusLabel)}</span>
       {presentation.expandable ? <ChevronRight size={12} className="thread-subagent-activity__chevron" /> : null}
     </div>
     <AnimatePresence initial={false}>{open && presentation.expandable ? <motion.div className="thread-subagent-details"
       initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
       style={{ height }} transition={{ duration: 0.3 }} onAnimationComplete={reflow.complete}>
       <div className="thread-subagent-details__inner">
+      {blocks.map(block => {
+        const status = deriveSubagentActivityPresentation(block).groupStatusLabel;
+        return <p key={block.id} className="thread-subagent-details__meta"
+          data-tool-call-status={block.toolCallStatus} data-delivery-status={block.deliveryStatus ?? "none"}
+          data-child-runtime-status={status === "started working" ? "working" : status === "finished" ? "done" : status}>
+          {intl.formatMessage(collaborationMessages.axes,{tool:stateName(block.toolCallStatus),delivery:deliveryName(block.deliveryStatus),child:stateName(status)})}
+        </p>;
+      })}
       {presentation.agents.map(agent => {
-        const { block, actionLabel } = detailsByThread.get(agent.threadId)!;
+        const { block } = detailsByThread.get(agent.threadId)!;
         return <div key={agent.threadId} className="thread-subagent-details__row" data-status={agent.status}>
-          <Avatar agent={agent} /><div><p><span>{actionLabel} </span><strong>{agent.displayName}</strong>
-            {block.prompt && block.tool === "spawnAgent" ? <> with the instructions: <span>{block.prompt}</span></>
+          <Avatar agent={agent} /><div><p><span>{toolName(block.tool)} </span><strong>{agent.displayName}</strong>
+            {block.prompt && block.tool === "spawnAgent" ? <>：<span>{block.prompt}</span></>
               : block.prompt && (block.tool === "sendInput" || block.tool === "resumeAgent") ? <>: <span>{block.prompt}</span></>
               : !block.prompt && block.action ? <> · {block.action}</> : null}
-            <small> · {agent.statusLabel}</small></p>
+            <small> · {stateName(agent.statusLabel)}</small></p>
+
             {agent.statusMessage ? <p className="thread-subagent-details__message">{agent.statusMessage}</p> : null}
           </div></div>;
       })}
       {!grouped && blocks[0]?.tool === "wait" && blocks[0].prompt ?
-        <p className="thread-subagent-details__input">Input: {blocks[0].prompt}</p> : null}
+        <p className="thread-subagent-details__input">{intl.formatMessage(collaborationMessages.input,{input:blocks[0].prompt})}</p> : null}
       {!grouped && (blocks[0]?.reasoningEffort || blocks[0]?.agentPath) ?
         <p className="thread-subagent-details__meta">{[
-          blocks[0].reasoningEffort ? "Reasoning: " + blocks[0].reasoningEffort : null, blocks[0].agentPath,
+          blocks[0].reasoningEffort ? intl.formatMessage(collaborationMessages.reasoning,{effort:blocks[0].reasoningEffort}) : null, blocks[0].agentPath,
         ].filter(Boolean).join(" · ")}</p> : null}
     </div></motion.div> : null}</AnimatePresence>
   </section>;

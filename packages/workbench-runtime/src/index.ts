@@ -79,3 +79,5 @@ export * from "./submitted-message-display";
 export * from "./host-composer-commands";
 
 export * from "./connectors/headless-port";
+
+export { ThreadOrchestrationResource } from "./thread-orchestration-resource";

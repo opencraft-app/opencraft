@@ -1,3 +1,4 @@
+import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { ThreadRecoveryResource } from "./thread-recovery-resource";
@@ -396,6 +397,7 @@ export interface AppServerWorkbenchRuntime {
     readonly attachments: AppServerAttachmentResourcePort;
     readonly goals: ThreadGoalResource;
     readonly turnRecovery: ThreadRecoveryResource;
+    readonly orchestration: ThreadOrchestrationResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -608,6 +610,10 @@ export function createAppServerWorkbenchRuntime(
   const turnRecovery = new ThreadRecoveryResource({
     supported: threadId => executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, TURN_RECOVERY_EXTENSION)?.version === 1,
     read: threadId => requireClient().request("opencraft/turn-recovery/read", { threadId }),
+  });
+  const orchestration = new ThreadOrchestrationResource({
+    supported: () => (client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-orchestration-view"] as {version?:unknown} | undefined)?.version === 1,
+    read: (threadId,calls) => requireClient().request("opencraft/collaboration",{action:"orchestration",threadId,calls}),
   });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
@@ -1712,6 +1718,7 @@ export function createAppServerWorkbenchRuntime(
       ensureLifecycle(generation);
       goals.reset();
       turnRecovery.reset();
+      orchestration.reset();
       const historyModeHint = () => {
         const capability = client?.initializeResult?.capabilities?.extensions?.[
           OPENCRAFT_RESUME_HISTORY_EXTENSION
@@ -1872,6 +1879,7 @@ export function createAppServerWorkbenchRuntime(
       },
       goals,
       turnRecovery,
+      orchestration,
       host: {
         subscribeSchedulesChanged(listener) {
           if (disposed) throw new Error("AppServer Workbench is disposed");
@@ -2467,6 +2475,7 @@ export function createAppServerWorkbenchRuntime(
         if (disposed) return;
         connection.dispose();
         recovery.dispose();
+        orchestration.dispose();
         if (detachRetryTimer !== null) clock.clearTimeout(detachRetryTimer);
         detachRetryTimer = null;
         failedReadDetaches.clear();

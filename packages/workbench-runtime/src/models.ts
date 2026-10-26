@@ -7,6 +7,10 @@ export interface WorkbenchThread {
   title: string;
   project: string;
   lineage: "root" | "fork" | "subagent";
+  /** Host-authored topology. Missing metadata never implies a parent. */
+  parentThreadId?: string | null;
+  /** Hidden conversations remain addressable through their parent. */
+  visibility?: "visible" | "hidden";
   time: string;
   /** Canonical AppServer recency timestamp in seconds. */
   updatedAt: number;

@@ -23,6 +23,7 @@ import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadA
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
 import { sidebarActivityDateHeadings, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
+import { sidebarThreadIdentity, sidebarThreadTree, type SidebarThreadTreeNode } from "../sidebar-thread-tree";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { useSidebarEndPull } from "./use-sidebar-end-pull";
 import { useSidebarHeadingOcclusion } from "./use-sidebar-heading-occlusion";
@@ -187,8 +188,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const contentViewport = useRef<HTMLDivElement>(null);
   const text = (id: string, defaultMessage: string) => intl.formatMessage({ id, defaultMessage });
   const label = (value: ThreadListLabel) => typeof value === "string" ? value : intl.formatMessage(value);
-  const identity = (thread: SidebarThread) => JSON.stringify([thread.connectionHostId, thread.id]);
-  const references = useMemo(() => threads.map(thread => ({
+  const identity = sidebarThreadIdentity;
+  const references = useMemo(() => threads.filter(thread => thread.visibility !== "hidden").map(thread => ({
     hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
   })), [threads]);
   const groupingWatch = useRef<(() => void) | undefined>(undefined);
@@ -217,12 +218,15 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const allowedReferences = threadListGrouping?.filterThreads?.(references) ?? references;
   const allowed = new Set(allowedReferences.map(ref => JSON.stringify([ref.hostId, ref.threadId])));
   const needle = query.trim().toLocaleLowerCase();
-  const matching = threads.filter(thread => allowed.has(identity(thread))
+  const matching = threads.filter(thread => thread.visibility !== "hidden" && allowed.has(identity(thread))
     && (!serverFilter.serverId || thread.serverOrigin.serverId === serverFilter.serverId)
     && (!needle || thread.title.toLocaleLowerCase().includes(needle)));
   const matchingById = new Map(matching.map(thread => [identity(thread), thread]));
-  const matchingReferences = references.filter(ref => matchingById.has(JSON.stringify([ref.hostId, ref.threadId])));
-  const taskFlow = groupThreadsByTaskFlow(matching);
+  const tree = sidebarThreadTree(matching);
+  const roots = tree.roots.map(node => node.thread);
+  const rootIds = new Set(roots.map(identity));
+  const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
+  const taskFlow = groupThreadsByTaskFlow(roots);
   const applicableCatalogs = threadCatalogs.filter(catalog => !serverFilter.serverId
     || catalog.hostId === serverFilter.serverId
     || threads.some(thread => thread.connectionHostId === catalog.hostId && thread.serverOrigin.serverId === serverFilter.serverId));
@@ -280,6 +284,19 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix]);
   const renderThread = (thread: SidebarThread, attention = false) => <SidebarThreadContent
     key={identity(thread)} thread={thread} attention={attention} render={renderThreadContent} />;
+  const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean): ReactNode => (
+    <li key={identity(node.thread)} className="sidebar-thread-tree__node"
+      data-thread-id={node.thread.id} data-host-id={node.thread.connectionHostId}>
+      {renderThread(node.thread, attention)}
+      {node.children.length ? <ul className="sidebar-thread-tree__children" role="list">
+        {node.children.map(child => renderTreeNode(child, attention))}
+      </ul> : null}
+    </li>
+  );
+  const renderThreadTree = (thread: SidebarThread, attention = false) => {
+    const node = tree.nodes.get(identity(thread));
+    return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention)}</ul> : null;
+  };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void) => {
     if (!rows.length) return null;
     const collapsed = folded[key] ?? false;
@@ -293,7 +310,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
         {visible.map(thread => <div key={identity(thread)}>
           {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}
-          {renderThread(thread, key === "attention")}
+          {renderThreadTree(thread, key === "attention")}
         </div>)}
         {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
           pageSize={key === "pinned" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
@@ -312,22 +329,24 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     if (!current || !("hostId" in current)) return;
     const key = JSON.stringify([current.hostId, current.threadId]);
     const target = matchingById.get(key);
+    const rootKey = tree.rootByIdentity.get(key) ?? key;
     const visible = target && target.interactionAvailable !== false && (groupedSections
       ? groupedSections.some(group => !group.collapsed && group.threads.some(ref =>
-          ref.hostId === current.hostId && ref.threadId === current.threadId))
+          JSON.stringify([ref.hostId, ref.threadId]) === rootKey))
       : Object.entries(taskFlow).some(([id, rows]) => !(folded[id] ?? false)
           && rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
-            .some(row => row.connectionHostId === current.hostId && row.id === current.threadId)));
+            .some(row => identity(row) === rootKey)));
     if (!visible) menus.close();
   });
   const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
+  const selectedRootKey = tree.rootByIdentity.get(selectedKey) ?? selectedKey;
   const selectedSection = groupedSections
-    ? groupedSections.find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedKey))
+    ? groupedSections.find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey))
     : Object.entries(taskFlow).map(([id, rows]) => ({ id, collapsed: folded[id] ?? false,
         threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
           .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) }))
-      .find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedKey));
+      .find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey));
   const selectedSectionId = selectedSection?.id;
   const selectedVisible = selectedSection !== undefined && !selectedSection.collapsed;
   const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit });
@@ -409,7 +428,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
                 <span className="sidebar-thread-group-label">{label(group.label)}</span><ChevronDown size={12} className={group.collapsed ? "is-collapsed" : undefined} />
               </button></h3>
               <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-group-${encodeURIComponent(group.id)}`} hidden={group.collapsed}>
-                {!group.collapsed && group.threads.map(ref => { const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId])); return thread ? renderThread(thread) : null; })}
+                {!group.collapsed && group.threads.map(ref => { const thread = matchingById.get(JSON.stringify([ref.hostId, ref.threadId])); return thread ? <div key={identity(thread)}>{renderThreadTree(thread)}</div> : null; })}
               </div>
             </section>) : <>
               {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
