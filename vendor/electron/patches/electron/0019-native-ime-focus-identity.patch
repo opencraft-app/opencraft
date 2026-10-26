@@ -1,0 +1,463 @@
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+index d84c06e..cc9da9e 100644
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -261,3 +261,4 @@ fix_gtk_dialog_dynamic_symbols.patch
+ fix_electron_component_exports.patch
+ fix_electron_gtk_component_dependency.patch
+ feat_native_input_causality.patch
++feat_native_ime_focus_metadata.patch
+diff --git a/patches/chromium/feat_native_ime_focus_metadata.patch b/patches/chromium/feat_native_ime_focus_metadata.patch
+new file mode 100644
+index 0000000..60caa12
+--- /dev/null
++++ b/patches/chromium/feat_native_ime_focus_metadata.patch
+@@ -0,0 +1,54 @@
++diff --git a/third_party/blink/public/web/web_input_method_controller.h b/third_party/blink/public/web/web_input_method_controller.h
++--- a/third_party/blink/public/web/web_input_method_controller.h
+++++ b/third_party/blink/public/web/web_input_method_controller.h
++@@ -73,6 +73,8 @@
++     int activation_kind = 0;
++     int32_t activation_node_id = 0;
++     int activation_input_type = 0;
+++    int32_t node_id = 0;
+++    int input_type = 0;
++   };
++   struct NativeImeResultForTesting {
++     bool dispatched = false;
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++@@ -60,7 +60,9 @@
++           .activation_timestamp_us = activation ? activation->timestamp_us : 0,
++           .activation_kind = activation ? activation->kind : 0,
++           .activation_node_id = activation ? activation->node_id : 0,
++-          .activation_input_type = activation ? activation->input_type : 0};
+++          .activation_input_type = activation ? activation->input_type : 0,
+++          .node_id = native.NodeIdOfFocusedElement(),
+++          .input_type = static_cast<int>(native.TextInputType())};
++ }
++
++ WebInputMethodController::NativeImeResultForTesting
++diff --git a/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc b/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
++--- a/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
+++++ b/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
++@@ -508,7 +508,8 @@
++
++   // Seal the focus generation in this dispatch task, before the ACK allows a
++   // caller to query it. No posted task may recapture a later editor as its own.
++-  if (input_event.GetType() == WebInputEvent::Type::kMouseUp ||
+++  if (input_event.GetType() == WebInputEvent::Type::kMouseDown ||
+++      input_event.GetType() == WebInputEvent::Type::kMouseUp ||
++       input_event.GetType() == WebInputEvent::Type::kGestureTap ||
++       input_event.GetType() == WebInputEvent::Type::kRawKeyDown) {
++     widget_->client()->DidHandleNativeInputForTesting(coalesced_event);
++diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++@@ -3395,7 +3395,10 @@
++   const auto& event = coalesced_event.Event();
++   uint64_t id =
++       static_cast<uint64_t>(coalesced_event.latency_info().trace_id());
++-  int kind = event.GetType() == WebInputEvent::Type::kMouseUp ? 1 : 2;
+++  int kind = event.GetType() == WebInputEvent::Type::kMouseDown ||
+++                     event.GetType() == WebInputEvent::Type::kMouseUp
+++                 ? 1
+++                 : 2;
++   if (event.GetType() == WebInputEvent::Type::kGestureTap) {
++     const auto& gesture = static_cast<const WebGestureEvent&>(event);
++     id = gesture.unique_touch_event_id;
+diff --git a/shell/browser/api/electron_api_web_contents.cc b/shell/browser/api/electron_api_web_contents.cc
+index b63e9ca..6938baa 100644
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -4322,7 +4322,8 @@ v8::Local<v8::Promise> WebContents::SendInputEventWithNativeInputTicket(
+     return std::string(kind) + ":" + base::NumberToString(id) + ":" +
+            base::NumberToString(time.since_origin().InMicroseconds());
+   };
+-  if (type == blink::WebInputEvent::Type::kMouseUp) {
++  if (type == blink::WebInputEvent::Type::kMouseDown ||
++      type == blink::WebInputEvent::Type::kMouseUp) {
+     blink::WebMouseEvent event;
+     if (!gin::ConvertFromV8(isolate, input_event, &event)) {
+       promise.RejectWithErrorMessage("Invalid native mouse activation");
+@@ -4378,7 +4379,7 @@ v8::Local<v8::Promise> WebContents::SendInputEventWithNativeInputTicket(
+     return handle;
+   }
+   promise.RejectWithErrorMessage(
+-      "Native input ticket requires mouseUp or keyDown");
++      "Native input ticket requires mouseDown, mouseUp or keyDown");
+   return handle;
+ }
+ 
+diff --git a/shell/browser/api/electron_api_web_frame_main.cc b/shell/browser/api/electron_api_web_frame_main.cc
+index 87737cb..a906a5b 100644
+--- a/shell/browser/api/electron_api_web_frame_main.cc
++++ b/shell/browser/api/electron_api_web_frame_main.cc
+@@ -67,6 +67,7 @@ base::Value NativeImeContextValue(
+   value.Set("token", context.token);
+   value.Set("compositionId", context.composition_id);
+   value.Set("targetIdentity", context.target_identity);
++  value.Set("focusIdentity", context.focus_identity);
+   value.Set("inputType", context.input_type);
+   value.Set("selectionStart", context.selection_start);
+   value.Set("selectionEnd", context.selection_end);
+@@ -75,6 +76,17 @@ base::Value NativeImeContextValue(
+   return base::Value(std::move(value));
+ }
+ 
++base::Value NativeImeFocusValue(
++    const electron::mojom::NativeImeContext& context) {
++  base::DictValue value;
++  value.Set("available", context.available);
++  value.Set("reason", context.reason);
++  value.Set("targetIdentity", context.target_identity);
++  value.Set("focusIdentity", context.focus_identity);
++  value.Set("inputType", context.input_type);
++  return base::Value(std::move(value));
++}
++
+ // RenderFrameCreated is called for speculative frames which may not be
+ // used in certain cross-origin navigations. Invoking
+ // RenderFrameHost::GetLifecycleState currently crashes when called for
+@@ -401,6 +413,57 @@ v8::Local<v8::Promise> WebFrameMain::GetNativeImeContextForInputForTesting(
+   return handle;
+ }
+ 
++v8::Local<v8::Promise> WebFrameMain::GetNativeImeFocusForTesting(
++    v8::Isolate* isolate) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (!HasRenderFrame() || Detached()) {
++    promise.RejectWithErrorMessage("Native IME frame is unavailable");
++    return handle;
++  }
++  GetRendererApi()->GetNativeImeFocusForTesting(
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeImeContextPtr context) {
++                if (!context)
++                  promise.RejectWithErrorMessage(
++                      "Native IME renderer disconnected");
++                else
++                  promise.Resolve(NativeImeFocusValue(*context));
++              },
++              std::move(promise)),
++          mojom::NativeImeContextPtr()));
++  return handle;
++}
++
++v8::Local<v8::Promise> WebFrameMain::GetNativeImeFocusForInputForTesting(
++    v8::Isolate* isolate,
++    const std::string& ticket) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (ticket.empty() || ticket.size() > 128 || !HasRenderFrame() ||
++      Detached()) {
++    promise.RejectWithErrorMessage("Native IME frame is unavailable");
++    return handle;
++  }
++  GetRendererApi()->GetNativeImeFocusForInputForTesting(
++      ticket,
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeImeContextPtr context) {
++                if (!context)
++                  promise.RejectWithErrorMessage(
++                      "Native IME renderer disconnected");
++                else
++                  promise.Resolve(NativeImeFocusValue(*context));
++              },
++              std::move(promise)),
++          mojom::NativeImeContextPtr()));
++  return handle;
++}
++
+ v8::Local<v8::Promise> WebFrameMain::ApplyNativeImeForTesting(
+     v8::Isolate* isolate,
+     const base::DictValue& value) {
+@@ -440,6 +503,7 @@ v8::Local<v8::Promise> WebFrameMain::ApplyNativeImeForTesting(
+                 }
+                 base::DictValue value;
+                 value.Set("status", result->status);
++                value.Set("reason", result->reason);
+                 value.Set("dispatched", result->dispatched);
+                 value.Set("context", NativeImeContextValue(*result->context));
+                 promise.Resolve(base::Value(std::move(value)));
+@@ -892,6 +956,12 @@ void WebFrameMain::FillObjectTemplate(v8::Isolate* isolate,
+                  &WebFrameMain::GetNativeClipboardContextForTesting)
+       .SetMethod("copyNativeClipboardForTesting",
+                  &WebFrameMain::CopyNativeClipboardForTesting)
++      .SetProperty("nativeImeContextVersionForTesting",
++                   &WebFrameMain::NativeImeContextVersionForTesting)
++      .SetMethod("getNativeImeFocusForTesting",
++                 &WebFrameMain::GetNativeImeFocusForTesting)
++      .SetMethod("getNativeImeFocusForInputForTesting",
++                 &WebFrameMain::GetNativeImeFocusForInputForTesting)
+       .SetMethod("getNativeImeContextForInputForTesting",
+                  &WebFrameMain::GetNativeImeContextForInputForTesting)
+       .SetMethod("getNativeImeContextForTesting",
+diff --git a/shell/browser/api/electron_api_web_frame_main.h b/shell/browser/api/electron_api_web_frame_main.h
+index 3023783..5ec6ed2 100644
+--- a/shell/browser/api/electron_api_web_frame_main.h
++++ b/shell/browser/api/electron_api_web_frame_main.h
+@@ -136,10 +136,15 @@ class WebFrameMain final : public gin::Wrappable<WebFrameMain>,
+   v8::Local<v8::Promise> CopyNativeClipboardForTesting(
+       v8::Isolate*,
+       const std::string& token);
++  int NativeImeContextVersionForTesting() const { return 2; }
+   v8::Local<v8::Promise> GetNativeImeContextForTesting(v8::Isolate*);
+   v8::Local<v8::Promise> GetNativeImeContextForInputForTesting(
+       v8::Isolate*,
+       const std::string&);
++  v8::Local<v8::Promise> GetNativeImeFocusForTesting(v8::Isolate*);
++  v8::Local<v8::Promise> GetNativeImeFocusForInputForTesting(
++      v8::Isolate*,
++      const std::string&);
+   v8::Local<v8::Promise> ApplyNativeImeForTesting(v8::Isolate*,
+                                                   const base::DictValue&);
+   bool Detached() const;
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+index a62077e..7ca76b4 100644
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -53,6 +53,7 @@ struct NativeImeContext {
+   string token;
+   string composition_id;
+   string target_identity;
++  string focus_identity;
+   int32 input_type;
+   int32 selection_start;
+   int32 selection_end;
+@@ -71,6 +72,7 @@ struct NativeImeOperation {
+ 
+ struct NativeImeResult {
+   string status;
++  string reason;
+   bool dispatched;
+   NativeImeContext context;
+ };
+@@ -94,6 +96,8 @@ interface ElectronRenderer {
+ 
+   GetNativeImeContextForTesting() => (NativeImeContext context);
+   GetNativeImeContextForInputForTesting(string ticket) => (NativeImeContext context);
++  GetNativeImeFocusForInputForTesting(string ticket) => (NativeImeContext focus);
++  GetNativeImeFocusForTesting() => (NativeImeContext focus);
+   ApplyNativeImeForTesting(NativeImeOperation operation) => (NativeImeResult result);
+ 
+   Message(
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+index eb82e80..0233d44 100644
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -235,6 +235,21 @@ mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
+   const auto document = web_frame->GetDocument().Token().ToString();
+   const uint64_t focus = state.focus_generation;
+   auto weak = GetWeakPtr();
++  // TextInputInfo reads keyboard/password flags before it updates layout.
++  // Let that bounded native read settle layout-dependent password tracking,
++  // then capture the actual snapshot. This is one native task, not polling.
++  input->TextInputInfo();
++  if (!weak)
++    return result;
++  web_frame = render_frame()->GetWebFrame();
++  input = web_frame ? web_frame->GetInputMethodController() : nullptr;
++  if (!input || web_frame->GetDocument().Token().ToString() != document ||
++      !web_frame->View() || web_frame->View()->FocusedFrame() != web_frame) {
++    return result;
++  }
++  const auto settled = input->GetNativeImeStateForTesting();
++  if (!settled.supported || settled.busy || settled.focus_generation != focus)
++    return result;
+   auto info = input->TextInputInfo();
+   if (!weak)
+     return result;
+@@ -264,6 +279,11 @@ mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
+   native_ime_snapshot_ = info;
+   native_ime_token_ = base::UnguessableToken::Create().ToString();
+   result->target_identity = document + ":" + base::NumberToString(info.node_id);
++  // This is editor-focus identity, not permission to write or a frozen edit
++  // snapshot. A new native context still validates its current text/selection.
++  result->focus_identity = result->target_identity + ":" +
++                           base::NumberToString(focus) + ":" +
++                           base::NumberToString(static_cast<int>(info.type));
+   result->input_type = static_cast<int32_t>(info.type);
+   result->available = true;
+   result->reason.clear();
+@@ -351,6 +371,92 @@ void ElectronApiServiceImpl::GetNativeImeContextForInputForTesting(
+   std::move(callback).Run(std::move(context));
+ }
+ 
++void ElectronApiServiceImpl::GetNativeImeFocusForTesting(
++    GetNativeImeFocusForTestingCallback callback) {
++  auto result = mojom::NativeImeContext::New();
++  result->reason = "no-native-editor";
++  auto* frame = render_frame()->GetWebFrame();
++  auto* input = frame ? frame->GetInputMethodController() : nullptr;
++  if (!input || !frame->View() || frame->View()->FocusedFrame() != frame) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  // Native editor identity only: no layout, value/selection snapshot, native
++  // edit-token mutation or composition ownership change. Existing preedit is
++  // allowed; this observation cannot acquire its write authority.
++  const auto state = input->GetNativeImeStateForTesting();
++  const bool text_type = (state.input_type >= 1 && state.input_type <= 7) ||
++                         state.input_type == 14 || state.input_type == 15;
++  if (!state.supported || state.busy || !text_type || state.node_id <= 0) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  result->available = true;
++  result->reason.clear();
++  result->target_identity = frame->GetDocument().Token().ToString() + ":" +
++                            base::NumberToString(state.node_id);
++  result->focus_identity = result->target_identity + ":" +
++                           base::NumberToString(state.focus_generation) + ":" +
++                           base::NumberToString(state.input_type);
++  result->input_type = state.input_type;
++  std::move(callback).Run(std::move(result));
++}
++
++void ElectronApiServiceImpl::GetNativeImeFocusForInputForTesting(
++    const std::string& ticket,
++    GetNativeImeFocusForInputForTestingCallback callback) {
++  auto result = mojom::NativeImeContext::New();
++  result->reason = "input-context-mismatch";
++  const auto first = ticket.find(':');
++  const auto second =
++      first == std::string::npos ? first : ticket.find(':', first + 1);
++  uint64_t id = 0;
++  int64_t timestamp = 0;
++  const auto prefix = ticket.substr(0, first);
++  const int kind = prefix == "mouse"   ? 1
++                   : prefix == "key"   ? 2
++                   : prefix == "touch" ? 3
++                                       : 0;
++  if (ticket == native_ime_last_activation_ticket_ || ticket.size() > 128 ||
++      !kind || first == std::string::npos || second == std::string::npos ||
++      !base::StringToUint64(ticket.substr(first + 1, second - first - 1), &id) ||
++      !base::StringToInt64(ticket.substr(second + 1), &timestamp) || !id ||
++      timestamp <= 0) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  auto* frame = render_frame()->GetWebFrame();
++  auto* input = frame ? frame->GetInputMethodController() : nullptr;
++  if (!input || !frame->View() || frame->View()->FocusedFrame() != frame) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  // Native editor identity only: no layout, value/selection snapshot, native
++  // edit-token mutation or composition ownership change. Existing preedit is
++  // allowed; this observation cannot acquire its write authority.
++  const auto state = input->GetNativeImeStateForTesting();
++  const bool text_type = (state.input_type >= 1 && state.input_type <= 7) ||
++                         state.input_type == 14 || state.input_type == 15;
++  if (!state.supported || state.busy || !text_type || state.node_id <= 0 ||
++      state.activation_id != id || state.activation_timestamp_us != timestamp ||
++      state.activation_kind != kind ||
++      state.node_id != state.activation_node_id ||
++      state.input_type != state.activation_input_type) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  result->available = true;
++  result->reason.clear();
++  result->target_identity = frame->GetDocument().Token().ToString() + ":" +
++                            base::NumberToString(state.node_id);
++  result->focus_identity = result->target_identity + ":" +
++                           base::NumberToString(state.focus_generation) + ":" +
++                           base::NumberToString(state.input_type);
++  result->input_type = state.input_type;
++  native_ime_last_activation_ticket_ = ticket;
++  std::move(callback).Run(std::move(result));
++}
++
+ void ElectronApiServiceImpl::ApplyNativeImeForTesting(
+     mojom::NativeImeOperationPtr operation,
+     ApplyNativeImeForTestingCallback callback) {
+@@ -407,6 +513,20 @@ void ElectronApiServiceImpl::ApplyNativeImeForTesting(
+       web_frame->GetDocument().Token().ToString() != native_ime_document_ ||
+       state.focus_generation != focus ||
+       state.composition_generation != composition || !(current == expected)) {
++    // Fixed categories only; never expose text, field values or native ids.
++    result->reason = !state.supported ? "unsupported-editor"
++                     : state.busy ? "native-editor-busy"
++                     : state.focus_generation != focus ? "focus-changed"
++                     : state.composition_generation != composition
++                         ? "composition-changed"
++                     : current.node_id != expected.node_id ? "node-changed"
++                     : current.type != expected.type ? "type-changed"
++                     : current.value != expected.value ? "text-changed"
++                     : current.selection_start != expected.selection_start ||
++                               current.selection_end != expected.selection_end
++                         ? "selection-changed"
++                     : current.flags != expected.flags ? "keyboard-flags-changed"
++                     : "native-context-changed";
+     finish("context-changed");
+     return;
+   }
+@@ -443,6 +563,7 @@ void ElectronApiServiceImpl::ApplyNativeImeForTesting(
+     return;
+   }
+   if (!edit.dispatched) {
++    result->reason = "native-target-validation";
+     finish("context-changed");
+     return;
+   }
+diff --git a/shell/renderer/electron_api_service_impl.h b/shell/renderer/electron_api_service_impl.h
+index 2e885e0..7cab8ea 100644
+--- a/shell/renderer/electron_api_service_impl.h
++++ b/shell/renderer/electron_api_service_impl.h
+@@ -59,6 +59,11 @@ class ElectronApiServiceImpl
+   void GetNativeImeContextForInputForTesting(
+       const std::string&,
+       GetNativeImeContextForInputForTestingCallback) override;
++  void GetNativeImeFocusForTesting(
++      GetNativeImeFocusForTestingCallback callback) override;
++  void GetNativeImeFocusForInputForTesting(
++      const std::string&,
++      GetNativeImeFocusForInputForTestingCallback) override;
+   void ApplyNativeImeForTesting(mojom::NativeImeOperationPtr,
+                                 ApplyNativeImeForTestingCallback) override;
+   void Message(bool internal,
+diff --git a/shell/renderer/service_worker_data.cc b/shell/renderer/service_worker_data.cc
+index 3de6b78..c7dbfab 100644
+--- a/shell/renderer/service_worker_data.cc
++++ b/shell/renderer/service_worker_data.cc
+@@ -58,6 +58,16 @@ void ServiceWorkerData::GetNativeImeContextForInputForTesting(
+   GetNativeImeContextForTesting(std::move(callback));
+ }
+ 
++void ServiceWorkerData::GetNativeImeFocusForTesting(
++    GetNativeImeFocusForTestingCallback callback) {
++  GetNativeImeContextForTesting(std::move(callback));
++}
++
++void ServiceWorkerData::GetNativeImeFocusForInputForTesting(
++    const std::string&, GetNativeImeFocusForInputForTestingCallback callback) {
++  GetNativeImeContextForTesting(std::move(callback));
++}
++
+ void ServiceWorkerData::ApplyNativeImeForTesting(
+     mojom::NativeImeOperationPtr,
+     ApplyNativeImeForTestingCallback callback) {
+diff --git a/shell/renderer/service_worker_data.h b/shell/renderer/service_worker_data.h
+index 0825713..3e5eba8 100644
+--- a/shell/renderer/service_worker_data.h
++++ b/shell/renderer/service_worker_data.h
+@@ -61,6 +61,11 @@ class ServiceWorkerData : public mojom::ElectronRenderer {
+   void GetNativeImeContextForInputForTesting(
+       const std::string& ticket,
+       GetNativeImeContextForInputForTestingCallback callback) override;
++  void GetNativeImeFocusForTesting(
++      GetNativeImeFocusForTestingCallback callback) override;
++  void GetNativeImeFocusForInputForTesting(
++      const std::string& ticket,
++      GetNativeImeFocusForInputForTestingCallback callback) override;
+   void ApplyNativeImeForTesting(
+       mojom::NativeImeOperationPtr operation,
+       ApplyNativeImeForTestingCallback callback) override;

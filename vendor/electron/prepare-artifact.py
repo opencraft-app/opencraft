@@ -28,7 +28,9 @@ def main():
     here = Path(__file__).resolve().parent
     distribution = args.distribution.resolve()
     definition = here / 'fork.json'
-    lock = json.loads(definition.read_text())
+    definition_bytes = definition.read_bytes()
+    definition_sha256 = hashlib.sha256(definition_bytes).hexdigest()
+    lock = json.loads(definition_bytes)
     if sys.platform != 'linux':
         raise ValueError('Only the Linux owned distribution is validated')
     marker = distribution / 'opencraft-electron-artifact.json'
@@ -69,6 +71,28 @@ def main():
         raise ValueError('Native copy probe did not pass')
     if result['versions']['electron'] != lock['version'] or result['versions']['chrome'] != lock['chromiumVersion']:
         raise ValueError('Distribution runtime version does not match fork')
+    causal = subprocess.run([str(distribution / 'electron'), '--no-sandbox', '--ozone-platform=headless',
+                             str(here / 'probe-native-input-causality.cjs')], env=environment,
+                            text=True, capture_output=True, timeout=150)
+    (args.evidence / 'native-input-causality.stdout.log').write_text(causal.stdout)
+    (args.evidence / 'native-input-causality.stderr.log').write_text(causal.stderr)
+    causal.check_returncode()
+    causal_result = json.loads(causal.stdout)
+    cases = causal_result.get('cases', [])
+    if causal_result.get('passed') is not True or len(cases) < 27 or not all(case.get('passed') is True for case in cases):
+        raise ValueError('Native input causality probe did not pass')
+    focus = subprocess.run([str(distribution / 'electron'), '--no-sandbox', '--ozone-platform=headless',
+                            str(here / 'probe-native-ime-focus-identity.cjs')], env=environment,
+                           text=True, capture_output=True, timeout=150)
+    (args.evidence / 'native-ime-focus-identity.stdout.log').write_text(focus.stdout)
+    (args.evidence / 'native-ime-focus-identity.stderr.log').write_text(focus.stderr)
+    focus.check_returncode()
+    focus_result = json.loads(focus.stdout)
+    focus_cases = focus_result.get('cases', [])
+    if (focus_result.get('passed') is not True or focus_result.get('readOnlyFocusQueryProved') is not True
+            or focus_result.get('mouseDownPhaseProved') is not True or len(focus_cases) != 20
+            or not all(case.get('passed') is True for case in focus_cases)):
+        raise ValueError('Native IME focus identity probe did not pass')
     files = []
     for path in sorted(distribution.rglob('*')):
         if path.is_symlink():
@@ -76,15 +100,23 @@ def main():
         if path.is_file():
             files.append(dict(path=path.relative_to(distribution).as_posix(),
                               size=path.stat().st_size, sha256=sha(path)))
+    # Probes may take minutes. Never label old source/runtime bytes with a
+    # definition changed by a concurrent preparation or a later native build.
+    final_verified = subprocess.run([sys.executable, str(here / 'manage.py'), 'verify', '--root', str(args.source_root)],
+                                    check=True, text=True, capture_output=True)
+    if definition.read_bytes() != definition_bytes or json.loads(final_verified.stdout) != source:
+        raise ValueError('Fork definition or verified source changed during artifact preparation')
     value = dict(schemaVersion=1, platform='linux', arch={'x86_64': 'x64', 'aarch64': 'arm64'}[os.uname().machine],
-                 forkDefinitionSha256=sha(definition), electronVersion=lock['version'],
+                 forkDefinitionSha256=definition_sha256, electronVersion=lock['version'],
                  chromiumVersion=lock['chromiumVersion'], nativeCopyProbePassed=True,
-                 source=source, files=files)
+                 nativeInputCausalityProbePassed=True, nativeImeFocusIdentityProbePassed=True, source=source, files=files)
     if stripped is not None:
         value['elfStripping'] = stripped
     marker.write_text(json.dumps(value, indent=2) + '\n')
     (args.evidence / 'native-copy-result.json').write_text(json.dumps(result, indent=2) + '\n')
-    print(json.dumps(dict(artifactVerified=True, nativeCopyProbePassed=True,
+    (args.evidence / 'native-input-causality-result.json').write_text(json.dumps(causal_result, indent=2) + '\n')
+    (args.evidence / 'native-ime-focus-identity-result.json').write_text(json.dumps(focus_result, indent=2) + '\n')
+    print(json.dumps(dict(artifactVerified=True, nativeCopyProbePassed=True, nativeInputCausalityProbePassed=True, nativeImeFocusIdentityProbePassed=True,
                          files=len(files), markerSha256=sha(marker))))
 
 
