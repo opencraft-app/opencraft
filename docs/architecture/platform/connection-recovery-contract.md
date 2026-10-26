@@ -42,6 +42,35 @@ observer reentry, arbitrary callback programs and other observer buses are not
 proved. The actual Client `fanout` chaos suite and raw/Cordis regressions supply
 separate implementation evidence, not a TypeScript refinement proof.
 
+## Diagnostic and request-lifecycle observer admission
+
+Client diagnostics and request-lifecycle events are non-authoritative
+observations. Their package-local `ClientObserverList` captures a finite set of
+registration instances for each emission, keeps same-function deduplication,
+and checks that each instance still owns its registration before invocation.
+Synchronous re-subscription starts with a later emission, including a nested
+emission, and a retired unsubscribe handle cannot remove a successor. Synchronous
+observer exceptions remain isolated from peers and RPC admission or settlement.
+
+These observers do not use the native notification connection fence. Transport
+loss must still publish a pending request's failure before a successor
+initializes. Client close publishes pending-request termination before clearing
+observers; clearing retires the original in-progress admission cut. A queued or
+started observer can synchronously abort or close the Client without crossing
+the existing final native `beforeSend` boundary. Observability does not grant
+execution authority or replay a request.
+
+`ObserverAdmission` checks one emission, two consumers, two registration
+incarnations each and clearing. Completion assumes finite observer work.
+Seven exact negative controls cover growing admission, registration replacement,
+stale unsubscribe, clear, repeat, drop and absent fairness. It has no transport
+generation dimension; nested RPC termination and physical-loss behavior have
+separate actual Client/Cordis regressions. The `observers` chaos suite drives
+real diagnostic and queued/started/terminal emissions, checks registration
+admission and conservation, and records RPC intent/frame counts separately.
+This is bounded evidence, not proof of all observer buses or TypeScript
+refinement.
+
 The [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
 cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
 Safety and conditional recurring liveness are checked separately, including
