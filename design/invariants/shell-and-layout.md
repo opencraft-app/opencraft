@@ -196,12 +196,10 @@ ordinary prop and width changes preserve drafts and mount identity. Exit presenc
 immediately becomes inert, aria-hidden and pointer-disabled. Desktop entrance
 translates the surface by -8px while its header counter-translates, then settles;
 exit translation keeps opacity. Reduced motion skips settling. Mobile depth
-consumes the same Shell progress and clamps 90–100% scale, with no opacity
-animation on the ancestor of glass controls and no separate exit animation.
-Its stationary wash remains a sibling outside the scaled layer, consumes the
-same progress from 65% to zero opacity, and stays transparent in reduced motion;
-Shell CSS retains material and hit-test ownership. This separation keeps
-`backdrop-filter` descendants in a stable opacity/compositing context.
+consumes the same Shell progress, clamps 90–100% scale and 45–100% opacity, and
+adds no separate exit animation. Its stationary wash remains a sibling outside
+the scaled layer, consumes the same progress from 65% to zero opacity, and stays
+transparent in reduced motion; Shell CSS retains material and hit-test ownership.
 Existing resize transactions own bounds,
 keyboard/default width, commits and cancellation; the floating resize port cannot
 collapse the sidebar.
