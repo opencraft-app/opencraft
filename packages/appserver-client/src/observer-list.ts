@@ -31,5 +31,6 @@ export class ClientObserverList<T> {
     };
   }
 
+  get size(): number { return this.registrations.size; }
   clear(): void { this.registrations.clear(); }
 }

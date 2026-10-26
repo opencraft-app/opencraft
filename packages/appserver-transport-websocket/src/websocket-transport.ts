@@ -3,7 +3,7 @@ import type {
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
 import { decodeUtf8 } from "@opencraft/appserver-client/utf8";
-import { TransportStatusObservers } from "@opencraft/appserver-client/transport";
+import { ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface WebSocketEventMap {
   open: Event;
@@ -66,7 +66,7 @@ async function messageDataToText(data: unknown): Promise<string> {
 
 export class WebSocketTransport implements DuplexTransport {
   private readonly options: WebSocketTransportOptions;
-  private readonly messageListeners = new Set<(frame: string) => void>();
+  private readonly messageListeners = new ClientObserverList<string>();
   private readonly statusListeners = new TransportStatusObservers();
   private socket: AppServerWebSocket | null = null;
   private currentStatus: TransportStatus = { state: "idle" };
@@ -151,7 +151,7 @@ export class WebSocketTransport implements DuplexTransport {
         .then(() => messageDataToText(event.data))
         .then((frame) => {
           if (!isCurrentSocket() || this.currentStatus.state !== "open") return;
-          for (const listener of this.messageListeners) listener(frame);
+          this.messageListeners.emit(frame, () => isCurrentSocket() && this.currentStatus.state === "open");
         })
         .catch((error: unknown) => {
           if (!isCurrentSocket() || this.currentStatus.state !== "open") return;
@@ -183,9 +183,13 @@ export class WebSocketTransport implements DuplexTransport {
     this.socket.send(frame);
   }
 
+  captureMessageScope(): () => boolean {
+    const socket = this.socket, generation = this.socketGeneration;
+    return () => socket !== null && this.socket === socket && this.socketGeneration === generation
+      && this.currentStatus.state === "open";
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
-    this.messageListeners.add(listener);
-    return () => this.messageListeners.delete(listener);
+    return this.messageListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {

@@ -2,7 +2,7 @@ import type {
   DuplexTransport,
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
-import { ClientObserverList } from "@opencraft/appserver-client/transport";
+import { captureTransportMessageScope, ClientObserverList } from "@opencraft/appserver-client/transport";
 
 export type RecordedFrameDirection = "client-to-server" | "server-to-client";
 
@@ -59,6 +59,10 @@ export class RecordingTransport implements DuplexTransport {
     await this.transport.send(frame, signal);
   }
 
+  captureMessageScope(): () => boolean {
+    const attachment = this.attachment, native = captureTransportMessageScope(this.transport);
+    return () => attachment !== null && this.attachment === attachment && native();
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
     return this.messageListeners.subscribe(listener);
   }
@@ -83,8 +87,9 @@ export class RecordingTransport implements DuplexTransport {
     this.attachment = attachment;
     attachment.remove = this.transport.subscribeMessage((frame) => {
       if (this.attachment !== attachment) return;
+      const isCurrent = this.captureMessageScope();
       this.record("server-to-client", frame);
-      this.messageListeners.emit(frame, () => this.attachment === attachment);
+      this.messageListeners.emit(frame, isCurrent);
     });
     // A provider may synchronously deliver while registering the tap.
     if (this.attachment !== attachment) this.release(attachment);

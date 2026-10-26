@@ -67,11 +67,23 @@ export interface DuplexTransport {
   /** Signal ends local request work, not an already-admitted remote Turn. */
   send(frame: string, signal?: AbortSignal): Promise<void>;
   sendWithContext?(frame: string, context: TransportSubmissionContext, signal?: AbortSignal): Promise<void>;
+  /** Capture native delivery ownership during a synchronous message callback.
+   * Recheck before each forwarded observer. Native retirement invalidates this
+   * guard before status notification; an open successor cannot revive it.
+   * No validity after the callback, send authority or wire field is implied.
+   * Optional only for compatibility with legacy opaque providers. */
+  captureMessageScope?(): () => boolean;
   subscribeMessage(listener: (frame: string) => void): () => void;
   subscribeStatus(listener: (status: TransportStatus) => void): () => void;
   /** Platform hint (foreground/network return); connection owner decides whether to retry. */
   subscribeRecoveryHint?(listener: () => void): () => void;
   close(): Promise<void>;
+}
+
+/** Core providers expose native ownership. Legacy providers can only expose
+ * their current label, which cannot detect an unreported native open/open ABA. */
+export function captureTransportMessageScope(transport: DuplexTransport): () => boolean {
+  return transport.captureMessageScope?.() ?? (() => transport.status.state === "open");
 }
 
 /** Transport state belongs to the adapter. Observations cannot interrupt native
@@ -151,7 +163,7 @@ export function combineAbortSignals(signals: readonly AbortSignal[]): {
 export class DeferredDuplexTransport implements DuplexTransport {
   private current: TransportStatus = { state: "idle" };
   private readonly owner = new AbortController();
-  private readonly messages = new Set<(frame: string) => void>();
+  private readonly messages = new ClientObserverList<string>();
   private readonly statuses = new TransportStatusObservers();
   private readonly recovery = new Set<() => void>();
   private delegate: DuplexTransport | null = null;
@@ -223,7 +235,10 @@ export class DeferredDuplexTransport implements DuplexTransport {
       if (this.delegate !== transport) {
         this.delegate = transport;
         this.releases = [
-          transport.subscribeMessage(frame => { if (this.delegate === transport) for (const listener of this.messages) listener(frame); }),
+          transport.subscribeMessage(frame => {
+            if (this.delegate !== transport) return;
+            this.messages.emit(frame, this.captureMessageScope());
+          }),
           transport.subscribeStatus(status => { if (this.delegate === transport && !this.owner.signal.aborted) this.publish(status); }),
           ...(transport.subscribeRecoveryHint ? [transport.subscribeRecoveryHint(() => { if (this.delegate === transport) for (const listener of this.recovery) listener(); })] : []),
         ];
@@ -248,7 +263,12 @@ export class DeferredDuplexTransport implements DuplexTransport {
     if (this.delegate.sendWithContext) await this.delegate.sendWithContext(frame, context, signal);
     else await this.delegate.send(frame, signal);
   }
-  subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => { this.messages.delete(listener); }; }
+  captureMessageScope(): () => boolean {
+    const delegate = this.delegate;
+    const native = delegate ? captureTransportMessageScope(delegate) : () => false;
+    return () => !this.owner.signal.aborted && this.delegate === delegate && native();
+  }
+  subscribeMessage(listener: (frame: string) => void): () => void { return this.messages.subscribe(listener); }
   subscribeStatus(listener: (status: TransportStatus) => void): () => void { return this.statuses.subscribe(listener); }
   subscribeRecoveryHint(listener: () => void): () => void { this.recovery.add(listener); return () => { this.recovery.delete(listener); }; }
   close(): Promise<void> {

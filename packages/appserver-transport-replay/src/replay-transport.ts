@@ -158,6 +158,10 @@ export class ReplayTransport implements DuplexTransport {
     await this.waitCaller(this.drainServerFrames(owner), signal);
   }
 
+  captureMessageScope(): () => boolean {
+    const owner = this.connection;
+    return () => owner !== null && this.live(owner) && owner.phase === "open";
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
     return this.messageListeners.subscribe(listener);
   }

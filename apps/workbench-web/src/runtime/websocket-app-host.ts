@@ -1,6 +1,7 @@
 import { serverFetch, serverUrl } from "./server-context";
 import { MessagePortAppHostClient } from "@opencraft/app-host-client";
 import type { RendererToAppHostMessage } from "@opencraft/app-host-protocol";
+import { captureTransportMessageScope, ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 import type { DuplexTransport, TransportStatus, TransportFailureDiagnostic } from "@opencraft/appserver-client/transport";
 
 type AppHostConnectionPhase = "connecting" | "socket-open" | "ready";
@@ -190,12 +191,12 @@ class RenewableAppHostTransport implements DuplexTransport {
   private lease: DuplexTransport | null = null;
   private removeMessageListener: (() => void) | null = null;
   private removeStatusListener: (() => void) | null = null;
-  private readonly messageListeners = new Set<(frame: string) => void>();
-  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly messageListeners = new ClientObserverList<string>();
+  private readonly statusListeners = new TransportStatusObservers();
   private readonly recoveryListeners = new Set<() => void>();
   private currentStatus: TransportStatus = { state: "idle" };
   private attempt: { readonly controller: AbortController; readonly promise: Promise<void>;
-    cancel(reason: unknown): void } | null = null;
+    cancel(reason: unknown, retirement?: TransportStatus): void } | null = null;
   // Physical lease release is serialized independently of local attempt cancellation.
   private closeBarrier: Promise<void> = Promise.resolve();
   private closed = false;
@@ -207,6 +208,13 @@ class RenewableAppHostTransport implements DuplexTransport {
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new Error("App Host transport is closed"));
     if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Connection cancelled"));
+    if (this.currentStatus.state === "open" && this.lease && !this.captureMessageScope()()) {
+      const native = this.lease.status;
+      const retirement: TransportStatus = { ...(native.state === "open" ? { state: "closed" as const } : native),
+        attemptId: this.currentStatus.attemptId };
+      if (this.attempt) this.attempt.cancel(new Error(retirement.reason ?? "App Host connection retired"), retirement);
+      else this.setStatus(retirement);
+    }
     if (this.attempt !== null) return this.attempt.promise;
     if (this.currentStatus.state === "open") return Promise.resolve();
     let resolve!: () => void, reject!: (cause: unknown) => void;
@@ -215,7 +223,7 @@ class RenewableAppHostTransport implements DuplexTransport {
     const controller = new AbortController();
     let removeStage: (() => void) | undefined;
     const cleanup = () => { signal?.removeEventListener("abort", abort); removeStage?.(); };
-    const attempt = { controller, promise, cancel: (cause: unknown) => {
+    const attempt = { controller, promise, cancel: (cause: unknown, retirement?: TransportStatus) => {
       if (this.attempt !== attempt) return;
       this.attempt = null;
       cleanup();
@@ -224,7 +232,7 @@ class RenewableAppHostTransport implements DuplexTransport {
       controller.abort(cause);
       reject(cause);
       if (!this.closed && this.currentStatus.state !== "failed")
-        this.setStatus({ state: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+        this.setStatus(retirement ?? { state: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
     } };
     const abort = () => attempt.cancel(signal?.reason ?? new Error("Connection cancelled"));
     this.attempt = attempt;
@@ -260,7 +268,7 @@ class RenewableAppHostTransport implements DuplexTransport {
       this.lease = next;
       this.removeMessageListener = next.subscribeMessage(frame => {
         if (this.lease !== next) return;
-        for (const listener of this.messageListeners) listener(frame);
+        this.messageListeners.emit(frame, this.captureMessageScope());
       });
       this.removeStatusListener = next.subscribeStatus(status => {
         if (this.lease !== next) return;
@@ -297,14 +305,17 @@ class RenewableAppHostTransport implements DuplexTransport {
     return this.lease.send(frame, signal);
   }
 
+  captureMessageScope(): () => boolean {
+    const lease = this.lease;
+    const native = lease ? captureTransportMessageScope(lease) : () => false;
+    return () => !this.closed && this.lease === lease && native();
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
-    this.messageListeners.add(listener);
-    return () => this.messageListeners.delete(listener);
+    return this.messageListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
-    this.statusListeners.add(listener);
-    return () => this.statusListeners.delete(listener);
+    return this.statusListeners.subscribe(listener);
   }
 
   subscribeRecoveryHint(listener: () => void): () => void {
@@ -339,7 +350,7 @@ class RenewableAppHostTransport implements DuplexTransport {
 
   private setStatus(status: TransportStatus): void {
     this.currentStatus = status;
-    for (const listener of this.statusListeners) listener(status);
+    this.statusListeners.emit(status, () => this.currentStatus === status);
   }
 }
 

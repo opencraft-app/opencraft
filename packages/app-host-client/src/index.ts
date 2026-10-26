@@ -6,7 +6,7 @@ import {
   type RendererToAppHostMessage,
 } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
-import { combineAbortSignals, TransportStatusObservers } from "@opencraft/appserver-client/transport";
+import { ClientObserverList, combineAbortSignals, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface AppHostPort {
   postMessage(message: RendererToAppHostMessage): void;
@@ -58,6 +58,13 @@ type AppHostRequestInput =
       readonly generation: number;
     };
 
+interface HostFramePublication {
+  readonly hostId: string;
+  readonly generation: number;
+  active: boolean;
+  retirement?: TransportStatus;
+}
+
 interface HostEvent {
   readonly leaseId?: string;
   readonly generation: number;
@@ -94,7 +101,11 @@ function abortError(message: string): Error {
 export class MessagePortAppHostClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly lateResults = new Map<string, (value: unknown) => void>();
-  private readonly hostListeners = new Map<string, Set<(event: HostEvent) => void>>();
+  private readonly hostListeners = new Map<string, ClientObserverList<HostEvent>>();
+  private readonly publications: (() => void)[] = [];
+  private publishing = false;
+  private readonly framePublications = new Set<HostFramePublication>();
+  private deliveringFrame: HostFramePublication | null = null;
   private readonly ready: Promise<void>;
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
@@ -192,16 +203,39 @@ export class MessagePortAppHostClient {
   }
 
   subscribeHost(hostId: string, listener: (event: HostEvent) => void): () => void {
+    if (this.closed) return () => undefined;
     let listeners = this.hostListeners.get(hostId);
     if (listeners === undefined) {
-      listeners = new Set();
+      listeners = new ClientObserverList<HostEvent>();
       this.hostListeners.set(hostId, listeners);
     }
-    listeners.add(listener);
+    const registry = listeners, remove = registry.subscribe(listener);
     return () => {
-      listeners?.delete(listener);
-      if (listeners?.size === 0) this.hostListeners.delete(hostId);
+      remove();
+      if (registry.size === 0 && this.hostListeners.get(hostId) === registry) this.hostListeners.delete(hostId);
     };
+  }
+
+  /** Only used while synchronously forwarding the current native Host frame.
+   * A queued terminal invalidates it before any child status observer runs. */
+  captureHostMessageScope(hostId: string, generation: number): () => boolean {
+    const frame = this.deliveringFrame;
+    return () => !this.closed && (frame === null || (frame.active
+      && frame.hostId === hostId && frame.generation === generation));
+  }
+
+  hostMessageRetirement(hostId: string, generation: number): TransportStatus | undefined {
+    if (this.terminalError) return { state: "failed", reason: this.terminalError.message,
+      ...(appHostFailure(this.terminalError) ? { failure: appHostFailure(this.terminalError) } : {}) };
+    const frame = this.deliveringFrame;
+    return frame?.hostId === hostId && frame.generation === generation ? frame.retirement : undefined;
+  }
+
+  private drainPublications(): void {
+    if (this.publishing) return;
+    this.publishing = true;
+    try { while (this.publications.length) this.publications.shift()!(); }
+    finally { this.publishing = false; }
   }
 
   close(): void {
@@ -265,6 +299,7 @@ export class MessagePortAppHostClient {
   private terminate(error: Error): void {
     if (this.closed) return;
     this.closed = true;
+    for (const frame of this.framePublications) frame.active = false;
     this.terminalError = error;
     this.port.removeEventListener("message", this.receive);
     this.port.close();
@@ -272,12 +307,14 @@ export class MessagePortAppHostClient {
     for (const request of this.pending.values()) { request.clearTimer(); request.reject(error); }
     this.pending.clear();
     this.lateResults.clear();
-    for (const listeners of this.hostListeners.values()) {
-      for (const listener of listeners) {
-        listener({ generation: 0, terminalReason: error.message, terminalFailure: appHostFailure(error) });
-      }
-    }
-    this.hostListeners.clear();
+    // Admit every Host cut before any observer can modify a later registry.
+    const terminal: HostEvent = { generation: 0, terminalReason: error.message, terminalFailure: appHostFailure(error) };
+    for (const listeners of this.hostListeners.values()) this.publications.push(listeners.capture(terminal));
+    this.publications.push(() => {
+      for (const listeners of this.hostListeners.values()) listeners.clear();
+      this.hostListeners.clear();
+    });
+    this.drainPublications();
   }
 
   private readonly receive = (event: MessageEvent<unknown>) => {
@@ -313,21 +350,47 @@ export class MessagePortAppHostClient {
       return;
     }
     if (message?.type !== "host/status" && message?.type !== "host/frame") return;
+    if (this.closed) return;
+    const terminal = message.type === "host/status"
+      && ["closing", "closed", "failed"].includes(message.status.state);
+    const retiresData = message.type === "host/status" && message.status.state !== "open";
+    if (retiresData) for (const frame of this.framePublications) {
+      if (frame.hostId === message.hostId && frame.generation === message.generation) {
+        frame.active = false;
+        if (message.type === "host/status") frame.retirement = message.status;
+      }
+    }
     const listeners = this.hostListeners.get(message.hostId);
     if (listeners === undefined) return;
     const hostEvent: HostEvent = message.type === "host/status"
       ? { generation: message.generation, status: message.status }
       : { generation: message.generation, frame: message.frame, leaseId: message.leaseId };
-    for (const listener of listeners) listener(hostEvent);
+    if (message.type === "host/frame") {
+      const frame: HostFramePublication = { hostId: message.hostId, generation: message.generation, active: true };
+      this.framePublications.add(frame);
+      const publish = listeners.capture(hostEvent, () => !this.closed && frame.active);
+      this.publications.push(() => {
+        const previous = this.deliveringFrame;
+        this.deliveringFrame = frame;
+        try { publish(); }
+        finally {
+          frame.active = false;
+          this.framePublications.delete(frame);
+          this.deliveringFrame = previous;
+        }
+      });
+    } else this.publications.push(listeners.capture(hostEvent, () => terminal || !this.closed));
+    this.drainPublications();
   };
 }
 
 class AppHostChannelTransport implements DuplexTransport {
-  private readonly messageListeners = new Set<(frame: string) => void>();
+  private readonly messageListeners = new ClientObserverList<string>();
   private readonly statusListeners = new TransportStatusObservers();
   private readonly unsubscribe: () => void;
   private currentStatus: TransportStatus = { state: "idle" };
   private generation = 0;
+  private messageOwner: object | null = null;
   private connectOperation: Promise<void> | null = null;
   private connectingAttempt: {
     readonly terminal: Map<number, TransportStatus>;
@@ -345,17 +408,26 @@ class AppHostChannelTransport implements DuplexTransport {
   }
 
   get status(): TransportStatus {
-    return this.currentStatus;
+    return !this.closed ? this.client.hostMessageRetirement(this.hostId, this.generation) ?? this.currentStatus : this.currentStatus;
   }
 
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new Error(`App Host channel ${this.hostId} is closed`));
+    if (this.currentStatus.state === "open" && !this.captureMessageScope()()) {
+      const terminal = this.status;
+      this.messageOwner = null;
+      if (this.connectingAttempt) this.connectingAttempt.revoked = terminal;
+      this.connectingAttempt = null;
+      this.connectOperation = null;
+      this.setStatus(terminal);
+    }
     if (this.currentStatus.state === "open") return Promise.resolve();
     if (this.connectOperation !== null) return this.connectOperation;
     if (signal?.aborted) return Promise.reject(abortError("App Host connection was aborted"));
     const leaseId = this.client.createLeaseId();
     this.leaseId = leaseId;
     this.generation = 0;
+    this.messageOwner = null;
     const attempt: NonNullable<AppHostChannelTransport["connectingAttempt"]> = { terminal: new Map() };
     this.connectingAttempt = attempt;
     const connectionSignals = combineAbortSignals([...(signal ? [signal] : []), this.closeAbort.signal]);
@@ -376,7 +448,16 @@ class AppHostChannelTransport implements DuplexTransport {
           throw new Error(`App Host channel ${this.hostId} closed during connection`);
         }
         this.generation = result.generation;
+        const owner = {};
+        this.messageOwner = owner;
         this.setStatus({ state: "open" });
+        if (this.closed || this.messageOwner !== owner) {
+          const retirement = attempt.revoked;
+          if (retirement) throw appHostError({ code: retirement.failure?.code ?? "APP_HOST_DISCONNECTED",
+            message: retirement.reason ?? "Host disconnected during its open publication",
+            retryable: retirement.failure?.recovery !== "manual" });
+          throw new Error(`App Host channel ${this.hostId} retired during connection`);
+        }
       })
       .catch((cause) => {
         const reason = cause instanceof Error ? cause.message : String(cause);
@@ -395,15 +476,19 @@ class AppHostChannelTransport implements DuplexTransport {
   }
 
   send(frame: string, signal?: AbortSignal): Promise<void> {
-    if (this.closed || this.currentStatus.state !== "open") {
+    if (this.closed || this.messageOwner === null || this.currentStatus.state !== "open") {
       return Promise.reject(new Error(`App Host channel ${this.hostId} is not open`));
     }
     return this.client.sendHostFrame(this.hostId, this.leaseId, this.generation, frame, signal);
   }
 
+  captureMessageScope(): () => boolean {
+    const owner = this.messageOwner;
+    const native = this.client.captureHostMessageScope(this.hostId, this.generation);
+    return () => !this.closed && owner !== null && this.messageOwner === owner && native();
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
-    this.messageListeners.add(listener);
-    return () => this.messageListeners.delete(listener);
+    return this.messageListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
@@ -413,6 +498,7 @@ class AppHostChannelTransport implements DuplexTransport {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.messageOwner = null;
     this.closeAbort.abort();
     this.setStatus({ state: "closing" });
     try {
@@ -431,6 +517,7 @@ class AppHostChannelTransport implements DuplexTransport {
     if (this.closed) return;
     if (event.leaseId !== undefined && event.leaseId !== this.leaseId) return;
     if (event.terminalReason !== undefined) {
+      this.messageOwner = null;
       this.generation = 0;
       const status: TransportStatus = { state: "failed", reason: event.terminalReason,
         ...(event.terminalFailure ? { failure: event.terminalFailure } : {}) };
@@ -449,9 +536,16 @@ class AppHostChannelTransport implements DuplexTransport {
       return;
     }
     if (event.generation !== this.generation) return;
-    if (event.status !== undefined) this.setStatus(event.status);
+    if (event.status !== undefined) {
+      if (event.status.state !== "open") {
+        this.messageOwner = null;
+        if (this.connectingAttempt) this.connectingAttempt.revoked = event.status;
+      }
+      // A shared open publication cannot grant a retired lease again.
+      if (event.status.state !== "open" || this.messageOwner !== null) this.setStatus(event.status);
+    }
     if (event.frame !== undefined && event.generation === this.generation) {
-      for (const listener of this.messageListeners) listener(event.frame);
+      this.messageListeners.emit(event.frame, this.captureMessageScope());
     }
   }
 
