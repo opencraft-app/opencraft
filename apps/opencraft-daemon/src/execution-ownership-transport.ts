@@ -33,6 +33,7 @@ export class ExecutionLeaseTracker {
     if (method !== "thread/queue/start") {
       inputId ||= `input:${randomUUID()}`; params.clientUserMessageId = inputId;
       this.store.capture(threadId, inputId, submission, method === "thread/queue/add" ? "pending" : "accepted", method === "turn/steer" ? "steer" : method === "thread/queue/add" ? "queue" : "start");
+      if (method === "thread/queue/add") params.__opencraftExecutionAdmission = this.store.queueAdmissionToken(threadId,inputId);
     } else inputId = this.store.queuedInput(threadId, text(params.queuedSubmissionId)) ?? "";
     if ((method === "turn/start" || method === "thread/queue/start") && inputId) this.store.begin(threadId, inputId, native?.incarnation);
     this.pending.set(key(message), { method, params, inputId, at: Date.now() });
@@ -83,7 +84,7 @@ export class ExecutionLeaseTracker {
     if (pending.method === "thread/queue/add") {
       const id = text(record(result.queuedSubmission).id);
       if (id) {
-        this.store.confirmQueued(t, pending.inputId, record(result.queuedSubmission).createdAt);
+        this.store.confirmQueued(t, pending.inputId, record(result.queuedSubmission).__opencraftExecutionAdmission);
         this.store.bindQueue(t, id, pending.inputId);
       }
     }

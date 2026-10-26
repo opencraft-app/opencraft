@@ -92,6 +92,8 @@ export function createConversationExecution(getAppHost, {serverId, hostId}) {
 /** Full conversation identity selects the native engine. Actor run bindings and
  * delegation stay on the default Codex authority until explicitly extended. */
 export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs }) {
+  const agentEngine = threadId => threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('pi_') ? 'pi'
+    : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
   const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', label:'Codex' },
     ...engines.map(engine => ({ serverId: `server:${machineId}:${engine}`, hostId: 'opencraft-server', engine, label:engine==='pi'?'Pi':'DSH' }))];
   const ports = new Map(descriptors.map(server => [server.serverId, createConversationExecution(getAppHost, server)]));
@@ -100,7 +102,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
   const serverForHost = (hostId, threadId) => {
     if (hostId === 'local-codex') return descriptors[0].serverId;
     if (hostId !== 'opencraft-server') return reject();
-    return descriptors.find(server => server.engine === (threadId.startsWith('pi_') ? 'pi' : 'dsh'))?.serverId ?? reject();
+    return descriptors.find(server => server.engine === agentEngine(threadId))?.serverId ?? reject();
   };
   const select = binding => {
     const serverId = binding.serverId ?? primary.serverId, port = ports.get(serverId);
@@ -119,6 +121,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
     return receipt ? { id: inputId, state:receipt.state, targetTurnId:receipt.turnId } : null;
   };
   return { ...primary, servers:descriptors, owns:serverId=>ports.has(serverId), serverForHost,
+    serverForThread: threadId => /^(?:pi_|dsh_acp_|claude_|acp_)/u.test(threadId) ? serverForHost('opencraft-server', threadId) : primary.serverId,
     hostForServer: serverId => ports.get(serverId)?.hostId ?? reject(),
     async discover(search,cursor) {
       const positions = cursor ? JSON.parse(Buffer.from(cursor,'base64url').toString()) : { codex:null, agent:engines.length ? null : false };

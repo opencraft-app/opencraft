@@ -3,6 +3,7 @@ import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
 import type { DshExecutionOwner } from "./dsh-execution-authority.js";
 import { serializeHistoryReply } from "@opencraft/appserver-client";
+import { observeNativeTranscriptFiles } from "@opencraft/native-history-node";
 import { fileRequest } from "./host-resources.js";
 import { ConversationSchedules, ScheduleFault } from "@opencraft/host-schedules";
 import { CONVERSATION_SCHEDULES_EXTENSION } from "@opencraft/appserver-protocol";
@@ -270,6 +271,36 @@ export async function startLocalAgentHost(options: {
   if (capabilityLink) adapter.setBackgroundProofReader((threadId, messageId) => capabilityLink!.backgroundProof(threadId, messageId));
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
   if (capabilityLink) adapter.setSkillInvocationValidator((threadId, skills) => capabilityLink!.validateSkillInvocations(threadId, skills));
+  if (capabilityLink && options.dataDirectory) {
+    const nativeHome = resolve(options.dataDirectory);
+    const locations = new Map<string, { generation: number; path: string | null }>();
+    adapter.setTranscriptCache(nativeHome, async threadId => {
+      const generation = capabilityLink!.sourceGeneration, routes = routing.generations(threadId);
+      const key = JSON.stringify(["dsh", generation, routes]);
+      const paths: string[] = [];
+      for (const route of routes) {
+        let binding = locations.get(route.nativeId);
+        if (!binding || binding.generation !== generation) {
+          const source = await capabilityLink!.thread("historySource", { sessionId: route.nativeId });
+          if (source.sessionId !== route.nativeId || generation !== capabilityLink!.sourceGeneration) throw new Error("DSH history source generation changed");
+          const path = source.location?.path;
+          if (path != null && typeof path !== "string") throw new Error("Invalid DSH history source location");
+          binding = { generation, path: path ?? null }; locations.set(route.nativeId, binding);
+        }
+        // Non-file/volatile backends retain their native read-only projection.
+        if (binding.path === null) return null;
+        await access(binding.path);
+        paths.push(binding.path);
+      }
+      const source = await observeNativeTranscriptFiles(nativeHome, paths, key);
+      return { ...source, async validate() {
+        if (generation !== capabilityLink!.sourceGeneration || JSON.stringify(["dsh", generation, routing.generations(threadId)]) !== key)
+          throw new Error("DSH history source generation changed");
+        for (const path of paths) await access(path);
+        await source.validate();
+      } };
+    });
+  }
   if (capabilityLink) adapter.setThreadEngine({
     goal: params => capabilityLink!.thread("goal", { ...params, sessionId: routing.native(String(params.sessionId)) }),
     describe: async params => {
@@ -708,7 +739,10 @@ export async function startLocalAgentHost(options: {
             },
           };
         }
-        if (request.method === "thread/archive" && typeof targetThread === "string") schedules.suspend(targetThread);
+        if (request.method === "thread/archive" && typeof targetThread === "string") {
+          schedules.suspend(targetThread); await adapter.invalidateTranscriptCache(targetThread);
+        }
+        if (request.method === "thread/delete" && typeof targetThread === "string") await adapter.invalidateTranscriptCache(targetThread);
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
         if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);

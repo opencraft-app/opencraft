@@ -122,3 +122,30 @@ test("replaying the same accepted input never opens a second execution interval"
   assert.equal(f.owner.database.prepare("SELECT count(*) AS n FROM execution_leases").get()!.n,1);
   assert.equal(f.store.resolve({threadId:"t",executionId:id}).status,"expired");
 });
+
+test('boot clock origin survives realtime jumps without moving an old job to a new employee', t=>{
+  const f=fixture(t);f.store.capture('t','A',A);const a=f.store.begin('t','A','engine');f.store.started('t','one','A');f.store.finished('t','one');
+  f.store.capture('t','B',B);const b=f.store.begin('t','B','engine');f.store.started('t','two','B');
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_boot_ms=1000,ended_at_boot_ms=2000,admitted_at_ms=100000,ended_at_ms=110000 WHERE execution_id=?").run(a);
+  f.owner.database.prepare("UPDATE execution_leases SET boot_id='boot',admitted_at_boot_ms=2100,admitted_at_ms=90000 WHERE execution_id=?").run(b);
+  const query=(startedAtBootMs:number,startedAtMs:number,bootId='boot')=>f.store.resolveJobOrigin({threadId:'t',engineIncarnation:'engine',startedAtBootMs,startedAtMs,bootId,uncertaintyMs:20});
+  const old=query(1100,90100);assert.equal(old.status,'expired');if(old.status==='expired')assert.equal(old.lease.executionId,a);
+  const next=query(2200,100100);assert.equal(next.status,'active');if(next.status==='active')assert.equal(next.lease.principal?.subject,'staff-B');
+  assert.equal(query(2105,100105).status,'unknown');assert.equal(query(2200,100100,'another-boot').status,'unknown');
+  assert.equal(f.store.originClock,'boot-monotonic-v1');
+  f.owner.database.prepare('UPDATE execution_leases SET boot_id=NULL,admitted_at_boot_ms=NULL WHERE execution_id=?').run(b);
+  assert.equal(query(2200,90100).status,'unknown','old clock records cannot fall back to epoch');
+});
+
+test('published v15 upgrades append-only and leaves old execution clock unknown', t=>{
+  const dir=mkdtempSync(join(tmpdir(),'oc-v15-clock-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const prior=openManagedDatabase({path:join(dir,'opencraft-host-state.sqlite'),migrations:OPENCRAFT_HOST_STATE_MIGRATIONS.slice(0,15)});
+  prior.database.exec("INSERT INTO execution_submissions(thread_id,input_id,principal_json,ownership,submitted_at_ms) VALUES('t','A','{\"provider\":\"employee\",\"subject\":\"A\"}','human',1);");
+  prior.database.exec("INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,turn_id,engine_incarnation,state,admitted_at_ms) VALUES('old','t','A',1,'one','engine','active',1000);");
+  const original=prior.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get();prior.database.close();
+  const next=new OpenCraftHostStateDatabase(dir);try{
+    assert.equal(next.outcome.appliedVersion,16);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
+    const reader=new ExecutionLeaseReader(next.database);
+    assert.equal(reader.resolveJobOrigin({threadId:'t',engineIncarnation:'engine',startedAtMs:1100,uncertaintyMs:20,bootId:'boot',startedAtBootMs:1100}).status,'unknown');
+  }finally{next.close();}
+});

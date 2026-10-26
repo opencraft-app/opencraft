@@ -66,6 +66,7 @@
     "extraResources": [
       { "from": "build/native", "to": "native", "filter": ["opencraft-speech-helper"] },
       { "from": "../local-agent-host/src/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
+      { "from": "../local-agent-host/src/dsh-execution-environment.mjs", "to": "runtime/dsh/dsh-execution-environment.mjs" },
       { "from": "../local-agent-host/src/dsh-skill-catalog.mjs", "to": "runtime/dsh/dsh-skill-catalog.mjs" },
       { "from": "../local-agent-host/src/dsh-skill-invocation.mjs", "to": "runtime/dsh/dsh-skill-invocation.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-engine.mjs", "to": "runtime/dsh/dsh-thread-engine.mjs" },

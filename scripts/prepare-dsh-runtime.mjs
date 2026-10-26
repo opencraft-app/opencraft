@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { patchDshThreadEnvironment } from "./patch-dsh-thread-environment.mjs";
 import { patchDshProviderLifecycle } from "./patch-dsh-provider-lifecycle.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,6 +68,7 @@ export async function prepareDshRuntime({ root = repositoryRoot, install = insta
   }
   // Reapply/verify on every build, including an already installed runtime.
   await patchDshProviderLifecycle(runtime);
+  await patchDshThreadEnvironment(runtime);
   console.log(`[opencraft] DSH runtime ${version} verified at ${runtime}`);
   return executable;
 }

@@ -85,6 +85,11 @@ export type AppServerNotificationInterceptor = (
   next: () => void,
 ) => void;
 
+interface NotificationSubscription {
+  readonly listener: (notification: AppServerNotification) => void;
+  readonly options?: AppServerNotificationSubscriptionOptions;
+}
+
 export type AppServerServerRequestInterceptor = (
   request: AppServerServerRequest,
   next: () => Promise<unknown>,
@@ -240,7 +245,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly createRequestId: () => JsonRpcId;
   private readonly maxPendingRequests: number;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
-  private readonly notificationListeners = new Set<(notification: AppServerNotification) => void>();
+  private readonly notificationListeners = new Set<NotificationSubscription>();
+  private readonly nativeNotificationListeners = new Map<NotificationSubscription["listener"], NotificationSubscription>();
   private readonly notificationInterceptors = new Set<AppServerNotificationInterceptor>();
   private readonly protocolErrorListeners = new Set<(error: Error) => void>();
   private readonly requestLifecycleListeners = new Set<(event: AppServerRequestLifecycleEvent) => void>();
@@ -458,28 +464,15 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   subscribeNotification(listener: (notification: AppServerNotification) => void, options?: AppServerNotificationSubscriptionOptions): () => void {
-    if (!options) {
-      this.notificationListeners.add(listener);
-      return () => this.notificationListeners.delete(listener);
-    }
-    let active = true;
-    const subscription = (notification: AppServerNotification) => {
-      const generation = this.connectionGeneration;
-      let delivered = false;
-      options.intercept(notification, () => {
-        // A retired consumer or connection cannot be revived by deferred work.
-        if (!active || !this.notificationListeners.has(subscription) || generation !== this.connectionGeneration) return;
-        try {
-          if (delivered) throw new AppServerClientError("PROTOCOL_ERROR", `AppServer notification subscription called next twice for ${notification.method}`);
-          delivered = true;
-          listener(notification);
-        } catch (error) {
-          this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", `AppServer notification listener failed for ${notification.method}`, { cause: error }));
-        }
-      });
-    };
+    // Native subscriptions retain same-function deduplication. A later
+    // registration of that function still has its own retirement identity.
+    const subscription = (!options && this.nativeNotificationListeners.get(listener)) || { listener, options };
+    if (!options) this.nativeNotificationListeners.set(listener, subscription);
     this.notificationListeners.add(subscription);
-    return () => { active = false; this.notificationListeners.delete(subscription); };
+    return () => {
+      this.notificationListeners.delete(subscription);
+      if (this.nativeNotificationListeners.get(listener) === subscription) this.nativeNotificationListeners.delete(listener);
+    };
   }
 
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void {
@@ -532,6 +525,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     this.removeMessageListener();
     this.removeStatusListener();
     this.notificationListeners.clear();
+    this.nativeNotificationListeners.clear();
     this.notificationInterceptors.clear();
     this.protocolErrorListeners.clear();
     this.requestLifecycleListeners.clear();
@@ -681,12 +675,35 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private dispatchNotification(notification: AppServerNotification): void {
+    // Admission precedes every observer, including a transport-wide gate.
+    // Reentrant registration cannot grow or inherit this event's finite cut.
+    const subscriptions = [...this.notificationListeners];
+    const generation = this.connectionGeneration, revision = this.transportRevision;
+    const current = () => !this.closed && this.transport.status.state === "open"
+      && this.connectionGeneration === generation && this.transportRevision === revision;
     const interceptors = [...this.notificationInterceptors];
     const dispatch = (index: number): void => {
+      if (!current()) return;
       if (index >= interceptors.length) {
-        for (const listener of this.notificationListeners) {
+        for (const subscription of subscriptions) {
+          const admitted = () => current() && this.notificationListeners.has(subscription);
+          if (!admitted()) continue;
+          let delivered = false;
+          const next = () => {
+            // Physical loss revokes immediately, even before a successor's
+            // initialization increments connectionGeneration.
+            if (!admitted()) return;
+            try {
+              if (delivered) throw new AppServerClientError("PROTOCOL_ERROR", `AppServer notification subscription called next twice for ${notification.method}`);
+              delivered = true;
+              subscription.listener(notification);
+            } catch (error) {
+              this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", `AppServer notification listener failed for ${notification.method}`, { cause: error }));
+            }
+          };
           try {
-            listener(notification);
+            if (subscription.options) subscription.options.intercept(notification, next);
+            else next();
           } catch (error) {
             this.emitProtocolError(new AppServerClientError(
               "PROTOCOL_ERROR",
@@ -700,6 +717,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       let called = false;
       try {
         interceptors[index]?.(notification, () => {
+          if (!current()) return;
           if (called) throw new AppServerClientError(
             "PROTOCOL_ERROR",
             `AppServer notification interceptor called next twice for ${notification.method}`,

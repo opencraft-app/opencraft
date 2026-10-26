@@ -37,6 +37,8 @@ test('gateway attachment close leaves the independent execution owner available'
   const f = await fixture(t);
   const client = await f.attach();
   assert.equal((await client.getIdentity()).pid, process.pid);
+  assert.equal((await client.getExecutionIdentity("pi_fixture")).pid,process.pid);
+  await assert.rejects(client.getExecutionIdentity("acp_unknown"));
   await client.close();
   assert.equal((await (await f.attach()).getIdentity()).pid, process.pid);
   await assert.rejects(startIndependentEngineHost(f.options), /already being held/);

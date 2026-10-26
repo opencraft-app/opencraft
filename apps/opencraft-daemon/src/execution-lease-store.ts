@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import type { TransportSubmissionContext } from "@opencraft/appserver-client/transport";
@@ -65,8 +66,20 @@ function resolution(row: Record<string, unknown> | undefined): ExecutionLeaseRes
   return { status: row.ownership === "unowned" ? "unowned" : "active", lease: value };
 }
 
+/** Linux boot-relative clock shares the broker's /proc startTicks time base.
+ * Its 10ms quantization is included in strict reader boundary checks. */
+function bootClock(): {bootId:string; at:number} | null {
+  if (process.platform !== "linux") return null;
+  try {
+    const bootId=readFileSync("/proc/sys/kernel/random/boot_id","utf8").trim();
+    const at=Number(readFileSync("/proc/uptime","utf8").split(" ")[0])*1000;
+    return bootId && Number.isFinite(at) && at>=0 ? {bootId,at} : null;
+  } catch { return null; }
+}
+
 /** Read-only broker port. The caller selects a trusted Host DB, never a Renderer path. */
 export class ExecutionLeaseReader {
+  readonly originClock = "boot-monotonic-v1" as const;
   constructor(protected readonly db: DatabaseSync) {}
   resolve(input: { threadId: string; executionId: string; generation?: number }): ExecutionLeaseResolution {
     const row = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.execution_id=?`).get(text(input.threadId), text(input.executionId));
@@ -76,10 +89,27 @@ export class ExecutionLeaseReader {
   /** Timestamp and incarnation MUST come from the broker's attested native job ancestry.
    * A whole uncertainty interval must fit exactly one execution; boundaries fail closed.
    * This does not authorize arbitrary same-UID callers or a supplied thread string. */
-  resolveJobOrigin(input: { threadId: string; engineIncarnation: string; startedAtMs: number; uncertaintyMs: number }): ExecutionLeaseResolution {
+  resolveJobOrigin(input: { threadId: string; engineIncarnation: string; startedAtMs: number; uncertaintyMs: number; bootId?:string; startedAtBootMs?:number }): ExecutionLeaseResolution {
     const { startedAtMs: at, uncertaintyMs: error } = input;
     text(input.threadId); text(input.engineIncarnation);
     if (!Number.isFinite(at) || !Number.isFinite(error) || error < 0 || error > 1000) return { status: "unknown" };
+    if (input.bootId !== undefined || input.startedAtBootMs !== undefined) {
+      const birth=input.startedAtBootMs;
+      if (!input.bootId || !Number.isFinite(birth) || birth! < 0) return {status:"unknown"};
+      // Include the stored clock's own /proc/uptime quantization. Old rows and
+      // another machine boot cannot silently downgrade to wall-clock matching.
+      const margin=error+10;
+      const candidates=this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.boot_id=? AND l.state!='rejected'
+        AND l.admitted_at_boot_ms<=? AND (l.ended_at_boot_ms IS NULL OR l.ended_at_boot_ms>=?)`)
+        .all(input.threadId,input.bootId,birth!+margin,birth!-margin);
+      if (candidates.length!==1) return {status:"unknown"};
+      const candidate=candidates[0]!;
+      if (candidate.engine_incarnation!==input.engineIncarnation || candidate.admitted_at_boot_ms===null
+        || Number(candidate.admitted_at_boot_ms)>=birth!-margin
+        || candidate.ended_at_boot_ms!==null && Number(candidate.ended_at_boot_ms)<=birth!+margin
+        || candidate.ended_at_ms!==null && candidate.ended_at_boot_ms===null) return {status:"unknown"};
+      return resolution(candidate);
+    }
     const rows = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.state!='rejected' AND l.admitted_at_ms<=?
       AND (l.ended_at_ms IS NULL OR l.ended_at_ms>=?)`).all(input.threadId, at + error, at - error);
     if (rows.length !== 1) return { status: "unknown" };
@@ -103,8 +133,8 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
         || existing.principal?.subject !== value.principal?.subject || (this.inputKind(threadId, inputId) === "steer") !== (kind === "steer")) throw new Error("Submission execution principal is immutable");
       return; // A renamed display label cannot change or invalidate the original binding.
     }
-    this.db.prepare(`INSERT INTO execution_submissions(thread_id,input_id,principal_json,ownership,submitted_at_ms,admission,input_kind) VALUES(?,?,?,?,?,?,?)`)
-      .run(threadId, inputId, value.principal ? JSON.stringify(value.principal) : null, value.ownership, Date.now(), admission, kind);
+    this.db.prepare(`INSERT INTO execution_submissions(thread_id,input_id,principal_json,ownership,submitted_at_ms,admission,input_kind,admission_token) VALUES(?,?,?,?,?,?,?,?)`)
+      .run(threadId, inputId, value.principal ? JSON.stringify(value.principal) : null, value.ownership, Date.now(), admission, kind, admission === "pending" ? randomUUID() : null);
   }
   private inputKind(threadId: string, inputId: string): ExecutionInputKind | null {
     const row = this.db.prepare("SELECT input_kind FROM execution_submissions WHERE thread_id=? AND input_id=?").get(threadId, inputId);
@@ -121,10 +151,10 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     if (this.inputKind(threadId, inputId) === "steer") throw new Error("A steer cannot acquire an execution lease");
     const pending = this.db.prepare("SELECT execution_id FROM execution_leases WHERE thread_id=? AND input_id=? AND (state='pending' OR turn_id IS NOT NULL) ORDER BY generation LIMIT 1").get(threadId, inputId);
     if (pending) return String(pending.execution_id);
-    const executionId = randomUUID();
-    this.db.prepare(`INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,state,admitted_at_ms,engine_incarnation)
-      VALUES(?,?,?,(SELECT COALESCE(MAX(generation),0)+1 FROM execution_leases WHERE thread_id=?),'pending',?,?)`)
-      .run(executionId, threadId, inputId, threadId, Date.now(), engineIncarnation ?? null);
+    const executionId = randomUUID(), clock=bootClock();
+    this.db.prepare(`INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,state,admitted_at_ms,engine_incarnation,boot_id,admitted_at_boot_ms)
+      VALUES(?,?,?,(SELECT COALESCE(MAX(generation),0)+1 FROM execution_leases WHERE thread_id=?),'pending',?,?,?,?)`)
+      .run(executionId, threadId, inputId, threadId, Date.now(), engineIncarnation ?? null, clock?.bootId ?? null, clock?.at ?? null);
     return executionId;
   }
   started(threadId: string, turnId: string, inputId?: string, engineIncarnation?: string): void {
@@ -165,19 +195,25 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     if (placeholder && existing!.execution_id !== target.execution_id) {
       // Retire an unbound observation, retaining the original pre-send lease,
       // generation, incarnation and process-birth interval across Gateway loss.
-      this.db.prepare("UPDATE execution_leases SET turn_id=NULL,state='rejected',ended_at_ms=admitted_at_ms WHERE execution_id=?")
+      this.db.prepare("UPDATE execution_leases SET turn_id=NULL,state='rejected',ended_at_ms=admitted_at_ms,ended_at_boot_ms=admitted_at_boot_ms WHERE execution_id=?")
         .run(existing!.execution_id!);
     }
-    this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=? WHERE thread_id=? AND execution_id!=? AND turn_id IS NOT NULL AND state IN ('active','unknown') AND ended_at_ms IS NULL")
-      .run(Date.now(), threadId, target.execution_id!);
-    this.db.prepare("UPDATE execution_leases SET input_id=?,turn_id=?,engine_incarnation=COALESCE(engine_incarnation,?),state=?,ended_at_ms=? WHERE execution_id=?")
-      .run(inputId, turnId, incarnation ?? null, endedAt === null ? "active" : "ended", endedAt, target.execution_id!);
+    const clock=bootClock();
+    this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND execution_id!=? AND turn_id IS NOT NULL AND state IN ('active','unknown') AND ended_at_ms IS NULL")
+      .run(Date.now(), clock?.at ?? null, threadId, target.execution_id!);
+    this.db.prepare("UPDATE execution_leases SET input_id=?,turn_id=?,engine_incarnation=COALESCE(engine_incarnation,?),state=?,ended_at_ms=?,ended_at_boot_ms=? WHERE execution_id=?")
+      .run(inputId, turnId, incarnation ?? null, endedAt === null ? "active" : "ended", endedAt, existing?.ended_at_boot_ms ?? null, target.execution_id!);
   }
-  confirmQueued(threadId: string, inputId: string, nativeCreatedAt: unknown): void {
-    // A duplicate native queue receipt from before this capture cannot backfill
-    // a missing historical principal from the employee replaying it today.
-    this.db.prepare("UPDATE execution_submissions SET admission=CASE WHEN ?>=submitted_at_ms THEN 'accepted' ELSE 'unknown' END WHERE thread_id=? AND input_id=? AND admission='pending'")
-      .run(typeof nativeCreatedAt === "number" && Number.isFinite(nativeCreatedAt) ? nativeCreatedAt : -1, threadId, inputId);
+  queueAdmissionToken(threadId:string,inputId:string):string|null {
+    const row=this.db.prepare("SELECT admission_token FROM execution_submissions WHERE thread_id=? AND input_id=?").get(threadId,inputId);
+    return typeof row?.admission_token === "string" ? row.admission_token : null;
+  }
+  confirmQueued(threadId: string, inputId: string, token: unknown): void {
+    // The Host must echo the nonce of the original native admission. A clock
+    // timestamp cannot distinguish a historical duplicate after an NTP jump.
+    const expected=this.queueAdmissionToken(threadId,inputId);
+    this.db.prepare("UPDATE execution_submissions SET admission=? WHERE thread_id=? AND input_id=? AND admission='pending'")
+      .run(expected && token === expected ? "accepted" : "unknown",threadId,inputId);
   }
   bindQueue(threadId: string, queueId: string, inputId: string): void {
     const existing = this.db.prepare("SELECT input_id FROM execution_queue_inputs WHERE thread_id=? AND queue_id=?").get(threadId, queueId);
@@ -211,8 +247,8 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     this.started(threadId, turnId, inputId);
   }
   outcome(threadId: string, inputId: string, rejected: boolean): void {
-    this.db.prepare("UPDATE execution_leases SET state=?,ended_at_ms=? WHERE thread_id=? AND input_id=? AND state='pending'")
-      .run(rejected ? "rejected" : "unknown", rejected ? Date.now() : null, threadId, inputId);
+    this.db.prepare("UPDATE execution_leases SET state=?,ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND input_id=? AND state='pending'")
+      .run(rejected ? "rejected" : "unknown", rejected ? Date.now() : null, rejected ? bootClock()?.at ?? null : null, threadId, inputId);
   }
   suspend(threadId?: string): void {
     this.db.prepare(`UPDATE execution_leases SET state='unknown' WHERE ended_at_ms IS NULL AND state IN ('active','pending')${threadId ? " AND thread_id=?" : ""}`)
@@ -233,8 +269,8 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     }
   }
   finished(threadId: string, turnId: string): void {
-    this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=? WHERE thread_id=? AND turn_id=? AND state IN ('active','unknown','pending')")
-      .run(Date.now(), threadId, turnId);
+    this.db.prepare("UPDATE execution_leases SET state='ended',ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=? AND turn_id=? AND state IN ('active','unknown','pending')")
+      .run(Date.now(), bootClock()?.at ?? null, threadId, turnId);
   }
 }
 
@@ -244,9 +280,11 @@ export type JobOriginQuery = Parameters<ExecutionLeaseReader["resolveJobOrigin"]
 /** Personal credentials require current native execution evidence as well as
  * persisted identity. A missed completion during Gateway downtime is not a lease. */
 export class LiveExecutionLeaseReader {
+  readonly originClock = "boot-monotonic-v1" as const;
   constructor(private readonly reader: ExecutionLeaseReader,
     private readonly inspect: (lease: ExecutionLease) => Promise<NativeExecutionState>) {}
   async resolveJobOrigin(input: JobOriginQuery): Promise<ExecutionLeaseResolution> {
+    if (this.reader.originClock !== this.originClock) return {status:"unknown"};
     const before = this.reader.resolveJobOrigin(input);
     if (before.status !== "active") return before;
     let state: NativeExecutionState;

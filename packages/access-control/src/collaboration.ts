@@ -18,6 +18,7 @@ export interface ConversationExecutionPort {
   readonly hostId: string;
   owns?(serverId: string): boolean;
   hostForServer?(serverId: string): string;
+  serverForThread?(threadId: string): string;
   discover?(search: string, cursor: string | null): Promise<unknown>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   validate(binding: RunBinding): Promise<void>;
@@ -199,7 +200,7 @@ export class Collaboration {
     return ref;
   }
   reference(context: ActorContext, threadId: string) {
-    const ref = this.#conversation(context, { serverId: this.execution.serverId, threadId: text(threadId) }, 'conversation.discover');
+    const ref = this.#conversation(context, { serverId: this.execution.serverForThread?.(threadId) ?? this.execution.serverId, threadId: text(threadId) }, 'conversation.discover');
     return {ref, reference: encodeConversationRef(ref)};
   }
   async readConversation(context: ActorContext, value: unknown, cursor: string | null = null) {
@@ -242,8 +243,8 @@ export class Collaboration {
     });
   }
   /** Explicit, bounded delegation from the authenticated user input, never the current viewer. */
-  authorizeExecution(context: ActorContext, threadId: string, inputId: string, input: readonly unknown[] = []) {
-    const ref = this.#conversation(context, {serverId:this.execution.serverId, threadId}, 'execution.delegate');
+  authorizeExecution(context: ActorContext, threadId: string, inputId: string, input: readonly unknown[] = [], serverId = this.execution.serverForThread?.(threadId) ?? this.execution.serverId) {
+    const ref = this.#conversation(context, {serverId, threadId}, 'execution.delegate');
     const existing = this.database.prepare('SELECT * FROM conversation_authorities WHERE thread_id=? AND input_id=?').get(ref.threadId,inputId);
     if (existing) {
       if (existing.actor_id !== context.actorId || existing.generation !== context.generation) throw new CollaborationError(409,'execution_authority_changed');
@@ -263,7 +264,7 @@ export class Collaboration {
       const existing=this.#authority(threadId,turnId);
       if (!existing) this.database.prepare('UPDATE conversation_authorities SET turn_id=? WHERE id=? AND turn_id IS NULL').run(turnId,String(inputAuthority.id));
       this.database.prepare('INSERT INTO conversation_turn_authorities VALUES(?,?,?) ON CONFLICT(thread_id,turn_id) DO UPDATE SET authority_id=excluded.authority_id').run(threadId,turnId,String(inputAuthority.id));
-      if (this.orchestration.relation(threadId)) this.database.prepare('INSERT INTO opencraft_thread_authorities VALUES(?,?) ON CONFLICT(thread_id) DO UPDATE SET authority_id=excluded.authority_id').run(threadId,String(inputAuthority.id));
+      this.database.prepare('INSERT INTO opencraft_thread_authorities VALUES(?,?) ON CONFLICT(thread_id) DO UPDATE SET authority_id=excluded.authority_id').run(threadId,String(inputAuthority.id));
     }
     if (!this.#authority(threadId,turnId)) {
       const binding=this.database.prepare('SELECT a.* FROM conversation_authorities a JOIN opencraft_thread_authorities b ON a.id=b.authority_id WHERE b.thread_id=?').get(threadId);
@@ -392,7 +393,7 @@ export class Collaboration {
     if (name === 'get_thread_delivery') { fields(args,['requestId']); return this.getRequest(context,text(args.requestId)); }
     if (name === 'send_message_to_thread') {
       fields(args,['reference','message','idempotencyKey']);
-      const result = this.sendConversation(context,{reference:args.reference,content:args.message,idempotencyKey:args.idempotencyKey},{serverId:this.execution.serverId!,threadId},String(r.id));
+      const result = this.sendConversation(context,{reference:args.reference,content:args.message,idempotencyKey:args.idempotencyKey},{serverId:this.execution.serverForThread?.(threadId)??this.execution.serverId!,threadId},String(r.id));
       void this.pump().catch(()=>{}); return result;
     }
     throw new CollaborationError(400,'unknown_conversation_tool');

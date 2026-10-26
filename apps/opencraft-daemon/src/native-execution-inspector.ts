@@ -50,8 +50,7 @@ export async function createWebSocketExecutionTurnInspector(resolveTarget: () =>
   const { default: WebSocket } = await import("ws");
   const sockets = new Set<InstanceType<typeof WebSocket>>();
   let closed = false;
-  return {
-    inspect: createNativeExecutionTurnInspector(async (method, params, signal) => {
+  const request = async (method: string, params: Record<string, unknown>, signal: AbortSignal) => {
       const target = new URL(await resolveTarget());
       if (target.protocol !== "ws:" || target.hostname !== "127.0.0.1" || target.username || target.password
         || closed || signal.aborted || sockets.size >= 4) throw new Error("Local execution reader unavailable");
@@ -92,7 +91,29 @@ export async function createWebSocketExecutionTurnInspector(resolveTarget: () =>
           } catch { abort(); }
         });
       });
-    }),
+    };
+  return {
+    inspect: createNativeExecutionTurnInspector(request),
+    // Recover exact original inputs without Resume or a tool callback lane.
+    readThread: (threadId: string) => request("thread/read", {threadId, includeTurns:true}, AbortSignal.timeout(1500)),
     close() { closed = true; for (const socket of sockets) socket.terminate(); sockets.clear(); },
+  };
+}
+
+/** ACP's native history uses native Turn numbering; the independent ACP owner
+ * retains the actual admitted public Turn/input. Read it through authenticated
+ * /execution-origin, never compare unrelated native transcript Turn IDs. */
+export function createHostExecutionTurnInspector(observe: (threadId: string) => Promise<{
+  pid: number | null; turn?: {id:string; status:string; inputId:string | null} | null;
+}>, fallback: (lease: ExecutionLease) => Promise<NativeExecutionState>) {
+  return async (lease: ExecutionLease): Promise<NativeExecutionState> => {
+    try {
+      const current = await observe(lease.threadId);
+      if (current.turn === undefined) return fallback(lease);
+      if (!current.pid || !current.turn || !lease.turnId) return "unknown";
+      if (current.turn.id !== lease.turnId) return "finished";
+      if (current.turn.inputId !== lease.inputId) return "unknown";
+      return current.turn.status === "inProgress" ? "active" : ["completed","interrupted","failed"].includes(current.turn.status) ? "finished" : "unknown";
+    } catch { return "unknown"; }
   };
 }

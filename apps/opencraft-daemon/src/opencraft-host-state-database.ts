@@ -1,4 +1,4 @@
-import { OPENCRAFT_HOST_EXECUTION_LEASES } from "./execution-lease-schema.js";
+import { OPENCRAFT_HOST_EXECUTION_LEASES, OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK } from "./execution-lease-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_FROZEN } from "./token-usage-frozen-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_ACTORS } from "./token-usage-actor-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_ATTEMPTS } from "./token-usage-attempt-schema.js";
@@ -104,7 +104,7 @@ ALTER TABLE codex_bot_message_slots RENAME TO opencraft_bot_message_slots;
 `;
 const PREVIOUS_OWNED_SCHEMA = LEGACY_FULL_SCHEMA + OPENCRAFT_HOST_STATE_OWNED_NAMES;
 const V14_SCHEMA = PREVIOUS_OWNED_SCHEMA + OPENCRAFT_HOST_BOT_OWNED_NAMES;
-const FULL_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES;
+const FULL_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK;
 // Historical schema source and the deployed CREATE/ALTER sequence establish these
 // room layouts. Only known objects/constraints are accepted; records are retained.
 const LEGACY_ROOM_COLUMNS = [
@@ -137,15 +137,15 @@ const legacyMigration = {
     const objects = database.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name!='schema_migrations' ORDER BY type,name")
       .all() as Array<{ type: string; name: string; sql: string }>;
     if (objects.length === priorFullObjectCount && v14Legacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_EXECUTION_LEASES);
+      database.exec(OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     if (objects.length === priorFullObjectCount && previousOwnedLegacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES);
+      database.exec(OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     if (objects.length === priorFullObjectCount && priorFullLegacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES);
+      database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     const columns = database.prepare("PRAGMA table_info(codex_bot_rooms)").all().map(row => String(row.name));
@@ -158,7 +158,7 @@ const legacyMigration = {
         FROM codex_bot_rooms_legacy; DROP TABLE codex_bot_rooms_legacy;`);
     }
     database.exec(LEGACY_FULL_SCHEMA.replace(/CREATE (TABLE|INDEX) /g, "CREATE $1 IF NOT EXISTS "));
-    database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES);
+    database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
   },
 };
 
@@ -179,6 +179,7 @@ export const OPENCRAFT_HOST_STATE_MIGRATIONS = [
   { version: 13, name: "opencraft-host-state-owned-names", sql: OPENCRAFT_HOST_STATE_OWNED_NAMES },
   { version: 14, name: "opencraft-host-bot-owned-names", sql: OPENCRAFT_HOST_BOT_OWNED_NAMES },
   { version: 15, name: "immutable-execution-leases", sql: OPENCRAFT_HOST_EXECUTION_LEASES },
+  { version: 16, name: "execution-boot-clock", sql: OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK },
 ] as const;
 
 export class OpenCraftHostStateDatabase {

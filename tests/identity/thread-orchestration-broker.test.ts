@@ -13,6 +13,39 @@ import { openManagedDatabase } from '../../packages/sqlite-node/src/index';
 import { ThreadOrchestrationLedger,type ThreadRelation } from '../../packages/access-control/src/orchestration-ledger';
 const relation=(id:string,owner:string):ThreadRelation=>({threadId:id,serverId:'server',driverKind:'codex',ownerActorId:owner,parentThreadId:null,lifecycleOwnerThreadId:null,
  forkedFromId:null,visibility:'visible',engineHostGeneration:null,nativeSessionId:id,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:0,hasDirectUserInput:false,userInputExcerpt:null});
+
+test('all Codex Pi and DSH ACP directions retain destination identity and one delegated child', async t => {
+  for (const source of ['codex', 'pi', 'dsh'] as const) for (const destination of ['codex', 'pi', 'dsh'] as const) {
+    const f = await fixture(t), prefix = { codex: 'codex_', pi: 'pi_', dsh: 'dsh_acp_' };
+    const server = (id: string) => id.startsWith('pi_') ? 'server:pi' : id.startsWith('dsh_acp_') ? 'server:dsh-acp' : 'server';
+    f.native.owns = id => ['server', 'server:pi', 'server:dsh-acp'].includes(id);
+    f.native.serverForThread = server;
+    const parent = prefix[source] + 'parent', turn = 'turn-' + source;
+    f.service.authorizeExecution(f.a, parent, 'human:' + source); f.service.executionStarted(parent, 'human:' + source, turn);
+    f.execution.create = async (_op, _source, settings) => ({ threadId: prefix[destination] + 'child', driverKind: destination });
+    const args = { driver: destination, prompt: 'Do the delegated task' };
+    const child = await f.broker.invoke(parent, turn, 'spawn:' + source + ':' + destination, 'thread_spawn', args) as any;
+    assert.deepEqual(await f.broker.invoke(parent, turn, 'spawn:' + source + ':' + destination, 'thread_spawn', args), child);
+    const stored = f.service.orchestration.relation(child.threadId)!;
+    assert.equal(stored.driverKind, destination); assert.equal(stored.serverId, server(child.threadId)); assert.equal(stored.parentThreadId, parent);
+    await f.broker.invoke(parent, turn, 'tell:' + source + ':' + destination, 'thread_tell', { threadId: child.threadId, message: 'Continue' });
+    const requests = f.service.database.prepare('SELECT server_id FROM actor_execution_requests WHERE thread_id=?').all(child.threadId);
+    assert.equal(requests.length, 2); assert.ok(requests.every(row => row.server_id === server(child.threadId)));
+    const op = f.service.orchestration.operation('spawn:' + source + ':' + destination)!;
+    assert.equal(f.service.inputOrigin(child.threadId, op.clientMessageId!)?.senderConversation?.serverId, server(parent));
+    assert.equal(f.service.usageSubmission(child.threadId, op.clientMessageId!)?.sourceKind, 'system');
+  }
+});
+
+test('a tell binds the recipient own live delegation without inheriting the sender authority', async t => {
+  const f = await fixture(t);
+  f.service.authorizeExecution(f.b, 'recipient', 'human-b'); f.service.executionStarted('recipient', 'human-b', 'recipient-original');
+  const result = await f.invoke('recipient-tell', 'thread_tell', { threadId: 'recipient', message: 'Please inspect' });
+  const operation = f.service.orchestration.operationById(result.operationId)!;
+  f.service.executionStarted('recipient', operation.clientMessageId!, 'recipient-next');
+  assert.equal(f.service.delegation('recipient', 'recipient-next').context.actorId, f.b.actorId);
+  assert.notEqual(f.service.delegation('recipient', 'recipient-next').context.actorId, f.a.actorId);
+});
 async function fixture(t:any){
  const root=await mkdtemp(join(tmpdir(),'oc-broker-')),actors=new ActorStore(join(root,'actors.sqlite'));
  const human=(subject:string)=>actors.resolveHuman(parsePrincipal({provider:'local',subject,displayName:subject,expiresAt:Date.now()+3_600_000})!)!;

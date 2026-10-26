@@ -5,6 +5,43 @@ revocable Web/client/Deferred waits, elapsed-time deadlines and initialization c
 also express environmental constraints abstracted by the independent model;
 they are not an implementation refinement proof or a phone latency guarantee.
 
+## Notification dispatch admission and subscription identity
+
+Each validated notification dispatch captures a finite set of subscription
+registrations before calling transport-wide interceptors or consumers. A
+consumer may synchronously subscribe, unsubscribe, replace another consumer or
+close the connection. New registrations can receive the next native input;
+they cannot inherit or repeatedly visit the dispatch already in progress.
+Removing and re-adding the same function creates a new registration identity.
+A retired unsubscribe handle can only revoke its original identity.
+
+Native same-function subscriptions retain their existing deduplication behavior:
+duplicate handles share one registration and retiring either removes that
+registration. Scoped subscriptions remain independent. All consumers retain
+exception isolation and subscription-local deferred delivery remains at most
+once. A global interceptor retains this original admission cut rather than
+looking up newly registered consumers when its continuation eventually runs.
+
+Connection loss revokes pending delivery immediately, including the interval
+before any successor initialization increments `connectionGeneration`.
+Dispatch and scoped continuations check physical transport revision, open
+status, initialization generation and Client lifetime. A deferred callback
+cannot publish an old native observation through a new subscription or a lost
+connection. This does not replay dropped retired observations or grant remote
+execution authority.
+
+`NotificationFanout` independently models one input, two consumers, two
+registration incarnations each, one physical loss and optional reinitialization.
+The positive model checks admission, retirement, token ownership, conservation,
+at-most-once delivery and conditional finite completion. Eight exact negative
+controls cover live/late admission, retired registrations, physical loss, stale
+unsubscribe, duplicate delivery, dropping and absent fairness. Callback
+termination and eventual invocation of admitted continuations are environmental
+assumptions; recursively generating unbounded new native inputs, preprocessing
+observer reentry, arbitrary callback programs and other observer buses are not
+proved. The actual Client `fanout` chaos suite and raw/Cordis regressions supply
+separate implementation evidence, not a TypeScript refinement proof.
+
 The [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
 cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
 Safety and conditional recurring liveness are checked separately, including

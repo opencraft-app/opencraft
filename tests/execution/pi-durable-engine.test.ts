@@ -1079,3 +1079,69 @@ test("Pi queued first input binds live platform tools and updates the conversati
   assert.equal(read.thread.preview,"queued first request");
   assert.equal(read.thread.turns[0].items.find((item:any)=>item.type==="dynamicToolCall").status,"completed");
 });
+
+
+test("native Pi shell receives its explicit public Thread ID across cached Turns and shared cwd", async t => {
+  const f = await fixture(t, []);
+  f.faux.setResponses(Array.from({length:3},(_,index)=>[
+    fauxAssistantMessage([fauxToolCall("bash", { command: "printf '%s' \"$OPENCRAFT_THREAD_ID\"" }, { id: `thread-env-${index}` })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("done"),
+  ]).flat());
+  const created = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const other = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  let index=0;
+  for (const threadId of [created.thread.id,created.thread.id,other.thread.id]) {
+    const done = completed(f.engine);
+    await f.engine.request("turn/start", { threadId, clientUserMessageId: `env-${index++}`, input: [{ type: "text", text: "probe environment" }] }, noTools);
+    const turn = await done;
+    const result = turn.items.find((item: any) => item.type === "commandExecution");
+    assert.ok(result, "a real native shell must run");
+    assert.equal(result.aggregatedOutput.trim(), threadId);
+  }
+});
+
+test('Pi native queue keeps the original admission nonce through duplicate and edit receipts', async t=>{
+  const f=await fixture(t,[fauxAssistantMessage('running '.repeat(1000))],1);
+  const {thread}=await f.engine.request('thread/start',{model:piModel('faux','faux-1')},noTools);
+  await f.engine.request('turn/start',{threadId:thread.id,input:[{type:'text',text:'hold'}]},noTools);
+  const input=[{type:'text',text:'next'}];
+  const first=await f.engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'original',input,__opencraftExecutionAdmission:'original-nonce'},noTools);
+  const duplicate=await f.engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'original',input,__opencraftExecutionAdmission:'replacement-nonce'},noTools);
+  assert.equal(first.queuedSubmission.__opencraftExecutionAdmission,'original-nonce');
+  assert.equal(duplicate.queuedSubmission.__opencraftExecutionAdmission,'original-nonce');
+  const edited=await f.engine.request('thread/queue/update',{threadId:thread.id,queuedSubmissionId:first.queuedSubmission.id,input:[{type:'text',text:'edited'}],__opencraftExecutionAdmission:'replacement-nonce'},noTools);
+  assert.equal(edited.queuedSubmission.__opencraftExecutionAdmission,'original-nonce');
+});
+
+test('dispatched Pi receipt retains its native nonce and cannot bind a fresh Gateway to a replaying employee', async t=>{
+  const {ThreadIdentityDatabase}=await import('../../apps/opencraft-daemon/src/thread-identity-database.js');
+  const {ExecutionLeaseStore}=await import('../../apps/opencraft-daemon/src/execution-lease-store.js');
+  const {ExecutionLeaseTracker}=await import('../../apps/opencraft-daemon/src/execution-ownership-transport.js');
+  const f=await fixture(t,[fauxAssistantMessage('running '.repeat(1000))],1);
+  const {thread}=await f.engine.request('thread/start',{model:piModel('faux','faux-1')},noTools),input=[{type:'text',text:'original queued input'}];
+  const original=await f.engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'history',input,__opencraftExecutionAdmission:'native-original-nonce'},noTools);
+  const deadline=Date.now()+5000;
+  while((await f.engine.request('thread/queue/list',{threadId:thread.id},noTools)).data.length){
+    if(Date.now()>deadline)throw new Error('native queue did not dispatch');await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  const gateway=new ThreadIdentityDatabase(join(f.directory,'fresh-gateway'));t.after(()=>gateway.close());
+  const store=new ExecutionLeaseStore(gateway.database),tracker=new ExecutionLeaseTracker(store);
+  const message=tracker.prepare({id:1,method:'thread/queue/add',params:{threadId:thread.id,clientUserMessageId:'history',input}},
+    {sender:{kind:'employee',loginName:'B'},executionPrincipal:{provider:'fixture',subject:'B'},validUntil:Date.now()+10000});
+  const replay=await f.engine.request('thread/queue/add',message.params,noTools);
+  assert.equal(replay.queuedSubmission.__opencraftExecutionAdmission,'native-original-nonce');
+  assert.notEqual(replay.queuedSubmission.__opencraftExecutionAdmission,message.params.__opencraftExecutionAdmission);
+  tracker.observe({id:1,result:replay});
+  tracker.prepare({id:2,method:'thread/read',params:{threadId:thread.id,includeTurns:true}},{sender:null});
+  tracker.observe({id:2,result:await f.engine.request('thread/read',{threadId:thread.id,includeTurns:true},noTools)});
+  const row=gateway.database.prepare('SELECT execution_id FROM execution_leases WHERE thread_id=? AND turn_id=?').get(thread.id,original.queuedSubmission.id)!;
+  assert.ok(row);assert.equal(store.resolve({threadId:thread.id,executionId:String(row.execution_id)}).status,'unknown');
+});
+
+test('a direct or legacy Pi input without native admission proof never echoes a replay nonce', async t=>{
+  const f=await fixture(t,[fauxAssistantMessage('running '.repeat(1000))],1);
+  const {thread}=await f.engine.request('thread/start',{model:piModel('faux','faux-1')},noTools),input=[{type:'text',text:'legacy direct input'}];
+  await f.engine.request('turn/start',{threadId:thread.id,clientUserMessageId:'legacy',input},noTools);
+  const replay=await f.engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'legacy',input,__opencraftExecutionAdmission:'new-caller-nonce'},noTools);
+  assert.equal(replay.queuedSubmission.__opencraftExecutionAdmission,undefined);
+});
