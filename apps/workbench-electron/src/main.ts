@@ -26,6 +26,7 @@ import { BrowserPermissionPolicy } from "./browser-permissions.js";
 import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
 import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
+import { SqliteClientResources } from "@opencraft/document-storage/client-resources-sqlite";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
@@ -85,6 +86,7 @@ let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 let sqliteDebugReader!: SqliteDebugReader;
 let uiPreferences!: DesktopUiPreferenceStore;
+let clientResourceStore: SqliteClientResources | undefined;
 const desktopLocale = createDesktopLocaleRuntime();
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
 const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
@@ -245,6 +247,21 @@ ipcMain.handle("opencraft:application-locale", (event, value: unknown) => {
 ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
   return uiPreferences.load(key);
+});
+function clientResources() {
+  return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
+}
+ipcMain.handle("opencraft:client-resource-read", (event, key) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().read(key);
+});
+ipcMain.handle("opencraft:client-resource-commit", (event, key, revision, record) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().compareAndSet(key, revision, record);
+});
+ipcMain.handle("opencraft:client-resource-clear-remote", (event, namespace) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().clearRemoteNamespace(namespace);
 });
 ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
@@ -629,6 +646,7 @@ const lifecycle = new DesktopLifecycle({
     desktopLocale.dispose();
     await nativeSpeech.close();
     uiPreferences.close();
+    clientResourceStore?.close();
     connectorConfiguration?.close();
     extensionData?.close();
     const productErrors: unknown[] = [];

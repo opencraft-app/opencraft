@@ -1,6 +1,6 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-16 已实现十五类自有 Node SQLite 物理库的独立迁移账本、升级前备份与旧库处置；配置目录的 Local Agent 六库在启动期打开，Codex/SSH 的功能私有 owner 按实际使用生命周期打开，摘要进入健康检查。保留 node:sqlite，不引入 ORM，不提供自动恢复备份。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)，验证边界见第 7 节。
+状态：2026-10-16 已实现十六类自有 Node SQLite 物理库的独立迁移账本、升级前备份与旧库处置；配置目录的 Local Agent 六库在启动期打开，Codex/SSH 的功能私有 owner 按实际使用生命周期打开，摘要进入健康检查。保留 node:sqlite，不引入 ORM，不提供自动恢复备份。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)，验证边界见第 7 节。
 
 ## 1. 设计结论
 
@@ -14,13 +14,14 @@
 
 ## 2. 现有存储清单
 
-以下十五类物理库均经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
+以下十六类物理库均经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
+| `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
 | `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
 | `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/workbench-electron/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
 | `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录 |

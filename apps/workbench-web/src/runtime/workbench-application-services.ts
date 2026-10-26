@@ -1,4 +1,5 @@
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
+import type { ClientResources } from "@opencraft/document-storage/client-resources";
 import { serverStorageKey, serverUrl, serverEndpointNeedsRefresh } from "./server-context";
 import { chooseNewConversationHost, isNewConversationHost, TurnCompletionObserver } from "@opencraft/workbench-runtime";
 import { FULL_WORKBENCH_PRESENTATION, type WorkbenchPresentationPolicy } from "../workbench-presentation-policy";
@@ -95,6 +96,7 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
@@ -420,6 +422,7 @@ export function createWorkbenchQueryClient(): QueryClient {
 
 
 export interface WebWorkbenchApplicationBase {
+  readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly connectors: ConnectorRuntime;
   readonly connectorManager: ConnectorManager;

@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/contract.ts",
-    "./sqlite": "./src/sqlite.ts"
+    "./sqlite": "./src/sqlite.ts",
+    "./client-resources": "./src/client-resources.ts",
+    "./client-resources-sqlite": "./src/client-resources-sqlite.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
