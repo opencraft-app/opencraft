@@ -100,7 +100,7 @@ function AccountActionsMenu({ account, index, total, pending, onMove, onRefresh,
   readonly onToggle: () => void;
   readonly onRemove: () => void;
 }) {
-  return <DropdownMenu.Root modal={false}>
+  return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <SettingsIconButton className="engine-account__menu-trigger" label={`${maskAccountDisplayIdentity(account.label)} 的操作`} disabled={pending}>
         <MoreHorizontal size={16} />
@@ -245,7 +245,7 @@ function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport, all
   readonly onImport: () => void;
   readonly allowImport: boolean;
 }) {
-  return <DropdownMenu.Root modal={false}>
+  return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <SettingsButton disabled={disabled}>
         <Plus size={14} aria-hidden="true" />添加账户<ChevronDown size={14} aria-hidden="true" />

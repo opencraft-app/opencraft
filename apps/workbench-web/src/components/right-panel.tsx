@@ -143,7 +143,7 @@ function PanelCreationMenu({
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; pending.current = null; }; }, []);
   return (
     <>
-      <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <button type="button" className="chrome-button right-panel-new-tab"
             aria-label={menuLabel} title={menuLabel}>

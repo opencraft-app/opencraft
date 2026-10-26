@@ -403,3 +403,25 @@ ElectronRuntime. Shell consumes their document projection instead of owning PWA
 or preload listeners. Shared appearance preference/catalog, real navigation and
 viewport geometry retain their existing owners. See
 [ClientRuntime](../../docs/architecture/platform/client-runtime.md).
+
+
+### Menu outside-interaction contract
+
+Dropdown and context command menus share design-system-web content and an invisible
+dismiss surface in their existing portal. On both mouse and touch Web, the first
+outside primary click only dismisses the open menu; navigation, another trigger,
+editor focus and voice holds require a new contact. The outside contact remains
+on the surface through its native click, without cancelling native touch
+pointerdown. Context-menu cancellation, nested submenu selection, Escape and
+Dialog handoff retain Radix ownership. Surfaces unmount with their root content.
+
+The shared Root does not expose Radix `modal`: command menus use Radix's
+normal nonmodal focus lifecycle and a mandatory outside-contact surface. There
+is no document-wide pointer lock, hidden-page state or focus trap to race with a
+subsequent Dialog. Boundary checks reject raw Radix menu imports in consumers.
+Editor auxiliary menus
+retain their nonmodal focus lease, original editor, selection, draft and software
+keyboard continuity. Ordinary action menus retain their Radix focus policy. The
+surface is transparent and takes its stacking level from the actual menu content;
+there is no additional Dialog or copied business menu. Tooltip/hover previews and
+editing autocomplete are separate interactions and do not use this contract.

@@ -46,7 +46,7 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
     return () => observer.disconnect();
   }, [label]);
   const failedLabel = intl.formatMessage({ id: "composer.model.loadError", defaultMessage: "Couldn't load models. Try again." });
-  return <DropdownMenu.Root modal={false} open={open} onOpenChange={onOpenChange}>
+  return <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
     <div className="opencraft-composer-picker opencraft-composer-picker--intelligence">
       <Tooltip.Provider delayDuration={300} skipDelayDuration={100}>
         <Tooltip.Root open={truncated && !open ? undefined : false}>

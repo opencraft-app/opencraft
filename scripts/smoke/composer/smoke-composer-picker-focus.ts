@@ -26,7 +26,7 @@ async function assertComposingMenuEscape(page:any, editor:any, trigger:any, menu
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:"error",cacheDir:`node_modules/.vite-composer-picker-focus-${process.env.OPENCRAFT_SMOKE_ENGINE??"chromium"}`,esbuild:{jsx:"automatic"},resolve:{dedupe:["react","react-dom"]},optimizeDeps:{entries:["tests/fixtures/touch-newera.tsx"]},server:{host:"127.0.0.1",port:0},plugins:[{name:"entry-defaults",configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url?.startsWith("/?"))return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/touch-newera.tsx"></script>')})}}]});
 const playwright=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??"playwright");
 const {chromium,webkit}=playwright.default??playwright;
-const webkitMode=process.env.OPENCRAFT_SMOKE_ENGINE==="webkit",tapOnly=process.argv.includes("--touch-tap-only");
+const webkitMode=process.env.OPENCRAFT_SMOKE_ENGINE==="webkit",tapOnly=process.argv.includes("--touch-tap-only"),outsideOnly=process.argv.includes("--outside-contract-only");
 await vite.listen();const browser=await (webkitMode?webkit:chromium).launch({executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:webkitMode?[]:["--no-sandbox"]});
 try {
  for(const newera of [true,false]) for(const mode of ["light","dark"]){
@@ -47,6 +47,33 @@ try {
    assert.equal(await page.evaluate(()=>getSelection()?.anchorOffset),2,'native selection retained');
   };
   const add=page.locator('.opencraft-composer-footer__attachment .opencraft-composer-icon-button[aria-haspopup="menu"]');
+  if(outsideOnly){
+   for(const trigger of [model,permissions,add]){
+    await trigger.tap();await menu.waitFor();await assertEditing();
+    const box=await editor.evaluate(el=>el.getBoundingClientRect().toJSON());
+    const point={x:box.x+35,y:box.y+box.height/2};
+    const hit=await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.hasAttribute('data-menu-dismiss-surface'),point);
+    assert(hit,'outside editor coordinate hits the menu surface before any editor contact');
+    await editor.evaluate(el=>{(window as any).editorContacts=0;el.addEventListener('touchstart',()=>{(window as any).editorContacts++},{once:true});});
+    if(!webkitMode){
+     const cdp=await context.newCDPSession(page);
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...point,id:1}]});
+     await page.waitForTimeout(550);
+     assert.equal(await page.evaluate(()=>(window as any).editorContacts),0,'dismiss hold cannot arm editor voice');
+     assert.equal(await menu.count(),1,'outside contact is retained until native click');
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();
+    }else await page.touchscreen.tap(point.x,point.y);
+    await menu.waitFor({state:'hidden'});await assertEditing();
+    assert.equal(await page.evaluate(()=>(window as any).editorContacts),0,'dismiss contact never reaches editor');
+    assert.equal(await page.locator('[data-menu-dismiss-surface]').count(),0);
+    await page.touchscreen.tap(point.x,point.y);
+    assert(await page.evaluate(()=>(window as any).editorContacts>0),'next contact reaches original editor');
+    // Restore only the fixture's original caret for the next independent picker case.
+    await editor.evaluate(el=>{const range=document.createRange();range.setStart(el.firstChild!.firstChild!,2);range.collapse(true);const sel=getSelection()!;sel.removeAllRanges();sel.addRange(range);});
+   }
+   assert.deepEqual(errors,[]);console.log('PASS outside isolation and original editor focus',webkitMode?'webkit':'chromium',newera,mode);
+   await context.close();continue;
+  }
   if(tapOnly){
    for(const trigger of [model,permissions,add]){
     await trigger.tap();await menu.waitFor();await assertEditing();
