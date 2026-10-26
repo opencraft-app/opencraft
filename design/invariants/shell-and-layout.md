@@ -338,6 +338,11 @@ finger drift or duration; fixed pixel/time cutoffs must not silently discard it.
 available. Radix owns mouse, keyboard, nested menus, focus and dismissal. Composer
 model, permission and Add controls preserve the editor focus and selection on
 touch; opening one retires the other picker without a delayed activation.
+The shared trigger withholds Radix's eager touch handler without cancelling native
+pointerdown, which must remain available for WebKit to complete its click. Editor
+focus retention cancels compatibility mousedown instead, including menu items;
+it must not suppress the native touch click. The Radix trigger retains its same
+button, ref, accessibility, mouse and keyboard ownership through the shared Slot.
 
 
 Keyboard acceptance must not manufacture a visible window by cropping at the
