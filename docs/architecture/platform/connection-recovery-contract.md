@@ -1165,3 +1165,45 @@ explicit saved event that releases declared fixture dependencies and proves a
 fresh actual initialize/echo. Teardown closes callers before releasing fixture
 gates. Tool negative controls are synthetic observations; replay against the
 unchanged old Client/Server classes is a separate production counterexample.
+
+
+## Physical cleanup ownership and failed release
+
+A received physical transport has a cleanup owner independent of its native
+record and client claims. The Server registers this owner before subscribing or
+connecting. Startup and cleanup operations are published before invoking provider
+callbacks, so synchronous reentry joins an existing operation.
+
+Normal retirement, partial startup rollback and Server shutdown use the same
+physical cleanup path. It retires forwarding first, attempts every acquired
+unsubscribe and the physical close, and retains any failing disposers. Only
+successful cleanup releases the captured physical owner and admits another
+factory. A synchronous throw, rejected close, unsubscribe failure, observed closed
+label or observer timeout cannot supply that proof. Even rejection after the
+provider actually releases remains conservatively fenced.
+
+A failed cleanup reports `APP_HOST_CLEANUP_FAILED` with `retryable: false`; ordinary
+connects fail without constructing or automatically retrying a transport. A later
+trusted reset or close retries the retained handle, sharing an already pending
+operation. One intent does not retry a failure it just produced. Failed shutdown
+rejects and keeps its physical owners; the Daemon preserves dependent resources
+for a later explicit retry and reports failure from process shutdown.
+
+A request waiting on cleanup rechecks its own current admission before starting
+or joining a replacement. Trusted reset revokes pre-reset client claims, while a
+fresh arrival can wait for that reset. Deferred startup counts only currently
+valid service admissions; one revoked caller cannot cancel a valid peer, nor
+report that peer's successful startup as its own authorization.
+
+HostPhysicalCleanup models received-handle conservation, physical exclusivity,
+honest shutdown and conditional cleanup progress. HostCleanupAdmission separates
+a revoked pre-reset waiter from a current replacement intent. Their finite
+safety/liveness checks and explicit negative controls are independent abstractions,
+not a TypeScript refinement proof. The cleanup chaos suite runs actual Server,
+bridge, channels and RPC initialization/echo against saved provider outcomes. Its
+resource ledger is independent of status labels and checks before teardown.
+Held startup and service-admission revocation also have focused component tests;
+the random suite does not claim their complete combined state space. No guarantee
+covers a factory that hides a resource before rejecting without returning its
+handle, a provider that falsely reports successful release, or unconditional
+progress when physical cleanup never settles.

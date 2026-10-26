@@ -149,9 +149,15 @@ export async function startOpenCraftDaemon(options: {
   let daemonServer: Awaited<ReturnType<typeof startOpenCraftDaemonServer>>;
   const close = (): Promise<void> => {
     if (closing !== null) return closing;
-    closing = (async () => {
+    let operation!: Promise<void>;
+    operation = Promise.resolve().then(async () => {
       await daemonServer.close();
-      await appHost.close();
+      try { await appHost.close(); } catch (error) {
+        // Keep dependent handles owned and allow a later explicit shutdown to
+        // retry the AppHost's retained physical cleanup. Server close is idempotent.
+        if (closing === operation) closing = null;
+        throw error;
+      }
       const agent = localAgent ?? await localAgentStarting?.catch(() => null);
       localAgent = null;
       try { await agent?.close(); } finally {
@@ -160,8 +166,9 @@ export async function startOpenCraftDaemon(options: {
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
       humanAccounts?.close();
-    })();
-    return closing;
+    });
+    closing = operation;
+    return operation;
   };
   try {
     daemonServer = await startOpenCraftDaemonServer({
@@ -170,7 +177,7 @@ export async function startOpenCraftDaemon(options: {
     authToken: options.authToken,
     appHost,
     ...(humanAccounts ? { authenticateHumanSession: proof => humanAccounts!.authenticateSession(proof) } : {}),
-    onShutdownRequested: () => void close().finally(() => process.exit(0)),
+    onShutdownRequested: () => void close().then(() => process.exit(0), () => process.exit(1)),
   });
   } catch (error) {
     humanAccounts?.close();

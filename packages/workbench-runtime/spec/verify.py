@@ -10,6 +10,28 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('HostCleanupAdmission', None),
+    ('HostCleanupAdmission-Revoked', 'NoRevokedAdmission'),
+    ('HostCleanupAdmission-Barrier', 'PhysicalBarrier'),
+    ('HostCleanupAdmission-Retarget', 'CurrentOwned'),
+    ('HostCleanupAdmission-OldWait', 'temporal:OldWaitProgress'),
+    ('HostCleanupAdmission-NoLocalFairness', 'temporal:OldWaitProgress'),
+    ('HostCleanupAdmission-NoCurrentFairness', 'temporal:FreshIntentProgress'),
+
+    ('HostPhysicalCleanup', None),
+    ('HostPhysicalCleanup-Startup', None),
+    ('HostPhysicalCleanup-Shutdown', None),
+    ('HostPhysicalCleanup-NormalDiscard', 'HandleConserved'),
+    ('HostPhysicalCleanup-StartupDiscard', 'HandleConserved'),
+    ('HostPhysicalCleanup-ShutdownIgnore', 'ShutdownHonest'),
+    ('HostPhysicalCleanup-LateOwner', 'HandleConserved'),
+    ('HostPhysicalCleanup-Timeout', 'AtMostOnePhysical'),
+    ('HostPhysicalCleanup-Observed', 'AtMostOnePhysical'),
+    ('HostPhysicalCleanup-RetryNew', 'AtMostOnePhysical'),
+    ('HostPhysicalCleanup-Retarget', 'HandleConserved'),
+    ('HostPhysicalCleanup-NoLocalFairness', 'temporal:SuccessSettles'),
+    ('HostPhysicalCleanup-NoProviderFairness', 'temporal:UnconditionalCloseProgress'),
+
     ('HostClaimHandoff', None),
     ('HostClaimHandoff-Peer', None),
     ('HostClaimHandoff-Forget', 'temporal:ObsoleteReclaimed'),

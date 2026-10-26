@@ -895,3 +895,47 @@ Separate tests inject unchanged old Server and Client constructors at the declar
 fixture dependency and replay the minimized failures normally on the repaired
 implementation; they do not mutate prototypes, private ledgers, or production
 source. A successful local release is not a claim about remote Turn completion.
+
+
+## Physical cleanup outcomes and admission after reset
+
+HostPhysicalCleanup adds 13 configurations: normal/startup/shutdown positives
+have 76/76/24 states; ten exact negative controls expose lost handles, false
+shutdown success, late owner publication, timeout/label release, retry through a
+new factory, stale cleanup retargeting and missing local/provider fairness.
+A rejected close does not prove resource release. The owner remains until an
+explicit retry of that same handle succeeds. No provider fairness deliberately
+refutes unconditional close progress.
+
+HostCleanupAdmission adds seven configurations. Its 19-state positive separates
+a revoked pre-reset waiter from a fresh replacement intent. Six exact negatives
+cover revoked admission, bypassing the physical barrier, retargeting the current
+owner, waiting for an old waiter and missing local/current-intent fairness.
+Together these bring the registry to 262 configurations. Current service-demand
+validation around deferred factory entry is additionally covered by real component
+tests; this finite reset model is not a full product of every admission source.
+
+The nineteenth suite, `cleanup`, runs actual AppHostServer,
+MessagePortAppHostClient/channels and initialized JsonRpcAppServerClient against
+declared provider faults. Saved events select normal retirement, startup rollback
+or shutdown; close can succeed, reject before/after release, throw synchronously
+or wait on an explicit gate. Subscription failures, failing detachers, old status
+callbacks, reset, ordinary reconnect and explicit repair/retry are inputs. A
+separate resource ledger predicts factory/close/disposer counts, retained ownership,
+physical exclusivity and caller outcomes. Healing is a saved event with an actual
+initialize/echo when the Server remains open; shutdown healing proves resource
+cleanup without inventing RPC readiness. Teardown is outside the assertions.
+
+```sh
+npm run test:recovery-chaos -- --suite cleanup --seed 20261027 --cases 1000 --steps 120 --output /tmp/cleanup-chaos
+npm run test:recovery-chaos -- --suite cleanup --mutant orphan-handle --seed 0 --output /tmp/cleanup-control
+npm run test:recovery-chaos -- --replay /tmp/cleanup-chaos/failure-minimal.json --output /tmp/cleanup-replay
+```
+
+Tool controls `orphan-handle`, `false-shutdown` and `bypass-barrier` corrupt
+observations to check exact-rule detection and shrinking. Separate unchanged-old
+Server runs supply production counterexamples; they do not alter private fields,
+prototypes or production sources. Held-startup cancellation and service authority
+revocation have component regressions, not a claim of exhaustive randomized
+coverage. Resources hidden by a rejecting factory, dishonest successful release
+and provider progress without cooperation remain outside the guarantee.
