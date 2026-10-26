@@ -672,3 +672,55 @@ completion assumes finite handler work under weak fairness. It does not model
 interceptor or wire scheduling, prove the TypeScript implementation, or establish
 physical-device timing. Raw/Cordis tests and the real Client `handlers` chaos suite
 cover those concrete registration/response boundaries separately.
+
+
+## Transport status observation and settlement
+
+The adapter owns transport status and native connection settlement. Synchronous
+status observers cannot fail a physical connection, orphan its Promise, interrupt
+a peer or prevent Client cleanup after loss. WebSocket open settles the native
+connection before notifying observers. Each publication captures its registration
+cut when enqueued, preserves same-function deduplication and checks registration
+identity before delivery or removal. An unused duplicate token cannot revoke a
+later incarnation.
+
+`TransportStatusObservers` is the narrow adapter primitive in the existing Client
+transport entry. It reuses the Client observer registry, isolates synchronous
+errors and drains publications in causal order. Obsolete nonterminal snapshots
+can be skipped. Closing/closed/failed events must still retire the old connection
+if a callback starts its successor; they precede successor publications. Permanent
+observer cleanup drains after the queued terminal event. Client retires old
+initialization and outgoing RPC work at local closing, independently of the remote
+close ACK. A reentrant `Client.connect()` creates its initialization slot after the
+current synchronous status publication, so the old failure cannot cancel a new slot.
+
+Memory, WebSocket and Replay retain their initial sample per subscription;
+Deferred and AppHost channels retain no initial sample. A requested sample is
+separate from publication order and invokes the consumer as a bare function.
+Client diagnostics/lifecycle continue without a physical/publication gate,
+including failure after loss. Message, hint and interceptor contracts are unchanged.
+
+`TransportObservers.tla` separates native open, observation, old retirement and
+one successor Client initialization. It bounds one changing observer to two
+incarnations, one persistent Client consumer, an optional held request and three
+publication versions. Progress assumes finite callback work, bounded synchronous reentry, fair native open,
+processing and successor initialization ACK; no RPC timeout or history reply is
+needed for old failure delivery. Twelve controls cover callback escape, token,
+admission, stale snapshot, repeat delivery, orphaned connect, lost failure,
+incorrect terminal gating, early clear, early successor allocation and absent
+native/init fairness. Initial samples, arbitrary generations and TypeScript
+refinement are outside the model. Actual five-adapter/raw/Cordis tests cover
+these concrete boundaries separately.
+
+The `transport` chaos suite drives actual WebSocketTransport with a controlled
+socket and two consumers. It exercises open/sample errors, token churn, self/peer
+replacement, close, successor-connect reentry, abort, failure and late native open.
+Public status/callback/Promise observations form its oracle; private registries
+are not inspected. Samples, causal publication order, terminal conservation and
+queue admission are distinct checks. Public getters at method and close-ACK
+boundaries retain the cut before a queued publication is observed. Physical inputs,
+ACKs, intents, publications, deliveries and samples are counted separately.
+Healing is explicit in the saved trace; an empty trace allocates no connection.
+Four adapter corruptions check exact-rule shrinking and ordinary replay. The suite
+itself does not run a Client or real network; composed Client tests prove held-RPC
+termination and initialization-slot reentry.

@@ -6,7 +6,7 @@ import {
   type RendererToAppHostMessage,
 } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
-import { combineAbortSignals } from "@opencraft/appserver-client/transport";
+import { combineAbortSignals, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface AppHostPort {
   postMessage(message: RendererToAppHostMessage): void;
@@ -324,7 +324,7 @@ export class MessagePortAppHostClient {
 
 class AppHostChannelTransport implements DuplexTransport {
   private readonly messageListeners = new Set<(frame: string) => void>();
-  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly statusListeners = new TransportStatusObservers();
   private readonly unsubscribe: () => void;
   private currentStatus: TransportStatus = { state: "idle" };
   private generation = 0;
@@ -407,8 +407,7 @@ class AppHostChannelTransport implements DuplexTransport {
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
-    this.statusListeners.add(listener);
-    return () => this.statusListeners.delete(listener);
+    return this.statusListeners.subscribe(listener);
   }
 
   async close(): Promise<void> {
@@ -461,6 +460,6 @@ class AppHostChannelTransport implements DuplexTransport {
       && this.currentStatus.failure?.code === status.failure?.code
       && this.currentStatus.failure?.recovery === status.failure?.recovery) return;
     this.currentStatus = status;
-    for (const listener of this.statusListeners) listener(status);
+    this.statusListeners.emit(status, () => this.currentStatus === status);
   }
 }

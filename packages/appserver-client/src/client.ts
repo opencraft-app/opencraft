@@ -296,6 +296,9 @@ export class JsonRpcAppServerClient implements AppServerClient {
     signal?: AbortSignal,
     assertCurrent?: () => void,
   ): Promise<AppServerInitializeResponse> {
+    // A reentrant caller allocates its successor only after the current
+    // synchronous status publication has retired the old initialization slot.
+    await Promise.resolve();
     if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
     if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
     assertCurrent?.();
@@ -766,11 +769,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private handleTransportStatus(status: TransportStatus): void {
-    if (status.state === "closing") {
-      this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", "AppServer transport closed"));
-      return;
-    }
-    if (status.state !== "closed" && status.state !== "failed") return;
+    if (status.state !== "closing" && status.state !== "closed" && status.state !== "failed") return;
     this.transportRevision += 1;
     this.initialized = null;
     const reason = status.reason == null ? "AppServer transport closed" : `AppServer transport closed: ${status.reason}`;

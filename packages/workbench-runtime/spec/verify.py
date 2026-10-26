@@ -10,6 +10,19 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('TransportObservers', None),
+    ('TransportObservers-Exception', 'ObserverIsolation'),
+    ('TransportObservers-Token', 'TokenOwnership'),
+    ('TransportObservers-Live', 'AdmittedOnly'),
+    ('TransportObservers-Stale', 'CurrentPublication'),
+    ('TransportObservers-Repeat', 'AtMostOnce'),
+    ('TransportObservers-Orphan', 'temporal:ConnectCompletion'),
+    ('TransportObservers-Loss', 'temporal:FailureDelivery'),
+    ('TransportObservers-Terminal', 'temporal:FailureDelivery'),
+    ('TransportObservers-Clear', 'temporal:FailureDelivery'),
+    ('TransportObservers-EagerInit', 'temporal:SuccessorReady'),
+    ('TransportObservers-NoFairness', 'temporal:ConnectCompletion'),
+    ('TransportObservers-NoInitFairness', 'temporal:SuccessorReady'),
     ("HandlerRegistration", None),
     ("HandlerRegistration-Token", "TokenOwnership"),
     ("HandlerRegistration-Cancel", "RegistrationDoesNotRevoke"),

@@ -3,6 +3,7 @@ import type {
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
 import { decodeUtf8 } from "@opencraft/appserver-client/utf8";
+import { TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface WebSocketEventMap {
   open: Event;
@@ -66,7 +67,7 @@ async function messageDataToText(data: unknown): Promise<string> {
 export class WebSocketTransport implements DuplexTransport {
   private readonly options: WebSocketTransportOptions;
   private readonly messageListeners = new Set<(frame: string) => void>();
-  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly statusListeners = new TransportStatusObservers();
   private socket: AppServerWebSocket | null = null;
   private currentStatus: TransportStatus = { state: "idle" };
   private connectPromise: Promise<void> | null = null;
@@ -112,8 +113,8 @@ export class WebSocketTransport implements DuplexTransport {
       settled = true;
       cleanupConnectListeners();
       if (this.connectPromise === connectionPromise) this.connectPromise = null;
-      this.setStatus({ state: "open" });
       resolve();
+      this.setStatus({ state: "open" });
     };
     const handleAbort = () => {
       if (settled) return;
@@ -188,9 +189,7 @@ export class WebSocketTransport implements DuplexTransport {
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
-    this.statusListeners.add(listener);
-    listener(this.currentStatus);
-    return () => this.statusListeners.delete(listener);
+    return this.statusListeners.subscribe(listener, this.currentStatus);
   }
 
   async close(): Promise<void> {
@@ -242,6 +241,6 @@ export class WebSocketTransport implements DuplexTransport {
 
   private setStatus(status: TransportStatus): void {
     this.currentStatus = status;
-    for (const listener of this.statusListeners) listener(status);
+    this.statusListeners.emit(status, () => this.currentStatus === status);
   }
 }

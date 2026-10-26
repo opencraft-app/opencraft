@@ -2,6 +2,7 @@ import type {
   DuplexTransport,
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
+import { TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 import type { RecordedFrame } from "./recording";
 
@@ -68,7 +69,7 @@ export class ReplayTransport implements DuplexTransport {
   private readonly timing: ReplayTimingMode;
   private readonly clock: ReplayClock;
   private readonly messageListeners = new Set<(frame: string) => void>();
-  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly statusListeners = new TransportStatusObservers();
   private readonly requestIds = new Map<string | number, string | number>();
   private currentStatus: TransportStatus = { state: "idle" };
   private cursor = 0;
@@ -124,9 +125,7 @@ export class ReplayTransport implements DuplexTransport {
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
-    this.statusListeners.add(listener);
-    listener(this.currentStatus);
-    return () => this.statusListeners.delete(listener);
+    return this.statusListeners.subscribe(listener, this.currentStatus);
   }
 
   async close(): Promise<void> {
@@ -174,6 +173,6 @@ export class ReplayTransport implements DuplexTransport {
 
   private setStatus(status: TransportStatus): void {
     this.currentStatus = status;
-    for (const listener of this.statusListeners) listener(status);
+    this.statusListeners.emit(status, () => this.currentStatus === status);
   }
 }
