@@ -14,4 +14,6 @@ export interface ClientPersistenceScopeSnapshot {
 export interface ClientPersistenceScope {
   getSnapshot(): ClientPersistenceScopeSnapshot;
   subscribe(listener: () => void): () => void;
+  /** Remembered offline partitions never grant dispatch admission. */
+  isVerified?(): boolean;
 }

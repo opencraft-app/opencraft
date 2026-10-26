@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 引擎驱动与可重建读取缓存架构
 
-> 状态：Stage 0 与 Codex Stage 1 已实现；Stage 2 UI 已实现；Stage 3 及统一异构驱动仍为后续设计。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准，本文件保留整体目标架构。
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。各独立宿主实际能力仍须握手与部署验收。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准。
 > 适用范围：`opencraft/apps/opencraft-daemon`、`opencraft/apps/local-agent-host`、`opencraft/packages/appserver-protocol`、`opencraft/packages/chat-core`  
 > 关联契约：[执行所有权](../docs/execution-ownership.md)、[平台架构](../docs/platform-architecture.md)、[SQLite 生命周期](../docs/sqlite-lifecycle.md)、[实施 Spec](thread-orchestration-spec.md)
 
@@ -11,7 +11,7 @@ OpenCraft 已实现 Stage 0 读取缓存与 Codex Stage 1 跨会话消息、父�
 核心架构原则如下：
 
 1. **进程拓扑服从“执行侧平滑升级”原则**：`AgentDriverContract` 是代码层面的统一 TypeScript 接口，但**底层引擎进程（Codex、DSH、Pi、Claude SDK、ACP）严禁由频繁重启的执行网关（Execution Gateway）直接持有**，必须运行在各自独立长驻的 Engine Host 单元（如 `@opencraft/codex-core`、拆分后的 Codex AppServer 宿主、独立 DSH Host、独立 Pi Host）中；仅当某引擎自身升级且排空任务后才重启该宿主。
-2. **下行采用“3 + 1”驱动契约（`AgentDriverContract`）**：上行（UI <-> 网关）保留现有 AppServer 协议与扩展；下行收敛为 **Codex（AppServer）、Claude Code（SDK）、Pi（stdio RPC）、ACP（通用协议，含 DSH `--profile acp`）** 四类 Driver。DSH 切换为 ACP 仅替换协议翻译层，完全保留独立 DSH Host 进程隔离与多代排空（Generation Draining）升级机制。
+2. **下行采用“3 + 1”驱动契约（`AgentDriverContract`）**：上行（UI <-> 网关）保留现有 AppServer 协议与扩展；下行收敛为 **Codex（AppServer）、Claude Code（SDK/ACP 桥接）、Pi（durable SDK）、ACP（通用协议，含 DSH `--profile acp`）** 四类 Driver。DSH 旧原生 Web owner 保留，新 ACP Host 持有有序多代和默认代 CAS；已有会话固定所属代，退休以原生任务、回调及创建回执全部排空为准。
 3. **编排协调器（`ThreadOrchestrationBroker`）跨网关重启无损恢复**：Broker 逻辑运行于执行网关/控制面，但其全部控制状态（等待票 `waitTickets`、通知批次 `parent_notification_batches`、投递状态与委托授权）持久化在受管 `dataDirectory` 的 SQLite 控制账本中；进行中的 Server-Owned 工具调用通过确定性幂等键与重连重放机制保证网关重启期间不中断、不丢回执。
 4. **混合存储明确定义为“可重建的派生读取缓存（Rebuildable Projection Cache）”**：各引擎原生日志是对话正文与工具输出的唯一真源。`<dataDirectory>/cache/transcripts/<threadId>.turns.jsonl`、字节偏移索引与冷数据 Blob 仅作服务于“打开会话只读、不唤醒引擎”的可丢弃派生缓存；支持按水位（Watermark）追平、按 Schema 版本自动失效重建、以及与 Token 统计共用同一套 Codex rollout 增量读取器。
 5. **多人共用身份、权限委托与 Token 归属对齐现有 `identity-core` 与 Token Spec**：Agent 发起的 `spawn / tell` 沿用 `access-control/collaboration` 的有界用户委托（Bounded User Delegation）校验权限；子会话由 Agent 触发的轮次在阶段 1 Token 看板中单列为 `sourceKind: "system"`（不冒充人工轮次），同时在控制账本完整保留委托链 `delegatorActorId`。
@@ -169,7 +169,7 @@ flowchart TB
 | **Stage 0（可提前做）：会话打开读写解耦与可重建缓存** | **无平滑升级依赖**；仅需与 Token 统计共用 Codex rollout 增量读取器，可独立排期先行落地 | 1. 拆开 UI 点击会话的“只读历史预览（Read）”与“发消息时才唤醒引擎（Resume）”<br/>2. 基于 Token 统计的共享 rollout 读取器 + DSH/Pi 原生读取，落地 `<dataDirectory>/cache/transcripts/` 可重建预折叠缓存与水位对账<br/>3. 验收服务端读取 < 5ms、用户点击到首屏渲染 P95 < 150ms | 直接解决用户最敏感的“OpenCraft 打开会话特别慢”痛点，不涉及多会话工具注入或跨进程生命周期改动，风险极低 |
 | **Stage 1（远景）：基于现有 `collaboration` 扩展父子会话与持久通知** | 排在**执行连续性改造（平滑升级前两步：拆 AppServer 常驻 + 自动续跑）**与**Token 统计（Token 改造）**完成之后 | 1. 在既有 `actor-collaboration.sqlite` 上扩展 `parentThreadId / lifecycleOwnerThreadId` 与持久 `parent_notification_batches`<br/>2. 对接 `@opencraft/host-recovery`，实现续跑期间抑制假中断通知、终态 2s 有界合并汇报与 `hasDirectUserInput` 保护<br/>3. 在长驻 Codex Core / AppServer Host 上打通跨网关重启不丢回执的 `thread_spawn / tell / inspect / wait` | 此时常驻宿主拆分与自动续跑已就绪，不会出现网关重启打断子会话或重复发送中断通知的问题 |
 | **Stage 2（远景）：UI 协作卡片三态分离与侧边栏会话树** | 依赖 Stage 1 | 1. 修复 `chat-core` 的 `SubagentTimelineBlock`（分离工具调用状态、投递状态与子会话真实运行状态，解决 `wait` 完成误标 `done`）<br/>2. 侧边栏支持父子会话树状缩进、`hidden` 后台会话过滤与点击跳转 | 纯客户端与共享投影层升级，消费 Stage 1 的权威状态 |
-| **Stage 3（远景）：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host 稳定运行 | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp` + 多代排空）、Claude/ACP Host 上接入统一 `AgentDriverContract` 与工具回调重放<br/>2. 打通跨异构引擎的父子派发与双向 `tell`（按有界用户委托校验权限，系统 Token 单列统计） | 完成最终的多引擎统一编排目标 |
+| **Stage 3：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host；源码已接入，各部署独立验收 | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp` + 多代排空）、Claude/ACP Host 上接入统一 `AgentDriverContract` 与工具回调重放<br/>2. 打通跨异构引擎的父子派发与双向 `tell`（按有界用户委托校验权限，系统 Token 单列统计） | 完成最终的多引擎统一编排目标 |
 
 
 ## Stage 1 Codex implementation boundary
@@ -192,8 +192,7 @@ accepted Turn on the supported Native protocol; the spawn result reports
 The recovery owner supplies explicit root snapshots. Broker notifications use
 those snapshots, not the absence of a UI recovery notice. Authority, continuation
 aliases and exact system input provenance are durable schema-v4 control facts;
-transcript caches remain rebuildable. Stage 2 UI and non-Codex Stage 3 driver
-integration are separate increments. The supported Native protocol cannot replace
+transcript caches remain rebuildable. Stage 2 UI is a separate increment. The supported Native protocol cannot replace
 an existing Thread dynamic-tool set during resume; new tools attach at creation,
 and per-generation capability filtering keeps older APP payloads compatible.
 
@@ -204,3 +203,27 @@ This is an explicit exception to ordinary root creation on the current default.
 Only the trusted Hub supplies this metadata; the router resolves the owner and
 checks admission/retirement fences before Native submission. Default rollback
 cannot move a pending or new delegated child to an incompatible APP payload.
+
+## Stage 3 independent driver implementation
+
+`AgentDriverContract` is the common Broker execution port. The gateway routes
+explicit driver selection and native thread namespaces to their independent
+owners. Remote provider attachments own sockets only; closing a gateway or
+aggregation socket never closes the ACP/Claude native owner. Cross-driver
+creation validates the source delegation before freezing destination settings;
+same-driver Codex children retain the source-generation exception above.
+
+Pi and ACP Host tools use a signed session HTTP callback independent of browser
+leases. The private gateway descriptor is rediscovered during the 15-second
+reconnect window and the same scoped native call identity is replayed. The
+control ledger remains the only authority for budgets, receipts and delivery.
+Tell keeps the recipient's own live delegation and cannot transfer sender
+authority. Unsupported or unconfigured peers do not become available merely
+because their command can be declared in configuration.
+
+Pi SQLite/WAL and DSH native generation logs share the disposable transcript
+index/blob store. Native watermark changes trigger canonical read-only snapshot
+projection with a stable-prefix diff; appending turns or updating the unfinished
+tail keeps existing history cursors. Prefix rewrites, source replacement or a
+projection-schema change rebuild with a new cursor epoch. This snapshot path
+does not claim Codex-style native byte-increment parsing.

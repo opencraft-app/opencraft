@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { forkSeed, requireThreadWorkspaceCwd } from "../../apps/local-agent-host/src/dsh-thread-engine.mjs";
+import { forkSeed, requireThreadWorkspaceCwd, locateThreadHistorySource } from "../../apps/local-agent-host/src/dsh-thread-engine.mjs";
+
+test("cold native artifact lookup uses metadata and locate without loading or preparing an Agent", async () => {
+  const meta = { id: "native-history", cwd: "/workspace" }, location = { kind: "jsonl", path: "/native/session.jsonl" };
+  let lists = 0, locates = 0;
+  const forbidden = () => { throw new Error("Read-only artifact lookup must not create an execution owner"); };
+  const ctx = {
+    agents: { get: () => undefined, create: forbidden },
+    sessionPersistence: {
+      async list() { lists++; return [meta]; },
+      locate(value) { locates++; assert.equal(value, meta); return location; },
+      inspect: forbidden, prepare: forbidden, load: forbidden,
+    },
+  };
+  assert.deepEqual(await locateThreadHistorySource(ctx, meta.id), { sessionId: meta.id, location, loaded: false });
+  assert.equal(lists, 1); assert.equal(locates, 1);
+  assert.equal(ctx.agents.get(meta.id), undefined, "historical lookup must leave the native Agent cold");
+});
 
 test("native Thread creation requires an explicit workspace cwd", () => {
   assert.equal(requireThreadWorkspaceCwd("/workspace/project"), "/workspace/project");

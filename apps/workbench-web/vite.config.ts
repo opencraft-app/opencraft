@@ -5,6 +5,7 @@ import { browserCompatibility } from "./browser-compatibility.vite";
 import { workspaceDependencies } from "./workspace-dependencies.vite";
 import { startupResources } from "./startup-resources.vite";
 import { startupResourceHints } from "./startup-resource-hints.vite";
+import { offlineShell } from "./offline-shell.vite";
 import type { StartupResourcePolicy } from "./startup-resource-policy.vite";
 import { optionalWebAssets } from "./optional-web-assets";
 import { productPublicAssets } from "./product-public-assets.mjs";
@@ -377,6 +378,7 @@ export function createWorkbenchWebConfig(
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [startupResourceHints(features.startupResourcePolicy)] : []),
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [optionalWebAssets()] : []),
       ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
+      ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [offlineShell(webRelease.buildId)] : []),
       ...(embeddedWorkbenchEntryPath ? [embeddedWorkbenchDevEntry(embeddedWorkbenchEntryPath)] : []),
       runtimeErrorCapture(),
       react(),

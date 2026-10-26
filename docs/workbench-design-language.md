@@ -43,13 +43,16 @@ In narrow browser Shells, the mobile drawer sits behind a translated foreground
 page with rounded leading corners and the existing sidebar elevation. Both layers
 read the same gesture progress; neither introduces a separate transition clock.
 The foreground card uses its theme radius throughout presence, rather than
-animating the radius and repainting the page/shadow on every move. The rear layer recedes to 90% scale and 45% opacity. A stationary full-height
-gradient of the theme elevated surface washes the rear layer toward white in
-light themes, fading from 65% to zero as it opens, stronger toward the page edge.
+animating the radius and repainting the page/shadow on every move. The rear
+layer recedes to 90% scale while retaining full opacity. A stationary
+full-height gradient of the theme elevated surface washes the rear layer toward
+white in light themes, fading from 65% to zero as it opens, stronger toward the
+page edge. The drawer ancestor must not animate opacity because its glass action
+descendants use live backdrop sampling; the sibling wash owns the reveal fade.
 Dark themes use their elevated surface; reduced motion disables the wash. The
 veil shares the gesture progress and cannot capture input or outlive active presence.
 The rear
-layer's normal-motion scale/opacity has a compositing hint scoped to its floating
+layer's normal-motion scale has a compositing hint scoped to its floating
 DOM lifetime; reduced motion and desktop retain their existing rear-depth policy.
 The translated foreground has a transform hint scoped to mobile presence too;
 otherwise masked composer utilities can repaint with each movement even with a
@@ -604,6 +607,10 @@ breathing room and the first transcript content starts below the controls; after
 scrolling, real text continues behind the status area. A non-interactive masked
 blur and theme veil soften the upper edge without creating a solid toolbar.
 Controls remain inside safe bounds and no scroll-driven layout switch is used.
+
+### Narrow settings action groups
+
+SettingsActions.wrap explicitly lets a multi-action group wrap without shrinking button labels. Utility SettingsPanel preserves SettingsRow.layout=stacked in its grid projection, so long readonly values remain readable at narrow widths.
 
 
 ### Unified touch setting

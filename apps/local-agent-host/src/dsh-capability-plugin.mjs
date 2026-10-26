@@ -1,3 +1,4 @@
+import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
 import { createBackgroundJobProofs } from "./dsh-background-jobs.mjs";
 import { recoverDshGeneration } from "./dsh-generation-recovery.mjs";
 // Engine-side capability registration. Imported by the actual DSH Loader so
@@ -40,6 +41,7 @@ export async function apply(ctx, config) {
   if (checkpoints) for (const checkpoint of await checkpoints.list()) {
     generations.set(checkpoint.sourceSessionId, { logicalSessionId: checkpoint.logicalSessionId, generation: checkpoint.generation });
   }
+  registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId);
   ctx.on("session/event", (session, event) => {
     if (!checkpoints || event.type !== "turn/end" || volatileSessions.has(session.id ?? session.header.id)) return;
     const id = String(session.id ?? session.header.id);

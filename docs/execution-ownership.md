@@ -139,6 +139,22 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。
 
+## 只读历史与可重建缓存
+
+打开历史调用 `thread/read`，读取正文、订阅呈现与取得执行权分开。只有发送、继续或其他明确执行操作才进入 Resume/准入；读取缓存不创建 Agent、Pi Harness 或其他执行 owner，不获取客户端工具租约。独立 Host 的网关 attachment 只连接已有 Host；缺失或不健康时拒绝连接，不由历史读取或网关启动补起引擎进程。
+
+原生日志始终是正文与工具输出的唯一真源。共享 [TranscriptReadCache](../packages/native-history-node/src/transcript-read-cache.ts) 在受管 `dataDirectory/cache/` 中维护可丢弃的 `transcript-index.sqlite` 与 `transcripts/<threadId>.turns.jsonl`；索引绑定投影 schema、原生来源身份与水位、分页 epoch 和 Turn 字节偏移。大于 1 KiB 的工具正文保存到会话自己的内容寻址 Blob，读取所需 Turn 时恢复原始字段类型。元数据每次从当前 Host 重新验证；缓存命中不能跳过 native HOME、路由代次或来源替换的检查。
+
+| 原生来源 | 水位与追平方式 | 读取不取得的资源 |
+|---|---|---|
+| Codex rollout | 受信 HOME 中的文件身份、大小与时间戳；与 Token 读取共用完整 JSONL 行的字节游标，定位脏 Turn 后通过原生规范投影追平后缀 | Native Thread 执行权、Resume、模型目录 RPC |
+| Pi SQLite | 数据库及 WAL 的文件身份、大小与内容修改时间；水位变化时从一致的只读快照取得原生规范投影 | Pi Harness、native writer、执行 owner |
+| DSH snapshot | 包含逻辑 Thread 全部原生路由代次的日志文件水位及路由指纹；持有该来源的 Host 校验代次后读取规范投影 | Agent 创建、prepare、Resume；既有只读元数据或历史查询不激活 Agent |
+
+Pi/DSH 的 snapshot port 可能仍需读取完整原生逻辑快照，不声称其数据库字节支持 JSONL 增量。缓存对比有序 Turn 前缀，只更新变化的未完成尾轮及新增 Turn 的偏移、正文和 Blob；这两类变化保留既有序号与分页 epoch，运行中新轮次不会使用户正在翻阅的旧页失效。SQLite WAL checkpoint 或截短本身也不改变逻辑历史的 epoch。历史前缀改写、删轮或重排、原生来源身份/路径/路由变更、schema 失效或派生文件丢失时重建并更换 epoch；旧游标明确要求重新加载，不能继续解释为另一版历史的偏移。SQLite 只读连接可能改变 WAL 的 ctime，因此 snapshot 水位不以该元数据变化制造内容失效；Codex 保留自己的字节追加判断。
+
+删缓存目录、索引损坏或正文/Blob 校验失败只能重建派生数据，不能修改或删除原生日志。归档或删除的缓存清理与迟到读取通过会话级失效代次协调；清理同时删除索引行及该会话的正文与 Blob。无可用文件来源的临时会话或原生 backend 保留原有只读协议兼容。回归入口为 [原生 snapshot 缓存](../tests/protocol/native-transcript-snapshot-cache.test.ts)、[Codex 缓存](../tests/protocol/transcript-read-cache.test.ts)及 [DSH 冷态来源定位](../tests/execution/dsh-thread-engine.test.mjs)；主服 Host 是否已加载这些能力仍须核对实际版本、进程与行为。
+
 ## Interaction 响应与重连对账
 
 Server 发起的 approval、question、option picker 与 MCP elicitation 仍由 Server
@@ -654,3 +670,76 @@ rechecks the original execution after the asynchronous read. Missed completion
 returns expired; read failures return unknown. The native probes use only a
 latest-Turn history read, never resume or subscribe, and ignore unsolicited native
 interaction requests without responding to them.
+
+
+### Independent Host execution observations
+
+Authenticated ingress forwards its frozen submission context through
+`AgentDriverTransport` only after execution authorization. The inner
+`ExecutionOwnershipTransport` records the same input identity before native
+admission. A queue start consumes its original persisted submitter; a steer
+records an author and never acquires the running execution.
+
+The gateway uses its existing thread-identity SQLite owner for independent
+engines. On restart, unresolved leases become unknown until bounded read-only
+reconciliation proves the exact original input and Turn. Inspection does not
+Resume, attach callbacks, subscribe to tools or answer unsolicited interactions.
+An explicit internal Host input records unowned execution; the viewer and the
+last human sender are never credential fallbacks.
+
+Independent Host descriptors expose authenticated, origin-free
+`GET /execution-origin?threadId=...`. The engine owner resolves the physical
+native generation and returns its PID. ACP also returns the admitted public
+Turn ID, status and original input ID from its live runtime; its native history
+Turn numbering is a different identity and cannot validate a public lease.
+`readEngineExecutionIdentity` revalidates the descriptor and live Host before
+reading this port. `observeNativeExecutionProcess` adds the process start ticks
+and boot fence. The broker must verify peer ancestry and birth time against the
+same native root and immutable lease, including after asynchronous inspection.
+An unavailable observer is unknown, never unowned.
+
+`createHostExecutionTurnInspector` uses the ACP owner observation, and falls
+back to the bounded raw WebSocket Turn reader only for providers without an
+owner Turn observation. It never follows a successor Turn or accepts a changed
+original input.
+
+### Thread identity in native shells
+
+Pi supplies the explicit public session ID to each session's native execution
+environment. Environments may be reused for the same session and working
+directory because they contain only this diagnostic Thread ID; employee
+credentials are resolved for each actual tool process through the broker.
+
+DSH shell and terminal boundaries consume one read-only native-to-public
+resolver. Legacy DSH uses its existing generation/checkpoint owner. DSH ACP
+reads the existing atomic routing records in one fixed generation directory;
+it does not construct a public ID from a native ID or create another writable
+mapping. Packaging patches the pinned `dsh-bash-local` and `dsh-terminal-bash`
+process environment boundaries, verifies both before writing, and rejects
+upstream drift. A new ACP generation must explicitly mount the packaged
+`dsh-acp-execution-environment.mjs` plugin with its `routesDirectory`; existing
+pinned generations are not silently changed.
+
+`OPENCRAFT_THREAD_ID` is diagnostic, like native Codex's `CODEX_THREAD_ID`.
+Neither is credential authority. A persistent shell or background child keeps
+its original process birth; after that Turn ends it cannot acquire a later
+employee's lease. A fresh shell process in a later Turn is a separate origin.
+
+
+### Boot clock and queue admission fences
+
+Linux job origin queries include `bootId` and `startedAtBootMs` from the attested
+process start ticks. Readers advertise `originClock: "boot-monotonic-v1"` so a
+broker can refuse an older reader that would silently ignore these fields.
+Host migration v16 and thread-identity migration v3 append boot-relative lease
+boundaries without rewriting v15/v2. The complete uncertainty interval, including
+`/proc/uptime` quantization, must fit one interval in the same boot and native
+incarnation. Old rows without boot evidence remain unknown. Realtime clock jumps
+cannot move an old background job to the next employee.
+
+Queue receipts use an immutable admission nonce, not creation time, to confirm
+that this principal's input was accepted. The gateway persists and overwrites
+the wire nonce before native admission. Pi stores the first nonce in its native
+queue; edits and duplicates preserve it. DSH echoes it only after the new native
+queue admission path. Older Hosts or historical receipts without matching
+admission evidence stay unknown until proven, and never inherit the current user.

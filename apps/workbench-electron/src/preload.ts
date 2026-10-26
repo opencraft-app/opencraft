@@ -1,3 +1,4 @@
+import { CONNECT_DESKTOP_SERVER, isDesktopServerConnectMessage } from '@opencraft/app-host-protocol/desktop-server';
 import { createDesktopPreload } from "./desktop-product-preload-entry.js";
 import { composeDesktopBridge } from "./desktop-product-lifetime.js";
 import { contextBridge, ipcRenderer } from "electron";
@@ -9,12 +10,24 @@ import {
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
+  if (isDesktopServerConnectMessage(event.data) && event.ports.length === 1) {
+    ipcRenderer.postMessage(CONNECT_DESKTOP_SERVER, event.data, [event.ports[0]!]); return;
+  }
   if (!isConnectAppHostMessage(event.data) || event.ports.length !== 1) return;
   ipcRenderer.postMessage(CONNECT_APP_HOST_MESSAGE, event.data, [event.ports[0]!]);
 });
 
 contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
   kind: "electron",
+  servers: Object.freeze({
+    validate: (value: unknown) => ipcRenderer.invoke('opencraft:server-validate', value),
+    prepare: (id: string, origin: string) => ipcRenderer.invoke('opencraft:server-prepare', id, origin),
+    cancel: (id: string) => ipcRenderer.invoke('opencraft:server-cancel', id),
+    onRevoked: (listener: (value: import('@opencraft/app-host-protocol/desktop-server').DesktopServerConnection) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, value: Parameters<typeof listener>[0]) => listener(value);
+      ipcRenderer.on('opencraft:server-revoked', receive); return () => ipcRenderer.off('opencraft:server-revoked', receive);
+    },
+  }),
   locale: Object.freeze({
     getSystemLocale: () => ipcRenderer.invoke("opencraft:system-locale"),
     setApplicationLocale: (locale: string) => ipcRenderer.invoke("opencraft:application-locale", locale),
@@ -75,6 +88,8 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
       record: Omit<import("@opencraft/document-storage/client-resources").ClientResourceRecord, "revision">) =>
       ipcRenderer.invoke("opencraft:client-resource-commit", key, revision, record),
     clearRemoteNamespace: (namespace: string) => ipcRenderer.invoke("opencraft:client-resource-clear-remote", namespace),
+    listLocalKeys: (namespace: string, name: string) => ipcRenderer.invoke("opencraft:client-resource-list-local", namespace, name),
+    clearLocalResource: (namespace: string, name: string) => ipcRenderer.invoke("opencraft:client-resource-clear-local", namespace, name),
   }),
   skillHub: Object.freeze({
     get: (path: string) => ipcRenderer.invoke("opencraft:skillhub-get", path),

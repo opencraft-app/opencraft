@@ -14,7 +14,11 @@ extend to Pi, DSH, SSH or federated resources merely because a target is routabl
 Actor, connection URL or renderer Host route. Its versioned canonical encoding is
 `opencraft://conversation/v1/<encoded-server>/<encoded-thread>`. HTTPS navigation
 links carry that encoding in `conversation`; title and current page are display
-hints. Links never carry authentication or a transcript. The shared codec lives
+hints. Link generation discards the base URL’s existing query and fragment,
+preserves its path, and adds only the canonical `conversation` parameter.
+Fragment removal uses the serialized URL without writing `URL.hash`, which is
+read-only in React Native’s global types. Links never carry authentication or a
+transcript. The shared codec lives
 in `appserver-protocol/collaboration`. Opening a link checks the resource's stable
 server identity before selecting a local Host route.
 

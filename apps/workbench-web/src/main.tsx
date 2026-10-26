@@ -146,7 +146,12 @@ function ApplicationBootstrap() {
     if (state.phase !== "ready") return;
     const owner = new AbortController();
     const cancel = startAfterWorkbenchPaint(() => state.application.startOptionalFeatures(), owner.signal);
-    return () => { owner.abort(); cancel(); };
+    const cancelOffline = import.meta.env.PROD && clientRuntime.kind === "web" && !mobileContainer()
+      ? startAfterWorkbenchPaint(async () => {
+        try { const module = await import("./runtime/offline-shell"); if (!owner.signal.aborted) await module.prepareOfflineShell(); }
+        catch (error) { reportRuntimeError(error, "offline-shell"); }
+      }, owner.signal) : () => {};
+    return () => { owner.abort(); cancel(); cancelOffline(); };
   }, [state]);
 
   if (state.phase === "error") throw state.error;

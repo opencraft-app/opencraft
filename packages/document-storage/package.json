@@ -7,6 +7,7 @@
     ".": "./src/contract.ts",
     "./sqlite": "./src/sqlite.ts",
     "./client-resources": "./src/client-resources.ts",
+    "./client-local-documents": "./src/client-local-documents.ts",
     "./client-resources-sqlite": "./src/client-resources-sqlite.ts"
   },
   "scripts": {

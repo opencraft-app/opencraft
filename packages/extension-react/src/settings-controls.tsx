@@ -318,11 +318,12 @@ export function SettingsNotice({ tone = "neutral", className, children, ...props
 
 export interface SettingsActionsProps extends HTMLAttributes<HTMLDivElement> {
   readonly align?: "start" | "between" | "end";
+  readonly wrap?: boolean;
 }
 
-export function SettingsActions({ align = "end", className, children, ...props }: SettingsActionsProps) {
+export function SettingsActions({ align = "end", wrap = false, className, children, ...props }: SettingsActionsProps) {
   return (
-    <div {...props} className={classes("settings-control-actions", `settings-control-actions--${align}`, className)}>
+    <div {...props} className={classes("settings-control-actions", `settings-control-actions--${align}`, wrap && 'settings-control-actions--wrap', className)}>
       {children}
     </div>
   );

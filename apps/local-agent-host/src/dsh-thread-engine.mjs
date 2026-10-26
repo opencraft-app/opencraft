@@ -9,6 +9,15 @@ export function requireThreadWorkspaceCwd(value) {
   return value;
 }
 
+/** Native artifact lookup is independent of inspect/prepare and Agent loading.
+ * The caller is the already-running independent Host, never the gateway. */
+export async function locateThreadHistorySource(ctx, sessionId) {
+  const live = ctx.agents.get(sessionId);
+  const meta = live?.session.header ?? (await ctx.sessionPersistence.list()).find(meta => meta.id === sessionId);
+  if (!meta) throw new Error("DSH history source not found");
+  return { sessionId, location: ctx.sessionPersistence.locate(meta) ?? null, loaded: live !== undefined };
+}
+
 export function forkSeed(source, { lastTurn, beforeTurn } = {}, closers) {
   if (lastTurn !== undefined && beforeTurn !== undefined) throw new Error("Fork boundaries are mutually exclusive");
   let selected = source;
@@ -84,6 +93,11 @@ export async function createThreadEngine(ctx, toolsModuleUrl, capabilities, inst
   });
   return {
     create,
+    async historySource(input) {
+      // locate() is the backend's own artifact authority. Listing immutable
+      // metadata is deliberately separate from inspect/prepare/resume.
+      return locateThreadHistorySource(ctx, SessionId(input.sessionId));
+    },
     async goal(input) {
       const agent = ctx.agents.get(input.sessionId);
       if (!agent) {

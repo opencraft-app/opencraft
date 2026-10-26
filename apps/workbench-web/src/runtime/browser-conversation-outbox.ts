@@ -2,6 +2,8 @@ import { createConversationKey, type ConversationKey } from "@opencraft/chat-cor
 import type { ConversationOutboxEntry, ConversationOutboxStorage } from "@opencraft/chat-runtime";
 import { parseConversationDraftDocument } from "@opencraft/workbench-runtime";
 import type { ComposerSelections, SubmitIntent } from "@opencraft/composer-core";
+import type { ClientLocalDocuments } from "@opencraft/document-storage/client-local-documents";
+import { readMigratingLocalDocument } from "./local-document-migration";
 
 const PREFIX = "opencraft.outbox.v1:";
 const MAX_BYTES = 512 * 1024;
@@ -55,9 +57,13 @@ function decode(raw: string | null, key: ConversationKey): readonly Conversation
 export function createBrowserConversationOutbox(input: {
   storage: Storage;
   scope(): string | null;
+  documents?(scope: string): ClientLocalDocuments;
+  canDispatch?(): boolean;
 }) {
   const listeners = new Set<() => void>();
   let scope = input.scope();
+  let documents = scope === null ? undefined : input.documents?.(scope);
+  let verified = input.canDispatch?.() ?? true;
   const prefix = (owner: string) => `${PREFIX}${encodeURIComponent(owner)}:`;
   const storageKey = (key: ConversationKey, profile: number) => {
     if (scope === null) throw new Error("Confirm your account identity before queueing a message");
@@ -66,16 +72,21 @@ export function createBrowserConversationOutbox(input: {
   return {
     forProfile(profile: number): ConversationOutboxStorage {
       return {
-        read(key) { return scope === null ? [] : decode(input.storage.getItem(storageKey(key, profile)), key); },
+        read(key) {
+          if (scope === null) return [];
+          const target = storageKey(key, profile);
+          return documents ? readMigratingLocalDocument(documents, target, input.storage).then(raw => decode(raw, key)) : decode(input.storage.getItem(target), key);
+        },
         write(key, entries) {
           const target = storageKey(key, profile);
-          if (!entries.length) { input.storage.removeItem(target); return; }
           for (const entry of entries) {
             if (!parseConversationDraftDocument(JSON.stringify({ version: 1, document: entry.intent.document })))
               throw new Error("This message cannot be saved in the local queue. Your draft has been kept.");
           }
           const value = JSON.stringify({ version: 1, entries });
           if (value.length > MAX_BYTES) throw new Error("The local message queue is full. Your draft has been kept.");
+          if (documents) return documents.write(target, entries.length ? value : null);
+          if (!entries.length) { input.storage.removeItem(target); return; }
           input.storage.setItem(target, value);
         },
         subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
@@ -83,9 +94,17 @@ export function createBrowserConversationOutbox(input: {
     },
     refreshScope() {
       const next = input.scope();
-      if (next === scope) return;
+      const nextVerified = input.canDispatch?.() ?? true;
+      if (next === scope) {
+        if (nextVerified !== verified) { verified = nextVerified; for (const listener of listeners) listener(); }
+        return;
+      }
+      verified = nextVerified;
       const previous = scope;
+      const previousDocuments = documents;
       scope = next;
+      documents = scope === null ? undefined : input.documents?.(scope);
+      void previousDocuments?.revokeAndClear().catch(() => undefined);
       // Revoke old readers before notifying them; a late ACK cannot write into
       // another account's namespace. Explicit identity changes clear old input.
       if (previous !== null) {

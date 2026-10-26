@@ -44,13 +44,14 @@ import type {
   TurnInterruptProvenance,
 } from "./ports";
 
-import { createConversationOutbox, type ConversationOutboxStorage } from "./conversation-outbox";
+import { createConversationOutbox, type ConversationOutboxStorage, type ConversationOutbox } from "./conversation-outbox";
 
 type JsonRecord = Readonly<Record<string, ReplicaJsonValue>>;
 
 export interface ReplicaConversationRuntimeConfig {
   readonly key: ConversationKey;
   readonly outbox?: ConversationOutboxStorage;
+  readonly localOutbox?: ConversationOutbox;
   readonly canDispatchOutbox?: (intent?: SubmitIntent) => boolean;
   /** Compatibility retry while a connected Codex Host does not own capacity continuation. */
   readonly canAutoContinueCapacity?: () => boolean;
@@ -1705,14 +1706,18 @@ export function createReplicaConversationRuntime(
         publish();
       }
   };
-  if (config.outbox) {
-    outbox = createConversationOutbox({
-      key: config.key, storage: config.outbox,
+  let releaseOutbox: (() => void) | undefined;
+  if (config.outbox || config.localOutbox) {
+    const dispatch = {
       ready: () => snapshot.authoritative && snapshot.phase === "live" && config.canDispatchOutbox?.() !== false,
       blocked: () => [...pendingSubmissions.values(), ...queued.values()].some(item => item.state === "unknown"),
       send: submitOnline, sender: config.getSubmissionSender, publish,
-      retire: ids => { for (const id of ids) { queued.delete(id); pendingSubmissions.delete(id); } },
-    });
+      retire: (ids: readonly string[]) => { for (const id of ids) { queued.delete(id); pendingSubmissions.delete(id); } },
+    };
+    if (config.localOutbox) {
+      outbox = config.localOutbox;
+      releaseOutbox = outbox.attach(dispatch);
+    } else outbox = createConversationOutbox({ key: config.key, storage: config.outbox!, ...dispatch });
     publish();
     queueMicrotask(() => outbox?.wake());
   }
@@ -1745,6 +1750,7 @@ export function createReplicaConversationRuntime(
     async submit(intent) {
       assertIntentTarget(config.key, intent);
       resetCapacityRetry();
+      if (outbox && !outbox.hydrated) await outbox.ready();
       if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
         || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
         return outbox.admit(intent);
@@ -1915,7 +1921,7 @@ export function createReplicaConversationRuntime(
       }
     },
     async deleteQueuedSubmission(queuedSubmissionId) {
-      if (outbox?.remove(queuedSubmissionId)) return;
+      if (await outbox?.remove(queuedSubmissionId)) return;
       if (queued.get(queuedSubmissionId)?.state === "failed") {
         queued.delete(queuedSubmissionId);
         localRevision += 1;
@@ -2128,7 +2134,8 @@ export function createReplicaConversationRuntime(
       clearCapacityRetryTimer();
       removeReplicaListener();
       listeners.clear();
-      outbox?.dispose();
+      if (config.localOutbox) releaseOutbox?.();
+      else outbox?.dispose();
       queued.clear();
       pendingSubmissions.clear();
       submissionSenders.clear();

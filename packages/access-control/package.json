@@ -15,7 +15,8 @@
     "@opencraft/identity-core": "*",
     "@opencraft/sqlite-node": "*",
     "openid-client": "6.8.8",
-    "@opencraft/appserver-protocol": "0.1.0"
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

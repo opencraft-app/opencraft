@@ -3,6 +3,7 @@ import test from 'node:test';
 import { CodexOrchestrationControl, type CodexOrchestrationControlPort } from '../../apps/opencraft-daemon/src/codex-orchestration-control';
 import type { RecoveryTurn } from '../../packages/host-recovery/src/index';
 import type { AppServerThread } from '../../packages/appserver-protocol/src/index';
+import { permissionModeProfileId } from '../../packages/appserver-protocol/src/index';
 
 const thread = (turns: unknown[], status = 'idle') => ({ id: 'child', status: { type: status }, turns }) as AppServerThread;
 function fixture() {
@@ -39,6 +40,37 @@ test('private Host operations require trusted admission and preserve source perm
   assert.equal(create.params.orchestrationTitle,undefined);
   f.revoke();await assert.rejects(f.invoke('create',{settings}),{code:403});
   assert.equal(f.requests.filter(r=>r.method==='thread/start').length,1);
+});
+
+test('a foreign source keeps delegation bounds while freezing Codex defaults and avoiding a foreign generation route', async () => {
+  const f = fixture(), original = f.port.request;
+  f.port.incarnation = () => 'codex-owner';
+  f.port.request = async (method, params, admit) => method === 'config/read'
+    ? { config: { model: 'codex-default', model_provider: 'codex-provider', model_reasoning_effort: 'medium' } }
+    : original(method, params, admit);
+  const settings = await f.invoke('prepare', { sourceSettings: { cwd: '/workspace', model: 'pi:foreign:model', modelProvider: 'foreign',
+    permissions: permissionModeProfileId('full'), approvalPolicy: 'never', sandbox: 'danger-full-access' }, arguments: { cwd: 'child' } });
+  assert.equal(settings.cwd, '/workspace/child'); assert.equal(settings.model, 'codex-default'); assert.equal(settings.modelProvider, 'codex-provider');
+  assert.equal(settings.orchestrationHostIncarnation, 'codex-owner'); assert.equal(settings.orchestrationCrossDriver, true);
+  assert.equal(f.requests.filter(request => request.method === 'thread/resume').length, 0);
+  await f.invoke('create', { settings: { ...settings, orchestrationDriver: 'codex' } });
+  const created = f.requests.find(request => request.method === 'thread/start')!;
+  assert.equal(created.params.__opencraftOrchestrationSourceThreadId, undefined);
+  assert.equal(created.params.orchestrationDriver, undefined); assert.equal(created.params.orchestrationCrossDriver, undefined);
+  assert.equal(created.params.permissions, undefined); assert.equal(created.params.sandbox, 'danger-full-access');
+  await assert.rejects(f.invoke('prepare', { sourceSettings: { cwd: '/workspace', permissions: 'full' }, arguments: { cwd: '../outside' } }), { code: 403 });
+  await assert.rejects(f.invoke('prepare', { sourceSettings: { cwd: '/workspace', permissions: 'untranslatable' }, arguments: {} }), { code: 403 });
+});
+
+test('nullable native Codex defaults stay absent instead of becoming invalid child overrides', async () => {
+  const f = fixture(), original = f.port.request;
+  f.port.request = async (method, params, admit) => method === 'config/read'
+    ? { config: { model: null, model_provider: null, model_reasoning_effort: null } } : original(method, params, admit);
+  const settings = await f.invoke('prepare', { sourceSettings: { cwd: '/workspace', sandbox: 'danger-full-access', approvalPolicy: 'never' }, arguments: {} });
+  assert.equal('model' in settings, false); assert.equal('modelProvider' in settings, false); assert.equal('config' in settings, false);
+  await f.invoke('create', { settings });
+  const native = f.requests.find(request => request.method === 'thread/start')!.params;
+  assert.equal(native.config, undefined); assert.equal(native.model, undefined);
 });
 
 test('recovery lifecycle is authoritative while notices omit active recovery states',async()=>{

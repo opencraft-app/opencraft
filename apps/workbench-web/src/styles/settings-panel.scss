@@ -13,6 +13,7 @@
   color: var(--color-text);
   font: var(--typography-control-compact-font);
   .settings-control-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 48px; gap: 16px; padding: 10px 0; }
+  .settings-control-row--stacked { grid-template-columns: minmax(0, 1fr); }
   .settings-control-row__label { @include typography.role(control-compact); }
   .settings-control-row__value { width: 100%; justify-content: flex-start; }
   .settings-control-notice { margin: 0 0 12px; }

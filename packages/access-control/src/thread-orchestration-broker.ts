@@ -7,14 +7,7 @@ import type { ChildOutcome, ThreadRelation, ToolOperation } from './orchestratio
 
 export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_tell','thread_inspect','thread_wait'] as const;
 export type OrchestrationRuntimeSnapshot = import("@opencraft/appserver-protocol/collaboration").ThreadOrchestrationSnapshot;
-export interface OrchestrationExecutionPort {
-  /** The Engine Host reconciles this operation id; a gateway must never retry an ordinary native create. */
-  prepare?(operationId:string,sourceThreadId:string,args:Record<string,unknown>,canAdmit:()=>boolean,callbackIncarnation?:string):Promise<Record<string,unknown>>;
-  inspect?(threadId:string,limit:number):Promise<{entries:Array<{turnId:string;role:string;text:string}>}>;
-  create(operationId: string,sourceThreadId: string,args: Record<string,unknown>,canAdmit:()=>boolean): Promise<{threadId:string;generationId?:string;durability?:'immediate'|'pending_first_turn'}|{rejected:{status:number}}>;
-  snapshot(threadId: string): Promise<OrchestrationRuntimeSnapshot>;
-  acknowledge?(operationId: string): Promise<boolean|void>;
-}
+export type OrchestrationExecutionPort = import('@opencraft/appserver-client').AgentDriverContract;
 const text=(value:unknown,max=256)=>{
   if(typeof value!=='string'||!value.trim()||value.length>max||/[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(value))throw new CollaborationError(400,'invalid_orchestration_field');return value;
 };
@@ -45,14 +38,15 @@ export class ThreadOrchestrationBroker {
     this.calls.set(toolCallKey,{fingerprint,promise:call});return call;
   }
   private authorize(delegation:BoundedThreadDelegation,target:string,action:string):void{
-    if(!this.collaboration.conversationAllowed(delegation.context,{serverId:this.collaboration.execution.serverId!,threadId:target},action))throw new CollaborationError(403,'conversation_action_denied');
+    if(!this.collaboration.conversationAllowed(delegation.context,this.reference(target),action))throw new CollaborationError(403,'conversation_action_denied');
   }
+  private reference(threadId:string){return {serverId:this.collaboration.execution.serverForThread?.(threadId)??this.collaboration.execution.serverId!,threadId};}
   private valid(delegation:BoundedThreadDelegation,turnId:string):boolean{
     try{return !this.closed&&this.collaboration.delegation(delegation.sourceThreadId,turnId,delegation.id).id===delegation.id;}catch{return false;}
   }
   private origin(delegation:BoundedThreadDelegation,operation:ToolOperation,inputId:string,turnId:string,replyExpectation:'required'|'none'='required'):OrchestrationMessageOrigin{
     return {kind:'agent',clientMessageId:inputId,authorActorId:null,delegatorActorId:delegation.context.actorId,delegationId:delegation.id,
-      senderConversation:{serverId:this.collaboration.execution.serverId!,threadId:delegation.sourceThreadId},senderTurnId:turnId,operationId:operation.operationId,
+      senderConversation:this.reference(delegation.sourceThreadId),senderTurnId:turnId,operationId:operation.operationId,
       replyExpectation,delegationRevision:delegation.context.generation,usageSourceKind:'system',createdAtMs:this.now()};
   }
   private async perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
@@ -63,7 +57,7 @@ export class ThreadOrchestrationBroker {
     if(name==='thread_spawn'){
       fields(args,['title','prompt','parentSelf','bindLifecycleToSelf','visibility','driver','model','reasoningEffort','cwd','idempotencyKey']);text(args.prompt,16384);
       for(const field of ['title','model','reasoningEffort','cwd'])if(args[field]!==undefined)text(args[field],field==='cwd'?4096:256);
-      if(args.driver!==undefined&&args.driver!=='codex')throw new CollaborationError(400,'orchestration_driver_unsupported');
+      if(args.driver!==undefined&&!['codex','pi','dsh','acp','claude-code'].includes(String(args.driver)))throw new CollaborationError(400,'orchestration_driver_unsupported');
       if(args.parentSelf!==undefined&&args.parentSelf!==true||args.bindLifecycleToSelf!==undefined&&args.bindLifecycleToSelf!==true)throw new CollaborationError(400,'invalid_parent_binding');
       if(args.visibility!==undefined&&!['visible','hidden'].includes(String(args.visibility)))throw new CollaborationError(400,'invalid_thread_visibility');
       this.authorize(delegation,threadId,'execution.delegate');mode='start';
@@ -98,15 +92,15 @@ export class ThreadOrchestrationBroker {
       }
       const childId=text(created.threadId),parent=ledger.relation(threadId);
       ledger.transaction(()=>{
-        ledger.createThread({threadId:childId,serverId:this.collaboration.execution.serverId!,driverKind:'codex',ownerActorId:delegation.context.actorId,parentThreadId:threadId,
+        ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:created.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
           lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='hidden'?'hidden':'visible',engineHostGeneration:created.generationId??null,nativeSessionId:childId,
           runtimeStatus:'starting',rootTurnId:null,turnId:null,delegationRevision:delegation.context.generation,autoExchangeDepth:(parent?.autoExchangeDepth??0)+1,hasDirectUserInput:false,userInputExcerpt:null});
         if(!this.valid(delegation,turnId)){
           ledger.runtime(childId,{runtimeStatus:'error',rootTurnId:null,turnId:null});
           ledger.finish(key,{orchestrationFailure:{status:403}},'failed',childId);this.collaboration.queueOrchestrationAck(operation.operationId);return;
         }
-        const sent=this.collaboration.sendConversation(delegation.context,{reference:{serverId:this.collaboration.execution.serverId,threadId:childId},content:args.prompt,
-          idempotencyKey:`spawn:${operation.operationId}`,execution:{mode:'queue'}},{serverId:this.collaboration.execution.serverId!,threadId},delegation.id,false);
+        const sent=this.collaboration.sendConversation(delegation.context,{reference:this.reference(childId),content:args.prompt,
+          idempotencyKey:`spawn:${operation.operationId}`,execution:{mode:'queue'}},this.reference(threadId),delegation.id,false);
         const inputId=ACTOR_INPUT_PREFIX+sent.requestId;
         this.collaboration.authorizeChild(delegation,childId,inputId);
         this.collaboration.recordInputOrigin(childId,inputId,this.origin(delegation,operation,inputId,turnId));
@@ -118,8 +112,8 @@ export class ThreadOrchestrationBroker {
     }
     if(name==='thread_tell'){
       ledger.transaction(()=>{
-        const sent=this.collaboration.sendConversation(delegation.context,{reference:{serverId:this.collaboration.execution.serverId,threadId:target},content:args.message,
-          idempotencyKey:`tell:${operation.operationId}`,execution:{mode,...(mode==='steer'?{expectedTurnId:args.expectedTurnId}:{})}},{serverId:this.collaboration.execution.serverId!,threadId},delegation.id);
+        const sent=this.collaboration.sendConversation(delegation.context,{reference:this.reference(target!),content:args.message,
+          idempotencyKey:`tell:${operation.operationId}`,execution:{mode,...(mode==='steer'?{expectedTurnId:args.expectedTurnId}:{})}},this.reference(threadId),delegation.id);
         const inputId=ACTOR_INPUT_PREFIX+sent.requestId;
         this.collaboration.recordInputOrigin(target!,inputId,this.origin(delegation,operation,inputId,turnId,args.replyExpectation==='none'?'none':'required'));
         ledger.finish(key,{operationId:operation.operationId,threadId:target,delivery:'queued',waitingOn:'turn_starting',delegationRevision:delegation.context.generation},'queued',target,inputId);
@@ -127,7 +121,7 @@ export class ThreadOrchestrationBroker {
       void this.collaboration.pump().catch(()=>{});return ledger.operation(key)!.result;
     }
     if(name==='thread_inspect'){
-      const read=this.execution.inspect?{history:await this.execution.inspect(target!,Number(args.includeRecentTurns??1))}:await this.collaboration.readConversation(delegation.context,{serverId:this.collaboration.execution.serverId,threadId:target});
+      const read=this.execution.inspect?{history:await this.execution.inspect(target!,Number(args.includeRecentTurns??1))}:await this.collaboration.readConversation(delegation.context,this.reference(target!));
       if(!this.valid(delegation,turnId))throw new CollaborationError(403,'execution_delegation_revoked');
       this.authorize(delegation,target!,'conversation.read');
       const history=read.history as {entries?:Array<{turnId:string;role:string;text:string}>;nextCursor?:string|null};
@@ -162,7 +156,7 @@ export class ThreadOrchestrationBroker {
     let target:string|null=null;
     if(name!=='get_thread_delivery'){
       const ref=parseConversationRef(typeof args.reference==='string'?args.reference:'');
-      if(!ref||ref.serverId!==this.collaboration.execution.serverId)throw new CollaborationError(400,'invalid_reference');
+      if(!ref||ref.serverId!==this.reference(ref.threadId).serverId)throw new CollaborationError(400,'invalid_reference');
       target=ref.threadId;this.authorize(delegation,target,name==='read_thread'?'conversation.read':'message.send');
       if(name==='send_message_to_thread')this.authorize(delegation,target,'execution.queue');
     }
@@ -243,10 +237,10 @@ export class ThreadOrchestrationBroker {
     for(const {parent,delegation,batches} of parents.values()){
       if(this.closed)return;
       const ids=batches.map(batch=>batch.batchId).sort(),key=createHash('sha256').update(JSON.stringify(ids)).digest('hex');
-      const body=batches.map(batch=>`Child ${encodeConversationRef({serverId:this.collaboration.execution.serverId!,threadId:batch.childThreadId})}: ${batch.outcomeKind}.${batch.hasDirectUserInput?' Direct user input occurred; user instructions take precedence.':''}${batch.userInputExcerpt?'\nUser context: '+batch.userInputExcerpt:''}\n${JSON.stringify(batch.summary)}`).join('\n');
+      const body=batches.map(batch=>`Child ${encodeConversationRef(this.reference(batch.childThreadId))}: ${batch.outcomeKind}.${batch.hasDirectUserInput?' Direct user input occurred; user instructions take precedence.':''}${batch.userInputExcerpt?'\nUser context: '+batch.userInputExcerpt:''}\n${JSON.stringify(batch.summary)}`).join('\n');
       try{
         ledger.transaction(()=>{
-          const sent=this.collaboration.sendConversation(delegation.context,{reference:{serverId:this.collaboration.execution.serverId,threadId:parent},content:body.slice(0,16384),
+          const sent=this.collaboration.sendConversation(delegation.context,{reference:this.reference(parent),content:body.slice(0,16384),
             idempotencyKey:`notice:${key}`,execution:{mode:'queue'}},null,delegation.id,false);
           const inputId=ACTOR_INPUT_PREFIX+sent.requestId,origin=this.origin(delegation,{operationId:`notice:${key}`} as ToolOperation,inputId,batches[0]!.childRootTurnId);
           this.collaboration.recordInputOrigin(parent,inputId,{...origin,kind:'parent_system_notice',replyExpectation:'none',senderConversation:null,senderTurnId:null,childBatchSize:batches.length});

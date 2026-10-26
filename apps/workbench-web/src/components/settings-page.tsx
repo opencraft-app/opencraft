@@ -45,6 +45,7 @@ import { WebUpdatesSettings, WebUpdatesNavigation, hasManagedWebUpdates } from "
 import { MachineConnectionsAvailable, SettingsMachine, SettingsMachineIdentity, SettingsMachines } from "./settings-machines";
 import { replacementMachineSettingsSection, machineSettingsSection } from "../runtime/settings-machine-route";
 import { SqliteDebugSettings } from "./sqlite-debug-settings";
+import { DesktopWelcome } from "./desktop-welcome";
 import {
   ArchivedThreadsSettings,
   type ArchivedThreadsSettingsProps,
@@ -64,6 +65,7 @@ export interface SettingsContentProps {
   readonly themePreference: ThemePreference;
   readonly onThemeChange: (themeId: string) => void;
   readonly onThemePreferenceChange: (preference: ThemePreference) => void;
+  readonly onConnectDesktopServer?: (origin: string, signal: AbortSignal) => Promise<void>;
   readonly onOpenAnnouncementLab: () => void;
   readonly onRemove: (hostId: string) => Promise<boolean>;
   readonly onProvisionHost: (input: ProvisionHostInput) => Promise<HostConnectionProfile>;
@@ -397,6 +399,7 @@ export function SettingsContent({
   onOpenAnnouncementLab,
   onRemove,
   onProvisionHost,
+  onConnectDesktopServer,
   extensionContributions,
   extensionManager,
   extensionRuntime,
@@ -411,7 +414,10 @@ export function SettingsContent({
   const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
   const platform = currentPlatform();
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const extensionPages = useSettingsExtensionPages(extensionContributions, platform);
+  const localProfile = profiles.find(profile => profile.enabled && profile.providerId === 'opencraft.builtin-agents');
+  const localModelsPage = localProfile ? extensionPages.find(page => page.modelConfiguration && page.targetHostId === localProfile.hostId) : undefined;
   const contributionSnapshot = useSyncExternalStore(
     extensionContributions.subscribe,
     extensionContributions.getSnapshot,
@@ -579,6 +585,15 @@ export function SettingsContent({
                 <>
                   <SettingsPageHeader title="Laboratory" description="Preview experimental Workbench platform capabilities." />
 
+                  {internalDeveloperMode && platform === 'electron' ? <SettingsSection title={intl.formatMessage({ id: 'welcome.developer.title', defaultMessage: 'First-use setup' })}>
+                    <SettingsGroup><SettingsRow
+                      label={intl.formatMessage({ id: 'welcome.developer.page', defaultMessage: 'Desktop welcome page' })}
+                      description={intl.formatMessage({ id: 'welcome.developer.description', defaultMessage: 'Preview the initial configuration flow. Normal startup is unchanged.' })}
+                      controlWidth="compact">
+                      <SettingsButton onClick={() => setWelcomeOpen(true)}>{intl.formatMessage({ id: 'welcome.developer.open', defaultMessage: 'Open welcome page' })}</SettingsButton>
+                    </SettingsRow></SettingsGroup>
+                  </SettingsSection> : null}
+
                   <SettingsSection
                     title="Announcement window"
                     description="A renderer-neutral announcement descriptor projected through the platform ModalHost."
@@ -625,6 +640,12 @@ export function SettingsContent({
                 </SettingsSection>
               )}
             </div>
-    </div></MachineConnectionsAvailable.Provider>
+    </div>
+      {welcomeOpen && internalDeveloperMode && platform === 'electron' && section === 'laboratory' ? <DesktopWelcome
+        onDismiss={() => setWelcomeOpen(false)}
+        onConnectServer={onConnectDesktopServer}
+        onConfigureLocal={localModelsPage ? () => { setWelcomeOpen(false); onSectionChange(localModelsPage.id); } : undefined}
+      /> : null}
+    </MachineConnectionsAvailable.Provider>
   );
 }

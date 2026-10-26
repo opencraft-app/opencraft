@@ -1,3 +1,5 @@
+import { DesktopServerConnections } from './desktop-server-connections.js';
+import { CONNECT_DESKTOP_SERVER, isDesktopServerConnectMessage } from '@opencraft/app-host-protocol/desktop-server';
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
@@ -28,6 +30,7 @@ import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
 import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
 import { SqliteClientResources } from "@opencraft/document-storage/client-resources-sqlite";
+import { createDesktopClientResourcePort } from "./client-resource-port.js";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
@@ -95,6 +98,25 @@ let sqliteDebugReader!: SqliteDebugReader;
 let uiPreferences!: DesktopUiPreferenceStore;
 let clientResourceStore: SqliteClientResources | undefined;
 const desktopLocale = createDesktopLocaleRuntime();
+const desktopServers = new DesktopServerConnections(() => mainWindow,
+  value => { if (mainWebContents && !mainWebContents.isDestroyed()) mainWebContents.send('opencraft:server-revoked', value); },
+  () => desktopLocale.getSnapshot().intl.formatMessage({ id: 'desktop.server.signIn', defaultMessage: 'Sign in to your server' }));
+ipcMain.handle('opencraft:server-prepare', (event, id: string, origin: string) => {
+  if (!trustedLoginCaller(event) || typeof id !== 'string' || typeof origin !== 'string') throw new Error('Untrusted server configuration caller');
+  return desktopServers.prepare(id, origin);
+});
+ipcMain.handle('opencraft:server-validate', (event, value: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error('Untrusted server configuration caller');
+  return desktopServers.validate(value);
+});
+ipcMain.handle('opencraft:server-cancel', (event, id: string) => {
+  if (!trustedLoginCaller(event) || typeof id !== 'string') throw new Error('Untrusted server configuration caller');
+  desktopServers.cancel(id);
+});
+ipcMain.on(CONNECT_DESKTOP_SERVER, (event, value: unknown) => {
+  if (!trustedLoginCaller(event) || !isDesktopServerConnectMessage(value) || event.ports.length !== 1) { for (const port of event.ports) port.close(); return; }
+  void desktopServers.connect(value, event.ports[0]!);
+});
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
 const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
 let extensionData: DesktopExtensionDataStore | null = null;
@@ -258,17 +280,26 @@ ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
 function clientResources() {
   return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
 }
+const clientResourcePort = createDesktopClientResourcePort(clientResources);
 ipcMain.handle("opencraft:client-resource-read", (event, key) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().read(key);
+  return clientResourcePort.read(key);
 });
 ipcMain.handle("opencraft:client-resource-commit", (event, key, revision, record) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().compareAndSet(key, revision, record);
+  return clientResourcePort.compareAndSet(key, revision, record);
 });
 ipcMain.handle("opencraft:client-resource-clear-remote", (event, namespace) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().clearRemoteNamespace(namespace);
+  return clientResourcePort.clearRemoteNamespace(namespace);
+});
+ipcMain.handle("opencraft:client-resource-list-local", (event, namespace, name) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResourcePort.listLocalKeys(namespace, name);
+});
+ipcMain.handle("opencraft:client-resource-clear-local", (event, namespace, name) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResourcePort.clearLocalResource(namespace, name);
 });
 ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
@@ -620,6 +651,11 @@ async function createMainWindow(): Promise<void> {
   mainWindow = window;
   lifecycle.bindWindow(window);
   mainWebContents = webContents;
+  webContents.once('destroyed', () => desktopServers.releaseRenderer());
+  webContents.on('render-process-gone', () => desktopServers.releaseRenderer());
+  webContents.on('did-start-navigation', details => {
+    if (details.isMainFrame && !details.isSameDocument) desktopServers.releaseRenderer();
+  });
   const speechOwner = webContents.id;
   webContents.once("destroyed", () => { void nativeSpeech.releaseOwner(speechOwner); });
   webContents.on("render-process-gone", () => { void nativeSpeech.releaseOwner(speechOwner); });
@@ -685,6 +721,7 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    desktopServers.close();
     desktopLocale.dispose();
     await nativeSpeech.close();
     uiPreferences.close();

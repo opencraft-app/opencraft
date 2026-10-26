@@ -22,9 +22,12 @@ test("real desktop bundles exclude private accounts by default and package selec
   const directory = await mkdtemp(join(tmpdir(), "desktop composition ")); t.after(() => rm(directory, { recursive: true, force: true }));
   const plain = await bundleDesktopHost({ environment: {}, outdir: join(directory, "plain") });
   for (const result of [plain.main, plain.preload]) {
-    const sourceRoots = ["apps/workbench-electron/src/", "packages/", "node_modules/"];
+    // The official local-account plugin is core authentication, independent of
+    // optional private product identity composition.
+    const sourceRoots = ["apps/workbench-electron/src/", "packages/", "plugins/local-account/src/", "node_modules/"];
+    const coreScripts = new Set(["scripts/serve-workbench-static.mjs", "scripts/human-login-page.ts", "scripts/web-asset-cache.mjs"]);
     const unexpectedInputs = Object.keys(result.metafile.inputs).filter(file =>
-      file !== "scripts/serve-workbench-static.mjs" && !sourceRoots.some(root => file.startsWith(root)));
+      !coreScripts.has(file) && !sourceRoots.some(root => file.startsWith(root)));
     assert.deepEqual(unexpectedInputs, [], "Standalone desktop bundles only its core owners and dependencies");
   }
   const loadPreload = async name => {
@@ -41,6 +44,7 @@ test("real desktop bundles exclude private accounts by default and package selec
   };
   const publicBridge = await loadPreload("plain");
   assert.equal(publicBridge.kind, "electron"); assert.equal(publicBridge.exampleAccount, undefined);
+  assert.deepEqual(Object.keys(publicBridge.servers).sort(), ["cancel", "onRevoked", "prepare", "validate"]);
   const main = join(directory, "product-main.ts"), preload = join(directory, "product-preload.ts"), identity = join(directory, "product-identity.ts");
   await writeFile(main, 'export const createDesktopProduct = api => { api.handle("example:identity", () => "fixture-identity"); return {receiveUrl:()=>null,cancelInteractions(){},dispose(){}}; };');
   await writeFile(preload, 'export const createDesktopPreload = port => ({exampleAccount:{read:()=>port.invoke("example:identity")}});');

@@ -197,7 +197,7 @@ export function ShellNavigationDock({ config, controller, expandedWidth, frameWi
   const compact = !transient && controller.projection.railDetent === "compact";
   if (config.layout === "unified") return <div className="shell-sidebar-navigation">
     {leadingControl}
-    <NavigationContent config={config} surface="applications" compact includeSettings={false} onInvoke={onInvoke} />
+    <NavigationContent config={config} surface="applications" compact includeSettings={false} tooltipSide="top" onInvoke={onInvoke} />
   </div>;
   const anonymousAccount = isAnonymousShellAccount(config.account);
   const content = surfaces.filter((surface) => {

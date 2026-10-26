@@ -578,7 +578,7 @@ function darkSemanticColors(theme: ThemeVariant): SemanticThemeColors {
     simpleScrim: rgba(theme.ink, 0.08 + theme.contrast * 0.04),
     textAccent: rgbString(accentText),
     textButtonPrimary: theme.theme.surface,
-    textButtonSecondary: mix(theme.ink, theme.surface, 0.7 + theme.contrast * 0.1),
+    textButtonSecondary: theme.theme.ink,
     textButtonTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
     textForeground:
       theme.theme.ink === opencraftNeutralThemePalette.dark.ink && theme.theme.surface === opencraftNeutralThemePalette.dark.surface

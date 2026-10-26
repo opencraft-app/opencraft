@@ -21,3 +21,12 @@ CREATE TABLE execution_leases (
 ) STRICT;
 CREATE INDEX execution_leases_origin ON execution_leases(thread_id,admitted_at_ms,ended_at_ms);
 `;
+
+/** v16 / identity v3. Do not edit the published identity schema above. */
+export const OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK = `
+ALTER TABLE execution_submissions ADD COLUMN admission_token TEXT;
+ALTER TABLE execution_leases ADD COLUMN boot_id TEXT;
+ALTER TABLE execution_leases ADD COLUMN admitted_at_boot_ms REAL;
+ALTER TABLE execution_leases ADD COLUMN ended_at_boot_ms REAL;
+CREATE INDEX execution_leases_boot_origin ON execution_leases(thread_id,boot_id,admitted_at_boot_ms,ended_at_boot_ms);
+`;

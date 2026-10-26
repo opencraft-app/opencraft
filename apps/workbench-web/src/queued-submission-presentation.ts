@@ -34,7 +34,7 @@ export function queuedSubmissionPresentation(
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
   const statusMessage = submission.pausedReason === "outbox-waiting"
-    ? { id: "chat.outbox.waiting", defaultMessage: "Saved in this browser tab · sends automatically after reconnect" }
+    ? { id: "chat.outbox.waiting", defaultMessage: "Saved locally · sends automatically after reconnect" }
     : submission.pausedReason === "outbox-unconfirmed"
       ? { id: "chat.outbox.unconfirmed", defaultMessage: "Delivery unconfirmed · check the conversation before sending again" }
       : submission.pausedReason === "outbox-failed"

@@ -39,10 +39,17 @@ test('read is bounded by adapter, authorized independently, and creates no messa
 test('conversation admission shares the existing idempotency ledger, retains source and reconciles lost receipts after restart',async t=>{
  const f=await fixture(t), body={reference:ref,content:'review',idempotencyKey:'same'};
  const sent=f.service.sendConversation(f.human,body,source);
+ f.actors.setGrant(f.human.actorId,f.session.id,'message.send',true,'operator');
+ assert.throws(()=>f.service.send(f.human,{targetActorId:f.session.id,content:'review',idempotencyKey:'same'}),/idempotency_key_reused/);
  assert.deepEqual(f.service.sendConversation(f.human,body,source),{...sent,replayed:true});
  assert.throws(()=>f.service.sendConversation(f.human,{...body,content:'different'},source),/idempotency_key_reused/);
  f.drop();await f.service.pump();assert.equal(f.service.getRequest(f.human,sent.requestId!).state,'unknown');
- await f.restart();await f.service.pump();assert.equal(f.inputs.length,1);assert.match(f.inputs[0]!,/source opencraft:\/\/conversation/);
+ await f.restart();
+ assert.deepEqual(f.service.sendConversation(f.human,body,source),{...sent,replayed:true});
+ assert.throws(()=>f.service.sendConversation(f.human,body,{...source,threadId:'other-source'}),/idempotency_key_reused/);
+ await f.service.pump();assert.equal(f.inputs.length,1);
+ assert.equal(f.inputs[0],`<opencraft_thread_message from="${encodeConversationRef(source)}" reply_expectation="none">\nreview\n</opencraft_thread_message>`);
+ assert.deepEqual(f.service.inputOrigin(ref.threadId,'actor-input:'+sent.requestId)?.senderConversation,source);
  assert.equal(f.service.getRequest(f.human,sent.requestId!).state,'queued');
  const r=f.receipts.get(sent.requestId!)!;f.receipts.set(sent.requestId!,{...r,state:'delivered',targetTurnId:'turn-1'});
  await f.service.pump();assert.equal(f.service.getRequest(f.human,sent.requestId!).state,'submitted');

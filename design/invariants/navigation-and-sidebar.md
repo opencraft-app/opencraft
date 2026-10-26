@@ -2,6 +2,22 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Desktop sidebar bottom navigation
+
+The unified desktop sidebar has one full-width context column. Global destination
+icons occupy its bottom row, with Settings and Account at the trailing edge in
+normal flow. There is no independent vertical icon rail. The action track scrolls
+horizontally if its destinations exceed the available width; accessory controls
+remain reachable. Application routes keep the same sidebar width rather than
+compressing this row into a vertical rail. Existing saved reading widths remain
+valid; default and minimum widths no longer include an absent rail.
+
+Applications has one desktop entrance in the persistent header, immediately before
+the preview-window toggle. It uses the same navigation action and selected state
+as the existing destination. Mobile retains its labeled scrolling navigation,
+drawer-header Applications entrance and floating actions. Portal, conversation,
+draft, scrolling, account and navigation owners remain unchanged.
+
 ## Persistent sidebar control beside the brand
 
 Unified Shell navigation keeps its sidebar toggle in the persistent header,

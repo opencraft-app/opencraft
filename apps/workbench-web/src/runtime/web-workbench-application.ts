@@ -1,6 +1,7 @@
 import { ThreadSummaryPlugin } from "@opencraft/plugin-thread-summary";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
 import { RemoteBrowserStorage } from '../browser/remote-browser-storage';
+import { discoverRemoteBrowser, discoverRemoteBrowserForStartup, isOfflineShellStartup } from '../browser/remote-browser-capabilities';
 import { supportsH264MediaSource } from '../browser/h264-media-source';
 import { RemoteBrowserSurfaceHost } from '../browser/remote-browser-surface-host';
 import type { ConversationPresentationProvider } from "./conversation-presentation";
@@ -105,7 +106,9 @@ export interface CreateWebWorkbenchApplicationOptions extends Omit<WebWorkbenchS
 
 export async function createWebWorkbenchApplication(
   options: CreateWebWorkbenchApplicationOptions = {},
+  startupSignal?: AbortSignal,
 ): Promise<WebWorkbenchApplication> {
+  startupSignal?.throwIfAborted();
   // OAuth can return into any Workbench route. Consume its one-time fragment
   // before IndexedDB, Cordis and extension activation so authentication does
   // not depend on the latency or success of the rest of application startup.
@@ -116,9 +119,15 @@ export async function createWebWorkbenchApplication(
   });
   const remoteBrowser = !desktop && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true'
     && (typeof VideoDecoder !== 'undefined' || supportsH264MediaSource())
-    && await serverFetch('/__opencraft_browser/capabilities', { signal: AbortSignal.timeout(2000) })
-      .then(response => response.ok ? response.json() : null).then(value => value?.available === true).catch(() => false);
-  const remoteStorage = remoteBrowser && !options.browserMetadataStorage ? await RemoteBrowserStorage.create() : null;
+    && await discoverRemoteBrowserForStartup(startupSignal);
+  const deferredBrowser = remoteBrowser && isOfflineShellStartup();
+  const browserAdmission = new AbortController();
+  const abortBrowserAdmission = () => browserAdmission.abort(startupSignal?.reason);
+  if (deferredBrowser) startupSignal?.addEventListener("abort", abortBrowserAdmission, { once: true });
+  const releaseBrowserAdmission = () => { browserAdmission.abort(); startupSignal?.removeEventListener("abort", abortBrowserAdmission); };
+  const remoteStorage = remoteBrowser && !options.browserMetadataStorage ? await RemoteBrowserStorage.create(startupSignal, deferredBrowser ? async () => {
+    if (!await discoverRemoteBrowser(browserAdmission.signal)) throw new Error('Browser backend changed; reload OpenCraft');
+  } : undefined) : null;
   const browserStorage = options.browserMetadataStorage ?? remoteStorage ?? (desktop ? await createDesktopBrowserStorage() : null);
   // Desktop account restoration is independent of local Host startup. The
   // local Host and its environment configuration must remain usable meanwhile.
@@ -148,7 +157,7 @@ export async function createWebWorkbenchApplication(
     return runtime.resources.host.fetchLoopback(targetUrl, init);
   });
   const browserSurfaces = desktop ? new ElectronBrowserSurfaceHost(browserStorage!)
-    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined) : new WebIframeSurfaceHost();
+    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady) : new WebIframeSurfaceHost();
   const releaseStorageErrors = remoteStorage?.onError(error => { if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error); });
   const browserPages = new WebBrowserPageRuntime(
     browserSurfaces,
@@ -165,6 +174,7 @@ export async function createWebWorkbenchApplication(
   try {
     chatRenderRuntime = await createWebChatRenderRuntime(cordis, options.chatRenderExtensions);
   } catch (error) {
+    releaseBrowserAdmission();
     browserPresentations.dispose();
     browserPages.dispose();
     browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose();
@@ -266,8 +276,17 @@ export async function createWebWorkbenchApplication(
       if (optionalFeatures === null) await installTerminal();
       else optionalFeatures.add("terminal-presentation", installTerminal);
       browserWorkbench.restorePersistedTabs();
+      if (deferredBrowser && remoteStorage) void remoteStorage.whenReady().then(() => {
+        if (browserAdmission.signal.aborted) return;
+        conversationBindings.restore(); browserPages.restore();
+        if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.restoreStorage();
+        browserWorkbench.restoreTabs(); browserWorkbench.restorePersistedTabs();
+      }).catch(error => {
+        if (!browserAdmission.signal.aborted && browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error as Error);
+      });
     }
   } catch (error) {
+    releaseBrowserAdmission();
     await optionalFeatures?.dispose();
     hostDesktop?.dispose();
     hostProxy.dispose();
@@ -295,6 +314,7 @@ export async function createWebWorkbenchApplication(
     supervisor,
     terminalSessions,
     dispose: createApplicationDisposer([
+      releaseBrowserAdmission,
       () => optionalFeatures?.dispose(),
       // Retire consumers before their Host transport provider.
       () => hostProxy.dispose(),

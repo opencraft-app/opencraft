@@ -86,8 +86,8 @@ export const frame = {
   paneToolbarHeight: 40,
   sidebarDefaultWidth: sidebarListDefaultWidth,
   sidebarIconRailWidth,
-  sidebarUnifiedDefaultWidth: sidebarListDefaultWidth + sidebarIconRailWidth,
-  sidebarUnifiedMinWidth: sidebarListMinimumWidth + sidebarIconRailWidth,
+  sidebarUnifiedDefaultWidth: sidebarListDefaultWidth,
+  sidebarUnifiedMinWidth: sidebarListMinimumWidth,
   sidebarMinWidth: sidebarListMinimumWidth,
   sidebarMaxWidth: 520,
   /** Mobile drawer keeps full-size controls in a narrower reading column. */

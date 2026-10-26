@@ -1,5 +1,13 @@
 # 工作区不变量
 
+## Desktop sidebar bottom navigation
+
+Desktop unified navigation uses the bottom row of the full-width sidebar;
+Applications is in the global header immediately before the preview-window
+control. See [navigation ownership](invariants/navigation-and-sidebar.md#desktop-sidebar-bottom-navigation)
+for overflow, mobile boundaries and state continuity.
+
+
 本页是不变量索引。正式约束、实现责任、证据与未验证边界按职责维护在下列专题；修改行为时更新对应专题，避免在本页继续追加正文。相同约束合并为一个正文，既有章节链接保留。
 
 | 专题 | 范围 |
@@ -280,3 +288,7 @@ and live appearance projector share catalog, mode, document background and color
 hints. See [Shell layout](invariants/shell-and-layout.md) and
 [appearance](invariants/appearance-and-controls.md). Native status pixels still
 require device acceptance.
+
+## Settings action and stacked-row layout
+
+SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment.

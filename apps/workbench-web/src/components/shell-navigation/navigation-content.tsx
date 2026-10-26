@@ -66,11 +66,12 @@ export function AccountLeadingVisual({ account }: { account: ShellAccount | null
 }
 
 /** The same content is placed in a rail or a transient surface by the Shell. */
-export function NavigationContent({ config, surface, compact = false, includeSettings = true, onInvoke }: {
+export function NavigationContent({ config, surface, compact = false, includeSettings = true, tooltipSide = "right", onInvoke }: {
   config: ShellNavigationConfig;
   surface: "applications" | "account";
   compact?: boolean;
   includeSettings?: boolean;
+  tooltipSide?: "top" | "right";
   onInvoke: (action: () => void) => void;
 }) {
   const intl = useIntl();
@@ -87,7 +88,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
             <span className="shell-navigation__item-label--full">{title}{badge}</span>
           </> : <>{title}{!compact ? badge : null}</>}
         </span>
-      </button></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side="right" sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
+      </button></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side={tooltipSide} sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
     })}
     {includeSettings ? <button type="button" data-resource-intent="settings" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
   </nav></Tooltip.Provider> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;

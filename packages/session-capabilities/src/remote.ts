@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
@@ -56,5 +57,26 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
         body: JSON.stringify({ inputId }), signal: AbortSignal.timeout(5_000) });
       return response.ok && (await response.json()).allowed === true;
     } catch { return false; }
+  }
+  /** The Host retains the native tool call while a replacement gateway starts.
+   * Rediscover the private endpoint and replay the same immutable call identity. */
+  async orchestration(threadId: string, request: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
+    const deadline = Date.now() + 15_000;
+    let backoff = 50;
+    while (true) {
+      signal.throwIfAborted();
+      try {
+        const { url, headers } = await this.connection(threadId);
+        const response = await fetch(new URL("/orchestration", url), { method: "POST", headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify(request), signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, Math.min(5_000, deadline - Date.now())))]) });
+        const body = await response.json() as { result?: unknown; error?: string };
+        if (response.ok) return body.result;
+        if (response.status < 500) throw Object.assign(new Error(body.error ?? "Orchestration denied"), { terminal: true });
+      } catch (error) {
+        if ((error as { terminal?: boolean }).terminal || signal.aborted) throw error;
+      }
+      if (Date.now() >= deadline) throw new Error("Orchestration gateway reconnect window exhausted; inspect the original operation before retrying");
+      await delay(Math.min(backoff, deadline - Date.now()), undefined, { signal }); backoff = Math.min(1_000, backoff * 2);
+    }
   }
 }

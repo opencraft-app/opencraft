@@ -14,6 +14,7 @@ import { sidebarThreadCatalogQueryKey } from "../../apps/workbench-web/src/runti
 Object.assign(globalThis, { IDBKeyRange });
 const key: ClientResourceKey = { namespace: "product/server/account-a", name: "draft", id: "thread-1", authority: "local" };
 const record = (value: string, savedAt = 1) => ({ value, savedAt, version: 1 });
+const currentFence = { isCurrent: () => true };
 const draft: ClientResourceDefinition<string> = { name: "draft", authority: "local", version: 1,
   parse(value) { if (typeof value !== "string") throw new Error("Invalid draft"); return value; } };
 const remote = { ...draft, name: "catalog", authority: "remote" as const };
@@ -54,17 +55,17 @@ for (const kind of ["sqlite", "indexeddb"] as const) {
       : await openIndexedDbClientResources("owners", new IDBFactory());
     const one = new ClientResources(Promise.resolve(storage), "account-a");
     const two = new ClientResources(Promise.resolve({ ...storage, read: storage.read.bind(storage),
-      compareAndSet: storage.compareAndSet.bind(storage), clearRemoteNamespace: storage.clearRemoteNamespace.bind(storage), close() {} }), "account-a");
+      compareAndSet: storage.compareAndSet.bind(storage), clearRemoteNamespace: storage.clearRemoteNamespace.bind(storage), listLocalKeys: storage.listLocalKeys.bind(storage), clearLocalResource: storage.clearLocalResource.bind(storage), close() {} }), "account-a");
     try {
       const first = one.local(draft, "draft-1"), stale = two.local(draft, "draft-1");
       await Promise.all([first.ready, stale.ready]);
-      await first.commit("saved input", 0);
+      await first.commit("saved input", 0, currentFence);
       assert.equal(first.getSnapshot().revision, 1);
-      await assert.rejects(stale.commit("retain my edit", 0), /conflict/);
+      await assert.rejects(stale.commit("retain my edit", 0, currentFence), /conflict/);
       assert.equal(stale.getSnapshot().value, null);
       await stale.reload();
       assert.equal(stale.getSnapshot().value, "saved input");
-      await stale.commit("merged input", 1);
+      await stale.commit("merged input", 1, currentFence);
       await first.reload();
       assert.equal(first.getSnapshot().value, "merged input");
       assert.throws(() => one.remote(draft, "draft-1"), /authority mismatch/);
@@ -78,7 +79,7 @@ test("remote projection survives a new offline application and a failed refresh;
   const cached = first.remote(threadCatalogResource, "host:revision-1");
   await cached.ready;
   await cached.observe(cacheThreadCatalog([{ id: "saved", title: "Saved title", project: "project", lineage: "root", updatedAt: 42,
-    status: "running", time: "Now", pinned: true }], true));
+    status: "running", time: "Now", pinned: true }], true), currentFence);
   await first.close();
   const offline = new ClientResources(openIndexedDbClientResources("catalog", factory), "server/account-a");
   try {
@@ -93,21 +94,21 @@ test("remote projection survives a new offline application and a failed refresh;
     assert.deepEqual(threadCatalogDisplayRows(partial, restored.getSnapshot().value, false).map(row => [row.thread.id, row.confirmed]), [["new", true], ["saved", false]]);
     assert.equal(threadCatalogDisplayRows(undefined, restored.getSnapshot().value, false)[0]?.confirmed, false);
     assert.deepEqual(mergeCachedCatalogRows([], restored.getSnapshot().value, true), []);
-    await restored.observe(cacheThreadCatalog([], true));
+    await restored.observe(cacheThreadCatalog([], true), currentFence);
     assert.deepEqual(restored.getSnapshot().value?.rows, []);
   } finally { await offline.close(); }
 });
 
 test("quota failure rejects local commit, but a remote observation remains usable with a visible persistence error", async () => {
   const quota = new Error("QuotaExceededError");
-  const storage: ClientResourcePersistence = { read: async () => null, compareAndSet: async () => { throw quota; }, clearRemoteNamespace: async () => {}, close() {} };
+  const storage: ClientResourcePersistence = { read: async () => null, compareAndSet: async () => { throw quota; }, clearRemoteNamespace: async () => {}, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {} };
   const resources = new ClientResources(Promise.resolve(storage), "account");
   const local = resources.local(draft, "draft"), copy = resources.remote(remote, "list");
   await Promise.all([local.ready, copy.ready]);
-  await assert.rejects(local.commit("keep this input", 0), error => error === quota);
+  await assert.rejects(local.commit("keep this input", 0, currentFence), error => error === quota);
   assert.equal(local.getSnapshot().value, null);
   assert.equal(local.getSnapshot().error, quota);
-  await copy.observe("fresh server data");
+  await copy.observe("fresh server data", currentFence);
   assert.equal(copy.getSnapshot().value, "fresh server data");
   assert.equal(copy.getSnapshot().error, quota);
   await resources.close();
@@ -121,19 +122,36 @@ test("scope revocation clears memory immediately and orders cleanup after an in-
   const storage: ClientResourcePersistence = {
     read: async () => null,
     compareAndSet: async key => { events.push(`write:${key.namespace}`); entered(); await gate; events.push("committed"); return true; },
-    clearRemoteNamespace: async namespace => { events.push(`clear:${namespace}`); }, close() {},
+    clearRemoteNamespace: async namespace => { events.push(`clear:${namespace}`); }, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {},
   };
   const resources = new ClientResources(Promise.resolve(storage), "a");
   const old = resources.remote(remote, "catalog"); await old.ready;
-  const pending = old.observe("old-account-title"); await started;
+  const pending = old.observe("old-account-title", currentFence); await started;
   resources.setNamespace("b");
   assert.equal(old.getSnapshot().value, null);
-  await assert.rejects(old.observe("late old title"), /revoked/);
+  await assert.rejects(old.observe("late old title", currentFence), /revoked/);
   const current = resources.remote(remote, "catalog");
   release(); await pending; await current.ready;
   assert.equal(current.getSnapshot().value, null);
   assert.deepEqual(events, ["write:a", "committed", "clear:a"]);
   assert.notDeepEqual(sidebarThreadCatalogQueryKey("h", { revision: 1, authorizationEpoch: null, clientEpoch: 0 }),
     sidebarThreadCatalogQueryKey("h", { revision: 1, authorizationEpoch: null, clientEpoch: 1 }));
+  await resources.close();
+});
+
+test("fence rejection happens before a remote projection is published or a local write is accepted", async () => {
+  const storage: ClientResourcePersistence = {
+    read: async () => null, compareAndSet: async () => true,
+    clearRemoteNamespace: async () => {}, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {},
+  };
+  const resources = new ClientResources(Promise.resolve(storage), "account");
+  const remoteResource = resources.remote(remote, "catalog");
+  const localResource = resources.local(draft, "draft");
+  await Promise.all([remoteResource.ready, localResource.ready]);
+  const revoked = { isCurrent: () => false };
+  await assert.rejects(remoteResource.observe("late", revoked), /scope changed/);
+  assert.equal(remoteResource.getSnapshot().value, null);
+  await assert.rejects(localResource.commit("late", 0, revoked), /scope changed/);
+  assert.equal(localResource.getSnapshot().value, null);
   await resources.close();
 });
