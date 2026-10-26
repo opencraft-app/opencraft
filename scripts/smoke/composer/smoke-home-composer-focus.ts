@@ -39,6 +39,15 @@ try {
     assert.equal(await menu.count(), 1, "a completed native click opens folders once regardless of duration");
     if (durationOnly) await page.screenshot({path:`${output}/${label}-duration-open.png`});
     await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+    for (const drift of [11, 13]) {
+      const bounds = (await folder.boundingBox())!;
+      const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...point, x: point.x + drift }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await menu.waitFor(); assert.equal(await menu.count(), 1, "browser-accepted finger drift opens folder once");
+      await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+    }
     await cdp.detach();
   }
   if (durationOnly) {

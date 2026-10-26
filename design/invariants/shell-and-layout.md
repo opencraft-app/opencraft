@@ -196,10 +196,12 @@ ordinary prop and width changes preserve drafts and mount identity. Exit presenc
 immediately becomes inert, aria-hidden and pointer-disabled. Desktop entrance
 translates the surface by -8px while its header counter-translates, then settles;
 exit translation keeps opacity. Reduced motion skips settling. Mobile depth
-consumes the same Shell progress, clamps 90–100% scale and 45–100% opacity, and
-adds no separate exit animation. Its stationary wash remains a sibling outside
-the scaled layer, consumes the same progress from 65% to zero opacity, and stays
-transparent in reduced motion; Shell CSS retains material and hit-test ownership.
+consumes the same Shell progress and clamps 90–100% scale, with no opacity
+animation on the ancestor of glass controls and no separate exit animation.
+Its stationary wash remains a sibling outside the scaled layer, consumes the
+same progress from 65% to zero opacity, and stays transparent in reduced motion;
+Shell CSS retains material and hit-test ownership. This separation keeps
+`backdrop-filter` descendants in a stable opacity/compositing context.
 Existing resize transactions own bounds,
 keyboard/default width, commits and cancellation; the floating resize port cannot
 collapse the sidebar.
@@ -323,18 +325,18 @@ Personal intent uses validated UiPreferencesRuntime storage keyed by account sco
 Customization drag keeps the source slot in layout and paints a noninteractive, unscaled DragOverlay in the presentation root outside modal transforms/clipping. The active source never uses another list's sortable transform. Pointer hit testing first selects a zone, then its rows; nonempty parent zones do not compete with their children. Keyboard targets rows or empty zones. Draft membership changes only on drop, cancellation leaves it unchanged, and release has no source-return animation.
 
 - Sidebar More menus open on a completed touch tap, after the browser has retained
-  the gesture as a click. Touch down alone never opens them; movement beyond
-  10 CSS pixels, ancestor scrolling, cancellation, another pointer, release
+  the gesture as a click. Touch down alone never opens them; native dragging,
+  ancestor scrolling, cancellation, another pointer, release
   outside the hit area or a native context-menu gesture invalidates that tap. These guards
   never prevent native scrolling. Row long-press/right-click and Radix keyboard,
   focus, dismissal and the single Sidebar menu owner remain unchanged.
 
 
 Web dropdown consumers use design-system-web/dropdown-menu. Direct touch/pen
-opens only after a valid completed tap; movement, ancestor scrolling, cancel,
+opens only after a valid completed tap; native dragging, ancestor scrolling, cancel,
 multiple pointers, release outside or a native context-menu gesture invalidates it.
-A stationary press that the browser completes as a click remains usable regardless
-of its duration; a fixed elapsed-time cutoff must not silently discard that click. Native pan remains
+A press that the browser completes as a click remains usable despite tolerated
+finger drift or duration; fixed pixel/time cutoffs must not silently discard it. Native pan remains
 available. Radix owns mouse, keyboard, nested menus, focus and dismissal. Composer
 model, permission and Add controls preserve the editor focus and selection on
 touch; opening one retires the other picker without a delayed activation.
