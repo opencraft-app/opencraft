@@ -20,6 +20,19 @@ export interface MemoryTransportOptions {
   schedule?: (callback: () => void) => void;
 }
 
+interface MemoryConnection {
+  readonly peer: InMemoryAppServerPeer;
+  phase: "connecting" | "open" | "retired";
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+  readonly reject: (cause: unknown) => void;
+  detach(): void;
+  started: boolean;
+  admissionDone: boolean;
+  cleanup?: Promise<void>;
+  closing?: Promise<void>;
+}
+
 export class MemoryTransport implements DuplexTransport {
   private readonly server: InMemoryAppServer;
   private readonly schedule: (callback: () => void) => void;
@@ -27,18 +40,7 @@ export class MemoryTransport implements DuplexTransport {
   private readonly statusListeners = new TransportStatusObservers();
   private currentStatus: TransportStatus = { state: "idle" };
 
-  private readonly peer: InMemoryAppServerPeer = {
-    send: (frame) => {
-      if (this.currentStatus.state !== "open") return;
-      this.schedule(() => {
-        if (this.currentStatus.state !== "open") return;
-        for (const listener of this.messageListeners) listener(frame);
-      });
-    },
-    close: (reason) => {
-      this.setStatus(reason === undefined ? { state: "closed" } : { state: "closed", reason });
-    },
-  };
+  private connection: MemoryConnection | null = null;
 
   constructor(options: MemoryTransportOptions | InMemoryAppServer) {
     this.server = "server" in options ? options.server : options;
@@ -51,23 +53,71 @@ export class MemoryTransport implements DuplexTransport {
     return this.currentStatus;
   }
 
-  async connect(signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) throw new Error("Memory transport connection was aborted");
-    if (this.currentStatus.state === "open") return;
+  connect(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new Error("Memory transport connection was aborted"));
+    if (this.connection?.phase === "open") return Promise.resolve();
+    if (this.connection?.phase === "connecting") return this.connection.promise;
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    const promise = new Promise<void>((a, b) => { resolve = a; reject = b; });
+    const owner: MemoryConnection = {
+      phase: "connecting", promise, resolve, reject, started: false, admissionDone: false,
+      detach: () => signal?.removeEventListener("abort", abort),
+      peer: {
+        send: frame => {
+          if (!this.isOpen(owner)) return;
+          this.schedule(() => {
+            for (const listener of this.messageListeners) {
+              if (!this.isOpen(owner)) return;
+              listener(frame);
+            }
+          });
+        },
+        close: reason => {
+          if (!this.isCurrent(owner)) return;
+          this.revoke(owner, new Error(reason ?? "Memory peer closed"));
+          this.setStatus(reason === undefined ? { state: "closed" } : { state: "closed", reason });
+          this.cleanupRetired(owner);
+        },
+      },
+    };
+    const abort = () => {
+      if (!this.isCurrent(owner) || owner.phase !== "connecting") return;
+      this.revoke(owner, new Error("Memory transport connection was aborted"));
+      this.setStatus({ state: "closed" });
+      this.cleanupRetired(owner);
+    };
+    this.connection = owner;
+    signal?.addEventListener("abort", abort, { once: true });
     this.setStatus({ state: "connecting" });
-    try {
-      await this.server.connected?.(this.peer);
-      if (signal?.aborted) throw new Error("Memory transport connection was aborted");
+    if (!this.isCurrent(owner)) return promise;
+    if (signal?.aborted) { abort(); return promise; }
+    owner.started = true;
+    const admitted = () => {
+      owner.admissionDone = true;
+      if (!this.isCurrent(owner)) { this.cleanupRetired(owner); return; }
+      owner.phase = "open";
+      owner.detach();
+      resolve();
       this.setStatus({ state: "open" });
-    } catch (error) {
-      this.setStatus({ state: "failed", reason: error instanceof Error ? error.message : String(error) });
-      throw error;
-    }
+    };
+    const failed = (cause: unknown) => {
+      owner.admissionDone = true;
+      if (this.isCurrent(owner)) {
+        this.revoke(owner, cause);
+        this.setStatus({ state: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+      }
+      this.cleanupRetired(owner);
+    };
+    try {
+      void Promise.resolve(this.server.connected?.(owner.peer)).then(admitted, failed);
+    } catch (cause) { failed(cause); }
+    return promise;
   }
 
   async send(frame: string): Promise<void> {
-    if (this.currentStatus.state !== "open") throw new Error("Memory transport is not open");
-    await this.server.receive(frame, this.peer);
+    const owner = this.connection;
+    if (owner === null || !this.isOpen(owner)) throw new Error("Memory transport is not open");
+    await this.server.receive(frame, owner.peer);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
@@ -79,11 +129,45 @@ export class MemoryTransport implements DuplexTransport {
     return this.statusListeners.subscribe(listener, this.currentStatus);
   }
 
-  async close(): Promise<void> {
-    if (this.currentStatus.state === "closed") return;
+  close(): Promise<void> {
+    const owner = this.connection;
+    if (owner?.closing !== undefined) return owner.closing;
+    if (owner === null || owner.phase === "retired") {
+      if (this.currentStatus.state !== "closed") this.setStatus({ state: "closed" });
+      return Promise.resolve();
+    }
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    owner.closing = new Promise<void>((a, b) => { resolve = a; reject = b; });
+    this.revoke(owner, new Error("Memory transport closed before opening"));
     this.setStatus({ state: "closing" });
-    await this.server.disconnected?.(this.peer);
-    this.setStatus({ state: "closed" });
+    const complete = () => {
+      if (this.connection === owner) this.setStatus({ state: "closed" });
+      resolve();
+    };
+    const cleanup = this.cleanup(owner);
+    // Pending admission is not a local close barrier. Its eventual completion
+    // starts cleanup for its own peer; it cannot publish through a successor.
+    if (cleanup === null) complete();
+    else void cleanup.then(complete, cause => {
+      if (this.connection === owner) this.setStatus({ state: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+      reject(cause);
+    });
+    return owner.closing;
+  }
+
+  private isCurrent(owner: MemoryConnection): boolean { return this.connection === owner && owner.phase !== "retired"; }
+  private isOpen(owner: MemoryConnection): boolean { return this.connection === owner && owner.phase === "open"; }
+  private revoke(owner: MemoryConnection, cause: unknown): void {
+    owner.phase = "retired";
+    owner.detach();
+    owner.reject(cause);
+  }
+  private cleanup(owner: MemoryConnection): Promise<void> | null {
+    if (!owner.started || !owner.admissionDone) return null;
+    return owner.cleanup ??= Promise.resolve().then(() => this.server.disconnected?.(owner.peer));
+  }
+  private cleanupRetired(owner: MemoryConnection): void {
+    if (owner.phase === "retired") void this.cleanup(owner)?.catch(() => {});
   }
 
   private setStatus(status: TransportStatus): void {
