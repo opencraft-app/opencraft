@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const before = process.argv.includes("--record-before");
+const durationOnly = process.argv.includes("--touch-duration-only");
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/composer-add-menu";
 await mkdir(output, { recursive: true });
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] }, server: { host: "127.0.0.1", port: 0 }, plugins: [{ name: "add-menu-layout", configureServer(server) { server.middlewares.use((req, res, next) => {
@@ -13,7 +14,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
 await vite.listen();
 const browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
 const evidence: unknown[] = [];
-const cases = before ? [{ width: 390, touch: true, newera: true, mode: "light", palette: "neutral", reduce: false }] : [
+const cases = durationOnly ? ["light", "dark"].map(mode => ({ width: 320, touch: true, newera: true, mode, palette: "neutral", reduce: false })) : before ? [{ width: 390, touch: true, newera: true, mode: "light", palette: "neutral", reduce: false }] : [
   ...[320, 390, 430].flatMap(width => ["light", "dark"].map(mode => ({ width, touch: true, newera: true, mode, palette: "neutral", reduce: false }))),
   ...["light", "dark"].flatMap(mode => [
     { width: 1280, touch: false, newera: true, mode, palette: "neutral", reduce: false },
@@ -36,6 +37,33 @@ try {
     const add = page.locator(".opencraft-composer-footer__attachment > button").first();
     const menu = page.locator(".opencraft-composer-add-menu"), outside = page.getByLabel("Outside input");
     const activate = async (target: any) => test.touch ? target.tap() : target.click();
+    if (!before && test.width === 320) {
+      const cdp = await context.newCDPSession(page);
+      const box = (await add.boundingBox())!;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+      await page.waitForTimeout(650);
+      assert.equal(await menu.count(), 0, "held contact alone cannot open Add");
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await menu.waitFor();
+      assert.equal(await menu.count(), 1, "a native click after a deliberate press opens Add once");
+      if (durationOnly) await page.screenshot({ path: `${output}/${label}-duration-open.png` });
+      await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+      for (const drift of [11, 13]) {
+        const bounds = (await add.boundingBox())!;
+        const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...point, x: point.x + drift }] });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await menu.waitFor(); assert.equal(await menu.count(), 1, "browser-accepted finger drift opens add once");
+        await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+      }
+      await cdp.detach();
+    }
+    if (durationOnly) {
+      await page.screenshot({ path: `${output}/${label}-duration.png` });
+      assert.deepEqual(errors, []); evidence.push({ label, durationTouchPassed: true });
+      console.log("PASS completed native Add press", label); await context.close(); continue;
+    }
     const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await outside.focus(); await settle();
     await editor.evaluate(el => (window as any).keptEditor = el);
