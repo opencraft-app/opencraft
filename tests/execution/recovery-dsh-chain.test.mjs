@@ -124,7 +124,9 @@ test('native-head Resume retains events arriving after its cut on a replacement 
   for(const entry of events.slice(from))adapter.onMuxFrame({type:'session/event',sessionId:'s',event:entry.event});
   await until(()=>delivered>beforeDelivery);release();await pending;
   await until(()=>lease.getSnapshot().authoritative&&JSON.stringify(lease.getSnapshot().timeline).includes('late answer'));
-  assert.equal(reads,before+1,'replacement connection reloads one bounded tail and preserves concurrent observations');
+  assert.equal(reads,before+2,'replacement tail plus one quiet reread orders unsequenced lifecycle observations');
+  assert.equal(lease.getSnapshot().activeTurn,null,'the older buffered start cannot revive a completed Turn');
+  assert.equal(JSON.stringify(lease.getSnapshot().timeline).match(/late answer/g)?.length,1,'the canonical answer is retained once');
  }finally{unblock?.();lease?.release();await runtime.dispose();await lifecycle.close();adapter.close();}
 });
 
