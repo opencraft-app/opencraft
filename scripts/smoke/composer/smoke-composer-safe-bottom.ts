@@ -4,6 +4,8 @@ import { createServer } from 'vite';
 import sharp from 'sharp';
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'playwright');
 const output = process.env.OPENCRAFT_SAFE_BOTTOM_OUTPUT ?? '/tmp/opencraft-composer-safe-bottom';
+const topProbe = process.argv.includes('--top-clearance');
+const projectIos27 = topProbe && process.env.OPENCRAFT_IOS27_CSS_PROBE === '1';
 const source = `import React from 'react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
@@ -21,10 +23,11 @@ import '/apps/workbench-web/src/styles/app.scss';
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
 const noop=()=>{};const client=new QueryClient();
 function App(){useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});return <QueryClientProvider client={client}><AppShell layoutScope='safe-bottom' sidebarTransientEnabled={false} mainContentLayout='thread-edge-scroll' sidebarOpen={false} sidebarWidth={320} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={noop} onSidebarExpand={noop} onSidebarResizeEnd={noop} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={noop} leftPanel={null}
-header={<AppShellHeader conversationHeader title='Safe bottom' project={null} sidebarOpen={false} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={noop} onToggleRightPanel={noop} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={[]}/>}
+header={<AppShellHeader conversationHeader title='Safe bottom' project={null} sidebarOpen={false} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={noop} onToggleRightPanel={noop} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={${topProbe ? "['sidebar-toggle']" : '[]'}}/>}
 ><div className='thread-scroll-layout'><div className='thread-scroll' data-thread-find-target='conversation'><div className='thread-scroll-footer'><div className='thread-scroll-footer__content thread-layout-width'><OpenCraftComposer controller={controller} placeholder='Reconnecting…' onSubmit={()=>false} onCancel={()=>{}}/></div></div><div style={{height:1600,flexShrink:0,background:'repeating-linear-gradient(#d0edfa 0 24px,#305b75 24px 48px)'}}>Conversation</div></div></div></AppShell></QueryClientProvider>};createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const server = await createServer({ root: process.cwd(), configFile: false, logLevel: 'error', resolve: { dedupe: ['react', 'react-dom'] }, esbuild: { jsx: 'automatic' }, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'safe-bottom-fixture', enforce: 'pre', transform(code, id) { if (id.endsWith('.scss'))
-                return code.replace(/env\(safe-area-inset-bottom(?:,[^)]*)?\)/g, 'var(--test-safe-bottom, 0px)'); }, resolveId: id => id === '/safe-bottom.tsx' ? id : null, load: id => id === '/safe-bottom.tsx' ? source : null, configureServer(v) { v.middlewares.use((req, res, next) => { if (req.url !== '/')
+                return code.replace(/env\(safe-area-inset-bottom(?:,[^)]*)?\)/g, 'var(--test-safe-bottom, 0px)')
+                    .replace('@supports (-webkit-touch-callout: none) and selector(:heading)', projectIos27 ? '@supports (display: grid)' : '@supports (-webkit-touch-callout: none) and selector(:heading)'); }, resolveId: id => id === '/safe-bottom.tsx' ? id : null, load: id => id === '/safe-bottom.tsx' ? source : null, configureServer(v) { v.middlewares.use((req, res, next) => { if (req.url !== '/')
                 return next(); res.setHeader('content-type', 'text/html'); res.end('<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="root"></div><script type="module" src="/safe-bottom.tsx"></script>'); }); } }] });
 
 let browser: any;
@@ -33,6 +36,58 @@ try {
     await mkdir(output, { recursive: true });
     await server.listen();
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    if (topProbe) {
+        // Only the CSS engine capability boundary is projected. AppShell,
+        // SafeLayout, floating conversation chrome and Composer are real.
+        for (const theme of ['light', 'dark']) for (const inset of [0, 62]) {
+            const page = await browser.newPage({ viewport: { width: 402, height: 874 }, isMobile: true, hasTouch: true });
+            const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+            await page.addInitScript(() => { (window as any).__name = (value: unknown) => value; Object.defineProperty(navigator, 'standalone', { value: true }); });
+            await page.goto(server.resolvedUrls!.local[0]);
+            const editor = page.locator('.opencraft-composer-editor'); await editor.waitFor();
+            await page.evaluate(({ theme, inset }) => {
+                (window as any).fixtureSetTheme(theme);
+                Object.assign(document.documentElement.dataset, { uiDensity: 'touch', touchNewera: 'on' });
+                document.documentElement.style.setProperty('--safe-layout-inset-top', inset + 'px');
+                document.documentElement.style.setProperty('--test-safe-bottom', '34px');
+            }, { theme, inset });
+            await editor.fill('Keep this PWA draft');
+            const original = await editor.elementHandle();
+            const geometry = () => page.evaluate(() => {
+                const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON();
+                return { row: rect('.app-shell-row'), surface: rect('.main-content-surface'), header: rect('.app-shell-header'),
+                    composer: rect('.opencraft-composer-shell'), padding: getComputedStyle(document.querySelector('.app-shell-row')!).paddingTop,
+                    clearance: getComputedStyle(document.documentElement).getPropertyValue('--shell-pwa-top-clearance').trim() };
+            });
+            for (const [host, display] of [['browser', 'standalone'], ['browser', 'tab'], ['electron', 'standalone'], ['native-container', 'standalone'], ['embedded', 'standalone']] as const) {
+                await page.evaluate(({ host, display }) => Object.assign(document.documentElement.dataset, { windowHost: host, windowDisplayMode: display }), { host, display });
+                const result = await geometry();
+                const gap = projectIos27 && host === 'browser' && display === 'standalone' ? 24 : 0;
+                assert.equal(result.padding, `${inset + gap}px`, JSON.stringify({ host, display, result }));
+                assert.equal(result.header.top, inset + gap, 'buttons consume the top clearance exactly once');
+                assert.equal(result.row.top, 0, 'full-bleed background stays at the physical top');
+                assert.equal(result.surface.top, 0, 'reading paint still scrolls under the status area');
+                assert.equal(result.composer.bottom, 874 - 34 - 16, 'bottom controls retain their original anchor');
+                const buttons = page.locator('.app-shell-header button:visible');
+                assert.ok(await buttons.count() > 0, 'check actual header controls');
+                for (const button of await buttons.all()) {
+                    assert.ok(await button.evaluate(e => { const r = e.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!hit && e.contains(hit); }), 'header control center remains hit-testable');
+                }
+                results.push({ theme, inset, host, display, projectIos27, result });
+                if (host === 'browser' && display === 'standalone') await page.screenshot({ path: `${output}/top-${theme}-${inset}.png` });
+            }
+            await page.setViewportSize({ width: 874, height: 402 });
+            await page.evaluate(() => Object.assign(document.documentElement.dataset, { windowHost: 'browser', windowDisplayMode: 'standalone' }));
+            assert.equal((await geometry()).padding, `${inset}px`, 'landscape adds no compatibility clearance');
+            await page.setViewportSize({ width: 402, height: 874 });
+            assert.equal((await geometry()).padding, `${inset + (projectIos27 ? 24 : 0)}px`, 'portrait restoration recalculates CSS only');
+            assert.ok(await original!.evaluate(e => e.isConnected && document.activeElement === e), 'draft and focus stay mounted through mode/rotation changes');
+            assert.equal(await editor.innerText(), 'Keep this PWA draft');
+            assert.deepEqual(errors, []); await page.close();
+        }
+        await writeFile(`${output}/result.json`, JSON.stringify({ results, boundary: 'Real components in Chromium; optional iOS27 CSS capability projection, no native system blur pixels' }, null, 2));
+        console.log(`PASS top clearance: ${results.length} host/theme/inset cases plus rotation; iOS27 capability projected=${projectIos27}`);
+    } else {
     for (const width of [390, 402]) for (const theme of ['light', 'dark'])
     for (const inset of [34, 0]) for (const visibleHeight of [812, 874])
     for (const status of ['black-translucent', 'default']) {
@@ -110,4 +165,5 @@ try {
         await page.close();
     }
     console.log('PASS: CSS-owned installed canvas, status-excluded reports, overlay/default, 390/402, light/dark, 0/34px, keyboard/blur/restore and draft');
+    }
 } finally { await browser?.close(); await server.close(); }

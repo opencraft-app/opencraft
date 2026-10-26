@@ -110,6 +110,18 @@ remain independent; full-screen modal surfaces allocate their own edges. Documen
 physical host drawing acceptance are separate: this primitive cannot promise
 that an opaque system status strip becomes part of the document viewport.
 
+In portrait Apple standalone browsers with Safari 27-era `:heading` support,
+Shell adds 24 CSS pixels of content clearance below the device top inset. The
+existing window-presentation projection identifies standalone mode, including
+Apple's navigator flag; touch-callout and heading support bound the CSS adapter.
+These capabilities are a compatibility proxy, not an exact iOS version. The
+row, floating drawer, header and transcript's initial content consume the same
+top allocation. Canvas extent, full-bleed background, scroll-under, status-bar
+metadata and keyboard/bottom allocation are unchanged. Tabs, landscape, native
+hosts and engines without these capabilities retain their existing spacing.
+This avoids the native progressive-blur band; it does not disable the system
+effect, and physical iOS 27 acceptance remains separate from browser simulation.
+
 Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
 adding the Home-indicator inset. The overlay also respects landscape cutouts.
