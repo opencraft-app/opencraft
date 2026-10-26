@@ -430,3 +430,51 @@ settlement before unrelated held work is released. Other controls are
 rule without a cleanup failure and replay normally after removing the flag.
 Artifacts retain explicit traces, source/runtime identity and effective coverage.
 This does not establish physical-phone behavior or all engines' target semantics.
+
+
+## Shared native lane and Session projection subscriptions
+
+`ProjectionNotifications.tla` adds eight configurations (94 total, including ResourceAvailability below). The positive
+model has 29 distinct states. One native observation, two consumers, one optional
+history buffer and two physical generations expose global gating, peer gating,
+global replay, stale subscription/generation and lost projection. Read replies
+have no fairness; current receipt has weak fairness. The seventh control removes
+that fairness. This independent finite model is not TypeScript refinement or a
+proof of arbitrary payload/observer/load behavior.
+
+```sh
+npm run test:recovery-chaos -- --suite projection --seed 0 --cases 1000 --steps 120 --output /tmp/projection-chaos
+npm run test:recovery-chaos -- --suite projection --mutant global-buffer --seed 0 --output /tmp/projection-control
+npm run test:recovery-chaos -- --replay /tmp/projection-control/failure-minimal.json --output /tmp/projection-replay
+```
+
+Projection generator version 1 drives real Workbench/Client and two independent
+Session projectors on the same Client. Native input tokens/order, resource
+availability, local restore settlement, per-Session projection and isolated
+projector failure counts are checked before Read replies become fair. Only
+Sessions completing their own Read are checked against that canonical snapshot.
+The final suffix releases held history; cancellation may discard that consumer's
+optional projection while native/peer delivery remains conserved. Source/runtime
+identity, explicit traces and effective coverage accompany artifacts. Controls
+`global-buffer`, `peer-buffer`, `native-replay`, `drop-projection` and
+`missing-restore-wake` must fail at
+their declared rule without cleanup failure and replay normally after removal.
+
+The actual composition regressions additionally cover resource restoration, late
+Read success, peer Thread isolation, raw/Cordis scoped continuation retirement
+and generation, and Hook observations across a canonical reread. A full built-Web
+smoke observes the archived state and explicit restoration before an old Read
+reply, using an isolated synthetic native endpoint. No account or paid model is
+needed; these checks do not establish physical-phone behavior.
+
+
+`ResourceAvailability.tla` adds six configurations for one restore transaction
+and fixed demanded/cached View cases. It checks that a captured ACK cannot
+override a later native deletion, a demanded restored resource progresses without
+the old Read, duplicate availability does not create a new epoch, and a cache
+cannot manufacture Read demand. Four mutants violate native authority, wake
+progress, idempotence or demand; a fifth removes action fairness. It does not
+model later resource reincarnations, all demand interleavings or a TS refinement.
+The projection chaos oracle also counts effective native-restoration Reads and
+duplicate availability events; explicit requested reads and actual wire Read
+requests are reported separately.

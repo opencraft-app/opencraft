@@ -1366,10 +1366,24 @@ export function createAppServerWorkbenchRuntime(
     publish();
   };
   const markThreadAvailable = (threadId: string) => {
-    unavailableThreads.delete(threadId);
-    availabilityRevisions.set(threadId, (availabilityRevisions.get(threadId) ?? 0) + 1);
+    // Native restoration and its ACK describe one transition. A duplicate must
+    // not retire the current recovery or manufacture another availability epoch.
+    if (!unavailableThreads.delete(threadId)) return;
+    const revision = (availabilityRevisions.get(threadId) ?? 0) + 1;
+    availabilityRevisions.set(threadId, revision);
     session?.resume.clearResumeRejection(threadId);
     session?.resume.markNeedsResume(threadId);
+    const binding = bindings.get(threadId);
+    const current = () => !disposed && phase === "ready" && binding !== undefined && !binding.disposed
+      && bindings.get(threadId) === binding && availabilityRevisions.get(threadId) === revision
+      && !unavailableThreads.has(threadId);
+    if (binding && current()) {
+      void recovery.recover({ key: binding, demand: () => current() ? recoveryDemand(binding) : "cache",
+        run: signal => current() ? hydrateBinding(binding, false, true, undefined, signal) : Promise.resolve(),
+        retryable: cause => current() && retryableHistoryFailure(cause),
+      }, true).catch(() => undefined);
+    }
+    publish();
   };
 
   const captureHistoryCheckpoint = (binding: ConversationBinding) => {
@@ -1948,8 +1962,12 @@ export function createAppServerWorkbenchRuntime(
         async delete(threadId) { await requireClient().request("thread/delete", { threadId }); markThreadUnavailable(threadId, "not-found"); },
         async archive(threadId) { await requireClient().request("thread/archive", { threadId }); markThreadUnavailable(threadId, "archived"); },
         async unarchive(threadId) {
-          const thread = (await requireClient().request("thread/unarchive", { threadId })).thread as ProtocolThread;
-          markThreadAvailable(threadId);
+          const currentClient = requireClient(), generation = currentClient.connectionGeneration;
+          const revision = availabilityRevisions.get(threadId) ?? 0;
+          const thread = (await currentClient.request("thread/unarchive", { threadId })).thread as ProtocolThread;
+          // A later native resource fact wins over an earlier mutation's ACK.
+          if (client === currentClient && generation === currentClient.connectionGeneration
+            && revision === (availabilityRevisions.get(threadId) ?? 0)) markThreadAvailable(threadId);
           return thread;
         },
         supportsSideChat(threadId) {

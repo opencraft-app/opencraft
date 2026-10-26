@@ -1,5 +1,6 @@
 import { Context, Service } from "@deepseek-ai/cordis";
 import type { AppServerClient } from "@opencraft/appserver-client";
+import type { AppServerNotification } from "@opencraft/appserver-protocol";
 
 
 declare module "@deepseek-ai/cordis" {
@@ -18,6 +19,7 @@ function isSnapshotHistoryNotification(method: string): boolean {
     "item/reasoning/summaryPartAdded", "turn/started", "turn/completed", "thread/status/changed", "thread/started"].includes(method);
 }
 
+/** Legacy constructor config; buffering never intercepts this shared Client. */
 export interface ResumeNotificationBufferConfig {
   client: AppServerClient;
 }
@@ -40,20 +42,18 @@ export function resolveThreadId(value: unknown): string | null {
 export class ResumeNotificationBufferService extends Service {
   private readonly buffers = new Map<string, BufferedAction[]>();
 
-  constructor(ctx: Context, config: ResumeNotificationBufferConfig) {
+  constructor(ctx: Context, _config?: ResumeNotificationBufferConfig) {
     super(ctx, "resumeNotificationBuffer");
-    const removeNotification = config.client.interceptNotification((notification, next) => {
-      const threadId = resolveThreadId(notification.params);
-      const buffer = threadId === null ? undefined : this.buffers.get(threadId);
-      // Preview tokens, execution settings and native withdrawal are owned
-      // outside presentation history; Read retirement cannot delay them.
-      if (buffer === undefined || ["thread/history/preview", "thread/settings/updated", "serverRequest/resolved"].includes(notification.method)) next();
-      else buffer.push({ method: notification.method, replay: next });
-    });
-    ctx.effect(() => () => {
-      removeNotification();
-      this.buffers.clear();
-    });
+    ctx.effect(() => () => { this.buffers.clear(); });
+  }
+
+  /** Only the owning Session's projection subscription enters this buffer.
+   * next is a guarded consumer continuation, never the shared Client lane. */
+  interceptProjection(notification: AppServerNotification, next: () => void): void {
+    const threadId = resolveThreadId(notification.params);
+    const buffer = threadId === null ? undefined : this.buffers.get(threadId);
+    if (buffer === undefined || ["thread/history/preview", "thread/settings/updated", "serverRequest/resolved"].includes(notification.method)) next();
+    else buffer.push({ method: notification.method, replay: next });
   }
 
   begin(threadId: string): void {

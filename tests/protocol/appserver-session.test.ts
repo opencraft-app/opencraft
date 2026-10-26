@@ -797,13 +797,14 @@ test("legacy Resume projects inline thread.turns without secondary history reque
   }
 });
 
-test("history notifications wait for View commit while native requests proceed", async () => {
+test("historical projections wait for View commit while shared notifications and native requests proceed", async () => {
   const harness = await createHarness({
     initialTurnsPage: { data: [], nextCursor: null },
     emitDuringResume: true,
     requestDuringResume: true,
   });
-  const observedStates: string[] = [];
+  const observedStates: string[] = [], projectedStates: string[] = [];
+  const removeProjector = harness.runtime.notificationProjectors.register({ name: "commit-order-probe", priority: 1000, project(view) { projectedStates.push(view.resumeState); return view; } });
   const removeNotification = harness.client.subscribeNotification(() => {
     observedStates.push(harness.runtime.views.get("thread-one")?.resumeState ?? "missing");
   });
@@ -815,11 +816,12 @@ test("history notifications wait for View commit while native requests proceed",
     const view = await harness.runtime.resume.resume({ threadId: "thread-one" });
     assert.equal(view.resumeState, "resumed");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(observedStates, ["resuming", "resumed"]);
+    assert.deepEqual(observedStates, ["resuming", "resuming"]);
+    assert.deepEqual(projectedStates, ["resumed"]);
     assert.equal(harness.runtime.views.get("thread-one")?.notificationRevision, 1);
     assert.deepEqual(harness.approvalResponses, [{ decision: "accept" }]);
   } finally {
-    removeNotification();
+    removeNotification(); removeProjector();
     await harness.close();
   }
 });

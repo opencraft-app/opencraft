@@ -90,6 +90,21 @@ CASES = [
     ('StopControl-Replay', 'NoDuplicateStop'),
     ('StopControl-Slot', 'NoDuplicateStop'),
     ('StopControl-NoFairness', 'temporal:StopProgress'),
+    ('ProjectionNotifications', None),
+    ('ProjectionNotifications-Global', 'NativeObserved'),
+    ('ProjectionNotifications-Peer', 'PeerIndependent'),
+    ('ProjectionNotifications-Replay', 'NoNativeReplay'),
+    ('ProjectionNotifications-Retired', 'ProjectionLease'),
+    ('ProjectionNotifications-Generation', 'ProjectionLease'),
+    ('ProjectionNotifications-Drop', 'ProjectionConserved'),
+    ('ProjectionNotifications-NoFairness', 'temporal:NativeProgress'),
+    ('ResourceAvailability', None),
+    ('ResourceAvailability-ACK', 'NativeAuthority'),
+    ('ResourceAvailability-Wake', 'temporal:RestorationProgress'),
+    ('ResourceAvailability-Duplicate', 'IdempotentAvailability'),
+    ('ResourceAvailability-Demand', 'ReadNeedsDemand'),
+    ('ResourceAvailability-NoFairness', 'temporal:RestorationProgress'),
+
 ]
 
 

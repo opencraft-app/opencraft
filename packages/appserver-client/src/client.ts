@@ -193,6 +193,12 @@ export type AppServerRequestLifecycleEvent =
     })
   | { type: "late-response"; hostId: string; id: JsonRpcId; receivedAtMs: number };
 
+/** A consumer may defer its own delivery without holding the shared notification
+ * lane. Deferred next retains this subscription and physical generation only. */
+export interface AppServerNotificationSubscriptionOptions {
+  readonly intercept: AppServerNotificationInterceptor;
+}
+
 export interface AppServerClient {
   readonly hostId: string;
   readonly status: TransportStatus;
@@ -209,7 +215,7 @@ export interface AppServerClient {
     params: unknown,
     options?: AppServerClientRequestOptions,
   ): Promise<TResult>;
-  subscribeNotification(listener: (notification: AppServerNotification) => void): () => void;
+  subscribeNotification(listener: (notification: AppServerNotification) => void, options?: AppServerNotificationSubscriptionOptions): () => void;
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void;
   interceptServerRequest(interceptor: AppServerServerRequestInterceptor): () => void;
   subscribeProtocolError(listener: (error: Error) => void): () => void;
@@ -451,9 +457,29 @@ export class JsonRpcAppServerClient implements AppServerClient {
     });
   }
 
-  subscribeNotification(listener: (notification: AppServerNotification) => void): () => void {
-    this.notificationListeners.add(listener);
-    return () => this.notificationListeners.delete(listener);
+  subscribeNotification(listener: (notification: AppServerNotification) => void, options?: AppServerNotificationSubscriptionOptions): () => void {
+    if (!options) {
+      this.notificationListeners.add(listener);
+      return () => this.notificationListeners.delete(listener);
+    }
+    let active = true;
+    const subscription = (notification: AppServerNotification) => {
+      const generation = this.connectionGeneration;
+      let delivered = false;
+      options.intercept(notification, () => {
+        // A retired consumer or connection cannot be revived by deferred work.
+        if (!active || !this.notificationListeners.has(subscription) || generation !== this.connectionGeneration) return;
+        try {
+          if (delivered) throw new AppServerClientError("PROTOCOL_ERROR", `AppServer notification subscription called next twice for ${notification.method}`);
+          delivered = true;
+          listener(notification);
+        } catch (error) {
+          this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", `AppServer notification listener failed for ${notification.method}`, { cause: error }));
+        }
+      });
+    };
+    this.notificationListeners.add(subscription);
+    return () => { active = false; this.notificationListeners.delete(subscription); };
   }
 
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void {
