@@ -92,6 +92,7 @@ import { sidebarGoalActive, observeSidebarThreadGoals, sidebarGoalSignature, typ
 
 import { ActiveWebWorkbenchApplicationSupervisor, AppServerHostCatalog, retryQuery } from './workbench-application-services';
 import { useHostThreadCatalogQueries } from "./use-host-thread-catalog-queries";
+import { cacheThreadCatalog, mergeCachedCatalogRows, threadCatalogDisplayRows, threadCatalogResource, useClientResourceSnapshots } from "./thread-catalog-cache";
 
 export * from "./workbench-application-services";
 const subscribeNoManagedCatalog = () => () => {};
@@ -264,6 +265,7 @@ export function AppServerRuntimeProvider({
     setConversationPresentationActive: supervisor.setConversationPresentationActive,
     tasks: supervisor.tasks,
     threadAttention: supervisor.threadAttention,
+    clientResources: supervisor.clientResources,
     managedHostCatalog: supervisor.managedHostCatalog,
     hostProfiles,
     displayContinuity: supervisor.displayContinuity,
@@ -607,6 +609,23 @@ export function useMultiHostThreadCatalog(): {
   );
   const queryClient = useQueryClient();
   const hostIds = useMemo(() => hosts.map((host) => host.hostId), [hosts]);
+  const resourceScope = useSyncExternalStore(application.clientResources.subscribe, application.clientResources.getSnapshot);
+  const resourceProfiles = JSON.stringify(hosts.map(host => [host.hostId,
+    application.profiles.find(profile => profile.hostId === host.hostId)!.revision]));
+  const catalogResources = useMemo(() => hosts.map(host => application.clientResources.remote(threadCatalogResource,
+    JSON.stringify([host.hostId, application.profiles.find(profile => profile.hostId === host.hostId)!.revision]))),
+  [application.clientResources, resourceScope, resourceProfiles]);
+  const savedCatalogs = useClientResourceSnapshots(catalogResources);
+  // A credential boundary can precede the old socket's teardown. Require a new
+  // ready incarnation before reading/caching through that socket for a new scope.
+  const catalogScopeFence = useRef({ epoch: resourceScope,
+    previous: new Map<string, { runtime: unknown; generation: number | undefined }>() });
+  if (catalogScopeFence.current.epoch !== resourceScope) {
+    catalogScopeFence.current = { epoch: resourceScope, previous: new Map(hosts.map(host => {
+      const runtime = application.registry.peekRuntime(host.hostId);
+      return [host.hostId, { runtime, generation: runtime?.getSnapshot().connectionGeneration }];
+    })) };
+  }
   useEffect(() => subscribeHostCatalogReadiness(
     application.registry,
     hostIds,
@@ -618,17 +637,19 @@ export function useMultiHostThreadCatalog(): {
     },
   ), [application.registry, hostIds, queryClient]);
   const phases = hosts.map(host => application.registry.peekRuntime(host.hostId)?.getSnapshot().phase);
-  const admitted = hosts.map((host, index) => canReadHostThreadCatalog(
-    application.profiles.find(profile => profile.hostId === host.hostId)!,
-    phases[index],
-    management,
-  ));
+  const admitted = hosts.map((host, index) => {
+    const previous = catalogScopeFence.current.previous.get(host.hostId);
+    const runtime = application.registry.peekRuntime(host.hostId);
+    return (!previous || runtime !== previous.runtime || runtime?.getSnapshot().connectionGeneration !== previous.generation)
+      && canReadHostThreadCatalog(application.profiles.find(profile => profile.hostId === host.hostId)!, phases[index], management);
+  });
   const queries = useHostThreadCatalogQueries(
     hosts.map((host, index) => ({
       // Discovery may attach a reader to an explicitly connected managed
       // Server, but cannot dial an idle remote merely to paint Chat.
       enabled: admitted[index],
       queryKey: sidebarThreadCatalogQueryKey(host.hostId, {
+        clientEpoch: resourceScope,
         revision: application.profiles.find(profile => profile.hostId === host.hostId)!.revision,
         authorizationEpoch: host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null,
       }),
@@ -640,6 +661,7 @@ export function useMultiHostThreadCatalog(): {
   );
   // One projection per admitted Host, independent of visible rows and selected conversation.
   const scheduleKeys = hosts.map(host => [...sidebarThreadCatalogQueryKey(host.hostId, {
+    clientEpoch: resourceScope,
     revision: application.profiles.find(profile => profile.hostId === host.hostId)!.revision,
     authorizationEpoch: host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null,
   }), "schedule-summary"]);
@@ -705,6 +727,19 @@ export function useMultiHostThreadCatalog(): {
     application.profiles.find(profile => profile.hostId === host.hostId)!, management,
   ));
   const querySignature = queries.map((query, index) => `${displayable[index]}:${admitted[index]}:${phases[index]}:${query.dataRevision}:${query.hasNextPage}:${query.status}:${query.fetchStatus}`).join("|");
+  const persistedCatalogObservations = useRef(new WeakMap<object, unknown>());
+  useEffect(() => {
+    queries.forEach((query, index) => {
+      if (!displayable[index] || !admitted[index] || !query.data || query.isError) return;
+      const resource = catalogResources[index]!;
+      if (persistedCatalogObservations.current.get(resource) === query.data) return;
+      persistedCatalogObservations.current.set(resource, query.data);
+      // A first successful page is useful immediately, but is not a complete directory.
+      void catalogResources[index]!.observe(cacheThreadCatalog(mergeCachedCatalogRows(
+        query.data.data.map(thread => projectAppServerThread(thread)),
+        catalogResources[index]!.getSnapshot().value, !query.hasNextPage), !query.hasNextPage)).catch(() => undefined);
+    });
+  }, [catalogResources, querySignature]);
   const goalSources = useMemo(() => hosts.flatMap((host, index): SidebarGoalSource[] => {
     const profile = application.profiles.find(value => value.hostId === host.hostId)!;
     const runtime = application.registry.peekRuntime(host.hostId);
@@ -743,25 +778,26 @@ export function useMultiHostThreadCatalog(): {
     }
   }, [hosts, querySignature, attentionRevision]);
   const threads = useMemo(() => hosts.flatMap((host, index) =>
-    (displayable[index] ? queries[index]?.data?.data ?? [] : []).map((thread) => {
+    (displayable[index] ? threadCatalogDisplayRows(queries[index]?.data?.data.map(thread => projectAppServerThread(thread)),
+      savedCatalogs[index]?.value ?? null, !queries[index]!.hasNextPage) : []).map(({ thread, confirmed }) => {
       const server = legacyDirectServerProjectionFromHost({
         hostId: host.hostId,
         hostKind: host.kind,
         label: host.label,
       });
       return {
-        ...projectAppServerThread(thread),
+        ...thread,
         schedule: scheduleQueries[index]?.data?.schedules.find(plan => plan.threadId === thread.id),
         goalActive: goalSources.some(source => source.goals === application.registry.peekRuntime(host.hostId)?.resources.goals
           && source.isCurrent() && source.goals.capability(thread.id)?.read
           && sidebarGoalActive(source.goals.getSnapshot(thread.id).goal)),
         unread: application.threadAttention.unread(host.hostId, thread.id),
         connectionHostId: host.hostId,
-        interactionAvailable: phases[index] === "ready" && admitted[index],
+        interactionAvailable: phases[index] === "ready" && admitted[index] && confirmed,
         connectionHostLabel: host.label,
         ...server,
       };
-    })).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature, attentionRevision, goalSources, goalRevision, scheduleSignature]);
+    })).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature, savedCatalogs, attentionRevision, goalSources, goalRevision, scheduleSignature]);
   const searchScope = JSON.stringify(hosts.map((host, index) => [host.hostId,
     application.profiles.find(profile => profile.hostId === host.hostId)?.revision,
     host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() : null,
@@ -807,9 +843,11 @@ export function useMultiHostThreadCatalog(): {
       label: host.label,
       phase: threadCatalogPhase({ admitted: admitted[index]!, status: queries[index]!.status, isFetching: queries[index]!.isFetching, partial: queries[index]!.hasNextPage }),
       ...(queries[index]!.hasNextPage ? { partial: true } : {}),
-      ...(displayable[index] && catalogCachedAt(queries[index]!.data) !== undefined ? { cachedAt: catalogCachedAt(queries[index]!.data) } : {}),
+      ...(displayable[index] && catalogCachedAt(queries[index]!.data) !== undefined ? { cachedAt: catalogCachedAt(queries[index]!.data) }
+        : displayable[index] && queries[index]!.data === undefined && savedCatalogs[index]?.value
+          ? { cachedAt: savedCatalogs[index]!.savedAt ?? undefined } : {}),
     })),
-    [hosts, querySignature]);
+    [hosts, querySignature, savedCatalogs]);
   return {
     scheduleCatalogs: hosts.flatMap((host, index): HostScheduleCatalog[] => {
       const query = scheduleQueries[index]!;
@@ -881,6 +919,7 @@ export function useMultiHostThreadCatalog(): {
       const currentManagement = application.managedHostCatalog?.getSnapshot() ?? management;
       if (!profile || !canReadHostThreadCatalog(profile, application.registry.peekRuntime(hostId)?.getSnapshot().phase, currentManagement)) return;
       await queryClient.refetchQueries({ queryKey: sidebarThreadCatalogQueryKey(hostId, {
+        clientEpoch: resourceScope,
         revision: profile.revision,
         authorizationEpoch: profile.hostKind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null,
       }), exact: true, type: "active" }, { cancelRefetch: false });

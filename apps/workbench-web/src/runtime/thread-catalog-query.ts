@@ -58,8 +58,9 @@ export function threadCatalogPhase(query: {
 export function sidebarThreadCatalogQueryKey(hostId: string, scope: {
   readonly revision: number;
   readonly authorizationEpoch: number | null;
+  readonly clientEpoch?: number;
 }) {
   // A valid late-read fence alone cannot protect previously cached data from
   // being reused after logout/unlock or a recipe revision change.
-  return ["appserver", hostId, "threads", "sidebar-pages", "updated_at", "desc", false, scope.revision, scope.authorizationEpoch] as const;
+  return ["appserver", hostId, "threads", "sidebar-pages", "updated_at", "desc", false, scope.revision, scope.authorizationEpoch, scope.clientEpoch ?? 0] as const;
 }

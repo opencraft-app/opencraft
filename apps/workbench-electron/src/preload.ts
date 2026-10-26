@@ -68,6 +68,14 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
       return () => ipcRenderer.off("opencraft:ui-preference-changed", receive);
     },
   }),
+  clientResources: Object.freeze({
+    read: (key: import("@opencraft/document-storage/client-resources").ClientResourceKey) =>
+      ipcRenderer.invoke("opencraft:client-resource-read", key),
+    compareAndSet: (key: import("@opencraft/document-storage/client-resources").ClientResourceKey, revision: number,
+      record: Omit<import("@opencraft/document-storage/client-resources").ClientResourceRecord, "revision">) =>
+      ipcRenderer.invoke("opencraft:client-resource-commit", key, revision, record),
+    clearRemoteNamespace: (namespace: string) => ipcRenderer.invoke("opencraft:client-resource-clear-remote", namespace),
+  }),
   skillHub: Object.freeze({
     get: (path: string) => ipcRenderer.invoke("opencraft:skillhub-get", path),
   }),
