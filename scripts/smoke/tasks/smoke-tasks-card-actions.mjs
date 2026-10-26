@@ -101,7 +101,7 @@ try {
     }));
     await page.goto(base + '/views/opencraft.tasks.board');
     await page.locator('.tasks-toolbar').waitFor();
-    const backlog = page.getByRole('radio', { name: /^Backlog / });
+    const backlog = page.getByRole('radio', { name: /^Product backlog / });
     if (await backlog.count()) await backlog.click();
     const card = page.locator('.tasks-card:visible').first(); await card.waitFor();
     for (const selector of ['.tasks-card__tools']) assert.equal(await card.locator(selector).evaluate(n => Number(getComputedStyle(n).opacity)), 1);

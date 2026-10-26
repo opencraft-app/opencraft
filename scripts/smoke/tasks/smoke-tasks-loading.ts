@@ -86,7 +86,7 @@ try {
     };
     await page.goto(base + "/views/opencraft.tasks.board"); await waitHeld(); await assertCold();
     await page.screenshot({ path: join(out, `cold-capabilities-${width}-${theme}.png`) });
-    assert.equal(await skeleton.locator(".tasks-column:visible").count(), width === 390 ? 1 : 6);
+    assert.equal(await skeleton.locator(".tasks-column:visible").count(), width === 390 ? 1 : 7);
     heldMethod = TASKS.list; release(); await waitHeld(); await assertCold();
     await page.getByRole("radio", { name: "List", exact: true }).click();
     assert.equal(await skeleton.locator(".tasks-loading__row").count(), 6);

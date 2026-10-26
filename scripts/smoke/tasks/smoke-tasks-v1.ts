@@ -32,7 +32,7 @@ try {
   await page.locator('[data-task-id="harness"]').waitFor();
   await page.reload();
   await page.locator('[data-task-id="harness"]').waitFor();
-  const column = page.locator('.tasks-column[data-status="backlog"]');
+  const column = page.locator('.tasks-column[data-column="technical_backlog"]');
   await column.getByRole("button", { name: "Add an item", exact: true }).click();
   const inline = column.getByLabel("Enter a title, then press Enter");
   await inline.fill("Inline new item");
@@ -73,7 +73,7 @@ try {
     await page.setViewportSize({ width, height: width === 320 ? 640 : 900 }); await page.emulateMedia({ colorScheme: theme });
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
     await page.waitForFunction(() => (document.querySelector(".tasks-viewport")?.getBoundingClientRect().width ?? 0) >= Math.min(innerWidth - 20, 290));
-    if (await page.locator(".tasks-statuses").isVisible()) await page.locator(".tasks-statuses").getByRole("radio", { name: /^Backlog/ }).click();
+    if (await page.locator(".tasks-statuses").isVisible()) await page.locator(".tasks-statuses").getByRole("radio", { name: /^Product backlog/ }).click();
     await page.locator('[data-task-id="harness"] .tasks-card__title').click();
     dialog = page.locator('.tasks-dialog'); await dialog.waitFor();
     assert.equal(await dialog.getByLabel("Title", { exact: true }).inputValue(), "Unsaved during progress");

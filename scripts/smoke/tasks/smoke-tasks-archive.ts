@@ -27,7 +27,7 @@ try {
   const archives = async () => { await boardMore.click(); await page.getByRole("menuitem", { name: "Archived tasks", exact: true }).click(); await page.locator(".tasks-archive").waitFor(); };
   const back = async () => { await page.getByRole("button", { name: "Back to tasks", exact: true }).click(); await page.locator(".tasks-toolbar:visible").waitFor(); };
   await page.goto(server.url + "/views/opencraft.tasks.board");
-  if (name === "touch") await page.getByRole("radio", { name: /^Backlog / }).click();
+  if (name === "touch") await page.getByRole("radio", { name: /^Product backlog / }).click();
   await card.waitFor();
   // Unsaved details are retained and must be explicitly saved before archival.
   await card.locator(".tasks-card__title").click();
@@ -42,7 +42,7 @@ try {
   await card.waitFor({ state: "detached" }); assert.ok(read(name).archivedAt); assert.equal(read(name).status, "backlog");
   await page.reload();
   await page.locator(".tasks-toolbar").waitFor(); assert.equal(await card.count(), 0);
-  if (name === "touch") await page.getByRole("radio", { name: /^Backlog / }).click();
+  if (name === "touch") await page.getByRole("radio", { name: /^Product backlog / }).click();
   await page.getByRole("searchbox", { name: "Search tasks…", exact: true }).fill("Workflow");
   await archives();
   await page.waitForFunction(() => document.querySelectorAll('.tasks-archive__list > li').length === 50);

@@ -29,7 +29,7 @@ never changes the business status.
 - TSK-02：六个业务状态由用户维护；原生会话活动单独读取，未知不等于空闲，空闲不等于完成。拖拽不触发执行或中断。
 - TSK-03：固定工作台后端拥有 SQLite；聊天 Host 切换不改变数据库。多会话关系引用稳定 Server/Thread，允许跨 Server 与多个任务共享会话。旧卡片不迁移、不删除。
 - TSK-04：插件激活拥有控制器和草稿，View 消失清理观察者，返回保留草稿。迟到读取不能覆盖写入；事务 revision 防止并发覆盖，冲突保留输入，明确载入最新内容。
-- TSK-05：容器宽度不超过 600px 时展示共享 SegmentedControl 与单列；宽屏六列。状态和视图按钮沿用共享 toolbar 外观，触摸区扩展至 44px。各列滚动位置保留；看板整卡可启动拖动，动作按钮独立，触屏普通滑动保留滚动、长按激活；列表保留手柄启动，两者保留键盘手柄。拖动预览不被列裁切，跨列落下以起始revision提交状态/邻居，取消不写入。宽屏列与吸顶标题使用主题拥有的不透明 surface，滚过的卡片不得透字；窄屏继续隐藏重复列标题。真实长列遮挡与主题/断点连续性由 `scripts/smoke/tasks/smoke-tasks-column-scroll.ts` 验证。
+- TSK-05：容器宽度不超过 600px 时展示共享 SegmentedControl 与单列；宽屏七列。状态和视图按钮沿用共享 toolbar 外观，触摸区扩展至 44px。各列滚动位置保留；看板整卡可启动拖动，动作按钮独立，触屏普通滑动保留滚动、长按激活；列表保留手柄启动，两者保留键盘手柄。拖动预览不被列裁切，跨列落下以起始revision提交状态/邻居，取消不写入。宽屏列与吸顶标题使用主题拥有的不透明 surface，滚过的卡片不得透字；窄屏继续隐藏重复列标题。真实长列遮挡与主题/断点连续性由 `scripts/smoke/tasks/smoke-tasks-column-scroll.ts` 验证。
 - TSK-06：详情是采用共享模态视觉契约的 Radix 弹窗卡片；宽容器显示属性栏，窄容器堆叠同一组字段并在顶部保存，宽度变化保持输入节点。进入聚焦标题而不唤起手机键盘，点击外部、Esc 或关闭按钮收起，保留各任务未保存草稿与原 revision。模态背景不可交互；关闭恢复概览原节点/滚动及仍有效的入口焦点；不添加另一套浏览器历史。看板仅显示标题、活动摘要和一个会话捷径，列表使用独立紧凑行。写入期间禁用编辑和关闭，异步会话验证在 View 关闭后不能关联到新草稿。
 - TSK-07：任务进入原生聊天只准备草稿，用户发送才创建会话和执行；同 Server 项目进入执行位置，跨 Server 不复用项目/目录。确认 Thread 回执后关联，首次 Turn 失败不丢关系；关联未知结果只核对和重试关系，不能重新执行。客户端交接记录按产品/账号隔离，SQLite 始终拥有任务和关联；账号撤销、销毁或新导航隔离迟到工作。
 - 执行连接行的宽屏动作与下拉控件底边对齐；窄屏沿同组控件堆叠、按钮靠起始边，保留共享触控尺寸与原 DOM，布局不改变新建会话语义。真实几何和换宽连续性由 `scripts/smoke/tasks/smoke-tasks-team.ts` 验证。
@@ -65,9 +65,21 @@ opening remains local to the card/detail. Validate real keyboard/touch menus,
 filter synchronization, recycle round trips and refresh with held requests.
 
 
+## Demand pool columns
+
+Board splits backlog into Product backlog and Technical backlog, followed by the
+existing workflow columns. This is one projection of the task status and kind:
+engineering, harness, research, documentation and operations backlog tasks use
+the technical pool; all other or missing kinds use the product pool. Filtering,
+counts, compact selection, loading geometry and scroll/draft keys use the same
+column identity. Existing statuses, ordering and task data are preserved.
+Inline creation defaults to feature in the product pool and engineering in the
+technical pool; compatible kind filters are inherited, incompatible filters do
+not override the chosen pool and a hidden-result notice explains the filter.
+
 ## Tasks board card width
 
-The six-column board uses one Tasks-owned minimum column width token of 340px,
+The seven-column board uses one Tasks-owned minimum column width token of 340px,
 with equal flexible tracks above that minimum. Cards fill the column content
 width. The board scrollport owns horizontal overflow; the page does not expand.
 At task-container widths of 600px or less, the existing selected single-column

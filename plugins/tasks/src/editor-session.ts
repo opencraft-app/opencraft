@@ -1,4 +1,5 @@
 import type { TaskContent, TaskDetail, TaskStatus } from "@opencraft/appserver-protocol";
+import type { BoardColumnId } from "./board-columns";
 export interface TaskDraft extends TaskContent { readonly id: string; readonly status: TaskStatus; readonly revision: number | null }
 export function taskDraft(task?: TaskDetail, status: TaskStatus = "backlog"): TaskDraft {
   return { id: task?.id ?? crypto.randomUUID(), title: task?.title ?? "", description: task?.description ?? "", status: task?.status ?? status, revision: task?.revision ?? null, projectServerId: task?.projectServerId ?? null, projectId: task?.projectId ?? null, assigneeId: task?.assigneeId ?? null, priority: task?.priority ?? "none", dueDate: task?.dueDate ?? null, aiResearch: task?.aiResearch ?? "unassessed", aiResearchReason: task?.aiResearchReason ?? "", kind: task?.kind ?? "unclassified", acceptanceCriteria: task?.acceptanceCriteria ?? "" };
@@ -11,7 +12,7 @@ export class TasksEditorSession {
   private state: { draft: TaskDraft | null; presentation: "quick" | "detail" } = { draft: null, presentation: "detail" };
   private listeners = new Set<() => void>();
   readonly progressDrafts = new Map<string, string>();
-  readonly inlineDrafts = new Map<TaskStatus, { id: string; title: string }>();
+  readonly inlineDrafts = new Map<BoardColumnId, { id: string; title: string }>();
   setProgress(taskId: string, text: string) { if (text) this.progressDrafts.set(taskId, text); else this.progressDrafts.delete(taskId); this.publish({}); }
   getSnapshot = () => this.state;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };

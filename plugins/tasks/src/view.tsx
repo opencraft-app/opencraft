@@ -45,6 +45,7 @@ import {
   type TaskStatus,
 } from "@opencraft/appserver-protocol";
 import type { TasksExtensionPorts, TaskConversationActivity } from "./index";
+import { BOARD_COLUMNS, boardColumn, columnStatus, columnCreateKind, type BoardColumnId } from "./board-columns";
 import { TasksEditorSession, taskDraft as draftFor, type TaskDraft as Draft } from "./editor-session";
 import { TaskActivityController } from "./activity-controller";
 import { TasksArchiveController } from "./archive-controller";
@@ -58,6 +59,8 @@ import { parseFollowUpReport } from "./ai-follow-up-model";
 import { parseResearchHandoff } from "./research-handoff";
 const ConversationOverview = lazy(() => import("./conversation-overview").then(module => ({ default: module.ConversationOverview })));
 const words = {
+  product_backlog: ["产品需求池", "Product backlog"],
+  technical_backlog: ["技术需求池", "Technical backlog"],
   morningOverview: ["晨会总览", "Morning overview"],
   aiFollowUp: ["AI 跟进", "AI follow-up"],
   morningShort: ["晨会", "Morning"],
@@ -300,7 +303,7 @@ function linkKey(link: Pick<TaskConversation, "serverId" | "threadId">): string 
 }
 interface ViewDraft {
   mode: "board" | "list" | "ai";
-  status: TaskStatus;
+  status: BoardColumnId;
   project: string;
   search: string;
   assignee: string;
@@ -453,7 +456,7 @@ function TaskRow({ task, members, pending, onEdit, onMove, activity }: {
   );
 }
 function Column({
-  status,
+  column,
   tasks,
   selected,
   children,
@@ -463,7 +466,7 @@ function Column({
   footer,
 }: {
   footer?: React.ReactNode;
-  status: TaskStatus;
+  column: BoardColumnId;
   tasks: readonly TaskDetail[];
   selected: boolean;
   children: React.ReactNode;
@@ -474,28 +477,29 @@ function Column({
   const t = useText();
   const element = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    if (element.current) element.current.scrollTop = positions.get(status) ?? 0;
-  }, [selected, status, positions]);
+    if (element.current) element.current.scrollTop = positions.get(column) ?? 0;
+  }, [selected, column, positions]);
   return (
     <section
       ref={element}
       onScroll={(event) => {
         if (event.currentTarget.clientHeight > 0)
-          positions.set(status, event.currentTarget.scrollTop);
+          positions.set(column, event.currentTarget.scrollTop);
       }}
-      data-status={status}
+      data-column={column}
+      data-status={columnStatus(column)}
       className={`tasks-column${selected ? " tasks-column--selected" : ""}`}
-      aria-label={t(status)}
+      aria-label={t(column)}
     >
       <header>
         <h2>
-          <i className="tasks-status-dot" aria-hidden="true" />{t(status)} <span>{tasks.length}</span>
+          <i className="tasks-status-dot" aria-hidden="true" />{t(column)} <span>{tasks.length}</span>
         </h2>
         <SettingsButton
           variant="ghost"
           onClick={onAdd}
           disabled={pending}
-          aria-label={`${t("add")}: ${t(status)}`}
+          aria-label={`${t("add")}: ${t(column)}`}
         >
           <Plus size={14} />
         </SettingsButton>
@@ -1121,14 +1125,14 @@ function ArchivePanel({ model, members, pending, reportError, ports, session, ac
   </section>;
 }
 /** Decorative geometry only: counts and empty states require an authority snapshot. */
-function TasksLoading({ mode, selected }: { mode: ViewDraft["mode"]; selected: TaskStatus }) {
+function TasksLoading({ mode, selected }: { mode: ViewDraft["mode"]; selected: BoardColumnId }) {
   const t = useText();
   const bar = (className = "") => <span className={`tasks-loading__bar ${className}`} />;
   return <div className="tasks-loading" aria-busy="true" role="status" aria-label={t("loading")}>
     <div className="tasks-loading__geometry" aria-hidden="true">
       {mode === "board" ? <>
-        <div className="tasks-loading__tabs">{TASK_STATUSES.map(status => <span key={status}>{bar()}</span>)}</div>
-        <div className="tasks-columns">{TASK_STATUSES.map((status, index) => <div key={status} className={`tasks-column${selected === status ? " tasks-column--selected" : ""}`}>
+        <div className="tasks-loading__tabs">{BOARD_COLUMNS.map(status => <span key={status}>{bar()}</span>)}</div>
+        <div className="tasks-columns">{BOARD_COLUMNS.map((status, index) => <div key={status} className={`tasks-column${selected === status ? " tasks-column--selected" : ""}`}>
           <header>{bar("tasks-loading__heading")}{bar("tasks-loading__count")}</header>
           {Array.from({ length: index % 2 ? 2 : 3 }, (_, card) => <div key={card} className="tasks-loading__card">
             {bar("tasks-loading__badge")}{bar()}{bar("tasks-loading__short")}
@@ -1177,7 +1181,7 @@ export function createTasksView(
     const filterId = useId();
     const viewport = useRef<HTMLDivElement>(null);
     const [compact, setCompact] = useState(false);
-    const [inlineStatus, setInlineStatus] = useState<TaskStatus | null>(null);
+    const [inlineStatus, setInlineStatus] = useState<BoardColumnId | null>(null);
     const [, updateInline] = useState(0);
     const [hiddenCreated, setHiddenCreated] = useState(false);
     useLayoutEffect(() => { const node = viewport.current; if (!node) return; const observer = new ResizeObserver(entries => setCompact(entries[0]!.contentRect.width <= 600)); observer.observe(node); return () => observer.disconnect(); }, []);
@@ -1658,11 +1662,11 @@ export function createTasksView(
               label={t("status")}
               value={draft.status}
               onValueChange={(status) =>
-                change({ status: status as TaskStatus })
+                change({ status: status as BoardColumnId })
               }
-              options={TASK_STATUSES.map((status) => ({
+              options={BOARD_COLUMNS.map((status) => ({
                 value: status,
-                label: `${t(status)} ${tasks.filter((task) => task.status === status).length}`,
+                label: `${t(status)} ${tasks.filter((task) => boardColumn(task) === status).length}`,
               }))}
             />
           ) : null}
@@ -1670,26 +1674,26 @@ export function createTasksView(
           {hiddenCreated ? <div className="tasks-filter-result" role="status"><span>{t("hiddenCreated")}</span><SettingsButton variant="quiet" onClick={() => { change({ search: "", assignee: "", project: "", overdue: false, kind: "", aiResearch: "" }); setHiddenCreated(false); }}>{t("clearFilters")}</SettingsButton></div> : null}
             {draft.mode === "board" ? (
               <div className="tasks-columns">
-                {TASK_STATUSES.map((status) => {
-                  const items = tasks.filter((task) => task.status === status);
+                {BOARD_COLUMNS.map((column) => {
+                  const items = tasks.filter((task) => boardColumn(task) === column);
                   return (
                     <Column
-                      key={status}
-                      status={status}
+                      key={column}
+                      column={column}
                       tasks={items}
-                      selected={draft.status === status}
+                      selected={draft.status === column}
                       positions={positions}
                       pending={state.pending || state.phase !== "ready"}
-                      onAdd={() => { if (!editorSession.inlineDrafts.has(status)) editorSession.inlineDrafts.set(status, { id: crypto.randomUUID(), title: "" }); setInlineStatus(status); }}
-                      footer={inlineStatus === status ? <InlineCreate value={editorSession.inlineDrafts.get(status)!} busy={state.pending} inherited={!!draft.kind || !!draft.project}
-                        onChange={title => { editorSession.inlineDrafts.set(status, { ...editorSession.inlineDrafts.get(status)!, title }); updateInline(epoch => epoch + 1); }}
+                      onAdd={() => { if (!editorSession.inlineDrafts.has(column)) editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); setInlineStatus(column); }}
+                      footer={inlineStatus === column ? <InlineCreate value={editorSession.inlineDrafts.get(column)!} busy={state.pending} inherited={!!draft.project || (!!draft.kind && columnCreateKind(column, draft.kind) === draft.kind)}
+                        onChange={title => { editorSession.inlineDrafts.set(column, { ...editorSession.inlineDrafts.get(column)!, title }); updateInline(epoch => epoch + 1); }}
                         onClose={() => setInlineStatus(null)} onSave={async () => {
-                          const input = editorSession.inlineDrafts.get(status)!;
+                          const input = editorSession.inlineDrafts.get(column)!;
                           let projectServerId: string | null = null, projectId: string | null = null;
                           if (draft.project) [projectServerId, projectId] = JSON.parse(draft.project);
-                          const saved = await model.mutate(TASKS.create, { id: input.id, title: input.title.trim(), description: "", status, projectServerId, projectId, ...(state.planning ? { kind: draft.kind || "unclassified", acceptanceCriteria: "" } : {}) });
-                          if (saved) { editorSession.inlineDrafts.set(status, { id: crypto.randomUUID(), title: "" }); updateInline(epoch => epoch + 1); if (draft.search || draft.assignee || draft.overdue) setHiddenCreated(true); }
-                        }} /> : <SettingsButton variant="quiet" className="tasks-column__add" disabled={state.pending || state.phase !== "ready"} onClick={() => { if (!editorSession.inlineDrafts.has(status)) editorSession.inlineDrafts.set(status, { id: crypto.randomUUID(), title: "" }); setInlineStatus(status); }}><Plus size={15} />{t("inlineAdd")}</SettingsButton>}
+                          const saved = await model.mutate(TASKS.create, { id: input.id, title: input.title.trim(), description: "", status: columnStatus(column), projectServerId, projectId, ...(state.planning ? { kind: columnCreateKind(column, draft.kind), acceptanceCriteria: "" } : {}) });
+                          if (saved) { editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); updateInline(epoch => epoch + 1); if (draft.search || draft.assignee || draft.overdue || (draft.kind && columnCreateKind(column, draft.kind) !== draft.kind)) setHiddenCreated(true); }
+                        }} /> : <SettingsButton variant="quiet" className="tasks-column__add" disabled={state.pending || state.phase !== "ready"} onClick={() => { if (!editorSession.inlineDrafts.has(column)) editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); setInlineStatus(column); }}><Plus size={15} />{t("inlineAdd")}</SettingsButton>}
                     >
                       {cards(items)}
                     </Column>

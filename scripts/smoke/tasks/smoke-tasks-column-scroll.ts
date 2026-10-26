@@ -41,9 +41,9 @@ try {
       }, palette);
       await page.emulateMedia({ colorScheme: theme as "light" | "dark" });
       await page.goto(server.url + "/views/opencraft.tasks.board");
-      const column = page.locator('.tasks-column[data-status="backlog"]');
+      const column = page.locator('.tasks-column[data-column="product_backlog"]');
       await column.waitFor({ state: "attached" });
-      if (!(await column.isVisible())) await page.getByRole("radio", { name: /^Backlog / }).click();
+      if (!(await column.isVisible())) await page.getByRole("radio", { name: /^Product backlog / }).click();
       await column.locator(".tasks-card").first().waitFor();
       const node = await column.elementHandle();
       const header = column.locator(":scope > header");
@@ -76,7 +76,7 @@ try {
         } else {
           assert.match(background, /^rgb\(/, "Sticky title uses an opaque theme surface");
           assert.ok(a.equals(b), "Moving cards cannot change any pixels inside the sticky title");
-          await column.getByRole("button", { name: /: Backlog$/ }).click();
+          await column.getByRole("button", { name: /: Product backlog$/ }).click();
           await page.getByRole("dialog").waitFor();
           assert.equal(await page.getByRole("dialog").getByLabel("Task status", { exact: true }).inputValue(), "backlog");
           await page.keyboard.press("Escape");
@@ -84,7 +84,7 @@ try {
           assert.equal(await column.evaluate((el: HTMLElement) => el.scrollTop), 491);
           if (width === 1440 && palette === "neutral") {
             await page.setViewportSize({ width: 390, height: 900 });
-            await page.getByRole("radio", { name: /^Backlog / }).click();
+            await page.getByRole("radio", { name: /^Product backlog / }).click();
             assert.equal(await header.isVisible(), false);
             await page.setViewportSize({ width, height: 900 });
             assert.equal(await header.isVisible(), true);
@@ -96,7 +96,7 @@ try {
         // Shared status navigation stays the sole mobile status header.
         const status = page.getByRole("radio", { name: /^To do / });
         await status.click();
-        await page.getByRole("radio", { name: /^Backlog / }).click();
+        await page.getByRole("radio", { name: /^Product backlog / }).click();
         assert.equal(await column.evaluate((el: HTMLElement) => el.scrollTop), 147, "Status switches restore the original column position");
         const taskBox = await page.locator(".tasks").boundingBox();
         const columnBox = await column.boundingBox(); assert.ok(taskBox && columnBox);

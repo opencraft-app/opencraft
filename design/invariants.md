@@ -184,6 +184,8 @@
 
 ### Tasks and follow-up
 
+- [Demand pool columns](invariants/tasks-and-follow-up.md#demand-pool-columns)
+
 - <a id="tasks-v1-editor-continuity"></a>[Tasks V1 editor continuity](invariants/tasks-and-follow-up.md#tasks-v1-editor-continuity)
 - <a id="tasks-view"></a>[Tasks View](invariants/tasks-and-follow-up.md#tasks-view)
 - <a id="tasks-type-badge-continuity"></a>[Tasks type badge continuity](invariants/tasks-and-follow-up.md#tasks-type-badge-continuity)
