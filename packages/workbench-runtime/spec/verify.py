@@ -10,6 +10,22 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('ReplayDrainAdmission', None),
+    ('ReplayDrainAdmission-LateJoin', 'AdmissionHasWorker'),
+    ('ReplayDrainAdmission-Cleanup', 'CompletionOwned'),
+    ('ReplayDrainAdmission-NoFairness', 'temporal:FrameProgress'),
+    ("ReplayLifetime-CloseOwner", "SuccessorNativeState"),
+    ('ReplayLifetime', None),
+    ('ReplayLifetime-Epoch', 'CurrentFrameOwner'),
+    ('ReplayLifetime-Cursor', 'CursorBounds'),
+    ('ReplayLifetime-Reservation', 'ClaimConsumed'),
+    ('ReplayLifetime-Double', 'AtMostOnce'),
+    ('ReplayLifetime-Early', 'NoEarlyAdmission'),
+    ('ReplayLifetime-Resurrect', 'NoResurrection'),
+    ('ReplayLifetime-Caller', 'CallerNotNative'),
+    ('ReplayLifetime-WaitClock', 'temporal:LocalCompletion'),
+    ('ReplayLifetime-NoLocalFairness', 'temporal:SuccessorCompletion'),
+    ('ReplayLifetime-NoClockFairness', 'temporal:SuccessorCompletion'),
     ('RecordingLifetime', None),
     ('RecordingLifetime-Cleanup', 'SuccessorTap'),
     ('RecordingLifetime-Terminal', 'TerminalConserved'),
