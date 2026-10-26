@@ -435,10 +435,10 @@ export class ThreadResumeCoordinatorService extends Service {
       const deadline = this.readClock.now() + this.requestTimeoutMs;
       try {
         let view = await this.readOnce(threadId, options, operation);
-        // Deltas and native snapshots lack a shared sequence: obtain a quiet
+        // History notifications and native snapshots lack a shared sequence: obtain a quiet
         // canonical cut, preserving admitted requests across rereads.
         operation.assertCurrent();
-        while (this.ctx.resumeNotificationBuffer.hasDeltas(threadId)) {
+        while (this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
           if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
             new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
           operation.assertCurrent();

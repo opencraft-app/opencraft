@@ -20,6 +20,18 @@ test("hydration generation/replay is deterministic and rejects unknown Threads",
   assert.deepEqual(generateHydrationChaos(42), generateHydrationChaos(42));
   assert.deepEqual(parseHydrationTrace(JSON.parse(JSON.stringify(handoff))), handoff);
   assert.throws(() => parseHydrationTrace([{ type: "retry", thread: "other" }]), /TRACE_SCHEMA/);
+  assert.throws(() => parseHydrationTrace([{ type: "snapshot-overlap", thread: "a", kind: "unknown" }]), /TRACE_SCHEMA/);
+});
+
+for (const kind of ["item-started", "turn-started", "status"] as const) test(`snapshot overlap ${kind} is detected by the real composition and its negative control`, async () => {
+  const events: HydrationChaosEvent[] = [{ type: "acquire", thread: "a" }, { type: "snapshot-overlap", thread: "a", kind }];
+  const result = await simulateHydrationRecovery(events);
+  assert.equal(result.coverage[`snapshot-overlap-${kind}`], 1, "the notification must actually be injected");
+  const run = (trace: readonly HydrationChaosEvent[]) => simulateHydrationRecovery(trace, { mutant: "delta-only" });
+  await assert.rejects(run(events), error => error instanceof ChaosViolation && error.rule === "SNAPSHOT_CUT");
+  const minimal = await shrinkChaosFailure(events, "SNAPSHOT_CUT", run);
+  await assert.rejects(run(parseHydrationTrace(JSON.parse(JSON.stringify(minimal)))), error => error instanceof ChaosViolation && error.rule === "SNAPSHOT_CUT");
+  await simulateHydrationRecovery(minimal);
 });
 
 for (const mutant of ["coupled-activation", "early-dispatch"] as const) test(`${mutant} fails its invariant and its minimized trace replays`, async () => {

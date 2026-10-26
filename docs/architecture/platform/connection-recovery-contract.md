@@ -252,7 +252,13 @@ legacy adapters without it must supply elapsed semantics through `now` as well.
 Changing the wall clock cannot extend the 180s preparation cap or end it early.
 This does not change ordinary request timeouts or preparation-completion policy.
 
-A read that overlaps native history deltas needs another canonical cut. That
+A read that overlaps native snapshot history notifications needs another canonical cut.
+This includes non-delta item/turn lifecycle, item updates and Thread status; an
+older buffered start must not overwrite the complete answer or terminal state
+already present in the snapshot. The same notification classification triggers
+the reread and supersedes observations represented by its new canonical cut.
+Settings, non-snapshot observations and admitted server requests remain buffered
+for exactly one release; they are not discarded with superseded history. That
 retry phase has an elapsed deadline measured from initial read admission. Its
 local owner settles with TIMEOUT and aborts child waits when the deadline expires,
 even if an in-progress reread ignores cancellation. Joining/continuing also checks

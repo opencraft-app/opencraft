@@ -1,4 +1,4 @@
-import { ThreadResumeCoordinatorService } from "@opencraft/appserver-session";
+import { ResumeNotificationBufferService, ThreadResumeCoordinatorService } from "@opencraft/appserver-session";
 import { SubmissionNotDispatchedError } from "@opencraft/chat-runtime";
 import { createConversationKey } from "@opencraft/chat-core";
 import type { SubmitIntent } from "@opencraft/composer-core";
@@ -9,9 +9,10 @@ import { ChaosViolation, requireThat, recoveryChaosRandom } from "./recovery-cha
 
 type Thread = "a" | "b";
 export type HydrationChaosEvent = { type: "acquire" | "release" | "retry" | "reply" | "submit" | "activation-reply"; thread: Thread }
+  | { type: "snapshot-overlap"; thread: Thread; kind: "item-started" | "turn-started" | "status" }
   | { type: "dispatch-reconnect"; thread: Thread; stage: "queued" | "started" }
   | { type: "reconnect" | "flush" };
-export interface HydrationChaosOptions { mutant?: "sticky-read" | "coupled-activation" | "early-dispatch"; legacy?: boolean }
+export interface HydrationChaosOptions { mutant?: "sticky-read" | "coupled-activation" | "early-dispatch" | "delta-only"; legacy?: boolean }
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
 /** Real Workbench/Session/RPC/Replica and user command composition. History
@@ -19,13 +20,16 @@ const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 export async function simulateHydrationRecovery(events: readonly HydrationChaosEvent[], options: HydrationChaosOptions = {}) {
   const coverage: Record<string, number> = {}, count = (key: string) => { coverage[key] = (coverage[key] ?? 0) + 1; };
   const leases = new Map<Thread, AppServerThreadRuntimeLease>();
-  const replies: { thread: Thread; epoch: number; kind: "history" | "activation"; done: boolean; send(): void }[] = [];
+  const replies: { thread: Thread; epoch: number; kind: "history" | "activation"; done: boolean; send(overlap?: "item-started" | "turn-started" | "status"): void }[] = [];
+  const overlappedCuts = new Map<Thread, number>();
   const callers: { settled: boolean }[] = [], arms = new Map<Thread, "queued" | "started">();
   type Intent = { thread: Thread; value: SubmitIntent; lease: AppServerThreadRuntimeLease; sends: number; settled: boolean; confirmed: boolean; error?: unknown };
   const intents = new Map<string, Intent>();
   let epoch = 0, healthy = false, activationsHealthy = false, initialized = 0, closes = 0, intentSequence = 0;
   let runtime!: ReturnType<typeof createAppServerWorkbenchRuntime>, wireViolation: unknown;
   const originalRead = ThreadResumeCoordinatorService.prototype.read, originalActivate = ThreadResumeCoordinatorService.prototype.activate;
+  const originalOverlap = ResumeNotificationBufferService.prototype.hasSnapshotOverlap;
+  if (options.mutant === "delta-only") ResumeNotificationBufferService.prototype.hasSnapshotOverlap = function (id) { return this.hasDeltas(id); };
   if (options.mutant === "sticky-read") {
     const sticky = new WeakMap<ThreadResumeCoordinatorService, Map<string, ReturnType<typeof originalRead>>>();
     ThreadResumeCoordinatorService.prototype.read = function (id, input = {}) {
@@ -53,10 +57,17 @@ export async function simulateHydrationRecovery(events: readonly HydrationChaosE
       const kind = request.method === "thread/resume" && !options.legacy ? "activation" : "history";
       const tag = `${thread}-epoch-${epoch}`, receivedEpoch = epoch;
       const turn = { id: `turn-${thread}`, status: "completed", itemsView: "full", items: [{ id: `item-${thread}`, type: "agentMessage", text: tag, phase: "final_answer" }], error: null };
-      const reply = { thread, epoch: receivedEpoch, kind, done: false, send() {
+      const reply = { thread, epoch: receivedEpoch, kind, done: false, send(overlap?: "item-started" | "turn-started" | "status") {
         if (this.done) return; this.done = true;
         if (this.epoch < epoch) count("retired-reply");
-        send({ thread: { id: thread, sessionId: thread, name: thread, path: `/rollouts/${thread}`, cwd: "/workspace", historyMode: options.legacy ? "message-window" : "paginated", model: "fixture", modelProvider: "fixture", turns: [] },
+        if (overlap && this.epoch === epoch && kind === "history") {
+          const notification = overlap === "item-started"
+            ? { method: "item/started", params: { threadId: thread, turnId: turn.id, item: { ...turn.items[0], text: "" } } }
+            : overlap === "turn-started" ? { method: "turn/started", params: { threadId: thread, turn: { ...turn, status: "inProgress", items: [] } } }
+            : { method: "thread/status/changed", params: { threadId: thread, status: { type: "active", activeFlags: [] } } };
+          peer.send(encodeJsonRpcMessage(notification)); overlappedCuts.set(thread, epoch); count(`snapshot-overlap-${overlap}`);
+        }
+        send({ thread: { id: thread, sessionId: thread, name: thread, path: `/rollouts/${thread}`, cwd: "/workspace", historyMode: options.legacy ? "message-window" : "paginated", model: "fixture", modelProvider: "fixture", turns: [], status: { type: "idle" } },
           model: "fixture", modelProvider: "fixture", cwd: "/workspace", runtimeWorkspaceRoots: [], approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: {},
           initialTurnsPage: { data: [turn], nextCursor: null }, turnsBackwardsCursor: null, itemsBackwardsCursor: null });
       } };
@@ -123,6 +134,7 @@ export async function simulateHydrationRecovery(events: readonly HydrationChaosE
         const lease = leases.get(event.thread);
         if (lease) { const caller = { settled: false }; callers.push(caller); void lease.retryRestore().then(() => { caller.settled = true; }, () => { caller.settled = true; }); }
       } else if (event.type === "reply") replies.find(reply => reply.thread === event.thread && reply.kind === "history" && !reply.done)?.send();
+      else if (event.type === "snapshot-overlap") replies.find(reply => reply.thread === event.thread && reply.kind === "history" && reply.epoch === epoch && !reply.done)?.send(event.kind);
       else if (event.type === "activation-reply") {
         // An explicit ACK event also gives asynchronous compiler/capability
         // preparation a bounded scheduling window before selecting the request.
@@ -147,6 +159,16 @@ export async function simulateHydrationRecovery(events: readonly HydrationChaosE
       }
       for (let i = 0; i < 3; i++) await flush();
       if (wireViolation) throw wireViolation;
+      for (const [thread, cut] of overlappedCuts) if (cut === epoch && runtime.getThreadResidency(thread)?.authoritative) {
+        const snapshot = leases.get(thread)?.getSnapshot();
+        if (snapshot) {
+          requireThat(JSON.stringify(snapshot.timeline).includes(`${thread}-epoch-${epoch}`)
+            && snapshot.timeline.frames.filter(frame => frame.turnId === `turn-${thread}`).every(frame => frame.status === "complete")
+            && (snapshot.threadStatus as { type?: string })?.type === "idle",
+            "SNAPSHOT_CUT", `${thread} buffered lifecycle regressed the canonical snapshot`);
+          overlappedCuts.delete(thread);
+        }
+      }
       requireThat(closes === 0 && initialized === 1 && runtime.getSnapshot().connectionGeneration === generation,
         "HYDRATION_HOST_ISOLATION", "logical recovery changed the healthy physical Host");
     }
@@ -178,6 +200,7 @@ export async function simulateHydrationRecovery(events: readonly HydrationChaosE
   } catch (error) { failure = error; throw error; }
   finally {
     ThreadResumeCoordinatorService.prototype.read = originalRead; ThreadResumeCoordinatorService.prototype.activate = originalActivate;
+    ResumeNotificationBufferService.prototype.hasSnapshotOverlap = originalOverlap;
     for (const reply of replies) reply.send(); for (const lease of leases.values()) lease.release();
     try { await runtime.dispose(); }
     catch (error) { if (failure instanceof ChaosViolation) failure.cleanupFailure = String(error); else if (!failure) throw error; }
@@ -185,19 +208,21 @@ export async function simulateHydrationRecovery(events: readonly HydrationChaosE
 }
 export function generateHydrationChaos(seed: number, steps = 80): HydrationChaosEvent[] {
   const random = recoveryChaosRandom(seed), events: HydrationChaosEvent[] = [{ type: "acquire", thread: "a" }];
-  const types = ["acquire", "release", "retry", "reply", "reconnect", "flush", "submit", "activation-reply", "dispatch-reconnect"] as const;
+  const types = ["acquire", "release", "retry", "reply", "reconnect", "flush", "submit", "activation-reply", "dispatch-reconnect", "snapshot-overlap"] as const;
   for (let i = 0; i < steps; i++) {
     const type = types[Math.floor(random() * types.length)]!, thread = random() < 0.5 ? "a" : "b";
-    events.push(type === "reconnect" || type === "flush" ? { type } : type === "dispatch-reconnect" ? { type, thread, stage: random() < 0.5 ? "queued" : "started" } : { type, thread });
+    events.push(type === "reconnect" || type === "flush" ? { type } : type === "dispatch-reconnect" ? { type, thread, stage: random() < 0.5 ? "queued" : "started" }
+      : type === "snapshot-overlap" ? { type, thread, kind: (["item-started", "turn-started", "status"] as const)[Math.floor(random() * 3)]! } : { type, thread });
   }
   return events;
 }
 export function parseHydrationTrace(value: unknown): HydrationChaosEvent[] {
   requireThat(Array.isArray(value), "TRACE_SCHEMA", "hydration events must be an array");
   return value.map(event => {
-    requireThat(event && typeof event === "object" && ["acquire", "release", "retry", "reply", "reconnect", "flush", "submit", "activation-reply", "dispatch-reconnect"].includes(event.type), "TRACE_SCHEMA", "unknown hydration event");
+    requireThat(event && typeof event === "object" && ["acquire", "release", "retry", "reply", "reconnect", "flush", "submit", "activation-reply", "dispatch-reconnect", "snapshot-overlap"].includes(event.type), "TRACE_SCHEMA", "unknown hydration event");
     if (event.type === "reconnect" || event.type === "flush") return { type: event.type };
     requireThat(event.thread === "a" || event.thread === "b", "TRACE_SCHEMA", "unknown Thread");
+    if (event.type === "snapshot-overlap") { requireThat(["item-started", "turn-started", "status"].includes(event.kind), "TRACE_SCHEMA", "unknown snapshot notification"); return { type: event.type, thread: event.thread, kind: event.kind }; }
     if (event.type === "dispatch-reconnect") { requireThat(event.stage === "queued" || event.stage === "started", "TRACE_SCHEMA", "unknown dispatch stage"); return { type: event.type, thread: event.thread, stage: event.stage }; }
     return { type: event.type, thread: event.thread };
   });
