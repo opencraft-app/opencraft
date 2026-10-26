@@ -112,6 +112,8 @@ import {
 } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
+  createConversationOutbox,
+  type ConversationOutbox,
   type ConversationCommandPort,
   type ConversationRuntime,
   type ConversationRuntimeSnapshot,
@@ -201,6 +203,7 @@ export interface AppServerWorkbenchRuntimeConfig {
   readonly hostId: string;
   /** Presentation-only identity captured when a local message is submitted. */
   readonly getSubmissionSender?: () => MessageSender | null;
+  readonly canDispatchOutbox?: () => boolean;
   readonly modelSelectionPolicy?: ModelSelectionPolicy;
   /** Composition-owned availability and display projection; the Host still authorizes execution. */
   readonly readSelectableModels?: (catalog: readonly { readonly id: string; readonly model: string }[], options?: { readonly preferCached?: boolean }) => Promise<readonly SelectableModelPresentation[] | null>;
@@ -407,6 +410,8 @@ export interface AppServerWorkbenchRuntime {
   connect(): Promise<void>;
   reconnect(): Promise<void>;
   acquireThread(threadId: string): Promise<AppServerThreadRuntimeLease>;
+  /** Local input only; this creates no Client, Thread lease or execution authority. */
+  localOutbox?(threadId: string): ConversationOutbox | null;
   /**
    * Creates the recoverable submission boundary declared by the Host. Most
    * Hosts return after Thread creation; first-Turn durable Hosts return only
@@ -1119,8 +1124,8 @@ export function createAppServerWorkbenchRuntime(
         ),
       };
       conversation = createReplicaConversationRuntime({
-        outbox: config.outbox,
-        canDispatchOutbox: (intent) => phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
+        localOutbox: localOutbox(threadId) ?? undefined,
+        canDispatchOutbox: (intent) => config.canDispatchOutbox?.() !== false && phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
           && (intent?.target.type === "steer-active-turn"
             || executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false
             || !conversation?.getSnapshot().activeTurn),
@@ -1897,6 +1902,19 @@ export function createAppServerWorkbenchRuntime(
     return operation;
   };
 
+  const localOutboxes = new Map<string, ConversationOutbox>();
+  const localOutbox = (threadId: string): ConversationOutbox | null => {
+    if (!config.outbox || disposed) return null;
+    let owner = localOutboxes.get(threadId);
+    if (!owner) {
+      owner = createConversationOutbox({ key: createConversationKey(hostId, requireThreadId(threadId)), storage: config.outbox,
+        ready: () => false, blocked: () => true, publish() {}, retire() {}, sender: config.getSubmissionSender,
+        send: async () => { throw new Error("A live Thread binding is required before dispatch"); },
+      });
+      localOutboxes.set(threadId, owner);
+    }
+    return owner;
+  };
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
       protocol: {
@@ -2296,6 +2314,7 @@ export function createAppServerWorkbenchRuntime(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    localOutbox,
     connect() { return connection.connect(); },
     reconnect() { return connection.connect(true); },
     async acquireThread(nextThreadId) {
@@ -2512,6 +2531,8 @@ export function createAppServerWorkbenchRuntime(
         detachRetryTimer = null;
         failedReadDetaches.clear();
         disposed = true;
+        for (const owner of localOutboxes.values()) owner.dispose();
+        localOutboxes.clear();
         lifecycleGeneration += 1;
         removeTransportListener?.();
         removeTransportListener = null;

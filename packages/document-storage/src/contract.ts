@@ -30,7 +30,7 @@ export function validateDataRevision(value: unknown): asserts value is number {
 export function validateDataVersion(value: unknown): asserts value is number {
   if (!Number.isSafeInteger(value) || Number(value) < 1) throw new TypeError("Invalid extension storage version");
 }
-export function serializeDocumentValue(value: unknown): string {
+export function serializeDocumentValue(value: unknown, maxBytes = DOCUMENT_MAX_BYTES): string {
   const ancestors = new Set<object>();
   function visit(input: unknown, depth: number): void {
     if (depth > 32) throw new TypeError("Extension storage nesting limit exceeded");
@@ -45,7 +45,7 @@ export function serializeDocumentValue(value: unknown): string {
   }
   visit(value, 0);
   const json = JSON.stringify(value);
-  if (new TextEncoder().encode(json).byteLength > DOCUMENT_MAX_BYTES) throw new RangeError("Extension storage quota exceeded");
+  if (new TextEncoder().encode(json).byteLength > maxBytes) throw new RangeError("Extension storage quota exceeded");
   return json;
 }
 

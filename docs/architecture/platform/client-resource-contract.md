@@ -8,7 +8,7 @@
 
 客户端资源层只解决四件事：资源属于哪个身份范围、谁是权威、如何持久化与恢复、旧异步结果如何失效。请求、分页、重试、服务端权限和执行回执仍由各领域 owner 持有。
 
-首个资源是会话列表的远端展示副本。后续草稿和发件箱复用同一套身份与生命周期端口，但拥有独立的写入语义。
+会话列表使用远端展示副本；会话草稿、Bot Composer 草稿和未发送消息已通过具名本地文档端口接入同一平台 adapter，业务 owner 和发送状态机保持唯一。
 
 ## 资源身份
 
@@ -39,7 +39,7 @@ type ClientResourceIdentity = {
 };
 ```
 
-资源 ID 由领域 owner 定义。会话列表的 ID 是 `host + hostRevision`；草稿的 ID 是 `host + hostRevision + thread`；发件箱的 ID 是稳定 `commandId`，不能使用数组下标或时间戳替代。
+资源 ID 由领域 owner 定义。会话列表按 `host + hostRevision` 隔离；会话草稿沿用 `editor slot + semantic target`，Bot 草稿沿用 Composer target，均不因重连/Host recipe revision 更换原件身份。发件箱沿用账号/部署/Host profile/thread 分区的现有队列文档，每条消息持有稳定 `commandId` 和 `clientMessageId`。存储不替业务层重新定义消息身份。
 
 ## 三种资源语义
 
@@ -61,27 +61,22 @@ type RemoteProjection<T> = {
 type LocalOriginal<T> = {
   authority: "local-original";
   commit(value: T, expectedRevision: number, fence: ClientResourceFence): Promise<AcceptedCommit>;
-  read(): Promise<DurableSnapshot<T> | null>;
+  read(): Promise<LocalSnapshot<T> | null>;
   clear(ownerToken: LocalClearToken): Promise<void>;
 };
 ```
 
 草稿、用户明确保存的本地设置和未送出的本地内容属于本地原件。调用方必须保留输入直到选定 adapter 接受并提交写入；CAS 冲突、格式降级、配额和数据库错误必须返回给调用方。IndexedDB 的事务成功只表示当前浏览器存储接受了写入，不承诺系统永不回收；不增加额外的 `storageEvicted` 业务状态。通用缓存淘汰不得删除本地原件；账号退出时由其 owner 按明确策略清除或保留，不能静默处理。
 
-### 持久命令
+### 既有消息发件箱
 
-```ts
-type DurableCommand = {
-  authority: "durable-command";
-  commandId: string;
-  idempotencyKey: string;
-  target: ClientResourceScope;
-  state: "queued" | "sending" | "unknown" | "acknowledged" | "failed" | "cancelled";
-  expiresAt: number | null;
-};
-```
+不增加通用持久命令框架。`conversation-outbox` 是本地文档，其业务语义仍由 chat-runtime 的既有发件箱 owner 持有。队列接受写入后才返回 custody/清输入；发送前先接受 sending 写入，再核对当前账号验证、Host、连接和基线。持久 sending 恢复为 unknown；未知送达只按精确服务端回执消解，不能自动重放。附件/上下文等未支持的离线输入不纳入队列；删除、执行及安全操作也不能通过缓存获得权限。
 
-发件箱不是普通 local resource。只有后端明确提供幂等键、回执和冲突规则的命令才能进入发件箱；未知送达不能自动重放，过期和取消都必须保留可观察结果。付款、验证、删除和安全操作默认不进入发件箱。
+### 具名文档迁移
+
+`ClientLocalDocuments` 只开放 conversation-draft、composer-draft、conversation-outbox。版本化字符串文档使用 CAS；null 是保留 revision 的删除标记，防止未能移除的旧源复活。旧 localStorage/sessionStorage 逐记录导入，新事务接受且旧值未改变才移除旧源；失败保留旧数据，不把旧源作为新写入的第二真源。
+
+草稿按最近接受的非空原件恢复既有编辑槽；保留有效 history 引用和多个独立槽位，输入容量/附件归属不变。并发页面从同一 revision 编辑时拒绝覆盖。读取迟到不替换已经输入的新内容。账号撤销先同步封闭旧 handle，再排队定向清理；远端副本淘汰不能清除这些原件。
 
 ## 运行时栅栏
 
@@ -116,19 +111,17 @@ type ResourceInvalidation = {
 | Electron | Main SQLite | Electron Main | Preload 暴露固定资源端口；Renderer 不给路径、不发 SQL |
 | 移动端 | 原生/Expo SQLite | Native coordinator | WebView 只接收窄失效事件，不直接访问原生数据库 |
 
-当前 Electron IPC 只开放已接入的 `thread-catalog` 远端副本，Main 校验资源名、authority、版本和写入预算；清理仅删除该资源名的远端数据，不影响本地原件或其他领域。底层 SQLite adapter 的本地原件能力不等于已向 Renderer 开放草稿写入入口；后续迁移按实际领域逐个接入。IPC 只接纳受信任的工作台主 frame，账号 namespace 仍是应用组合根提供的展示分区，不代表 Main 已认证该账号，也不授予服务端操作权限。
+Electron IPC 开放 thread-catalog 远端副本 v2 和上述三个本地文档 v1；Main 在打开固定 SQLite 前校验具名资源、authority、版本和预算。本地格式只接收字符串/null；远端每文档 1 MiB，本地 envelope 16 MiB 并保留各 owner 更紧的原有预算（包括 Bot 草稿 4M 字符）。枚举和本地清理只作用于明确指定的已接入领域；远端清理仍限 thread-catalog。IPC 只接纳受信任的工作台主 frame，账号 namespace 仍是应用组合根提供的展示分区，不代表 Main 已认证该账号，也不授予服务端操作权限。
 
 三种 adapter 必须通过同一组 contract tests：重开恢复、CAS 冲突、schema 版本、账号切换、迟到写入、远端淘汰、本地原件保护、数据库/配额失败。adapter 不复制业务 fetch、分页或权限判断。
 
 写入成功的含义由 adapter 决定：Electron/移动端 SQLite 可验证事务提交并支持普通进程重启恢复；Web/PWA IndexedDB 只提供浏览器本地写入和后续读取能力，浏览器清理、配额回收或用户清站后需要按存储缺失重新恢复。业务层不得把 IndexedDB 写入称为备份或永久保存。
 
-## 施工顺序
+## 当前接入范围
 
-1. 稳定 shared contract、scope 和 fence；补三种 authority 的测试夹具。
-2. 移动端实现 SQLite adapter 和 Native coordinator；先接会话列表展示副本。
-3. 将草稿迁移为 `local-original`，保留当前草稿 owner 的容量、附件和账号撤销规则。
-4. 仅对有后端幂等/回执合同的消息命令实现 `durable-command`。
-5. Service Worker 完成离线启动壳；它与业务资源层独立验收。
+Web/PWA IndexedDB、Electron Main SQLite 已消费同一 contract。原生移动端继续通过同一端口接适配器，不复用 Electron IPC；本轮不声称已接入其安装包。Web 离线壳、草稿及发件箱各自验证；SW 只保证已准备版本的静态启动资源，不接管业务数据。
+
+同一浏览器未退出的上次账号可以在断网冷启动时恢复自己的本地数据分区。该 marker 只选择展示/编辑数据；验证状态保持 false，不恢复 token、Actor、执行能力或发送权限。联网重新验证同一账号后才恢复正常发送准入；明确登出/换账号撤销旧分区。
 
 ## 明确不承诺
 

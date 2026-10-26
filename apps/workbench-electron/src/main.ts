@@ -293,6 +293,14 @@ ipcMain.handle("opencraft:client-resource-clear-remote", (event, namespace) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
   return clientResourcePort.clearRemoteNamespace(namespace);
 });
+ipcMain.handle("opencraft:client-resource-list-local", (event, namespace, name) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResourcePort.listLocalKeys(namespace, name);
+});
+ipcMain.handle("opencraft:client-resource-clear-local", (event, namespace, name) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResourcePort.clearLocalResource(namespace, name);
+});
 ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
   const result = uiPreferences.compareAndSet(key, expectedRevision, valueJson);

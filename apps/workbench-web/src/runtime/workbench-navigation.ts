@@ -209,6 +209,8 @@ export interface ApplicationRouterOptions {
   readonly mode?: "memory" | "browser";
   readonly initialEntries?: string[];
   readonly initialIndex?: number;
+  /** Restored local input slot when this browser history has no owner reference. */
+  readonly initialRouteScopeId?: RouteScopeId;
   /** Resource owners validate references; Router owns any necessary REPLACE. */
   readonly resolveRestoredEntry?: (entry: RestoredWorkbenchEntry) => RestoredWorkbenchEntry;
 }
@@ -256,7 +258,7 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
   const firstRoute = parseApplicationRouteUrl(url);
   const bootUrl = serverPath(url.pathname).replace(/\/$/, "") === "/environments" && firstRoute.kind === "settings"
     ? new URL(serverUrl("/settings/" + encodeURIComponent(firstRoute.slug)), initialUrl) : url;
-  const firstScope = legacy ? asRouteScopeId(legacy.routeScopeId) : createRouteScopeId();
+  const firstScope = legacy ? asRouteScopeId(legacy.routeScopeId) : options.initialRouteScopeId ?? createRouteScopeId();
   const entry = (location: TLocation, routeScopeId: RouteScopeId) => ({
     namespace: "opencraft.application-route.v8",
     location: location === null ? null : serializeWorkbenchLocation(location),
@@ -300,7 +302,7 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
       ? resolveLocation(parseWorkbenchLocation(state.location)) : null;
     let scope = state?.namespace === "opencraft.application-route.v8" && typeof state.routeScopeId === "string"
       ? asRouteScopeId(state.routeScopeId) : scopes.get(current.key);
-    if (!scope) { scope = createRouteScopeId(); scopes.set(current.key, scope); }
+    if (!scope) { scope = action === "initial" ? firstScope : createRouteScopeId(); scopes.set(current.key, scope); }
     return {
       url: current.pathname + current.search + current.hash,
       revision, action, historyIndex: index,

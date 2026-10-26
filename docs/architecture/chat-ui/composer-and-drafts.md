@@ -7,9 +7,10 @@
 Existing Web/Electron conversations can accept text while their Host is offline
 or their Replica baseline is recovering. `ConversationRuntime` owns a local
 outbox distinct from the Host execution queue. The platform injects
-`ConversationOutboxStorage`; the browser adapter uses tab-scoped sessionStorage
-under `opencraft.outbox.v1:`, partitioned by server, product, account, Host profile
-revision and Thread. Local persistence must succeed before the Composer clears.
+`ConversationOutboxStorage`; Web/PWA uses IndexedDB and Electron uses fixed Main
+SQLite via the shared named local document port. Legacy `opencraft.outbox.v1:`
+sessionStorage is an import source, partitioned by server, product, account, Host
+profile revision and Thread. Local persistence must succeed before the Composer clears.
 Storage denial, capacity errors and unsupported attachment/context handles retain
 the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
@@ -37,9 +38,9 @@ published, the transport has not been called: restore waiting custody before
 exiting the drain. A confirmed pre-dispatch refusal can return to waiting. An
 identity replacement revokes the old namespace and late completions; ownership
 is rechecked after asynchronous compilation immediately before sending.
-Closing a browser tab ends sessionStorage lifetime; this is not cross-device
-or browser-close durable delivery. Reload restores each conversation when its
-Runtime is reacquired; background open conversations remain resident for recovery.
+Reopening a document/process restores locally accepted input when its Runtime is
+reacquired; this is not cross-device delivery, and Web storage may be evicted.
+Background open conversations remain resident for recovery.
 
 ## Attachment staging during reconnect
 
@@ -58,8 +59,9 @@ Application, without changing the refresh persistence limits below.
 ## Browser-local input drafts
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
-`BrowserComposerDrafts` adapts browser localStorage for Bot input without server or
-device synchronization. Task input slots use an account-bound
+the persistent browser adapter uses shared local documents for Bot input without
+server or device synchronization. `BrowserComposerDrafts` remains the legacy
+localStorage codec/import path. Task input slots use an account-bound
 `ConversationDraftOwnerRegistry`; `ConversationDraftContinuity` remains their
 sole document persistence writer.
 Bot input is isolated by product/account and exact Host/conversation identity. Document, context and
@@ -815,3 +817,29 @@ native `loadSkills` roots, precedence, diagnostics and paths; explicit-only skil
 remain user-selectable. No skill body is included in the catalog. Selection
 inserts canonical name/path, and Pi validates retained references against the
 current native registry before loading instructions or admitting inference.
+
+
+## Local document persistence and offline restoration
+
+Conversation draft continuity and Bot Composer draft storage share the platform
+client-resource adapter while retaining their independent existing input owners.
+Web/PWA uses IndexedDB; Electron uses named Main SQLite ports. Async hydration
+only replaces untouched initial content. Accepted write is the custody boundary;
+quota, schema/CAS conflicts or revoked scope cannot silently clear input. Legacy
+localStorage/sessionStorage is migrated per record only after accepted import.
+Null tombstones prevent resurrection if a legacy removal failed. Web acceptance
+is not a promise against iOS/browser eviction.
+
+Persisted conversation keys retain editor-slot and semantic-target identity.
+A fresh document with no history owner reference restores the most recently
+accepted nonempty slot for that target, rather than cloning its document into a
+new owner. Explicit valid history references and independent slots remain intact.
+Local presentation can resume before Host recovery; reconnect never restores an
+execution lock. Account changes fence pending restoration.
+
+The existing message outbox now hydrates and serializes mutations asynchronously.
+It awaits accepted waiting writes before reporting custody and accepted sending
+writes before transport. Restored sending becomes unknown; exact proof may retire
+it, but no automatic retry is permitted. Remembered account partitions only enable
+local read/edit; verified identity, live Host/baseline and existing send admission
+remain required. This does not add a generic command or background-sync layer.

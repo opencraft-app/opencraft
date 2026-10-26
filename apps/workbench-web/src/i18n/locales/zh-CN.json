@@ -641,7 +641,7 @@
   "office.failed": "无法预览此文档，可以下载原文件查看。",
   "navigation.switchServer": "切换服务器",
   "webUpdates.directManagement": "请通过这台服务器的部署管理入口更新软件。",
-  "chat.outbox.waiting": "已保存在当前标签页 · 重连后自动发送",
+  "chat.outbox.waiting": "已保存在本地 · 重连后自动发送",
   "chat.outbox.unconfirmed": "发送结果未知 · 请先核对会话，再决定是否重发",
   "chat.outbox.failed": "消息未发送 · 重连后可删除并重新发送",
   "mcpApp.failed": "应用暂不可用",

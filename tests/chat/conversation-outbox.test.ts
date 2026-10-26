@@ -35,7 +35,7 @@ function fixture(send?: (i: SubmitIntent) => Promise<void>) {
 
 test("offline input survives reload and moves FIFO into the Host queue once authoritative", async () => {
   const f = fixture(); const original = f.create();
-  original.admit(intent("one")); original.admit(intent("two"));
+  await original.admit(intent("one")); await original.admit(intent("two"));
   assert.equal(f.sent.length, 0); assert.equal(f.rows().length, 2);
   original.dispose(); const restored = f.create();
   assert.deepEqual(restored.project().map(i => i.preview), ["one", "two"]);
@@ -45,39 +45,39 @@ test("offline input survives reload and moves FIFO into the Host queue once auth
   restored.dispose();
 });
 
-test("quota, capacity and attachment refusal never claim local custody", () => {
+test("quota, capacity and attachment refusal never claim local custody", async () => {
   const f = fixture(); const box = f.create(); f.fail();
-  assert.throws(() => box.admit(intent("quota")), /Quota/); assert.equal(box.project().length, 0); box.dispose();
+  await assert.rejects(box.admit(intent("quota")), /Quota/); assert.equal(box.project().length, 0); box.dispose();
   const other = fixture(); const q = other.create();
-  assert.throws(() => q.admit({ ...intent("attachment"), context: [{ id: "c", kind: "file", title: "file", uri: "blob:x", visible: true }] }), /Reconnect/);
-  for (let i = 0; i < 50; i++) q.admit(intent(String(i)));
-  assert.throws(() => q.admit(intent("overflow")), /full/); q.dispose();
+  await assert.rejects(q.admit({ ...intent("attachment"), context: [{ id: "c", kind: "file", title: "file", uri: "blob:x", visible: true }] }), /Reconnect/);
+  for (let i = 0; i < 50; i++) await q.admit(intent(String(i)));
+  await assert.rejects(q.admit(intent("overflow")), /full/); q.dispose();
 });
 
 test("cancel and duplicate local admission preserve order without remote effects", async () => {
-  const f = fixture(); const box = f.create(); box.admit(intent("one")); box.admit(intent("one")); box.admit(intent("two"));
-  assert.equal(box.project().length, 2); assert.equal(box.remove("one"), true);
+  const f = fixture(); const box = f.create(); await box.admit(intent("one")); await box.admit(intent("one")); await box.admit(intent("two"));
+  assert.equal(box.project().length, 2); assert.equal(await box.remove("one"), true);
   f.ready(); box.wake(); await settle(); assert.deepEqual(f.sent.map(i => i.commandId), ["two"]); box.dispose();
 });
 
 test("lost ACK blocks FIFO until positive server proof, including across reload", async () => {
   const f = fixture(async () => { throw new SubmissionOutcomeUnknownError(); }); const box = f.create();
-  box.admit(intent("one")); box.admit(intent("two")); f.ready(); box.wake(); await settle();
+  await box.admit(intent("one")); await box.admit(intent("two")); f.ready(); box.wake(); await settle();
   assert.equal(box.project()[0]?.state, "unknown"); box.wake(); await settle(); assert.equal(f.sent.length, 1);
   box.dispose(); const restored = f.create(); restored.wake(); await settle(); assert.equal(f.sent.length, 1);
-  restored.reconcile(new Set(["client-one"])); assert.equal(restored.project()[0]?.clientMessageId, "client-two"); restored.dispose();
+  await restored.reconcile(new Set(["client-one"])); assert.equal(restored.project()[0]?.clientMessageId, "client-two"); restored.dispose();
 });
 
 test("a tab reloaded during send does not replay the attempt", async () => {
   let release!: () => void; const f = fixture(() => new Promise<void>(r => { release = r; })); const box = f.create();
-  box.admit(intent("one")); f.ready(); box.wake(); await settle(); assert.equal(f.rows()[0]?.state, "sending");
+  await box.admit(intent("one")); f.ready(); box.wake(); await settle(); assert.equal(f.rows()[0]?.state, "sending");
   box.dispose(); const restored = f.create(); assert.equal(restored.project()[0]?.state, "unknown"); restored.wake();
   release(); await settle(); assert.equal(f.sent.length, 1); assert.equal(f.rows().length, 1); restored.dispose();
 });
 
 test("late completion cannot overwrite a replacement account queue", async () => {
   let release!: () => void; const f = fixture(() => new Promise<void>(r => { release = r; })); const box = f.create();
-  box.admit(intent("old")); f.ready(); box.wake(); await settle(); f.changeScope(); release(); await settle();
+  await box.admit(intent("old")); f.ready(); box.wake(); await settle(); f.changeScope(); release(); await settle();
   assert.equal(box.project().length, 0); assert.equal(f.rows().length, 0); box.dispose();
 });
 
@@ -117,7 +117,7 @@ test("server confirmation before a lost RPC ACK continues draining the next inpu
       throw new SubmissionOutcomeUnknownError();
     }
   });
-  box = f.create(); box.admit(intent("one")); box.admit(intent("two"));
+  box = f.create(); await box.admit(intent("one")); await box.admit(intent("two"));
   f.ready(); box.wake(); await settle();
   assert.deepEqual(f.sent.map(i => i.commandId), ["one", "two"]);
   assert.equal(box.project().length, 0); box.dispose();
@@ -135,7 +135,7 @@ test("browser queue preserves Fast and explicit Standard across reload", () => {
 
 test("late positive proof wakes FIFO without another connection event or resending the uncertain input", async () => {
   const f = fixture(async i => { if (i.commandId === "one") throw new SubmissionOutcomeUnknownError(); });
-  const box = f.create(); box.admit(intent("one")); box.admit(intent("two"));
+  const box = f.create(); await box.admit(intent("one")); await box.admit(intent("two"));
   f.ready(); box.wake(); await settle();
   assert.equal(box.project()[0]?.state, "unknown");
   box.reconcile(new Set(["client-one"]));
@@ -155,8 +155,33 @@ test("synchronous readiness loss after custody publication keeps the undispatche
     async send(i) { sent++; return { commandId: i.commandId, clientMessageId: i.clientMessageId,
       hostId: key.hostId, threadId: key.threadId, turnId: null, acceptedAt: 1, replayed: false }; },
   });
-  box.admit(intent("one")); ready = true; box.wake(); await settle();
+  await box.admit(intent("one")); ready = true; box.wake(); await settle();
   assert.equal(sent, 0); assert.equal(rows[0]?.state, "waiting");
   ready = true; box.wake(); await settle();
   assert.equal(sent, 1); assert.equal(rows.length, 0); box.dispose();
+});
+
+test('one local outbox owns cold-start input before a Thread exists and later attaches its live dispatcher', async () => {
+  const f = fixture(); const box = f.create();
+  await box.admit(intent('cold'));
+  let sends = 0, notifications = 0;
+  const unsubscribe = box.subscribe(() => { notifications++; });
+  let releaseSend!: () => void;
+  const detach = box.attach({ ready: () => true, blocked: () => false, publish() {}, retire() {},
+    async send(input, options) {
+      assert.equal(options.canDispatch(), true); sends++;
+      await new Promise<void>(resolve => { releaseSend = resolve; });
+      return { commandId: input.commandId, clientMessageId: input.clientMessageId, hostId: key.hostId, threadId: key.threadId, turnId: null, acceptedAt: 1, replayed: false };
+    },
+  });
+  for (let n = 0; n < 20 && !sends; n++) await settle();
+  assert.equal(sends, 1); detach();
+  assert.equal(box.project()[0]?.state, 'unknown');
+  releaseSend(); await settle();
+  assert.equal(box.project().length, 1, 'late dispatcher ACK cannot erase replacement custody');
+  await box.admit(intent('later'));
+  box.attach({ ready: () => true, blocked: () => false, publish() {}, retire() {}, send: async () => { throw new Error('unknown must block FIFO'); } });
+  await box.ready(); box.wake(); await settle();
+  assert.equal(sends, 1); assert.equal(box.project().length, 2); assert.ok(notifications > 0);
+  unsubscribe(); box.dispose();
 });

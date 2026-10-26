@@ -2,6 +2,8 @@ import {
   encodeComposerTarget, isComposerDocumentEmpty,
   type ComposerDraftStorage, type ComposerSavedContent, type ComposerTarget,
 } from "@opencraft/composer-core";
+import type { ClientLocalDocuments } from "@opencraft/document-storage/client-local-documents";
+import { readMigratingLocalDocument } from "./local-document-migration";
 
 type StoragePort = Pick<Storage, "getItem" | "setItem" | "removeItem"> & Partial<Pick<Storage, "key" | "length">>;
 type RecordValue = Record<string, unknown>;
@@ -41,6 +43,37 @@ function content(value: unknown): value is ComposerSavedContent {
     && all(value.context, item => object(item) && string(item.id) && string(item.title) && ["file", "selection", "image", "mcp", "appshot", "resource", "annotation"].includes(String(item.kind)) && (item.uri === null || string(item.uri)) && typeof item.visible === "boolean" && metadata(item.metadata));
 }
 
+function restoreContent(value: ComposerSavedContent): ComposerSavedContent {
+  return { ...value, attachments: value.attachments.map(item => item.uri?.startsWith("blob:") || item.uri === null || item.lifecycle !== "ready"
+    ? { ...item, uri: null, lifecycle: "failed", error: "请重新添加此文件。", metadata: undefined } : item) };
+}
+
+/** Production persistence is asynchronous; legacy browser storage is import-only. */
+export function createPersistentComposerDrafts(storage: StoragePort, namespace: string, documents: ClientLocalDocuments) {
+  const legacy = new BrowserComposerDrafts(storage, namespace);
+  let revoked = false;
+  const key = (target: ComposerTarget) => `${namespace}:${encodeComposerTarget(target)}`;
+  return {
+    async read(target: ComposerTarget): Promise<ComposerSavedContent | null> {
+      if (revoked) return null;
+      const raw = await readMigratingLocalDocument(documents, key(target), storage);
+      if (revoked || raw === null || raw.length > 4 * 1024 * 1024) return null;
+      const value: unknown = JSON.parse(raw);
+      if (!object(value) || value.version !== 1 || !content(value.content)) throw new Error("Invalid local draft content");
+      return restoreContent(value.content);
+    },
+    async write(target: ComposerTarget, value: ComposerSavedContent): Promise<void> {
+      if (revoked) throw new Error("Local draft scope revoked");
+      if (!content(value)) throw new Error("Invalid local draft content");
+      const serialized = isComposerDocumentEmpty(value.document) && value.attachments.length === 0 && value.context.length === 0
+        ? null : JSON.stringify({ version: 1, target, content: value });
+      if (serialized !== null && serialized.length > 4 * 1024 * 1024) throw new RangeError("Local draft exceeds the supported record size");
+      await documents.write(key(target), serialized);
+    },
+    revokeAndClear() { revoked = true; void documents.revokeAndClear().catch(() => undefined); legacy.revokeAndClear(); },
+  };
+}
+
 /** Browser-origin local, no RPC, no cross-tab subscriptions, no submission replay.
  * Task and message rooms use separate namespaces even on the same native Thread.
  * A stored draft never restores a lock, provisional dictation or in-flight work.
@@ -66,14 +99,7 @@ export class BrowserComposerDrafts implements ComposerDraftStorage {
     if (this.revoked) return null;
     const record = this.record(target);
     if (!record || !content(record.content)) return null;
-    return {
-      ...record.content,
-      // Object URLs and unfinished staging have process-local owners. Keep
-      // the file chip recoverable, but never claim its missing bytes are ready.
-      attachments: record.content.attachments.map(item => item.uri?.startsWith("blob:") || item.uri === null || item.lifecycle !== "ready"
-        ? { ...item, uri: null, lifecycle: "failed", error: "请重新添加此文件。", metadata: undefined }
-        : item),
-    };
+    return restoreContent(record.content);
   }
   write(target: ComposerTarget, value: ComposerSavedContent): void {
     if (this.revoked) return;

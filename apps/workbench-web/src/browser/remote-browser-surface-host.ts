@@ -115,9 +115,12 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private root: HTMLElement | null = null;
   private storageIds = new Map<BrowserPageId, string>();
-  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1')) {
+  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1'), private readonly admitted: () => boolean = () => true) {
+    this.restoreStorage();
+  }
+  restoreStorage() {
     try { for (const [id, storage] of Object.entries(JSON.parse(this.storage.getItem(this.storageKey) || '{}')))
-      if (typeof storage === 'string' && /^browser[:-][a-zA-Z0-9-]+$/.test(storage)) this.storageIds.set(id as BrowserPageId, storage); } catch {}
+      if (!this.storageIds.has(id as BrowserPageId) && typeof storage === 'string' && /^browser[:-][a-zA-Z0-9-]+$/.test(storage)) this.storageIds.set(id as BrowserPageId, storage); } catch {}
   }
   get listResources() { return this.storage.listResources ? () => this.storage.listResources!() : undefined; }
   get closeResource() { return this.storage.closeResource ? (lease: string) => this.storage.closeResource!(lease) : undefined; }
@@ -151,6 +154,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       park: () => this.park(id), close: () => this.release(id, false), clearCover: () => {}, cover: () => {} };
   }
   navigate(id: BrowserPageId, _title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force = false): boolean {
+    if (!this.admitted()) throw Object.assign(new Error('Remote browser awaits authenticated initialization'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
     const absent = !this.pages.has(id);
     if (absent && !this.hostIdentities.has(id)) this.backing?.(id);
     const p = this.ensure(id, events); p.events = events;

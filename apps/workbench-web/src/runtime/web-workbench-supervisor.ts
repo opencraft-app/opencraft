@@ -105,7 +105,7 @@ import {
 } from "@opencraft/workbench-runtime";
 import { installAppServerDiagnostics } from "./appserver-diagnostics";
 import { authenticationProviderAdapter } from "./authentication-contributions";
-import { BrowserComposerDrafts } from "./browser-composer-drafts";
+import { createPersistentComposerDrafts } from "./browser-composer-drafts";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { changesComposerCapabilities, invalidateComposerCapabilities } from "./composer-capabilities-query";
 import { openConnectorConfigurationStore } from "./connector-configuration-store";
@@ -151,6 +151,7 @@ import {
 
 import { appServerUrl, BoundedCheckpointMap, BrowserDisplayContinuity, createWebWorkbenchCommands, createWorkbenchQueryClient, currentProductDatabaseName, currentProductStorageKey, readLocalPreference, currentWorkbenchPlatform, hostDefinitionProfile, HostlessWebWorkbenchApplicationSupervisor, parseWebHostDefinitions, persistProvisionedHost, profileDescriptor, provisionWebSocketHost, refreshBundledHostProfiles, rememberedThreadId, WebWorkbenchApplicationSupervisor, WebWorkbenchSupervisorOptions } from './workbench-application-services';
 import { ClientResources } from "@opencraft/document-storage/client-resources";
+import { ClientLocalDocuments, type ClientLocalDocumentName } from "@opencraft/document-storage/client-local-documents";
 import { openClientResourcePersistence } from "./client-resource-persistence";
 export async function createWebWorkbenchApplicationSupervisor(
   browserToolHost: BrowserDynamicToolHost,
@@ -266,23 +267,31 @@ export async function createWebWorkbenchApplicationSupervisor(
     if (remoteAppHost) startupRollback.push(() => remoteAppHost.close());
     const clientProduct = await options.clientProduct?.create({ platform, hostProfileMode: options.hostProfileMode, defaultExtensions: deployment.extensions });
     if (clientProduct) startupRollback.push(() => clientProduct.dispose());
-    const localClientScope = clientProduct?.persistenceScope ? null : new LocalClientPersistenceScope(platformAccounts, serverStorageKey("local"));
+    const localClientScope = clientProduct?.persistenceScope ? null : new LocalClientPersistenceScope(platformAccounts, serverStorageKey("local"), window.localStorage);
     if (localClientScope) startupRollback.push(() => localClientScope.dispose());
     const clientPersistenceScope = clientProduct?.persistenceScope ?? localClientScope!;
+    const clientResourceStorage = openClientResourcePersistence(currentProductDatabaseName("opencraft-client-resources"));
+    const localDocumentStores = new Set<ClientLocalDocuments>();
+    const localDocuments = (namespace: string, name: ClientLocalDocumentName) => {
+      const documents = new ClientLocalDocuments(clientResourceStorage, namespace, name);
+      localDocumentStores.add(documents); return documents;
+    };
+    const flushLocalDocuments = () => Promise.all([...localDocumentStores].map(store => store.flush())).then(() => undefined);
     const clientResources = new ClientResources(
-      openClientResourcePersistence(currentProductDatabaseName("opencraft-client-resources")),
+      clientResourceStorage,
       JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
     );
     const stopClientResourceScope = clientPersistenceScope.subscribe(() => clientResources.setNamespace(
       JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
     ));
-    startupRollback.push(stopClientResourceScope, () => clientResources.close());
+    startupRollback.push(stopClientResourceScope, () => clientResources.close(), flushLocalDocuments);
     // Existing task View continuity remains its sole persistence owner. Bot
     // content uses a separate account-bound adapter; an old account cannot
     // read or write through it after its credential scope is revoked.
     const botDraftScope = clientPersistenceScope.getSnapshot().namespace;
-    const botDrafts = new BrowserComposerDrafts(window.localStorage,
-      currentProductStorageKey(`opencraft.composer-drafts.v1.bot.${botDraftScope}`));
+    const botDraftNamespace = currentProductStorageKey(`opencraft.composer-drafts.v1.bot.${botDraftScope}`);
+    const botDrafts = createPersistentComposerDrafts(window.localStorage, botDraftNamespace,
+      localDocuments(botDraftNamespace, "composer-draft"));
     const stopBotDraftScope = clientPersistenceScope.subscribe(() => {
       if (clientPersistenceScope.getSnapshot().namespace !== botDraftScope) botDrafts.revokeAndClear();
     });
@@ -691,11 +700,9 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => connectorApprovals.dispose(),
     () => authenticationFiber.dispose(),
     () => environmentFiber.dispose(),
-    stopBotDraftScope,
-    stopClientResourceScope,
+    flushLocalDocuments,
     () => clientResources.close(),
     () => clientProduct?.dispose(),
-    () => localClientScope?.dispose(),
     disconnectAppearanceThemes,
     () => botDirectory.dispose(),
     () => profileSkills.dispose(),
@@ -715,7 +722,8 @@ export async function createWebWorkbenchApplicationSupervisor(
   ];
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
   let draftCredentialScope = clientPersistenceScope.getSnapshot().namespace;
-  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`);
+  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`,
+    localDocuments(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`, "conversation-draft"));
   const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
     requestedBootstrapLocation,
     { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
@@ -800,13 +808,38 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
+  const canDispatchLocalOutbox = () => {
+    const account = platformAccounts.getSnapshot().contribution?.getSnapshot();
+    return clientPersistenceScope.isVerified?.() !== false && (!account || account.phase === "authenticated");
+  };
   const browserOutbox = createBrowserConversationOutbox({
     get storage() { return window.sessionStorage; },
+    documents: scope => localDocuments(scope, "conversation-outbox"),
+    canDispatch: canDispatchLocalOutbox,
     scope: () => {
       const account = platformAccounts.getSnapshot().contribution?.getSnapshot();
+      const partition = clientPersistenceScope.getSnapshot().namespace;
+      const hintKey = serverStorageKey(`${workbenchProductId}.outbox-partition.v1`);
       const identity = account?.readStateScope !== undefined ? account.readStateScope
-        : account?.identity?.id ?? clientPersistenceScope.getSnapshot().namespace;
-      return identity ? JSON.stringify([serverStorageKey(workbenchProductId), identity, clientPersistenceScope.getSnapshot().namespace]) : null;
+        : account?.identity?.id ?? partition;
+      if ((!account || account.phase === "loading" || account.phase === "error") && !account?.identity) {
+        try {
+          const raw = window.localStorage.getItem(hintKey);
+          const hint = raw && raw.length < 8192 ? JSON.parse(raw) : null;
+          if (hint?.partition === partition && typeof hint.scope === "string") {
+            const tuple: unknown = JSON.parse(hint.scope);
+            if (Array.isArray(tuple) && tuple.length === 3 && tuple[0] === serverStorageKey(workbenchProductId)
+              && typeof tuple[1] === "string" && tuple[1].length > 0 && tuple[2] === partition
+              && JSON.stringify(tuple) === hint.scope) return hint.scope;
+          }
+        } catch { /* A display partition is optional, never remote authorization. */ }
+      }
+      const scope = identity ? JSON.stringify([serverStorageKey(workbenchProductId), identity, partition]) : null;
+      try {
+        if (scope) window.localStorage.setItem(hintKey, JSON.stringify({ partition, scope }));
+        else window.localStorage.removeItem(hintKey);
+      } catch { /* Local custody still requires the selected database adapter. */ }
+      return scope;
     },
   });
   let stopOutboxAccount: (() => void) | undefined;
@@ -816,8 +849,9 @@ export async function createWebWorkbenchApplicationSupervisor(
     browserOutbox.refreshScope();
   };
   const stopOutboxRegistry = platformAccounts.subscribe(bindOutboxAccount);
+  const stopOutboxScope = clientPersistenceScope.subscribe(() => browserOutbox.refreshScope());
   bindOutboxAccount();
-  startupRollback.push(() => { stopOutboxRegistry(); stopOutboxAccount?.(); });
+  startupRollback.push(() => { stopOutboxRegistry(); stopOutboxScope(); stopOutboxAccount?.(); });
   const initialWorkspaceRoot = profiles.find((host) => host.hostId === initialHostId)
     ?.workspaceBrowseRoots[0] ?? null;
   let forgetUnavailableThread: ((hostId: string, threadId: string) => void) | undefined;
@@ -844,6 +878,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         const normalizedConfig = providerLease.provider.validate(profile.providerConfig, providerContext);
         runtime = createAppServerWorkbenchRuntime({
         outbox: browserOutbox.forProfile(profile.revision),
+        canDispatchOutbox: canDispatchLocalOutbox,
         onRecoveryEvent: reportRecoveryEvent,
         ...resourcePolicy,
         getSubmissionSender: () => platformAccounts.getSnapshot().contribution?.getSnapshot().submissionSender ?? null,
@@ -1084,7 +1119,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     displayWritesSuspended = true;
     displayResumeAfterGeneration = coordinator.getRuntime().getSnapshot().connectionGeneration;
     draftCredentialScope = nextScope;
-    browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${nextScope}`);
+    browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${nextScope}`,
+      localDocuments(`${serverStorageKey(workbenchProductId)}.${nextScope}`, "conversation-draft"));
     currentDisplayContinuity = createConversationDisplayContinuity({
       namespace: `${serverStorageKey(workbenchProductId)}.${nextScope}`,
       storage: browserDraftStore.displayStorage,
@@ -1106,12 +1142,23 @@ export async function createWebWorkbenchApplicationSupervisor(
     conversationViews,
   );
   startupRollback.push(() => conversationActivation.dispose());
+  const restoreDraftViewId = async (location: WorkbenchLocation) => {
+    const target = location.kind === "thread"
+      ? { type: "existing-thread" as const, key: location.key }
+      : conversationScopes.getDraft(location.draftId)?.target;
+    if (!target) return undefined;
+    const id = await browserDraftStore.loadViewId(target);
+    return id === null ? undefined : asRouteScopeId(id);
+  };
+  const restoredInitialView = await restoreDraftViewId(initialLocation);
   const navigation = createWorkbenchNavigationTransaction(
     initialLocation,
     conversationActivation,
     conversationScopes,
     {
       ...routerOptions,
+      initialRouteScopeId: restoredInitialView,
+      restoreViewId: restoreDraftViewId,
       resolveLocation: resolveWebsiteLocation,
       resolveCanonicalLocation(location) {
         return resolveRetainedWorkbenchLocation(location, {
@@ -1304,7 +1351,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       () => machineIdentityObserver.dispose(),
       stopEnvironmentRegistry,
       stopDraftScope,
-      () => { stopOutboxRegistry(); stopOutboxAccount?.(); },
+      () => { stopOutboxRegistry(); stopOutboxScope(); stopOutboxAccount?.(); },
       () => displayListeners.clear(),
       () => navigation.dispose(),
       () => conversationActivation.dispose(),

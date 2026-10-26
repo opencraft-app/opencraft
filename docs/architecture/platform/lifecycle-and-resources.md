@@ -366,3 +366,34 @@ View/observer keeps a shared read alive. Local ABORTED retirement does not becom
 a cached history error; genuine read failures retain their existing error behavior.
 A released lease cannot start another optional read. This is local cancellation,
 not remote execution cancellation or an automatic write retry.
+
+
+## Prepared offline Web shell
+
+Production Web builds emit an application Service Worker, pristine offline HTML,
+and a bounded public asset manifest. The shell includes emitted JS/CSS/fonts and
+small build resources, excludes document-preview optional assets, source maps and
+private responses, and fails its build if public precache exceeds 64 MiB. It is
+registered after usable paint; Electron/embedded builds do not register it.
+
+Each deployment scope/build has its own cache. Installation uses credential-free,
+nonredirected requests and removes its own partial cache on failure. Normal worker
+activation retires previous shell caches for that scope; no forced skipWaiting
+mixes active application generations. Navigation is network-first and only known
+application routes fall back on transport failure/5xx. Login/auth/API routes and
+401/403 responses never fall back. Static cache hits only cover declared build URLs.
+Startup configuration is an explicit sanitized allowlist, without credentials,
+private runtime HTML, query tokens or API responses.
+
+Remote-browser capability discovery cannot indefinitely block offline Chat.
+A same-build backend hint can select only presentation while offline; unknown
+never silently selects an iframe. Remote metadata initialization waits in the
+background for a fresh authoritative capability and authenticated state. Before
+that, metadata writes and remote surface admission are unavailable. On readiness,
+owners re-read their original metadata without replacing already active identity;
+server leases continue to arbitrate input. Online startup still probes normally.
+
+The browser-local remembered account chooses an input partition only, never an
+Actor or native proof. Explicit logout clears it. Full offline acceptance requires
+an actual new document under network-offline conditions, saved draft/queue recovery
+and no send before live verification; a cached HTML response alone is insufficient.

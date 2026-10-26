@@ -2,7 +2,7 @@
 
 [Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
 
-Shared resource authority, runtime fences and platform adapter boundaries follow the [client resource contract](./client-resource-contract.md).
+跨端客户端资源的 scope、authority、运行时 fence、失效事件与移动端/Electron/Web adapter 边界见[Client resource contract](./client-resource-contract.md)。本文继续持有物理存储、迁移和 UI 偏好的 owner 规则。
 
 ### Project selection and persistence
 
@@ -310,10 +310,13 @@ cache cleanup; their owning domain decides explicit removal/export.
 
 Application composition selects IndexedDB for Web/PWA and a separate Main-owned
 SQLite file for Electron, behind trusted-main-frame Preload IPC. React components
-do not choose storage engines. Opening is asynchronous and does not gate Shell or
-Host recovery. The shared owner serializes operations, revokes old scope handles
+do not choose storage engines. Remote projection opening does not gate Shell or Host recovery. Draft-slot
+bootstrap may await bounded local storage lookup to restore the original input
+identity before mounting; it never waits for network authority. The shared owner serializes operations, revokes old scope handles
 synchronously and orders remote namespace cleanup after in-flight writes. No
-credentials are stored in resource values. Browser storage remains evictable; an IndexedDB transaction is an accepted local write, not a backup or permanent retention guarantee.
+credentials are stored in resource values. Browser storage remains evictable; an
+IndexedDB transaction is a successful local write, not a backup or permanent
+retention guarantee.
 
 The first consumer is the sidebar thread catalog: at most 300 display rows per
 Host recipe revision and at most 64 remote resource documents per client store
@@ -323,8 +326,13 @@ do not. Cached rows cannot grant interaction. TanStack remains the sole request,
 retry and pagination owner. A failed refresh preserves saved rows; a successful
 complete empty response clears them. Partial pages retain unseen saved rows until
 the live directory is complete. Existing draft, display continuity and outbox
-owners are retained; this foundation does not migrate their persistence yet.
+owners remain unique. Task/Conversation drafts, Bot drafts and unsent queues now
+use named local document ports over the same adapters. Display continuity keeps
+its existing disposable projection owner. Legacy stores are import-only sources;
+accepted writes and revisioned tombstones prevent loss or resurrection.
 
-This data layer does not provide an offline navigation shell or an offline model.
-Service Worker navigation/static-resource policy is a separate layer; HTTP cache
-and a saved catalog alone do not guarantee an airplane-mode cold launch.
+The Web application separately prepares a versioned Service Worker shell after
+usable paint. It precaches public build assets and sanitized deployment recipes,
+never private HTML or account/Host API responses. A prepared shell can start a
+new document fully offline and restore local input. Browser storage remains
+evictable; this provides neither an offline model nor background sending.

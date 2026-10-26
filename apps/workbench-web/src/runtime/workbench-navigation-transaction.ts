@@ -32,6 +32,7 @@ export interface WorkbenchNavigationTransactionOptions extends ApplicationRouter
   /** A cached View or its independently retained draft owner may restore this slot. */
   readonly isRetainedView?: (location: WorkbenchLocation, viewId: RouteScopeId) => boolean;
   readonly maxPreferredViews?: number;
+  readonly restoreViewId?: (location: WorkbenchLocation) => Promise<RouteScopeId | undefined>;
 }
 
 export interface WorkbenchNavigationTransaction<
@@ -307,6 +308,21 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
         return Promise.resolve(true);
       }
       return returnToView(location, retainedScope);
+    }
+    if (routerOptions.restoreViewId) {
+      const epoch = beginIntent(), origin = navigation.getSnapshot();
+      return routerOptions.restoreViewId(location).then(viewId => {
+        if (!ownsIntent(epoch, origin)) return false;
+        if (viewId !== undefined) {
+          activation.mountInitial(location, viewId);
+          activeLocation = location; activeScope = viewId;
+          commitRoute(() => navigation.push(location, { routeScopeId: viewId }),
+            () => rememberPresentedView(location, viewId));
+          resumeReadiness(navigation.getSnapshot(), epoch);
+          return true;
+        }
+        return navigate(location, "push");
+      });
     }
     return navigate(location);
   };
