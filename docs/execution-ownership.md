@@ -363,6 +363,13 @@ The `runtime/engines/list` endpoint describes the enabled engine registry.
 `plugins/pi-engine` embeds the pinned experimental `pi-durable` 1.3.0 SDK in the
 server execution owner. It does not start the legacy Pi CLI RPC process. The owner
 holds each session's SQLite database, writer lock, scheduler and model/tool environment.
+Pi always has one execution cwd, but selecting a workspace is optional. An absent,
+null or empty `runtimeWorkspaceRoots` inherits the configured Host cwd for a new
+Thread and the retained session cwd on Resume/Turn start. A non-empty roots list
+must contain one absolute path equal to that cwd; path normalization also removes
+equivalent trailing separators. Empty roots do not clear or replace a session's
+workspace, and invalid/multiple roots remain explicit errors.
+
 Pi exposes the shared durable queue and atomic queue-to-steer APIs. Pending message
 custody lives in the native conversation's `opencraft.queue` document; native
 submissions remain the sole execution receipts. Queue updates, removal and exact

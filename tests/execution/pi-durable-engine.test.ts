@@ -9,6 +9,7 @@ import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-work
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { PiEngine, piModel } from "../../plugins/pi-engine/src/index.js";
 import type { ExecutionEngineClient } from "@opencraft/appserver-client";
+import { asHostId } from "@opencraft/chat-core";
 import { startEngineHost } from "../../apps/local-agent-host/src/engine-host.js";
 import WebSocket from "ws";
 
@@ -178,6 +179,48 @@ test("durable Host clients send outbox input to Pi without DSH queue or history 
   assert.ok(!sent.includes("thread/turns/list"));
 });
 
+
+test("Pi New chat without a selected workspace uses the Host cwd through the actual bridge", async t => {
+  const { createAppServerWorkbenchRuntime } = await import("../../packages/workbench-runtime/src/appserver-runtime.js");
+  const { WebSocketTransport } = await import("../../packages/appserver-transport-websocket/src/index.js");
+  const f = await fixture(t, [fauxAssistantMessage("default workspace reply")]);
+  const host = await startEngineHost({ providers: [f.engine], defaultEngine: "pi" }); t.after(() => host.close());
+  const starts: any[] = [];
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "pi-default-workspace", hostKind: "durable",
+    createTransport: () => {
+      const transport = new WebSocketTransport(host.websocketUrl), send = transport.send.bind(transport);
+      transport.send = frame => { const message = JSON.parse(frame); if (message.method === "thread/start") starts.push(message.params); return send(frame); };
+      return transport;
+    },
+  });
+  t.after(() => runtime.dispose()); await runtime.connect();
+  const created = await runtime.createThread({ commandId: "default-create", clientMessageId: "default-input",
+    target: { type: "new-thread", draftId: "default-draft", execution: { hostId: asHostId("pi-default-workspace"),
+      workspace: { cwd: null, runtimeWorkspaceRoots: [] } } },
+    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "hello" }] }] },
+    attachments: [], context: [], selections: { model: piModel("faux", "faux-1"), permissionProfile: "opencraft:permission-mode:full" },
+    options: { autoContext: true }, createdAt: Date.now(),
+  });
+  assert.equal(starts.length, 1); assert.deepEqual(starts[0].runtimeWorkspaceRoots, []); assert.equal(starts[0].cwd, undefined);
+  const resumed = await f.engine.request("thread/resume", { threadId: created.threadId, runtimeWorkspaceRoots: [] }, noTools);
+  assert.equal(resumed.cwd, f.directory); assert.deepEqual(resumed.runtimeWorkspaceRoots, [f.directory]);
+  const done = completed(f.engine);
+  await f.engine.request("turn/start", { threadId: created.threadId, runtimeWorkspaceRoots: [],
+    clientUserMessageId: "default-first-turn", input: [{ type: "text", text: "use the default directory" }] }, noTools);
+  assert.equal((await done).status, "completed");
+});
+
+test("Pi workspace defaults accept empty roots while rejecting incompatible or malformed roots", async t => {
+  const { workspace } = await import("../../plugins/pi-engine/src/contract.js");
+  const f = await fixture(t, []);
+  for (const params of [{}, { cwd: null, runtimeWorkspaceRoots: [] }, { runtimeWorkspaceRoots: null },
+    { cwd: f.directory, runtimeWorkspaceRoots: [] }, { cwd: f.directory + "/", runtimeWorkspaceRoots: [f.directory] }]) {
+    assert.equal(await workspace(params, f.directory), f.directory);
+  }
+  for (const roots of ["invalid", [null], [42], [{}], ["relative"], [f.directory, "/tmp"], ["/tmp"]]) {
+    await assert.rejects(workspace({ runtimeWorkspaceRoots: roots }, f.directory), /workspace|Workspace/);
+  }
+});
 
 test("workspace first submission accepts native full access and retains project ownership on restart", async t => {
   const f = await fixture(t, [fauxAssistantMessage("First workspace reply")]);

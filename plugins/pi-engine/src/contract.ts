@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { isAbsolute, normalize } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 
@@ -48,9 +48,12 @@ export async function workspace(params: Value, previous: string) {
   const cwd = params.cwd ?? previous;
   if (typeof cwd !== "string" || !isAbsolute(cwd)) throw new Error("Pi cwd must be an absolute workspace directory");
   if (!(await stat(cwd)).isDirectory()) throw new Error("Pi cwd must be a directory");
-  const normalized = normalize(cwd);
-  if (params.runtimeWorkspaceRoots != null && (!Array.isArray(params.runtimeWorkspaceRoots) || params.runtimeWorkspaceRoots.length !== 1
-    || !isAbsolute(params.runtimeWorkspaceRoots[0]) || normalize(params.runtimeWorkspaceRoots[0]) !== normalized))
+  const normalized = resolve(cwd);
+  // A New chat without a selected workspace sends []; inherit the Host/session
+  // cwd just as when roots are omitted. Non-empty roots still describe one cwd.
+  const roots = params.runtimeWorkspaceRoots;
+  if (roots != null && (!Array.isArray(roots) || roots.length > 1
+    || roots.length === 1 && (typeof roots[0] !== "string" || !isAbsolute(roots[0]) || resolve(roots[0]) !== normalized)))
     throw new Error("Pi supports one runtimeWorkspaceRoot equal to cwd");
   return normalized;
 }
