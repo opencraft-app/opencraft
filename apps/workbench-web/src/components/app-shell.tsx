@@ -269,12 +269,9 @@ export function AppShell({
   const preferredSidebarWidth = unifiedNavigation
     ? Math.max(sidebarMetrics.minimumWidth, Math.min(requestedSidebarWidth, sidebarMetrics.maximumWidth))
     : requestedSidebarWidth;
-  // A unified sidebar can hold only global destinations on application routes.
-  // Reclaim its absent context on desktop without writing the conversation-width
-  // preference or changing the small-screen drawer presentation.
-  const navigationOnly = unifiedNavigation && leftPanel == null
-    && viewportWidth >= preferredSidebarWidth + shellSpaceMetrics.mainMinimum;
-  const sidebarWidth = navigationOnly ? sidebarMetrics.railWidth : preferredSidebarWidth;
+  // The unified sidebar owns one reading column and a horizontal action bar.
+  // Never compress that bar into the former vertical icon rail on other routes.
+  const sidebarWidth = preferredSidebarWidth;
   const contextAvailable = unifiedNavigation || leftPanel != null;
   const [dockedPrimaryHost, setDockedPrimaryHost] = useState<HTMLDivElement | null>(null);
   const [dockedContextHost, setDockedContextHost] = useState<HTMLDivElement | null>(null);
@@ -286,7 +283,7 @@ export function AppShell({
   const navigationController = useShellNavigation({
     // Dock/visibility policy is stable for the gesture. Actual pane and main
     // geometry below use live MotionValues, never this saved width.
-    viewportWidth, contextWidth: sidebarWidth, contextMinimumWidth: unifiedNavigation ? navigationOnly ? sidebarMetrics.railWidth : sidebarMetrics.minimumWidth : undefined, contextAvailable, sidecarOpen,
+    viewportWidth, contextWidth: sidebarWidth, contextMinimumWidth: unifiedNavigation ? sidebarMetrics.minimumWidth : undefined, contextAvailable, sidecarOpen,
     enabled: navigation !== undefined, allowDock: navigation?.allowDock,
     unified: unifiedNavigation,
     rightPanelOpen: requestedRightPanelOpen,
@@ -604,9 +601,9 @@ export function AppShell({
   const browserSafeLayout = windowChrome.kind === "browser";
   const mobileSidebarEnabled = browserSafeLayout && unifiedNavigation && sidebarTransientEnabled
     && !canDockSidebar;
-  const primaryNavigation = useMemo(() => navigation && mobileSidebarEnabled
+  const primaryNavigation = useMemo(() => navigation && unifiedNavigation
     ? { ...navigation, actions: navigation.actions.filter(action => action.id !== "shell.applications") }
-    : navigation, [navigation, mobileSidebarEnabled]);
+    : navigation, [navigation, unifiedNavigation]);
   const floatingWidth = useTransform([liveSidebarWidth, floatingPrimaryWidth, shellWidth], ([context, primary, viewport]) =>
     Math.min(Math.max(0, Number(viewport) - 24), mobileSidebarEnabled
       ? mobileSidebarWidth(Number(viewport), Number(context))
@@ -789,6 +786,7 @@ export function AppShell({
       sidebarOpen: sidebarOpen || navigationOpen || drawerRequested || floatingIntent.requested,
       sidebarFloating: showFloatingSidebar,
       mobileSidebar: mobileSidebarEnabled,
+      applicationsAction: unifiedNavigation && !mobileSidebarEnabled ? applicationsAction : undefined,
       sidebarActionHost: mobileSidebarEnabled ? mobileSidebarActionHost : null,
       rightPanelOpen, rightPanelFullWidth, toggleSidebar, toggleRightPanel,
       dismissSidebarAfterSelection,
@@ -796,7 +794,7 @@ export function AppShell({
     <SidebarDismissContext.Provider value={dismissSidebarAfterSelection}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
-        className={`${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
+        className={`${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? " has-unified-sidebar" : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
@@ -922,7 +920,7 @@ export function AppShell({
               contentOpacity={sidebarProgress}
               viewportSize={contextViewportWidth}
               viewportClassName="app-shell-left-panel__viewport"
-              resizeHandle={sidebarResizable && !navigationOnly ? <SidebarResizeHandle
+              resizeHandle={sidebarResizable ? <SidebarResizeHandle
                   unified={unifiedNavigation}
                   collapsible={sidebarCollapsible}
                   getCurrentWidth={getLiveSidebarWidth}

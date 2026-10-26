@@ -1,5 +1,13 @@
 # 工作区不变量
 
+## Desktop sidebar bottom navigation
+
+Desktop unified navigation uses the bottom row of the full-width sidebar;
+Applications is in the global header immediately before the preview-window
+control. See [navigation ownership](invariants/navigation-and-sidebar.md#desktop-sidebar-bottom-navigation)
+for overflow, mobile boundaries and state continuity.
+
+
 本页是不变量索引。正式约束、实现责任、证据与未验证边界按职责维护在下列专题；修改行为时更新对应专题，避免在本页继续追加正文。相同约束合并为一个正文，既有章节链接保留。
 
 | 专题 | 范围 |

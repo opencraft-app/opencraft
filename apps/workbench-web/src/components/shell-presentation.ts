@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { NavigationAction } from "./shell-navigation/navigation-action";
 
 /** Header and panel controls describe the actual window, not suspended intent. */
 export const ShellPresentationContext = createContext<{
@@ -10,6 +11,8 @@ export const ShellPresentationContext = createContext<{
   /** Shell-owned mobile action overlay, outside the conversation scrollport. */
   mobileSidebar?: boolean;
   sidebarActionHost?: HTMLElement | null;
+  /** Global Applications destination beside the preview-window control. */
+  applicationsAction?: NavigationAction;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
   toggleSidebar(): void;
