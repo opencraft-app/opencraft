@@ -140,15 +140,21 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
  * aggregate activity item at the run's final position. Agent identity is
  * stable across create/message/wait/close updates; the newest state wins.
  */
+/** A failed call remains visible even when later calls in the group succeed. */
+export function subagentHeaderCall(blocks:readonly SubagentTimelineBlock[]):SubagentTimelineBlock|undefined {
+  for (let index=blocks.length-1;index>=0;index--) if (blocks[index]!.toolCallStatus === "failed") return blocks[index];
+  return blocks.at(-1);
+}
+
 export function deriveSubagentActivityGroupPresentation(
   blocks: readonly SubagentTimelineBlock[],
 ): SubagentActivityGroupPresentation {
   const agentsByThreadId = new Map<string, SubagentActivityAgent>();
-  let action = "Worked with";
+  const header = subagentHeaderCall(blocks);
+  const action = header ? actionLabel(header.tool,header.toolCallStatus) : "Worked with";
   let expandable = false;
   for (const block of blocks) {
     const presentation = deriveSubagentActivityPresentation(block);
-    action = presentation.actionLabel;
     expandable ||= presentation.expandable;
     for (const agent of presentation.agents) {
       const previous = agentsByThreadId.get(agent.threadId);

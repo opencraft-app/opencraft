@@ -3,7 +3,7 @@ import { collaborationMessages, collaborationStateMessage } from "./collaboratio
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import {
   threadToolNavigationTarget, createdThreadToolResult,
-  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation,
+  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation, subagentHeaderCall,
   extractToolCallContentParts, formatThreadHandoffStepLabel, isCodexAppThreadTool,
   threadHandoffToolResult, visibleThreadHandoffSteps,
   type SubagentActivityRenderUnit, type TimelineBlock, type ToolCallContentPart,
@@ -324,6 +324,7 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
     const detail = deriveSubagentActivityPresentation(block);
     for (const agent of detail.agents) detailsByThread.set(agent.threadId, { block, actionLabel: detail.actionLabel });
   }
+  const headerCall = subagentHeaderCall(blocks)!;
   const running = blocks.some(block => block.status === "running" || block.status === "pending");
   const [open, setOpen] = useActivityOpen(running, false, restoreKey);
   const [showAllAgents, setShowAllAgents] = useActivityOpen(false, false,
@@ -341,9 +342,9 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
       <Avatar agent={agent} /><span>{intl.formatMessage(collaborationMessages.inline,{name:agent.displayName,status:stateName(agent.statusLabel)})}</span>
     </button>;
   }
-  return <section className="thread-subagent-activity" data-status={blocks.at(-1)?.toolCallStatus} data-open={open || undefined}>
+  return <section className="thread-subagent-activity" data-status={headerCall.toolCallStatus} data-open={open || undefined}>
     <div className="thread-subagent-activity__header">
-      {renderToggle({ label: toolName(blocks.at(-1)!.tool) + " · " + stateName(blocks.at(-1)!.toolCallStatus), open, disabled: !presentation.expandable, onClick: event => {
+      {renderToggle({ label: toolName(headerCall.tool) + " · " + stateName(headerCall.toolCallStatus), open, disabled: !presentation.expandable, onClick: event => {
           reflow.begin(event.currentTarget); setOpen(!open);
         } })}
       <div className="thread-subagent-chips">{visibleAgents.map(agent =>

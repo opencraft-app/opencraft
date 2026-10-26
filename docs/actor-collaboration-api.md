@@ -179,3 +179,7 @@ the sidebar groups and paginates whole visible trees by their root, scoped to th
 Host connection. Hidden rows are excluded from the sidebar, while authorized child
 links in the parent conversation remain navigable. The persisted catalog display
 cache retains topology and rejects pre-topology cache records.
+
+A collaboration group's collapsed headline retains its most recent failed tool
+call even when later calls succeed and the failed creation has no child ID.
+Child runtime remains an independent summary; a failed call cannot finish a child.

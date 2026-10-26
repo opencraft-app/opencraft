@@ -62,6 +62,8 @@ const parentTurn = {
   id: turnId, status: "completed", itemsView: "full", error: null,
   items: [
     { id: "question", type: "userMessage", content: [{ type: "text", text: "等待子任务；超时后继续显示真实进度。", text_elements: [] }] },
+    {id:"earlier-failed-create",type:"dynamicToolCall",namespace:null,tool:"thread_spawn",arguments:{prompt:"合成创建拒绝"},
+      status:"completed",success:false,contentItems:[{type:"inputText",text:'{"status":403}'}]},
     ...calls.map(call => ({ id: call.id, type: "dynamicToolCall", namespace: null, tool: call.tool, arguments: call.arguments,
       status: "completed", success: true, contentItems: [{ type: "inputText", text: JSON.stringify(receipts[call.id]) }], durationMs: 1 })),
     { id: "parent-answer", type: "agentMessage", text: "等待调用已经返回；子任务仍在独立执行。", phase: "final_answer" },
@@ -143,7 +145,8 @@ async function assertWorking(page: Page) {
   await page.getByText("等待调用已经返回；子任务仍在独立执行。", { exact: true }).waitFor({ timeout: 30_000 });
   const history = page.locator('.thread-agent-activity__turn-toggle > button[aria-expanded="false"]').first();
   if (await history.count()) await history.click();
-  await page.locator('.thread-subagent-activity[data-status="complete"]').waitFor({ timeout: 30_000 });
+  await page.locator('.thread-subagent-activity[data-status="failed"]').waitFor({ timeout: 30_000 });
+  await page.getByRole("button",{name:"创建会话 · 失败",exact:true}).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.thread-subagent-chip[data-status="working"]').length === 2);
   assert.equal(await page.locator('.thread-subagent-chip[data-status="done"]').count(), 0);
 }

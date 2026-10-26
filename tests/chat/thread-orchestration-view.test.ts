@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {applyThreadOrchestrationView,createConversationKey,createDefaultTimelineProjectorRegistry,projectTimeline,deriveSubagentActivityGroupPresentation} from '@opencraft/chat-core';
+import {applyThreadOrchestrationView,createConversationKey,createDefaultTimelineProjectorRegistry,projectTimeline,deriveSubagentActivityGroupPresentation,subagentHeaderCall} from '@opencraft/chat-core';
 import {parseThreadOrchestrationView,type ThreadOrchestrationView} from '@opencraft/appserver-protocol/collaboration';
 import {projectThreadTopologyResult} from '../../apps/opencraft-daemon/src/thread-orchestration-projection';
 
@@ -51,4 +51,16 @@ test('a failed creation without a child retains its independent failed call axis
  const block=timeline.frames.flatMap(frame=>frame.blocks).find(block=>block.type==='subagent')!;
  assert.equal(block.type,'subagent');if(block.type!=='subagent')return;
  assert.equal(block.toolCallStatus,'failed');assert.deepEqual(agents(timeline).agents,[]);
+});
+
+
+test('a childless failure stays in the collapsed group summary after successful calls',()=>{
+ const timeline=nativeTimeline(),blocks=timeline.frames.flatMap(frame=>frame.blocks).filter(block=>block.type==='subagent');
+ const failed={...blocks[0]!,id:'failed-create' as typeof blocks[number]['id'],agentId:null,receiverThreadIds:[],agentStates:{},childRuntimeStatus:null,toolCallStatus:'failed' as const,status:'failed' as const};
+ const mixed=[failed,...blocks];
+ assert.equal(subagentHeaderCall(mixed),failed);
+ const group=deriveSubagentActivityGroupPresentation(mixed);
+ assert.equal(group.actionLabel,'Failed to create');
+ assert.equal(group.groupStatusLabel,'started working');
+ assert.equal(group.agents[0]!.status,'working');
 });
