@@ -114,7 +114,7 @@ export class AppHostServer {
       port,
       connectionId,
       `connection:${++this.connectionSequence}`,
-      Object.freeze({ ...submissionContext, sender: submissionContext.sender ? Object.freeze({ ...submissionContext.sender }) : null }),
+      Object.freeze({ ...submissionContext, ...(submissionContext.executionPrincipal ? { executionPrincipal: Object.freeze({ ...submissionContext.executionPrincipal }) } : {}), sender: submissionContext.sender ? Object.freeze({ ...submissionContext.sender }) : null }),
     );
     this.connections.add(connection);
     return connection;

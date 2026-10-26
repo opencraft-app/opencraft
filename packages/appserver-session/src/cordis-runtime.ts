@@ -54,7 +54,7 @@ export async function createCordisThreadSessionRuntime(
   await installEmpty(ThreadResumeProjectorRegistryService);
   await installEmpty(ThreadNotificationProjectorRegistryService);
   await installEmpty(ThreadStreamOwnershipService);
-  await install(ResumeNotificationBufferService, { client: config.client });
+  await installEmpty(ResumeNotificationBufferService);
   const builtinFiber = context.plugin(BuiltinSessionPlugins);
   fibers.push(builtinFiber);
   await builtinFiber;

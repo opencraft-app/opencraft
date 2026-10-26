@@ -24,7 +24,7 @@ test("Hub metadata owner persists provenance and completion; rejects tampered/ne
   raw.exec("UPDATE schema_migrations SET checksum='tampered'"); raw.close();
   assert.throws(() => new ThreadIdentityDatabase(root), (error: any) => error.kind === "history-mismatch");
   const verify = new DatabaseSync(path); assert.equal(verify.prepare("SELECT login_name FROM ioa_thread_creators").get()?.login_name, "alice");
-  verify.prepare("UPDATE schema_migrations SET version=2,checksum=?").run(ledger[0].checksum as string); verify.close();
+  verify.prepare("UPDATE schema_migrations SET version=99,checksum=? WHERE version=1").run(ledger[0].checksum as string); verify.close();
   assert.throws(() => new ThreadIdentityDatabase(root), (error: any) => error.kind === "newer-schema");
 });
 

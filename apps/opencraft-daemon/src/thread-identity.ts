@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import type { ThreadMetadataContext, ThreadMetadataExtension, TransportSubmissionContext } from "@opencraft/appserver-client";
+import { snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { OpenCraftMessageSenders } from "./opencraft-message-senders.js";
 import { projectThreadMessageResult, projectThreadMessageNotification } from "./thread-message-projection.js";
 
@@ -10,6 +11,7 @@ const string = (value: unknown): string => typeof value === "string" ? value : "
 export type ThreadMetadataFactory = (database: DatabaseSync, context: ThreadMetadataContext) => ThreadMetadataExtension;
 
 export function assertSubmissionIdentity(context: TransportSubmissionContext): void {
+  snapshotExecutionSubmission(context);
   if (context.sender && (!Number.isFinite(context.validUntil) || Date.now() >= context.validUntil!)) {
     throw new Error("Employee identity expired; reconnect before sending");
   }

@@ -200,7 +200,7 @@ export class ThreadResumeCoordinatorService extends Service {
         // Lifecycle/replacement/unknown notifications are ordered flush barriers.
         ctx.threadViews.update(threadId, project);
       }
-    });
+    }, { intercept: (notification, next) => ctx.resumeNotificationBuffer.interceptProjection(notification, next) });
     const removeStatus = this.client.subscribeStatus((status) => {
       if (status.state !== "closed" && status.state !== "failed") return;
       for (const operation of [...this.inFlight.values(), ...this.reads.values(), ...this.activations.values()]) operation.cancel();
