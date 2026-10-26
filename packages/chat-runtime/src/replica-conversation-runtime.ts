@@ -1751,29 +1751,36 @@ export function createReplicaConversationRuntime(
       return submitOnline(intent);
     },
     interrupt(turnId, provenance) {
+      if (disposed) return Promise.reject(new Error("Conversation runtime is disposed"));
       const pending = interruptions.get(turnId);
       if (pending) return pending;
       interruptingTurnId = turnId;
       interruptedByThisClient.add(turnId);
       localRevision += 1;
-      const operation = (async () => {
+      // Reserve the intent before request/replica observers can reenter.
+      const operation = Promise.resolve().then(async () => {
         try {
+          if (disposed) throw new Error("Conversation runtime is disposed");
           const dismissals = snapshot.pendingInteractions
             .filter((interaction) => interaction.turnId === turnId)
             .map(createInterruptInteractionResponse)
             .filter((response): response is InteractionResponse => response !== null);
-          await Promise.allSettled(dismissals.map(response => config.commands.respond(config.key, response)));
-          await config.commands.interrupt(config.key, turnId, provenance);
+          // Dismissals are best effort. A missing delivery receipt must not
+          // hold the native stop which can itself resolve those questions.
+          void Promise.allSettled(dismissals.map(response => Promise.resolve().then(() => config.commands.respond(config.key, response))));
+          await config.commands.interrupt(config.key, turnId, provenance, {
+            canDispatch: () => !disposed && interruptions.get(turnId) === operation,
+          });
         } catch (error) {
           interruptedByThisClient.delete(turnId);
           throw error;
         } finally {
           if (interruptingTurnId === turnId) interruptingTurnId = null;
-          interruptions.delete(turnId);
+          if (interruptions.get(turnId) === operation) interruptions.delete(turnId);
           localRevision += 1;
           publish();
         }
-      })();
+      });
       interruptions.set(turnId, operation);
       publish();
       return operation;

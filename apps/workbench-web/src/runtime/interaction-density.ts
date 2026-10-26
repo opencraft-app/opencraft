@@ -6,7 +6,6 @@ export function bindInteractionDensity(document: Document, preferences: UiPrefer
   const update = () => {
     const values = preferences.getSnapshot().values;
     const choice = values["interface.touchFriendly"];
-    document.documentElement.dataset.touchNewera = values["chat.touchNewera"] ? "on" : "off";
     document.documentElement.dataset.uiDensity = choice === "on" || (choice === "auto" && capability.matches) ? "touch" : "compact";
   };
   const unsubscribe = preferences.subscribe(update);
@@ -16,6 +15,5 @@ export function bindInteractionDensity(document: Document, preferences: UiPrefer
     unsubscribe();
     capability.removeEventListener("change", update);
     delete document.documentElement.dataset.uiDensity;
-    delete document.documentElement.dataset.touchNewera;
   };
 }

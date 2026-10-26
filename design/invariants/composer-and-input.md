@@ -302,7 +302,7 @@ floating-keyboard occlusion when the browser supplies no rectangle.
 
 - DIC-13：触控 Web 的触摸输入框长按450ms复用语音插件和现有瞬时输入事务；短点、触发前移动、已有文字选区、鼠标和能力不可用时不接管。松手完成识别并保留明确发送动作，上滑64px、系统取消、后台和卸载取消并保留原草稿。启动权限尚未完成时的松手只在实际listening后结束该代次。输入框节点和草稿身份保持；由共享交互密度提供至少44px麦克风触摸框；实际 touch 事件才可长按，屏幕宽度不限制入口，覆盖 iPad、折叠屏展开/分屏及混合指针设备。原生接触的 identifier 与 touchend/touchcancel 持有长按生命周期；派生 PointerEvent 的结束缺失不能使已经松开的短触摸留着计时，更不能延迟启动录音。第二触点进入编辑区外也取消当前手势。
 
-- WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为 auto/on/off，默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 投影 shared hit-target/gap token；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。实际鼠标不能触发输入框听写；显式关闭撤销长按入口。
+- WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为唯一“触控体验”偏好，SettingsSegmented提供 auto/on/off（自动/开启/关闭），默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 同时投影 shared hit-target/gap token、触控输入框、浮动顶栏与窄屏浏览布局；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。实际鼠标不能触发输入框听写；显式关闭撤销长按入口。
 
 ## Conversation selection quote (2026-10-15)
 
@@ -321,7 +321,17 @@ The queue and goal remain in the attached rail. The active Turn's file summary i
 
 
 ## Touch Newera composer
-`chat.touchNewera` is an installation UI preference: absent a saved choice, standalone workbench defaults on and embedded workbench defaults off; only the conjunction of enabled preference and touch density selects this presentation. The existing density binding projects it to the document; components do not read storage or create a second draft. Theme-derived Newera tokens own the restrained translucent material, highlight, blur, radius and geometry, with opaque fallbacks for unsupported/reduced transparency and forced colors. The attached queue/goal rail has its own translucent material in both desktop and touch layouts, independently of Newera and editor material.
+The installation's single `interface.touchFriendly` preference owns touch interaction
+and the Newera visual presentation together. Settings exposes Automatic / On / Off
+through the shared segmented control in Appearance; Chat has no independent toggle.
+Standalone and embedded entries both default to Automatic, and stored touch choices
+retain their original value. Retired `chat.touchNewera` records remain untouched in
+storage and are ignored; a separate large-target/ordinary-style mode no longer exists.
+Only `data-ui-density` is projected. Components do not read storage or create a second
+draft. Theme-derived Newera tokens own the translucent material, highlight, blur,
+radius and geometry, with opaque fallbacks for unsupported/reduced transparency and
+forced colors. The attached queue/goal rail keeps its independent translucent material.
+
 An empty editing draft with no attachments, transient text or suggestions stays
 one line through editor focus, autofocus, toolbar and portaled menu focus. Focus
 is input ownership, not a layout expansion signal. Actual draft content,
@@ -334,7 +344,7 @@ focus the editor; cancel restores its activation entrance and final text focuses
 the same editable view. Grid presentation never reparents/remounts the editor or
 command controls. Footer measurement supports display:contents using the existing
 shell; circular touch targets remain 44px with clipped hit regions. Disabling
-Newera or compact density restores standard presentation with the same draft,
+the touch experience restores standard presentation with the same draft,
 selection and command owners. The backdrop sees scrolling content, with
 independent attached-rail glass and opaque accessibility fallbacks.
 
@@ -371,7 +381,7 @@ Entry defaults are runtime fallbacks, never startup writes. Existing valid choic
 win; reset/invalid-record fallback use that entry default. Explicitly choosing the
 default is still a persisted choice. Only touch density enables the presentation.
 
-Newera触控时间线浮动回底部控件：箭头与运行点共用ScrollToBottomButton的玻璃外壳和44px圆形触控区，图形放大15%并增强笔画；沿用主题Newera材质及减少透明/强制色彩/无滤镜实底回退。两态不得改变锚点、尺寸或滚动语义；桌面与关闭Newera的呈现保持。
+Newera触控时间线浮动回底部控件：箭头与运行点共用ScrollToBottomButton的玻璃外壳和44px圆形触控区，图形放大15%并增强笔画；沿用主题Newera材质及减少透明/强制色彩/无滤镜实底回退。两态不得改变锚点、尺寸或滚动语义；紧凑布局与关闭触控体验时保留普通呈现。
 
 Composer四角保持对称，共用shell radius token（普通16px/Newera28px）；附属rail以同半径互补圆弧mask适配shell肩部。结构tuck等于radius且padding/负margin相消，材料扣除shell范围，仅1px边界覆盖；不得压平shell上圆角或用整块双层玻璃掩盖接缝。验收包含实际像素覆盖、四角相等和编辑器/内容间距不变。
 

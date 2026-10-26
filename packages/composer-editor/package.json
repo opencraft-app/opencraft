@@ -27,10 +27,10 @@
     "prosemirror-model": "^1.25.12",
     "prosemirror-schema-list": "^1.5.1",
     "prosemirror-state": "^1.4.3",
-    "prosemirror-view": "^1.42.6",
+    "prosemirror-view": "^1.42.7",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-dialog": "1.3.1",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/chat-render-web": "0.1.0"
   }

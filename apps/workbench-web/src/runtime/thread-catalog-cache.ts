@@ -6,6 +6,7 @@ import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 type CachedThread = {
   id: string; title: string; project: string; lineage: "root" | "fork" | "subagent";
   updatedAt: number; createdAt: number | null; pinned: boolean;
+  parentThreadId: string | null; visibility: "visible" | "hidden";
 };
 export type CachedThreadCatalog = { rows: CachedThread[]; complete: boolean };
 export const CACHED_THREAD_LIMIT = 300;
@@ -23,7 +24,7 @@ function timestamp(value: DocumentValue | undefined): number {
   return value;
 }
 export const threadCatalogResource: ClientResourceDefinition<CachedThreadCatalog> = {
-  name: "thread-catalog", authority: "remote", version: 1,
+  name: "thread-catalog", authority: "remote", version: 2,
   parse(value) {
     const catalog = object(value);
     if (typeof catalog.complete !== "boolean" || !Array.isArray(catalog.rows) || catalog.rows.length > CACHED_THREAD_LIMIT) throw new Error("Invalid saved thread catalog");
@@ -31,10 +32,12 @@ export const threadCatalogResource: ClientResourceDefinition<CachedThreadCatalog
     return { complete: catalog.complete, rows: catalog.rows.map(value => {
       const row = object(value);
       const id = text(row.id, 512);
-      if (!id || seen.has(id) || !["root", "fork", "subagent"].includes(String(row.lineage)) || typeof row.pinned !== "boolean") throw new Error("Invalid saved thread identity");
+      if (!id || seen.has(id) || !["root", "fork", "subagent"].includes(String(row.lineage)) || typeof row.pinned !== "boolean"
+        || (row.visibility !== "visible" && row.visibility !== "hidden")) throw new Error("Invalid saved thread identity");
       seen.add(id);
       return { id, title: text(row.title, 512), project: text(row.project, 256), lineage: row.lineage as CachedThread["lineage"],
-        updatedAt: timestamp(row.updatedAt), createdAt: row.createdAt === null ? null : timestamp(row.createdAt), pinned: row.pinned };
+        updatedAt: timestamp(row.updatedAt), createdAt: row.createdAt === null ? null : timestamp(row.createdAt), pinned: row.pinned,
+        parentThreadId: row.parentThreadId === null ? null : text(row.parentThreadId, 512), visibility: row.visibility };
     }) };
   },
 };
@@ -44,6 +47,7 @@ export function cacheThreadCatalog(rows: readonly WorkbenchThread[], complete: b
   return { complete: complete && rows.length <= CACHED_THREAD_LIMIT, rows: rows.slice(0, CACHED_THREAD_LIMIT).map(row => ({
     id: row.id, title: row.title.slice(0, 512), project: row.project.slice(0, 256), lineage: row.lineage,
     updatedAt: row.updatedAt, createdAt: row.createdAt ?? null, pinned: row.pinned === true,
+    parentThreadId: row.parentThreadId ?? null, visibility: row.visibility ?? "visible",
   })) };
 }
 export function mergeCachedCatalogRows(fresh: readonly WorkbenchThread[], saved: CachedThreadCatalog | null, complete: boolean): WorkbenchThread[] {

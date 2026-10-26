@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 驱动与可重建读取缓存实施规范 (Spec)
 
-> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 单独推进。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
 > 目标：在遵循“执行侧平滑升级（引擎进程由长驻宿主持有）”、“原生日志为唯一正文真源”、“多人 `identity-core` 有界委托与 Token Spec 系统来源归属”的前提下，提供可直接编码与验收的接口契约、SQLite 表结构、缓存重建规则及分阶段实施计划。
 
 ---
@@ -325,7 +325,7 @@ CREATE TABLE IF NOT EXISTS opencraft_cache_blobs (
 |---|---|---|---|
 | **Stage 0（可先行落地）：打开会话只读解耦与可重建缓存** | **不依赖平滑升级改造**；与Token 统计共用同一个 Codex rollout 增量读取器 | 1. 拆开客户端点击会话的 `Read`（只读历史）与发消息时的 `Resume`（唤醒引擎）<br/>2. 在受管 `<dataDirectory>/cache/transcripts/` 实现 `.turns.jsonl` + `opencraft_turn_offset_index` + 水位追平与版本重建<br/>3. 实现单会话 `.blobs/` 冷热分离与删除联动 | • 服务端缓存命中读取耗时 P95 < 5ms；不唤醒引擎、不触发模型目录 RPC<br/>• **用户端体感指标**：点击 500+ 轮旧会话到首屏 10 轮 DOM 渲染完成 P95 < 150ms<br/>• 删缓存目录、改 `projection_schema_version`、模拟崩溃水位落后三场景均能从原生日志无损自动重建 |
 | **Stage 1（Codex 已实现）：常驻宿主编排、自动续跑协同与多人权限** | 排在**执行连续性改造（拆 AppServer 常驻 + 自动续跑）**与**Token 统计（Token 改造）**之后 | 1. 扩展 `actor-collaboration.sqlite` 支持父子拓扑、持久 `waitTickets`、`parent_notification_batches` 与 `toolCallKey` 幂等回执<br/>2. 实现 Engine Host 侧工具调用断线重连重放（网关重启不中断工具）<br/>3. 对接 `@opencraft/host-recovery` 抑制续跑期假中断通知；对接有界用户委托校验跨会话权限，Agent 触发轮次记入 `sourceKind: "system"` | • 执行网关在子会话调用 `thread_tell / spawn` 期间重启，原 Turn 与工具调用一次完成、不报错、不重复创建<br/>• 子会话被杀触发自动续跑期间，父会话不收到假中断通知；续跑完成或 `exhausted` 后才收到唯一通知<br/>• 跨用户未授权 `tell` 返回 403；子会话自动轮次在 Token 看板归入“系统已知量” |
-| **Stage 2（远景）：UI 协作卡片三态分离与父子会话树** | 依赖 Stage 1 | 1. 改造 `@opencraft/chat-core` 的 `SubagentTimelineBlock`（分离 `toolCallStatus`、`deliveryStatus`、`childRuntimeStatus`）<br/>2. 侧边栏支持 `parentThreadId` 树状缩进与 `hidden` 会话过滤 | • `thread_wait` 超时返回 `settled: false` 时，UI 卡片保持 `working` 而非误标 `done`<br/>• 页面刷新后从控制账本与缓存精确恢复卡片状态 |
+| **Stage 2（已实现）：UI 协作卡片三态分离与父子会话树** | 依赖 Stage 1 | 1. 改造 `@opencraft/chat-core` 的 `SubagentTimelineBlock`（分离 `toolCallStatus`、`deliveryStatus`、`childRuntimeStatus`）<br/>2. 侧边栏支持 `parentThreadId` 树状缩进与 `hidden` 会话过滤 | • `thread_wait` 超时返回 `settled: false` 时，UI 卡片保持 `working` 而非误标 `done`<br/>• 页面刷新后从控制账本与缓存精确恢复卡片状态 |
 | **Stage 3：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host；源码已接入，各部署独立验收 | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp`，保留多代排空升级）、Claude/ACP Host 接入统一 `AgentDriverContract`<br/>2. 验证跨异构引擎父子派发与双向通信 | • Codex、DSH(ACP)、Pi 跨引擎互发 `spawn / tell` 全链路通过，且日常重启网关不中断任一引擎正在运行的任务 |
 
 
@@ -339,4 +339,4 @@ Codex 的独立 APP Host 持有真实 Native 连接，Gateway 通过稳定 callb
 
 Native 0.162 只在创建 Thread 时接收动态工具，因此四个编排工具注册到新 Thread；
 既有 Thread 保留原工具集。旧 APP 继续按实际能力工作，不能仅凭 Gateway 已升级
-宣称支持 callback 重放。UI 三态投影属于 Stage 2；Stage 3 通过统一契约接入独立 Pi/DSH-ACP/Claude Host，各宿主需单独验收。
+宣称支持 callback 重放。UI 三态投影与父子树已在 Stage 2 实现；Stage 3 通过统一契约接入独立 Pi/DSH-ACP/Claude Host，各宿主需单独验收。

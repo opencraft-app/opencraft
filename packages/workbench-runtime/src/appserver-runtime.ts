@@ -1,3 +1,4 @@
+import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { ThreadRecoveryResource } from "./thread-recovery-resource";
@@ -396,6 +397,7 @@ export interface AppServerWorkbenchRuntime {
     readonly attachments: AppServerAttachmentResourcePort;
     readonly goals: ThreadGoalResource;
     readonly turnRecovery: ThreadRecoveryResource;
+    readonly orchestration: ThreadOrchestrationResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -608,6 +610,10 @@ export function createAppServerWorkbenchRuntime(
   const turnRecovery = new ThreadRecoveryResource({
     supported: threadId => executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, TURN_RECOVERY_EXTENSION)?.version === 1,
     read: threadId => requireClient().request("opencraft/turn-recovery/read", { threadId }),
+  });
+  const orchestration = new ThreadOrchestrationResource({
+    supported: () => (client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-orchestration-view"] as {version?:unknown} | undefined)?.version === 1,
+    read: (threadId,calls) => requireClient().request("opencraft/collaboration",{action:"orchestration",threadId,calls}),
   });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
@@ -1067,6 +1073,20 @@ export function createAppServerWorkbenchRuntime(
           return operation(canDispatch);
         }
       };
+      const afterCurrentHost = async <T>(operation: (canDispatch: () => boolean) => Promise<T>): Promise<T> => {
+        const owner = bindings.get(threadId);
+        if (!owner || owner.disposed) throw new Error(`Thread ${threadId} is unavailable`);
+        if (phase !== "ready") await runtime.connect();
+        const dispatchClient = requireClient(), generation = dispatchClient.connectionGeneration;
+        // A known-target control needs current Host/connection ownership.
+        // Presentation revision and historical authority are separate owners.
+        const canDispatch = () => !disposed && !owner.disposed && bindings.get(threadId) === owner
+          && phase === "ready" && connection.snapshot.phase === "usable" && !unavailableThreads.has(threadId)
+          && client === currentClient && client === dispatchClient
+          && generation === dispatchClient.connectionGeneration && dispatchClient.status.state === "open";
+        if (!canDispatch()) throw new AppServerClientError("NOT_CONNECTED", "The connection changed before the response could be stopped");
+        return operation(canDispatch);
+      };
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
         submit: (intent, options) => afterAuthoritativeBaseline(canDispatch => {
@@ -1075,9 +1095,9 @@ export function createAppServerWorkbenchRuntime(
             ? { ...intent, target: { type: "existing-thread" as const, key: intent.target.key } } : intent;
           return currentCommandPort.submit(dispatched, { ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch() });
         }, true),
-        interrupt: (key, turnId, provenance) => afterAuthoritativeBaseline(
-          () => currentCommandPort.interrupt(key, turnId, provenance),
-        ),
+        interrupt: (key, turnId, provenance, options) => afterCurrentHost(canDispatch => currentCommandPort.interrupt(key, turnId, provenance, {
+          canDispatch: () => (options?.canDispatch() ?? true) && canDispatch(),
+        })),
         continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId), true),
         // The Broker validates the exact native request context. Historical
         // authority cannot grant or revoke its already-admitted reply channel.
@@ -1712,6 +1732,7 @@ export function createAppServerWorkbenchRuntime(
       ensureLifecycle(generation);
       goals.reset();
       turnRecovery.reset();
+      orchestration.reset();
       const historyModeHint = () => {
         const capability = client?.initializeResult?.capabilities?.extensions?.[
           OPENCRAFT_RESUME_HISTORY_EXTENSION
@@ -1872,6 +1893,7 @@ export function createAppServerWorkbenchRuntime(
       },
       goals,
       turnRecovery,
+      orchestration,
       host: {
         subscribeSchedulesChanged(listener) {
           if (disposed) throw new Error("AppServer Workbench is disposed");
@@ -2467,6 +2489,7 @@ export function createAppServerWorkbenchRuntime(
         if (disposed) return;
         connection.dispose();
         recovery.dispose();
+        orchestration.dispose();
         if (detachRetryTimer !== null) clock.clearTimeout(detachRetryTimer);
         detachRetryTimer = null;
         failedReadDetaches.clear();

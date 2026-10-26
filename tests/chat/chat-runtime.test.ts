@@ -2686,3 +2686,32 @@ test("a later running turn remains the active turn when earlier inProgress histo
   try { assert.equal(runtime.getSnapshot().activeTurn?.turnId, "after-restart"); }
   finally { runtime.dispose(); }
 });
+
+
+for (const delivery of ["synchronous-throw", "rejected-receipt"] as const) test(`stop survives a ${delivery} from best-effort prompt dismissal`, async () => {
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ respond: () => { if (delivery === "synchronous-throw") throw Error("synthetic dismissal failure"); return Promise.reject(Error("synthetic receipt failure")); },
+      interrupt: async () => { calls++; } }), history: { async loadOlder() {} },
+  });
+  try { await runtime.interrupt(asTurnId("turn-one")); assert.equal(calls, 1); await new Promise(resolve => setImmediate(resolve)); }
+  finally { runtime.dispose(); }
+});
+
+test("disposal before deferred stop preparation cannot send an intent", async () => {
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ interrupt: async () => { calls++; } }), history: { async loadOlder() {} } });
+  const operation = runtime.interrupt(asTurnId("turn-one")); runtime.dispose();
+  await assert.rejects(operation, /disposed/); assert.equal(calls, 0);
+});
+
+test("snapshot observer stop reentry joins the reserved intent", async () => {
+  let calls = 0, nested: Promise<void> | undefined, once = false;
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ interrupt: async () => { calls++; } }), history: { async loadOlder() {} } });
+  const remove = runtime.subscribe(() => { if (!once && runtime.getSnapshot().activeTurn?.status === "interrupting") { once = true; nested = runtime.interrupt(asTurnId("turn-one")); } });
+  try { const original = runtime.interrupt(asTurnId("turn-one")); assert.equal(nested, original); await original; assert.equal(calls, 1); }
+  finally { remove(); runtime.dispose(); }
+});

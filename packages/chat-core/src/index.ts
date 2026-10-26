@@ -25,3 +25,5 @@ export * from "./turn-diff";
 export * from "./unified-diff";
 export * from "./user-message";
 export * from "./user-message-collapse";
+
+export { applyThreadOrchestrationView } from "./thread-orchestration-view";

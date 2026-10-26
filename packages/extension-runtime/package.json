@@ -13,7 +13,7 @@
   "dependencies": {
     "@opencraft/design-system": "0.1.0",
     "@opencraft/document-storage": "0.1.0",
-    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis": "4.0.5",
     "@opencraft/extension-contract": "0.1.0"
   }
 }

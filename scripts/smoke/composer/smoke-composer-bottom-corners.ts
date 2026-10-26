@@ -19,7 +19,7 @@ try {
   await page.addInitScript("window.__name=value=>value");
   await page.goto(`${server.resolvedUrls!.local[0]}?palette=neutral&mode=${mode}&pickerFocus&corners`);
   const editor = page.locator(".opencraft-composer-editor"); await editor.waitFor();
-  await page.evaluate(({ width, newera }) => { (window as any).setTouch(width < 768); (window as any).setNewera(newera); }, { width, newera });
+  await page.evaluate(({ width, newera }) => { (window as any).setTouch(width < 768 && newera); }, { width, newera });
   await editor.fill("保留草稿与焦点"); await page.waitForTimeout(180);
   await editor.evaluate(node => { (window as any).keptEditor = node; });
   const initial = await page.locator(".opencraft-composer-stack").boundingBox();
@@ -36,7 +36,7 @@ try {
    const before = await page.screenshot({ clip });
    await page.locator("#corner-activity-probe").evaluate(node => { (node as HTMLElement).style.background = "#00ff00"; });
    const after = await page.screenshot({ clip });
-   assert.equal(before.equals(after), width >= 768, `${width}/${mode}/${newera}/${side}: desktop hides transcript outside lower corners; touch floats`);
+   assert.equal(before.equals(after), !(width < 768 && newera), `${width}/${mode}/${newera}/${side}: desktop hides transcript outside lower corners; touch floats`);
    await page.locator("#corner-activity-probe").evaluate(node => { (node as HTMLElement).style.background = "#ff00ff"; });
   }
   // Change input density on the SAME editor; width must not choose the paint.
@@ -69,7 +69,7 @@ try {
    assert.equal(await editor.innerText(), "保留草稿与焦点");
    await page.locator("#corner-activity-probe").evaluate(node => { (node as HTMLElement).style.background = "#ff00ff"; });
   }
-  await page.evaluate(touch => (window as any).setTouch(touch), width < 768);
+  await page.evaluate(touch => (window as any).setTouch(touch), width < 768 && newera);
   await page.waitForTimeout(60);
   assert.deepEqual(await page.locator(".opencraft-composer-stack").boundingBox(), initial, "exterior material adds no height");
   await page.locator("#corner-activity-probe").evaluate(node => node.remove());

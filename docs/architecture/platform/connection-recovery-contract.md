@@ -431,8 +431,9 @@ Workbench projects current native interactions and changed execution metadata in
 its nonauthoritative paint while retaining the existing transcript and cursor.
 This listener belongs to the binding, so a failed/cancelled history operation does
 not cancel it. Replying to a Broker-owned native interaction does not initiate or
-wait for a historical baseline. New submissions and other baseline-gated commands
-retain their existing current-generation baseline and final beforeSend checks.
+wait for a historical baseline. Known-Turn stop controls use the current Host
+contract below. New submissions and the remaining baseline-gated commands retain
+their existing current-generation baseline and final beforeSend checks.
 
 `ExecutionChannels.tla` checks native progress under fair handler/answer processing
 without assuming the history server ever replies, plus cancellation conservation,
@@ -477,3 +478,40 @@ fail their exact rules, shrink without a cleanup failure, and pass normal replay
 Artifacts retain runtime version/platform/architecture with generator and source
 hashes. The existing independent ExecutionChannels NativeProgress contract is
 unchanged; stronger executable evidence does not turn it into a TS refinement proof.
+
+
+## Known-Turn stop controls
+
+An explicit stop names its original Thread and Turn. It needs a current usable
+Host and physical client generation, the same live binding, a non-retired Thread
+and execution permission. Historical baseline authority and an implicit question
+dismissal delivery receipt are separate owners and cannot hold this control.
+The final client-local admission guard runs again after request observers and
+serialization; it grants no permission to a retired operation. A logical history
+revision alone does not retire the usable physical Host.
+
+Conversation reserves a per-Turn stop Promise before publishing its interrupting
+state. Synchronous snapshot/request observers join that intent. Best-effort
+question dismissals run with handled failures independently of the stop. Releasing
+a View preserves an admitted user intent; disposing its Runtime prevents an
+unsent command. Native rejection and an uncertain write outcome reach the caller;
+there is no automatic replay, target substitution or claim that the engine has
+stopped merely because a local wait ended. A later explicit user request remains
+a new intent. The native engine must enforce its own exact-target semantics.
+
+`StopControl.tla` independently checks current admission, original target,
+at-most-one send and eventual local settlement under fair preparation/admission/
+completion. Read replies and prompt receipts have no fairness. Its finite Host
+churn and cooperative native completion assumptions do not promise progress for
+a permanently unavailable Host. Eight configurations include exact history and
+prompt gate, stale fence, target, replay, slot and missing-fairness controls.
+This abstraction is not a composition or TypeScript refinement proof.
+
+The `stop` chaos suite exercises actual Workbench/Session/Conversation/Client
+composition with retained Reads, held prompt receipts, observer reentry, final
+disposal, View release, server-head changes and ACK loss after native admission.
+Its independent oracle checks the input target, frame count, caller result and
+progress before unrelated work is released. Four deliberate controls must fail
+at the named rule; shrinking preserves that rule and ordinary replay must pass.
+The loopback server is cooperative and enforces exact targets for this fixture;
+these results do not certify every provider or physical phone behavior.

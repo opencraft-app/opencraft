@@ -187,7 +187,9 @@ export class ThreadOrchestrationBroker {
     }})().finally(()=>{this.ackSweep=null;});
   }
   observe(snapshot:OrchestrationRuntimeSnapshot):void{
-    if(this.closed)return;const ledger=this.collaboration.orchestration,child=ledger.relation(snapshot.threadId);if(!child)return;
+    if(this.closed)return;const ledger=this.collaboration.orchestration;
+    ledger.observeRuntime(snapshot);
+    const child=ledger.relation(snapshot.threadId);if(!child)return;
     const runtimeStatus:ThreadRelation['runtimeStatus']=snapshot.state==='recovering'?'recovering':snapshot.state==='starting'?'starting':snapshot.state==='active'?'active'
       :snapshot.state==='awaiting_interaction'||snapshot.state==='unconfirmed'?'awaiting_interaction':snapshot.state==='completed'?'idle':'error';
     ledger.runtime(child.threadId,{runtimeStatus,rootTurnId:snapshot.rootTurnId,turnId:snapshot.turnId});
@@ -203,7 +205,7 @@ export class ThreadOrchestrationBroker {
   private async runSweep():Promise<void>{
     void this.reconcileAcks();
     const ledger=this.collaboration.orchestration;
-    const targets=new Set([...ledger.threads().filter(thread=>!this.reconciledStartup||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),...ledger.activeWaits().flatMap(ticket=>ticket.targetThreadIds)]);
+    const targets=new Set([...ledger.observedRuntimeThreads(!this.reconciledStartup),...ledger.threads().filter(thread=>!this.reconciledStartup||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),...ledger.activeWaits().flatMap(ticket=>ticket.targetThreadIds)]);
     const snapshots=new Map<string,OrchestrationRuntimeSnapshot>();
     for(const id of targets){try{const state=await this.execution.snapshot(id);if(this.closed)return;snapshots.set(id,state);this.observe(state);}catch{/* A disconnected owner is not a terminal outcome. */}}
     this.reconciledStartup=true;

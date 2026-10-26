@@ -41,7 +41,7 @@ export function inspectNativeResponses(received: readonly unknown[], expected: r
 /** This fixture has an immediately cooperative native transport and no external
  * I/O. Drain its known event-loop turns; do not wait for a broken operation to
  * settle before reporting non-progress, and do not use wall-clock deadlines. */
-async function settleFixtureOperation(operation: Promise<unknown>, rule: string, boundary: string): Promise<void> {
+export async function settleFixtureOperation(operation: Promise<unknown>, rule: string, boundary: string): Promise<void> {
   const observed: { settled: boolean; failed: boolean; error?: unknown } = { settled: false, failed: false };
   void operation.then(() => { observed.settled = true; }, error => { observed.settled = true; observed.failed = true; observed.error = error; });
   await flush();

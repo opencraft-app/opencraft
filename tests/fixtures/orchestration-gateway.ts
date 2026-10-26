@@ -23,6 +23,7 @@ const createEngine=()=>engine=new CodexEngineAdapter({executable:config.executab
   decorateNativeTransport:native=>({get status(){return native.status;},connect:signal=>native.connect(signal),close:()=>native.close(),subscribeMessage:listener=>native.subscribeMessage(listener),subscribeStatus:listener=>native.subscribeStatus(status=>{process.stderr.write('native-status '+JSON.stringify(status)+'\n');listener(status);}),send:frame=>native.send(frame)}),
   tokenUsage:{derivedQueries:usageQueries,queryWorkerEntry:new URL('../../apps/opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url).pathname,serverId:'server',actor:context=>actors.get(context.actorId),person:id=>actors.get(id),submission:(thread,input)=>service.usageSubmission(thread,input)},
   collaboration:{
+    topology: threadId => service.threadTopology(threadId),
     queuedContext:(thread,id,input)=>service.queuedReferenceContext(thread,id,input),continued:(thread,previous,turn)=>service.executionContinued(thread,previous,turn),
     continuing:(thread,previous,input)=>service.executionContinuing(thread,previous,input),inputDelegation:(thread,input,expected)=>service.inputDelegation(thread,input,expected),
     prepare:(context,input)=>service.referenceContext(context,input),command:(context,body)=>service.command(context,body),

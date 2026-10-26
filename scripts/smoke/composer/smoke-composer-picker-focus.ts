@@ -36,7 +36,7 @@ try {
   await page.addInitScript("window.__name=value=>value");
   await page.goto(`${vite.resolvedUrls!.local[0]}?pickerFocus=1&addMenu=1&mode=${mode}`);
   await page.waitForFunction(()=>typeof(window as any).setTouch==="function");
-  await page.evaluate(async newera=>{await(window as any).setTouch(true);await(window as any).setNewera(newera)},newera);
+  await page.evaluate(async newera=>{await (window as any).setTouch(newera)},newera);
   const editor=page.locator('.opencraft-composer-editor'),model=page.locator('.opencraft-composer-mode--intelligence'),permissions=page.locator('.opencraft-composer-mode--permissions');
   const menu=page.locator('[role="menu"]');
   await editor.fill('正在编辑的草稿');

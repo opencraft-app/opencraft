@@ -1,3 +1,4 @@
+import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
@@ -139,6 +140,7 @@ interface SharedCodexRoutingOptions {
     readonly derivedQueries?: TokenUsageQueryService;
   };
   readonly collaboration?: {
+    topology?(threadId: string): {parentThreadId:string|null;visibility:"visible"|"hidden"} | null;
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
     continued?(threadId: string, fromTurnId: string, turnId: string): void;
     continuing?(threadId:string,fromTurnId:string,inputId:string):void;
@@ -835,7 +837,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (historyParams.watch === true) this.watchHistory(threadId, clientId);
         const projected = projectThreadMessageResult(this.projectSender, string(message.method), historyParams, result);
         this.emit({ id, result: this.messageAttachments
-          ? projectThreadAttachmentResult(this.messageAttachments, string(message.method), historyParams, projected) : projected }, clientId);
+          ? projectThreadAttachmentResult(this.messageAttachments, string(message.method), historyParams, projected) : projected }, clientId, string(message.method));
       } catch (error) {
         if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
           this.emit({ id, error: { code: -32000, message: errorMessage(error) } }, clientId);
@@ -891,7 +893,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const epoch = this.clientEpoch(clientId);
       try {
         const result = await this.durableCatalog.list(record(message.params));
-        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId);
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId, "thread/list");
       } catch {
         if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Conversation catalog is unavailable" } }, clientId);
       }
@@ -1372,6 +1374,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions, ...this.threadMetadata.capabilities,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, ...this.threadMetadata.methods])] } } : {}),
         } } };
+      }
+      if (this.options.collaboration?.topology) {
+        const value=record(this.initializeResult),capabilities=record(value.capabilities),extensions=record(capabilities.extensions);
+        this.initializeResult={...value,capabilities:{...capabilities,extensions:{...extensions,"opencraft/thread-orchestration-view":{version:1}}}};
       }
       if (this.options.collaboration) {
         const value=record(this.initializeResult),capabilities=record(value.capabilities),extensions=record(capabilities.extensions),access=record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
@@ -2914,6 +2920,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private emit(message: RpcRecord, clientId?: string, method = ""): void {
+    if ("result" in message && this.options.collaboration?.topology) message = {...message,
+      result:projectThreadTopologyResult(method,message.result,id => this.options.collaboration!.topology!(id))};
     const frame = serializeHistoryReply(clientId ? { ...message, [LOGICAL_CLIENT_FIELD]: clientId } : message, method);
     for (const listener of this.listeners) listener(frame);
   }

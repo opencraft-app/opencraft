@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 引擎驱动与可重建读取缓存架构
 
-> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 单独推进。各独立宿主实际能力仍须握手与部署验收。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准。
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 已实现。各独立宿主实际能力仍须握手与部署验收。当前实现以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)与[Core 契约](../docs/codex-core.md)为准。
 > 适用范围：`opencraft/apps/opencraft-daemon`、`opencraft/apps/local-agent-host`、`opencraft/packages/appserver-protocol`、`opencraft/packages/chat-core`  
 > 关联契约：[执行所有权](../docs/execution-ownership.md)、[平台架构](../docs/platform-architecture.md)、[SQLite 生命周期](../docs/sqlite-lifecycle.md)、[实施 Spec](thread-orchestration-spec.md)
 

@@ -6,7 +6,7 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis": "4.0.5",
     "@opencraft/chat-core": "0.1.0",
     "@opencraft/design-system": "0.1.0",
     "@opencraft/design-system-web": "0.1.0",
