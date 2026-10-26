@@ -12829,23 +12829,11 @@ html[data-window-host="browser"] body {
     }
   }
 
-  // Reuse Shell's existing non-interactive fade, including in browser windows.
-  // Content and its scroll owner remain mounted beneath the floating controls.
+  // Keep the reading plane clear between the floating controls. Device status
+  // effects and each control's own material are independent of this overlay.
   .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"])
     .main-content-top-fade {
-    display: block;
-    height: calc(var(--shell-conversation-top-bleed, 0px) + var(--height-toolbar) + var(--spacing) * 4);
-    opacity: 1;
-    background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-surface) 65%, transparent), transparent);
-    backdrop-filter: blur(var(--material-liquid-blur));
-    -webkit-backdrop-filter: blur(var(--material-liquid-blur));
-    mask-image: linear-gradient(to bottom, black, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
-    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      background-image: linear-gradient(to bottom, var(--color-surface), transparent);
-    }
+    display: none;
   }
 }
 

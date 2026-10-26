@@ -57,11 +57,13 @@ try {
                 const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON();
                 return { row: rect('.app-shell-row'), surface: rect('.main-content-surface'), header: rect('.app-shell-header'),
                     composer: rect('.opencraft-composer-shell'), padding: getComputedStyle(document.querySelector('.app-shell-row')!).paddingTop,
-                    clearance: getComputedStyle(document.documentElement).getPropertyValue('--shell-pwa-top-clearance').trim() };
+                    clearance: getComputedStyle(document.documentElement).getPropertyValue('--shell-pwa-top-clearance').trim(),
+                    overlay: { display: getComputedStyle(document.querySelector('.main-content-top-fade')!).display, filter: getComputedStyle(document.querySelector('.main-content-top-fade')!).backdropFilter, height: rect('.main-content-top-fade').height } };
             });
             for (const [host, display] of [['browser', 'standalone'], ['browser', 'tab'], ['electron', 'standalone'], ['native-container', 'standalone'], ['embedded', 'standalone']] as const) {
                 await page.evaluate(({ host, display }) => Object.assign(document.documentElement.dataset, { windowHost: host, windowDisplayMode: display }), { host, display });
                 const result = await geometry();
+                assert.deepEqual(result.overlay, { display: 'none', filter: 'none', height: 0 }, 'the app-owned top overlay must not blur the reading plane');
                 const gap = projectIos27 && host === 'browser' && display === 'standalone' ? 24 : 0;
                 assert.equal(result.padding, `${inset + gap}px`, JSON.stringify({ host, display, result }));
                 assert.equal(result.header.top, inset + gap, 'buttons consume the top clearance exactly once');
