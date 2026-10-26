@@ -652,3 +652,23 @@ Read demand; the final control removes scheduling fairness. Later resource
 recreation and arbitrary demand changes are outside this finite transaction.
 Executable held-ACK, no-View, reentrant restore and full-Web cases substantiate
 the implementation mapping independently of that model.
+
+
+## Native handler registration and admitted responses
+
+Each `handleServerRequest(method, handler)` call creates a new method registration,
+even when it reuses the same function. The latest registration admits future
+requests; its unsubscribe handle can remove only that exact instance. Unlike
+non-authoritative observer subscriptions, repeated calls are replacements, not
+same-function deduplication. A held interceptor chooses the current registration
+when it finally enters the handler. The handler is invoked as a bare function.
+
+Once a handler is admitted, the native response context owns its asynchronous
+result. Replacing or removing a registration cannot cancel that context or retarget
+its result to a successor. Native withdrawal and physical Client loss still revoke
+the context through the existing lifetime rules. `HandlerRegistration.tla` separates
+the two owners for one method, two registration instances and one request;
+completion assumes finite handler work under weak fairness. It does not model
+interceptor or wire scheduling, prove the TypeScript implementation, or establish
+physical-device timing. Raw/Cordis tests and the real Client `handlers` chaos suite
+cover those concrete registration/response boundaries separately.
