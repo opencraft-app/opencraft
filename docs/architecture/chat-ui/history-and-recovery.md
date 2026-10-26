@@ -22,6 +22,19 @@ existing ownership even when no restore target is pending. Web executes the
 unchanged synchronous/pending commit paths; Native retains measurement leases
 and frame scheduling. Neither platform adds another compensation policy.
 
+### Scroll state and geometry reads
+
+The scroll controller owns confirmed distance and animation state. State-only
+controls use `getState` and `subscribeState`; rendering or subscribing a bottom
+button must not sample DOM geometry. Measured snapshots remain available to
+geometry consumers, and platform scroll events and imperative commands still
+reconcile the physical, possibly clamped distance before publishing state.
+
+Footer padding is established on the first measurable height without reading
+post-write scroll geometry for compensation. Only subsequent eligible resizes
+measure and compensate; parked routes, active animations and explicit preserve
+suppression retain their existing rules.
+
 ### Initial history and display reuse
 
 Durable paginated providers that explicitly advertise initial-page support may

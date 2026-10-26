@@ -21,10 +21,14 @@ export interface TurnScrollControllerHost {
   cancelFrame(handle: number): void;
 }
 
-export interface TurnScrollControllerSnapshot extends TurnViewportMetrics {
+/** Confirmed controller state; reading it never samples platform geometry. */
+export interface TurnScrollControllerState {
+  readonly distanceFromBottomPx: number;
   readonly isScrolledFromBottom: boolean;
   readonly isScrollAnimationActive: boolean;
 }
+
+export type TurnScrollControllerSnapshot = TurnViewportMetrics & TurnScrollControllerState;
 
 export interface TurnPlatformScrollChange {
   readonly previousDistanceFromBottomPx: number;
@@ -49,6 +53,7 @@ type UserScrollListener = (
 export class TurnScrollController {
   readonly #host: TurnScrollControllerHost;
   readonly #listeners = new Set<ScrollListener>();
+  readonly #stateListeners = new Set<() => void>();
   readonly #userListeners = new Set<UserScrollListener>();
   #distanceFromBottomPx: number;
   #animationFrame: number | null = null;
@@ -61,14 +66,23 @@ export class TurnScrollController {
     this.#distanceFromBottomPx = normalizeInitialScrollDistance(initialDistanceFromBottomPx);
   }
 
-  getSnapshot(): TurnScrollControllerSnapshot {
-    const metrics = this.#host.getMetrics();
+  getState(): TurnScrollControllerState {
     return {
-      ...metrics,
       distanceFromBottomPx: this.#distanceFromBottomPx,
       isScrolledFromBottom: this.#distanceFromBottomPx > OPENCRAFT_SCROLL_NEAR_BOTTOM_PX,
       isScrollAnimationActive: this.#animationFrame !== null,
     };
+  }
+
+  getSnapshot(): TurnScrollControllerSnapshot {
+    return { ...this.#host.getMetrics(), ...this.getState() };
+  }
+
+  /** State-only consumers do not need a measured subscription snapshot. */
+  subscribeState(listener: () => void): () => void {
+    this.#stateListeners.add(listener);
+    listener();
+    return () => this.#stateListeners.delete(listener);
   }
 
   getLastScrollDistanceFromBottomPx(): number {
@@ -118,6 +132,7 @@ export class TurnScrollController {
       previousDistanceFromBottomPx: previous,
     };
     for (const listener of this.#listeners) listener(snapshot);
+    this.#publishState();
     if (origin === "user" && previous !== this.#distanceFromBottomPx) {
       for (const listener of this.#userListeners) {
         listener(this.#distanceFromBottomPx, previous);
@@ -137,8 +152,7 @@ export class TurnScrollController {
     if (distance > OPENCRAFT_SCROLL_NEAR_BOTTOM_PX) this.cancelScrollAnimation();
     this.#host.writeDistanceFromBottomPx(distance, behavior);
     this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
-    const snapshot = this.getSnapshot();
-    for (const listener of this.#listeners) listener(snapshot);
+    this.#publish();
     if (origin === "user" && previous !== this.#distanceFromBottomPx) {
       for (const listener of this.#userListeners) listener(this.#distanceFromBottomPx, previous);
     }
@@ -231,12 +245,20 @@ export class TurnScrollController {
     this.#preserveFrame = null;
     this.#preservedLayout = null;
     this.#listeners.clear();
+    this.#stateListeners.clear();
     this.#userListeners.clear();
   }
 
   #publish(): void {
-    const snapshot = this.getSnapshot();
-    for (const listener of this.#listeners) listener(snapshot);
+    if (this.#listeners.size > 0) {
+      const snapshot = this.getSnapshot();
+      for (const listener of this.#listeners) listener(snapshot);
+    }
+    this.#publishState();
+  }
+
+  #publishState(): void {
+    for (const listener of this.#stateListeners) listener();
   }
 
   #restorePendingLayoutBeforeScrollEvent(): void {
