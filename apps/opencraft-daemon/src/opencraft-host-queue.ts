@@ -1,3 +1,4 @@
+import { ExecutionLeaseStore, type ExecutionSubmission } from "./execution-lease-store.js";
 import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { randomUUID } from "node:crypto";
@@ -17,6 +18,7 @@ export interface HostQueuedSubmission {
   readonly state: QueueState;
   readonly targetTurnId: string | null;
   readonly pausedReason: string | null;
+  readonly executionSubmission: ExecutionSubmission | null;
 }
 
 function requiredText(value: unknown, label: string): string {
@@ -42,6 +44,7 @@ function fromRow(row: Record<string, unknown>): HostQueuedSubmission {
     state: row.state as QueueState,
     targetTurnId: typeof row.target_turn_id === "string" ? row.target_turn_id : null,
     pausedReason: typeof row.paused_reason === "string" ? row.paused_reason : null,
+    executionSubmission: null,
   };
 }
 
@@ -59,27 +62,33 @@ export class OpenCraftHostQueue {
 
   close(): void { this.owner?.close(); }
 
+  private project(row: Record<string, unknown>): HostQueuedSubmission {
+    return { ...fromRow(row), executionSubmission: new ExecutionLeaseStore(this.db).getSubmission(String(row.thread_id), String(row.client_id)) };
+  }
   private row(threadId: string, id: string): HostQueuedSubmission | null {
     const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND id=?").get(threadId, id);
-    return row ? fromRow(row) : null;
+    return row ? this.project(row) : null;
   }
 
   find(threadId: string, id: string): HostQueuedSubmission | null { return this.row(threadId, id); }
 
   findByClientId(threadId: string, clientId: string): HostQueuedSubmission | null {
     const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND client_id=?").get(threadId, clientId);
-    return row ? fromRow(row) : null;
+    return row ? this.project(row) : null;
   }
 
-  add(threadId: string, clientId: string, input: readonly unknown[]): HostQueuedSubmission {
+  add(threadId: string, clientId: string, input: readonly unknown[], executionSubmission: ExecutionSubmission = { principal: null, ownership: "unowned" }): HostQueuedSubmission {
     requiredText(threadId, "thread id");
     requiredText(clientId, "client message id");
     parseInput(input);
     const existing = this.findByClientId(threadId, clientId);
     if (existing) {
       if (JSON.stringify(existing.input) !== JSON.stringify(input)) throw new Error("Client message id already belongs to different input");
-      return existing;
+      const store = new ExecutionLeaseStore(this.db);
+      store.capture(threadId, clientId, existing.executionSubmission ? executionSubmission : { principal: null, ownership: "unknown" }, "accepted", "queue");
+      return { ...existing, executionSubmission: store.getSubmission(threadId, clientId) };
     }
+    new ExecutionLeaseStore(this.db).capture(threadId, clientId, executionSubmission, "accepted", "queue");
     const now = Date.now();
     const position = Number((this.db.prepare("SELECT COALESCE(MAX(position), 0) AS position FROM opencraft_host_queue WHERE thread_id=?").get(threadId) as { position: number }).position) + 1;
     const id = randomUUID();
@@ -90,7 +99,7 @@ export class OpenCraftHostQueue {
 
   list(threadId: string): HostQueuedSubmission[] {
     return this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','steering','unknown') ORDER BY position,created_at_ms,id")
-      .all(threadId).map(fromRow);
+      .all(threadId).map(row => this.project(row));
   }
 
   observationCount(threadId: string): number {
@@ -114,7 +123,7 @@ export class OpenCraftHostQueue {
   firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {
     const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') ORDER BY position,created_at_ms,id LIMIT 1")
       .get(threadId);
-    return row ? fromRow(row) : null;
+    return row ? this.project(row) : null;
   }
 
   update(threadId: string, id: string, input: readonly unknown[]): HostQueuedSubmission | null {
