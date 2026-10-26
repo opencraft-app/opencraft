@@ -1,6 +1,6 @@
 import { ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, ChevronUpIcon as ChevronUp, MoreIcon as Ellipsis, LoadingRingIcon as LoaderCircle, AddIcon as Plus, RefreshIcon as RefreshCw, SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import * as Popover from "@radix-ui/react-popover";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { EyeIcon as Eye, EyeOffIcon as EyeOff } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useState, useSyncExternalStore } from "react";

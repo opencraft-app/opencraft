@@ -27,7 +27,7 @@ export function AppShellToolbarSelect({
   const unavailable = disabled || options.length === 0;
 
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild disabled={unavailable}>
         <Button
           aria-label={label}
