@@ -13,7 +13,7 @@
   color: var(--color-text);
   font: var(--typography-control-compact-font);
   .settings-control-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 48px; gap: 16px; padding: 10px 0; }
-  .settings-control-row--stacked { grid-template-columns: minmax(0, 1fr); }
+  .settings-control-row--stacked { grid-template-columns: minmax(0, 1fr); gap: calc(var(--spacing) * 2); }
   .settings-control-row__label { @include typography.role(control-compact); }
   .settings-control-row__value { width: 100%; justify-content: flex-start; }
   .settings-control-notice { margin: 0 0 12px; }
@@ -32,6 +32,7 @@
 }
 .settings-panel__actions { display: flex; align-items: center; }
 .settings-panel__body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 24px; overscroll-behavior: contain; }
+.settings-panel__body > .settings-control-section + .settings-control-section { margin-block-start: var(--gap-token-settings-sections); }
 .settings-panel__footer {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   flex: 0 0 auto; min-height: 52px; padding: 8px 16px;

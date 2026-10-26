@@ -44,6 +44,24 @@ async function fixture(t: any, now?: () => number) {
   return { dir, path, store };
 }
 
+test('trusted Human registration subscribers run after commit and do not replay on login, rename or binding', async t => {
+  const { store, path } = await fixture(t);
+  const seen: string[] = [];
+  const unsubscribe = store.onHumanRegistered((principal, context) => {
+    const reader = new DatabaseSync(path, { readOnly: true });
+    try { assert.ok(reader.prepare('SELECT 1 FROM actors WHERE id=?').get(context.actorId), 'actor is committed before notification'); }
+    finally { reader.close(); }
+    assert.equal(principal.subject, '123'); seen.push(context.actorId);
+  });
+  assert.equal(store.resolveHuman(human('expired', 'expired', Date.now() - 1)), null);
+  const first = store.resolveHuman(human())!;
+  store.resolveHuman(human('123', 'renamed'));
+  store.bindHuman(first, human('second-binding'));
+  assert.deepEqual(seen, [first.actorId]);
+  unsubscribe(); store.resolveHuman(human('new-after-unsubscribe'));
+  assert.equal(seen.length, 1);
+});
+
 test('human identity survives rename and restart; provider scope and aliases cannot merge actors', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'actor-restart-')); cleanup(t, () => rm(dir, { recursive: true, force: true }));
   const path = join(dir, 'actors.sqlite');

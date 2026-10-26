@@ -72,6 +72,24 @@ function createSshHttpIngress(options) {
     const ssh = new SshServer({ hostKeys: [options.hostKey], ident: "OpenCraft" }, (client) => {
       client.once("ready", ready);
       let authenticated = false;
+      let authorization = null;
+      let nativeSession;
+      let retired = false;
+      let watch;
+      const current = () => {
+        try { return !retired && (!authorization || authorization.isCurrent() === true); }
+        catch { return false; }
+      };
+      client.once('close', () => {
+        retired = true; clearInterval(watch);
+        void nativeSession?.then(session => session.close()).catch(() => {});
+      });
+      client.once('ready', () => {
+        if (authorization) {
+          watch = setInterval(() => { if (!current()) client.end(); }, 500);
+          watch.unref();
+        }
+      });
       let attempts = 0;
       let channels = 0;
       client.on("error", () => {
@@ -86,19 +104,32 @@ function createSshHttpIngress(options) {
           context.reject(["publickey"]);
           return;
         }
-        const key = principals.get(context.username)?.find((candidate) => {
+        let candidates;
+        try { candidates = [
+          ...(principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })),
+          ...(options.resolveAuthorizedKeys?.(context.username) ?? []).map(value => ({ key: parsePublicKey(value), dynamic: true })),
+        ]; } catch { context.reject(['publickey']); return; }
+        const accepted = candidates.find(({ key: candidate }) => {
           const data = candidate.getPublicSSH();
           return data.length === context.key.data.length && timingSafeEqual(data, context.key.data);
         });
+        const key = accepted?.key;
         if (!key || context.signature && key.verify(context.blob, context.signature, context.hashAlgo) !== true) {
           context.reject(["publickey"]);
           return;
         }
-        if (context.signature) authenticated = true;
+        if (context.signature) {
+          if (accepted.dynamic) {
+            try { authorization = options.authorizeSession?.(context.username, context.key.data) ?? null; }
+            catch { authorization = null; }
+            if (!authorization || !current() || !options.createNativeSession) { context.reject(['publickey']); return; }
+          }
+          authenticated = true;
+        }
         context.accept();
       });
       client.on("session", (accept, reject) => {
-        if (closing || !authenticated || channels >= 16) {
+        if (closing || !authenticated || !current() || channels >= 16) {
           reject();
           return;
         }
@@ -106,11 +137,13 @@ function createSshHttpIngress(options) {
         const session = accept();
         session.once("close", () => channels--);
         session.on("exec", (acceptExec, rejectExec, info) => {
-          if (closing) {
+          if (closing || !current()) {
             rejectExec();
             return;
           }
           if (info.command === "opencraft app-server proxy") {
+            // Scoped credentials must never downgrade into the legacy unscoped HTTP bridge.
+            if (authorization) { rejectExec(); return; }
             bridge(acceptExec());
             return;
           }
@@ -151,7 +184,14 @@ function createSshHttpIngress(options) {
             void options.codexControl(recipe.kind, controller.signal).then((output) => finish(output, 0), () => finish("", 1));
             return;
           }
-          bridge(stream, options.codexPort);
+          if (!authorization) bridge(stream, options.codexPort);
+          else {
+            nativeSession ??= Promise.resolve().then(() => options.createNativeSession(authorization));
+            void nativeSession.then(session => {
+              if (!current() || stream.destroyed) { stream.destroy(); return; }
+              bridge(stream, session.port);
+            }).catch(() => stream.destroy());
+          }
         });
         session.on("shell", (_accept, rejectShell) => rejectShell());
         session.on("pty", (_accept, rejectPty) => rejectPty());

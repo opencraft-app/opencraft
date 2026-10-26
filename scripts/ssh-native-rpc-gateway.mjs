@@ -3,7 +3,8 @@ import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version"
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
-async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4 } = {}) {
+async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4, submissionContext = { sender: null }, isCurrent = () => true } = {}) {
+  const current = () => { try { return isCurrent() === true; } catch { return false; } };
   const http = createServer((_request, response) => {
     response.writeHead(404);
     response.end();
@@ -15,7 +16,7 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
     socket.once("close", () => sockets.delete(socket));
   });
   http.on("upgrade", (request, socket, head) => {
-    if (request.url !== "/rpc") {
+    if (request.url !== "/rpc" || !current()) {
       socket.destroy();
       return;
     }
@@ -53,6 +54,7 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
       });
     };
     const send = (frame) => {
+      if (!current()) { close(); return; }
       const requestId = `send:${++sequence}`;
       if (sends.size >= 256) {
         close();
@@ -126,7 +128,7 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
             if (message.hostId === "local-codex" && message.generation === generation) write(message.frame);
           } else if (message.type === "fatal" || message.type === "host/status" && ["failed", "closed"].includes(message.status.state)) close();
         }
-      }, id);
+      }, id, submissionContext);
       receive?.({ type: "hello", protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: id });
     } catch {
       close();

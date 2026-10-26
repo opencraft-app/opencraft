@@ -21,6 +21,56 @@ const get = (port, path) => new Promise((resolve, reject) => {
   req.on('error', reject); req.end();
 });
 
+test('dynamic SSH keys retain trusted submission context and retire when their authority is revoked', { timeout: 15_000 }, async () => {
+  const host = ssh2.utils.generateKeyPairSync('ed25519'), user = ssh2.utils.generateKeyPairSync('ed25519');
+  const contexts = [], listeners = new Set(); let allowed = true;
+  const adapter = {
+    get status() { return { state: 'open' }; },
+    subscribeMessage(fn) { listeners.add(fn); return () => listeners.delete(fn); }, subscribeStatus() { return () => {}; },
+    async connect() {}, async close() {},
+    async send(frame) { const v = JSON.parse(frame); for (const fn of listeners) fn(JSON.stringify({ id: v.id, result: {}, __opencraftClient: v.__opencraftClient })); },
+    async sendWithContext(frame, context) { contexts.push(context); await this.send(frame); },
+  };
+  const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLifetime: 'server', createTransport: () => adapter });
+  const native = await createSshNativeRpcGateway(appHost);
+  const http = createServer((_req, res) => res.end('legacy'));
+  const httpPort = await listen(http);
+  const submissionContext = { sender: { kind: 'employee', loginName: 'new.member' } };
+  let scoped;
+  const ingress = createSshHttpIngress({ hostKey: host.private, authorizedKeys: { legacy: [host.public] }, httpPort, codexPort: native.port,
+    resolveAuthorizedKeys: username => allowed && username === 'new.member' ? [user.public] : [],
+    authorizeSession: () => ({ submissionContext, isCurrent: () => allowed }),
+    createNativeSession: async authorization => scoped = await createSshNativeRpcGateway(appHost, authorization),
+  });
+  const address = await ingress.listen({ port: 0 });
+  const clients = [];
+  const connectClient = (username, privateKey = user.private) => {
+    const c = new ssh2.Client(); c.on('error', () => {}); clients.push(c);
+    const ready = new Promise((resolve, reject) => { c.once('ready', () => resolve(c)); c.once('error', reject); });
+    c.connect({ host: '127.0.0.1', port: address.port, username, privateKey, readyTimeout: 1500 }); return ready;
+  };
+  try {
+    await assert.rejects(connectClient('other.member'), /authentication/);
+    await assert.rejects(connectClient('new.member', host.private), /authentication/);
+    const client = await connectClient('new.member');
+    await assert.rejects(new Promise((resolve, reject) => client.exec('opencraft app-server proxy', (error, stream) => error ? reject(error) : resolve(stream))), /Unable to exec/);
+    const stream = await new Promise((resolve, reject) => client.exec('codex app-server proxy', (error, channel) => error ? reject(error) : resolve(channel)));
+    stream.on('error', () => {});
+    const ws = new WebSocket('ws://127.0.0.1/rpc', { createConnection: () => stream });
+    ws.on('error', () => {});
+    await once(ws, 'open');
+    const message = once(ws, 'message'); ws.send(JSON.stringify({ id: 1, method: 'initialize', params: {} })); await message;
+    assert.equal(contexts.length, 1); assert.deepEqual(contexts[0], submissionContext);
+    const closed = once(client, 'close'); allowed = false; await closed;
+    assert.equal(ws.readyState, WebSocket.CLOSED);
+    await assert.rejects(connectClient('new.member'), /authentication/);
+  } finally {
+    for (const client of clients) client.destroy();
+    await ingress.close(); await scoped?.close(); await native.close(); await appHost.close();
+    await new Promise(resolve => http.close(resolve));
+  }
+});
+
 test('protocol classifier preserves fragmented HTTP/SSH boundaries and rejects other protocols', () => {
   for (const classifier of [classifyProtocol, classifyIngress]) {
     for (const text of ['S', 'SS', 'SSH', 'GE', 'OPTI']) assert.equal(classifier(Buffer.from(text)), 'pending');
