@@ -387,6 +387,35 @@ before aborting the active Turn; queued messages survive restart and can be edit
 removed or explicitly resumed. Successful new direct input resumes normal queue
 processing. Temporary threads cannot own durable queues.
 
+The headless Pi adapter includes the pinned `pi-interactive-shell` extension in a
+separate process per active conversation. `interactive_shell` launches dispatch or
+structured monitor sessions, returns their handles, accepts terminal input, reads
+bounded output and stops sessions. The CLI's foreground TUI overlays and slash
+commands are unavailable; requesting them yields an explicit error. The worker's
+profile, logs and session handles are isolated by conversation, and are not client
+installable extensions or an additional model runtime.
+
+`bash` preserves the native command and timeout-in-seconds input and adds optional
+`yield_time_ms` (0–10000, default 1000). A command that exits in this window returns
+its result inline. Otherwise it returns a background session handle and lets the
+native agent proceed, allowing steering at the next native boundary while the
+command continues. Background dispatch does not terminate merely because output
+is quiet. Use `interactive_shell` to query, send input, or kill the returned handle.
+At most eight commands run per conversation; result history retains up to forty
+records with bounded output. A handle from another conversation cannot be used.
+
+Native `opencraft.piShell` documents hold session receipts and retained results.
+Completed commands and monitor events enter the native submission kernel using
+stable identities and system provenance. Admission, stop gating and notification
+receipts share a transaction. A completion starts an idle native run or joins the
+follow-up inbox of a busy run; it never invents a human message in the timeline.
+Short commands already returned inline do not trigger a second model continuation.
+Stop pauses delivery before killing shell processes and aborting the native run;
+this also works after the original agent response has already settled. Closing a
+session shuts down its isolated extension process, including retained CLI timers.
+On owner restart, running PTYs are reported interrupted and never re-executed;
+retained state remains queryable. Only native durable agent tasks resume normally.
+
 Pi publishes native idle status when a Turn settles and supports `turn/steer`.
 `expectedTurnId` is checked against the native live run in the admission transaction.
 Steers are consumed at native tool/final boundaries; current model requests and

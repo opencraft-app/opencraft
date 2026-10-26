@@ -49,7 +49,7 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     const status = state === "queued" || state === "placed" ? "inProgress" : state === "unanswered"
       ? submission?.reason === "aborted" ? "interrupted" : "failed" : "completed";
     const createdAt = metadata.createdAtMs ?? message.timestamp;
-    const result: PiTurn = { id, items: [{ type: "userMessage", id: `${id}:user`,
+    const result: PiTurn = { id, items: metadata.sourceKind === "system" ? [] : [{ type: "userMessage", id: `${id}:user`,
       clientId: metadata.clientId ?? (id.startsWith(`${session.id}:turn:client:`) ? id.slice(`${session.id}:turn:client:`.length) : null),
       ...(metadata.steerTurnId ? { __opencraftMessageKind: "steering", __opencraftSteeringStatus: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
       content: metadata.input ?? [{ type: "text", text: textOf(message.content), text_elements: [] }] }],
@@ -75,7 +75,7 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     }
     let messageIndex = 0;
     for (const message of entry.model ?? []) {
-      if (message.role === "user" && (submissions.has(entry.id) || UserEntry.is(entry) || entry.kind === "opencraft.input")) turn = makeTurn(submissions.get(entry.id), entry.id, message, entry.kind === "opencraft.input" ? entry.data as Value : {});
+      if (message.role === "user" && (submissions.has(entry.id) || UserEntry.is(entry) || entry.kind === "opencraft.input")) turn = makeTurn(submissions.get(entry.id), entry.id, message, entry.kind === "opencraft.input" || entry.kind === "opencraft.shellNotification" ? entry.data as Value : {});
       else if (turn && message.role === "assistant") {
         const key = entry.byTaskId ?? `entry-${entry.id}`;
         const ordinal = counts.get(key) ?? 0; counts.set(key, ordinal + 1);
