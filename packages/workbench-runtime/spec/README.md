@@ -662,3 +662,33 @@ replay normally. They corrupt test delivery/observation/submission, not producti
 classes. Empty trace creates no native activity; cleanup creates no hidden probe.
 Bounded microtask drains assume cooperative controlled callbacks, not arbitrary
 network timing. Model and fuzz results do not establish TypeScript refinement.
+
+
+RecordingLifetime separates native status subscriptions from recording tap
+ownership. It covers old close ACK success/failure, reentrant successor taps,
+captured old message retirement, initial sample provenance and sink/observer
+continuations. Positive: 92 distinct states. Eight precise controls remove these
+guards or local fairness. No old-close fairness is required for successor progress;
+cooperative new work and finite synchronous callbacks remain assumptions.
+Provider epochs/ordered native status and shared registration cuts are separate
+contracts, not derived by this bounded model.
+
+The thirteenth suite, recording, composes actual RecordingTransport + Client +
+MemoryTransport. It compares status publication provenance, native frame records,
+intent settlement, peer identity and one native submission; injects observer/sink
+exceptions, stale tokens and reentry; and saves an explicit heal that initializes
+and performs a usable RPC. Empty input performs no native connect. Final cleanup
+only closes existing work and removes harness-owned registrations. Source/lock
+hashes bind the CLI artifacts.
+
+```
+npm run test:recovery-chaos -- --suite recording --seed 0 --cases 1000 --steps 120 --output /tmp/recording-chaos
+npm run test:recovery-chaos -- --suite recording --mutant retarget-cleanup --seed 0 --output /tmp/recording-control
+npm run test:recovery-chaos -- --replay /tmp/recording-control/failure-minimal.json --output /tmp/recording-replay
+```
+
+Controls sample-echo, retarget-cleanup and orphan-rpc corrupt test observation,
+adapter cleanup binding or Promise result observation, respectively. Each must
+fail its exact rule, shrink under that rule and replay normally. They do not mutate
+production classes or claim to defend an arbitrary lying provider. Separate
+unchanged old-class runs establish real regression detection.
