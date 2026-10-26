@@ -599,3 +599,35 @@ close may fail with no socket allocation; it is a status-publication counterexam
 not a native RPC input. Separate actual Client/Memory/Cordis tests check held-RPC
 loss, closing before ACK and successor initialization reentry. Five-adapter tests
 also check initial samples, permanent cleanup and queued peer replacement.
+
+
+`MemoryGenerations.tla` models one primary and one successor Memory connection,
+one queued frame per origin, admission completion, retirement and per-peer cleanup.
+Connect settlement is independent of uncooperative retired admission; cleanup is
+conditional on admission settlement. Finite synchronous callback work is assumed. Only live admission and cleanup scheduling
+have weak fairness, and open-close completion requires a cleanup ACK. Ten precise
+controls remove admission/peer/queue/ACK guards, immediate cancellation, cleanup
+ordering/uniqueness or those fairness assumptions. Terminal states permit
+stuttering. This is an independent bounded model, not TypeScript refinement,
+arbitrary generation coverage, callback-registration proof or a model of failed
+cleanup ACKs. Concrete tests cover current and retired cleanup failures separately.
+
+The eleventh chaos suite, memory, uses actual MemoryTransport with controlled
+server admission/cleanup promises and queued native deliveries. Its intent/epoch
+oracle has no private-map access. It distinguishes local cancellation from native
+hook completion, old peer identity from global open state, and old close ACKs
+from successor status. The generator saves explicit healing. Empty input allocates
+no connection; final cleanup only retires existing work. Metrics count trace
+native inputs/admissions/cleanup calls/deliveries, and connect settlement includes
+final local cleanup. Selected hashes include source and lockfile.
+
+```
+npm run test:recovery-chaos -- --suite memory --seed 0 --cases 1000 --steps 120 --output /tmp/memory-chaos
+npm run test:recovery-chaos -- --suite memory --mutant orphan-connect --seed 0 --output /tmp/memory-control
+npm run test:recovery-chaos -- --replay /tmp/memory-control/failure-minimal.json --output /tmp/memory-replay
+```
+
+Controls orphan-connect, stale-peer and cleanup-retarget corrupt the test adapter's
+promise observation or native callback binding. They must fail their precise rule,
+shrink under that same rule and replay normally without corruption. They are
+separate from reproducing the actual old implementation without a mutation.

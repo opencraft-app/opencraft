@@ -10,6 +10,17 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('MemoryGenerations', None),
+    ('MemoryGenerations-LateAdmission', 'CurrentStatus'),
+    ('MemoryGenerations-OldPeerClose', 'CurrentStatus'),
+    ('MemoryGenerations-OldPeerSend', 'FrameOwner'),
+    ('MemoryGenerations-QueuedFrame', 'FrameOwner'),
+    ('MemoryGenerations-OldAck', 'CurrentStatus'),
+    ('MemoryGenerations-WaitCancel', 'temporal:LocalCompletion'),
+    ('MemoryGenerations-EarlyCleanup', 'CleanupAfterAdmission'),
+    ('MemoryGenerations-RepeatCleanup', 'CleanupAtMostOnce'),
+    ('MemoryGenerations-NoCleanupFairness', 'temporal:CleanupProgress'),
+    ('MemoryGenerations-NoLiveFairness', 'temporal:CurrentCompletion'),
     ('TransportObservers', None),
     ('TransportObservers-Exception', 'ObserverIsolation'),
     ('TransportObservers-Token', 'TokenOwnership'),

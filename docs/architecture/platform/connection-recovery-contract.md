@@ -724,3 +724,56 @@ Healing is explicit in the saved trace; an empty trace allocates no connection.
 Four adapter corruptions check exact-rule shrinking and ordinary replay. The suite
 itself does not run a Client or real network; composed Client tests prove held-RPC
 termination and initialization-slot reentry.
+
+
+## Memory native connection incarnations
+
+MemoryTransport allocates a distinct owner and peer for each connection attempt.
+Concurrent connect callers join that attempt; the initiating signal owns its
+pending cancellation. Cancellation after open is a no-op. Native peer sends,
+scheduled deliveries and each next message consumer check that same open owner.
+A retained old peer cannot send through, or close, a successor. The peer passed to
+receive remains bound to that connection even when asynchronous server work ends
+later. This provider boundary is separate from status-observer registration.
+
+Local close, abort and peer close settle pending connect callers immediately and
+revoke the owner before external callbacks can reenter. A connecting-status
+callback can cancel before server admission starts. Old admission success/failure
+cannot publish readiness or failure through a successor. For an already open
+connection, close still waits for its own disconnected hook; its ACK or failure
+only settles that close caller and cannot publish status through a newer owner.
+A current cleanup failure remains a failed status and rejects that close caller.
+
+Pending connected hooks are not local close barriers. Their eventual success or
+failure starts disconnected cleanup for their own retired peer exactly once,
+after admission settles. An attempt revoked before admission invokes neither
+hook. This ordering prevents cleanup from running before a late admission has
+finished allocating its resources. Local close completion during pending admission
+does not certify external cleanup. An indefinitely pending admission Promise or arbitrary server
+side effects remain server-owned; finite synchronous callback work is assumed.
+Deferred cleanup failures cannot fail a newer
+connection. An already open close retains its external cleanup barrier.
+
+The independent MemoryGenerations model bounds one primary and one successor,
+a single frame per origin, asynchronous admission and successful cleanup ACKs.
+It checks publication owner, peer/queued-frame authority, local cancellation,
+cleanup order and at-most-once cleanup. Live admission fairness applies only to
+active owners. Retired hooks may remain uncooperative forever without preventing
+local cancellation; cleanup progress is conditional on their eventual settlement
+and a fair cleanup scheduler. Open-close completion additionally assumes a fair
+cleanup ACK. Ten negative controls remove these guards or fairness assumptions.
+Initial status samples, callback registration, receive internals, arbitrary churn
+and TypeScript refinement are outside this finite model. Concrete tests cover
+synchronous reentry, current/old hook errors, delayed receive and Client reconnect.
+
+The memory chaos suite runs actual MemoryTransport with controlled connected and
+disconnected promises, retained peers and an explicitly drained delivery queue.
+An independent intent/epoch oracle predicts status, connection settlement, cleanup
+counts and frame authority; it does not inspect private fields. It contains no
+Client or actual network. Healing is a saved event, not a hidden probe. Trace
+native inputs/admissions/cleanup calls/deliveries are separate from intents and
+cleanup after the trace. Three test adapter corruptions exercise orphaned connect,
+retargeted peer and retargeted old cleanup, with exact-rule shrinking and normal
+replay. Existing actual-Client tests establish the composed request behavior.
+ReplayTransport's separate delayed-frame/cursor lifecycle is not fixed by this
+Memory provider change.
