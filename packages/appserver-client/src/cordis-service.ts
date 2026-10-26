@@ -15,6 +15,7 @@ import {
   type AppServerClientConfig,
   type AppServerRequestLifecycleEvent,
   type AppServerNotificationInterceptor,
+  type AppServerNotificationSubscriptionOptions,
   type AppServerServerRequestInterceptor,
   type ServerRequestHandler,
 } from "./client";
@@ -71,8 +72,8 @@ export class AppServerClientService extends Service implements AppServerClient {
     return this.client.requestRaw(method, params, options);
   }
 
-  subscribeNotification(listener: (notification: AppServerNotification) => void): () => void {
-    return this.client.subscribeNotification(listener);
+  subscribeNotification(listener: (notification: AppServerNotification) => void, options?: AppServerNotificationSubscriptionOptions): () => void {
+    return this.client.subscribeNotification(listener, options);
   }
 
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void {
