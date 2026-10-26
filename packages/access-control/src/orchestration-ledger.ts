@@ -45,6 +45,14 @@ CREATE TABLE opencraft_wait_tickets (
 CREATE INDEX opencraft_wait_pending ON opencraft_wait_tickets(state,expires_at_ms);
 `;
 
+/** v5 adds durable runtime facts without fabricating parentage or ownership. */
+export const ORCHESTRATION_VIEW_SCHEMA = `
+CREATE TABLE opencraft_orchestration_runtime_views (
+ thread_id TEXT PRIMARY KEY, root_turn_id TEXT, turn_id TEXT, state TEXT NOT NULL,
+ updated_at_ms INTEGER NOT NULL
+) STRICT;
+`;
+
 export type ThreadRuntimeStatus = 'starting' | 'active' | 'recovering' | 'awaiting_interaction' | 'idle' | 'error';
 export interface ThreadRelation {
   threadId: string; serverId: string; driverKind: string; ownerActorId: string;
@@ -99,6 +107,19 @@ export class ThreadOrchestrationLedger {
     this.db.exec('BEGIN IMMEDIATE');
     try { const value = work(); this.db.exec('COMMIT'); return value; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  observeRuntime(snapshot: import('@opencraft/appserver-protocol/collaboration').ThreadOrchestrationSnapshot): void {
+    this.db.prepare('INSERT INTO opencraft_orchestration_runtime_views VALUES(?,?,?,?,?) ON CONFLICT(thread_id) DO UPDATE SET root_turn_id=excluded.root_turn_id,turn_id=excluded.turn_id,state=excluded.state,updated_at_ms=excluded.updated_at_ms')
+      .run(snapshot.threadId,snapshot.rootTurnId,snapshot.turnId,snapshot.state,this.now());
+  }
+  runtimeSnapshot(threadId: string): import('@opencraft/appserver-protocol/collaboration').ThreadOrchestrationSnapshot | null {
+    const row = this.db.prepare('SELECT * FROM opencraft_orchestration_runtime_views WHERE thread_id=?').get(threadId);
+    return row ? {threadId,rootTurnId:row.root_turn_id as string|null,turnId:row.turn_id as string|null,
+      state:row.state as import('@opencraft/appserver-protocol/collaboration').ThreadOrchestrationSnapshot['state']} : null;
+  }
+  observedRuntimeThreads(includeTerminal: boolean): string[] {
+    return this.db.prepare("SELECT thread_id FROM opencraft_orchestration_runtime_views WHERE ? OR state IN ('starting','active','recovering','awaiting_interaction')")
+      .all(includeTerminal?1:0).map(row => String(row.thread_id));
   }
   relation(threadId: string): ThreadRelation | null {
     const r = this.db.prepare('SELECT * FROM opencraft_thread_relations WHERE thread_id=?').get(threadId);
@@ -176,6 +197,13 @@ export class ThreadOrchestrationLedger {
     });
   }
   operationById(id:string):ToolOperation|null {const row=this.db.prepare('SELECT * FROM opencraft_orchestration_operations WHERE operation_id=?').get(id);return row?operation(row):null;}
+  /** Match exact Native Turn/Item identities, including replay aliases. */
+  callForItem(senderThreadId: string, turnId: string, itemId: string): ToolOperation | null {
+    const suffix = `:${senderThreadId}:${turnId}:${itemId}`;
+    const key = this.db.prepare('SELECT c.tool_call_key FROM opencraft_orchestration_tool_calls c JOIN opencraft_orchestration_operations o ON o.operation_id=c.operation_id WHERE o.sender_thread_id=? AND (c.tool_call_key=? OR substr(c.tool_call_key,-length(?))=?) LIMIT 1')
+      .get(senderThreadId,`${senderThreadId}:${turnId}:${itemId}`,suffix,suffix)?.tool_call_key;
+    return key === undefined ? null : this.operation(String(key));
+  }
   pendingOperations(): ToolOperation[] { return this.db.prepare('SELECT * FROM opencraft_orchestration_operations WHERE result_json IS NULL ORDER BY created_at_ms').all().map(operation); }
   createWait(value: Omit<WaitTicket,'state'>): WaitTicket {
     return this.transaction(() => {

@@ -1,7 +1,7 @@
 import type { SubagentTimelineBlock, TimelineExecutionStatus } from "./timeline";
 
-export type SubagentTaskStatus = "waiting" | "working" | "done" | "failed";
-export type SubagentDisplayStatus = "active" | "updated" | "interrupted" | "done";
+export type SubagentTaskStatus = "waiting" | "working" | "done" | "failed" | "unknown";
+export type SubagentDisplayStatus = "active" | "updated" | "interrupted" | "done" | "unknown";
 
 export interface SubagentActivityAgent {
   readonly threadId: string;
@@ -17,7 +17,7 @@ export interface SubagentActivityAgent {
 export interface SubagentActivityPresentation {
   readonly agents: readonly SubagentActivityAgent[];
   readonly actionLabel: string;
-  readonly groupStatusLabel: "started working" | "updated" | "interrupted" | "finished" | "failed";
+  readonly groupStatusLabel: "started working" | "updated" | "interrupted" | "finished" | "failed" | "unknown";
   readonly expandable: boolean;
 }
 
@@ -43,10 +43,11 @@ function nameFromPath(path: string | null): string | null {
 }
 
 export function mapSubagentTaskStatus(value: unknown): SubagentTaskStatus {
-  if (value === "pendingInit") return "waiting";
-  if (value === "running") return "working";
-  if (value === "errored" || value === "notFound" || value === "failed") return "failed";
-  return "done";
+  if (["pendingInit", "starting", "awaiting_interaction", "unconfirmed"].includes(String(value))) return "waiting";
+  if (["running", "active", "recovering"].includes(String(value))) return "working";
+  if (value === "errored" || value === "notFound" || value === "failed" || value === "error" || value === "exhausted") return "failed";
+  if (["completed", "idle", "shutdown", "interrupted", "interrupted_by_user"].includes(String(value))) return "done";
+  return "unknown";
 }
 
 export function subagentTaskStatusLabel(value: unknown): string {
@@ -58,7 +59,14 @@ export function subagentTaskStatusLabel(value: unknown): string {
   if (value === "errored") return "errored";
   if (value === "notFound") return "not found";
   if (value === "failed") return "failed";
-  return "completed";
+  if (value === "starting") return "starting";
+  if (value === "active") return "running";
+  if (value === "recovering") return "recovering";
+  if (value === "awaiting_interaction" || value === "unconfirmed") return "awaiting attention";
+  if (value === "idle") return "completed";
+  if (value === "error" || value === "exhausted") return "failed";
+  if (value === "interrupted_by_user") return "interrupted";
+  return "unknown";
 }
 
 function actionLabel(tool: SubagentTimelineBlock["tool"], status: TimelineExecutionStatus): string {
@@ -82,15 +90,14 @@ function uniqueThreadIds(block: SubagentTimelineBlock, states: Readonly<Record<s
   for (const id of block.receiverThreadIds) add(id);
   add(block.agentId);
   for (const id of Object.keys(states)) add(id);
-  if (ids.length === 0) add(block.id);
   return ids;
 }
 
 function displayStatusFor(block: SubagentTimelineBlock, status: SubagentTaskStatus): SubagentDisplayStatus {
-  if (block.activityKind === "interrupted" || block.status === "interrupted") return "interrupted";
+  if (block.activityKind === "interrupted") return "interrupted";
   if (block.activityKind === "interacted") return "updated";
   if (block.activityKind === "started") return "active";
-  return status === "waiting" || status === "working" ? "active" : "done";
+  return status === "unknown" ? "unknown" : status === "waiting" || status === "working" ? "active" : "done";
 }
 
 /** Renderer-neutral projection of collaboration calls and task states. */
@@ -99,10 +106,7 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
   const pathName = nameFromPath(block.agentPath);
   const agents = uniqueThreadIds(block, states).map((threadId): SubagentActivityAgent => {
     const source = record(states[threadId]);
-    const rawStatus = source?.status ?? (block.status === "running" || block.status === "pending" ? "running"
-      : block.status === "failed" ? "errored"
-      : block.status === "interrupted" ? "interrupted"
-      : "completed");
+    const rawStatus = block.childRuntimeStatus?.[threadId] ?? source?.status ?? "unknown";
     const status = mapSubagentTaskStatus(rawStatus);
     const defaultName = block.label !== "Agent" ? block.label : pathName;
     return {
@@ -113,7 +117,7 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
       status,
       statusLabel: subagentTaskStatusLabel(rawStatus),
       statusMessage: text(source?.message),
-      displayStatus: displayStatusFor(block, status),
+      displayStatus: rawStatus === "interrupted" || rawStatus === "interrupted_by_user" ? "interrupted" : displayStatusFor(block, status),
     };
   });
   const displayStatuses = agents.map((agent) => agent.displayStatus);
@@ -122,12 +126,12 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
     : displayStatuses.some((status) => status === "updated") ? "updated"
     : taskStatuses.some((status) => status === "failed") ? "failed"
     : taskStatuses.length > 0 && taskStatuses.every((status) => status === "done") ? "finished"
-    : "started working";
+    : taskStatuses.some(status => status === "working" || status === "waiting") ? "started working" : "unknown";
   return {
     agents,
-    actionLabel: actionLabel(block.tool, block.status),
+    actionLabel: actionLabel(block.tool, block.toolCallStatus),
     groupStatusLabel,
-    expandable: Boolean(block.prompt || block.action || block.model || block.reasoningEffort || block.agentPath || agents.some((agent) => agent.statusMessage)),
+    expandable: Boolean(block.controlCall || block.deliveryStatus || block.prompt || block.action || block.model || block.reasoningEffort || block.agentPath || agents.some((agent) => agent.statusMessage)),
   };
 }
 
@@ -159,18 +163,6 @@ export function deriveSubagentActivityGroupPresentation(
         statusMessage: agent.statusMessage ?? (agent.status === "working" || agent.status === "waiting" ? null : previous?.statusMessage ?? null),
       });
     }
-    if (block.tool === "wait" && block.status === "complete") {
-      for (const [threadId, agent] of agentsByThreadId) {
-        if (agent.status === "working" || agent.status === "waiting") {
-          agentsByThreadId.set(threadId, {
-            ...agent,
-            displayStatus: "done",
-            status: "done",
-            statusLabel: "completed",
-          });
-        }
-      }
-    }
   }
   const agents = [...agentsByThreadId.values()];
   const displayStatuses = agents.map((agent) => agent.displayStatus);
@@ -179,7 +171,7 @@ export function deriveSubagentActivityGroupPresentation(
     : displayStatuses.some((status) => status === "updated") ? "updated"
     : taskStatuses.some((status) => status === "failed") ? "failed"
     : taskStatuses.length > 0 && taskStatuses.every((status) => status === "done") ? "finished"
-    : "started working";
+    : taskStatuses.some(status => status === "working" || status === "waiting") ? "started working" : "unknown";
   return { blocks, agents, actionLabel: action, groupStatusLabel, expandable };
 }
 

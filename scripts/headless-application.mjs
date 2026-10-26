@@ -508,6 +508,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             submission: (threadId,inputId) => actorCollaboration.usageSubmission(threadId,inputId),
           },
           collaboration: {
+    topology: threadId => actorCollaboration.threadTopology(threadId),
             queuedContext: (thread,inputId,input) => actorCollaboration.queuedReferenceContext(thread,inputId,input),
             continued: (thread,previous,turn) => actorCollaboration.executionContinued(thread,previous,turn),
             continuing: (thread,previous,inputId) => actorCollaboration.executionContinuing(thread,previous,inputId),

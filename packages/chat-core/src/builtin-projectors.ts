@@ -748,6 +748,34 @@ function projectAutomationUpdate(
   };
 }
 
+function orchestrationSubagent(item: TimelineSourceItem, source: RecordValue, context: TimelineProjectionContext): TimelineItemProjection | null {
+  const tool = string(source.tool) ?? string(source.name);
+  const tools = {thread_spawn:"spawnAgent",thread_tell:"sendInput",thread_inspect:null,thread_wait:"wait"} as const;
+  if (source.namespace || tool === null || !(tool in tools)) return null;
+  const args = record(source.arguments);
+  let receipt: RecordValue = {};
+  // The Native transcript cache preserves the exact server tool receipt.
+  for (const content of Array.isArray(source.contentItems) ? source.contentItems : []) {
+    const text = string(record(content).text);
+    if (text !== null) try { receipt = record(JSON.parse(text)); break; } catch { /* Non-JSON output has no control facts. */ }
+  }
+  const ids = [...stringArray(args.threadIds)];
+  const single = string(receipt.threadId) ?? string(args.threadId);
+  if (single !== null && !ids.includes(single)) ids.push(single);
+  const states = Object.fromEntries((Array.isArray(receipt.threads) ? receipt.threads : []).flatMap(value => {
+    const state = record(value), id = string(state.threadId);
+    return id === null ? [] : [[id,{status:state.state ?? state.status}]];
+  }));
+  if (single !== null && receipt.status !== undefined) states[single] = {status:receipt.status};
+  const toolCallStatus = source.success === false ? "failed" : executionStatus(source.status);
+  return {lane:"assistant",block:{...blockBase(item,"subagent"),
+    toolCallStatus,deliveryStatus:null,childRuntimeStatus:null,controlCall:{turnId:context.turn.id,itemId:item.id},
+    agentId:ids[0] ?? null,label:string(args.title) ?? "Agent",action:"",tool:tools[tool as keyof typeof tools],
+    senderThreadId:null,receiverThreadIds:ids,prompt:string(args.prompt) ?? string(args.message),
+    model:string(args.model),reasoningEffort:string(args.reasoningEffort),agentStates:states,
+    activityKind:null,agentPath:null,status:toolCallStatus}};
+}
+
 export function createBuiltinTimelineProjectors(): readonly TimelineItemProjector[] {
   return [
     simpleProjector("user-message", ["userMessage"], (item, source, context) => {
@@ -913,6 +941,8 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       };
     }),
     simpleProjector("tool-call", ["mcpToolCall", "dynamicToolCall", "webSearch", "imageView", "sleep"], (item, source, context) => {
+      const collaboration = item.type === "dynamicToolCall" ? orchestrationSubagent(item,source,context) : null;
+      if (collaboration !== null) return collaboration;
       const appContext = record(source.appContext);
       const managedApp = (() => {
         if (item.type !== "dynamicToolCall" || !((source.namespace === MCP_APPS_NAMESPACE && (source.tool ?? source.name) === "manage")
@@ -1071,6 +1101,8 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       lane: "assistant",
       block: {
         ...blockBase(item, "subagent"),
+        toolCallStatus: item.type === "subAgentActivity" ? source.kind === "interrupted" ? "interrupted" : "complete" : executionStatus(source.status),
+        deliveryStatus:null,childRuntimeStatus:null,controlCall:null,
         agentId: string(source.agentId) ?? stringArray(source.receiverThreadIds)[0] ?? string(source.agentThreadId),
         label: string(source.agentName) ?? string(source.label) ?? "Agent",
         action: textFrom(source.action ?? source.content ?? source.message ?? source.prompt),

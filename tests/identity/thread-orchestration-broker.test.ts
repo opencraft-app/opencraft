@@ -186,3 +186,69 @@ test('a confirmed human stop marks direct intervention even when the child start
  const f=await fixture(t),child=await f.invoke('stop-child','thread_spawn',{prompt:'Review'});f.broker.observe({threadId:child.threadId,turnId:'turn',rootTurnId:'root',state:'interrupted_by_user'});
  assert.equal(f.service.orchestration.relation(child.threadId)?.hasDirectUserInput,true);
 });
+
+test('UI control reads separate timed-out tool, delivery and child facts across restart',async t=>{
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review',visibility:'hidden'});
+ f.states.set(spawn.threadId,{threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'active'});
+ f.broker.observe(f.states.get(spawn.threadId)!);
+ const wait=await f.invoke('wait','thread_wait',{threadIds:[spawn.threadId],timeoutMs:0});
+ assert.equal(wait.settled,false);
+ const calls=[{turnId:'parent-turn',itemId:'spawn'},{turnId:'parent-turn',itemId:'wait'}];
+ const read=()=>f.service.orchestrationView(f.a,'parent',calls);
+ const before=read();
+ assert.equal(before.calls[1]!.toolCallStatus,'complete');
+ assert.equal(before.calls[1]!.childRuntimeStatus[spawn.threadId],'active');
+ assert.notEqual(before.calls[0]!.deliveryStatus,null);
+ assert.equal(before.calls[1]!.deliveryStatus,null);
+ assert.deepEqual(f.service.threadTopology(spawn.threadId),{parentThreadId:'parent',visibility:'hidden'});
+ await f.restart();assert.deepEqual(read(),before);
+ f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'recovering'});
+ assert.equal(read().calls[1]!.childRuntimeStatus[spawn.threadId],'recovering');
+ f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'completed'});
+ assert.equal(read().calls[1]!.childRuntimeStatus[spawn.threadId],'completed');
+ assert.equal(f.service.orchestration.operation('parent:parent-turn:wait')!.result && (f.service.orchestration.operation('parent:parent-turn:wait')!.result as any).settled,false);
+});
+
+test('UI ledger projection checks source and each child read authority and exact Native identities',async t=>{
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
+ await assert.rejects(f.service.command(f.b,{action:'orchestration',threadId:spawn.threadId,calls:[]}),/conversation_action_denied/);
+ const op=f.service.orchestration.operation('parent:parent-turn:spawn')!;
+ f.service.database.prepare('INSERT INTO opencraft_orchestration_tool_calls VALUES(?,?)').run('incarnation:parent:parent-turn:replayed',op.operationId);
+ assert.deepEqual(f.service.orchestrationView(f.a,'parent',[{turnId:'parent-turn',itemId:'replayed'}]).calls[0]?.receiverThreadIds,[spawn.threadId]);
+ assert.equal(f.service.orchestrationView(f.a,'parent',[{turnId:'other-turn',itemId:'spawn'}]).calls.length,0);
+ const forOther=f.service.orchestrationView(f.b,'parent',[{turnId:'parent-turn',itemId:'spawn'}]);
+ assert.deepEqual(forOther.calls[0]?.receiverThreadIds,[]);
+ assert.deepEqual(forOther.calls[0]?.childRuntimeStatus,{});
+ assert.equal(forOther.calls[0]?.deliveryStatus,null);
+ assert.throws(()=>f.service.orchestrationView(f.a,'parent',Array(101).fill({turnId:'t',itemId:'i'})),/invalid_orchestration_calls/);
+});
+
+
+test('ordinary authorized wait targets retain independent runtime facts after polling and restart',async t=>{
+ const f=await fixture(t);
+ f.states.set('ordinary',{threadId:'ordinary',turnId:'ordinary-turn',rootTurnId:'ordinary-turn',state:'active'});
+ const receipt=await f.invoke('ordinary-wait','thread_wait',{threadIds:['ordinary'],timeoutMs:1});
+ assert.equal(receipt.settled,false);assert.equal(f.service.orchestration.relation('ordinary'),null);
+ const calls=[{turnId:'parent-turn',itemId:'ordinary-wait'}],read=()=>f.service.orchestrationView(f.a,'parent',calls);
+ assert.equal(read().calls[0]!.childRuntimeStatus.ordinary,'active');
+ await f.restart();assert.equal(read().calls[0]!.childRuntimeStatus.ordinary,'active');
+ f.states.set('ordinary',{threadId:'ordinary',turnId:'ordinary-turn',rootTurnId:'ordinary-turn',state:'completed'});
+ await f.broker.reconcile();assert.equal(read().calls[0]!.childRuntimeStatus.ordinary,'completed');
+});
+
+test('v4 to v5 display migration preserves receipts and rejects a changed v5 checksum',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'oc-view-upgrade-'));t.after(()=>rm(root,{recursive:true,force:true}));const path=join(root,'collaboration.sqlite');
+ const old=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS.slice(0,4)}).database,ledger=new ThreadOrchestrationLedger(old);
+ ledger.createThread(relation('kept','owner'));
+ const op=ledger.accept({toolCallKey:'call',delegationId:'delegation',issuerActorId:'owner',kind:'wait',senderThreadId:'kept',targetThreadId:null,clientMessageId:null,mode:'wait',arguments:{threadIds:['ordinary']}});
+ ledger.finish('call',{settled:false});const hashes=old.prepare('SELECT version,checksum FROM schema_migrations').all();old.close();
+ const current=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
+ assert.deepEqual(current.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=4').all(),hashes);
+ const views=new ThreadOrchestrationLedger(current);assert.deepEqual(views.operationById(op.operationId)?.result,{settled:false});
+ views.observeRuntime({threadId:'ordinary',rootTurnId:'root',turnId:'turn',state:'active'});
+ assert.equal(views.runtimeSnapshot('ordinary')?.state,'active');current.close();
+ const reopen=openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}).database;
+ assert.equal(new ThreadOrchestrationLedger(reopen).runtimeSnapshot('ordinary')?.rootTurnId,'root');
+ reopen.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=5");reopen.close();
+ assert.throws(()=>openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}));
+});

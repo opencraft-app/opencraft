@@ -153,3 +153,29 @@ The opt-in `scripts/smoke/execution/smoke-thread-orchestration.ts` exercises a r
 fixed Native CLI with synthetic identities, isolated processes and a local model.
 The target contract and later UI/driver stages remain in
 [the orchestration specification](../design/thread-orchestration-spec.md).
+
+### UI control read projection
+
+`opencraft/thread-orchestration-view` version 1 advertises the read-only
+`opencraft/collaboration` action `orchestration`. The request binds `threadId`
+and up to 100 Native `{turnId,itemId}` identities. The authenticated source read
+and each target read are checked independently. Replies contain only the matched
+calls' `toolCallStatus`, queue-owned `deliveryStatus`, authorized target IDs and
+ledger-owned `childRuntimeStatus`; they do not return delegations or message bodies.
+A completed polling call with `settled:false` does not settle the child. Recovery
+remains active work; an absent runtime fact is unconfirmed, never completed.
+
+Schema v5 appends `opencraft_orchestration_runtime_views` for Host-observed runtime
+facts, including authorized ordinary Threads that have no parent relationship.
+These facts survive restart and are reconciled with the Host; observing a Thread
+never invents ownership or topology. Existing v1–v4 migration SQL is unchanged.
+
+The Native transcript cache owns tool identity, arguments and immutable receipts.
+The client keeps a replaceable display cache of current control facts, refreshes
+only observed conversations, fences replies across connection generations and
+re-reads after reconnect. Refreshing these facts neither resumes a Thread nor
+submits input. Catalog/read replies overlay ledger `parentThreadId` and `visibility`;
+the sidebar groups and paginates whole visible trees by their root, scoped to the
+Host connection. Hidden rows are excluded from the sidebar, while authorized child
+links in the parent conversation remain navigable. The persisted catalog display
+cache retains topology and rejects pre-topology cache records.

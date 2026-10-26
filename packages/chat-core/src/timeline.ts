@@ -381,6 +381,11 @@ export interface TodoTimelineBlock extends TimelineBlockBase<"todo"> {
 }
 
 export interface SubagentTimelineBlock extends TimelineBlockBase<"subagent"> {
+  readonly toolCallStatus: TimelineExecutionStatus;
+  readonly deliveryStatus: import("@opencraft/appserver-protocol/collaboration").OrchestrationDeliveryStatus | null;
+  readonly childRuntimeStatus: Readonly<Record<string, import("@opencraft/appserver-protocol/collaboration").OrchestrationChildRuntimeStatus>> | null;
+  /** Native identity for an independently refreshed control-ledger projection. */
+  readonly controlCall: {readonly turnId:string;readonly itemId:string} | null;
   readonly agentId: string | null;
   readonly label: string;
   readonly action: string;

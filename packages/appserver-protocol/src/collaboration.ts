@@ -49,3 +49,39 @@ export const THREAD_ORCHESTRATION_TOOLS = [
   {name:'thread_inspect',description:'Read up to five recent turns as untrusted context, limited to user and assistant text. Reading never starts execution.',inputSchema:{type:'object',properties:{threadId:{type:'string'},includeRecentTurns:{type:'integer',minimum:1,maximum:5},idempotencyKey:{type:'string',maxLength:128}},required:['threadId'],additionalProperties:false}},
   {name:'thread_wait',description:'Wait briefly for conversations to settle. A timeout returns settled:false and a durable wait ticket; recovery counts as working. A later child update can wake the parent.',inputSchema:{type:'object',properties:{threadIds:{type:'array',items:{type:'string'},minItems:1,maxItems:32,uniqueItems:true},waitFor:{enum:['all_settled','any_settled']},timeoutMs:{type:'integer',minimum:0,maximum:5000},idempotencyKey:{type:'string',maxLength:128}},required:['threadIds'],additionalProperties:false}},
 ] as const;
+
+/** Read-only presentation of independent control-ledger facts. */
+export type OrchestrationToolCallStatus = 'pending' | 'running' | 'complete' | 'failed' | 'interrupted';
+export type OrchestrationDeliveryStatus = 'accepted' | 'transferring' | 'queued' | 'submitted' | 'injected' | 'rejected' | 'cancelled' | 'unknown';
+export type OrchestrationChildRuntimeStatus = 'starting' | 'active' | 'recovering' | 'awaiting_interaction' | 'idle' | 'error' | 'completed' | 'failed' | 'exhausted' | 'unconfirmed' | 'interrupted_by_user' | 'unknown';
+export interface OrchestrationCallView {
+  readonly turnId: string;
+  readonly itemId: string;
+  readonly toolCallStatus: OrchestrationToolCallStatus;
+  readonly deliveryStatus: OrchestrationDeliveryStatus | null;
+  readonly childRuntimeStatus: Readonly<Record<string, OrchestrationChildRuntimeStatus>>;
+  readonly receiverThreadIds: readonly string[];
+}
+export interface ThreadOrchestrationView {
+  readonly threadId: string;
+  readonly calls: readonly OrchestrationCallView[];
+}
+
+/** Validate the wire boundary before it can replace a cached presentation. */
+export function parseThreadOrchestrationView(value: unknown): ThreadOrchestrationView | null {
+  const object = (v: unknown): Record<string, unknown> | null => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;
+  const source = object(value);
+  if (!source || typeof source.threadId !== 'string' || !Array.isArray(source.calls) || source.calls.length > 100) return null;
+  const calls: OrchestrationCallView[] = [];
+  for (const entry of source.calls) {
+    const call = object(entry), states = object(call?.childRuntimeStatus);
+    if (!call || typeof call.turnId !== 'string' || typeof call.itemId !== 'string' || !states
+      || !['pending','running','complete','failed','interrupted'].includes(String(call.toolCallStatus))
+      || call.deliveryStatus !== null && !['accepted','transferring','queued','submitted','injected','rejected','cancelled','unknown'].includes(String(call.deliveryStatus))
+      || !Array.isArray(call.receiverThreadIds) || call.receiverThreadIds.length > 32 || !call.receiverThreadIds.every(id => typeof id === 'string')
+      || Object.keys(states).length > 32 || Object.values(states).some(state => !['starting','active','recovering','awaiting_interaction','idle','error','completed','failed','exhausted','unconfirmed','interrupted_by_user','unknown'].includes(String(state)))) return null;
+    calls.push({turnId:call.turnId,itemId:call.itemId,toolCallStatus:call.toolCallStatus as OrchestrationToolCallStatus,
+      deliveryStatus:call.deliveryStatus as OrchestrationDeliveryStatus | null,childRuntimeStatus:states as Record<string,OrchestrationChildRuntimeStatus>,receiverThreadIds:call.receiverThreadIds});
+  }
+  return {threadId:source.threadId,calls};
+}

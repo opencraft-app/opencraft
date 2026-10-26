@@ -1575,6 +1575,25 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   gap: var(--gap-navigation-rows);
 }
 
+.sidebar-thread-tree,
+.sidebar-thread-tree__children {
+  display: grid;
+  min-width: 0;
+  gap: var(--gap-navigation-rows);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar-thread-tree__node {
+  min-width: 0;
+}
+
+.sidebar-thread-tree__children {
+  padding-inline-start: calc(var(--spacing) * 3);
+  margin-block-start: var(--gap-navigation-rows);
+}
+
 .sidebar-activity-group__heading {
   @include typography.role(metadata, tertiary);
   min-width: 0;
