@@ -1,3 +1,5 @@
+import { configureDesktopServer } from './runtime/configure-desktop-server';
+import { desktopServerPort } from './runtime/desktop-server-connections';
 import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
 import { useTurnNotifications } from "./runtime/turn-notifications-context";
 import { resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
@@ -1518,6 +1520,11 @@ export function App({
         activeHostId={snapshot.hostId}
         onRemove={hostCatalog.removeHost}
         onProvisionHost={hostCatalog.provisionHost}
+        onConnectDesktopServer={desktopServerPort() ? async (origin, signal) => {
+          const profile = await configureDesktopServer({ origin, signal, port: desktopServerPort()!, profiles: hostCatalog.profiles, provision: hostCatalog.provisionHost });
+          signal.throwIfAborted();
+          hostCatalog.navigateToHome({ execution: { hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+        } : undefined}
         onOpenView={workbenchNavigation.openExtensionView}
         onPushViewResource={workbenchNavigation.pushExtensionViewResource}
         onReplaceViewResource={workbenchNavigation.replaceExtensionViewResource}

@@ -203,6 +203,10 @@ test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
     new URL("../../apps/workbench-web/src/main.tsx", import.meta.url),
     "utf8",
   );
+  const clientRuntime = readFileSync(
+    new URL("../../apps/workbench-web/src/runtime/client-runtime.ts", import.meta.url),
+    "utf8",
+  );
   const appStyles = readFileSync(
     new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url),
     "utf8",
@@ -254,7 +258,9 @@ test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
   assert.match(desktopMain, /window\.on\("leave-full-screen", publishLeftFullscreen\)/u);
   assert.match(desktopPreload, /getWindowFullscreen/u);
   assert.match(desktopPreload, /onWindowFullscreenChanged/u);
-  assert.match(rendererMain, /data(?:set)?\.opencraftWindowFullscreen/u);
+  assert.match(rendererMain, /clientRuntime\.start\(\)/u);
+  assert.match(clientRuntime, /data(?:set)?\.opencraftWindowFullscreen/u);
+  assert.match(clientRuntime, /onWindowFullscreenChanged\?\.\(apply\)/u);
   assert.doesNotMatch(rendererMain, /electron-opaque/u);
   assert.doesNotMatch(appStyles, /electron-opaque/u);
   assert.doesNotMatch(appShellHeader, /traffic-light-snapshot/u);

@@ -12,6 +12,7 @@
     "./connections": "./src/connections.ts"
   },
   "dependencies": {
+    "@opencraft/design-system": "*",
     "@opencraft/identity-core": "*",
     "@opencraft/access-control": "*",
     "@opencraft/extension-runtime": "*",

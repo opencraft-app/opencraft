@@ -86,7 +86,7 @@ export class AuthBrowser {
   }
 }
 
-export async function humanAuthFixture(t: any, protectedInstance = true) {
+export async function humanAuthFixture(t: any, protectedInstance = true, appServerTarget: string | null = null, port = 0) {
   const directory = await mkdtemp(join(tmpdir(), 'opencraft-human-auth-'));
   const issuer = await mockIssuer();
   const actors = new ActorStore(join(directory, 'actors.sqlite'));
@@ -102,10 +102,10 @@ export async function humanAuthFixture(t: any, protectedInstance = true) {
     administrator: p => access.role(p) === 'admin', isHumanCurrent: p => auth.isCurrent(p),
     rejectHumanRequest: r => auth.invalidSession(r) || (auth.hasSessionCookie(r) && r.headers.authorization !== undefined) });
   await writeFile(join(directory, 'index.html'), '<!doctype html><title>Workbench fixture</title>');
-  const web = await createWorkbenchWebServer({ root: directory, appServerTarget: null, authService: auth, actorService: actorAccess,
+  const web = await createWorkbenchWebServer({ root: directory, appServerTarget, authService: auth, actorService: actorAccess,
     ...(protectedInstance ? { accessService: access } : {}),
     desktopAccess: 'trusted-internal', desktopService: { accept(ws: any) { ws.send('connected'); } }, onAppHostDiagnostic() {} });
-  const address = await web.listen({ host: '127.0.0.1', port: 0 }); configuration.origin = `http://127.0.0.1:${address.port}`;
+  const address = await web.listen({ host: '127.0.0.1', port }); configuration.origin = `http://127.0.0.1:${address.port}`;
   t.after(async () => { await web.close(); auth.close(); accounts.close(); members.close(); actors.close(); await issuer.close(); await rm(directory, { recursive: true, force: true }); });
   return { directory, issuer, actors, accounts, localAccounts, deactivateLocal, members, auth, access, actorAccess, origin: configuration.origin, browser: () => new AuthBrowser(configuration.origin) };
 }

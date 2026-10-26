@@ -12,6 +12,31 @@ existing geometry and lifecycle.
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Desktop first-use welcome preview
+
+The developer Laboratory exposes the desktop welcome page manually. It uses
+the existing fullscreen ModalSurface, preserving the mounted Workbench, drafts
+and current Settings route. Normal startup is unchanged. Local setup opens the
+enabled builtin Host's declared model-configuration Settings page through the
+application Router. The server form delegates authentication to Main's desktop
+server owner. Main probes the remote execution ingress, showing a temporary isolated
+sign-in window when needed and closing it before a remote Workbench is rendered.
+The target server and its plugins own identity and authorization; the desktop does
+not require an Actor discovery endpoint or a private identity plugin API.
+A scoped `opencraft.desktop-server` provider carries the existing AppServer protocol
+through a native-held immutable credential snapshot, never a fabricated Human identity.
+The application saves a profile only after protocol preflight, then opens a fresh
+remote draft through its existing Router, retaining the previous draft. Closing,
+leaving or cancelling configuration revokes pending authentication and preflight;
+late results cannot save or navigate. Scope loss retires the profile/runtime and
+private query projection. Startup reauthorizes the address under a fresh client scope
+and drops prior cached identity, roots and query data. Network recovery reuses the
+immutable credential snapshot; browser cookie changes cannot replace its account.
+Authorization rejection retires the scope. Denial, HTML or execution
+service errors never constitute admission. Renderer reload/crash cancels authentication
+and releases all native bridges and credential snapshots.
+Normal startup and onboarding-complete state are unchanged.
+
 ## Owned DOM projection names
 
 Shared Web chrome writes the current platform to `data-opencraft-platform`;
@@ -186,7 +211,11 @@ than panels; circular touch chrome has inset-only shading. Geometry, Radix
 focus and modal lifetime retain their owners. Solid accessibility/unsupported
 filter fallbacks and explicit extension popover surfaces remain readable.
 Independent Shell buttons and grouped conversation chrome share the same neutral
-floating veil and effective blur, including the SVG enhancement path. Footer
+floating veil and effective blur, including the SVG enhancement path. Electron
+titlebar navigation and panel controls use quiet icon buttons instead: their
+resting surface is transparent, with no glass disc or raised shadow. Hover,
+press, keyboard focus, hit targets and command ownership stay with the existing
+chrome control. Mobile floating controls retain their glass material. Footer
 geometry must not replace that material or clip its background as a text label.
 The existing lens resize owner reads the shared scattering length for an explicit
 SVG Gaussian stage; icons and focus remain outside it. Verify the optical path

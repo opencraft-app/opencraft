@@ -1,3 +1,5 @@
+import { parseDesktopServerConnection, type DesktopServerConnection } from '@opencraft/app-host-protocol/desktop-server';
+import { DesktopServerConnectionExtension, desktopServerPort } from './desktop-server-connections';
 import { SERVER_CONNECTIONS_ID, migrateServerConnectionProfiles } from "@opencraft/plugin-builtin-agents/server-connection-identity";
 import { migrateBuiltinConnectionProfiles, resolveBuiltinConnectionRoute } from "./builtin-connection-compatibility";
 import { BrowserHeadlessConnectors, connectorApprovals as createConnectorApprovals } from "./headless-connectors";
@@ -333,6 +335,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => sidebarLayout.close());
     startupRollback.push(stopSidebarLayoutPersistReporting);
     await extensions.activate(BuiltinWebSocketHostConnectionExtension);
+    if (platform === "electron" && desktopServerPort()) await extensions.activate(DesktopServerConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
     const loadPresentationExtension = async (
       id: string,
@@ -631,6 +634,28 @@ export async function createWebWorkbenchApplicationSupervisor(
     ? configuredHostProfiles
     : new EnvironmentProfileStore(configuredHostProfiles, environmentDirectory);
   startupRollback.push(() => hostProfiles.close());
+  const earlyServerRevocations: DesktopServerConnection[] = [];
+  let retireDesktopServer: ((connection: DesktopServerConnection) => void) | null = null;
+  const stopDesktopServers = desktopServerPort()?.onRevoked(connection => {
+    if (retireDesktopServer) retireDesktopServer(connection); else earlyServerRevocations.push(connection);
+  });
+  if (stopDesktopServers) startupRollback.push(stopDesktopServers);
+  // Revalidate stored authority before choosing a bootstrap Host or exposing its cache.
+  if (desktopServerPort()) await Promise.all(hostProfiles.getSnapshot().profiles.map(async profile => {
+    if (profile.providerId !== 'opencraft.desktop-server') return;
+    try {
+      const valid = await desktopServerPort()!.validate(parseDesktopServerConnection(profile.providerConfig));
+      if (!valid) await hostProfiles.remove(profile.hostId);
+      else if (valid.accountKey !== parseDesktopServerConnection(profile.providerConfig).accountKey) {
+        // Authorization is scoped to a fresh native credential incarnation.
+        // Preserve the server address without restoring another account's cached data.
+        await hostProfiles.remove(profile.hostId);
+        await hostProfiles.put({ ...profile, hostId: 'desktop-server:' + valid.accountKey,
+          providerConfig: { ...valid }, workspaceBrowseRoots: [], machineIdentity: null, agent: null, revision: 0 });
+      }
+    } catch { /* A transient network failure preserves the configured recipe; transport recovery owns retry. */ }
+  }));
+
   const restoreLegacyWebsite = platform === "web" && workbenchProductId === "opencraft"
     && websiteConfig !== null && !import.meta.env.VITE_APPSERVER_HOSTS_JSON?.trim()
     && !import.meta.env.VITE_APPSERVER_WS_URL?.trim()
@@ -651,7 +676,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     await environmentDirectory.refresh().catch(() => undefined);
   }
   const sharedDisposalSteps: readonly (() => void | Promise<void>)[] = [
-    () => hostProfiles.close(),
+    () => { stopDesktopServers?.(); hostProfiles.close(); },
     () => queryClient.clear(),
     () => extensionManager.dispose(),
     () => extensionSettings.close(),
@@ -721,10 +746,12 @@ export async function createWebWorkbenchApplicationSupervisor(
     const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
-    const provisionHost = (input: ProvisionHostInput) => persistProvisionedHost(
+    const provisionHost = (input: ProvisionHostInput, options?: { signal?: AbortSignal }) => persistProvisionedHost(
       input,
       hostProfiles,
       connectionProviders.providers,
+      [],
+      options?.signal,
     );
     const hostless: HostlessWebWorkbenchApplicationSupervisor = {
       clientResources,
@@ -1137,6 +1164,27 @@ export async function createWebWorkbenchApplicationSupervisor(
     connectionProviders: connectionProviders.providers,
     onThreadCreated: (intent, receipt) => taskConversationFlow?.created(intent, receipt) ?? Promise.resolve(),
   });
+  const retiringDesktopServers = new Set<string>();
+  retireDesktopServer = connection => {
+    for (const profile of hostProfiles.getSnapshot().profiles) {
+      if (profile.providerId !== 'opencraft.desktop-server' || retiringDesktopServers.has(profile.hostId)) continue;
+      let config: DesktopServerConnection;
+      try { config = parseDesktopServerConnection(profile.providerConfig); } catch { continue; }
+      if (config.origin !== connection.origin || config.accountKey !== connection.accountKey) continue;
+      retiringDesktopServers.add(profile.hostId);
+      const state = coordinator.getSnapshot();
+      const currentHost = state.location.kind === 'thread' ? state.location.key.hostId : state.location.hostId;
+      const fallback = hostProfiles.getSnapshot().profiles.find(value => value.enabled && value.hostId !== profile.hostId && value.providerId !== 'opencraft.desktop-server');
+      if (fallback && (currentHost === profile.hostId || state.selectedHostId === profile.hostId)) {
+        commands.navigateToHome({ execution: { hostId: asHostId(fallback.hostId), workspace: { cwd: null, runtimeWorkspaceRoots: [] } }, mode: 'replace' });
+      }
+      const detached = registry.remove(profile.hostId);
+      queryClient.removeQueries({ queryKey: ['appserver', profile.hostId] });
+      void Promise.all([detached, hostProfiles.remove(profile.hostId)]).catch(error => console.error('Desktop server retirement failed', error instanceof Error ? error.name : 'Error'))
+        .finally(() => retiringDesktopServers.delete(profile.hostId));
+    }
+  };
+  for (const connection of earlyServerRevocations) retireDesktopServer(connection);
   forgetUnavailableThread = commands.forgetThread;
   const tasksStorageHostId = platform === "electron" ? "local-codex" : headlessAppHost ? "opencraft-server" : bootstrapDefinitions[0]?.hostId;
   const tasks: TasksRequestPort | null = import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true" ? {

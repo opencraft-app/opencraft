@@ -12,7 +12,8 @@
     "./routing": {
       "types": "./src/routing.d.mts",
       "default": "./src/routing.mjs"
-    }
+    },
+    "./desktop-server": "./src/desktop-server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

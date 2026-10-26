@@ -13177,9 +13177,9 @@ html[data-window-host="browser"] body {
   .thread-tool-details__raw { opacity: 1; }
 }
 
-// Shell actions share one material across pointer, touch, Web and Electron.
-// Existing owners retain dimensions, placement, focus and interaction behavior.
-$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes)';
+// Electron titlebar controls keep quiet icon-button paint rather than raised
+// glass. Other Shell actions retain their shared material and interaction owner.
+$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes):not(:where([data-window-host="electron"] .chrome-button, [data-window-host="electron"] .app-shell-header__action-group))';
 :root[data-ui-density] #{$shell-liquid-actions} {
   @include material.liquid;
   color: var(--color-text);

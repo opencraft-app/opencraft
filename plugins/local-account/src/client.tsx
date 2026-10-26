@@ -25,7 +25,11 @@ export function createLocalAccountExtension(fetcher: typeof fetch, manageUrl = '
       <SettingsSection title={title}>
         <SettingsGroup><SettingsRow label={intl.formatMessage({ id: 'localAccount.identity', defaultMessage: 'Human identity' })}
           description={intl.formatMessage({ id: 'localAccount.identity.description', defaultMessage: 'Verified sign-in methods share a stable Human. Server membership controls access.' })}>
-          <SettingsButton disabled={available !== true} onClick={() => window.location.assign(manageUrl)}>
+          <SettingsButton disabled={available !== true} onClick={() => {
+            const destination = new URL(manageUrl, window.location.href);
+            destination.searchParams.set('locale', intl.locale);
+            window.location.assign(destination.href);
+          }}>
             {intl.formatMessage({ id: 'localAccount.manage', defaultMessage: 'Manage accounts' })}
           </SettingsButton>
         </SettingsRow></SettingsGroup>

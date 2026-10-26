@@ -158,7 +158,7 @@ export interface AppServerHostCatalog {
   readonly navigation: WorkbenchNavigationTransaction<AppServerWorkbenchRuntime>;
   readonly routeCheckpoints: Map<string, unknown>;
   retargetDraft(draftId: string, execution: ComposerExecutionTarget): void;
-  provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
+  provisionHost(input: ProvisionHostInput, options?: { signal?: AbortSignal }): Promise<HostConnectionProfile>;
   addWebSocketHost(input: {
     readonly displayName: string;
     readonly url: string;
@@ -182,7 +182,7 @@ export interface WebWorkbenchCommands {
   retargetDraft(draftId: string, execution: ComposerExecutionTarget): void;
   submit(intent: Parameters<AppServerWorkbenchRuntime["submit"]>[0]): Promise<SubmissionReceipt>;
   createGoal(intent: SubmitIntent, objective: string): Promise<SubmissionReceipt>;
-  provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
+  provisionHost(input: ProvisionHostInput, options?: { signal?: AbortSignal }): Promise<HostConnectionProfile>;
   addWebSocketHost(input: {
     readonly displayName: string;
     readonly url: string;
@@ -454,7 +454,7 @@ export interface WebWorkbenchApplicationBase {
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;
   readonly queryClient: QueryClient;
-  provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
+  provisionHost(input: ProvisionHostInput, options?: { signal?: AbortSignal }): Promise<HostConnectionProfile>;
   addWebSocketHost(input: {
     readonly displayName: string;
     readonly url: string;
@@ -538,7 +538,9 @@ export async function persistProvisionedHost(
   hostProfiles: HostConnectionProfileStore,
   connectionProviders: CordisHostConnectionProviderRuntime["providers"],
   reservedHostIds: readonly string[] = [],
+  signal?: AbortSignal,
 ): Promise<HostConnectionProfile> {
+  signal?.throwIfAborted();
   const displayName = host.displayName.trim();
   if (displayName.length === 0) throw new RangeError("Host display name must not be empty");
   const hostId = host.hostId?.trim() || createWebHostId();
@@ -563,7 +565,7 @@ export async function persistProvisionedHost(
     });
     await preflightHostConnection(providerLease.provider, providerConfig, {
       platform, hostId, profileRevision: 0,
-    });
+    }, { signal });
   } finally {
     providerLease.release();
   }
@@ -583,7 +585,9 @@ export async function persistProvisionedHost(
     workspaceBrowseRoots: roots,
     revision: 0,
   };
+  signal?.throwIfAborted();
   await hostProfiles.put(profile);
+  if (signal?.aborted) { await hostProfiles.remove(profile.hostId); signal.throwIfAborted(); }
   return profile;
 }
 
@@ -835,13 +839,14 @@ export function createWebWorkbenchCommands(input: {
       assertTarget(intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId);
       return submissionPipeline.submit(intent);
     },
-    async provisionHost(host) {
+    async provisionHost(host, options) {
       assertHostConfiguration();
       const profile = await persistProvisionedHost(
         host,
         input.hostProfiles,
         input.connectionProviders,
         input.registry.getSnapshot().hosts.map(({ hostId }) => hostId),
+        options?.signal,
       );
       try {
         if (!input.registry.has(profile.hostId)) input.registry.register(input.createHostRegistration(profile));
