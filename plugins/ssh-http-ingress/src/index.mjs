@@ -51,8 +51,8 @@ function createSshHttpIngress(options) {
   const peers = /* @__PURE__ */ new Set();
   let closing = false;
   let closeOperation;
-  const bridge = (stream, port = options.httpPort) => {
-    const peer = createConnection({ host: "127.0.0.1", port });
+  const bridge = (stream, port = options.httpPort, connectPeer = null) => {
+    const peer = connectPeer ? connectPeer() : createConnection({ host: "127.0.0.1", port });
     peers.add(peer);
     peer.setTimeout(timeoutMs, () => peer.destroy());
     peer.once("connect", () => peer.setTimeout(0));
@@ -104,15 +104,16 @@ function createSshHttpIngress(options) {
           context.reject(["publickey"]);
           return;
         }
-        let candidates;
-        try { candidates = [
-          ...(principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })),
-          ...(options.resolveAuthorizedKeys?.(context.username) ?? []).map(value => ({ key: parsePublicKey(value), dynamic: true })),
-        ]; } catch { context.reject(['publickey']); return; }
-        const accepted = candidates.find(({ key: candidate }) => {
+        const matches = ({ key: candidate }) => {
           const data = candidate.getPublicSSH();
           return data.length === context.key.data.length && timingSafeEqual(data, context.key.data);
-        });
+        };
+        let accepted;
+        try {
+          accepted = (principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })).find(matches);
+          if (!accepted) accepted = (options.resolveAuthorizedKeys?.(context.username) ?? [])
+            .map(value => ({ key: parsePublicKey(value), dynamic: true })).find(matches);
+        } catch { context.reject(['publickey']); return; }
         const key = accepted?.key;
         if (!key || context.signature && key.verify(context.blob, context.signature, context.hashAlgo) !== true) {
           context.reject(["publickey"]);
@@ -189,7 +190,7 @@ function createSshHttpIngress(options) {
             nativeSession ??= Promise.resolve().then(() => options.createNativeSession(authorization));
             void nativeSession.then(session => {
               if (!current() || stream.destroyed) { stream.destroy(); return; }
-              bridge(stream, session.port);
+              bridge(stream, session.port, session.connect);
             }).catch(() => stream.destroy());
           }
         });

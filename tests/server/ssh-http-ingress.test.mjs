@@ -38,7 +38,10 @@ test('dynamic SSH keys retain trusted submission context and retire when their a
   const submissionContext = { sender: { kind: 'employee', loginName: 'new.member' } };
   let scoped;
   const ingress = createSshHttpIngress({ hostKey: host.private, authorizedKeys: { legacy: [host.public] }, httpPort, codexPort: native.port,
-    resolveAuthorizedKeys: username => allowed && username === 'new.member' ? [user.public] : [],
+    resolveAuthorizedKeys: username => {
+      if (username === 'legacy') throw Error('fixture optional key store unavailable');
+      return allowed && username === 'new.member' ? [user.public] : [];
+    },
     authorizeSession: () => ({ submissionContext, isCurrent: () => allowed }),
     createNativeSession: async authorization => scoped = await createSshNativeRpcGateway(appHost, authorization),
   });
@@ -50,6 +53,7 @@ test('dynamic SSH keys retain trusted submission context and retire when their a
     c.connect({ host: '127.0.0.1', port: address.port, username, privateKey, readyTimeout: 1500 }); return ready;
   };
   try {
+    const legacy = await connectClient('legacy', host.private); legacy.end();
     await assert.rejects(connectClient('other.member'), /authentication/);
     await assert.rejects(connectClient('new.member', host.private), /authentication/);
     const client = await connectClient('new.member');
@@ -61,6 +65,10 @@ test('dynamic SSH keys retain trusted submission context and retire when their a
     await once(ws, 'open');
     const message = once(ws, 'message'); ws.send(JSON.stringify({ id: 1, method: 'initialize', params: {} })); await message;
     assert.equal(contexts.length, 1); assert.deepEqual(contexts[0], submissionContext);
+    const intruder = new WebSocket(`ws://127.0.0.1:${scoped.port}/rpc`);
+    intruder.on('error', () => {});
+    await assert.rejects(once(intruder, 'open'), /socket hang up/);
+    assert.equal(contexts.length, 1, 'an unrelated loopback peer cannot acquire the SSH identity');
     const closed = once(client, 'close'); allowed = false; await closed;
     assert.equal(ws.readyState, WebSocket.CLOSED);
     await assert.rejects(connectClient('new.member'), /authentication/);

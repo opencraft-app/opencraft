@@ -19,6 +19,9 @@ resolves current public keys and trusted per-connection authority. The SSH
 ingress still verifies the signature, rechecks authority and closes revoked
 connections. Its native gateway passes the server-owned submission/Actor context
 to AppHost rather than accepting identity fields from client frames. Scoped keys
+use an in-process peer factory: only TCP peers opened by that SSH owner can
+upgrade the scoped native gateway. An unrelated loopback connection cannot gain
+the context by discovering its listener port. Scoped keys
 cannot enter the legacy unscoped HTTP bridge. Static SSH configuration remains
 available independently; no provider-specific credential policy is built into
 core.
