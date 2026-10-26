@@ -3,6 +3,9 @@ import type { MessageSender } from "@opencraft/appserver-protocol";
 /** Trusted in-process context. Never decoded from a Renderer frame. */
 export interface TransportSubmissionContext {
   readonly sender: MessageSender | null;
+  /** Verified provider subject for execution ownership. Never decoded from client frames.
+   * loginName is an audit label, never the credential lookup key. */
+  readonly executionPrincipal?: { readonly provider: string; readonly subject: string; readonly loginName?: string };
   /** Trusted ingress role lookup, rechecked before delivering statistics. Never wire decoded. */
   readonly tokenUsageAuthority?: () => { readonly actorId: string; readonly administrator: boolean } | null;
   /** Verified at ingress; never deserialize from a wire frame. */

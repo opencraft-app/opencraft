@@ -1264,7 +1264,7 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
   let seq = 0;
   const request = async (client: string, method: string, params: Record<string, unknown>, sender = a, validUntil = Date.now() + 60_000) => {
     const id = `sender-${++seq}`;
-    await adapter.sendWithContext(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }), { sender, validUntil });
+    await adapter.sendWithContext(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }), { sender, validUntil, executionPrincipal: { provider: "employee", subject: sender === a ? "staff-A" : "staff-B", loginName: sender.loginName } });
     return await waitFor(frames, frame => frame.id === id) as any;
   };
   try {
@@ -1288,6 +1288,14 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
     const native = (await request("a", "test/readAcceptedInputs", {})).result.data;
     assert.deepEqual(native.map((entry: any) => entry.params.input[0].text), ["one", "two", "three"]);
     assert.doesNotMatch(JSON.stringify(native), /employee\.|loginName|staffId|"sender"/);
+    const state = new DatabaseSync(join(root, "data/opencraft-host-state.sqlite"), { readOnly: true });
+    try {
+      const leases = state.prepare("SELECT l.turn_id,s.principal_json FROM execution_leases l JOIN execution_submissions s USING(thread_id,input_id) WHERE l.thread_id=?").all(threadId);
+      assert.equal(leases.length, 1); assert.equal(leases[0].turn_id, turnId);
+      assert.equal(JSON.parse(String(leases[0].principal_json)).subject, "staff-A", "B steer cannot replace running A execution");
+      assert.equal(JSON.parse(String(state.prepare("SELECT principal_json FROM execution_submissions WHERE thread_id=? AND input_id='second'").get(threadId)!.principal_json)).subject, "staff-B");
+      assert.equal(JSON.parse(String(state.prepare("SELECT principal_json FROM execution_submissions WHERE thread_id=? AND input_id='third'").get(threadId)!.principal_json)).subject, "staff-A");
+    } finally { state.close(); }
     const withoutId = await request("a", "turn/steer", { threadId, expectedTurnId: turnId, input: [{ type: "text", text: "no id" }] });
     assert.match(withoutId.error.message, /Message identity/);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }

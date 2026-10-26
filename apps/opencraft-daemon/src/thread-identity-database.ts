@@ -1,3 +1,4 @@
+import { OPENCRAFT_HOST_EXECUTION_LEASES } from "./execution-lease-schema.js";
 import { join } from "node:path";
 import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
@@ -27,8 +28,9 @@ export class ThreadIdentityDatabase {
   readonly outcome: DatabaseOutcome;
   constructor(directory: string) {
     const opened = openManagedDatabase({ path: join(directory, "thread-identity.sqlite"), legacyPolicy: "reject-unknown",
-      validateSchema: createSchemaValidator(THREAD_IDENTITY_SCHEMA),
-      migrations: [{ version: 1, name: "thread-identity", sql: THREAD_IDENTITY_SCHEMA }],
+      validateSchema: createSchemaValidator(THREAD_IDENTITY_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES),
+      migrations: [{ version: 1, name: "thread-identity", sql: THREAD_IDENTITY_SCHEMA },
+        { version: 2, name: "immutable-execution-leases", sql: OPENCRAFT_HOST_EXECUTION_LEASES }],
     });
     this.database = opened.database; this.outcome = opened.outcome;
   }

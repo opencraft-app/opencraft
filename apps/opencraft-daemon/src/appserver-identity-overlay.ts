@@ -1,3 +1,5 @@
+import { ExecutionLeaseStore } from "./execution-lease-store.js";
+import { ExecutionLeaseTracker } from "./execution-ownership-transport.js";
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
 import { JsonRpcAppServerClient, type AppServerClient, type TransportSubmissionContext } from "@opencraft/appserver-client";
@@ -16,6 +18,8 @@ const submissions = new Set(["turn/start", "turn/steer", "thread/queue/add"]);
 export class AppServerIdentityOverlay {
   readonly store: ThreadIdentityDatabase;
   readonly identity: ThreadIdentity;
+  readonly executions: ExecutionLeaseStore;
+  private readonly executionTracker: ExecutionLeaseTracker;
   private readonly sessions = new Set<IdentitySocketSession>();
   private reader: AppServerClient | null = null;
   private readerTarget: string | null = null;
@@ -23,6 +27,8 @@ export class AppServerIdentityOverlay {
   private closed = false;
   constructor(readonly options: { directory: string; resolveTarget(): Promise<string>; createMetadata: ThreadMetadataFactory }) {
     this.store = new ThreadIdentityDatabase(options.directory);
+    this.executions = new ExecutionLeaseStore(this.store.database);
+    this.executionTracker = new ExecutionLeaseTracker(this.executions);
     try {
       this.identity = new ThreadIdentity(this.store.database, {
         createMetadata: options.createMetadata,
@@ -59,7 +65,7 @@ export class AppServerIdentityOverlay {
   }
   open(emit: (frame: string) => void): IdentitySocketSession {
     if (this.closed) throw new Error("Thread identity overlay closed");
-    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session));
+    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session), this.executionTracker);
     this.sessions.add(session); return session;
   }
   async close(): Promise<void> {
@@ -83,7 +89,7 @@ class IdentitySocketSession {
   private sequence = 0;
   private readonly initialized = new Set<string>();
   private closed = false;
-  constructor(readonly identity: ThreadIdentity, readonly emit: (frame: string) => void, readonly dispose: () => void) {}
+  constructor(readonly identity: ThreadIdentity, readonly emit: (frame: string) => void, readonly dispose: () => void, readonly executions?: ExecutionLeaseTracker) {}
   private reply(message: IdentityRecord, packet: IdentityRecord): void {
     if (!this.closed) this.emit(JSON.stringify({ ...packet, ...(clientId(message) ? { [LOGICAL_CLIENT_FIELD]: clientId(message) } : {}) }));
   }
@@ -99,7 +105,8 @@ class IdentitySocketSession {
       return frame;
     }
     if (typeof message.method !== "string" || !(typeof message.id === "string" || typeof message.id === "number")) return frame;
-    const method = message.method, params = record(message.params), key = requestKey(message);
+    const method = message.method, key = requestKey(message);
+    let params = record(message.params);
     const error = (reason: string, code = -32602) => { this.reply(message, { id: message.id, error: { code, message: reason } }); return null; };
     if (this.identity.metadata?.supports(method)) {
       if (!this.initialized.has(clientId(message))) return error("Initialize before reading thread metadata", -32002);
@@ -119,8 +126,9 @@ class IdentitySocketSession {
         if (this.originals.get(request.key) === id) this.originals.delete(request.key);
       }
       if (this.originals.has(key) || this.pending.size >= 256) return error("Too many pending or duplicate AppServer requests");
-      if (submissions.has(method)) this.identity.recordSubmission(params, context);
       const id = this.prefix + ++this.sequence;
+      if (submissions.has(method)) this.identity.recordSubmission(params, context);
+      params = record(this.executions?.prepare({ ...message, id, params }, context).params ?? params);
       this.pending.set(id, { method, params, sender: context.sender, created: Date.now(), original: message,
         key, client: clientId(message), epoch: this.epochs.get(clientId(message)) ?? 0 });
       this.originals.set(key, id);
@@ -128,13 +136,14 @@ class IdentitySocketSession {
         const { sender: _sender, creator: _creator, participants: _participants, ...native } = params;
         return JSON.stringify({ ...message, id, params: native });
       }
-      return JSON.stringify({ ...message, id });
+      return JSON.stringify({ ...message, id, params });
     } catch (failure) { return error(failure instanceof Error ? failure.message : "Invalid submission identity"); }
   }
   fromNative(frame: string): string | null {
     if (this.closed) return null;
     let message: IdentityRecord;
     try { message = record(JSON.parse(frame)); } catch { return frame; }
+    this.executions?.observe(message);
     if (typeof message.method === "string") {
       this.identity.observeNotification(message);
       return JSON.stringify(this.identity.projectNotification(message));
