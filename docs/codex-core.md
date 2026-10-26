@@ -245,3 +245,17 @@ The routing facade advertises `orchestrationRoutingVersion: 1` independently of
 the default APP callback capability. A gateway requires this version before
 using the mixed-generation tool superset or callback attachment fallback; an
 older router with only `routingEpoch` cannot accidentally advertise Stage 1.
+
+## 准入拒绝记录
+
+Host 的维护只读快照新增可选 `rejectedAdmissions`，统计当前 Host 实例拒绝的 RPC 尝试数，
+重试分别计数。每次拒绝同时经现有诊断端口输出 `codex-admission-rejected`，包含时间、
+进程 ID、实例内累计数、方法、逻辑 client ID、目标 Thread UUID 与拒绝原因；不输出
+input、objective、工具参数或请求正文。新建 Thread 尚无 ID 或 ID 格式无效时记为 null，
+不能把 client ID 当作 Thread ID，也不能据此推断用户身份或目标所有权。
+
+原始 bridge 与 Host overlays 复用同一个 Host 计数与诊断 owner；维护和 generation fence
+分别标记原因。读请求、已经接纳的工作及允许的 goal 暂停/完成不计入拒绝。
+诊断输出失败不改变拒绝及其 RPC 错误，另输出固定失败标记，不输出异常正文。
+服务部署需将诊断输出接入持久日志；跨 Host 重启的窗口总数按时间范围内的事件条数汇总，
+不能把重置后的实例计数当成整个窗口累计值。持久日志不可用时明确报告审计不完整。

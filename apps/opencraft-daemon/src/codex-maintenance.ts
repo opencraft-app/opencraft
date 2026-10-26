@@ -24,6 +24,8 @@ export const codexAdmissionPaused = (directory: string): boolean => existsSync(j
 export const codexMaintenanceError = () => ({ code: -32000, message: "New Codex tasks are temporarily unavailable during maintenance", data: { retryable: true } });
 export interface CodexMaintenanceSnapshot {
   paused: boolean;
+  /** Rejected RPC attempts in this Host instance; durable diagnostics span restarts. */
+  rejectedAdmissions?: number;
   pendingAdmissions: number;
   queued: number;
   unknown: number;

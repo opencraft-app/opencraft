@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,48 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 
 const token = "synthetic-core-token-".repeat(3);
+
+for (const overlays of [false, true]) test(`admission rejection diagnostics survive Host restart without recording input (overlays=${overlays})`, async () => {
+  const f = await fixture(), audit = join(f.root, "admission-audit.jsonl"), client = "audit-client";
+  const a = await f.adapter(overlays, entry => {
+    if (entry.event === "codex-admission-rejected") appendFileSync(audit, JSON.stringify(entry) + "\n");
+  });
+  const flag = join(overlays ? f.options.dataDirectory : join(f.root, "forbidden"), "codex-admission.paused");
+  const threadId = "11111111-1111-7111-8111-111111111111", content = "synthetic-private-content-must-not-be-logged";
+  try {
+    await a.rpc(client, "initialize");
+    await mkdir(join(flag, ".."), { recursive: true }); await writeFile(flag, "maintenance\n");
+    for (const [method, params] of [
+      ["turn/start", { threadId, input: [{ type: "text", text: content }] }],
+      ["thread/goal/set", { threadId, objective: content }],
+      ["thread/start", { input: [{ type: "text", text: content }] }],
+      ["turn/start", { threadId: content, input: [] }],
+    ] as const) await assert.rejects(a.rpc(client, method, params), /temporarily unavailable/);
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).rejectedAdmissions, 4);
+    const rows = readFileSync(audit, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(rows.map(row => row.rejectedAdmissions), [1, 2, 3, 4]);
+    assert.deepEqual(rows.map(row => row.threadId), [threadId, threadId, null, null]);
+    assert.ok(rows.every(row => row.clientId === client && row.reason === "maintenance" && Number.isFinite(Date.parse(row.at))));
+    assert.equal(readFileSync(audit, "utf8").includes(content), false);
+    await a.engine.close();
+    const b = await f.adapter(overlays); await b.rpc(client, "initialize");
+    assert.equal((await b.rpc(client, "opencraft/codex/maintenance/read")).rejectedAdmissions, 0);
+    assert.equal(readFileSync(audit, "utf8").trim().split("\n").length, 4);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
+
+test("a diagnostic sink failure does not admit work or suppress the maintenance error", async () => {
+  const f = await fixture(), a = await f.adapter(true, entry => {
+    if (entry.event === "codex-admission-rejected") throw new Error("synthetic unavailable sink");
+  });
+  const flag = join(f.options.dataDirectory, "codex-admission.paused");
+  try {
+    await a.rpc("audit", "initialize"); await writeFile(flag, "maintenance\n");
+    await assert.rejects(a.rpc("audit", "thread/start"), /temporarily unavailable/);
+    assert.equal((await a.rpc("audit", "thread/list")).data.length, 0);
+    assert.equal((await a.rpc("audit", "opencraft/codex/maintenance/read")).rejectedAdmissions, 1);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
 
 for (const overlays of [false, true]) test(`maintenance rejects new Codex inputs while existing work and reads continue (overlays=${overlays})`, async () => {
   const f = await fixture();
@@ -311,11 +353,11 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
   const core = await startCodexCore(options);
   const control = new CodexCoreControlClient(core.endpoint, token);
   const adapters: CodexEngineAdapter[] = [];
-  async function adapter(overlays = false) {
+  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined) {
     const engine = new CodexEngineAdapter({ ...options, coreEndpoint: core.endpoint, coreAuthToken: token,
       // Remote mode must not touch any local account store or spawn a child.
       dataDirectory: overlays ? options.dataDirectory : join(root, "forbidden"),
-      coreHostOverlays: overlays, logDiagnostic: () => undefined,
+      coreHostOverlays: overlays, logDiagnostic,
       spawnAppServer: () => { throw new Error("Remote mode spawned a writer"); } });
     adapters.push(engine);
     const frames: any[] = [];
