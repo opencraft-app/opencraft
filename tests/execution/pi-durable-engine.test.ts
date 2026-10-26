@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import test from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -392,6 +393,18 @@ test("Pi file/skill/image input is explicit and upload staging works without DSH
   await assert.rejects(compilePiInput([{ type: "image", url: "data:image/png;base64,AA==" }], null, f.directory, { input: ["text"] }), /does not support image/);
   const image = await compilePiInput([{ type: "image", url: "data:image/png;base64,AA==" }], null, f.directory, { input: ["text", "image"] });
   assert.equal(image[0].mimeType, "image/png");
+  const stagedImage: any = await resources.request("attachment/stage", { clientAttachmentId: "image-one", name: "sample.png", mimeType: "image/png", size: 1,
+    source: { kind: "client-bytes", dataBase64: "AA==" } });
+  const imageRef = stagedImage.attachment ?? stagedImage.ref;
+  const byFileId = await compilePiInput([{ type: "image", fileId: imageRef.id }], null, f.directory, { input: ["image"] }, { attachmentDirectory: join(f.directory, "attachments") });
+  assert.deepEqual(byFileId[0], image[0]);
+  const server = createServer((_request, response) => { response.writeHead(200, { "content-type": "image/png", "content-length": "1" }); response.end(Buffer.from([0])); });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const remote = await compilePiInput([{ type: "image", url: `http://127.0.0.1:${address.port}/sample.png` }], null, f.directory, { input: ["image"] });
+  assert.deepEqual(remote[0], image[0]);
+  await assert.rejects(compilePiInput([{ type: "image", fileId: "missing-image" }], null, f.directory, { input: ["image"] }, { attachmentDirectory: join(f.directory, "attachments") }), /ENOENT|manifest/);
   await assert.rejects(compilePiInput([{ type: "localImage", path: join(f.directory, "missing.png") }], null, f.directory, { input: ["image"] }));
   await assert.rejects(compilePiInput([{ type: "audio", url: "data:audio/wav;base64,AA==" }], null, f.directory, { input: ["text"] }), /input.audio/);
 });
