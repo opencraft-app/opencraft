@@ -82,6 +82,14 @@ CASES = [
     ('ExecutionChannels-Cleanup', 'SuccessorOwner'),
     ('ExecutionChannels-Gate', 'temporal:NativeProgress'),
     ('ExecutionChannels-NoFairness', 'temporal:NativeProgress'),
+    ('StopControl', None),
+    ('StopControl-History', 'temporal:StopProgress'),
+    ('StopControl-Prompt', 'temporal:StopProgress'),
+    ('StopControl-Fence', 'StopAdmission'),
+    ('StopControl-Target', 'ExactTarget'),
+    ('StopControl-Replay', 'NoDuplicateStop'),
+    ('StopControl-Slot', 'NoDuplicateStop'),
+    ('StopControl-NoFairness', 'temporal:StopProgress'),
 ]
 
 

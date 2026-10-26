@@ -403,3 +403,30 @@ is not part of correspondence; answer-array order is. The cooperative memory
 fixture drains event-loop turns instead of waiting forever for a broken native
 answer; it does not establish a production latency bound. Existing finite models
 are unchanged and their prior exact hashes retain their independent proof scope.
+
+
+## Known-Turn stop ownership
+
+`StopControl.tla` adds eight configurations (80 total). It keeps physical Host
+identity, binding/permission admission, original target and an intent reservation
+separate from historical reads and question delivery receipts. The positive model
+has 1,088 distinct states; six mutants fail their exact safety/progress property
+and the seventh removes native scheduling fairness. No history or prompt fairness
+is assumed. This is an independent finite model with bounded physical churn, not
+an implementation refinement proof or a native engine cancellation proof.
+
+```sh
+npm run test:recovery-chaos -- --suite stop --seed 0 --cases 1000 --steps 120 --output /tmp/stop-chaos
+npm run test:recovery-chaos -- --suite stop --mutant history-gated-stop --seed 0 --output /tmp/stop-control
+npm run test:recovery-chaos -- --replay /tmp/stop-control/failure-minimal.json --output /tmp/stop-replay
+```
+
+Stop generator version 1 drives the real Workbench/Session/Conversation/Client.
+The controlled server can hold Reads and prompt receipts while native stops stay
+fair. The oracle checks original input target, at-most-one frame per explicit
+intent, final lifecycle admission, observed rejection/unknown result and local
+settlement before unrelated held work is released. Other controls are
+`prompt-gated-stop`, `retarget-stop` and `replay-stop`; each must fail at its exact
+rule without a cleanup failure and replay normally after removing the flag.
+Artifacts retain explicit traces, source/runtime identity and effective coverage.
+This does not establish physical-phone behavior or all engines' target semantics.
