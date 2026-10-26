@@ -57,8 +57,8 @@ by the row's allocated top inset. That exact CSS inset is added to the transcrip
 initial content padding (and the new-task layout's top reserve), not subtracted
 from the scrollport. At scroll start the first content remains clear of system
 and app controls; on scroll, the same mounted text can pass behind the status
-area. The existing Shell top fade becomes a masked theme veil/backdrop blur over
-this full area and accepts no input. The header hit targets retain their original
+area. Touch conversation chrome has no full-width Shell veil or backdrop-blur
+overlay above this reading plane. The header hit targets retain their original
 safe position. Adjacent preview tools retain that safe origin and the original
 remaining height; only the reading plane extends under the edge. No scroll
 threshold, duplicate transcript, screen arithmetic,
