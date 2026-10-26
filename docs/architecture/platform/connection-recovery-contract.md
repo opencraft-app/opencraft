@@ -1015,3 +1015,46 @@ Client request settlement. The message chaos suite uses actual five-adapter
 paths with an independent admission oracle, explicit reentry/healing and saved
 same-rule shrinking. No new RPC replay or conclusion that this is the sole cause
 of the original phone incident follows from these results.
+
+### Host native delivery lifetime and local forwarding waits
+
+Host readiness has a private per-claim owner in the parent MessagePort client,
+separate from the FIFO of observed status. It is registered before connecting
+observers run. Receipt of that claim's own successful control response binds its
+generation synchronously, before Promise adoption. Pending terminal observations
+are matched only against that generation; another generation's loss and ordinary
+pre-ACK connecting cannot reject the claim. A fresh own ACK can grant the same
+Host record generation without reviving a previously retired claim.
+
+Any matching native non-open status retires active delivery ownership before
+external Host observers run. Bridge loss retires every owned lifetime. The
+channel's status snapshot, open connect fast path, send admission and message
+scope read this same owner. Global open publications cannot regrant it. Existing
+public frame-scope helpers remain compatible, but a transient frame snapshot is
+insufficient to establish control readiness outside frame publication.
+
+Each admitted forwarding wait combines its caller signal with this owner's
+lifetime. Native retirement and local channel close synchronously remove those
+local pending controls, freeing the shared request budget before external status
+callbacks; Promise outcomes follow local microtask progress. Startup cancellation
+and late connect grants retain their existing process-scoped claim cleanup.
+Disposing an old owner or closing one lease cannot abort a peer or successor.
+Physical disconnect barriers remain independent of local wait settlement.
+
+Cancelling forwarding does not prove that remote work was cancelled or never
+executed. A late forwarding ACK is ignored for the retired wait; no automatic
+replay, new authentication authority or wire change follows. The actual Client's
+leading admission microtask already protects one early-status reconnect case;
+that successful control is retained alongside primitive counterexamples.
+
+HostDeliveryLifetime is a separate finite abstraction of native grants,
+observed labels, pending generation matching, peer/successor isolation and local
+wait progress, including release of one occupied forwarding control slot before
+successor admission. It assumes cooperative local settlement and a cooperative current
+own ACK, never recovery of an old forwarding ACK. Its controls remove each
+assumption separately. It does not prove TypeScript refinement, arbitrary port
+behavior, the global budget's complete product or physical cleanup liveness.
+Actual tests cover synchronous budget release, queued pre-ACK retirement and
+the response-to-Promise gap. The host-delivery chaos suite runs the actual parent
+and channel through the declared Port with held and late ACKs, explicit loss,
+reentry and fresh healing; its oracle evolves from saved input, not callbacks.
