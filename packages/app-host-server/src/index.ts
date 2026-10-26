@@ -42,6 +42,7 @@ export interface AppHostServerOptions {
 interface HostRecord {
   readonly transport: DuplexTransport;
   readonly generation: number;
+  forwarding: AbortController;
   readonly unsubscribeMessage: () => void;
   readonly unsubscribeStatus: () => void;
 }
@@ -86,6 +87,7 @@ function lostHostConnection(status: TransportStatus): Error {
 export class AppHostServer {
   private readonly slots = new Map<string, HostSlot>();
   private readonly connections = new Set<AppHostServerConnection>();
+  private readonly forwardingAdmissions = new WeakMap<object, () => void>();
   private generationSequence = 0;
   private connectionSequence = 0;
   private closed = false;
@@ -115,6 +117,7 @@ export class AppHostServer {
       connectionId,
       `connection:${++this.connectionSequence}`,
       Object.freeze({ ...submissionContext, ...(submissionContext.executionPrincipal ? { executionPrincipal: Object.freeze({ ...submissionContext.executionPrincipal }) } : {}), sender: submissionContext.sender ? Object.freeze({ ...submissionContext.sender }) : null }),
+      (connection, message) => this.admitForwarding(connection, message),
     );
     this.connections.add(connection);
     return connection;
@@ -217,6 +220,7 @@ export class AppHostServer {
       return { hostId: message.hostId, generation: record.generation };
     }
     if (message.type === "host/send") {
+      this.forwardingAdmissions.get(message)?.();
       const record = this.requireWritableClaim(
         connection,
         message.hostId,
@@ -225,8 +229,7 @@ export class AppHostServer {
       );
       const frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
-      if (record.transport.sendWithContext) await record.transport.sendWithContext(frame, connection.submissionContext);
-      else await record.transport.send(frame);
+      await this.forward(record, frame, connection.submissionContext);
       return undefined;
     }
     if (message.type === "host/disconnect") {
@@ -238,6 +241,53 @@ export class AppHostServer {
 
   private claimKey(connection: AppHostServerConnection, leaseId: string): string {
     return `${connection.internalId}\0${leaseId}`;
+  }
+
+  private admitForwarding(connection: AppHostServerConnection, message: RendererToAppHostMessage): void {
+    if (message.type !== "host/send") return;
+    let check: () => void;
+    try {
+      const { hostId, leaseId, generation } = message;
+      const record = this.requireWritableClaim(connection, hostId, leaseId, generation);
+      const slot = this.slots.get(hostId)!;
+      const key = this.claimKey(connection, leaseId), claim = slot.claims.get(key);
+      const native = record.forwarding;
+      check = () => {
+        if (slot.record !== record || slot.claims.get(key) !== claim
+          || record.forwarding !== native || native.signal.aborted) {
+          throw lostHostConnection({ state: "closed", reason: "Host forwarding admission retired" });
+        }
+      };
+    } catch (error) { check = () => { throw error; }; }
+    // Receipt owns admission. Dequeue-time labels cannot authorize old work
+    // across a same-record native close/open or a same-key claim replacement.
+    this.forwardingAdmissions.set(message, check);
+  }
+
+  /** End the Server's local queue wait when its captured native epoch retires.
+   * The provider operation may already be admitted and need never return. Its
+   * late result belongs only to this waiter and cannot release a newer epoch. */
+  private forward(record: HostRecord, frame: string, context: TransportSubmissionContext): Promise<void> {
+    const signal = record.forwarding.signal;
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (failed: boolean, error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", abort);
+        if (failed) reject(error); else resolve();
+      };
+      const abort = () => finish(true, signal.reason instanceof Error ? signal.reason
+        : lostHostConnection({ state: "closed" }));
+      if (signal.aborted) { abort(); return; }
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        const operation = record.transport.sendWithContext
+          ? record.transport.sendWithContext(frame, context, signal)
+          : record.transport.send(frame, signal);
+        void operation.then(() => finish(false), (error) => finish(true, error));
+      } catch (error) { finish(true, error); }
+    });
   }
 
   private slotFor(hostId: string): HostSlot {
@@ -336,9 +386,11 @@ export class AppHostServer {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
         }
         const generation = ++this.generationSequence;
-        const ownsRecord = () => !this.closed && slot.record === record;
+        const ownsRecord = () => !this.closed && record !== null && slot.record === record;
         const publishStatus = (status: TransportStatus) => {
-          if (!ownsRecord()) return;
+          if (!ownsRecord() || record === null) return;
+          if (status.state !== "open") record.forwarding.abort(lostHostConnection(status));
+          else if (record.forwarding.signal.aborted) record.forwarding = new AbortController();
           slot.lastState = status.state;
           this.publish(slot.hostId, generation, {
             type: "host/status",
@@ -350,6 +402,7 @@ export class AppHostServer {
         record = {
           transport,
           generation,
+          forwarding: new AbortController(),
           unsubscribeMessage: transport.subscribeMessage((frame) => {
             if (!ownsRecord()) return;
             this.publish(slot.hostId, generation, {
@@ -374,6 +427,7 @@ export class AppHostServer {
       } catch (cause) {
         slot.lastState = abort.signal.aborted ? "closed" : "failed";
         if (record !== null) {
+          record.forwarding.abort(cause);
           if (!this.closed) {
             this.publish(slot.hostId, record.generation, {
               type: "host/status",
@@ -486,6 +540,7 @@ export class AppHostServer {
     const record = slot.record;
     slot.phase = "closing";
     slot.record = null;
+    record.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host generation retired" }));
     record.unsubscribeMessage();
     record.unsubscribeStatus();
     for (const connection of this.connections) connection.forgetHost(slot.hostId, record.generation);
@@ -519,8 +574,11 @@ export class AppHostServerConnection {
     readonly connectionId: string,
     readonly internalId: string,
     readonly submissionContext: TransportSubmissionContext = { sender: null },
+    private readonly admitForwarding: (connection: AppHostServerConnection, message: RendererToAppHostMessage) => void = () => {},
   ) {
-    this.unsubscribePort = port.subscribe((message) => {
+    this.unsubscribePort = port.subscribe((value) => {
+      const message = typeof value === "object" && value !== null && "type" in value && value.type === "host/send"
+        ? { ...value } : value;
       // A reachability probe must never queue behind Host activation or sends.
       if (this.ready && !this.closed && typeof message === "object" && message !== null
         && "type" in message && message.type === "connection/probe"
@@ -547,6 +605,9 @@ export class AppHostServerConnection {
       if (!this.ready) return;
       const hostId = typeof message === "object" && message !== null && "hostId" in message && typeof message.hostId === "string"
         ? message.hostId : "";
+      if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
+        this.admitForwarding(this, message as RendererToAppHostMessage);
+      }
       const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
         () => this.receive(message),
         () => this.receive(message),

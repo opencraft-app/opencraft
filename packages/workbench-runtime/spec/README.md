@@ -812,3 +812,45 @@ npm run test:recovery-chaos -- --suite host-delivery --seed 0 --cases 1000 --ste
 npm run test:recovery-chaos -- --suite host-delivery --mutant retained-wait --seed 0 --output /tmp/host-delivery-control
 npm run test:recovery-chaos -- --replay /tmp/host-delivery-control/failure-minimal.json --output /tmp/host-delivery-replay
 ```
+
+## Server native forwarding and queued admission
+
+HostForwardingLifetime has 143 positive states. It distinguishes an old native
+operation from the Server's local queue wait, native facts from delayed status
+observations, old completion from successor settlement, and local retirement
+from the physical close barrier. Eleven controls wait for an old ACK, gate loss
+on observations, omit stop retirement, retarget old cleanup, reuse an aborted
+owner, capture an old owner, bypass a physical barrier, cancel live FIFO work,
+replay an old operation, or remove local/current-native fairness separately.
+The old provider result is deliberately not fair. Fresh work still requires a
+cooperative current native boundary and local work after an available result.
+
+HostQueuedAdmission has 19 positive states. It captures native and claim identity
+at incoming queue admission, then checks both again before physical forwarding.
+Native close/open preserves the record generation in this abstraction. Six
+controls admit on dequeue, trust an observed owner, check only record generation,
+omit claim identity, drop valid work or remove local dequeue fairness. Queue
+worker availability is a condition supplied by the first obligation, not an
+assumption that an old native Promise eventually resolves. These two models do
+not establish their complete product, arbitrary provider behavior or TypeScript
+refinement; concrete tests cover the actual composition.
+
+The seventeenth suite, forwarding, runs the actual AppHostServer, actual
+MessagePortAppHostClient/channel and actual JsonRpcAppServerClient through only
+declared Port and physical-adapter fixtures. A saved-input ledger predicts held
+and queued frame admissions, local outcomes, initialization generations and
+physical factory counts. Events explicitly hold/settle native operations, retire
+native epochs, report late old results, renew the same page, test a fresh page,
+hold/release a reset close barrier, reenter during a provider call and freshly
+heal. Live FIFO may wait for its saved dependency; input-retired work cannot
+excuse a production initialization stall. A heal proves actual initialization
+and an echo RPC, not merely an open label or remote execution. Empty input makes
+no native work. Cleanup and dependency releases are not counted as saved progress.
+Three observation controls exercise exact-rule detection and shrinking without
+mutating production. Separate unchanged-old-Server runs use the same oracle.
+
+```
+npm run test:recovery-chaos -- --suite forwarding --seed 0 --cases 1000 --steps 120 --output /tmp/forwarding-chaos
+npm run test:recovery-chaos -- --suite forwarding --mutant queued-replay --seed 0 --output /tmp/forwarding-control
+npm run test:recovery-chaos -- --replay /tmp/forwarding-control/failure-minimal.json --output /tmp/forwarding-replay
+```

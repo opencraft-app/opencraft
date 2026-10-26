@@ -1058,3 +1058,53 @@ Actual tests cover synchronous budget release, queued pre-ACK retirement and
 the response-to-Promise gap. The host-delivery chaos suite runs the actual parent
 and channel through the declared Port with held and late ACKs, explicit loss,
 reentry and fresh healing; its oracle evolves from saved input, not callbacks.
+
+### Server forwarding waits and queued frame admission
+
+A Host connect acknowledgement and a usable initialized Client are separate
+boundaries. AppHostServerConnection admits connects outside its writable Host
+queue. If that queue keeps awaiting an old physical forwarding Promise after
+native loss, a same-page successor can obtain a Host ACK while its initialize
+frame remains blocked. A new page has a different connection queue and may
+initialize immediately against the same server-owned Host. An actual Client /
+MessagePort / Server counterexample demonstrates this distinction; it does not
+establish the sole cause of a particular device incident.
+
+Each Host record owns a native forwarding lifetime. A non-open native status or
+record retirement aborts captured local forwarding waits before publishing loss.
+An open status creates a fresh owner only after the previous owner retired;
+repeated open observations preserve a live FIFO dependency. Each provider call
+receives the captured signal. The Server also ends its own local wait without
+requiring an already-admitted old provider Promise to return. Late success or
+failure settles only that captured waiter and never disposes a successor owner.
+Physical stop and its close barrier remain separate; local queue progress cannot
+authorize another physical generation before that barrier finishes.
+
+Ending an old wait must not forward packets that were still queued before loss.
+For each incoming host/send, the connection first owns a copy of the descriptor.
+The Server privately captures its Host record, native forwarding owner and claim
+instance before enqueue. Handling revalidates this captured admission as well as
+the normal writable claim. A same-record close/open retains the numeric Host
+generation, so checking generation or dequeue-time open alone is insufficient.
+A same-key claim replacement likewise cannot authorize an earlier queued frame.
+The admission map is private and adds no wire field or caller-supplied authority.
+Direct trusted handle calls retain their ordinary writable-claim checks.
+
+These are different retirement outcomes: a forwarding operation already issued
+to the provider has an unknown remote result; an obsolete queued intent must not
+newly cross that provider boundary. Neither outcome automatically replays work.
+While its native owner and claim remain live, a queued frame retains normal FIFO
+ordering. Service-owned Host lifetime, Actor identity and execution ownership are
+unchanged. Remote claim reclamation and Host state projection remain independent
+obligations, not consequences of ending this local forwarding wait.
+
+HostForwardingLifetime bounds one old and one successor wait, native retirement,
+late completion, valid FIFO and physical-barrier admission. HostQueuedAdmission
+separately bounds capture, same-record native renewal, claim replacement and
+dequeue. Their local and current-native fairness assumptions do not require an
+old provider response or delayed status observation to recover. They are finite
+abstractions, not a TypeScript or whole-system refinement proof. Actual Server /
+Client regressions and the forwarding chaos suite additionally exercise repeated
+loss, synchronous provider reentry, manual disposition, contextual sends, peer
+Hosts and explicit physical-close release. An opaque provider that never reports
+its native replacement remains outside this guarantee.
