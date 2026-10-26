@@ -777,3 +777,57 @@ retargeted peer and retargeted old cleanup, with exact-rule shrinking and normal
 replay. Existing actual-Client tests establish the composed request behavior.
 ReplayTransport's separate delayed-frame/cursor lifecycle is not fixed by this
 Memory provider change.
+
+
+### Client native retirement and successor admission
+
+A Client initialization slot and a native transport activity have different
+lifetimes. Closing retires the current activity immediately; its later closed or
+failed ACK must not revoke a successor slot that is still preparing native
+admission. Retirement of initialization authority is idempotent until a new
+connecting/open observation re-arms it. Every terminal observation still rejects
+pending RPCs and invalidates incoming response contexts. The whole terminal
+handler must not return early merely because retirement already occurred.
+
+Client seeds that authority from the constructor's native status, including an
+already open provider that emits no initial subscription sample. Connect retains
+its microtask admission boundary and reconciles the current native snapshot before
+allocating or joining a slot. This also retires cached initialization and held
+RPCs when an intermediate observer missed a loss. It is recovery at the next
+connect entry, not a replacement for reliable transport notifications.
+
+Each initialization records whether its native connect has started. A subsequent
+caller cannot join already issued work whose current native snapshot is terminal,
+even if an earlier native observer revoked it before Client saw connecting and its
+rejection continuation has not run. Preparing successor work remains eligible.
+Cancellation and stale continuations retain slot identity checks; explicit caller
+abort keeps its ABORTED cause. Successful recovery initializes once; failed RPCs
+are never replayed implicitly.
+
+The provider must fence native generations and order conserved terminal
+publications before successor activity observations. Its accepted connect must
+publish connecting/open or reject without leaving admitted work hidden behind a
+terminal snapshot. Client cannot infer native epochs from a provider that falsely
+labels a stale failure as current. Finite synchronous callbacks and a cooperative
+local scheduler are assumed.
+
+ClientRetirement independently models two native activities, a preparing versus
+issued local slot, old closing/ACK, initial live snapshots, unseen revocation and
+stale rejection continuations. Its positive configuration has 76 reachable states;
+nine controls remove guards or local/native fairness. Progress assumes fair local
+work and a cooperative new native connect/initialize response; old close ACKs need
+not be fair. This is a bounded model, not TypeScript refinement or proof of every
+intermediate observer, network or arbitrary callback schedule.
+
+The retirement chaos suite composes actual JsonRpcAppServerClient and actual
+MemoryTransport. Its server-owned epoch/intent oracle checks settlement, current
+readiness, initialization count, held RPC authority and one wire submission per
+admitted RPC. Renew closes and connects without awaiting close; repeated terminal
+samples, genuine new losses, old peer callbacks, cancellation and explicit heal
+are saved inputs. Empty input performs no native connect, and final cleanup only
+retires existing work. Controlled callbacks are sampled after bounded microtask
+drains; this does not model arbitrary native timing or infinite JavaScript work.
+Four adapter corruptions test old-loss re-arming, dropped current loss, orphaned
+result observation and extra request submission. They must fail exact rules,
+shrink under the same rule and replay normally. These controls are distinct from
+running the unchanged old Client through the same oracle.

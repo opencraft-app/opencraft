@@ -631,3 +631,34 @@ Controls orphan-connect, stale-peer and cleanup-retarget corrupt the test adapte
 promise observation or native callback binding. They must fail their precise rule,
 shrink under that same rule and replay normally without corruption. They are
 separate from reproducing the actual old implementation without a mutation.
+
+
+`ClientRetirement.tla` separates local initialization admission from native activity
+and idempotent retirement. Initial modes cover ready, preconnected without an
+initial sample, and a native attempt revoked before the Client observer sees
+connecting. It checks old request cleanup, initial/new activity revocation,
+successor outcome and old completion. Positive: 76 distinct states. Nine controls
+exercise repeated retirement, missing cleanup/re-arm/constructor snapshot/join
+fence, stale catch, eager local admission and absent local/native fairness.
+Terminal states allow stuttering. Provider generation fencing and publication
+ordering are assumptions; finite scheduling, two activities and a cooperative new
+response bound the progress claim. Concrete Client/Memory/WS tests additionally
+cover real close ACK interleavings and snapshot recovery after missed loss.
+
+The twelfth suite, retirement, composes actual Client and MemoryTransport with an
+independent server epoch/intent oracle. It includes overlapping close/connect,
+duplicate terminal samples, held requests, genuine new failure, old peer close,
+cancellation and an explicit usable heal. Source and lock hashes bind results.
+
+```
+npm run test:recovery-chaos -- --suite retirement --seed 0 --cases 1000 --steps 120 --output /tmp/retirement-chaos
+npm run test:recovery-chaos -- --suite retirement --mutant rearm-old-loss --seed 0 --output /tmp/retirement-control
+npm run test:recovery-chaos -- --replay /tmp/retirement-control/failure-minimal.json --output /tmp/retirement-replay
+```
+
+Four adapter controls are rearm-old-loss, drop-current-loss, orphan-connect and
+replay-request. Each must fail its exact rule, shrink under the same rule and
+replay normally. They corrupt test delivery/observation/submission, not production
+classes. Empty trace creates no native activity; cleanup creates no hidden probe.
+Bounded microtask drains assume cooperative controlled callbacks, not arbitrary
+network timing. Model and fuzz results do not establish TypeScript refinement.

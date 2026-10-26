@@ -259,14 +259,17 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private requestSequence = 0;
   private generation = 0;
   private transportRevision = 0;
+  private transportRetired = true;
   private closed = false;
   private initialized: AppServerInitializeResponse | null = null;
   private initializationSignal: AbortSignal | undefined;
-  private initialization: { readonly promise: Promise<AppServerInitializeResponse>; cancel(cause: unknown): void } | null = null;
+  private initialization: { readonly promise: Promise<AppServerInitializeResponse>; nativeStarted: boolean; cancel(cause: unknown): void } | null = null;
 
   constructor(config: AppServerClientConfig) {
     this.hostId = config.hostId;
     this.transport = config.transport;
+    const initialState = this.transport.status.state;
+    this.transportRetired = initialState !== "open" && initialState !== "connecting";
     this.requestTimeoutMs = config.requestTimeoutMs ?? 30_000;
     this.clock = config.clock ?? systemClock;
     const incarnation = ++clientIncarnationSequence;
@@ -302,6 +305,15 @@ export class JsonRpcAppServerClient implements AppServerClient {
     if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
     if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
     assertCurrent?.();
+    // Reconcile the current native truth before allocating or joining a slot,
+    // including after an intermediate observer missed its loss publication.
+    this.handleTransportStatus(this.transport.status);
+    const status = this.transport.status;
+    if (this.initialization?.nativeStarted && (status.state === "closing" || status.state === "closed" || status.state === "failed")) {
+      // A native attempt can be revoked before this subscriber observes its
+      // connecting publication. A new caller must not join that retired work.
+      this.initialization.cancel(new AppServerClientError("TRANSPORT_ERROR", "AppServer native initialization was retired"));
+    }
     const initialized = this.initializeResult;
     if (this.transport.status.state === "open" && initialized !== null) return initialized;
     if (this.initialization !== null) return this.initialization.promise;
@@ -310,7 +322,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     void promise.catch(() => undefined);
     const controller = new AbortController();
     const cleanup = () => signal?.removeEventListener("abort", abort);
-    const attempt = { promise, cancel: (cause: unknown) => {
+    const attempt = { promise, nativeStarted: false, cancel: (cause: unknown) => {
       if (this.initialization !== attempt) return;
       // Release this LOCAL slot before lower-layer abort/status observers reenter.
       this.initialization = null;
@@ -330,8 +342,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
     // operation or publish through its successor. Physical barriers stay below.
     void Promise.resolve().then(async () => {
       check();
+      attempt.nativeStarted = true;
       await this.transport.connect(controller.signal);
       check();
+      if (this.transport.status.state === "open") this.transportRetired = false;
       const revision = this.transportRevision;
       const result = await this.request("initialize", params, { signal: controller.signal, priority: "user-blocking" });
       if (this.closed || revision !== this.transportRevision || this.transport.status.state !== "open") {
@@ -769,11 +783,19 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private handleTransportStatus(status: TransportStatus): void {
+    if (status.state === "connecting" || status.state === "open") {
+      this.transportRetired = false;
+      return;
+    }
     if (status.state !== "closing" && status.state !== "closed" && status.state !== "failed") return;
-    this.transportRevision += 1;
+    const firstRetirement = !this.transportRetired;
+    this.transportRetired = true;
+    if (firstRetirement) this.transportRevision += 1;
     this.initialized = null;
     const reason = status.reason == null ? "AppServer transport closed" : `AppServer transport closed: ${status.reason}`;
-    this.initialization?.cancel(new AppServerClientError("TRANSPORT_ERROR", reason));
+    // Repeated terminal snapshots belong to the retired native activity. They
+    // cannot cancel a successor that has not started native admission yet.
+    if (firstRetirement) this.initialization?.cancel(new AppServerClientError("TRANSPORT_ERROR", reason));
     this.rejectAllPending(new AppServerClientError("TRANSPORT_ERROR", reason), "failed");
     this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", reason));
   }
