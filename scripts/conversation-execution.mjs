@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
 
 /** Narrow internal logical-client lane; no client-supplied RPC method or Host is forwarded. */
-export function callConversationHost(appHost, binding, requestId, method, params, submissionContext) {
+export function callConversationHost(appHost, binding, requestId, method, params, submissionContext, timeoutMs = 35_000) {
   const clientId = `actor-service:${randomUUID()}`, leaseId = randomUUID();
   return new Promise((resolve, reject) => {
     let connection, receive, generation, finished = false;
@@ -11,7 +11,7 @@ export function callConversationHost(appHost, binding, requestId, method, params
       try { connection?.close(); } catch { /* Lease cleanup cannot rewrite the engine result. */ }
       error ? reject(error) : resolve(result);
     };
-    const timer = setTimeout(() => finish(new Error('Actor execution outcome unknown')), 35_000); timer.unref();
+    const timer = setTimeout(() => finish(new Error('Actor execution outcome unknown')), timeoutMs); timer.unref();
     const send = (id, operation, arguments_) => receive?.({ type: 'host/send', requestId: `send-${id}`, hostId: binding.hostId, leaseId, generation,
       frame: JSON.stringify({ id, method: operation, params: arguments_ }) });
     try {

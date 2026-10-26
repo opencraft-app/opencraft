@@ -23,7 +23,7 @@ test('the retained notice matches the exact installed public dependency and comp
 });
 
 test('Expo config retains the full notice without losing unrelated public metadata', () => {
-  const configure = require('../../apps/workbench-expo/app.config.js');
+  const configure = require('../../apps/mobile/app.config.js');
   const config = configure({ config: { name: 'Fixture', extra: { existing: true } } });
   assert.equal(config.name, 'Fixture');
   assert.equal(config.extra.existing, true);
@@ -38,7 +38,7 @@ test('an explicit native product keeps its own notices as well as the shared dep
   const original = process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG;
   process.env.OPENCRAFT_EXPO_PRODUCT_CONFIG = filename;
   try {
-    const configure = require('../../apps/workbench-expo/app.config.js');
+    const configure = require('../../apps/mobile/app.config.js');
     const config = configure({ config: { name: 'Core' } });
     assert.equal(config.name, 'Product');
     assert.equal(config.extra.product, true);

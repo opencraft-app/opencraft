@@ -26,6 +26,21 @@ const project = (
     tabId,
     readiness,
   });
+test('mobile browser starts on demand through loading and retains explicit reveal intent', () => {
+  const state = new FloatingComposerState();
+  state.prepareMobileBrowser('a');
+  for (const readiness of ['loading', 'ready', 'unavailable'] as const) {
+    const view = projectFloatingComposer(state.getSnapshot(), { floating: true, tabId: 'a', readiness, onDemand: true });
+    assert.equal(view.interactive, false);
+  }
+  state.show('a', true);
+  state.focus('a');
+  state.prepareMobileBrowser('a');
+  assert.equal(project(state).interactive, true);
+  state.prepareMobileBrowser('b');
+  assert.equal(project(state, 'b').interactive, false);
+  assert.equal(project(state).interactive, true);
+});
 test("browser compact/focused/peek are separate from latest turn and route visibility", () => {
   const state = new FloatingComposerState();
   assert.equal(project(state).density, "compact");

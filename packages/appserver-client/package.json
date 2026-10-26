@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./transport": "./src/transport.ts",
-    "./utf8": "./src/utf8.ts"
+    "./utf8": "./src/utf8.ts",
+    "./clock": "./src/clock.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

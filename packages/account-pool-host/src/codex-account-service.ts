@@ -5,6 +5,7 @@ import { CodexAccountPoolProxy } from "./codex-proxy.js";
 import { AccountCredentialRefreshManager } from "./oauth-refresh.js";
 import { CodexDeviceLoginService, createManagedCodexRefresh, type CodexMaintenanceClientFactory } from "./codex-auth.js";
 import { CodexSubscriptionService } from "./codex-usage.js";
+import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
 import { startCodexAccountPoolServer } from "./server.js";
@@ -16,6 +17,8 @@ export interface CodexAccountServiceOptions {
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
+  /** Fixed loopback port for an independently running AppServer. */
+  readonly proxyPort?: number;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
 }
@@ -25,6 +28,7 @@ export class CodexAccountService {
   private readonly store: AccountPoolStore;
   private readonly login: CodexDeviceLoginService;
   private readonly subscriptions: CodexSubscriptionService;
+  private readonly resetCreditService: CodexResetCreditService;
   private server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
   private readonly requests = new Set<Promise<unknown>>();
   private closing: Promise<void> | null = null;
@@ -42,6 +46,9 @@ export class CodexAccountService {
     }) });
     this.subscriptions = new CodexSubscriptionService({ store, fetch: options.fetch,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
+    this.resetCreditService = new CodexResetCreditService({ store, fetch: options.fetch,
+      resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+      refreshUsage: accountId => this.subscriptions.refreshAccount(accountId) });
     this.login = new CodexDeviceLoginService({ store, loginRoot: join(options.dataDirectory, "login"), createClient,
       onAccountImported: account => { void this.subscriptions.refreshAccount(account.id).catch(() => undefined); },
     });
@@ -55,7 +62,7 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      service.server = await startCodexAccountPoolServer({ proxy: service.proxy });
+      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort });
       service.subscriptions.start();
       return service;
     } catch (error) { await service.close(); throw error; }
@@ -76,12 +83,22 @@ export class CodexAccountService {
 
   close(): Promise<void> {
     return this.closing ??= (async () => {
-      await Promise.allSettled(this.requests);
-      await this.login.dispose();
-      await this.subscriptions.dispose();
-      // CLI stops first; drain proxy requests (including refresh) before closing storage.
-      await this.server?.close();
-      this.store.close();
+      let phase = "account-requests";
+      const startedAt = Date.now();
+      const timer = setInterval(() => console.warn("[opencraft account-pool]", JSON.stringify({
+        event: "shutdown-account-wait", phase, durationMs: Date.now() - startedAt,
+      })), 15_000);
+      timer.unref();
+      try {
+        await Promise.allSettled(this.requests);
+        // Stop background jobs while inference still listens. Inference's own
+        // credential resolver remains available until its idle-point drain ends.
+        phase = "login"; await this.login.dispose();
+        phase = "reset-credits"; await this.resetCreditService.dispose();
+        phase = "subscriptions"; await this.subscriptions.dispose();
+        phase = "proxy"; await this.server?.close();
+        this.store.close();
+      } finally { clearInterval(timer); }
     })();
   }
 
@@ -89,6 +106,13 @@ export class CodexAccountService {
     const { store, login, subscriptions } = this;
     let result: unknown;
     switch (method) {
+      case "opencraft/codex/accounts/resetCredits/list":
+        return this.resetCreditService.list(string(params.accountId));
+      case "opencraft/codex/accounts/resetCredits/consume": {
+        const consumed = await this.resetCreditService.consume({ accountId: string(params.accountId), creditId: string(params.creditId),
+          idempotencyKey: string(params.idempotencyKey), confirmed: params.confirmed });
+        return { ...consumed, accounts: this.accountViews() };
+      }
       case "opencraft/codex/accounts/list": result = { accounts: this.accountViews() }; break;
       case "opencraft/codex/accounts/setEnabled":
         store.setEnabled(string(params.accountId), params.enabled === true);
@@ -152,6 +176,7 @@ export class CodexAccountService {
         subscriptionType: state.subscriptionType,
         rateLimitTier: state.rateLimitTier,
         resetCredits: state.resetCredits,
+        resetCreditActions: true,
         status: state.status,
         observedAt: state.observedAt,
         heldUntil: state.heldUntil,

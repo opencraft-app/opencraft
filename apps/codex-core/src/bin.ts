@@ -9,6 +9,8 @@ function argument(name: string): string {
   return value;
 }
 
+function optional(name: string): string | undefined { return process.argv.includes(name) ? argument(name) : undefined; }
+
 async function main() {
   const token = (await readFile(argument("--token-file"), "utf8")).trim();
   let shutdown: ((code: number) => Promise<void>) | undefined;
@@ -16,11 +18,13 @@ async function main() {
     endpoint: argument("--endpoint"), authToken: token,
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
+    appServerEndpoint: optional("--app-server-endpoint"),
+    proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   });
   shutdown = async (code: number) => { await core.close(); process.exit(code); };
   process.once("SIGTERM", () => void shutdown!(0));
   process.once("SIGINT", () => void shutdown!(0));
-  process.stdout.write(`${JSON.stringify({ type: "codex-core-ready", ...core.health })}\n`);
+  process.stdout.write(`${JSON.stringify({ type: process.argv.includes("--app-server-endpoint") ? "codex-accounts-listening" : "codex-core-ready", ...core.health })}\n`);
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

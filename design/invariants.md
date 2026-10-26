@@ -39,7 +39,9 @@
 - <a id="shell-right-panel-host-replacement-2026-10-19"></a>[Shell right-panel host replacement (2026-10-19)](invariants/shell-and-layout.md#shell-right-panel-host-replacement-2026-10-19)
 - <a id="personal-toolbardock"></a>[Personal ToolbarDock](invariants/shell-and-layout.md#personal-toolbardock)
 
-- <a id="ios-home-screen-edge-navigation"></a>[iOS Home Screen edge navigation](invariants/shell-and-layout.md#ios-home-screen-edge-navigation)
+- <a id="ios-home-screen-edge-navigation"></a>[iOS Home Screen edge navigation](invariants/shell-and-layout.md#ios-home-screen-edge-navigation) — Runtime bridges reserved contacts to shared sidebar arbitration
+
+- [Shared safe layout container](invariants/shell-and-layout.md#shared-safe-layout-container) — host-owned edge allocation, independent of sidebar mode
 
 ### Navigation and sidebar
 
@@ -208,7 +210,7 @@
 ### Appearance and controls
 
 - [Mobile paint and content boundaries](invariants/shell-and-layout.md#experimental-mobile-web-container) — full viewport backgrounds with safe-area content insets.
-- [Window appearance projection](invariants/appearance-and-controls.md#window-appearance-projection) — theme intent, host/display mode, startup and native evidence boundaries.
+- [Window appearance projection](invariants/appearance-and-controls.md#window-appearance-projection) — theme intent, host/display mode, startup, standalone WebKit edge-color compatibility and native evidence boundaries.
 
 - <a id="discrete-slider-fill"></a>[Discrete slider fill](invariants/appearance-and-controls.md#discrete-slider-fill)
 - <a id="ui-图标共享视觉语言"></a>[UI 图标：共享视觉语言](invariants/appearance-and-controls.md#ui-图标共享视觉语言)
@@ -250,10 +252,31 @@ its route owns the scrollport, shared controls own focus/hover/touch feedback an
 the shared icon owner supplies glyphs. Returning to Chat preserves its draft,
 selection and running execution. The retired conversation-card overview and its
 Appearance setting are absent; task-board statistics remain independent.
+The shared desktop material spans Shell chrome and the moving mobile page.
+Icon-to-window motion holds transient geometry, keeps outgoing surfaces inert,
+and obeys the latest Router intent and reduced-motion setting; it cannot reset
+a retained Chat or write another route/history state.
 
 ### Shared shell action material
 
+Application navigation rows and compact rail destinations remain flat navigation
+controls, without a per-item glass backdrop. Shared Shell button material must
+not replace their quiet resting, hover and current-state treatment.
+
 Shell buttons on Web/Electron and phone/tablet share the same liquid glass owner.
+The optical enhancement retains the shared readable frost; mobile sidebar scroll
+paint reaches the bottom while floating action hosts own its safe inset.
 Only existing size/density/grouping differ; commands, placement, icons, labels and
 focus remain with controls. Dialog/form/menu content buttons keep their semantic
 surfaces. See [shared Shell material](../docs/workbench-design-language.md#shared-shell-action-material).
+
+
+### PWA content and appearance allocation
+
+Browser Shell SafeLayout allocates main-content top/bottom once inside the
+measured visible canvas; it adds no canvas/client metric reserve. Composer routes retain ordinary gaps; independent
+drawer/modal surfaces keep their own explicit edges. The generated early head
+and live appearance projector share catalog, mode, document background and color
+hints. See [Shell layout](invariants/shell-and-layout.md) and
+[appearance](invariants/appearance-and-controls.md). Native status pixels still
+require device acceptance.

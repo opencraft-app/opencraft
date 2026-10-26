@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
+import { serveNotModified } from "./web-asset-cache.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
@@ -234,7 +235,7 @@ function validRecoveryDiagnostic(report) {
 }
 
 const viewportGeometryKeys = new Set(["layoutHeight", "layoutWidth", "visualHeight", "visualWidth", "visualTop", "visualLeft", "pageTop", "scrollY", "scale", "shellTop", "shellHeight", "editorTop", "sendBottom", "editing"]);
-const viewportOptionalGeometryKeys = new Set(["screenHeight", "screenWidth", "standalone", "rowTop", "rowHeight", "headerTop", "headerHeight", "shellPaddingTop", "rowPaddingTop", "cssTop", "cssHeight", "clientHeight", "rootTop", "rootHeight", "bodyTop", "bodyHeight", "fixedTop", "fixedLeft", "editorBottom", "composerTop", "composerBottom", "draftScroll", "editorScroll", "sendTop", "sendHit", "touchSequence", "touchScreenClientY", "touchPageClientY", "editorMinTop", "editorMaxTop", "shellMinTop", "shellMaxTop", "observedSamples"]);
+const viewportOptionalGeometryKeys = new Set(["screenHeight", "screenWidth", "standalone", "statusBarOverlayRequested", "edgeSamplingActive", "safeLayoutTop", "rowTop", "rowHeight", "headerTop", "headerHeight", "shellPaddingTop", "rowPaddingTop", "cssTop", "cssHeight", "clientHeight", "rootTop", "rootHeight", "bodyTop", "bodyHeight", "fixedTop", "fixedLeft", "editorBottom", "composerTop", "composerBottom", "draftScroll", "editorScroll", "sendTop", "sendHit", "touchSequence", "touchScreenClientY", "touchPageClientY", "editorMinTop", "editorMaxTop", "shellMinTop", "shellMaxTop", "observedSamples"]);
 function validViewportDiagnostic(report) {
   return report?.kind === "viewport"
     && typeof report.episode === "string" && /^viewport-[a-z0-9]{1,20}$/.test(report.episode)
@@ -243,6 +244,8 @@ function validViewportDiagnostic(report) {
     && Object.entries(report).every(([key, value]) => ["kind", "episode", "sourceRevision"].includes(key)
       || ((viewportGeometryKeys.has(key) || viewportOptionalGeometryKeys.has(key)) && Number.isFinite(value) && Math.abs(value) <= 100_000))
     && (report.standalone === undefined || [0, 1].includes(report.standalone))
+    && ["statusBarOverlayRequested", "edgeSamplingActive"].every(key => report[key] === undefined || [0, 1].includes(report[key]))
+    && (report.safeLayoutTop === undefined || [0, 1].includes(report.safeLayoutTop))
     && [0, 1].includes(report.editing) && report.scale > 0 && report.scale <= 20;
 }
 
@@ -358,6 +361,7 @@ async function serveFile(request, response, path, pathname) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
+  if (serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;
@@ -391,7 +395,9 @@ export async function createWorkbenchWebServer({
   accessService = null,
   actorService = null,
   actorCollaborationService = null,
+  turnPushService = null,
   authService = null,
+  accountService = null,
   observability = null,
   mcpAppsService = null,
   getImService = () => null,
@@ -467,6 +473,10 @@ export async function createWorkbenchWebServer({
       const local = !!localAccess?.origin(request);
       if (!local && !["/health", "/__opencraft_health"].includes(url.pathname)) await accessService?.prepare?.(request);
       // Login/callback endpoints must remain reachable before instance admission.
+      if (url.pathname === '/setup' || url.pathname === '/__opencraft_account' || url.pathname.startsWith('/__opencraft_account/')) {
+        if (accountService && await accountService.handle(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
       if (url.pathname === '/__opencraft_auth' || url.pathname.startsWith('/__opencraft_auth/')) {
         if (authService && await authService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
@@ -484,6 +494,10 @@ export async function createWorkbenchWebServer({
       if (url.pathname === "/__opencraft_connectors") {
         if (connectorService && await connectorService.handle(request, response)) return;
         sendJson(response, 404, { error: "missing" }); return;
+      }
+      if (url.pathname === '/__opencraft_push') {
+        if (turnPushService && await turnPushService.handle(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
       }
       if (actorService?.isSessionRequest(request)) {
         sendJson(response, 403, { error: 'actor_resource_interface_required' }); return;

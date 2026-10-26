@@ -93,21 +93,26 @@ export class OpenCraftTokenUsageLedger {
     return statement;
   }
 
+  private readonly projectLegacy:boolean;
   query(value: unknown, authorize: () => TokenUsageAuthority | null) {
+    if(!this.projectLegacy||this.checkpoint("legacy-projection-stale-v1"))throw new Error("Legacy usage projections require restoration");
     return (this.queryOwner ??= new TokenUsageQuery(this.state, this.serverId, "Asia/Shanghai", this.now)).read(value, authorize);
   }
-  constructor(state: Pick<OpenCraftHostStateDatabase,"database"|"transaction">, serverId: string, now: () => number = Date.now, readonly telemetry=new TokenUsageTelemetry()) {
+  constructor(state: Pick<OpenCraftHostStateDatabase,"database"|"transaction">, serverId: string, now: () => number = Date.now, readonly telemetry=new TokenUsageTelemetry(), options: { recoverPendingAttempts?: boolean; projectLegacy?:boolean } = {}) {
     this.state = state;
     this.serverId = requiredId(serverId);
     this.now = now;
+    this.projectLegacy=options.projectLegacy??!this.checkpoint("legacy-projection-retired-v1");
     this.write(() => {
       const at = timestamp(now());
       const inserted = this.statement("INSERT OR IGNORE INTO token_usage_scopes VALUES(?,?,1,0)").run(this.serverId, at);
       if (inserted.changes) this.statement("INSERT INTO token_usage_coverage(server_id,starts_ms,ends_ms) VALUES(?,?,NULL)").run(this.serverId, at);
       this.statement("INSERT OR IGNORE INTO token_usage_projection_state SELECT ?,NOT EXISTS(SELECT 1 FROM token_usage_turns WHERE server_id=?),'',''").run(this.serverId,this.serverId);
-      const uncertain=this.statement("INSERT OR IGNORE INTO token_usage_gaps SELECT server_id,'attempt-restart:'||attempt_id,thread_id,NULL,'source-offline',?,NULL FROM token_usage_attempts WHERE server_id=? AND outcome='pending'").run(at,this.serverId);
-      this.statement("UPDATE token_usage_attempts SET outcome='unknown' WHERE server_id=? AND outcome='pending'").run(this.serverId);
-      if(uncertain.changes)this.bump();
+      if(options.recoverPendingAttempts!==false){
+        const uncertain=this.statement("INSERT OR IGNORE INTO token_usage_gaps SELECT server_id,'attempt-restart:'||attempt_id,thread_id,NULL,'source-offline',?,NULL FROM token_usage_attempts WHERE server_id=? AND outcome='pending'").run(at,this.serverId);
+        this.statement("UPDATE token_usage_attempts SET outcome='unknown' WHERE server_id=? AND outcome='pending'").run(this.serverId);
+        if(uncertain.changes)this.bump();
+      }
     });
   }
   private write<T>(callback: () => T): T {
@@ -142,25 +147,30 @@ export class OpenCraftTokenUsageLedger {
   private bump(): void {
     this.statement("UPDATE token_usage_scopes SET revision=revision+1 WHERE server_id=?").run(this.serverId);
   }
-  projectionReady():boolean {return this.statement("SELECT ready FROM token_usage_projection_state WHERE server_id=?").get(this.serverId)?.ready===1;}
-  backfillProjectionBatch(limit=32):boolean {
+  projectionReady():boolean {return !this.checkpoint("legacy-projection-stale-v1")&&this.statement("SELECT ready FROM token_usage_projection_state WHERE server_id=?").get(this.serverId)?.ready===1;}
+  backfillProjectionBatch(limit=32,recompute=false):boolean {
+    if(!this.projectLegacy)throw new Error("Legacy usage projections require restoration");
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TypeError("Invalid projection batch");
     if(this.projectionReady())return true;
+    recompute=recompute||this.checkpoint("legacy-projection-stale-v1")!==null;
     return this.write(()=>{
       const position=this.statement("SELECT cursor_thread,cursor_turn FROM token_usage_projection_state WHERE server_id=?").get(this.serverId)!;
       const turns=this.statement("SELECT * FROM token_usage_turns WHERE server_id=? AND (thread_id,turn_id)>(?,?) ORDER BY thread_id,turn_id LIMIT ?").all(this.serverId,position.cursor_thread!,position.cursor_turn!,limit);
       for(const turn of turns){
         const ids:[string,string,string]=[this.serverId,String(turn.thread_id),String(turn.turn_id)];
+        if(recompute){this.rebuild(ids);continue;}
         if(this.statement("SELECT 1 FROM token_usage_turn_actor_projections a JOIN token_usage_turn_projections d USING(server_id,thread_id,turn_id) WHERE a.server_id=? AND a.thread_id=? AND a.turn_id=?").get(...ids))continue;
         const buckets=this.statement("SELECT model_key,provider,model,tokens FROM token_usage_buckets WHERE server_id=? AND thread_id=? AND turn_id=?").all(...ids);
         this.updateDailyProjection(ids,turn,buckets);
       }
       const last=turns.at(-1);
       this.statement("UPDATE token_usage_projection_state SET ready=?,cursor_thread=?,cursor_turn=? WHERE server_id=?").run(turns.length<limit?1:0,last?.thread_id??position.cursor_thread!,last?.turn_id??position.cursor_turn!,this.serverId);
+      if(turns.length<limit)this.statement("DELETE FROM token_usage_checkpoints WHERE server_id=? AND lineage='legacy-projection-stale-v1'").run(this.serverId);
       return turns.length<limit;
     });
   }
   private updateDailyProjection(ids:[string,string,string],turn:Record<string,unknown>,buckets:readonly {model_key?:unknown;provider?:unknown;model?:unknown;tokens?:unknown}[]):void {
+    if(!this.projectLegacy){this.markLegacyProjectionStale();return;}
     type Contribution={day:string;modelFilter:number;modelKey:string;state:string;tokens:string;turns:number;missing:number;unknown:number};
     const day=new Date(Number(turn.started_ms)+8*3600000).toISOString().slice(0,10);
     const state=String(turn.allocation_state),next:Contribution[]=[{day,modelFilter:0,modelKey:"",state,tokens:String(turn.observed_tokens??"0"),turns:1,missing:turn.observed_tokens===null||turn.frozen===1?1:0,unknown:buckets.some(b=>b.provider===null||b.model===null)?1:0},
@@ -405,6 +415,22 @@ export class OpenCraftTokenUsageLedger {
   }
   /** Synchronous internal replay only: never hold a transaction over I/O. */
   commitReplayBatch<T>(callback: () => T): T { return this.write(callback); }
+  /** Recompute a disposable projection after its trusted receipt copy changes. */
+  rebuildProjection(key:UsageTurnKey):void { if(this.readTurn(key))this.write(()=>this.rebuild(this.key(key))); }
+  participationCursor(threadId:string,path:string):number|null {
+    const value=this.checkpoint(`participation-rollout:${requiredId(threadId)}`);
+    if(!value)return null;
+    const saved=JSON.parse(value) as {path?:unknown;cursor?:unknown};
+    return saved.path===path&&typeof saved.cursor==="number"&&Number.isSafeInteger(saved.cursor)&&saved.cursor>=0?saved.cursor:null;
+  }
+  advanceParticipationCursor(threadId:string,path:string,cursor:number):void {
+    requiredId(threadId);if(!Number.isSafeInteger(cursor)||cursor<0)throw new TypeError("Invalid participation cursor");
+    this.write(()=>{
+      if(this.rollout(threadId)?.path!==path)throw new Error("Participation rollout changed");
+      this.statement("INSERT INTO token_usage_checkpoints VALUES(?,?,?) ON CONFLICT(server_id,lineage) DO UPDATE SET cursor=excluded.cursor")
+        .run(this.serverId,`participation-rollout:${threadId}`,JSON.stringify({path,cursor}));
+    });
+  }
   rememberRollout(threadId: string, path: string): void {
     requiredId(threadId);
     if (typeof path !== "string" || !path || path.length > 32768) throw new TypeError("Invalid native rollout reference");
@@ -523,6 +549,10 @@ export class OpenCraftTokenUsageLedger {
     const responses = this.statement("SELECT counts_json FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? AND source_kind='response'").all(...ids);
     const exact = responses.reduce((n, row) => n + BigInt((JSON.parse(String(row.counts_json)) as UsageCounts).totalTokens!), 0n);
     return { usageComplete: true, responsesComplete: responses.length > 0 && exact === reported };
+  }
+  recordedSettlement(key:UsageTurnKey):{usageComplete:boolean;responsesComplete:boolean}{
+    const row=this.statement("SELECT usage_complete,responses_complete FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(...this.key(key));
+    return {usageComplete:row?.usage_complete===1,responsesComplete:row?.responses_complete===1};
   }
   coverage(): { enabledAt: number; enabled: boolean; revision: number; intervals: {startsAt: number; endsAt: number | null}[] } {
     const row = this.statement("SELECT * FROM token_usage_scopes WHERE server_id=?").get(this.serverId)!;
@@ -676,7 +706,12 @@ export class OpenCraftTokenUsageLedger {
     const row = this.statement("SELECT cursor FROM token_usage_checkpoints WHERE server_id=? AND lineage=?").get(this.serverId, lineage);
     return row ? String(row.cursor) : null;
   }
+  private markLegacyProjectionStale():void {
+    const stale=this.statement("INSERT OR IGNORE INTO token_usage_checkpoints VALUES(?,'legacy-projection-stale-v1','recompute')").run(this.serverId);
+    if(stale.changes)this.statement("UPDATE token_usage_projection_state SET ready=0,cursor_thread='',cursor_turn='' WHERE server_id=?").run(this.serverId);
+  }
   private rebuild(ids: [string, string, string]): void {
+    if(!this.projectLegacy){this.markLegacyProjectionStale();this.bump();return;}
     const turn = this.statement("SELECT * FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(...ids)!;
     const sources = this.statement("SELECT source_kind,provider,model,counts_json FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? ORDER BY source_version DESC,lineage,source_id").all(...ids);
     const responses = sources.filter(row => row.source_kind === "response");
@@ -684,9 +719,11 @@ export class OpenCraftTokenUsageLedger {
     // The adapter supplies a validated per-turn snapshot, never the native
     // thread cumulative total. Raw responses and snapshots are alternatives.
     const chosen = turn.responses_complete === 1 && responses.length ? responses : snapshot ? [snapshot] : responses;
-    const buckets: TokenModelBucket[] = chosen.map(row => ({ provider: row.provider as string | null, model: row.model as string | null,
+    const preserved=turn.frozen===1?this.statement("SELECT provider,model,tokens FROM token_usage_buckets WHERE server_id=? AND thread_id=? AND turn_id=? ORDER BY model_key").all(...ids):null;
+    if(preserved&&!preserved.length&&turn.observed_tokens!==null)throw new Error("Frozen usage requires its archived model buckets");
+    const buckets: TokenModelBucket[] = preserved?preserved.map(row=>({provider:row.provider as string|null,model:row.model as string|null,totalTokens:String(row.tokens)})):chosen.map(row => ({ provider: row.provider as string | null, model: row.model as string | null,
       totalTokens: (JSON.parse(String(row.counts_json)) as UsageCounts).totalTokens! }));
-    const total = chosen.length ? buckets.reduce((n, b) => n + BigInt(b.totalTokens), 0n).toString() : null;
+    const total = preserved?turn.observed_tokens as string|null:chosen.length ? buckets.reduce((n, b) => n + BigInt(b.totalTokens), 0n).toString() : null;
     this.statement("DELETE FROM token_usage_buckets WHERE server_id=? AND thread_id=? AND turn_id=?").run(...ids);
     const modelTotals=new Map<string,{provider:string|null;model:string|null;tokens:bigint}>();
     for(const bucket of buckets){
@@ -701,7 +738,7 @@ export class OpenCraftTokenUsageLedger {
     let allocationState: UsageAllocationState = turn.source_kind === "system" ? "system" : turn.source_kind === "unknown" ? "unknown" : "pending";
     this.statement("DELETE FROM token_usage_allocations WHERE server_id=? AND thread_id=? AND turn_id=?").run(...ids);
     if (turn.source_kind === "human" && complete && participants.length && total !== null) {
-      allocationState = turn.execution_state !== "running" && turn.usage_complete === 1 ? "settled" : "provisional";
+      allocationState = preserved&&["settled","provisional"].includes(String(turn.allocation_state))?turn.allocation_state as UsageAllocationState:turn.execution_state !== "running" && turn.usage_complete === 1 ? "settled" : "provisional";
       const allocation = allocateTurnTokens(buckets, participants);
       const insert = this.statement("INSERT INTO token_usage_allocations VALUES(?,?,?,?,?,?,?,?)");
       for (const model of allocation.models) for (const actor of model.actors) {

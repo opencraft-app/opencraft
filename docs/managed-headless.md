@@ -1,6 +1,6 @@
 # 受管 Headless 与独立 Codex core
 
-本方式保留 Headless 的下游 Host/HTTP/WS 语义，core 只承载原生 Codex CLI 和账户维护。
+本方式保留 Headless 的下游 Host/HTTP/WS 语义，Core 默认合并原生 Codex CLI 和账户维护；显式拆分模式由独立 APP Server owner 持原生执行，账号 Core 仅持账户维护。
 独立网站和版本化 Headless execution 通过同一更新事务切换；DSH 引擎、core 与 CLI 独立维护。
 首次迁移必须停止旧内嵌 writer 后才能打开其原 Codex 目录；有活动任务时继续准备，等待自然结束。
 
@@ -8,7 +8,9 @@
 
 | 资源 | 唯一 owner | 生命周期 |
 |---|---|---|
-| 原生 CLI、account-pool、OAuth、账户代理 | core | 网站/Headless 断开不终止原 turn |
+| 可选 generation registry、稳定 native socket | 独立 routing owner | 固定 Thread 归属/接纳 epoch；CLI 升级不重启路由进程；路由进程自身维护先排空 PTY lease |
+| 原生 CLI | 兼容 core 或独立 APP Server owner | 网站/Headless 断开不终止原 turn；拆分后账号 Core 重启不停止 native |
+| account-pool、OAuth、账户代理 | 账号 core | 独立单写；拆分升级先排空已接收代理流与凭据写入 |
 | Host queue、sender、企业身份、附件、私有 Tasks、pins 投影 | Headless 的 CodexEngineAdapter | 原生 transport 只提供帧，不绕过 overlay；实例关闭释放存储 |
 | DSH、agent 目录、执行 journal 与公共 Tasks | 内嵌 Local Agent，或显式配置的独立 DSH Host | 独立 Host 不随 Web/execution 更新停止 |
 | SSH management/SSH Host、employee/speech 路由 | Headless | 沿用私有配置、Host/凭据/域名身份 |
@@ -19,6 +21,8 @@ connect/send/subscribe/close。原纯 core bridge 和未选择 core 的默认方
 纯 bridge 的早返回代替 Headless overlay。账户 RPC 单次转发给认证 control socket；原生请求
 由 Host 映射 ID、保留 client epoch、订阅/queue/goal 处理，结果未知不重放。
 
+显式多代模式的 APP/native 每代独立 HOME/socket/固定 CLI，共用账号 Core；Host 仍单写 overlay，并通过私有 generation fence/ACK 协议证明队列、goal、schedule 与恢复工作已排空。单代崩溃只恢复该代 Thread，正常退休保持其它代的连接，见 [多代升级](codex-core.md#第-3-步新旧并行)。
+
 core 的数据目录 guard 与 overlay 的 `host-overlays-owner` guard 独立，均复用内核持有的
 SQLite EXCLUSIVE 锁，进程退出释放。Headless 的安装级 server.lock 仍保护整个数据根。
 配置独立 core 时，Headless 在 HTTP/SSH listener 启动后，通过已有 AppHost owner 后台
@@ -27,6 +31,9 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 不阻塞网站监听。就绪检查继续监测连接丢失，gateway 关闭时撤销检查。
 该检查不拥有队列、账户、core 进程或额外存储。首次切换检查旧 CLI/任务；旧二进制未使用新 guard 不能当作自动排空。关闭 overlay 只关闭
 其原生连接与 stores，不关闭 core。复用数据/项目 cwd，不从包目录推导身份。
+
+执行进程真的中断后，Host 通过[被打断轮次恢复](interrupted-turn-recovery.md)自动继续已跟踪的任务；
+活跃原生轮次、用户已处理的任务及未知提交不会被盲目重发。恢复次数、系统来源与界面提示由同一持久策略管理。
 
 ## Codex 原生会话与保留数据
 
@@ -196,3 +203,6 @@ Headless Linux 分发及 managed headless execution 包携带 `runtime/browser/`
 仅隔离测试可显式设置 `OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX=1`；默认关闭，不应在正式环境启用。运行时目录只含公开代码和 Electron 资产，权限统一为可读/可遍历，以便 DynamicUser 只读挂载；用户数据仍私有。
 
 查看 `GET /__opencraft_browser/capabilities` 可知分发是否包含 runtime；该探测不等于编码器和 Linux 动态依赖已实机验证。实际媒体与类型化控制复用 `/__opencraft_browser/stream` 的同源及现有认证/撤权。原始页面 JS/CDP/Node 入口不暴露。
+
+
+Codex 账号 Core 与 APP Server 的显式拆分、三步升级接口及首次维护/回退见 [Codex 平滑升级](codex-core.md#执行侧平滑升级三步方案)。旧部署省略新参数继续使用兼容合并模式；网站/网关 CI 不自动启用拆分。

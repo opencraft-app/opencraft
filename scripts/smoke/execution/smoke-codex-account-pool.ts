@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { brotliCompressSync } from "node:zlib";
 
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { WebSocketTransport, type AppServerWebSocket } from "@opencraft/appserver-transport-websocket";
@@ -56,7 +57,28 @@ const upstreamAccounts = new Set<string>();
 const upstreamSequence: string[] = [];
 const upstreamAuthorizations = new Set<string>();
 const upstreamPoolTokens = new Set<string>();
+let mcpInitializations = 0;
+let mcpToolLists = 0;
 const model = createHttpServer((request, response) => {
+  if (request.url === "/backend-api/ps/mcp") {
+    if (request.method === "GET") { response.writeHead(405); response.end(); return; }
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(Buffer.from(chunk)));
+    request.on("end", () => {
+      const message = JSON.parse(Buffer.concat(chunks).toString());
+      if (message.id === undefined) { response.writeHead(202); response.end(); return; }
+      assert.match(String(request.headers.authorization), /^Bearer fixture-account-access-/u);
+      let result = {};
+      if (message.method === "initialize") {
+        mcpInitializations++;
+        result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} },
+          serverInfo: { name: "fixture", version: "1" } };
+      } else if (message.method === "tools/list") { mcpToolLists++; result = { tools: [] }; }
+      response.writeHead(200, { "content-type": "application/json", "content-encoding": "br" });
+      response.end(brotliCompressSync(Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }))));
+    });
+    return;
+  }
   request.resume();
   if (request.url === "/backend-api/codex/models") {
     response.writeHead(200, { "content-type": "application/json" });
@@ -73,6 +95,11 @@ const model = createHttpServer((request, response) => {
   upstreamSequence.push(String(request.headers["chatgpt-account-id"] ?? ""));
   upstreamAuthorizations.add(String(request.headers.authorization ?? ""));
   upstreamPoolTokens.add(String(request.headers["x-opencraft-account-pool-token"] ?? ""));
+  if (modelRequests === 1) {
+    response.writeHead(429, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { type: "usage_limit_reached" } }));
+    return;
+  }
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "x-codex-primary-used-percent": "10",
@@ -109,13 +136,14 @@ const child = spawn(executable, [
   "--listen", `ws://127.0.0.1:${appServerPort}`,
   ...launch.args,
   "-c", 'model="gpt-test"',
+  "-c", "features.apps=true",
 ], {
   cwd: root,
   env: {
     ...process.env,
     ...launch.env,
     CODEX_HOME: profile,
-    OPENAI_API_KEY: "fixture-appserver-key",
+    OPENAI_API_KEY: undefined,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -151,6 +179,7 @@ try {
   }
   if (!connected) throw new Error(`Codex AppServer did not start: ${stderrTail}`);
   await client.connect({ clientInfo: { name: "opencraft-account-pool-smoke", version: "0.1.0" }, capabilities: { experimentalApi: true } });
+  await client.request("account/login/start", launch.auth);
   async function runTurn(threadId: string): Promise<void> {
     let stop = () => {};
     let timer: ReturnType<typeof setTimeout>;
@@ -173,8 +202,10 @@ try {
     await runTurn(thread.id);
   }
   await runTurn(threads[0]!);
-  assert.equal(modelRequests, 5);
-  assert.deepEqual(upstreamSequence, [0, 1, 2, 0, 0].map(index => `fixture-chatgpt-account-${index}`));
+  assert.equal(modelRequests, 6);
+  assert.deepEqual(upstreamSequence, [0, 1, 2, 0, 1, 1].map(index => `fixture-chatgpt-account-${index}`));
+  assert.ok(mcpInitializations > 0, "native hosted MCP must initialize without an explicit MCP override");
+  assert.ok(mcpToolLists > 0, "native hosted MCP must decode the compressed tool catalog");
   assert.equal(upstreamAccounts.size, 3);
   assert.deepEqual([...upstreamAuthorizations].sort(), [0, 1, 2].map(index => `Bearer fixture-account-access-${index}`));
   assert.deepEqual([...upstreamPoolTokens], [""]);
@@ -183,6 +214,8 @@ try {
     codexVersion,
     transport: "real Codex AppServer WebSocket through OpenCraft Account Pool",
     localFixtureModelRequests: modelRequests,
+    mcpInitializations,
+    mcpToolLists,
     externalModelRequests: 0,
   }));
 } finally {

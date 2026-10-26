@@ -98,7 +98,7 @@ test("a consumer acquired during unsubscribe keeps its view and reestablishes se
     await waitForRequest(harness, "thread/unsubscribe");
     const current = await runtime.acquireThread("thread-created");
     harness.releaseUnsubscribe(); await unsubscribing;
-    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 2);
+    assert.equal(harness.requests.filter(request => request.method === "thread/read").length, 2);
     assert.equal(current.getSnapshot().authoritative, true);
     current.release();
   } finally { await runtime.dispose(); }
@@ -127,7 +127,7 @@ test("failed baseline remains an error and retries on the same lease without rec
     await runtime.connect();
     const lease = await runtime.acquireThread("thread-created");
     const until = async (predicate: () => boolean) => {
-      const deadline = Date.now() + 2000;
+      const deadline = Date.now() + 10000;
       while (!predicate()) {
         assert.ok(Date.now() < deadline, "timed out waiting for recovery state");
         await new Promise(resolve => setTimeout(resolve, 1));
@@ -137,11 +137,11 @@ test("failed baseline remains an error and retries on the same lease without rec
     assert.equal(runtime.getSnapshot().phase, "ready");
     assert.equal(runtime.getThreadResidency(lease.threadId)?.phase, "error");
     const generation = runtime.getSnapshot().connectionGeneration;
-    const resumes = harness.requests.filter(r => r.method === "thread/resume").length;
+    const resumes = harness.requests.filter(r => r.method === "thread/read").length;
     const retry = lease.retryRestore();
     assert.equal(lease.getSnapshot().phase, "syncing");
     assert.equal(lease.getSnapshot().error, null);
-    await until(() => harness.requests.filter(r => r.method === "thread/resume").length > resumes);
+    await until(() => harness.requests.filter(r => r.method === "thread/read").length > resumes);
     harness.releaseResume();
     await retry;
     assert.equal(lease.getSnapshot().authoritative, true);
@@ -570,9 +570,10 @@ test("concurrent Thread acquisition shares one hydration and evicts only after t
       runtime.acquireThread("thread-shared"),
       runtime.acquireThread("thread-shared"),
     ]);
-    await waitForRequest(harness, "thread/resume");
+    await waitForRequest(harness, "thread/read");
+    await waitForAuthoritative(first);
     assert.equal(
-      harness.requests.filter((request) => request.method === "thread/resume").length,
+      harness.requests.filter((request) => request.method === "thread/read").length,
       1,
     );
     first.release();
@@ -585,7 +586,7 @@ test("concurrent Thread acquisition shares one hydration and evicts only after t
 });
 
 
-test("Thread acquisition stays empty until its single authoritative Resume promotion", async () => {
+test("Thread acquisition stays empty until its single authoritative Read promotion", async () => {
   const harness = createHarness(false, true, [{
     id: "turn-history-one",
     status: "completed",
@@ -617,7 +618,7 @@ test("Thread acquisition stays empty until its single authoritative Resume promo
         visibleFrameCount = nextFrameCount;
       }
     });
-    await waitForRequest(harness, "thread/resume");
+    await waitForRequest(harness, "thread/read");
     harness.releaseResume();
     await waitForAuthoritative(lease);
     assert.equal(lease.getSnapshot().phase, "live");
@@ -647,8 +648,8 @@ test("slow dynamic-tool registration does not hold restored history behind hydra
   try {
     await runtime.connect();
     const lease = await runtime.acquireThread("thread-created");
-    await waitForRequest(harness, "runtime/capabilities/register");
     await waitForAuthoritative(lease);
+    assert.equal(harness.requests.some(request => request.method === "runtime/capabilities/register"), false);
     assert.equal(lease.getSnapshot().timeline.frames.length, 1);
     const stopping = lease.interrupt(asTurnId("turn-history-one"));
     await waitForRequest(harness, "turn/interrupt");
@@ -674,6 +675,7 @@ test("slow dynamic-tool registration does not hold restored history behind hydra
       false,
       "execution must still wait for the capability lease",
     );
+    await waitForRequest(harness, "runtime/capabilities/register");
     harness.releaseCapabilityRegistration();
     await submitting;
     assert.equal(
@@ -688,57 +690,28 @@ test("slow dynamic-tool registration does not hold restored history behind hydra
 });
 
 
-test("failed background capability registration preserves history and retries on execution", async () => {
-  const harness = createHarness(false, false, [{
-    id: "turn-history-one",
-    status: "completed",
-    itemsView: "full",
-    items: [{ id: "message-history-one", type: "agentMessage", text: "history survives" }],
-  }], false, undefined, true, true);
-  const runtime = createAppServerWorkbenchRuntime({
-    hostId: "local",
-    transport: harness.transport,
-    autoReconnect: false,
-    dynamicTools: oneDynamicTool,
-  });
+test("capability failure preserves read history and retries only on a subsequent send", async () => {
+  const harness = createHarness(false, false, [{ id: "history", status: "completed", items: [
+    { id: "message", type: "agentMessage", text: "history survives" },
+  ] }], false, undefined, true, true);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport,
+    autoReconnect: false, dynamicTools: oneDynamicTool });
   try {
     await runtime.connect();
-    const lease = await runtime.acquireThread("thread-created");
+    const lease = await runtime.acquireThread("thread-created"); await waitForAuthoritative(lease);
+    assert.equal(harness.requests.some(r => r.method === "runtime/capabilities/register" || r.method === "thread/resume"), false);
+    const submission = () => lease.submit(intent({ type: "existing-thread", key: createConversationKey("local", "thread-created") }));
+    const failed = submission();
     await waitForRequest(harness, "runtime/capabilities/register");
-    harness.failCapabilityRegistration();
-    await waitForAuthoritative(lease);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    assert.equal(lease.getSnapshot().timeline.frames.length, 1);
-
-    const submitting = lease.submit({
-      ...intent({
-        type: "new-thread",
-        draftId: "unused",
-        execution: {
-          hostId: "local",
-          workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
-        },
-      }),
-      target: {
-        type: "existing-thread",
-        key: createConversationKey("local", "thread-created"),
-      },
-    });
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      if (harness.requests.filter((request) => request.method === "runtime/capabilities/register").length === 2) break;
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
-    assert.equal(
-      harness.requests.filter((request) => request.method === "runtime/capabilities/register").length,
-      2,
-    );
-    harness.releaseCapabilityRegistration();
-    await submitting;
-    assert.equal(harness.requests.filter((request) => request.method === "turn/start").length, 1);
+    harness.failCapabilityRegistration(); await assert.rejects(failed);
+    assert.equal(JSON.stringify(lease.getSnapshot().timeline).includes("history survives"), true);
+    const retry = submission();
+    for (let i = 0; i < 50 && harness.requests.filter(r => r.method === "runtime/capabilities/register").length < 2; i++) await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(harness.requests.filter(r => r.method === "runtime/capabilities/register").length, 2);
+    harness.releaseCapabilityRegistration(); await retry;
+    assert.equal(harness.requests.filter(r => r.method === "turn/start").length, 1);
     lease.release();
-  } finally {
-    await runtime.dispose();
-  }
+  } finally { await runtime.dispose(); }
 });
 
 
@@ -760,8 +733,8 @@ test("Thread catalog metadata removes the first-restore metadata waterfall", asy
     assert.equal(listed.data[0]?.id, "thread-created");
     const lease = await runtime.acquireThread("thread-created");
     await waitForAuthoritative(lease);
-    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
-    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
+    assert.equal(harness.requests.some((request) => request.method === "thread/resume"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/read").length, 1);
     assert.equal(lease.getSnapshot().timeline.frames.length, 1);
     lease.release();
   } finally {
@@ -785,8 +758,8 @@ test("Host history capability removes the deep-link metadata waterfall", async (
   try {
     const lease = await runtime.acquireThread("thread-created");
     await waitForAuthoritative(lease);
-    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
-    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
+    assert.equal(harness.requests.some((request) => request.method === "thread/resume"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/read").length, 1);
     lease.release();
   } finally {
     await runtime.dispose();
@@ -794,7 +767,7 @@ test("Host history capability removes the deep-link metadata waterfall", async (
 });
 
 
-test("a first Turn paints optimistically but cannot overtake its authoritative Resume baseline", async () => {
+test("a first Turn paints optimistically but cannot overtake its authoritative Read baseline", async () => {
   const harness = createHarness(false, true);
   const runtime = createAppServerWorkbenchRuntime({
     hostId: "local",
@@ -804,7 +777,7 @@ test("a first Turn paints optimistically but cannot overtake its authoritative R
   try {
     await runtime.connect();
     const lease = await runtime.acquireThread("thread-created");
-    await waitForRequest(harness, "thread/resume");
+    await waitForRequest(harness, "thread/read");
     const submission: SubmitIntent = {
       ...intent({
         type: "new-thread",
@@ -1006,10 +979,10 @@ test("idle LRU detaches server readership and reacquisition waits before restori
     const reopening = runtime.acquireThread("evicted").then(value => { acquired = true; return value; });
     await new Promise(resolve => setTimeout(resolve, 5));
     assert.equal(acquired, false);
-    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 1);
+    assert.equal(harness.requests.filter(request => request.method === "thread/read").length, 1);
     harness.releaseUnsubscribe();
     const restored = await reopening; await waitForAuthoritative(restored);
-    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 2);
+    assert.equal(harness.requests.filter(request => request.method === "thread/read").length, 2);
     restored.release(); harness.releaseUnsubscribe();
   } finally { await runtime.dispose(); }
 });
@@ -1047,7 +1020,7 @@ test("idle content budget evicts oversized history even below the count limit", 
     lease.release();
     assert.equal(runtime.getSnapshot().residentThreads.length, 0);
     const restored = await runtime.acquireThread("large"); await waitForAuthoritative(restored);
-    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 2);
+    assert.equal(harness.requests.filter(request => request.method === "thread/read").length, 2);
     restored.release();
   } finally { await runtime.dispose(); }
 });
@@ -1083,3 +1056,20 @@ for (const reopen of [false, true]) {
     } finally { await runtime.dispose(); }
   });
 }
+
+test("opening a failed Turn is read-only and Continue resumes before admitting its new Turn", async () => {
+  const harness = createHarness(false, false, [{ id: "failed", status: "failed", error: { message: "Capacity", codexErrorInfo: "serverOverloaded" }, items: [
+    { id: "question", type: "userMessage", content: [{ type: "text", text: "Continue my task" }] },
+  ] }]);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created"); await waitForAuthoritative(lease);
+    assert.equal(harness.requests.some(r => r.method === "thread/resume"), false);
+    await lease.continueTurn(asTurnId("failed"));
+    const methods = harness.requests.map(r => r.method);
+    assert.equal(methods.filter(m => m === "thread/resume").length, 1);
+    assert.ok(methods.indexOf("thread/resume") < methods.indexOf("turn/start"));
+    lease.release();
+  } finally { await runtime.dispose(); }
+});

@@ -38,7 +38,7 @@ export interface HeadlessServerExtensionOptions {
   readonly requestHost: HostProtocolRequest;
   readonly createTransport: (hostId: string) => DuplexTransport;
   readonly workspaceBrowseRoots: readonly string[];
-  readonly sshServers?: readonly { readonly serverId: string; readonly displayName: string; readonly workspaceBrowseRoots: readonly string[] }[];
+  readonly sshServers?: readonly { readonly serverId: string; readonly displayName: string; readonly workspaceBrowseRoots: readonly string[]; readonly hideFromNewChat?: boolean }[];
   readonly sshManagement?: SshConnectionsController;
 }
 
@@ -132,6 +132,7 @@ export function createHeadlessServerExtension(options: HeadlessServerExtensionOp
           providerConfig: config,
           providerConfigVersion: 1,
           hostKind: "remote-ssh",
+          hideFromNewChat: server.hideFromNewChat,
           enabled: true,
           autoConnect: false,
           includeInSidebar: true,

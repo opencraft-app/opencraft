@@ -47,6 +47,12 @@ spacing and a small hierarchy instead of emphasizing every interactive label.
 
 Conversation-list Show more / Show less use `controlSmall` with the tertiary tone, retaining the existing control hit area and hover/focus behavior.
 
+Fenced code uses one reading-size owner for every language. Its scroll surface
+sets `text-size-adjust: 100%` (including the WebKit prefix), so streaming text and
+later syntax-highlighted nodes keep the declared reading size instead of receiving
+a separate mobile inflation factor. Keep the reading-size variable, browser zoom,
+selection, horizontal scrolling and the user's wrapping choice available.
+
 In the conversation list, date groups use `metadata` with the secondary tone;
 row project names use `label` with the tertiary tone. Project names remain plain
 text beneath the title, without a badge surface. Keep essential activity status

@@ -1,4 +1,5 @@
 export * from "./appserver-runtime";
+export * from "./thread-recovery-resource";
 export type { RecoveryProgress, RecoveryStage } from "./recovery-observation";
 export { createThreadViewFrameScheduler } from "@opencraft/appserver-session";
 export * from "./agent-runtime";

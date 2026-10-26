@@ -45,6 +45,25 @@ function fixture(onGeometryObserved?: (event?: Event) => void) {
   };
 }
 
+test("viewport contraction stays distinct from editable keyboard inference", () => {
+  const f = fixture();
+  try {
+    const root = f.win.document.documentElement;
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    f.visual.height = 688;
+    f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false");
+    f.input.focus();
+    f.visual.height = 394;
+    f.visual.dispatchEvent(new f.win.Event("resize"));
+    f.input.blur(); f.frame(10);
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
+    assert.equal(root.style.getPropertyValue("--timeline-available-viewport-height"), "394px");
+  } finally { f.close(); }
+});
+
 test("fixed frame separates native fixed basis from reported visual offset in either update order", () => {
   const f = fixture();
   try {
@@ -220,5 +239,60 @@ test("hidden hosts cancel the shared observation window and resume from actual g
     f.frame(40);
     assert.equal(f.css("top"), 294);
     assert.equal(observations, 2);
+  } finally { f.close(); }
+});
+
+
+test("document and fixed frames map the same visible origin through independent bases", () => {
+  const f = fixture();
+  try {
+    for (const [page, scroll, native] of [[294, 0, 0], [294, 294, -294], [310, 294, 0], [0, 0, 0]]) {
+      f.scroll(scroll);f.native.top = native;f.visual.pageTop = page;f.visual.offsetTop = page-scroll;
+      f.visual.dispatchEvent(new f.win.Event("scroll"));
+      const documentTop = Number.parseFloat(f.win.document.documentElement.style.getPropertyValue("--timeline-document-viewport-top"));
+      const visibleClientTop = page-scroll;
+      assert.equal(documentTop-scroll,visibleClientTop,"flow frame is positioned in document coordinates");
+      assert.equal(f.css("top")+native,visibleClientTop,"fixed frame retains the independent native reference");
+    }
+  } finally { f.close(); }
+});
+
+test("document-origin changes publish even when fixed-client geometry stays unchanged", () => {
+  const f = fixture();
+  try {
+    f.frame(20);const revision=f.port.getSnapshot().revision;
+    f.scroll(100);f.visual.pageTop=100;f.visual.dispatchEvent(new f.win.Event("scroll"));
+    assert.equal(f.css("top"),0);
+    assert.equal(f.win.document.documentElement.style.getPropertyValue("--timeline-document-viewport-top"),"100px");
+    assert.equal(f.port.getSnapshot().revision,revision+1);
+  } finally { f.close(); }
+});
+
+test("resting overlay canvas stays CSS-owned while the existing port projects contraction", () => {
+  const f = fixture();
+  try {
+    const root = f.win.document.documentElement;
+    Object.assign(root.dataset, { windowHost: "browser", windowDisplayMode: "standalone", windowEdgeStrategy: "legacy-overlay-requested" });
+    for (const height of [688, 750, 688]) {
+      Object.defineProperty(f.win, "innerHeight", { configurable: true, value: height });
+      f.visual.height = height; f.visual.dispatchEvent(new f.win.Event("resize"));
+      assert.equal(root.dataset.timelineViewportOccluded, "false");
+      assert.equal(root.dataset.timelineKeyboardOpen, "false");
+      assert.equal(root.style.getPropertyValue("--timeline-visible-viewport-height"), "", "no measurement may replace the resting CSS canvas");
+    }
+    f.input.focus(); f.input.setSelectionRange(2, 2);
+    f.visual.height = 394; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
+    assert.equal(root.dataset.timelineKeyboardOpen, "true");
+    assert.equal(root.style.getPropertyValue("--timeline-available-viewport-height"), "394px");
+    f.input.blur(); f.frame(20);
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    assert.equal(root.dataset.timelineViewportOccluded, "true", "blur must not restore CSS capacity before the native frame recovers");
+    f.visual.height = 688; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false");
+    f.visual.scale = 2; f.visual.height = 344; f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false", "pinch alone is not keyboard contraction");
+    assert.equal(root.style.getPropertyValue("--timeline-visible-viewport-height"), "");
+    assert.equal(f.input.value, "preserve draft"); assert.equal(f.input.selectionStart, 2);
   } finally { f.close(); }
 });

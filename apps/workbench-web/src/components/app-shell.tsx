@@ -1,3 +1,4 @@
+import { SafeLayout } from "@opencraft/design-system-web/safe-layout";
 import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut } from "../workbench-shortcuts";
@@ -80,7 +81,11 @@ import { shellNavigationMetrics, shellSpaceMetrics } from "@opencraft/workbench-
 import { ShellPresentationContext, SidebarDismissContext } from "./shell-presentation";
 import { ShellNavigationDock, ShellNavigationFooter, useShellNavigation, type ShellNavigationConfig } from "./shell-navigation";
 
+const MotionSafeLayout = motion.create(SafeLayout);
+
 interface AppShellProps {
+  /** Route-selected backdrop; geometry and safe areas stay owned by Shell. */
+  surface?: "default" | "application-desktop";
   navigation?: ShellNavigationConfig;
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
@@ -224,6 +229,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 }
 
 export function AppShell({
+  surface = "default",
   navigation,
   layoutScope,
   mainContentLayout,
@@ -275,8 +281,8 @@ export function AppShell({
   const [dockedFooterHost, setDockedFooterHost] = useState<HTMLDivElement | null>(null);
   const [floatingPrimaryHost, setFloatingPrimaryHost] = useState<HTMLDivElement | null>(null);
   const [floatingContextHost, setFloatingContextHost] = useState<HTMLDivElement | null>(null);
-  const [mobileSidebarActionHost, setMobileSidebarActionHost] = useState<HTMLDivElement | null>(null);
-  const [floatingFooterHost, setFloatingFooterHost] = useState<HTMLDivElement | null>(null);
+  const [mobileSidebarActionHost, setMobileSidebarActionHost] = useState<HTMLElement | null>(null);
+  const [floatingFooterHost, setFloatingFooterHost] = useState<HTMLElement | null>(null);
   const navigationController = useShellNavigation({
     // Dock/visibility policy is stable for the gesture. Actual pane and main
     // geometry below use live MotionValues, never this saved width.
@@ -595,7 +601,8 @@ export function AppShell({
     navigationController.requestDock();
     onSidebarExpand();
   }, [navigationController.requestDock, onSidebarExpand]);
-  const mobileSidebarEnabled = windowChrome.kind === "browser" && unifiedNavigation && sidebarTransientEnabled
+  const browserSafeLayout = windowChrome.kind === "browser";
+  const mobileSidebarEnabled = browserSafeLayout && unifiedNavigation && sidebarTransientEnabled
     && !canDockSidebar;
   const primaryNavigation = useMemo(() => navigation && mobileSidebarEnabled
     ? { ...navigation, actions: navigation.actions.filter(action => action.id !== "shell.applications") }
@@ -775,6 +782,7 @@ export function AppShell({
 
   return (
     <ShellPresentationContext.Provider value={{
+      surface,
       sidebarControlsInSidebar: unifiedNavigation,
       // Control ownership follows intent, not the retained exit/gesture surface.
       // Otherwise the collapsed entrance disappears until the spring settles.
@@ -788,7 +796,7 @@ export function AppShell({
     <SidebarDismissContext.Provider value={dismissSidebarAfterSelection}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
-        className={navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : undefined}
+        className={`${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
@@ -846,8 +854,8 @@ export function AppShell({
                   <div className="shell-sidebar__navigation sidecar-content-slot" ref={setFloatingPrimaryHost} />
                   <div className="shell-sidebar__context sidecar-content-slot" ref={setFloatingContextHost} />
                 </div>
-                {mobileSidebarEnabled ? <div className="shell-sidebar__floating-action" ref={setMobileSidebarActionHost} /> : null}
-                <div className="shell-sidebar__rail-footer sidecar-content-slot" ref={setFloatingFooterHost} />
+                {mobileSidebarEnabled ? <SafeLayout edges={["bottom"]} minimumInsets={{ bottom: "var(--shell-mobile-actions-bottom-reserve)" }} className="shell-sidebar__floating-action" ref={setMobileSidebarActionHost} /> : null}
+                <SafeLayout edges={mobileSidebarEnabled ? ["bottom"] : []} minimumInsets={{ bottom: "var(--shell-mobile-actions-bottom-reserve)" }} className="shell-sidebar__rail-footer sidecar-content-slot" ref={setFloatingFooterHost} />
               </div> : <div className="sidecar-content-slot" ref={setFloatingContextHost} />}</motion.div></div> : null}
             </div>
           </FloatingLeftPanel>
@@ -871,7 +879,7 @@ export function AppShell({
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
-        <motion.div className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+        <MotionSafeLayout edges={browserSafeLayout ? ["top", "bottom"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
           style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
             className="app-shell-sidecar__footer"
@@ -1014,7 +1022,7 @@ export function AppShell({
           {mobilePageBlocked ? <button
             type="button" className="app-shell-mobile-page-dismiss"
             aria-label="Close sidebar" onClick={() => { sidebarToggleFocusPending.current = true; dismissFloatingSidebar(); }} /> : null}
-        </motion.div>
+        </MotionSafeLayout>
       </ApplicationShellRoot>
     </AppShellLayoutMotionContext.Provider>
     </SidebarDismissContext.Provider>

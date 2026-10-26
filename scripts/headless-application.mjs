@@ -52,10 +52,16 @@ import { MembershipStore, InstanceAccess } from '../packages/access-control/src/
 import { ActorStore } from '../packages/access-control/src/actors.ts';
 import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
 import { Collaboration, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
-import { createRoutedConversationExecution } from './conversation-execution.mjs';
+import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
+import { createThreadOrchestrationExecution } from './thread-orchestration-execution.mjs';
+import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
+import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
 import { HumanAccounts } from '../packages/access-control/src/human-accounts.ts';
 import { LocalAccountServerPlugin } from '../plugins/local-account/src/server.ts';
+import { LocalAccountApplication } from '../plugins/local-account/src/application.ts';
+import { readPrivateJson } from '../packages/identity-core/src/node.ts';
+import { HumanAccountManagement } from '../packages/access-control/src/account-management.ts';
 import { HumanAuth, readHumanAuthConfiguration } from '../packages/access-control/src/human-auth.ts';
 import { humanLoginPage } from './human-login-page.ts';
 import { connectRelay, loadRelayConnection } from '../plugins/relay-connect/src/server.ts';
@@ -249,6 +255,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let membership;
   let actorStore;
   let actorCollaboration;
+  let threadOrchestration;
   let actorCollaborationApi;
   let actorAccess;
   let humanAccounts;
@@ -260,6 +267,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let capabilitiesReadyResolve;
   const capabilitiesReady = new Promise(resolve => { capabilitiesReadyResolve = resolve; });
   let humanAuth;
+  let accountManagement;
+  let accountApplication;
   let relay;
   let hubController;
   let sshNativeRpc;
@@ -267,6 +276,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let usageQueries;
   let remoteBrowser;
   let observability;
+  let turnPush;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
@@ -279,8 +289,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       hubController?.close();
       remoteBrowser?.close();
       desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
+      await turnPush?.close();
       // Retire admitted ingress clients before their Host provider.
       const entryResults = await Promise.allSettled([ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
+      threadOrchestration?.stop();
+      await appHostServer?.close();
+      await threadOrchestration?.close();
       entryResults.push(...await Promise.allSettled([connectorService?.close(), actorCollaboration?.close()]));
       const results = [...entryResults, ...await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()])];
       if (releasePiOwner) results.push(...await Promise.allSettled([releasePiOwner()]));
@@ -290,7 +304,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Settle every provider/store before releasing the directory lock, even
       // when one disposer throws synchronously or returns a rejected promise.
       for (const dispose of [() => mcpApps?.close(), () => sshManagement?.close(), () => identity?.close?.(),
-        () => humanAuth?.close(), () => humanAccounts?.close(),
+        () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close(), () => releaseLock()]) {
         results.push(...await Promise.allSettled([Promise.resolve().then(dispose)]));
       }
@@ -306,7 +320,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const humanConfiguration = options.humanAuthConfig ? await readHumanAuthConfiguration(options.humanAuthConfig) : null;
     const imConfiguration = await readImConfiguration(options.imConfigFile);
     hubController = await createHubController(join(dataDirectory, 'hub-network-controller.json'), join(dataDirectory, 'hub-network.json'));
-    if (options.accessControl || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
+    if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
       membership = new MembershipStore(join(dataDirectory, 'memberships.sqlite'));
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     if (composition.createIdentity) {
@@ -337,6 +351,17 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         humanAccounts.registerLocalAccounts(localAccounts);
       } else humanAccounts.disableLocalAccounts();
       humanAuth = new HumanAuth(humanAccounts, actorStore, humanConfiguration, humanLoginPage, externalHuman);
+      if (humanConfiguration.local && membership) {
+        let setupToken;
+        if (humanConfiguration.setupTokenFile) {
+          const input = await readPrivateJson(humanConfiguration.setupTokenFile);
+          if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1
+            || typeof input.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(input.token)) throw new Error('Invalid private setup token file');
+          setupToken = input.token;
+        }
+        accountManagement = new HumanAccountManagement(join(dataDirectory, 'account-onboarding.sqlite'), humanAccounts, actorStore, membership);
+        accountApplication = new LocalAccountApplication({ auth: humanAuth, management: accountManagement, setupToken });
+      }
     }
     const providers = [...(humanAuth ? [humanAuth] : []), ...externalProviders];
     if (membership) instanceAccess = new InstanceAccess(membership, providers, actorStore, options.accessMemberProviders ?? [], identity?.admissionPolicy);
@@ -369,6 +394,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
     actorCollaboration.start();
+    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer));
+    threadOrchestration.start();
     if (options.localDesktop === true) {
       const observer = createNativeObserver();
       const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
@@ -422,7 +449,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     } else if (engines.includes("pi")) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
-      piEngine = new PiEngine({ ...piModels, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), directory: join(dataDirectory, "pi"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      piEngine = new PiEngine({ ...piModels, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       agent = await startEngineHost({
         providers: [piEngine],
         defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), machine: machineIdentity,
@@ -450,11 +477,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
+      ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime'),
+        ...(options.codexCoreEndpoint ? {coreEndpoint:options.codexCoreEndpoint,coreAuthToken:options.codexCoreAuthToken} : {})}}),
     });
     appHostServer = new AppHostServer({
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
+        const transport = (() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
           new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)})), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
@@ -472,6 +502,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
               ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
               : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
             serverId: `server:${machineIdentity.machineId}:codex`,
+            ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {derivedQueries:usageQueries}),
             actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
             person: actorId => actorStore.get(actorId),
             submission: (threadId,inputId) => actorCollaboration.usageSubmission(threadId,inputId),
@@ -479,11 +510,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           collaboration: {
             queuedContext: (thread,inputId,input) => actorCollaboration.queuedReferenceContext(thread,inputId,input),
             continued: (thread,previous,turn) => actorCollaboration.executionContinued(thread,previous,turn),
+            continuing: (thread,previous,inputId) => actorCollaboration.executionContinuing(thread,previous,inputId),
+            inputDelegation: (thread,inputId,expected) => actorCollaboration.inputDelegation(thread,inputId,expected),
             prepare: (context,input) => actorCollaboration.referenceContext(context,input),
             command: (context, body) => actorCollaboration.command(context, body),
-            authorize: (context, threadId, inputId) => actorCollaboration.authorizeExecution(context, threadId, inputId),
+            authorize: (context, threadId, inputId, input) => actorCollaboration.authorizeExecution(context, threadId, inputId, input),
             started: (threadId, inputId, turnId) => actorCollaboration.executionStarted(threadId, inputId, turnId),
             tool: (threadId, turnId, name, args) => actorCollaboration.tool(threadId, turnId, name, args),
+            orchestration: { available: () => threadOrchestration.available, tool: (threadId,turnId,key,name,args,delegationId,callbackIncarnation) => threadOrchestration.invoke(threadId,turnId,key,name,args,delegationId,callbackIncarnation), observed: snapshot => threadOrchestration.observe(snapshot) },
           },
           collaborationInput: {
             available: () => actorCollaboration.available,
@@ -502,7 +536,25 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
         })), mcpApps);
+        })();
+        return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(transport, value => {
+          if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
+          turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId);
+        }) : transport;
       },
+    });
+    turnPush = new TurnPushService(new PushStore(join(dataDirectory, 'web-push.sqlite')), {
+      hosts: ['local-codex', 'opencraft-server'],
+      authenticate: request => {
+        const context = actorAccess.authenticate(request);
+        return context && actorStore.get(context.actorId)?.kind === 'human'
+          ? { context, loginDigest: humanAuth?.notificationLoginDigest(request) } : null;
+      },
+      current: binding => actorStore.isCurrent(binding.context) && actorStore.get(binding.context.actorId)?.kind === 'human'
+        && (!instanceAccess || instanceAccess.admitsActor(binding.context.actorId))
+        && (!binding.loginDigest || !!humanAccounts?.byDigest(binding.loginDigest)),
+      trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
+      read: (hostId, method, params) => callConversationHost(appHostServer, {hostId, threadId:params.threadId}, 'push-history', method, params, undefined, 10_000),
     });
     // Local anonymous features remain usable. Public remote access is enabled
     // only with explicit operator opt-in; all remote sockets require a session.
@@ -536,13 +588,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       appHostServer,
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
-      getPluginHealth: () => imPlugins ? {'opencraft.im':imPlugins.states()} : {},
+      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
       getStorageOutcomes: () => [
         ...(capabilityBindings ? [{name:'session-capabilities',status:capabilityBindings.outcome.status,appliedVersion:capabilityBindings.outcome.appliedVersion,movedAside:capabilityBindings.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-posts',status:imPlugins.postOutcome.status,appliedVersion:imPlugins.postOutcome.appliedVersion,movedAside:imPlugins.postOutcome.movedAsidePaths.length>0}] : []),
         ...(agent.storageOutcomes ?? []),
         ...(connectorService?.outcomes() ?? []),
+        ...(turnPush ? [{name:'web-push',status:turnPush.store.outcome.status,appliedVersion:turnPush.store.outcome.appliedVersion,movedAside:turnPush.store.outcome.movedAsidePaths.length>0}] : []),
         {name:"mcp-apps",status:mcpApps.outcome.status,appliedVersion:mcpApps.outcome.appliedVersion,movedAside:mcpApps.outcome.movedAsidePaths.length>0},
         ...(agentIdentity ? [{ name: "thread-identity", hostId: "opencraft-server", status: agentIdentity.store.outcome.status,
           appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
@@ -566,7 +619,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       accessService: instanceAccess ?? null,
       actorService: actorAccess,
       actorCollaborationService: actorCollaborationApi,
+      turnPushService: turnPush,
       authService: humanAuth ?? null,
+      accountService: accountApplication ?? null,
       hubService: hubController,
       remoteBrowserService: remoteBrowser = new RemoteBrowserService({ root, dataDirectory,
         allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1' }),
@@ -601,7 +656,7 @@ export async function runHeadlessCli({ parseArguments = parseHeadlessArguments, 
     if (args.help) {
       process.stdout.write('Optional IM server plugins: --im-config ABSOLUTE_PRIVATE_JSON (also OPENCRAFT_IM_CONFIG_FILE); requires verified human sender bindings.\n');
       process.stdout.write('Optional instance-owned membership: --access-control (memberships.sqlite under --data-dir); administer with access-admin. --access-member-provider PROVIDER admits verified identities from that provider as ordinary members; explicit revocations and admin roles remain authoritative. --relay-connect-file ABSOLUTE_PRIVATE_JSON enables an outbound relay and requires instance membership.\n');
-      process.stdout.write('Optional human login (bundled opencraft.account plugin for local accounts): --human-auth-config ABSOLUTE_PRIVATE_JSON (local accounts and OIDC); provision with human-account. Add --access-control to require instance membership.\n');
+      process.stdout.write('Optional human login (bundled opencraft.account plugin for local accounts): --human-auth-config ABSOLUTE_PRIVATE_JSON (local accounts and OIDC); initialize new instances at /setup with a private setupTokenFile, or recover with human-account. setupTokenFile enables instance membership; otherwise add --access-control explicitly.\n');
       process.stdout.write('Optional same-machine managed Web workspace: --local-access-file ABSOLUTE_PRIVATE_FILE (also OPENCRAFT_LOCAL_ACCESS_FILE); the same private key file must be configured at the outer managed Web entry.\n');
       for (const line of help) process.stdout.write(line + '\n');
       process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--machine-name NAME] [--engines dsh,pi|pi|dsh] [--default-engine dsh|pi] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");

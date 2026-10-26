@@ -5,6 +5,7 @@ import { createServer } from "vite";
 // probe never sends a command to a user Host or invokes a model.
 const source = `
 import React,{useState} from 'react';
+import {AsyncNoticesProvider} from '/apps/workbench-web/src/components/async-notices.tsx';
 import {createRoot} from 'react-dom/client';
 import {OpenCraftComposer} from '@opencraft/composer-editor';
 import {createComposerController} from '@opencraft/composer-core';
@@ -22,7 +23,7 @@ const calls=[];
 function App(){const[active,setActive]=useState(true);const action=useDefaultFollowUpAction();
 window.fixture={setActive,calls,flush:()=>preferences.flush(),draft:()=>controller.getSnapshot().draft,setTheme:mode=>Object.entries(buildOpenCraftThemeCssProperties(mode,opencraftCanvasThemePalette[mode])).forEach(([k,v])=>document.documentElement.style.setProperty(k,v))};
 return <main style={{padding:20,maxWidth:750}}><ChatSettings/><OpenCraftComposer controller={controller} defaultFollowUpAction={action} isStreaming={active} selectionCatalog={{models:[{id:'fixture-model',value:'fixture-model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={(intent,context)=>{calls.push({text:intent.plainText,action:context.followUpAction});return true}} onCancel={()=>{}}/></main>}
-createRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}><WorkbenchIntlProvider controller={locale} target={document.documentElement}><App/></WorkbenchIntlProvider></UiPreferencesProvider>);
+createRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}><WorkbenchIntlProvider controller={locale} target={document.documentElement}><AsyncNoticesProvider><App/></AsyncNoticesProvider></WorkbenchIntlProvider></UiPreferencesProvider>);
 `;
 
 const server = await createServer({
@@ -53,7 +54,7 @@ try {
     const page = await context.newPage();
     page.on("pageerror", (error: Error) => errors.push(error.message));
     await page.goto(origin);
-    const toggle = page.getByRole("switch");
+    const toggle = page.getByRole("switch", { name: "Follow up immediately while responding", exact: true });
     const editor = page.locator(".opencraft-composer-editor");
     const action = () => page.locator("[data-composer-primary-action]").getAttribute("data-composer-primary-action");
     await toggle.waitFor();
@@ -67,11 +68,11 @@ try {
       getSelection()!.removeAllRanges(); getSelection()!.addRange(range);
     });
     const second = await context.newPage();
-    await second.goto(origin); await second.getByRole("switch").waitFor();
+    await second.goto(origin); await second.getByRole("switch", { name: "Follow up immediately while responding", exact: true }).waitFor();
     // A second window mutates the actual IndexedDB/BroadcastChannel authority.
-    await second.getByRole("switch").click();
+    await second.getByRole("switch", { name: "Follow up immediately while responding", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-composer-primary-action]')?.getAttribute('data-composer-primary-action') === 'steer');
-    await second.getByRole("switch").click();
+    await second.getByRole("switch", { name: "Follow up immediately while responding", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-composer-primary-action]')?.getAttribute('data-composer-primary-action') === 'queue');
     assert.equal(await editor.innerText(), "preserved draft");
     assert.equal(await page.evaluate(() => (window as any).originalEditor === document.querySelector(".opencraft-composer-editor")), true);

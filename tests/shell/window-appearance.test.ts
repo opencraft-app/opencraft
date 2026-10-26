@@ -7,16 +7,20 @@ import { resolveWorkbenchPresentation } from "../../apps/workbench-web/src/workb
 import { readWindowPresentation, resolveWindowPresentation } from "../../apps/workbench-web/src/runtime/window-presentation";
 import { projectWindowAppearance, resolveWindowAppearanceIntent } from "../../apps/workbench-web/src/runtime/window-appearance";
 
-function fixture(values: Record<string, string> = {}, dark = false) {
+function fixture(values: Record<string, string> = {}, dark = false, overlay = true) {
   const properties = new Map<string, string>();
   const style = { colorScheme: "", backgroundColor: "", setProperty: (key: string, value: string) => properties.set(key, value) };
-  let meta = "initial";
+  let meta = "initial", scheme = "initial";
   const view: any = { navigator: {}, matchMedia: (query: string) => ({ matches: query.includes("prefers-color-scheme") && dark }),
     localStorage: { getItem: (key: string) => values[key] ?? null, setItem: () => { throw Error("bootstrap must not write preferences"); } } };
   view.top = view;
   const document: any = { defaultView: view, documentElement: { style, dataset: {}, classList: { add() {} } },
-    querySelector: () => ({ setAttribute: (_key: string, value: string) => { meta = value; } }) };
-  return { document, view, properties, meta: () => meta };
+    querySelector: (selector: string) => selector.includes("apple-mobile-web-app-status-bar-style")
+      ? overlay ? {} : null
+      : selector.includes('name="color-scheme"')
+        ? ({ setAttribute: (_key: string, value: string) => { scheme = value; } })
+        : ({ setAttribute: (_key: string, value: string) => { meta = value; } }) };
+  return { document, view, properties, meta: () => meta, scheme: () => scheme };
 }
 function bootstrap(policy = {}) {
   const plugin = appearanceBootstrap(resolveWorkbenchPresentation(policy));
@@ -43,6 +47,7 @@ test("generated head bootstrap paints every built-in before the application load
     vm.runInNewContext(source, { document: f.document });
     assert.equal(f.document.documentElement.style.backgroundColor, entry.palettes[mode].surface, `${entry.descriptor.id}/${mode}`);
     assert.equal(f.meta(), entry.palettes[mode].surface);
+    assert.equal(f.scheme(), mode);
     assert.equal(f.document.documentElement.dataset.windowAppearancePhase, "bootstrap");
   }
 });
@@ -86,6 +91,20 @@ test("host-owned system bars still permit painting our document", () => {
   assert.equal(f.meta(), "initial", "no invented native appearance capability");
 });
 
+test("overlay requests and system color extension are mutually exclusive document policies", () => {
+  const f = fixture(); f.view.navigator.standalone = true;
+  const intent = resolveWindowAppearanceIntent("light", "light", builtinAppearanceThemes[0]!.palettes.light);
+  const overlay = projectWindowAppearance(f.document, intent, readWindowPresentation(f.view), "resolved");
+  assert.equal(overlay.edgeStrategy, "legacy-overlay-requested");
+  assert.equal(f.document.documentElement.dataset.windowEdgeStrategy, overlay.edgeStrategy);
+  assert.equal(overlay.systemAppearance, "unobserved");
+  const ordinary = projectWindowAppearance(f.document, intent, resolveWindowPresentation({}), "resolved");
+  assert.equal(ordinary.edgeStrategy, "system-color-extension", "the iOS-only request does not turn an ordinary tab into an overlay");
+  const fallback = fixture({}, false, false); fallback.view.navigator.standalone = true;
+  assert.equal(projectWindowAppearance(fallback.document, intent, readWindowPresentation(fallback.view), "resolved").edgeStrategy, "system-color-extension");
+  assert.equal(projectWindowAppearance(f.document, intent, resolveWindowPresentation({ host: "native-container", standalone: true }), "resolved").edgeStrategy, "host-owned");
+});
+
 
 test("an unreadable mode key does not discard a readable saved palette", () => {
   const f = fixture();
@@ -103,4 +122,17 @@ test("Vite configuration loads in plain Node without a TypeScript loader", async
     "import {loadConfigFromFile} from 'vite'; const config=await loadConfigFromFile({command:'serve',mode:'development'},'apps/workbench-web/vite.config.ts'); if(!config)throw Error('configuration missing');"],
     { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" }, timeout: 60_000 });
   assert.equal(result.status, 0, result.stderr);
+});
+
+
+test("document appearance updates color and scheme together without replacing status-bar policy", () => {
+  const f = fixture(); f.view.navigator.standalone = true;
+  for (const mode of ["light", "dark", "light"] as const) {
+    const intent = resolveWindowAppearanceIntent("system", mode, builtinAppearanceThemes[0]!.palettes[mode]);
+    projectWindowAppearance(f.document, intent, readWindowPresentation(f.view), "resolved");
+    assert.equal(f.meta(), intent.edgeBackgroundColor);
+    assert.equal(f.scheme(), mode);
+    assert.equal(f.document.documentElement.style.colorScheme, mode);
+    assert.equal(f.document.documentElement.style.backgroundColor, intent.edgeBackgroundColor);
+  }
 });

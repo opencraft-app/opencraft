@@ -8,7 +8,7 @@ import { HostRuntimeRegistry, createConversationBindingStore, createConversation
 import { createWorkbenchNavigationTransaction } from "../../apps/workbench-web/src/runtime/workbench-navigation-transaction";
 
 Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "http://localhost/" }, history: { state: null }, localStorage: { setItem() {}, removeItem() {} } } });
-const { createWebWorkbenchCommands } = await import("../../apps/workbench-web/src/runtime/appserver-runtime-context");
+const { createWebWorkbenchCommands } = await import("../../apps/workbench-web/src/runtime/workbench-application-services");
 const identity = { machineId: "12345678-1234-4123-8123-123456789abc", name: "machine", platform: "linux" as const };
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => resolve = done); return { promise, resolve }; }
 async function fixture(targetProject = false, targetDirectory = targetProject, presentation = FULL_WORKBENCH_PRESENTATION) {
@@ -29,7 +29,7 @@ async function fixture(targetProject = false, targetDirectory = targetProject, p
   const commands = createWebWorkbenchCommands({ presentation, registry, coordinator, activation, scopes, views, navigation, queryClient: new QueryClient(), hostProfiles: { getSnapshot: () => ({ revision: 0, profiles }), subscribe: () => () => {}, put: async () => {}, remove: async () => false, close() {} }, createHostRegistration: () => { throw new Error("unexpected registration"); }, connectionProviders: {} } as any);
   const composer = () => views.get(coordinator.getSnapshot().viewId!)!.composer;
   composer().dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "keep my draft" }] }] } });
-  return { get projectCreates() { return projectCreates; }, commands, scopes, coordinator, composer, holds, async close() { navigation.dispose(); activation.dispose(); views.dispose(); leases.dispose(); scopes.dispose(); coordinator.dispose(); bindings.dispose(); await registry.dispose(); } };
+  return { profiles, calls, get projectCreates() { return projectCreates; }, commands, scopes, coordinator, composer, holds, async close() { navigation.dispose(); activation.dispose(); views.dispose(); leases.dispose(); scopes.dispose(); coordinator.dispose(); bindings.dispose(); await registry.dispose(); } };
 }
 
 test("switching Agent preserves text/cwd/project and applies the requested model", async () => {
@@ -199,4 +199,32 @@ test("embedded boundary rejects machine/configuration actions before effects and
     assert.equal(composerDocumentToPlainText(f.composer().getSnapshot().draft.document), "keep my draft");
     assert.equal(f.projectCreates, 0);
   } finally { await f.close(); }
+});
+
+
+test("New chat from a hidden Host falls back without carrying its remote project", async () => {
+  const f = await fixture();
+  try {
+    Object.assign(f.profiles[0]!, { hideFromNewChat: true });
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.hostId, "local", "changing visibility does not move the existing draft");
+    f.commands.navigateToHome({ execution: f.scopes.getActiveDraft()!.target.execution });
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.hostId, "fixture-secondary");
+    assert.deepEqual(f.scopes.getActiveDraft()!.target.execution.workspace, { cwd: "/default", runtimeWorkspaceRoots: ["/default"] });
+  } finally { await f.close(); }
+});
+
+test("a hidden Host is rejected before connection, including visibility changes during a held selection", async () => {
+  const f = await fixture(); const held = deferred();
+  try {
+    Object.assign(f.profiles[1]!, { hideFromNewChat: true });
+    await assert.rejects(f.commands.selectHost("fixture-secondary"));
+    assert.equal(f.calls.has("fixture-secondary"), false);
+    Object.assign(f.profiles[1]!, { hideFromNewChat: false });
+    f.holds.set("fixture-secondary", held.promise);
+    const pending = f.commands.selectHost("fixture-secondary");
+    Object.assign(f.profiles[1]!, { hideFromNewChat: true });
+    held.resolve(); await pending;
+    assert.equal(f.scopes.getActiveDraft()!.target.execution.hostId, "local");
+    assert.equal(composerDocumentToPlainText(f.composer().getSnapshot().draft.document), "keep my draft");
+  } finally { held.resolve(); await f.close(); }
 });

@@ -13,7 +13,7 @@ export function BrowserLocalMenu({ controller }: { readonly controller: BrowserL
   useLayoutEffect(() => { controller.setLabels({ copy, copyLink }); }, [controller, copy, copyLink]);
   useLayoutEffect(() => () => controller.retire(), [controller]);
   if (!menu) return null;
-  return <DropdownMenu.Root key={menu.id} open modal={false}
+  return <DropdownMenu.Root key={menu.id} open
     onOpenChange={open => { if (!open) controller.dismiss(menu.id); }}>
     <DropdownMenu.Trigger className="browser-local-menu-anchor" tabIndex={-1} aria-label={copy}
       style={{ left: menu.x, top: menu.y }} />

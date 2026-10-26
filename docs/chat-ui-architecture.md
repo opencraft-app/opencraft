@@ -161,3 +161,54 @@
 - <a id="reading-expanded-file-diffs-in-a-retained-view"></a>[Reading expanded file diffs in a retained View](architecture/chat-ui/files-and-resources.md#reading-expanded-file-diffs-in-a-retained-view)
 - <a id="code-and-table-reading-positions-in-a-retained-view"></a>[Code and table reading positions in a retained View](architecture/chat-ui/files-and-resources.md#code-and-table-reading-positions-in-a-retained-view)
 - <a id="plan-preview-natural-height"></a>[Plan preview natural height](architecture/chat-ui/files-and-resources.md#plan-preview-natural-height)
+
+### Recovered native Turn activity
+
+Native history may retain `inProgress` for a Turn whose process ended. Shared
+Chat Runtime projects that historical Turn as interrupted only after an
+authoritative history proves a later Turn exists. Thread status arrives on an
+independent stream: even an authoritative `idle` / `notLoaded` notification can
+predate a new Turn start, so it cannot end the latest Turn. A cached status or a
+lost connection cannot interrupt remote work. The latest genuinely active Turn remains active. This projection
+removes automatic-retry indicators from the recovered historical Turn without
+changing native history, sending an interrupt, or claiming this client stopped it.
+Composer and all timeline consumers use this same projection so an old status
+cannot leave the Stop action or working indicator active after later work ends.
+
+### Read before execution
+
+Opening or reconnecting a persisted conversation reads its native history; it
+must not Resume, register execution tools, or claim interaction ownership.
+`ThreadResumeCoordinatorService.read` owns the read baseline and older pages.
+`resumeState` remains `needs_resume` until an explicit send or continuation
+resumes execution. History authority and execution readiness are independent.
+The shared Workbench command boundary waits for the read baseline, then Resume
+and capability registration before admitting an execution write. Temporary fork
+streams retain their existing adopted ownership.
+
+Codex, DSH and Pi Hosts advertise `opencraft/read-history` v1 for a metadata read with an
+`initialTurnsPage` of ten full native Turns. The disposable transcript cache
+preserves the native full-items wire contract, including cold output bodies;
+no UI is told that reading grants execution. See the
+[Stage 0 design](../design/thread-orchestration-spec.md) and
+[cache lifecycle](sqlite-lifecycle.md#transcript-read-cache).
+
+Older native paginators that ignore `itemsView=full` use the existing Item-page
+reader to hydrate their Turns without Resume. A passive history subscription can
+observe already-running Turns; it cannot answer platform tools or retain an
+execution lease. Sending or continuing still acquires execution ownership first.
+
+Read buffers notifications while the canonical baseline is loading. Native snapshots
+and additive deltas have no common sequence. If a delta overlaps a read, the
+coordinator supersedes those notifications with another read and obtains a quiet
+cut before releasing the buffer; the existing request timeout bounds continuous
+churn. It never appends an ambiguous delta to a snapshot that may include it.
+Oversized full windows and older pages fall back to headers plus adaptive Item
+pages, retaining their native cursor and the lossless full-body result.
+
+Message-window providers without `opencraft/read-history` v1 retain their
+existing Resume bootstrap, early REST preview and history retry semantics.
+Metadata-only `thread/read` does not imply that this provider can bootstrap a
+window without Resume. Explicit read-history support opts that provider into
+read-only opening; Codex paging remains read-only without requiring this legacy
+message-window handshake.

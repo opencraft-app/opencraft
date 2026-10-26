@@ -20,6 +20,7 @@ import type { CodexAccountView, CodexDeviceLoginView } from "@opencraft/appserve
 
 import type { CodexAccountsService } from "./service.js";
 import { maskAccountDisplayIdentity } from "./identity.js";
+import { ResetCredits } from "./reset-credits.js";
 
 function accountStatusLabel(status: CodexAccountView["status"]): string {
   switch (status) {
@@ -99,7 +100,7 @@ function AccountActionsMenu({ account, index, total, pending, onMove, onRefresh,
   readonly onToggle: () => void;
   readonly onRemove: () => void;
 }) {
-  return <DropdownMenu.Root modal={false}>
+  return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <SettingsIconButton className="engine-account__menu-trigger" label={`${maskAccountDisplayIdentity(account.label)} 的操作`} disabled={pending}>
         <MoreHorizontal size={16} />
@@ -129,12 +130,13 @@ function AccountActionsMenu({ account, index, total, pending, onMove, onRefresh,
   </DropdownMenu.Root>;
 }
 
-function AccountRow({ account, index, total, service, credentialLocation }: {
+function AccountRow({ account, index, total, service, credentialLocation, reportError }: {
   readonly account: CodexAccountView;
   readonly index: number;
   readonly total: number;
   readonly service: CodexAccountsService;
   readonly credentialLocation: string;
+  readonly reportError?: ExtensionSettingsViewProps["reportError"];
 }) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -216,6 +218,7 @@ function AccountRow({ account, index, total, service, credentialLocation }: {
           <div><dt>最近使用环境</dt><dd>{account.lastUsedHostId ?? "—"}</dd></div>
           {account.heldUntil === null ? null : <div><dt>限制解除</dt><dd>{formatDate(account.heldUntil)}</dd></div>}
         </dl>
+        {account.resetCreditActions === true ? <ResetCredits account={account} service={service} reportError={reportError} /> : null}
       </div> : null}
     </article>
     <AlertDialog.Root open={confirming} onOpenChange={setConfirming}>
@@ -242,7 +245,7 @@ function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport, all
   readonly onImport: () => void;
   readonly allowImport: boolean;
 }) {
-  return <DropdownMenu.Root modal={false}>
+  return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <SettingsButton disabled={disabled}>
         <Plus size={14} aria-hidden="true" />添加账户<ChevronDown size={14} aria-hidden="true" />
@@ -362,7 +365,7 @@ export function createCodexAccountsView(service: CodexAccountsService, options: 
               <div><strong>还没有 Codex 账户</strong><p>添加 ChatGPT 账户后，Codex 会按可用额度自动选择并保持会话绑定。</p></div>
               <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} allowImport={allowImport} />
             </div> : null}
-            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} service={service} credentialLocation={credentialLocation} />)}
+            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} service={service} credentialLocation={credentialLocation} reportError={_props.reportError} />)}
           </SettingsGroup>
         </SettingsSection>
       </div>

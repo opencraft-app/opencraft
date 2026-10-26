@@ -19,7 +19,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `electron-linux-x64-rpm` | Electron host + renderer | TencentOS/RHEL/Fedora RPM | Linux |
 | `electron-linux-x64-deb` | Electron host + renderer | Debian/Ubuntu amd64 package | Linux |
 | `headless-linux-amd64-tar` | Node Local Agent Host + Vite WebUI + bundled headless Electron browser | Self-contained private server `.tar.gz` | Native Linux amd64 |
-| `expo-web` | Public RN Workbench + Metro Web | Expo static export | Linux/macOS/Windows |
+| `expo-web` | Packaged Web Workbench + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
 | `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Configured public application ID, signed APK and filing text | Linux with JDK, Android SDK and release key |
@@ -252,13 +252,13 @@ npm run package:electron:mac:arm64:preview
 
 The Android internal target syncs an ignored native project, runs Gradle's
 `assembleRelease`, verifies its signature, and copies the standalone APK plus a
-SHA-256 file to `apps/workbench-expo/release/`. Expo's generated release
+SHA-256 file to `apps/mobile/release/`. Expo's generated release
 configuration currently signs with its development keystore. This is suitable
 only for internal installation; it is not a Play Store signing or publication
 contract. `.github/workflows/android-internal-apk.yml` exposes a manual build
 and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run downstream. The local
-requirements and install command are in `apps/workbench-expo/README.md`.
+requirements and install command are in `apps/mobile/README.md`.
 
 The public Android release target uses the public Expo configuration (the legacy
 development identifier remains `dev.opencraft.workbench`). It requires a
@@ -269,7 +269,7 @@ edition selection and original artifact names belong to the explicit downstream
 `products/<product>` build commands; public APK/IPA commands do not select that product.
 `OPENCRAFT_NATIVE_ARTIFACT_NAME` is an optional trusted filename prefix, defaulting
 to `OpenCraft`, for generic release APK and IPA output. The certificate MD5 and
-APK file MD5 are different values. The [Expo mobile route](../apps/workbench-expo/README.md#手机端路线)
+APK file MD5 are different values. The [Expo mobile route](../apps/mobile/README.md#手机端路线)
 also covers the temporary Expo Go preview, iOS test IPA and single-file
 intranet download flow. An iOS IPA needs macOS, Xcode, CocoaPods and Apple
 signing; `expo-ios-bundle` does not produce an IPA.
@@ -691,18 +691,18 @@ This neither deploys the downstream product nor resolves the artwork's distribut
 
 ### Expo product selection
 
-`OPENCRAFT_EXPO_WORKBENCH=web` explicitly selects the experimental packaged full
+The public mobile entry always selects the packaged full
 Web Workbench container for public Expo commands. The runner builds its local
-document before Metro. This does not change the RN default, select a private
-product or prove native-device parity. See
+document before Metro. This is the only public mobile entry; it neither selects a private
+product nor proves native-device parity. See
 [container ownership and acceptance](mobile-workbench-container.md).
 
-Default Expo Web/iOS bundle commands build the public RN Workbench with its
+Default Expo Web/iOS bundle commands build the packaged Web Workbench with its
 configured direct Host. An account-gated downstream Router is selected through
 `products/<product>/run-expo.cjs`; product-owned APK/IPA and agents-next aliases explicitly delegate
 to it so Metro, Gradle and Xcode inherit the same local product entry/config.
-Only the downstream iOS product requires frontend-generated Bot HTML. Both products
-retain locally packaged generic math/Mermaid renderers. This selection does not
+All downstream product platform entries use its frontend-generated Bot HTML;
+math/Mermaid rendering is part of that shared packaged document. This selection does not
 claim signed builds, physical plugin extraction or device verification.
 
 
@@ -733,3 +733,11 @@ build/release runtimes and actual copied delivery-asset verification.
 ### Linux remote-browser payload
 
 Both `package-headless-linux.mjs` and managed headless `package-web-server.mjs` ship `runtime/browser` using `package-browser-runtime.mjs`, including Electron licenses. Build on native Linux using the workspace-pinned Electron distribution. The independent browser worker does not start the desktop application. See [managed headless](managed-headless.md#内置远程网页渲染) for sandbox, dependencies and profile ownership. `npm run smoke:remote-browser` exercises the real typed Dynamic Tool Host, Page/Presentation and H.264 Canvas on Linux; it uses a synthetic website and does not prove macOS behavior or physical-device input.
+
+
+Optional Session history refresh, older-page projection and tail-drain handling
+are demand-loaded from `packages/appserver-session/src/derived-history.ts`.
+The startup-resource policy rejects this module in the required bootstrap graph;
+initial Thread baseline and cancellation admission remain in the Session core.
+Both ordinary hidden-map builds and release builds retain their existing asset
+naming, minification, startup byte limits and separate browser compatibility checks.

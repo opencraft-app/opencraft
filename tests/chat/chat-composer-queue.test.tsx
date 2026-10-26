@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { registerHooks } from "node:module";
 
 import React from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
@@ -14,7 +15,16 @@ function renderToStaticMarkup(children: React.ReactNode) {
 }
 
 import { ComposerQueueTray } from "../../packages/composer-editor/src/queue-tray";
-import { OpenCraftComposer } from "@opencraft/composer-editor";
+// This Node suite renders markup; browser styles are exercised by smoke tests.
+const styles = registerHooks({
+  load(url, context, nextLoad) {
+    return /\.(?:css|scss)$/u.test(new URL(url).pathname)
+      ? { format: "module", source: "export default {};", shortCircuit: true }
+      : nextLoad(url, context);
+  },
+});
+const { OpenCraftComposer } = await import("@opencraft/composer-editor");
+styles.deregister();
 import { createConversationKey } from "@opencraft/chat-core";
 import { createComposerController } from "@opencraft/composer-core";
 import { queuedSubmissionPresentation } from "../../apps/workbench-web/src/queued-submission-presentation";

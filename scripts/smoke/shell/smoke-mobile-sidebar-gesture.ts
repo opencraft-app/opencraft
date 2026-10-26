@@ -22,8 +22,21 @@ const arbitrationMarkdown = [
   "| " + Array.from({length:8},()=>"---").join(" | ") + " |",
   ...Array.from({length:4},(_,row)=>"| "+Array.from({length:8},(_,i)=>"Cell_"+row+"_"+i+"_readable_value").join(" | ")+" |"),
 ].join("\n");
+const edgeProbe = process.env.OPENCRAFT_GESTURE_EDGE_ONLY === "1";
 const source = `
 import{bindInteractionDensity}from'/apps/workbench-web/src/runtime/interaction-density';
+import{createClientRuntime}from'/apps/workbench-web/src/runtime/client-runtime';
+import{createEdgeGestureBridge}from'/apps/workbench-web/src/runtime/edge-gesture-bridge';
+let inputRuntime=createClientRuntime(document);inputRuntime.start();
+let releaseInjectedBridge=()=>{};
+if(new URLSearchParams(location.search).has('bridged')){
+  const bridge=createEdgeGestureBridge();
+  const forward=event=>{event.preventDefault();bridge.handoff(event,event.touches[0]?.clientX<innerWidth/2?'left':'right')};
+  window.addEventListener('touchstart',forward,{capture:true,passive:false});
+  releaseInjectedBridge=()=>{bridge.dispose();window.removeEventListener('touchstart',forward,true)};
+}
+window.retireInputRuntime=()=>{releaseInjectedBridge();inputRuntime.dispose()};
+window.rebindInputRuntime=()=>{inputRuntime=createClientRuntime(document);inputRuntime.start()};
 import React,{useState,useEffect,useSyncExternalStore} from 'react';
 import {CommandBlock} from '/apps/workbench-web/src/components/conversation-renderers/activity/command-and-review-renderers.tsx';
 import {WebChatDocument} from '@opencraft/chat-render-web';
@@ -59,7 +72,7 @@ const contributions={subscribe:()=>()=>{},getSnapshot:()=>contributionSnapshot};
 function Context({showNewChat=true}){const[selected,setSelected]=useState('thread-0');window.selectFixtureThread=setSelected;useEffect(()=>{mounts++},[]);return <Sidebar showStart={false} showFooter={false} showNewChat={showNewChat} threads={threads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} onNewTask={()=>actions.push('New chat')} onOpenSettings={()=>{}} onSelectThread={(_host,id)=>actions.push(id)}/>}
 function App(){const preferences=useUiPreferencesRuntime();useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);const route=useSyncExternalStore(navigationRouter.subscribe,navigationRouter.getSnapshot).applicationRoute;const[open,setOpen]=useState(false),[modal,setModal]=useState(false),[showNewChat,setShowNewChat]=useState(true),[conversationHeader,setConversationHeader]=useState(false);window.fixture={setDensity:value=>preferences.set('interface.touchFriendly',value),sidebarOpen:()=>open,setOpen,setModal,setShowNewChat,setConversationHeader,setThemePreference,returnToChat:()=>navigationRouter.openChat(),route:()=>navigationRouter.getSnapshot().applicationRoute,mounts:()=>mounts,actions};
 const navigation={layout:'unified',account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
-return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
+return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell sidebarTransientEnabled={${process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === "1" ? "false" : "true"}} navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader conversationHeader={conversationHeader} navigationBrand={stationaryProbe ? brand : undefined} title='Workspace' project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={stationaryProbe} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={()=> stationaryProbe ? <AppShellNavigationControls brand={brand} hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={()=>{}} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/> : <div style={{height:'100%',display:'flex',alignItems:'center',padding:12}}>Conversations</div>}
 leftPanel={route.kind==='settings'?<SettingsNavigation section={route.slug} presentation='sidebar' extensionContributions={contributions} profiles={[]} machines={[]} activeHostId='' onBack={()=>navigationRouter.openChat()} onSectionChange={slug=>{actions.push('Settings:'+slug);navigationRouter.openSettings(slug);}}/>:<Context showNewChat={showNewChat}/>}>
@@ -90,19 +103,47 @@ const evidence: any[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
-  for (const reducedMotion of (process.env.OPENCRAFT_GESTURE_MOTION ? [process.env.OPENCRAFT_GESTURE_MOTION] : ["no-preference", "reduce"])) for (const theme of ["light", "dark"]) for (const shadow of (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? [false,true] : [false])) {
+  for (const reducedMotion of (process.env.OPENCRAFT_GESTURE_MOTION ? [process.env.OPENCRAFT_GESTURE_MOTION] : ["no-preference", "reduce"])) for (const theme of ["light", "dark"]) for (const shadow of (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? [false,true] : [false])) for (const inputHost of (edgeProbe ? ["web", "pwa", "bridge"] : ["web"])) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion });
+    await context.addInitScript(host => { if(host === "pwa") Object.defineProperty(navigator,"standalone",{value:true}); }, inputHost);
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const errors: string[] = []; page.on("pageerror", (e: Error) => { errors.push(e.message); console.error(e.stack); });
     page.on("requestfailed", request => console.error("fixture request failed", request.url(), request.failure()));
     page.on("console", message => { if (message.type() === "error") console.error("fixture console", message.text()); });
     await page.addInitScript("window.__name=value=>value");
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}${shadow?"?shadow=1":""}`, {timeout:60000});
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}${shadow?"?shadow=1":inputHost==="bridge"?"?bridged=1":""}`, {timeout:60000});
     await page.waitForFunction(() => !!(window as any).fixture, null, { timeout: 30000 });
     await page.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
     // Simulate notch/Home Indicator CSS env projections, which Chromium's mobile emulation leaves at zero.
-    await page.evaluate(() => { document.documentElement.style.setProperty('--shell-mobile-safe-top','47px'); document.documentElement.style.setProperty('--shell-mobile-safe-bottom','34px'); });
+    await page.evaluate(() => { document.documentElement.style.setProperty('--safe-layout-inset-top','47px'); document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'); });
     await page.waitForTimeout(250);
+    if (process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === '1') {
+      const input = page.getByRole('textbox', { name: 'Draft', exact: true });
+      await input.fill('Safe layout independent of sidebar');
+      await input.evaluate(e => { (window as any).safeDraft = e; (e as HTMLInputElement).setSelectionRange(2, 8); });
+      for (const width of [390, 1200]) {
+        await page.setViewportSize({width, height:844});
+        const geometry = await page.evaluate(() => {
+          const root = document.querySelector<HTMLElement>('.app-shell-root')!;
+          const row = root.querySelector<HTMLElement>('.app-shell-row')!;
+          const header = root.querySelector<HTMLElement>('.app-shell-header')!;
+          return {mobile:root.classList.contains('has-mobile-sidebar-gestures'), edges:row.dataset.safeLayout,
+            rootTop:root.getBoundingClientRect().top,rowTop:row.getBoundingClientRect().top,
+            padding:getComputedStyle(row).paddingTop,bottomPadding:getComputedStyle(row).paddingBottom,headerTop:header.getBoundingClientRect().top};
+        });
+        assert.equal(geometry.mobile,false); assert.equal(geometry.edges,'top bottom');
+        assert.equal(geometry.rowTop,geometry.rootTop); assert.equal(geometry.padding,'47px');
+        assert.equal(geometry.headerTop,47);assert.equal(geometry.bottomPadding,'34px','one Shell content bottom inset independent of sidebar');
+        evidence.push({theme,reducedMotion,width,geometry});
+      }
+      await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-top','0px'));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingTop==='0px');
+      assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingTop),'0px');
+      assert.equal(await input.evaluate(e=>e===(window as any).safeDraft),true);
+      assert.equal(await input.inputValue(),'Safe layout independent of sidebar');
+      assert.deepEqual(await input.evaluate(e=>[(e as HTMLInputElement).selectionStart,(e as HTMLInputElement).selectionEnd]),[2,8]);
+      assert.deepEqual(errors,[]);await context.close();continue;
+    }
     if (process.env.OPENCRAFT_GESTURE_COMPOSITING_ONLY !== '1') await page.evaluate(()=>{(window as any).touchReceipts=[];for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,(e:Event)=>{const t=e as TouchEvent;const list=document.querySelector<HTMLElement>('.app-shell-floating-left-panel .shell-sidebar__scroll');if(list&&list.scrollTop>0)(window as any).lastSidebarScroll=list.scrollTop;(window as any).touchReceipts.push({type,cancelable:t.cancelable,prevented:t.defaultPrevented,target:(t.target as Element)?.className,x:t.touches[0]?.clientX,y:t.touches[0]?.clientY,open:document.querySelector('.app-shell-floating-left-panel')?.getBoundingClientRect().x,selection:window.getSelection()?.toString()});},false);});
     const cdp = await context.newCDPSession(page);
     const touch = async (type: string, x = 0, y = 250, second = false, timestamp?: number) => cdp.send("Input.dispatchTouchEvent", { type, ...(timestamp === undefined ? {} : { timestamp }), touchPoints: type === "touchEnd" || type === "touchCancel" ? [] : [{ x, y, id: 1 }, ...(second ? [{ x: x + 20, y: y + 20, id: 2 }] : [])] });
@@ -128,6 +169,58 @@ try {
       }
     };
     await closed();
+    if (edgeProbe) {
+      const row = page.locator('.app-shell-row');
+      const position = () => row.evaluate(e => e.getBoundingClientRect().x);
+      const wait = () => page.waitForTimeout(reducedMotion === 'reduce' ? 70 : 650);
+      const handed = inputHost !== 'web';
+      const hold = async (from: number, to: number, y = 250) => {
+        await touch('touchStart',from,y);
+        for(let i=1;i<=8;i++){await touch('touchMove',from+(to-from)*i/8,y);await page.waitForTimeout(20);}
+        return position();
+      };
+      const draft=page.getByRole('textbox',{name:'Draft',exact:true});
+      const draftNode=await draft.elementHandle();await draft.fill('Keep edge bridge draft');
+      const heldOpen=await hold(4,230);
+      assert.equal(heldOpen>100,handed,'held edge input must reach the existing drawer');
+      await touch('touchEnd');await wait();
+      if(handed)await opened();else{
+        await closed();await page.locator('.app-shell-header [data-app-shell-sidebar-trigger]').click();
+        await page.waitForFunction(()=>document.querySelector('.app-shell-row')!.getBoundingClientRect().x>200);await wait();
+      }
+      const openX=await position();const heldClose=await hold(386,80);
+      assert(openX>200,'close starts with an actually visible drawer');
+      assert.equal(heldClose<openX-100,handed,'opposite edge must drive existing close motion');
+      await touch('touchEnd');await wait();
+      // Unclaimed Web contacts retain native/DOM end handling, including clicks.
+      if(handed)await closed();else{await page.evaluate(()=>(window as any).fixture.setOpen(false));await wait();}
+      if(handed){
+        assert(await hold(4,140)>50);await touch('touchCancel');await wait();await closed();
+        assert(await hold(4,170)>50);await touch('touchMove',4,250);await touch('touchEnd');await wait();await closed();
+        // The full shared24px gutter has no native/application dead band.
+        await drag(22,270);await opened();await drag(386,80);await closed();
+        const input=await draft.boundingBox();assert(input);
+        await drag(input.x+4,240,input.y+input.height/2);await closed();
+        await page.evaluate(()=>(window as any).fixture.setModal(true));await page.waitForTimeout(120);
+        await drag(4,230);assert(Math.abs(await position())<1,'foreground modal retains input');
+        await page.keyboard.press('Escape');await page.waitForTimeout(120);
+        await page.setViewportSize({width:430,height:844});await wait();
+        await drag(4,260);await opened();await drag(426,70);await closed();
+        await page.setViewportSize({width:390,height:844});await wait();
+        await page.evaluate(()=>(window as any).retireInputRuntime());
+        await drag(4,230);await closed();
+        if(inputHost==='pwa'){
+          // Rebind after consumer mount: bridge capture order stays authoritative.
+          await page.evaluate(()=>(window as any).rebindInputRuntime());
+          await drag(4,260);await opened();await drag(386,70);await closed();
+        }
+      }
+      assert.equal(await draft.inputValue(),'Keep edge bridge draft');
+      assert(await draftNode!.evaluate(e=>e===document.querySelector('input[aria-label="Draft"]')));
+      assert.deepEqual(errors,[]);evidence.push({theme,reducedMotion,inputHost,heldOpen,heldClose,openX,handoff:handed,draftRetained:true});
+      await page.screenshot({path:`${output}/edge-${inputHost}-${theme}-${reducedMotion}.png`});
+      await context.close();continue;
+    }
     if (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1') {
       const preview=page.getByRole('button',{name:'Boundary preview',exact:true});
       const dialog=page.locator('dialog[open]');
@@ -515,6 +608,7 @@ try {
       });
       assert.equal(paintGeometry.top, paintGeometry.rootTop, 'page paint starts at the viewport edge');
       assert.equal(paintGeometry.height, paintGeometry.rootHeight, 'page paint covers the complete viewport');
+      assert.equal(await page.locator('.app-shell-row').getAttribute('data-safe-layout'), 'top bottom');
       assert.equal(paintGeometry.contentInset, '47px', 'safe area insets content, not the page paint');
       assert.ok(paintGeometry.headerTop >= paintGeometry.rootTop + 47, 'controls remain below the safe area');
       const edgePixels = async () => {
@@ -757,6 +851,11 @@ try {
         assert.equal(await button.count(),1,'one accessible creation action');
         assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
         const before=await button.boundingBox();assert.ok(before);
+        const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
+        const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
+        assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
+          'initial native list reaches the drawer bottom behind floating actions');
+        await expandScrollFixture();
         assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
         const scroll=panel.locator('.shell-sidebar__scroll');
         await scroll.evaluate(e=>{e.scrollTop=0});await page.waitForTimeout(100);
@@ -775,30 +874,26 @@ try {
         const settings=panel.getByRole('button',{name:'Settings',exact:true});
         assert.equal(await settings.count(),1,'one accessible settings action');
         const gear=await settings.boundingBox();assert.ok(gear);
-        // The overlay must occlude real list content in every interactive state.
-        await cdp.send('DOM.enable');await cdp.send('CSS.enable');
-        const {root}=await cdp.send('DOM.getDocument');
-        const {nodeId}=await cdp.send('DOM.querySelector',{nodeId:root.nodeId,selector:'.app-shell-floating-left-panel [data-surface="settings"]'});
-        for(const state of [[],['hover'],['hover','active'],['focus-visible']]) {
-          await cdp.send('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:state});
-          const paint=await settings.evaluate(e=>{
-            const style=getComputedStyle(e),canvas=document.createElement('canvas');
-            canvas.width=canvas.height=1;
-            const ctx=canvas.getContext('2d')!;ctx.fillStyle=style.backgroundColor;ctx.fillRect(0,0,1,1);
-            return {alpha:ctx.getImageData(0,0,1,1).data[3],opacity:style.opacity};
-          });
-          assert.deepEqual(paint,{alpha:255,opacity:'1'},`floating settings is opaque in ${state.join('+')||'rest'}`);
-        }
-        await cdp.send('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:[]});
+        // Floating controls keep their own safe inset; the list continues behind
+        // them, while end padding brings the final row fully above them.
+        assert.ok(Math.abs(viewport.y+viewport.height-column.y-column.height)<1,
+          'native list reaches the bottom edge: '+JSON.stringify({viewport,column}));
+        assert.ok(viewport.y+viewport.height>Math.max(after.y+after.height,gear.y+gear.height),
+          'list continues below both floating actions');
+        assert.equal(await scroll.evaluate(e=>getComputedStyle(e).marginBottom),'0px');
         assert.ok(gear.width>=48&&gear.height>=48,'settings retains a comfortable touch target');
         assert.ok(gear.x>=after.x+after.width+8,'settings floats to the right without overlapping creation');
         assert.ok(Math.abs(gear.y-after.y)<1,'floating actions share a baseline');
         assert.equal(await panel.locator('[data-surface="account"],.sidebar-account__avatar').count(),0,'no mobile avatar or hidden account entrance');
+        const creationPlate=await panel.locator('.shell-sidebar__floating-action').evaluate(e=>getComputedStyle(e).backgroundColor);
+        assert.equal(creationPlate,'rgba(0, 0, 0, 0)','creation host remains transparent');
         const plate=await panel.locator('.shell-sidebar__rail-footer').evaluate(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderTopWidth}));
         assert.deepEqual(plate,{background:'rgba(0, 0, 0, 0)',border:'0px'},'no bottom plate or divider');
         assert.ok(gear.y+gear.height<=844-34,'settings respects the simulated bottom safe area');
         const last=await panel.locator('.sidebar-activity-item').last().boundingBox();assert.ok(last);
         assert.ok(last.y+last.height<=after.y,'last conversation scrolls fully above action');
+        const pagination=await panel.locator('.sidebar-activity-pagination').last().boundingBox();assert.ok(pagination);
+        assert.ok(pagination.y+pagination.height<=Math.min(after.y,gear.y),'final pagination remains fully above glass actions');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-fab.png`});
         const prior=await page.evaluate(()=>(window as any).fixture.actions.length);
@@ -807,9 +902,10 @@ try {
         assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
         await drag(80,width-50);await opened();
         const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-        await panel.getByRole('button',{name:'Settings',exact:true}).tap();await page.waitForTimeout(650);await opened();
+        await panel.getByRole('button',{name:'Settings',exact:true}).tap();await page.waitForTimeout(650);await closed();
+        await drag(80,width-50);await opened();
         await panel.getByRole('navigation',{name:'Settings sections'}).waitFor({state:'visible'});
-        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings'],'one settings entrance intent, drawer retained for categories');
+        assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings'],'one settings entrance intent; destination dismisses the drawer');
         assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'});
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-settings-categories.png`});
         const category=width===320?'Appearance':'Chat';
@@ -827,7 +923,8 @@ try {
       const standaloneSettings=panel.getByRole('button',{name:'Settings',exact:true});
       await standaloneSettings.waitFor({state:'visible'});
       const settingsPrior=await page.evaluate(()=>(window as any).fixture.actions.length);
-      await standaloneSettings.tap();await page.waitForTimeout(650);await opened();
+      await standaloneSettings.tap();await page.waitForTimeout(650);await closed();
+      await drag(80,340);await opened();
       assert.deepEqual(await page.evaluate(n=>(window as any).fixture.actions.slice(n),settingsPrior),['Settings']);
       await panel.getByRole('button',{name:'Appearance',exact:true}).tap();await page.waitForTimeout(650);await closed();
       assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:'appearance'},'choosing already selected category still dismisses');
@@ -958,5 +1055,5 @@ try {
     assert.deepEqual(errors,[]);evidence.push({theme,reducedMotion,held:[held1,held2],safe,mounts,scrollPosition,passed:true});
     await context.close();
   }
-  console.log(process.env.OPENCRAFT_GESTURE_STACK_ONLY === '1' ? 'Mobile page stack, plugin mark, plain entrance, held reversal/cancel, Escape and reopen passed in light/dark and normal/reduced motion' : process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === '1' ? 'Touch sidebar button retains its node, position and hit target throughout open/close; compact fallback and draft preserved' : process.env.OPENCRAFT_GESTURE_TOGGLE_RETURN_ONLY === '1' ? 'Sidebar entrance returns on first closing frame in light/dark and normal/reduced motion; draft and exit lifetime preserved' : process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1' ? 'Mobile creation/settings geometry, hidden account, no plate, scroll, shared actions and desktop fallback passed' : process.env.OPENCRAFT_GESTURE_WIDTH_ONLY === '1' ? 'Real touch sidebar normal-width, screen clamp, reveal/dismiss and draft checks passed' : 'Real touch sidebar follow/cancel/reverse, scroll/draft preservation and safe-area checks passed');
+  console.log(process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === '1' ? 'Browser-host safe layout stays active without transient sidebar across widths, themes and motion preferences' : process.env.OPENCRAFT_GESTURE_STACK_ONLY === '1' ? 'Mobile page stack, plugin mark, plain entrance, held reversal/cancel, Escape and reopen passed in light/dark and normal/reduced motion' : process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === '1' ? 'Touch sidebar button retains its node, position and hit target throughout open/close; compact fallback and draft preserved' : process.env.OPENCRAFT_GESTURE_TOGGLE_RETURN_ONLY === '1' ? 'Sidebar entrance returns on first closing frame in light/dark and normal/reduced motion; draft and exit lifetime preserved' : process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1' ? 'Mobile creation/settings geometry, hidden account, no plate, scroll, shared actions and desktop fallback passed' : process.env.OPENCRAFT_GESTURE_WIDTH_ONLY === '1' ? 'Real touch sidebar normal-width, screen clamp, reveal/dismiss and draft checks passed' : 'Real touch sidebar follow/cancel/reverse, scroll/draft preservation and safe-area checks passed');
 } finally { await writeFile(`${output}/result.json`,JSON.stringify(evidence,null,2));await browser?.close();await vite.close(); }

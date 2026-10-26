@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 
 /** Header and panel controls describe the actual window, not suspended intent. */
 export const ShellPresentationContext = createContext<{
+  surface?: "default" | "application-desktop";
   sidebarOpen: boolean;
   /** Unified Shell owns its collapse control inside the sidebar. */
   sidebarControlsInSidebar?: boolean;

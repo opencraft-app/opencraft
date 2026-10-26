@@ -1,3 +1,4 @@
+import { SafeLayout } from "@opencraft/design-system-web/safe-layout";
 
 import {
   AnimatePresence,
@@ -96,7 +97,8 @@ function FloatingLeftPanelContent({
           } : {}),
         }}
       >
-        <aside
+        <SafeLayout as="aside" edges={mobile ? ["top", "left"] : []}
+          minimumInsets={{ bottom: "var(--gap-control-group)" }}
           className="app-shell-floating-left-panel__surface"
           data-testid="app-shell-floating-left-panel"
         >
@@ -108,7 +110,7 @@ function FloatingLeftPanelContent({
           </motion.div>
           <div className="app-shell-floating-left-panel__body">{children}</div>
           {footer ? <div className="app-shell-sidecar__footer">{footer}</div> : null}
-        </aside>
+        </SafeLayout>
         {mobile ? null : (
           <SidebarResizeHandle
             unified={unified}

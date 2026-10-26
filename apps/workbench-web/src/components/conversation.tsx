@@ -905,12 +905,12 @@ export function Conversation({
   }, [conversationScrollApi, onConversationScrollApiChange]);
 
   const subscribeScrollToBottomVisibility = useCallback((listener: () => void) => {
-    const releaseScroll = scrollController.subscribe(listener);
+    const releaseScroll = scrollController.subscribeState(listener);
     const releaseSpacer = responseApi?.subscribeSpacerHeight(listener);
     return () => { releaseScroll(); releaseSpacer?.(); };
   }, [responseApi, scrollController]);
   const getScrollToBottomVisibility = useCallback(() => shouldShowScrollToBottomAction({
-    isScrolledFromBottom: scrollController.getSnapshot().isScrolledFromBottom,
+    isScrolledFromBottom: scrollController.getState().isScrolledFromBottom,
     responseSpacerHeightPx: responseApi?.getSpacerHeightPx() ?? 0,
     scrollDistanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
   }), [responseApi, scrollController]);
@@ -1078,6 +1078,7 @@ export function Conversation({
                             initialRestoreState={initialRestoreSnapshot?.virtualizedTurnList ?? null}
                             initialDistanceFromBottomPx={normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx)}
                             preserveMeasuredTurnViewport
+                            expandToMountedContent
                             onApiChange={handleVirtualizerApiChange}
                             onVisibleContentReady={onVisibleContentReady}
                             onContentLayoutCommitted={loadOlderUntilScrollable}

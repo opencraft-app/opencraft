@@ -127,8 +127,10 @@ automatic View reacquisition does not replay the same failed native request.
 An explicit user retry and a new physical generation may retry; transport
 failures are not memoized. A provider may explicitly declare a transient RPC
 failure with `error.data.retryable: true`; it is also not memoized and the
-Workbench's existing bounded history recovery may retry it. Missing, false or
-malformed retryability retains the rejection behavior. This does not enable
+Workbench's history recovery may retry it until its demand is released. Explicit false or malformed retryability retains the rejection behavior.
+For legacy generic server/internal history errors without a hint, the Workbench
+read-only recovery owner explicitly reissues Resume with capped backoff; Session
+still memoizes other rejections and never retries ordinary commands. This does not enable
 automatic replay of arbitrary commands. The shorter Host grace is an additional release
 policy, not a substitute for Codex's own idle-thread cleanup.
 
@@ -352,3 +354,15 @@ gap: ordinary output remains a skipped non-fact, possible facts retain the
 existing missing-source reconciliation, and the committed cursor resumes after
 the complete line. The observer has one typed call shape, never a second
 object-shaped compatibility invocation.
+
+
+Pending View acquisition reserves residency demand before asynchronous binding
+publication. A queue/view observer cannot evict that binding before its lease is
+admitted, including with zero inactive-cache allowance. Optional older-history
+reads do not count as execution commands. The last retained View and observer
+leaving retires derived read waits while preserving the cached baseline, history
+source, execution work and healthy Host. A pending replacement acquisition or peer
+View/observer keeps a shared read alive. Local ABORTED retirement does not become
+a cached history error; genuine read failures retain their existing error behavior.
+A released lease cannot start another optional read. This is local cancellation,
+not remote execution cancellation or an automatic write retry.

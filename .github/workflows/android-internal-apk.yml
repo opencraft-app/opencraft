@@ -28,6 +28,6 @@ jobs:
         with:
           name: opencraft-android-internal-apk
           path: |
-            apps/workbench-expo/release/OpenCraft-android-internal.apk
-            apps/workbench-expo/release/OpenCraft-android-internal.apk.sha256
+            apps/mobile/release/OpenCraft-android-internal.apk
+            apps/mobile/release/OpenCraft-android-internal.apk.sha256
           if-no-files-found: error

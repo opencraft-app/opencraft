@@ -1,3 +1,4 @@
+import type { TurnRecoveryMethodMap } from "./turn-recovery";
 import type { ConversationSchedulesMethodMap } from "./conversation-schedules";
 import type { MessageSender } from "./message-sender";
 import type { RuntimeMachineReadResponse } from "./machine";
@@ -181,10 +182,17 @@ export type ThreadResumeResponse = ThreadResumeHistoryResponse<AppServerTurn> & 
 export interface ThreadReadParams {
   threadId: string;
   includeTurns: boolean;
+  /** Passive Host notifications; does not retain a native execution engine. */
+  watch?: boolean;
+  /** Optional opencraft/read-history v1 page. Never resumes execution. */
+  initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
+  historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
 }
 
 export interface ThreadReadResponse {
   thread: AppServerThread;
+  initialTurnsPage?: ThreadTurnsListResponse;
+  historyRecovery?: import("./resume-history").ThreadHistoryRecovery;
 }
 
 export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
@@ -328,7 +336,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };

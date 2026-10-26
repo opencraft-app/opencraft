@@ -17,6 +17,42 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 
 
+def native_platform():
+    """Return the Electron platform name for the current native runner."""
+    if sys.platform == 'win32':
+        return 'win32'
+    if sys.platform == 'darwin':
+        return 'darwin'
+    if sys.platform.startswith('linux'):
+        return 'linux'
+    raise ValueError('unsupported native runner: ' + sys.platform)
+
+
+def native_arch():
+    value = (os.uname().machine.lower() if hasattr(os, 'uname')
+             else (os.environ.get('PROCESSOR_ARCHITEW6432')
+                   or os.environ.get('PROCESSOR_ARCHITECTURE', '')).lower())
+    if value in ('x86_64', 'amd64', 'x64'):
+        return 'x64'
+    if value in ('aarch64', 'arm64'):
+        return 'arm64'
+    raise ValueError('unsupported native runner architecture: ' + value)
+
+
+def native_executable(root, platform_name):
+    base = Path(root) / 'src' / 'out' / 'OpenCraft'
+    if platform_name == 'darwin':
+        return base / 'Electron.app' / 'Contents' / 'MacOS' / 'Electron'
+    if platform_name == 'win32':
+        return base / 'electron.exe'
+    return base / 'electron'
+
+
+def build_targets():
+    """Build the executable and Electron's clean distributable archive."""
+    return ['electron', 'electron:electron_dist_zip']
+
+
 def run(args, cwd=None, capture=False, env=None):
     return subprocess.run(
         [str(arg) for arg in args], cwd=cwd, env=env, check=True,
@@ -46,7 +82,7 @@ class Fork:
             self.patches.append(path)
 
     def git(self, *args, capture=True, env=None):
-        return run(['git', '-C', self.source, *args], capture=capture, env=env)
+        return run(['git', '-c', 'core.autocrlf=false', '-C', self.source, *args], capture=capture, env=env)
 
     def expected_tree(self):
         with tempfile.TemporaryDirectory(prefix='opencraft-electron-index-') as tmp:
@@ -62,9 +98,13 @@ class Fork:
                                '--', 'patches/chromium', env=env).splitlines()
             for path in changed:
                 if path.endswith('.patch'):
-                    payload = self.git('show', f'{tree}:{path}', env=env)
+                    # Patch blobs must cross the pipe byte-for-byte. Python's
+                    # text stdin expands LF to CRLF on Windows and corrupts
+                    # nested Chromium patch hunks despite a correct Git tree.
+                    payload = subprocess.check_output(
+                        ['git', '-C', str(self.source), 'show', f'{tree}:{path}'], env=env)
                     subprocess.run(['git', 'apply', '--numstat'], input=payload,
-                                   text=True, stdout=subprocess.DEVNULL, check=True)
+                                   stdout=subprocess.DEVNULL, check=True)
             return tree
 
     def verify(self):
@@ -126,7 +166,8 @@ class Fork:
 
     def sync(self):
         self.verify()
-        if not shutil.which('gclient'):
+        gclient = shutil.which('gclient')
+        if not gclient:
             raise ValueError('gclient missing; install Chromium depot_tools and add it to PATH')
         config = (
             'solutions = [{"name": "src/electron", "managed": False, '
@@ -138,24 +179,37 @@ class Fork:
             raise ValueError('existing .gclient differs; it was not overwritten')
         if not path.exists():
             path.write_text(config)
-        run(['gclient', 'sync', '--no-history', '--with_branch_heads', '--with_tags'],
+        run([gclient, 'sync', '--no-history', '--with_branch_heads', '--with_tags'],
             cwd=self.root)
         return self.verify()
 
     def build(self, jobs):
         result = self.verify()
-        if sys.platform != 'linux':
-            raise ValueError('the initial build command supports Linux; other targets are not validated')
+        platform_name = native_platform()
+        arch = native_arch()
         if not (self.root / 'src' / 'DEPS').exists():
             raise ValueError('Chromium source missing; run sync first')
-        for tool in ['gn', 'ninja']:
-            if not shutil.which(tool):
-                raise ValueError(f'{tool} missing from PATH')
+        suffix = '.exe' if platform_name == 'win32' else ''
+        gn_platform = {'linux': 'linux64', 'darwin': 'mac', 'win32': 'win'}[platform_name]
+        tools = {}
+        for name, relative in [('gn', Path('buildtools') / gn_platform / ('gn' + suffix)),
+                               ('ninja', Path('third_party/ninja') / ('ninja' + suffix))]:
+            pinned = self.root / 'src' / relative
+            tools[name] = str(pinned) if pinned.is_file() else shutil.which(name)
+            if not tools[name]:
+                raise ValueError(f'{name} missing; sync the pinned Chromium tools first')
         out = 'out/OpenCraft'
         gn_args = (self.directory / 'args.gn').read_text()
-        run(['gn', 'gen', out, '--args=' + gn_args], cwd=self.root / 'src')
-        run(['ninja', '-C', out, '-j', str(jobs), 'electron'], cwd=self.root / 'src')
-        result.update(executable=str(self.root / 'src' / out / 'electron'),
+        run([tools['gn'], 'gen', out, '--args=' + gn_args], cwd=self.root / 'src')
+        run([tools['ninja'], '-C', out, '-j', str(jobs), *build_targets()], cwd=self.root / 'src')
+        executable = native_executable(self.root, platform_name)
+        if not executable.is_file():
+            raise ValueError('native Electron build did not produce ' + str(executable))
+        distribution_archive = self.root / 'src' / out / 'dist.zip'
+        if not distribution_archive.is_file():
+            raise ValueError('native Electron build did not produce ' + str(distribution_archive))
+        result.update(platform=platform_name, arch=arch, executable=str(executable),
+                      distributionArchive=str(distribution_archive),
                       compiled=True, nativeProbePassed=False)
         return result
 

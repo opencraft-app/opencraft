@@ -27,21 +27,125 @@ state. Native system pixels still require device acceptance. See
 Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
+Requested standalone/fullscreen browser overlay documents keep html/body and the
+main Shell in document flow. At rest, CSS `100vh` owns the complete canvas;
+status-excluded `innerHeight`, `clientHeight` or VisualViewport reports must not
+replace that resting extent. The existing viewport owner signals actual geometric
+contraction separately from keyboard focus; only the contracted Shell uses its
+available height. Pinch alone does not contract the canvas, and blur does not end
+an observed contraction. No second measured-canvas variable is introduced.
+The body-relative drawer portal uses an absolute document frame. Do not fix the
+document roots or main Shell. SafeLayout allocates the main content bottom once;
+independent drawer action surfaces keep their own allocation. Do not add a
+CSS/client metric difference as padding or subtract a status strip from the full
+canvas. Native overlay acceptance and physical pixels still require device evidence.
+
+Any geometric contraction uses the existing VisualViewport capacity through
+blur, independently of focus. The single Web viewport port projects origins for
+both coordinate bases: document frames use the visible page origin; fixed
+consumers keep the independent native fixed-reference correction. Neither may
+consume the other's offset. Document scrolling, focus, draft and native selection
+are preserved rather than force-reset. Ordinary tabs and native hosts retain
+their fixed geometry. No screen arithmetic, fixed cutout size or new observation
+clock is used. DOM dimensions and browser simulation do not prove physical native
+painting; device acceptance remains explicit.
+
+### Touch conversation scroll-under
+
+For the floating touch conversation header, the reading surface may bleed upward
+by the row's allocated top inset. That exact CSS inset is added to the transcript's
+initial content padding (and the new-task layout's top reserve), not subtracted
+from the scrollport. At scroll start the first content remains clear of system
+and app controls; on scroll, the same mounted text can pass behind the status
+area. Touch conversation chrome has no full-width Shell veil or backdrop-blur
+overlay above this reading plane. The header hit targets retain their original
+safe position. Adjacent preview tools retain that safe origin and the original
+remaining height; only the reading plane extends under the edge. No scroll
+threshold, duplicate transcript, screen arithmetic,
+viewport owner or resize/scroll observer is introduced. Settings, other routes,
+Sidecar and native desktop keep their existing allocations. Device status-bar
+compositing still requires physical acceptance.
+
+For existing touch conversations, reading also extends through the row's allocated
+bottom inset. The main surface and reading viewport bleed by that exact CSS
+allocation, while `main-content-body` retains its protected rectangle as the single
+Composer overlay anchor. Its children may paint beyond that rectangle only within
+the full-bleed main surface's clip. Preview tools and body-level browser Composer
+portals retain the same protected geometry. The inline footer places the same
+allocated space inside the expanded scrollport, preserving the Composer's original
+bottom position while transcript paint can continue beneath it. This is not a
+second device-inset lookup or a canvas/client metric tail. New-thread and ordinary
+routes retain their protected frame; keyboard projection still owns when the
+allocation becomes zero. Test full scrollport paint as well as Composer placement.
+
+### Shared safe layout container
+
+`@opencraft/design-system-web/safe-layout` owns device inset consumption inside
+the surface border-box. Background/material remains on that same full-bleed box;
+safe content does not move the paint origin or create a separate color strip.
+Callers explicitly allocate `edges`; nested containers omit edges already consumed
+by their ancestor. `minimumInsets` preserves ordinary spacing using max, not an
+extra copy of the device inset. Unselected edges retain consumer styles.
+CSS env is the geometry authority; a host may project `--safe-layout-inset-*`
+at its viewport boundary. The container does not measure screens, guess cutouts,
+observe keyboard geometry, or own theme/scroll/motion state. Shell's stable Motion
+adapter uses the same DOM box. Browser hosts allocate the row's top and bottom edges regardless
+of sidebar docking/transient presentation; a zero device inset is not a disabled
+container. The fixed header consumes the same host top source. Electron keeps its
+native window control reservations. Bounded diagnostics report the top-allocation
+flag separately from resolved padding. The drawer frame owns top/left; its native
+scrollport paints to the bottom edge, with end padding that lets the final row
+scroll above the floating actions and device inset. Intermediate rows may scroll
+behind those actions; their transparent hosts must not reserve an external margin
+or a full-width bottom plate. Only the floating action
+hosts allocate the bottom safe edge; moving that inset back to the whole drawer
+would hard-clip the scrolling list above the physical bottom. The existing 16px
+action clearance is retained in the hosts' minimum reserve, not duplicated by
+an ancestor. Fixed header/hit-region offsets consume the same inset source.
+The Shell row is the main content bottom owner. It consumes
+`--shell-content-safe-bottom` once through SafeLayout. Routes and their measured body-level Composer portals retain ordinary
+spacing only. The existing viewport keyboard signal makes the content device inset
+zero while the software keyboard occupies the bottom edge. Drawer action surfaces
+remain independent; full-screen modal surfaces allocate their own edges. Document geometry and
+physical host drawing acceptance are separate: this primitive cannot promise
+that an opaque system status strip becomes part of the document viewport.
+
+In portrait Apple standalone browsers with Safari 27-era `:heading` support,
+Shell adds 24 CSS pixels of content clearance below the device top inset. The
+existing window-presentation projection identifies standalone mode, including
+Apple's navigator flag; touch-callout and heading support bound the CSS adapter.
+These capabilities are a compatibility proxy, not an exact iOS version. The
+row, floating drawer, header and transcript's initial content consume the same
+top allocation. Canvas extent, full-bleed background, scroll-under, status-bar
+metadata and keyboard/bottom allocation are unchanged. Tabs, landscape, native
+hosts and engines without these capabilities retain their existing spacing.
+This avoids the native progressive-blur band; it does not disable the system
+effect, and physical iOS 27 acceptance remains separate from browser simulation.
+
 Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
 adding the Home-indicator inset. The overlay also respects landscape cutouts.
 This padding leaves the timeline visible below the floating touch Composer.
-The new-thread draft route likewise adds its device inset to its existing route
-gap, and uses the original route gap above an open keyboard. Route-owned
-available Composer height subtracts that same inset once.
+The new-thread draft route uses the same Shell-protected content box and retains
+its existing route gap. Its available Composer height measures that reduced
+containing block; it never subtracts the device inset again.
 
 The explicit public Expo Web-container entry packages the same complete Web
 Workbench application/UI graph. Native owns safe area, lifecycle, back and
 external navigation only; it must not duplicate Scope/View, drafts, navigation
-or panel state. Viewport changes retain the mounted document. RN remains the
-default until device/capability acceptance; downstream product assembly is
-independent. Packaging, bridge and acceptance boundaries are owned by
+or panel state. Viewport changes retain the mounted document. The packaged Web
+container is the public default; the separate RN workbench has been retired.
+Downstream product assembly remains independent. Packaged modules load lazily
+through a fixed native asset registry, never an arbitrary file or remote-code
+reader. The built-in ready surface uses the full safe-area viewport; source
+selection lives in Web settings with independent native startup/error recovery. Packaging, bridge and acceptance boundaries are owned by
 [Mobile Workbench container](../../docs/mobile-workbench-container.md).
+
+A Settings destination invoked from the floating applications drawer uses the
+same Shell `onInvoke` dismissal as other destinations. Do not leave the former
+drawer covering the new controls on narrow displays. Category navigation remains
+available through the ordinary sidebar action; no feature-owned overlay or
+second navigation state is added.
 
 ## Internal projection metadata identity
 
@@ -55,12 +159,28 @@ source-item key as message projections.
 
 ## Floating material ownership
 
+Newera narrow full-width browser chrome groups address/navigation at the bottom.
+The active browser supplies the mobile chrome projection; Shell retains drawer,
+safe-area and visual viewport ownership. Its duplicate top controls are hidden
+only while that active mobile browser provides workspace, tab and utility
+actions. Native Safari controls remain outside the document's ownership.
+The dock reserves a stable content area; software-keyboard state reuses the
+existing viewport projection rather than adding another resize observer.
+Agent is on demand in this presentation, retaining the original Composer node,
+draft and conversation owner. Overview dialogs use the shared modal adapter.
+
 Shared floating surfaces consume design-system `material.web` and theme-owned
 neutral frost roles. Backdrop color may show softly through the panel; a brand
 fill or page-wide blur cannot substitute for glass. Menus/search are denser
 than panels; circular touch chrome has inset-only shading. Geometry, Radix
 focus and modal lifetime retain their owners. Solid accessibility/unsupported
 filter fallbacks and explicit extension popover surfaces remain readable.
+Independent Shell buttons and grouped conversation chrome share the same neutral
+floating veil and effective blur, including the SVG enhancement path. Footer
+geometry must not replace that material or clip its background as a text label.
+The existing lens resize owner reads the shared scattering length for an explicit
+SVG Gaussian stage; icons and focus remain outside it. Verify the optical path
+as well as its CSS approximation against changing backdrop pixels.
 See the workbench language and `scripts/smoke/shell/smoke-frosted-materials.ts` for real
 consumer, backdrop and fallback verification. Native appearance is unchanged.
 
@@ -208,24 +328,33 @@ this disposition does not classify those dependencies or native platform behavio
 
 Conversation actions have stable IDs and a single Feature-owned handler, availability, label and pending state. ToolbarDock projects personal ordering into icon-only dock actions and overflow; it does not own task relations or conversation mutations. Default task linking uses the shared connected-object glyph (two rounded objects joined by links), with the localized link-task label retained for hover and accessibility, and is exposed when space permits. Shell owns capacity from independent context width, retained title budget, mandatory controls and shared density tokens; its inert sizing twin uses identical action availability, preference and capacity. Phone/mobile sidebar presentation always overflows; wide touch tablets may dock. Resizing never remounts a task dialog or discards search/draft.
 
+Browser/PWA conversation actions include Share link for an existing conversation. The application supplies its canonical same-origin route with the deployment prefix and Host identity; recovery parameters, credentials and draft state are excluded. The original click invokes Web Share synchronously before any asynchronous work. Cancellation is silent, unsupported sharing copies the URL, and failures use the existing notice owner. Sharing a route grants no access; the destination still enforces its existing authentication and permissions. Embedded/native wrappers and non-HTTP desktop URLs do not advertise this Web action.
+
 Personal intent uses validated UiPreferencesRuntime storage keyed by account scope and dock identity. Empty means intentionally empty, absent means defaults. Unknown/unavailable action IDs remain stored; temporary overflow does not rewrite preference. Customization supports cross-zone dragging, keyboard sorting, add/remove, explicit save/cancel/reset and visible persistence failure. Drag gestures do not execute actions. Dialog focus returns to the connected invoking icon or visible overflow after capacity change. Icons have localized accessible labels/tooltips; neutral theme tokens and touch hit targets are shared.
 
 Customization drag keeps the source slot in layout and paints a noninteractive, unscaled DragOverlay in the presentation root outside modal transforms/clipping. The active source never uses another list's sortable transform. Pointer hit testing first selects a zone, then its rows; nonempty parent zones do not compete with their children. Keyboard targets rows or empty zones. Draft membership changes only on drop, cancellation leaves it unchanged, and release has no source-return animation.
 
 - Sidebar More menus open on a completed touch tap, after the browser has retained
-  the gesture as a click. Touch down alone never opens them; movement beyond
-  10 CSS pixels, ancestor scrolling, cancellation, another pointer, release
-  outside the hit area or a hold beyond 500ms invalidates that tap. These guards
+  the gesture as a click. Touch down alone never opens them; native dragging,
+  ancestor scrolling, cancellation, another pointer, release
+  outside the hit area or a native context-menu gesture invalidates that tap. These guards
   never prevent native scrolling. Row long-press/right-click and Radix keyboard,
   focus, dismissal and the single Sidebar menu owner remain unchanged.
 
 
 Web dropdown consumers use design-system-web/dropdown-menu. Direct touch/pen
-opens only after a valid completed tap; movement, ancestor scrolling, cancel,
-multiple pointers, release outside or holding invalidates it. Native pan remains
+opens only after a valid completed tap; native dragging, ancestor scrolling, cancel,
+multiple pointers, release outside or a native context-menu gesture invalidates it.
+A press that the browser completes as a click remains usable despite tolerated
+finger drift or duration; fixed pixel/time cutoffs must not silently discard it. Native pan remains
 available. Radix owns mouse, keyboard, nested menus, focus and dismissal. Composer
 model, permission and Add controls preserve the editor focus and selection on
 touch; opening one retires the other picker without a delayed activation.
+The shared trigger withholds Radix's eager touch handler without cancelling native
+pointerdown, which must remain available for WebKit to complete its click. Editor
+focus retention cancels compatibility mousedown instead, including menu items;
+it must not suppress the native touch click. The Radix trigger retains its same
+button, ref, accessibility, mouse and keyboard ownership through the shared Slot.
 
 
 Keyboard acceptance must not manufacture a visible window by cropping at the
@@ -249,16 +378,50 @@ physical compositor painting or device acceptance.
 
 ### iOS Home Screen edge navigation
 
-The Web bootstrap suppresses native history-back gestures in iOS Home Screen
-apps (`navigator.standalone === true`). A non-passive capture listener cancels
-single-finger `touchstart` in the leftmost 20 CSS pixels, before WebKit admits its
-history recognizer. This strip remains inside the sidebar's reserved 24px edge;
-it does not become a second sidebar gesture owner. Cancelling the initial contact
+PwaRuntime suppresses native history traversal in iOS Home Screen apps
+(`navigator.standalone === true`). A non-passive capture listener cancels
+single-finger `touchstart` in either outermost 24 CSS pixels, before WebKit admits
+its history recognizer. The right boundary follows current viewport width. The
+adapter hands the original contact through the shared edge-input bridge, with
+Window capture preceding document consumers even after rebind. Shell accepts the
+handoff without host detection and retains its original gesture/progress/open
+owner. The bridge and Shell use one 24px gutter; no synthetic event replay or
+second sidebar state machine is introduced. Adapter disposal revokes handoffs.
+Cancelling the initial contact
 also reserves edge-origin taps/scrolls; normal content and controls are inset.
-Middle/right contacts and simultaneous multi-touch retain native handling.
+Middle contacts and simultaneous multi-touch retain native handling.
 Ordinary browser tabs, embedded documents and Electron are unaffected. History
 entries and URL changes remain real; explicit Back/Forward uses the original
 router. Do not trap `popstate`, add dummy history entries or cancel every touch.
-The bootstrap releases the listener on retirement/HMR and retains it across
+The owning ClientRuntime releases the listener on retirement/HMR and retains it across
 persisted pagehide. Native Safari gesture acceptance requires a physical-device
 check; synthetic DOM touch events only prove cancellation and routing isolation.
+
+
+Client presentation is selected at bootstrap through WebRuntime, PwaRuntime or
+ElectronRuntime. Shell consumes their document projection instead of owning PWA
+or preload listeners. Shared appearance preference/catalog, real navigation and
+viewport geometry retain their existing owners. See
+[ClientRuntime](../../docs/architecture/platform/client-runtime.md).
+
+
+### Menu outside-interaction contract
+
+Dropdown and context command menus share design-system-web content and an invisible
+dismiss surface in their existing portal. On both mouse and touch Web, the first
+outside primary click only dismisses the open menu; navigation, another trigger,
+editor focus and voice holds require a new contact. The outside contact remains
+on the surface through its native click, without cancelling native touch
+pointerdown. Context-menu cancellation, nested submenu selection, Escape and
+Dialog handoff retain Radix ownership. Surfaces unmount with their root content.
+
+The shared Root does not expose Radix `modal`: command menus use Radix's
+normal nonmodal focus lifecycle and a mandatory outside-contact surface. There
+is no document-wide pointer lock, hidden-page state or focus trap to race with a
+subsequent Dialog. Boundary checks reject raw Radix menu imports in consumers.
+Editor auxiliary menus
+retain their nonmodal focus lease, original editor, selection, draft and software
+keyboard continuity. Ordinary action menus retain their Radix focus policy. The
+surface is transparent and takes its stacking level from the actual menu content;
+there is no additional Dialog or copied business menu. Tooltip/hover previews and
+editing autocomplete are separate interactions and do not use this contract.

@@ -2159,7 +2159,9 @@ export const OpenCraftComposer = forwardRef<
         />
         {attachedContent}
       </ComposerAttachedRail>
-      <div className="opencraft-composer-shell" data-warning={isUnstable ? "true" : undefined}>
+      <div className="opencraft-composer-shell"
+        data-loading={isRecovering && !isUnstable ? "true" : undefined}
+        data-warning={isUnstable ? "true" : undefined}>
         <ComposerRecoveryScan active={isRecovering} />
         {chromeHeader === undefined ? null : (
           <div className="opencraft-composer-chrome-header">{chromeHeader}</div>
@@ -2410,7 +2412,7 @@ export const OpenCraftComposer = forwardRef<
                 <Plus size={20} />
               </button>
             ) : (
-              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={changeAddMenu}>
+              <DropdownMenu.Root open={addMenuOpen} onOpenChange={changeAddMenu}>
                 <DropdownMenu.Trigger asChild>
                   <button
                     {...addFocus.triggerProps}
@@ -2571,7 +2573,7 @@ export const OpenCraftComposer = forwardRef<
               </ComposerModelPicker> : null}
 
               {showPermissionPicker ? <DropdownMenu.Root
-                modal={false}
+
                 open={openPicker === "permissions"}
                 onOpenChange={changePicker("permissions")}
               >

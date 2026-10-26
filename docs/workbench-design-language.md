@@ -536,14 +536,25 @@ and curved highlights. Icons, focus rings and portalled menus are unfiltered.
 ### Shared shell action material
 
 Phone, tablet, wide Web and Electron Shell actions share `LiquidGlassBackdrop`,
-`material.liquid` and the same `material-liquid-*` tokens. Sidebar top/compact rail
-icons, New chat, footer Settings/account/update entrances and navigation controls
-use one backdrop per independent action. The header trailing group keeps one
+`material.liquid` and the same `material-liquid-*` tokens. Sidebar toggle and top
+actions, New chat, footer Settings/account/update entrances and header controls
+use one backdrop per independent action. Application navigation rows, including
+the compact icon rail, retain the flat `application-navigation-control` style:
+no per-row glass backdrop or pill material; only neutral hover, press and current
+state fills. A navigation destination is distinct from an independent Shell action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
+The mobile drawer's native scrollport extends to the physical bottom edge,
+behind the floating New chat and Settings actions. Their hosts remain transparent
+and allocate the controls' bottom safe inset. End content padding, including a
+stacked update entrance, lets final rows and pagination scroll fully above the
+actions without shortening the scrollport. Do not reserve an external bottom
+margin or paint a full-width action plate. Docked tablet/desktop lists retain
+their existing geometry.
+
 
 Material does not branch by platform or density. Existing owners keep position,
 size, labels, icons, actions and keyboard focus; touch retains at least 44px hit
@@ -555,6 +566,16 @@ semantic styles. Those content-layer controls are outside this Shell unification
 The shared tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
 fallbacks for unsupported blur, reduced transparency and forced colors. Safari
 uses the existing CSS approximation; physical iOS rendering needs device evidence.
+All paths retain the same readable frost beneath the optical enhancement: the
+theme's floating veil and shared liquid blur also apply after a supported SVG
+lens. The SVG graph consumes the same CSS scattering length after refraction and contrast tint, with a
+three-sigma sampling outset; appending a CSS blur function after a URL filter is not its authority.
+The mobile drawer retains transform promotion for presence, but must not keep
+`will-change: opacity` after settling: that creates a backdrop root which can
+exclude composited list rows from the floating controls' blur. Verify actual row
+paint beneath the controls, alongside any independent contrast probe.
+A lens must not replace scattering with a nearly clear transmission. Mobile
+footer styles own geometry only; label truncation must exclude the backdrop span.
 
 ### Live navigation optics
 
@@ -568,7 +589,18 @@ Navigation glass keeps a directional edge: a softened upper-leading light and a 
 
 Overhome is the default Applications destination. Its responsive icon grid uses
 rounded icon surfaces and localized labels, with one ordinary launch action per
-app. Follow the existing neutral page and theme semantics; supply no store
-ratings, downloads, promotional rows or placeholder apps. The first catalog
+app. Use the shared application-desktop wallpaper, squircle artwork, white labels
+and glass Dock, including opaque/forced-color fallbacks. Keep document themes
+inside launched windows. Icon press, launch expansion and reverse return use the
+shared spring with measured icon/aperture geometry; reduced motion is immediate.
+Supply no store ratings, downloads, promotional rows or placeholder apps. The first catalog
 contains Scheduled tasks. Catalog/launch ownership and the retained Chat lifecycle
 are defined in [Shell navigation](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
+
+
+Touch conversation reading extends to the page top beneath floating chrome. The
+safe top inset is initial scrollable spacing, so a new task keeps its welcome
+breathing room and the first transcript content starts below the controls; after
+scrolling, real text continues behind the status area. A non-interactive masked
+blur and theme veil soften the upper edge without creating a solid toolbar.
+Controls remain inside safe bounds and no scroll-driven layout switch is used.

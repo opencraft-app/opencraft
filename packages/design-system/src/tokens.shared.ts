@@ -27,6 +27,31 @@ export const radii = {
   full: 9999,
 } as const;
 
+/** Icon-to-window motion: the Shell supplies live aperture/launch geometry. */
+export const applicationDesktopMotion = {
+  window: { type: "spring", stiffness: 340, damping: 34, mass: 1 },
+  press: { type: "spring", stiffness: 520, damping: 30 },
+  content: { duration: 0.18, delay: 0.08 },
+  pressScale: 0.88,
+  iconEntryScale: 0.86,
+  sceneEntryScale: 1.04,
+  iconStagger: 0.025,
+  iconEntryY: 14,
+  desktopRestScale: 0.94,
+  closedRadiusRatio: 0.32,
+} as const;
+
+/** Discrete choices: short held tracking, quiet settling and reversible surfaces. */
+export const selectionMotion = {
+  drag: { duration: 0.08, ease: [0.2, 0.7, 0.2, 1] },
+  settle: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] },
+  press: { type: "spring", stiffness: 480, damping: 34, mass: 0.8 },
+  release: { type: "spring", stiffness: 280, damping: 28, mass: 0.9 },
+  surface: { duration: 0.2, ease: [0.2, 0.8, 0.2, 1] },
+  pressedScale: 1.1,
+  hoveredScale: 1.04,
+} as const;
+
 /**
  * Cross-platform menu geometry. The platform overlay owns collision and
  * placement mechanics; product surfaces only choose an anchor alignment.

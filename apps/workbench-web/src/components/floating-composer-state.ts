@@ -17,9 +17,10 @@ export function projectFloatingComposer(
     tabId: string | null;
     readiness: BrowserReadiness;
     forceExpanded?: boolean;
+    onDemand?: boolean;
   },
 ) {
-  const handles = input.floating && input.readiness === "ready";
+  const handles = input.floating && (input.onDemand || input.readiness === "ready");
   const collapsed = handles && input.tabId !== null && state.collapsedTabs.has(input.tabId);
   const peeked = collapsed && state.enabled;
   const wantsHidden = handles && (!state.enabled || collapsed);
@@ -38,6 +39,15 @@ export function projectFloatingComposer(
 }
 
 export class FloatingComposerState {
+  private readonly mobileTabs = new Set<string>();
+
+  /** Initialize each mobile browser once; reopening must retain explicit intent. */
+  prepareMobileBrowser(tabId: string): void {
+    if (this.mobileTabs.has(tabId)) return;
+    this.mobileTabs.add(tabId);
+    if (this.value.focusedTab !== tabId && !this.value.collapsedTabs.has(tabId))
+      this.collapse(tabId, 'manual', true);
+  }
   private value: FloatingComposerSnapshot = {
     enabled: true,
     collapsedTabs: new Map(),

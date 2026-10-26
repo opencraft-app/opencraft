@@ -28,6 +28,9 @@ const cases: [string, Partial<UserMessageTimelineBlock>][] = [
   ["context", { content: [{ type: "skill", name: "review", path: "/skills/review/SKILL.md" }] }],
   ["failed", { message: "Retry this", deliveryStatus: "failed" }],
   ["sending", { message: "Sending this", deliveryStatus: "sending" }],
+  ["steer-pending", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "pending", deliveryStatus: "sent" }],
+  ["steer-accepted", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "accepted", deliveryStatus: "sent" }],
+  ["steer-cancelled", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "cancelled", deliveryStatus: "sent" }],
   ["comment", { commentCount: 1, attachments: [{ type: "comment", id: "c", label: "note", target: null, body: "fix", line: null }] }],
   ["audio", { content: [{ type: "audio", source: "data:audio/wav;base64,UklGRg==" }] }],
 ];

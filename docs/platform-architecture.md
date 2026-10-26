@@ -10,6 +10,7 @@
 | [Execution and models](architecture/platform/execution-and-models.md) | Provider 账号、Bot、模型服务、能力与执行边界 |
 | [Storage and preferences](architecture/platform/storage-and-preferences.md) | 项目持久化、数据库诊断与 UI 偏好权威 |
 | [Shell and navigation](architecture/platform/shell-and-navigation.md) | 嵌入式 Shell、工作区、路由与导航入口 |
+| [ClientRuntime](architecture/platform/client-runtime.md) | Web/PWA/Electron 的文档级呈现、边缘输入与宿主订阅生命周期 |
 | [Presentation and input](architecture/platform/presentation-and-input.md) | 跨端呈现、主题、字体、语音与原生输入 |
 | [Lifecycle and resources](architecture/platform/lifecycle-and-resources.md) | Thread 生命周期、启动资源、恢复与观测数据 |
 | [Build and deployment](architecture/platform/build-and-deployment.md) | 构建命令、Web 发布、部署与实现审计 |

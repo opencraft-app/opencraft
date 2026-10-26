@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { stat, realpath } from "node:fs/promises";
 import { OpenCraftTokenUsageLedger, normalizeUsageCounts, type UsageSource, type UsageSubmission, type UsageTurnKey, type UsageExecutionState } from "./token-usage-ledger.js";
 import { replayRolloutUsage, readTurnIdentity, type RolloutTurnIdentity } from "./token-usage-rollout.js";
+import type { NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
@@ -31,11 +32,13 @@ export class CodexTokenUsageRuntime {
     const thread=record(record(value).thread),threadId=text(thread.id);
     if(!this.enabled()||!threadId||thread.ephemeral!==true||thread.path!=null||!Array.isArray(thread.turns)||thread.turns.length!==0)return;
     if(this.ephemeral.size>=2048){this.missing(threadId,"unreplayable");return;}
+    if(this.port.derived){this.ephemeral.add(threadId);this.missing(threadId,"unreplayable");return;}
     try{if(this.ledger.registerNativeCounter(threadId,this.counterEpoch))this.ephemeral.add(threadId);}
     catch{this.missing(threadId,"storage-write");}
   }
   /** Only an owned one-shot native job calls this after unsubscribe ACK. */
   releaseEphemeral(threadId:string):void {
+    if(this.port.derived){this.ephemeral.delete(threadId);return;}
     if(this.ephemeral.has(threadId))this.enqueueCounter({kind:"release",key:{threadId,turnId:""}});
   }
   private counterMissing(threadId:string):void {
@@ -87,12 +90,22 @@ export class CodexTokenUsageRuntime {
     readonly request: (method: string, params: Record<string, unknown>) => Promise<unknown>;
     readonly submission?: (threadId: string, inputId: string) => UsageSubmission | null;
     readonly diagnostic: (category: string) => void;
+    readonly derived?: { invalidate(threadId:string,path?:string):void };
+    readonly source?: (threadId: string, path: string) => Promise<NativeRolloutSource>;
+    readonly writes?: {
+      record(attemptId:string,input:UsageSubmission):Promise<void>;
+      outcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null):Promise<string|null>;
+      admit(key:UsageTurnKey,inputId:string,startedAt:number|null,trusted:UsageSubmission|null):Promise<void>;
+      submission(input:UsageSubmission):Promise<void>;
+    };
   }) {}
 
   initialize(value: unknown): void {
     const home = text(record(value).codexHome);
-    if (!home || this.nativeHome || this.abort.signal.aborted) return;
+    if (!home || this.abort.signal.aborted) return;
+    const initialized = this.nativeHome !== null;
     this.nativeHome = home;
+    if (initialized) return;
     this.seedGaps();
     this.timer = setInterval(() => { this.scheduleProjection(); for (const thread of new Set([...this.active,...this.settling.keys()])) this.schedule(thread); this.retryGaps(); }, 2000);
     this.timer.unref();
@@ -109,6 +122,7 @@ export class CodexTokenUsageRuntime {
     }
   }
   private scheduleProjection():void {
+    if(this.port.derived)return;
     if(this.abort.signal.aborted||this.projectionScheduled)return;
     this.projectionScheduled=setImmediate(()=>{
       this.projectionScheduled=null;
@@ -117,38 +131,55 @@ export class CodexTokenUsageRuntime {
       catch{try{this.port.diagnostic("projection-rebuild");}catch{}}
     });
   }
-  attempt(attemptId:string,threadId:string,inputId:string,mode:UsageSubmission["mode"],identity?:UsageSubmission):void {
+  attempt(attemptId:string,threadId:string,inputId:string,mode:UsageSubmission["mode"],identity?:UsageSubmission):void|Promise<void> {
     if(!this.enabled())return;
     try{
       const trusted=identity??this.port.submission?.(threadId,inputId)??this.ledger.storedSubmission(threadId,inputId);
-      this.ledger.recordAttempt(attemptId,{...(trusted??{threadId,inputId,actorId:null,actorKind:"unknown",sourceKind:"unknown",submittedAt:Date.now()}),mode});
+      const input={...(trusted??{threadId,inputId,actorId:null,actorKind:"unknown" as const,sourceKind:"unknown" as const,submittedAt:Date.now()}),mode};
+      if(this.port.writes?.record)return this.port.writes.record(attemptId,input).catch(()=>{this.missing(threadId,"storage-write");});
+      this.ledger.recordAttempt(attemptId,input);
     }catch{this.missing(threadId,"storage-write");}
   }
   attemptOutcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null=null):void {
+    if(this.port.writes){
+      void this.port.writes.outcome(attemptId,outcome,turnId).then(threadId=>{if(threadId&&outcome==="unknown")this.missing(threadId,"source-offline");})
+        .catch(()=>{try{this.port.diagnostic("attempt-outcome");}catch{}});return;
+    }
     try{const threadId=this.ledger.recordAttemptOutcome(attemptId,outcome,turnId);if(threadId&&outcome==="unknown")this.missing(threadId,"source-offline");}
     catch{try{this.port.diagnostic("attempt-outcome");}catch{}}
   }
   submission(value: UsageSubmission): void {
     if (!this.enabled()) return;
+    if(this.port.writes){void this.port.writes.submission(value).catch(()=>this.missing(value.threadId,"storage-write"));return;}
     try { this.ledger.recordSubmission(value); } catch { this.missing(value.threadId, "storage-write"); }
   }
   admission(key: UsageTurnKey, inputId: string): void {
     if (!inputId || !this.enabled()) return;
+    if(this.port.writes){
+      void this.port.writes.admit(key,inputId,nativeTurnStartedAt(key.turnId),this.port.submission?.(key.threadId,inputId)??null)
+        .then(()=>{this.port.derived?.invalidate(key.threadId);this.schedule(key.threadId);})
+        .catch(()=>this.missing(key.threadId,"storage-write"));return;
+    }
     try {
       const at=nativeTurnStartedAt(key.turnId);
       if (at!==null) this.ledger.startTurn(key,at,"unknown");
       const trusted = this.port.submission?.(key.threadId, inputId);
       if (trusted) this.ledger.recoverSubmission(trusted);
       this.ledger.recordAdmission(key, inputId);
+      this.port.derived?.invalidate(key.threadId);
     } catch { this.missing(key.threadId, "storage-write"); }
     this.schedule(key.threadId);
   }
   notification(method: string, params: Record<string, unknown>): void {
     const threadId = text(params.threadId);
     if (!threadId) return;
-    if(this.ephemeral.has(threadId)&&!this.enabled()){this.counterMissing(threadId);return;}
+    if(this.ephemeral.has(threadId)&&!this.enabled()){if(this.port.derived)this.missing(threadId,"unreplayable");else this.counterMissing(threadId);return;}
     const accepted=nativeLiveAcceptedInputFact(method,params);
     if(accepted)this.admission(accepted,accepted.inputId);
+    if(this.port.derived){
+      this.port.derived.invalidate(threadId);
+      if(this.ephemeral.has(threadId))return;
+    }
     if(this.ephemeral.has(threadId)){
       const turn=record(params.turn),turnId=text(params.turnId)||text(turn.id),key={threadId,turnId};
       if(method==="turn/started"&&turnId)this.enqueueCounter({kind:"start",key});
@@ -241,6 +272,8 @@ export class CodexTokenUsageRuntime {
     signal.throwIfAborted();
     const path = text(thread.path);
     if (!path) { this.missing(threadId, "unreplayable"); return; }
+    const source = await this.port.source?.(threadId, path);
+    signal.throwIfAborted();
     let canonical: string;
     try { canonical = await realpath(path); }
     catch { this.missing(threadId, "source-replaced"); return; }
@@ -253,6 +286,7 @@ export class CodexTokenUsageRuntime {
     }
     this.ledger.rememberRollout(threadId, canonical);
     const stored = this.ledger.rollout(threadId)!;
+    const replayCursor=this.port.derived?(this.ledger.participationCursor(threadId,canonical)??Number(stored.cursor)):Number(stored.cursor);
     // The native paged API explicitly omits message/tool bodies.
     const metadataCursor=this.ledger.metadataCursor(threadId);
     let turns:Record<string,unknown>;
@@ -270,13 +304,14 @@ export class CodexTokenUsageRuntime {
       if (at === null || !this.ledger.startTurn(key, at, "unknown")) { excluded.add(turnId); return false; }
       return true;
     };
+    if(this.port.derived)for(const turnId of metadata.keys())ensure(turnId);
     let identity = this.identities.get(threadId);
-    if (!identity) {
-      identity = await readTurnIdentity(canonical, Number(stored.cursor)) ?? undefined;
+    if (!identity&&!this.port.derived) {
+      identity = await readTurnIdentity(canonical, replayCursor) ?? undefined;
       if (identity) this.identities.set(threadId, identity);
     }
-    const replay = await replayRolloutUsage({ path: canonical, nativeHome:this.nativeHome!,threadId,ledger:this.ledger,cursor:Number(stored.cursor),maxFacts:32,excludedTurnIds:excluded,signal,
-      identity,
+    const replay = await replayRolloutUsage({ path: canonical, nativeHome:this.nativeHome!,source,threadId,ledger:this.ledger,cursor:replayCursor,maxFacts:32,excludedTurnIds:excluded,signal,
+      identity,counts:!this.port.derived,
       onAdmission: fact => {
         if (!ensure(fact.turnId)) return;
         const trusted = this.port.submission?.(threadId,fact.inputId);
@@ -285,7 +320,7 @@ export class CodexTokenUsageRuntime {
       },
       onSourceTurn: key => ensure(key.turnId),
       onTerminal: turnId => { if (this.ledger.readTurn({threadId,turnId})) this.ledger.recordNativeTerminal({threadId,turnId}); },
-      onCommitCursor: cursor => this.ledger.advanceRollout(threadId,canonical,String(cursor)),
+      onCommitCursor: cursor => {if(this.port.derived)this.ledger.advanceParticipationCursor(threadId,canonical,cursor);else this.ledger.advanceRollout(threadId,canonical,String(cursor));},
       onOversizedLine: (mayContainFact: boolean) => {
         try { this.port.diagnostic(mayContainFact ? "oversized-usage-line" : "oversized-line-skipped"); } catch {}
       },
@@ -294,7 +329,7 @@ export class CodexTokenUsageRuntime {
     if (replay.blockedTurnId) ensure(replay.blockedTurnId);
     if (replay.oversizedFact) this.missing(threadId,"oversized-line");
     else if (replay.missing) this.missing(threadId,"invalid-source");
-    if (replay.more && replay.cursor > Number(stored.cursor) && (await stat(canonical)).size > replay.cursor) { this.schedule(threadId); return; }
+    if (replay.more && replay.cursor > replayCursor && (await stat(canonical)).size > replay.cursor) { this.schedule(threadId); return; }
     if (!replay.missing && !replay.oversizedFact) { this.ledger.resolveReplayGaps(threadId); this.gaps.delete(threadId); }
     let incompleteTerminal=false;
     for (const [turnId, turn] of metadata) {
@@ -302,11 +337,11 @@ export class CodexTokenUsageRuntime {
       if (!known || known.frozen) continue;
       const status = turn.status === "inProgress" ? "running" : turn.status;
       if (!["running","completed","failed","interrupted"].includes(String(status))) continue;
-      const completion = this.ledger.nativeSettlement(key);
+      const completion = this.port.derived?this.ledger.recordedSettlement(key):this.ledger.nativeSettlement(key);
       this.ledger.reconcile(key,{executionState:status as UsageExecutionState,participantsComplete:true,...completion});
       await yieldIfNeeded();
       if (status === "running" && this.active.size<256) this.active.add(threadId);
-      else if (status!=="running" && !completion.usageComplete) incompleteTerminal=true;
+      else if (!this.port.derived && status!=="running" && !completion.usageComplete) incompleteTerminal=true;
     }
     const nextCursor=text(turns.nextCursor);
     if(nextCursor&&nextCursor===metadataCursor)throw new Error("Native metadata cursor did not advance");
@@ -318,6 +353,7 @@ export class CodexTokenUsageRuntime {
       if(attempts<=5 && this.settling.size<256) this.settling.set(threadId,attempts);
       else {this.settling.delete(threadId);this.missing(threadId,"unreplayable");}
     } else this.settling.delete(threadId);
+    this.port.derived?.invalidate(threadId,canonical);
   }
   close(): void {
     this.abort.abort();

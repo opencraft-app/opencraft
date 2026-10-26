@@ -217,7 +217,7 @@ Client ApplicationSupervisor
         ├───────────────────────────┐
         ▼                           ▼
 Vite / React DOM              Expo / React Native
-apps/workbench-web            apps/workbench-expo
+apps/workbench-web            apps/mobile
 OpenCraft desktop frame           iOS · Android · Expo Web
         │                           │
 Electron bridge               native/web adapters

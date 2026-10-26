@@ -14,7 +14,7 @@ import { TurnCompletionObserver, WORKBENCH_RESOURCE_POLICIES } from "@opencraft/
 import { ApplicationBrandingRegistry } from "./application-branding";
 import { createApplicationDisposer, disposeOwnedSteps } from "./application-disposal";
 import { BrowserThreadAttention } from "./browser-thread-attention";
-import { BrowserTurnNotifications } from "./browser-turn-notifications";
+import { TurnNotificationController } from "./turn-notification-controller";
 import { FixedHostProfileStore } from "./fixed-host-profile-store";
 import { ImageEditorContributionRegistry } from "./image-editor-contributions";
 import { IdentityAvatarContributionRegistry } from "./identity-avatar-contributions";
@@ -63,6 +63,7 @@ import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
 import { SidebarLayoutStore } from "@opencraft/sidebar-layout";
 import {
+  chooseNewConversationHost,
   AgentRuntimeDirectory,
   asRouteScopeId,
   AUTHENTICATION_PROVIDER_CHANNEL,
@@ -147,6 +148,8 @@ import {
 } from "./workbench-navigation-transaction";
 
 import { appServerUrl, BoundedCheckpointMap, BrowserDisplayContinuity, createWebWorkbenchCommands, createWorkbenchQueryClient, currentProductDatabaseName, currentProductStorageKey, readLocalPreference, currentWorkbenchPlatform, hostDefinitionProfile, HostlessWebWorkbenchApplicationSupervisor, parseWebHostDefinitions, persistProvisionedHost, profileDescriptor, provisionWebSocketHost, refreshBundledHostProfiles, rememberedThreadId, WebWorkbenchApplicationSupervisor, WebWorkbenchSupervisorOptions } from './workbench-application-services';
+import { ClientResources } from "@opencraft/document-storage/client-resources";
+import { openClientResourcePersistence } from "./client-resource-persistence";
 export async function createWebWorkbenchApplicationSupervisor(
   browserToolHost: BrowserDynamicToolHost,
   terminalToolHost: ConversationTerminalToolHost,
@@ -172,7 +175,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => appServerRegistry.dispose());
     const turnCompletions = new TurnCompletionObserver(appServerRegistry.clients);
     startupRollback.push(() => turnCompletions.dispose());
-    const turnNotifications = new BrowserTurnNotifications();
+    const turnNotifications = new TurnNotificationController(options.pushDevice);
     startupRollback.push(() => turnNotifications.dispose());
     const agentRuntimes = new AgentRuntimeDirectory();
     const botConversations = await createCordisBotConversationRuntime(cordis);
@@ -264,6 +267,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     const localClientScope = clientProduct?.persistenceScope ? null : new LocalClientPersistenceScope(platformAccounts, serverStorageKey("local"));
     if (localClientScope) startupRollback.push(() => localClientScope.dispose());
     const clientPersistenceScope = clientProduct?.persistenceScope ?? localClientScope!;
+    const clientResources = new ClientResources(
+      openClientResourcePersistence(currentProductDatabaseName("opencraft-client-resources")),
+      JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
+    );
+    const stopClientResourceScope = clientPersistenceScope.subscribe(() => clientResources.setNamespace(
+      JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
+    ));
+    startupRollback.push(stopClientResourceScope, () => clientResources.close());
     // Existing task View continuity remains its sole persistence owner. Bot
     // content uses a separate account-bound adapter; an old account cannot
     // read or write through it after its credential scope is revoked.
@@ -316,6 +327,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       databaseName: currentProductDatabaseName("opencraft-sidebar-layout-v2"),
       formerDatabaseName: currentProductDatabaseName("vela-sidebar-layout-v2"),
     });
+    startupRollback.push(() => sidebarLayoutStorage.close());
     const sidebarLayout = await SidebarLayoutStore.open(sidebarLayoutStorage);
     const stopSidebarLayoutPersistReporting = bindSidebarLayoutPersistReporting(sidebarLayout);
     startupRollback.push(() => sidebarLayout.close());
@@ -474,6 +486,10 @@ export async function createWebWorkbenchApplicationSupervisor(
         });
       });
     }
+    if (platform === 'electron') {
+      await extensions.loadOptional('opencraft.account', async () =>
+        (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
+    }
     if (headlessAppHost !== null) {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
@@ -606,7 +622,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...sshManagement!.getSnapshot().legacyServers.map(server => ({ ...server, enabled: true, revision: 1 })),
     ].map(server => ({
         hostId: server.serverId, displayName: server.displayName, providerId: SERVER_CONNECTIONS_ID, providerConfig: {}, providerConfigVersion: 1,
-        hostKind: "remote-ssh", enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
+        hostKind: "remote-ssh", hideFromNewChat: server.hideFromNewChat, enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
         transportEndpoint: null, executionLocation: server.displayName, workspaceBrowseRoots: server.workspaceBrowseRoots, revision: server.revision,
       })))
     : storedHostProfiles;
@@ -651,6 +667,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => authenticationFiber.dispose(),
     () => environmentFiber.dispose(),
     stopBotDraftScope,
+    stopClientResourceScope,
+    () => clientResources.close(),
     () => clientProduct?.dispose(),
     () => localClientScope?.dispose(),
     disconnectAppearanceThemes,
@@ -671,7 +689,35 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => imageFiber.dispose(),
   ];
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
-  if (profiles.length === 0) {
+  let draftCredentialScope = clientPersistenceScope.getSnapshot().namespace;
+  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`);
+  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+    requestedBootstrapLocation,
+    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
+  );
+  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
+    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
+  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
+    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
+    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
+    ? savedNewTarget : null;
+  const bootstrapLocation = restoredNewTarget
+    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
+    : normalizedBootstrapLocation;
+  const persistedHostId = readLocalPreference(currentProductStorageKey("opencraft.active-host-id"));
+  const requestedHostId = bootstrapLocation?.kind === "thread"
+    ? bootstrapLocation.key.hostId
+    : bootstrapLocation?.hostId;
+  const persistedHasThread = persistedHostId !== null && rememberedThreadId(
+    window.localStorage, persistedHostId, options.hostProfileMode,
+    fixedPresentation ? clientPersistenceScope.getSnapshot().threadMemoryScope : undefined,
+  ) !== null;
+  const initialHostId = requestedHostId !== undefined && profiles.some(host => host.hostId === requestedHostId)
+    ? requestedHostId
+    : profiles.some(host => host.hostId === persistedHostId && (host.hideFromNewChat !== true || persistedHasThread))
+      ? persistedHostId!
+      : chooseNewConversationHost(profiles)?.hostId;
+  if (initialHostId === undefined) {
     const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
@@ -681,6 +727,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectionProviders.providers,
     );
     const hostless: HostlessWebWorkbenchApplicationSupervisor = {
+      clientResources,
       setConversationPresentationActive,
       connectors,
       connectorManager,
@@ -726,7 +773,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  let draftCredentialScope = clientPersistenceScope.getSnapshot().namespace;
   const browserOutbox = createBrowserConversationOutbox({
     get storage() { return window.sessionStorage; },
     scope: () => {
@@ -745,32 +791,6 @@ export async function createWebWorkbenchApplicationSupervisor(
   const stopOutboxRegistry = platformAccounts.subscribe(bindOutboxAccount);
   bindOutboxAccount();
   startupRollback.push(() => { stopOutboxRegistry(); stopOutboxAccount?.(); });
-  let browserDraftStore = createBrowserConversationDraftStorage(`${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`);
-  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
-    requestedBootstrapLocation,
-    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
-  );
-  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
-    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
-  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
-    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
-    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
-    ? savedNewTarget : null;
-  const bootstrapLocation = restoredNewTarget
-    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
-    : normalizedBootstrapLocation;
-  const persistedHostId = readLocalPreference(currentProductStorageKey("opencraft.active-host-id"));
-  const requestedHostId = bootstrapLocation?.kind === "thread"
-    ? bootstrapLocation.key.hostId
-    : bootstrapLocation?.hostId;
-  const initialHostId = requestedHostId !== undefined
-    && profiles.some((host) => host.hostId === requestedHostId)
-    ? requestedHostId
-    : profiles.some((host) => host.hostId === persistedHostId)
-      ? persistedHostId!
-      : profiles.find((host) => host.hostId === "local")?.hostId
-        ?? profiles.find((host) => host.hostKind === "local" || host.hostKind === "durable")?.hostId
-        ?? profiles[0]!.hostId;
   const initialWorkspaceRoot = profiles.find((host) => host.hostId === initialHostId)
     ?.workspaceBrowseRoots[0] ?? null;
   let forgetUnavailableThread: ((hostId: string, threadId: string) => void) | undefined;
@@ -1189,6 +1209,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
+    clientResources,
     managedHostCatalog: sshManagement,
     cordis,
     appServerRegistry,

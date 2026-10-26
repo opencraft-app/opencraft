@@ -6,7 +6,7 @@ import "./liquid-glass.web.scss";
 export function LiquidGlassBackdrop() {
   const id = `liquid-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const ref = useRef<HTMLSpanElement>(null);
-  const [map, setMap] = useState<{ href: string; width: number; height: number } | null>(null);
+  const [map, setMap] = useState<{ href: string; width: number; height: number; blur: number } | null>(null);
   useLayoutEffect(() => {
     const element = ref.current;
     // Prefixed backdrop engines can accept URL syntax without rendering it.
@@ -16,6 +16,10 @@ export function LiquidGlassBackdrop() {
     const observer = new ResizeObserver(() => {
       const width = Math.round(element.clientWidth), height = Math.round(element.clientHeight);
       if (width < 1 || height < 1) return;
+      // CSS and SVG share one scattering length. The optical graph includes
+      // its full blur kernel so transparent filter edges cannot reveal detail.
+      const blur = Number.parseFloat(getComputedStyle(element).getPropertyValue("--material-liquid-blur"));
+      if (!Number.isFinite(blur) || blur < 0) return;
       // One CSS-pixel lookup per surface pixel, not a captured page texture.
       const canvas = document.createElement("canvas");
       canvas.width = width; canvas.height = height;
@@ -45,7 +49,7 @@ export function LiquidGlassBackdrop() {
         pixels.data[i + 3] = 255;
       }
       context.putImageData(pixels, 0, 0);
-      setMap({ href: canvas.toDataURL(), width, height });
+      setMap({ href: canvas.toDataURL(), width, height, blur });
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -53,8 +57,10 @@ export function LiquidGlassBackdrop() {
   return <span ref={ref} aria-hidden="true" className="ui-liquid-glass"
     style={map ? { "--material-liquid-lens": `url("#${id}") saturate(1.15)` } as CSSProperties : undefined}>
     {map ? <svg className="ui-liquid-glass__filters" width="0" height="0" focusable="false">
-      <defs><filter id={id} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
-        <feImage href={map.href} width={map.width} height={map.height} result="lens-map" preserveAspectRatio="none" />
+      <defs><filter id={id} filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse"
+        x={-map.blur * 3} y={-map.blur * 3} width={map.width + map.blur * 6} height={map.height + map.blur * 6}
+        colorInterpolationFilters="sRGB">
+        <feImage x="0" y="0" href={map.href} width={map.width} height={map.height} result="lens-map" preserveAspectRatio="none" />
         <feGaussianBlur in="SourceGraphic" stdDeviation=".45" result="antialiased" />
         <feDisplacementMap in="antialiased" in2="lens-map" scale="24" xChannelSelector="R" yChannelSelector="G" result="transmission" />
         <feGaussianBlur in="transmission" stdDeviation="2.2" result="scattered" />
@@ -73,7 +79,8 @@ export function LiquidGlassBackdrop() {
         <feGaussianBlur in="contrast" stdDeviation="2" result="local-contrast" />
         <feFlood style={{ floodColor: "var(--material-glass-base)" }} floodOpacity=".65" result="tint" />
         <feComposite in="tint" in2="local-contrast" operator="in" result="adaptive-tint" />
-        <feComposite in="adaptive-tint" in2="glass" operator="over" />
+        <feComposite in="adaptive-tint" in2="glass" operator="over" result="tinted-glass" />
+        <feGaussianBlur in="tinted-glass" stdDeviation={map.blur} result="frosted-glass" />
       </filter></defs>
     </svg> : null}
   </span>;

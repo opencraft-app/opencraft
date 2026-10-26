@@ -64,6 +64,7 @@ export const CloudIcon = glyph("CloudIcon");
 export const CodeFileIcon = glyph("CodeFileIcon");
 export const CodeIcon = glyph("CodeIcon");
 export const ComposeIcon = glyph("ComposeIcon");
+export const ShareIcon = glyph("ShareIcon");
 export const CopyIcon = glyph("CopyIcon");
 export const ExpandIcon = glyph("ExpandIcon");
 export const FolderIcon = glyph("FolderIcon");

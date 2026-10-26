@@ -96,9 +96,10 @@ export function applyTimelineViewportDocumentState(
   snapshot: TimelineViewportSnapshot,
   policy: TimelineViewportPolicy,
   fixedFrameOffset = snapshot.visualOffset,
+  documentFrameOffset = snapshot.visualOffset,
 ): void {
   applyTimelineViewportDocumentExtent(root, snapshot, policy);
-  applyTimelineViewportDocumentOrigin(root, snapshot, policy, fixedFrameOffset);
+  applyTimelineViewportDocumentOrigin(root, snapshot, policy, fixedFrameOffset, documentFrameOffset);
 }
 
 function setViewportProperty(root: WebTimelineViewportRoot, name: string, value: number): void {
@@ -116,6 +117,7 @@ function applyTimelineViewportDocumentExtent(
     timelineOverscroll: policy.threadOverscroll,
     timelineElasticEffect: String(policy.localElasticEffect),
     timelineTracksVisualViewport: String(policy.tracksVisualViewport),
+    timelineViewportOccluded: String(layout.occludedBottomPx > 0),
     timelineKeyboardOpen: String(snapshot.keyboardInsetBottomPx > 0),
   };
   for (const [key, value] of Object.entries(attributes)) {
@@ -132,12 +134,17 @@ function applyTimelineViewportDocumentOrigin(
   snapshot: TimelineViewportSnapshot,
   policy: TimelineViewportPolicy,
   fixedFrameOffset: TimelineViewportSnapshot["visualOffset"],
+  documentFrameOffset: TimelineViewportSnapshot["visualOffset"],
 ): void {
   // Capacity and the browser's fixed-position coordinate basis are independent.
   // The Web port measures that basis outside the positioned application tree.
   const followsVisualOrigin = policy.tracksVisualViewport && Math.abs(snapshot.scale - 1) <= 0.01;
   setViewportProperty(root, "--timeline-available-viewport-top", followsVisualOrigin ? fixedFrameOffset.topPx : 0);
   setViewportProperty(root, "--timeline-available-viewport-left", followsVisualOrigin ? fixedFrameOffset.leftPx : 0);
+  // A flow/absolute document frame uses page coordinates. Applying the fixed
+  // reference correction there would compensate native document scroll twice.
+  setViewportProperty(root, "--timeline-document-viewport-top", followsVisualOrigin ? documentFrameOffset.topPx : 0);
+  setViewportProperty(root, "--timeline-document-viewport-left", followsVisualOrigin ? documentFrameOffset.leftPx : 0);
 }
 
 export function createWebTimelineViewportPort(
@@ -211,17 +218,25 @@ export function createWebTimelineViewportPort(
         - windowObject.scrollX - (reference?.left ?? 0),
     };
   };
+  const readDocumentFrameOffset = () => {
+    const visual = windowObject.visualViewport;
+    return {
+      topPx: visual?.pageTop ?? windowObject.scrollY + (visual?.offsetTop ?? 0),
+      leftPx: visual?.pageLeft ?? windowObject.scrollX + (visual?.offsetLeft ?? 0),
+    };
+  };
   const commitDocumentState = (next: TimelineViewportSnapshot) => {
     // Shrinking the focused editor's containing block can itself move the
     // browser's native fixed plane. Commit capacity before measuring that plane;
     // otherwise the origin describes the previous layout for a painted frame.
     applyTimelineViewportDocumentExtent(root, next, policy);
-    const offset = readFixedFrameOffset(); // independent read also flushes layout
-    applyTimelineViewportDocumentOrigin(root, next, policy, offset);
-    return offset;
+    const fixed = readFixedFrameOffset(); // independent read also flushes layout
+    const document = readDocumentFrameOffset();
+    applyTimelineViewportDocumentOrigin(root, next, policy, fixed, document);
+    return { fixed, document };
   };
   let snapshot = read();
-  let fixedFrameOffset = commitDocumentState(snapshot);
+  let frameOffsets = commitDocumentState(snapshot);
   const observe = () => {
     if (!policy.tracksVisualViewport) return;
     const event = observationEvent;
@@ -234,7 +249,7 @@ export function createWebTimelineViewportPort(
   };
   const reconcile = () => {
     if (disposed || documentObject.visibilityState === "hidden") return;
-    const nextFixedFrameOffset = commitDocumentState(read());
+    const nextFrameOffsets = commitDocumentState(read());
     const next = read();
     if (
       next.editableFocused !== snapshot.editableFocused
@@ -245,12 +260,14 @@ export function createWebTimelineViewportPort(
       || next.visualViewport.heightPx !== snapshot.visualViewport.heightPx
       || next.visualOffset.leftPx !== snapshot.visualOffset.leftPx
       || next.visualOffset.topPx !== snapshot.visualOffset.topPx
-      || nextFixedFrameOffset.topPx !== fixedFrameOffset.topPx
-      || nextFixedFrameOffset.leftPx !== fixedFrameOffset.leftPx
+      || nextFrameOffsets.fixed.topPx !== frameOffsets.fixed.topPx
+      || nextFrameOffsets.fixed.leftPx !== frameOffsets.fixed.leftPx
+      || nextFrameOffsets.document.topPx !== frameOffsets.document.topPx
+      || nextFrameOffsets.document.leftPx !== frameOffsets.document.leftPx
     ) {
       revision += 1;
       snapshot = { ...next, revision };
-      fixedFrameOffset = nextFixedFrameOffset;
+      frameOffsets = nextFrameOffsets;
       for (const listener of listeners) listener();
     }
     // Evidence follows the committed frame even if no raw snapshot changed.

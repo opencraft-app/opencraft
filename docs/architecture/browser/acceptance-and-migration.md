@@ -205,7 +205,7 @@ Supervisor、多个有清晰所有权的 Runtime scope，以及可被两种以�
 | 当前路径 | 现状 | R6 目标 |
 | --- | --- | --- |
 | `packages/workbench-runtime/src/appserver-runtime.ts` | 每个单 Host runtime 内创建一项 Cordis client registry | HostRuntime 直接拥有 client，由应用 HostRuntimeRegistry 索引 |
-| `apps/workbench-web/src/runtime/appserver-runtime-context.tsx`、`apps/workbench-expo/src/runtime/runtime-context.tsx` | Runtime 仍由 React Provider 构造 | bootstrap 的 ApplicationSupervisor 构造，Provider 只借用稳定引用 |
+| `apps/workbench-web/src/runtime/appserver-runtime-context.tsx`、`apps/mobile/src/runtime/runtime-context.tsx` | Runtime 仍由 React Provider 构造 | bootstrap 的 ApplicationSupervisor 构造，Provider 只借用稳定引用 |
 | Browser packages | 尚未实现本设计的 Session/owner/presentation 分层 | Phase 0 iframe 与 Phase 1 Electron 两个纵切共同校正 SPI |
 | Chat/Panel renderer registries | 各自暴露内部 Cordis `install(plugin, unknown)` | 保持内部 API；由 ExtensionSupervisor/Contribution Broker 提供公共扩展入口 |
 

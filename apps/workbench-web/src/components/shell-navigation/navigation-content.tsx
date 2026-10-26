@@ -1,4 +1,3 @@
-import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { GaugeIcon as Gauge, LoginIcon as LogIn, LogoutIcon as LogOut, PersonIcon as User } from "@opencraft/design-system-web/action-icons";
@@ -81,7 +80,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
       const badge = action.badge === undefined ? null : <small className="shell-navigation__beta">{action.badge}</small>;
       return <Tooltip.Root key={action.id}><Tooltip.Trigger asChild><button type="button"
         data-action-id={action.id} aria-label={title} aria-current={action.active ? "page" : undefined} onClick={() => onInvoke(action.onInvoke)}>
-        <LiquidGlassBackdrop /><NavigationIcon name={action.icon} selected={action.active} />
+        <NavigationIcon name={action.icon} selected={action.active} />
         <span className="shell-navigation__item-label">
           {config.layout === "unified" ? <>
             <span className="shell-navigation__item-label--short">{short}</span>
@@ -90,7 +89,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
         </span>
       </button></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side="right" sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
     })}
-    {includeSettings ? <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
+    {includeSettings ? <button type="button" data-resource-intent="settings" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
   </nav></Tooltip.Provider> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 
@@ -127,7 +126,7 @@ function AccountContent({ config, compact, onInvoke }: {
       </button>}
       <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span><FormattedMessage id="account.title" defaultMessage="Account" /></span></button>
     </>
-    <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><SettingsGearIcon size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
+    <button type="button" data-resource-intent="settings" onClick={() => onInvoke(config.onOpenSettings)}><SettingsGearIcon size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
     {account.onSignOut ? <button type="button" disabled={signingOut} onClick={async () => {
       setSigningOut(true);
       setError(null);

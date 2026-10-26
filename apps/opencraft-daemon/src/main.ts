@@ -12,6 +12,7 @@ import { MachineIdentityTransport } from "./machine-transport.js";
 
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
+import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
 
 function isNamedPipe(endpoint: string): boolean {
   return endpoint.startsWith("\\\\.\\pipe\\");
@@ -47,6 +48,7 @@ export async function startOpenCraftDaemon(options: {
   readonly dshExecutable: string;
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
+  readonly humanAccountDirectory?: string;
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
   readonly codexExecutable: string;
@@ -74,6 +76,13 @@ export async function startOpenCraftDaemon(options: {
     }
   };
   reportStorage();
+  let humanAccounts: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
+  try {
+    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '') : null;
+  } catch (error) {
+    try { storage.close(); } finally { await releaseStorageOwner(); }
+    throw error;
+  }
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
   let localAgentStarting: Promise<Awaited<ReturnType<typeof startLocalAgentHost>>> | null = null;
   const codexAgents = new Set<CodexEngineAdapter>();
@@ -150,6 +159,7 @@ export async function startOpenCraftDaemon(options: {
       }
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
+      humanAccounts?.close();
     })();
     return closing;
   };
@@ -159,9 +169,11 @@ export async function startOpenCraftDaemon(options: {
     endpoint: options.endpoint,
     authToken: options.authToken,
     appHost,
+    ...(humanAccounts ? { authenticateHumanSession: proof => humanAccounts!.authenticateSession(proof) } : {}),
     onShutdownRequested: () => void close().finally(() => process.exit(0)),
   });
   } catch (error) {
+    humanAccounts?.close();
     await appHost.close();
     try { storage.close(); } finally { await releaseStorageOwner(); }
     throw error;

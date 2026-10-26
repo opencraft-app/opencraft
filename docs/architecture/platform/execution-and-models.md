@@ -48,9 +48,31 @@ Codex subscription maintenance also retains the backend-issued reset-credit coun
 and its own last-successful observation time. Only a nonnegative safe integer in
 `rate_limit_reset_credits.available_count` is a known count; missing or invalid
 metadata is unknown, including on older Hosts. A failed refresh preserves the
-previous observation. The existing account Settings row renders the count without
-collecting per-credit details or redeeming a credit. This metadata never affects
-account selection, affinity, or inferred recovery from a blocked quota.
+previous observation. This metadata never affects account selection, affinity,
+or inferred recovery from a blocked quota.
+
+Hosts with `resetCreditActions` expose on-demand credit details and explicit
+redemption through the same account owner in Core and the embedded adapter.
+Settings keeps this action hidden for older Hosts. Detail reads never redeem a
+credit. Only credit metadata reaches the Renderer: ID, title, status, supported
+plan, issue/expiry times and observation time; profile identities and OAuth
+credentials do not. Raw HTTP ISO times are normalized to milliseconds. Unknown
+expiry is distinct from explicit no-expiry, and the backend total is independent
+of the possibly capped detail list.
+
+Redemption requires a confirmation for one account and one credit. The Host
+re-reads details and rejects unavailable, expired, unsupported or unrecognized
+credits before POST. It binds `credit_id` and `redeem_request_id`, coalesces
+duplicate attempts and rejects concurrent attempts for the same account. An
+uncertain network, HTTP or payload result never reports success or automatically
+replays POST. Settings requires a fresh detail read before a further explicit
+confirmation and retains the same retry key for an unresolved attempt during the
+application service's lifetime. This in-memory tracking is not a durable queue
+or a cross-client guarantee; upstream credit identity/idempotency remains the
+redemption authority. No fallback selects a different credit. The original
+quota/count owners are refreshed afterward; a successful reset followed by a
+failed usage read remains a successful reset with a refresh-needed notice.
+Closing the account owner drains its credit requests before closing storage.
 
 Codex AppServer connects to one synthetic Responses provider on a loopback-only
 HTTP proxy. Each AppServer child receives only the proxy URL and a Host-scoped
@@ -68,8 +90,22 @@ and ChatGPT metadata base URL point at loopback; the broker JWT is never sent to
 an external backend. No shared auth file is copied into native runtime state.
 Initialization waits for native auth before releasing logical clients.
 
+The native hosted MCP route `/api/codex/ps/mcp` maps to ChatGPT's
+`/backend-api/ps/mcp`, outside the Codex Responses prefix. It authenticates the
+loopback broker bearer before injecting an account credential. Native launch
+also supplies that synthetic bearer through `CODEX_CONNECTORS_TOKEN`, which the
+implicit hosted MCP client resolves separately from external account login.
+Neither value is an upstream OAuth credential. Tool calls use
+native `params._meta.threadId` for Host-scoped affinity; initialization and
+catalog requests do not reserve a conversation or advance the cursor. Hosted
+tool failures retain their upstream status and never replay on another account
+or change text quota. This is not an unrestricted ChatGPT API proxy.
+
 The loopback bridge preserves request bytes, including native compressed Responses
-bodies, without a UTF-8 round trip. The proxy also allows POST `/v1/images/generations` and `/v1/images/edits`.
+bodies, without a UTF-8 round trip. Upstream Fetch decodes response compression;
+the bridge omits its stale `Content-Encoding` and compressed length so clients
+consume the decoded JSON or event stream once.
+The proxy also allows POST `/v1/images/generations` and `/v1/images/edits`.
 Native image turn IDs resolve through a bounded, Host-scoped map populated by
 Responses turn metadata to the same thread affinity. Unknown or cross-Host turns
 are rejected. Native image requests run once and retain their backend status and
@@ -100,9 +136,14 @@ An eligible bound Thread stays pinned. A short temporary hold returns bounded
 `Retry-After` for that Thread while new Threads may use another account. The
 proxy advances within one request only after an explicit pre-success quota or
 authorization rejection; successful responses, transport failures and
-indeterminate streaming outcomes are never replayed. The provider cursor moves
-to the next eligible account after the current account and wraps in configured
-priority order; recovery of an earlier account does not pull new Threads back.
+indeterminate streaming outcomes are never replayed. HTTP 429 with exhausted
+quota headers or JSON `error.type` equal to `usage_limit_reached` is an explicit
+quota rejection; an ordinary temporary rate limit does not trigger replay.
+A body-only rejection excludes that account for the current request without
+inventing a quota window or reset time; subscription refresh owns durable usage.
+The provider cursor moves to the next eligible account after the current account
+and wraps in configured priority order; recovery of an earlier account does not
+pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
@@ -438,7 +479,7 @@ leaves retry ownership with the Host.
 
 ### Native history read fault boundary
 
-Codex Core history reads (`thread/read`, `thread/turns/list`, `thread/items/list`) use bounded, individually initialized read-only native sockets with capped concurrency and queue depth. They do not subscribe, resume, run tools or own the Core process. An oversized response or read socket failure resolves only its originating RPC; it cannot publish failure on the shared execution/subscription socket. Payload limits stay bounded, with a non-retryable `HISTORY_RESPONSE_TOO_LARGE` response for oversized pages. Host queue/Goal/tool-configuration resumes explicitly exclude history. Capacity retries inspect one summary turn, and schedule inspection scans bounded summary pages, retaining unknown when the target is unavailable. This is a failure-domain boundary, not tenant data separation or process-level resource isolation.
+Codex Core history reads (`thread/read`, `thread/turns/list`, `thread/items/list`) use a Host-owned pool of bounded read-only native sockets with capped concurrency and queue depth. A socket initializes once and serves at most one RPC at a time; subsequent reads reuse it without repeating native connection initialization. Each RPC has a unique transport ID mapped back to its caller ID, so duplicate or late replies cannot satisfy another request. Its deadline includes queueing, health lookup, initialization and response delivery. Expired queued work starts no new connection. Timeout, malformed or oversized replies retire that slot; failed requests are not replayed. Transport reset fails old reads and retires their connections before a new incarnation can initialize. Host close drains pending reads and prevents late health results from allocating sockets. They do not subscribe, resume, run tools or own the Core process. An oversized response or read socket failure resolves only its originating RPC; it cannot publish failure on the shared execution/subscription socket. Payload limits stay bounded, with a non-retryable `HISTORY_RESPONSE_TOO_LARGE` response for oversized pages. Host queue/Goal/tool-configuration resumes explicitly exclude history. Capacity retries inspect one summary turn, and schedule inspection scans bounded summary pages, retaining unknown when the target is unavailable. This is a failure-domain boundary, not tenant data separation or process-level resource isolation.
 
 ### Execution observation and bounded history delivery
 

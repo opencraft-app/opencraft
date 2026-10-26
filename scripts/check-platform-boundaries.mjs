@@ -18,17 +18,18 @@ function collectFiles(directory) {
 
 const violations = [];
 
-// Web menu consumers share direct-touch activation rather than reopening the
-// same accidental-scroll bug at each feature trigger. Radix lives at the adapter.
-for (const directory of ["apps/workbench-web/src", "packages/composer-editor/src", "plugins/tasks/src", "plugins/builtin-agents/src"]) {
-  checkFiles("shared dropdown activation", directory, [{
-    pattern: /["']@radix-ui\/react-dropdown-menu["']/m,
-    message: "must consume design-system-web/dropdown-menu so direct touch completes before opening",
-  }]);
+// Menu input is a shared contract. Focus policy must never opt out of outside
+// isolation; business code cannot import Radix menus behind the adapter.
+for (const directory of ["apps/workbench-web/src", "packages", "plugins"]) {
+  for (const path of collectFiles(resolve(repositoryRoot, directory))) {
+    const location = relative(repositoryRoot, path);
+    if (location.startsWith("packages/design-system-web/")) continue;
+    const source = readFileSync(path, "utf8");
+    if (/["']@radix-ui\/react-(?:dropdown-menu|context-menu)["']/.test(source)) {
+      violations.push(`${location}: command menus must consume design-system-web dropdown-menu/context-menu`);
+    }
+  }
 }
-
-
-
 
 // Shared workbench code consumes SpeechServicePort/AudioCapturePort. Product
 // bridge globals, authenticated routes and fixed product model policy belong
@@ -78,7 +79,7 @@ for (const directory of ["apps/workbench-web/src/components/workbench-tool-navig
     message: "must consume declared management entry points, not private page IDs",
   }]);
 }
-checkFiles("public Expo tool", "apps/workbench-expo/scripts", [{
+checkFiles("public Expo tool", "apps/mobile/scripts", [{
   pattern: /mobile-bot-runtime\.html|native-cron-client\.js/m,
   message: "must not depend on downstream Bot/Cron generated artifacts; keep the probe with its product builder",
 }]);
@@ -231,7 +232,7 @@ checkFiles("Vite host", "apps/workbench-web/src", [
   },
 ]);
 
-checkFiles("Expo host", "apps/workbench-expo/src", [
+checkFiles("Expo host", "apps/mobile/src", [
   {
     pattern: /(?:from\s*|import\s*)["'](?:@opencraft\/opencraft-composer|prosemirror-|lucide-react["'])/m,
     message: "must not import DOM-only composer or icon packages",
@@ -302,7 +303,7 @@ for (const dependency of Object.keys(desktopPackage.dependencies ?? {})) {
   }
 }
 
-for (const directory of ["apps/workbench-web/src/components", "apps/workbench-expo/src/components"]) {
+for (const directory of ["apps/workbench-web/src/components", "apps/mobile/src/components"]) {
   checkFiles("ChatUI host", directory, forbiddenUiAuthorityImports.map((specifier) => ({
     pattern: new RegExp(`(?:from\\s*|import\\s*)["']${specifier.replaceAll("/", "\\/")}(?:["'/])`),
     message: `must consume ${specifier} through a runtime composition root, not from a UI component`,

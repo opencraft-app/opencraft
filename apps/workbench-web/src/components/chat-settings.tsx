@@ -4,28 +4,18 @@ import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, Setting
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
 import { useAsyncNotices } from "./async-notices";
-import { useTurnNotifications } from "../runtime/turn-notifications-context";
-
-const unavailableNotifications = { supported: false, permission: "denied" as const, error: false };
-const noSubscription = () => () => undefined;
-const getUnavailableNotifications = () => unavailableNotifications;
+import { TurnNotificationSettings } from "./turn-notification-settings";
 
 export function ChatSettings() {
   const intl = useIntl();
   const notices = useAsyncNotices();
   const preferences = useUiPreferencesRuntime();
   const defaultFollowUpAction = useDefaultFollowUpAction();
-  const notifications = useTurnNotifications();
-  const notificationState = useSyncExternalStore(notifications?.subscribe ?? noSubscription,
-    notifications?.getSnapshot ?? getUnavailableNotifications, notifications?.getSnapshot ?? getUnavailableNotifications);
   const preferenceState = useSyncExternalStore(preferences.subscribe, preferences.getSnapshot, preferences.getSnapshot);
   const [neweraSaving, setNeweraSaving] = useState(false);
-  const [notificationSaving, setNotificationSaving] = useState(false);
-  const [permissionError, setPermissionError] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [saving, setSaving] = useState(false);
   const label = intl.formatMessage({ id: "settings.chat.immediateFollowUp", defaultMessage: "Follow up immediately while responding" });
-  const notificationLabel = intl.formatMessage({ id: "settings.chat.turnNotifications", defaultMessage: "Notify when a response ends" });
 
   return <>
     <SettingsPageHeader title={intl.formatMessage({ id: "settings.chat", defaultMessage: "Chat" })} />
@@ -57,31 +47,8 @@ export function ChatSettings() {
             .finally(() => setSaving(false));
         }} />
       </SettingsRow>
-      <SettingsRow
-        label={notificationLabel}
-        description={!notificationState.supported
-          ? intl.formatMessage({ id: "settings.chat.turnNotifications.unsupported", defaultMessage: "Browser notifications are unavailable here. Use a supported browser on HTTPS." })
-          : notificationState.permission === "denied"
-            ? intl.formatMessage({ id: "settings.chat.turnNotifications.denied", defaultMessage: "Notifications are blocked. Allow them in your browser's site settings, then return here." })
-            : intl.formatMessage({ id: "settings.chat.turnNotifications.description", defaultMessage: "Receive a browser notification after each response completes, fails or stops, including while viewing this page. The page must remain open." })}
-        controlWidth="compact"
-      >
-        <SettingsSwitch label={notificationLabel}
-          checked={preferenceState.values["chat.turnNotifications"]}
-          disabled={notificationSaving || !notificationState.supported || (notificationState.permission === "denied" && !preferenceState.values["chat.turnNotifications"])}
-          onCheckedChange={(checked) => {
-            setSaveError(false); setPermissionError(false); setNotificationSaving(true);
-            // Preserve transient user activation: ask before any asynchronous preference write.
-            const permission = checked && notifications ? notifications.requestPermission() : Promise.resolve("granted" as const);
-            void permission.then(async value => {
-              if (checked && value !== "granted") { setPermissionError(true); return; }
-              await preferences.set("chat.turnNotifications", checked);
-            }).catch(() => setSaveError(true)).finally(() => setNotificationSaving(false));
-          }} />
-      </SettingsRow>
     </SettingsGroup>
-    {permissionError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.turnNotifications.permissionRequired", defaultMessage: "Notification permission was not granted. You can enable it again when ready." })}</SettingsNotice> : null}
-    {notificationState.error ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.turnNotifications.showError", defaultMessage: "The browser could not display a notification. Check your browser and system notification settings." })}</SettingsNotice> : null}
+    <TurnNotificationSettings />
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}
   </>;
 }

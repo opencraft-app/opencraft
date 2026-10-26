@@ -1,5 +1,8 @@
+import { useTurnNotifications } from "./runtime/turn-notifications-context";
 import { resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
 import { ConversationSummaryButton, ConversationSummarySurface, useConversationSummary, useSummaryGoal } from "./components/conversation-summary";
+import { serverUrl } from "./runtime/server-context";
+import { workbenchLocationUrl } from "./runtime/workbench-navigation";
 import { ConversationToolbarSizing } from "./components/toolbar-dock-state";
 import { conversationToolbarActionIds } from "./components/toolbar-dock-model";
 import { useConversationDisplay } from "./runtime/use-conversation-display";
@@ -23,6 +26,7 @@ import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
 import { OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { IdentityAvatarContext } from "@opencraft/extension-react";
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
@@ -65,7 +69,7 @@ import type {
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
-import { workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
+import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
@@ -134,6 +138,7 @@ import { useConversationRecoveryDiagnostic } from "./runtime/conversation-recove
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { ThreadGoalSurface } from "./components/thread-goal-surface";
+import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
@@ -183,7 +188,7 @@ import {
   setThemePreference,
   useAppearanceTheme,
 } from "./appearance-theme";
-import { resolveBrowserAttachment } from "./runtime/browser-attachment-resolver";
+import { resolveBrowserAttachmentForHost } from "./runtime/browser-attachment-resolver";
 import { createAppServerMediaSourceLoader } from "./runtime/appserver-media-loader";
 import { useBlobResources, useImageProcessing } from "./runtime/appserver-runtime-context";
 import {
@@ -294,6 +299,7 @@ export function App({
   readonly presentation?: WorkbenchPresentationPolicy;
 } = {}) {
   const intl = useIntl();
+  const turnNotifications = useTurnNotifications();
   const notices = useAsyncNotices();
   const modelSelectionPolicy = embedded?.modelSelectionPolicy ?? (embedded ? "host-default" : "user");
   const internalDeveloperMode = useInternalDeveloperMode();
@@ -368,7 +374,8 @@ export function App({
     hostCatalog.hosts[0]!;
   const machines = useMemo(() => groupWorkInMachines(hostCatalog.profiles, environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
   const activeMachine = machines.find(machine => machine.hosts.some(host => host.hostId === snapshot.hostId));
-  const composerHostOptions = useMemo(() => machines.map(machine => ({
+  const newConversationMachines = useMemo(() => groupNewConversationMachines(hostCatalog.profiles.filter(host => host.hideFromNewChat !== true), environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
+  const composerHostOptions = useMemo(() => newConversationMachines.map(machine => ({
     id: machine.id,
     hostIds: machine.hosts.map(host => host.hostId),
     label: machineName(machine, extensionPlatform, intl),
@@ -377,8 +384,8 @@ export function App({
     resource: machine.resource,
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
-  })), [machines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).map(host => host.hostId), snapshot.hostId);
+  })), [newConversationMachines, extensionPlatform, intl]);
+  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId);
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -388,20 +395,8 @@ export function App({
     [blobs, runtime, snapshot.hostId],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: Parameters<typeof resolveBrowserAttachment>[1], signal?: AbortSignal) => {
-      const capability = runtime.resources.attachments.capabilities();
-      return resolveBrowserAttachment(file, pending, {
-        maxBytes: capability?.maxBytes,
-        chunkBytes: capability?.chunkBytes,
-        uploadChunk: capability?.chunkBytes ? params => runtime.resources.attachments.uploadChunk(params) : undefined,
-        uploadCancel: capability?.chunkBytes ? id => runtime.resources.attachments.uploadCancel(id) : undefined,
-        stage:
-          runtime.resources.attachments.capabilities()?.sources.includes("client-bytes") === true
-            ? (request, requestSignal) =>
-                runtime.resources.attachments.stage(request, requestSignal)
-            : null,
-      }, images, signal);
-    },
+    (file: File, pending: ComposerAttachment, signal?: AbortSignal) =>
+      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal),
     [runtime, images],
   );
   const removeActiveHostAttachment = useCallback(
@@ -486,6 +481,7 @@ export function App({
   const routeHeader = useAppShellRouteHeader(
     workbenchNavigationSnapshot.routeScopeId,
   );
+  const desktopBackdrop = useApplicationDesktopBackdrop(workbenchNavigationSnapshot.applicationRoute);
   const canGoBack = workbenchNavigationSnapshot.canGoBack;
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
@@ -810,24 +806,6 @@ export function App({
       activationPhase: conversationViewActivation.phase,
     });
   }, [recoveryPresentation, snapshot.hostId, activeThreadId, snapshot.phase, conversationViewActivation.phase]);
-  const retryConversationRecovery = () => {
-    const operation = snapshot.phase === "error"
-      ? runtime.reconnect()
-      : activeThreadLease?.retryRestore();
-    void operation?.catch(() => undefined);
-  };
-  const retryColdActivation = (snapshot.phase === "error" || conversationViewActivation.phase === "error")
-    && hostCatalog.currentLocation.kind === "thread"
-    ? () => {
-        const location = hostCatalog.currentLocation;
-        const reconnect = snapshot.phase === "error" ? runtime.reconnect() : Promise.resolve();
-        void reconnect.then(() => {
-          if (equalWorkbenchLocation(hostCatalog.currentLocation, location)) {
-            return hostCatalog.navigate(location, "replace");
-          }
-        }).catch(() => undefined);
-      }
-    : undefined;
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
     () => findPendingInteraction(timeline),
@@ -1737,6 +1715,8 @@ export function App({
     scope: displayScope,
     serverId: legacyDirectServerProjectionFromHost({ hostId: activeHost.hostId, hostKind: activeHost.kind, label: activeHost.label }).serverOrigin.serverId,
     threadId: headerThreadId,
+    shareUrl: !embedded && headerThreadId && ["https:", "http:"].includes(window.location.protocol)
+      ? new URL(serverUrl(workbenchLocationUrl(createWorkbenchThreadLocation(snapshot.hostId, headerThreadId))), window.location.origin).href : undefined,
     title: activeThread?.title ?? pageTitle ?? "",
     pinned: activeThread?.pinned,
     project: activeThread?.project,
@@ -1903,7 +1883,8 @@ export function App({
         controller={routeHeader.controller}
         target={routeHeader.target}
       >
-      <AppShell
+        <AppShell
+          surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
             settingsActive: routeSettingsOpen,
@@ -1924,7 +1905,10 @@ export function App({
               signIn: authenticationPresentation.signIn,
               onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
               onRefresh: extensionProjection.account.provider.refresh,
-              onSignOut: extensionProjection.account.provider.signOut,
+              onSignOut: extensionProjection.account.provider.signOut ? async () => {
+                await turnNotifications?.beforeSignOut();
+                await extensionProjection.account?.provider.signOut?.();
+              } : undefined,
             },
             onOpenSettings: () => openSettingsFromConversation(),
             onOpenUpdates: () => openSettingsFromConversation('updates'),
@@ -2048,7 +2032,7 @@ export function App({
             connectionPhase={activeHostConnectionPhase}
             onSelectHost={async (machineId) => {
               setWorkspacePickerOpen(false);
-              const machine = machines.find(machine => machine.id === machineId);
+              const machine = newConversationMachines.find(machine => machine.id === machineId);
               if (!machine) return;
               const currentAgent = hostCatalog.profiles.find(host => host.hostId === snapshot.hostId)?.agent;
               const target = chooseWorkInHost(machine, currentAgent, snapshot.hostId);
@@ -2112,8 +2096,6 @@ export function App({
                     ? <ConversationRecoveryEmptyState
                         failed={recoveryPresentation === "cold-error"}
                         requiresUpdate={recoveryRequiresUpdate}
-                        diagnostic={recoveryDiagnostic}
-                        onRetry={activeThreadLease === null ? retryColdActivation : retryConversationRecovery}
                       />
                     : undefined}
                   key={activeConversationRestoreKey ?? "empty"}
@@ -2193,8 +2175,7 @@ export function App({
                       data-thread-find-composer="true"
                     >
                     {draft === null && recoveryPresentation === "warm-error" ? <ConversationRecoveryNotice
-                      failed requiresUpdate={recoveryRequiresUpdate} diagnostic={recoveryDiagnostic}
-                      onRetry={retryConversationRecovery}
+                      failed requiresUpdate={recoveryRequiresUpdate}
                     /> : null}
                     {conversationContribution?.beforeComposer}
                     {snapshot.conversation?.continuation.error ? (
@@ -2206,8 +2187,9 @@ export function App({
                         goals={runtime.resources.goals}
                         portalContainer={portalContainer}
                       >{(goalMenuItem, _goalBusy, goalContent) => (
+                      <ThreadRecoveryNotice threadId={snapshot.phase === "ready" ? activeThreadId : null} resource={runtime.resources.turnRecovery}>{recoveryContent => (
                       <OpenCraftComposer
-                        attachedContent={goalContent}
+                        attachedContent={goalContent || recoveryContent ? <>{goalContent}{recoveryContent}</> : null}
                         floatingContent={composerChangeSummary}
                         controller={composerController}
                         defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
@@ -2275,6 +2257,7 @@ export function App({
                         onSubmit={sendMessage}
                         onCancel={cancelStream}
                       />
+                      )}</ThreadRecoveryNotice>
                       )}</ThreadGoalSurface>
                     ) : (
                       <div className="opencraft-composer-stack">
@@ -2303,6 +2286,7 @@ export function App({
         )}
           </div>
           </WorkbenchPresentationActivityProvider>
+          <ApplicationRouteMotion route={workbenchNavigationSnapshot.applicationRoute}>
           {standaloneManagementOpen ? (
             <section className="workbench-tool-route" aria-label="Account management">
               {settingsContent}
@@ -2314,6 +2298,7 @@ export function App({
               {extensionProjection.activeViewNode}
             </section>
           ) : null}
+          </ApplicationRouteMotion>
         </div>
         {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}

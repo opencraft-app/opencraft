@@ -1,8 +1,8 @@
 import type { Socket } from "node:net";
 
 export const OPENCRAFT_DAEMON_PROTOCOL_VERSION = 1 as const;
-// Stable handshake identity; branding alone does not change the wire contract.
-export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v2" as const;
+// v3 requires native Human proof when account admission is configured.
+export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v3" as const;
 export const MAX_DAEMON_FRAME_BYTES = 64 * 1024 * 1024;
 
 export interface DaemonStorageSummary {
@@ -23,6 +23,8 @@ export type DaemonClientMessage =
       readonly authToken: string;
       readonly connectionId: string;
       readonly role: "app-host" | "control";
+      /** Server-issued Human login proof, passed only by trusted native Main. */
+      readonly humanSession?: string;
     }
   | { readonly type: "app-host/message"; readonly payload: unknown }
   | { readonly type: "daemon/shutdown" };
@@ -55,7 +57,9 @@ export function isDaemonClientHello(value: unknown): value is Extract<DaemonClie
     && record.authToken.length >= 32
     && typeof record.connectionId === "string"
     && record.connectionId.length > 0
-    && (record.role === "app-host" || record.role === "control");
+    && (record.role === "app-host" || record.role === "control")
+    && (record.humanSession === undefined || (record.role === "app-host" && typeof record.humanSession === "string"
+      && record.humanSession.length > 0 && record.humanSession.length <= 128));
 }
 
 export class DaemonJsonLineChannel {

@@ -94,21 +94,21 @@
       "id": "expo-web",
       "platforms": ["linux", "darwin", "win32"],
       "command": ["npm", "run", "build:expo:web"],
-      "artifacts": ["apps/workbench-expo/dist/index.html"],
+      "artifacts": ["apps/mobile/dist/index.html"],
       "description": "Expo/Metro web export for the native-shaped application"
     },
     {
       "id": "expo-ios-bundle",
       "platforms": ["darwin", "linux"],
       "command": ["npm", "run", "build:expo:ios"],
-      "artifacts": ["apps/workbench-expo/dist/ios/main.jsbundle"],
+      "artifacts": ["apps/mobile/dist/ios/main.jsbundle"],
       "description": "Deterministic JavaScript/assets bundle; native archive remains a macOS job"
     },
     {
       "id": "expo-android-internal-apk",
       "platforms": ["linux", "darwin"],
       "command": ["npm", "run", "build:expo:android:apk"],
-      "artifacts": ["apps/workbench-expo/release/OpenCraft-android-internal.apk"],
+      "artifacts": ["apps/mobile/release/OpenCraft-android-internal.apk"],
       "description": "Standalone Android release APK signed with the generated development key for internal testing"
     },
     {
@@ -116,8 +116,8 @@
       "platforms": ["linux"],
       "command": ["npm", "run", "build:expo:android:release"],
       "artifacts": [
-        "apps/workbench-expo/release/OpenCraft-dev.opencraft.workbench-android-release.apk",
-        "apps/workbench-expo/release/OpenCraft-dev.opencraft.workbench-filing.txt"
+        "apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk",
+        "apps/mobile/release/OpenCraft-dev.opencraft.workbench-filing.txt"
       ],
       "description": "OpenCraft APK signed with an external production keystore; explicit downstream products own release identity and naming"
     }

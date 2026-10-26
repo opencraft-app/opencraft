@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { createRequire } = require('node:module');
 const semver = require('semver');
 
-const app = path.resolve(__dirname, '../../apps/workbench-expo');
+const app = path.resolve(__dirname, '../../apps/mobile');
 
 test('Expo Router and animation runtime resolve within the installed SDK contract', () => {
   const fromApp = createRequire(path.join(app, 'package.json'));
@@ -54,7 +54,7 @@ function capturePrebuild(script, release) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'opencraft-native-build-'));
   try {
     // Standalone source fixture has no downstream products sibling or native project.
-    const standalone = path.join(temp, 'apps/workbench-expo');
+    const standalone = path.join(temp, 'apps/mobile');
     fs.mkdirSync(path.join(standalone, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(temp, 'packages/react-runtime'), { recursive: true });
     fs.copyFileSync(path.join(app, '../../packages/react-runtime/NOTICE.json'), path.join(temp, 'packages/react-runtime/NOTICE.json'));

@@ -33,7 +33,7 @@ const vite=await createServer({configFile:false,root:process.cwd(),logLevel:"err
  });
 }}]});
 let browser:any; const sockets=new WebSocketServer({noServer:true});
-let dropNextResume = false, resumeRequests = 0;
+let dropNextResume = false, resumeRequests = 0, failResumes = 0;
 const resumeParams: any[] = [];
 let releaseResume: (() => void) | undefined, holdNextResume = false;
 try {
@@ -46,6 +46,7 @@ try {
     resumeRequests++;
     resumeParams.push(request.params);
     if(holdNextResume){holdNextResume=false;await new Promise<void>(resolve=>{releaseResume=resolve;});}
+    if (failResumes > 0) { failResumes--; ws.send(JSON.stringify({id:request.id,error:{code:-32000,message:"synthetic history failure"}})); return; }
     if(dropNextResume){dropNextResume=false;return;}
   }
   try { const result=request.method==="initialize"?{codexHome:"/tmp",platformFamily:"unix",platformOs:"linux",userAgent:"fixture",capabilities:{extensions:{"opencraft/resume-history":{version:1,mode:"paginated",initialTurnsPage:true,boundedRecovery:true}}}}:await adapter.dispatch(request.method,request.params);
@@ -58,7 +59,7 @@ try {
  for(const {width,theme} of [390,1100].flatMap(width=>["light","dark"].map(theme=>({width,theme})))) {
   events.length=0;for(let i=0;i<10;i++)addTurn(i);
   const page=await browser.newPage({viewport:{width,height:850},hasTouch:width===390,isMobile:width===390});
-  const consoleDetails:string[]=[],copiedDetails:string[]=[];page.on("console",message=>{if(message.type()==="log"&&message.text().startsWith("[conversation-recovery] details"))consoleDetails.push(message.text());if(message.type()==="log"&&message.text().startsWith("[conversation-recovery] copied details"))copiedDetails.push(message.text());});
+  const consoleDetails:string[]=[];page.on("console",message=>{if(message.type()==="log"&&message.text().startsWith("[conversation-recovery] details"))consoleDetails.push(message.text());});
   const errors:string[]=[];page.on("pageerror",(e:Error)=>errors.push(e.message));await page.addInitScript("window.__name=value=>value");
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?theme=${theme}`);
   await page.waitForSelector('[data-authoritative="true"]');
@@ -115,6 +116,19 @@ try {
   assert.equal(await page.evaluate(()=>(window as any).recovery.snapshot().authoritative),true);
   assert.equal(await page.evaluate(()=>document.querySelector('[data-turn-key="dsh-turn-s-9"]')===(window as any).originalRow),true);
   assert.equal(await page.getByRole('textbox',{name:'Unsent draft'}).inputValue(),'Preserve my unsent words');
+  const serverErrorStart = resumeRequests;
+  failResumes = 6;
+  await page.getByRole('textbox',{name:'Unsent draft'}).focus();
+  await page.evaluate(()=>{void (window as any).recovery.revalidate();});
+  await page.waitForFunction(()=>(window as any).recovery.snapshot().authoritative===false);
+  await assertQuietRecovery();
+  await page.waitForSelector('[data-authoritative="true"]');
+  assert.equal(resumeRequests-serverErrorStart,7,'six generic server failures recover automatically without manual retry');
+  assert.equal(await page.locator('.conversation-recovery-details, .conversation-recovery-notice button').count(),0);
+  assert.equal(await page.getByRole('textbox',{name:'Unsent draft'}).inputValue(),'Preserve my unsent words');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Unsent draft');
+  assert.equal(await page.evaluate(()=>document.querySelector('[data-turn-key="dsh-turn-s-9"]')===(window as any).originalRow),true);
+  await page.screenshot({path:`${output}/silent-recovered-${width}-${theme}.png`});
   for(let turn=10;turn<110;turn++)addTurn(turn);
   const gapStart=calls.length;
   await page.evaluate(()=>(window as any).recovery.revalidate());
@@ -126,17 +140,8 @@ try {
   assert.equal(await page.getByRole('textbox',{name:'Unsent draft'}).inputValue(),'Preserve my unsent words');
   await page.evaluate(()=>(window as any).recovery.loadOlder());
   await page.screenshot({path:`${output}/gap-${width}-${theme}.png`});
-  await page.evaluate(()=>{
-    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text:string)=>{(window as any).copiedRecoveryDetails=text;}}});
-    (window as any).recovery.showErrorDiagnostic();
-  });
-  const copyFixture=page.locator('#copy-diagnostic-fixture');await copyFixture.locator('summary').click();
-  const expectedClipboard=await copyFixture.locator('pre').innerText();await copyFixture.getByRole('button',{name:'Copy details'}).click();
-  await page.waitForFunction(()=>(window as any).copiedRecoveryDetails!==undefined);
-  assert.equal(await page.evaluate(()=>(window as any).copiedRecoveryDetails),expectedClipboard);
-  assert.equal(copiedDetails.at(-1),'[conversation-recovery] copied details\n'+expectedClipboard);
-  assert.match(expectedClipboard,/attemptId: 11111111-1111-4111-8111-111111111111/);
-  assert.deepEqual(errors,[]);results.push({width,theme,unchangedReads,gapReads:2,timeoutRecoveryMs,timeoutReads:2,retainedDOM:true,draftPreserved:true,consoleDiagnosticVerified:true,clipboardMatchesConsole:true,trace});
+  assert.equal(await page.locator('.conversation-recovery-details, .conversation-recovery-notice button').count(),0);
+  assert.deepEqual(errors,[]);results.push({width,theme,unchangedReads,gapReads:2,timeoutRecoveryMs,timeoutReads:2,retainedDOM:true,draftPreserved:true,consoleDiagnosticVerified:true,noRetryChrome:true,serverErrorReads:7,focusPreserved:true,trace});
   await page.close();
  }
  await writeFile(`${output}/results.json`,JSON.stringify({results,diagnostics},null,2));console.log(JSON.stringify(results));

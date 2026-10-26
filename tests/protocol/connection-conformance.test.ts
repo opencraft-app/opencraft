@@ -9,21 +9,28 @@ import { ConnectionLifecycleOwner } from "../../packages/workbench-runtime/src/c
 // helpers or Runtime projections. Each event is replayed through both adapters.
 type Event = "connect" | "ack" | "loss" | "manual" | "retry" | "deadline" | "stable" | "late" | "freeze" | "dispose";
 class Specification {
-  phase = "idle"; failures = 0; error = false; stable = false;
+  phase = "idle"; failures = 0; error = false; stable = false; expired = false;
+  constructor(private readonly stageMs = 30_000) {}
   step(event: Event) {
     if (this.phase === "disposed") return;
     if (event === "dispose") { this.phase = "disposed"; this.error = false; return; }
     if (event === "connect") {
-      if (this.phase !== "usable") { this.phase = "attempting"; this.error = false; }
-    } else if (event === "ack" && this.phase === "attempting") { this.phase = "usable"; this.error = false; this.stable = true; }
+      // Explicit demand observes elapsed time too, even before timer callbacks.
+      if (this.phase === "attempting" && this.expired) { this.failures++; this.expired = false; }
+      if (this.phase !== "usable" && this.phase !== "attempting") { this.phase = "attempting"; this.error = false; this.expired = false; }
+    } else if (event === "freeze" && this.phase === "attempting") this.expired = true;
+    else if (event === "ack" && this.phase === "attempting") {
+      if (this.expired) { this.phase = "backoff"; this.error = true; this.failures++; }
+      else { this.phase = "usable"; this.error = false; this.stable = true; }
+    }
     else if (event === "manual" && ["attempting", "usable"].includes(this.phase)) { this.phase = "blocked"; this.error = true; }
     else if ((event === "loss" && ["attempting", "usable"].includes(this.phase)) || event === "deadline") {
       this.phase = "backoff"; this.error = true; this.failures++;
-    } else if (event === "retry") { this.phase = "attempting"; this.error = false; }
+    } else if (event === "retry") { this.phase = "attempting"; this.error = false; this.expired = false; }
     else if (event === "stable") { this.failures = 0; this.stable = false; }
   }
   timers() {
-    return this.phase === "attempting" ? [60_000] : this.phase === "usable" ? this.stable ? [7_000] : []
+    return this.phase === "attempting" ? [this.stageMs] : this.phase === "usable" ? this.stable ? [7_000] : []
       : this.phase === "backoff" ? [[2, 4, 8][Math.min(this.failures - 1, 2)]!] : [];
   }
 }
@@ -35,7 +42,7 @@ function clock() {
     setTimeout(callback: () => void, delay: number) { const id = {}; timers.set(id, { callback, delay }); return id; },
     clearTimeout(id: unknown) { const timer = timers.get(id as object); if (timer) retired.push(timer.callback); timers.delete(id as object); },
     freeze() { now += 300_000; },
-    fire(delay: number) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `missing timer ${delay}`); timers.delete(entry[0]); entry[1].callback(); },
+    fire(delay: number) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `missing timer ${delay}`); timers.delete(entry[0]); now += delay; entry[1].callback(); },
   };
 }
 class Physical {
@@ -98,7 +105,7 @@ function trace(seed: number) {
 }
 for (const kind of ["owner", "runtime", "apphost"] as const) test(`model trace conformance through ${kind}, including suspended clocks and late callbacks`, { timeout: 60_000 }, async () => {
   for (let seed = 1; seed <= 24; seed++) {
-    const model = new Specification(), actual = await adapter(kind); const history: Event[] = [];
+    const model = new Specification(kind === "owner" ? 30_000 : 35_000), actual = await adapter(kind); const history: Event[] = [];
     try {
       for (const event of trace(seed)) {
         history.push(event); const before = model.phase;

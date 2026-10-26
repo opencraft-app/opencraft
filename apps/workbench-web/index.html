@@ -5,7 +5,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      /* OPENCRAFT_BOOTSTRAP_APPEARANCE */
+    </script>
     <link rel="icon" href="/opencraft-icon.svg" />
     <title>OpenCraft</title>
     <script>
@@ -35,6 +40,33 @@
       @media (display-mode: standalone) {
         html { background-color: #ffffff; }
         html.electron-dark { background-color: #181818; }
+      }
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]),
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
+        position: static;
+        inset: auto;
+        height: 100vh;
+      }
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
+        position: relative;
+      }
+      html[data-window-host="browser"],
+      html[data-window-host="browser"] body {
+        background-color: var(--shell-window-edge-background);
+      }
+      #opencraft-host-edge-color { display: none; }
+      @supports (-webkit-touch-callout: none) and (background-clip: text) {
+        html[data-window-host="browser"][data-window-edge-strategy="system-color-extension"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) #opencraft-host-edge-color {
+          display: block;
+          position: fixed;
+          inset: 0 0 auto;
+          height: 11px; /* Exceed the host's thin-border sampling threshold. */
+          z-index: 2147483646;
+          pointer-events: none;
+          background-color: var(--shell-window-edge-background);
+          -webkit-background-clip: text;
+          background-clip: text;
+        }
       }
       #opencraft-bootstrap {
         position: fixed;
@@ -86,7 +118,7 @@
         const describeFailure = (error) => error instanceof Error
           ? { name: error.name, message: error.message, stack: error.stack }
           : { message: String(error ?? "A JavaScript module failed to load") };
-        const isStorageFailure = (error) => error?.name === "BrowserStorageError";
+        const isStorageFailure = (error) => (error?.name === "BrowserStorageError" || error?.name === "IndexedDbIdentityError");
         const retryResources = () => {
           if (document.querySelector('meta[name="opencraft-resource-recovery"]')?.getAttribute("content") !== "supported") {
             location.reload();
@@ -121,7 +153,7 @@
           surface.querySelector("[data-recovery-title]").textContent = storageFailure
             ? "暂时无法读取本地配置" : "界面资源未能加载";
           surface.querySelector("[data-recovery-summary]").textContent = storageFailure
-            ? "请关闭此站点的其他标签页或应用窗口后重新加载。已保存的配置会保留。"
+            ? "请关闭此站点的其他标签页或应用窗口后重新加载。如果仍无法打开，请完全退出浏览器后重试。已保存的配置会保留。"
             : "当前版本可能正在更新，或网络中断。页面没有进入静默白屏。";
           const details = surface.querySelector("[data-release-error]");
           if (details != null) {
@@ -226,11 +258,12 @@
           }
         }, 15000);
 
-        /* OPENCRAFT_BOOTSTRAP_APPEARANCE */
+
       })();
     </script>
   </head>
   <body>
+    <div id="opencraft-host-edge-color" aria-hidden="true"></div>
     <div id="opencraft-bootstrap" role="status" aria-label="正在加载"><i aria-hidden="true"></i></div>
     <div id="root"></div>
     <script type="module">

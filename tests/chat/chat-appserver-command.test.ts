@@ -1499,11 +1499,12 @@ test("interaction ledger replays an unresolved Skip across client generations wi
         };
         const handler = handlers.get(method);
         assert.notEqual(handler, undefined);
-        return Promise.resolve(handler!(params, {
-          id,
-          method,
-          params,
-        }, { delivered }));
+        const controller = new AbortController();
+        let retirement: ServerRequestResponseContext["retirement"] = null;
+        void delivered.then(() => { retirement = "answered"; controller.abort(); }, () => { retirement = "lost"; controller.abort(); });
+        return Promise.resolve(handler!(params, { id, method, params }, {
+          delivered, signal: controller.signal, get retirement() { return retirement; },
+        }));
       },
     };
   };

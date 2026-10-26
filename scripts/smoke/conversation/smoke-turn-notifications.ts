@@ -10,7 +10,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
   cacheDir: "node_modules/.vite-turn-notifications-test", esbuild: { jsx: "automatic" },
   server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [{ name: "notification-fixture", configureServer(server) { server.middlewares.use((req, res, next) => {
-    if (req.url !== "/") return next();
+    if (req.url?.split("?")[0] !== "/") return next();
     res.setHeader("content-type", "text/html");
     res.end('<html><head><title>OpenCraft notification verification</title></head><body><div id="root"></div><script type="module" src="/tests/fixtures/turn-notifications.tsx"></script></body></html>');
   }); } }],
@@ -54,6 +54,7 @@ try {
   await page.evaluate(() => (window as any).__turnNotificationFixture.settings());
   await page.locator("[data-conversation]").waitFor();
   await page.evaluate(() => (window as any).__turnNotificationFixture.emit("host-a", "turn-2")); await waitCount(4);
+  assert.ok((await notifications()).some(value => value.data.completion.turnId === "turn-2" && value.title === "#thread · OpenCraft · 本轮已完成"), "missing metadata still identifies the conversation");
   await page.evaluate(() => (window as any).__turnNotificationFixture.settings()); await toggle.waitFor();
   await toggle.click(); await page.waitForFunction(() => (window as any).__turnNotificationFixture.preference() === false);
   await page.evaluate(() => (window as any).__turnNotificationFixture.emit("host-a", "turn-3"));

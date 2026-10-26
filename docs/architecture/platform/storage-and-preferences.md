@@ -27,7 +27,7 @@ in their original Host catalog, but never retarget a replacement draft.
 
 ### Read-only SQLite diagnostics
 
-The thirteen Node SQLite storage kinds use the shared sqlite-node lifecycle;
+The sixteen Node SQLite storage kinds use the shared sqlite-node lifecycle;
 physical paths and exclusive owners stay separate. A configured Local Agent opens
 its five foundational stores plus the existing Tasks file before listening. Its
 failure releases handles and rejects startup. OpenCraft Host state opens queue, sender and
@@ -35,7 +35,7 @@ enterprise identity tables through one connection/migration owner; attachments h
 Host-private Tasks remain lazy and validate storage before capability success.
 SSH management opens only for the configured feature. Private Host failures cannot
 publish that Host open; unused optional owners do not prevent default embedded or
-headless operation. Electron Main's three stores remain lazy; account-pool belongs
+headless operation. Electron Main's resource and extension stores remain lazy; account-pool belongs
 to the selected embedded or independent Codex owner. Native engine databases,
 reserved-section pins, read-only diagnostics and writer locks are not adopted.
 `daemon/ready.storage` retains its original five-name projection for old clients;
@@ -45,7 +45,13 @@ migration dispositions, not claims that every optional engine is initialized.
 See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
 recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
 for payload migration. This retains node:sqlite without Drizzle; Web retains
-IndexedDB and its existing adapter-specific upgrade coordination gaps.
+IndexedDB. Known database identity handoffs wait for other windows to release
+connections within a bounded deadline; the Sidebar adapter closes on versionchange
+and startup rollback owns its handle before loading layout rows. Expired migration
+opens retain late-handle cleanup and abort late upgrades. Both bootstrap recovery
+surfaces classify identity migration failures as local storage failures, preserve
+the original databases and offer closing other windows/restarting the browser;
+release cache recovery must not run for these errors.
 Client-local and Host-owned data have separate authorities; engine-private
 databases retain their owners. Code rollback does not restore database backups
 or promise N-1 binary compatibility.
@@ -288,3 +294,35 @@ are independent; the invariant is that a physical connection, Browser instance
 or native Surface has exactly one owner and every child scope is disposed by the
 Application Supervisor. Renderer extension registries do not need to share a
 Context with AppServer Host runtimes.
+
+### Client resource authority and offline display
+
+`document-storage/client-resources` is the shared asynchronous resource port for
+Web/PWA and Electron. A resource has a product/deployment/account namespace, a
+domain name, a stable resource ID, a schema version and an explicit authority.
+A remote resource accepts successful observations; it is a disposable display
+copy. A local resource requires revision-based durable commit before the caller
+may discard its input. Conflicts, format downgrade and quota failures remain
+visible. Local originals are excluded from remote capacity eviction and namespace
+cache cleanup; their owning domain decides explicit removal/export.
+
+Application composition selects IndexedDB for Web/PWA and a separate Main-owned
+SQLite file for Electron, behind trusted-main-frame Preload IPC. React components
+do not choose storage engines. Opening is asynchronous and does not gate Shell or
+Host recovery. The shared owner serializes operations, revokes old scope handles
+synchronously and orders remote namespace cleanup after in-flight writes. No
+credentials are stored in resource values. Browser storage remains evictable.
+
+The first consumer is the sidebar thread catalog: at most 300 display rows per
+Host recipe revision and at most 64 remote resource documents per client store
+(each document is bounded to 1 MiB). Titles, project labels, recency, lineage and
+pins survive reopening; execution state, capabilities, raw history and requests
+do not. Cached rows cannot grant interaction. TanStack remains the sole request,
+retry and pagination owner. A failed refresh preserves saved rows; a successful
+complete empty response clears them. Partial pages retain unseen saved rows until
+the live directory is complete. Existing draft, display continuity and outbox
+owners are retained; this foundation does not migrate their persistence yet.
+
+This data layer does not provide an offline navigation shell or an offline model.
+Service Worker navigation/static-resource policy is a separate layer; HTTP cache
+and a saved catalog alone do not guarantee an airplane-mode cold launch.

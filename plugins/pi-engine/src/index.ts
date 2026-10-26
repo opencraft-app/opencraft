@@ -1,4 +1,8 @@
+import { queueProjection, type PiQueuedInput } from "./queue.js";
+import { readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
+import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort } from "@opencraft/host-schedules";
@@ -31,6 +35,7 @@ interface Session {
   hostTools?: Value[];
   native?: PiDurableSession; starting?: Promise<PiDurableSession>; owner?: EngineClient; lease?: AbortController;
   active?: PiTurn; turns?: PiTurn[]; snapshot?: PiSnapshot; effort?: string; failed?: boolean;
+  needsResume?: boolean;
 }
 class ScheduleAdmissionDeferred extends Error {}
 const seconds = () => Math.floor(Date.now() / 1000);
@@ -58,16 +63,23 @@ export class PiEngine {
   readonly threadPrefix = "pi_";
   readonly modelPrefix = "pi:";
   readonly extensions = Object.freeze({
+    "opencraft/read-history": { version: 1, initialTurnsPage: true },
     "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
     "opencraft/scoped-model-catalog": { version: 1 },
     "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true },
     [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
     [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
-    "opencraft/thread-follow-up": { version: 1, queue: false, steer: false },
+    "opencraft/thread-follow-up": { version: 1, queue: true, steer: true },
+    "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: true, perItemPause: false },
+    [TURN_RECOVERY_EXTENSION]: { version: 1 },
   });
   private scheduleService?: ConversationSchedules;
-  get storageOutcomes(): readonly unknown[] { return this.scheduleService ? [{ name: "pi-conversation-schedules", outcome: this.scheduleService.outcome }] : []; }
+  private recovery?: InterruptedTurnRecovery;
+  get storageOutcomes(): readonly unknown[] { return [
+    ...(this.scheduleService ? [{ name: "pi-conversation-schedules", outcome: this.scheduleService.outcome }] : []),
+    ...(this.recovery ? [{ name: "pi-interrupted-turn-recovery", outcome: this.recovery.outcome }] : []),
+  ]; }
   private permissionProfiles() { return [{ id: fullAccessProfile, description: "Pi Full access", allowed: true, openCraftMode: "full" as const, openCraftLabel: "Full access" }]; }
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: Value) => void>();
@@ -75,10 +87,12 @@ export class PiEngine {
   private closed = false;
   private readonly writes = new Map<string, Promise<void>>();
   private latestPinAt = 0;
+  private readonly queueDrains = new Set<string>();
+  private readonly queueOwners = new Map<string, EngineClient>();
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
-  constructor(private readonly options: { directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort }) {
+  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -86,7 +100,11 @@ export class PiEngine {
   ownsThread(id: string) { return id.startsWith("pi_"); }
   ownsModel(id: string) { return id.startsWith("pi:"); }
   subscribe(listener: (method: string, params: Value) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  private notify(method: string, params: Value) { nodeObserver("pi").execution("pi", method, params); for (const listener of this.listeners) listener(method, params); }
+  private notify(method: string, params: Value) {
+    if (method === "turn/started" && !this.sessions.get(params.threadId)?.ephemeral) this.recovery?.started(params.threadId, params.turn.id);
+    if (method === "turn/completed") this.recovery?.finished(params.threadId, params.turn.id);
+    nodeObserver("pi").execution("pi", method, params); for (const listener of this.listeners) listener(method, params);
+  }
   private load() {
     return this.loading ??= (async () => {
       await mkdir(this.options.directory, { recursive: true, mode: 0o700 });
@@ -96,11 +114,41 @@ export class PiEngine {
           const record = JSON.parse(await readFile(join(this.options.directory, file), "utf8"));
           if (record.format !== "pi-durable-1" || `${record.id}.json` !== file || !Array.isArray(record.tools)) throw new Error("Invalid Pi session index");
           this.sessions.set(record.id, record);
+          record.needsResume = record.pendingRecovery === true;
         } catch {
           // Retain corrupt metadata and its ledger for repair; one record cannot disable all Pi sessions.
           this.notify("warning", { message: `Pi session index could not be loaded: ${file}` });
         }
       }
+      this.recovery = new InterruptedTurnRecovery(this.options.directory, {
+        serialize: (id, operation) => this.serialize(id, operation),
+        inspect: async turn => {
+          const session = this.sessions.get(turn.threadId);
+          if (!session || session.archived || session.ephemeral) return "handled";
+          await this.refresh(session);
+          const latest = session.turns?.at(-1);
+          if (!latest) return "unknown";
+          if (latest.id !== turn.turnId) return "handled";
+          if (latest.status !== "inProgress") return "finished";
+          return session.needsResume ? "lost" : "live";
+        },
+        continue: async (turn, current, admit) => {
+          const session = this.sessions.get(turn.threadId)!;
+          const native = await this.native(session);
+          if (!current() || !session.active) return null;
+          const turnId = session.active.id;
+          await native.recordRecovery(turnId, turn.inputId!);
+          if (!admit()) return null;
+          session.needsResume = false;
+          native.resume();
+          return turnId;
+        },
+        stop: async turn => {
+          const session = this.sessions.get(turn.threadId);
+          if (session?.native) { await session.native.abort(); await this.refresh(session); }
+        },
+        changed: (threadId, recovery) => this.notify("opencraft/turn-recovery/updated", { threadId, recovery }),
+      });
     })();
   }
   async start() {
@@ -108,14 +156,15 @@ export class PiEngine {
     this.schedules();
     for (const session of this.sessions.values()) {
       if (!session.pendingRecovery || session.archived) continue;
-      try { const native = await this.native(session); await this.refresh(session); if (session.active) native.resume(); }
+      try { await this.refresh(session); if (!session.active) { session.needsResume = false; this.scheduleQueue(session); } }
       catch { this.fail(session, "Pi session recovery failed"); }
     }
+    this.recovery?.wake();
   }
   private save(session: Session, pinState?: Pick<Session, "pinned" | "pinnedAt">): Promise<void> {
     if (session.ephemeral) return Promise.resolve();
     const { native: _native, starting: _starting, owner: _owner, lease: _lease, active: _active, turns: _turns,
-      snapshot: _snapshot, effort: _effort, failed: _failed, hostTools: _hostTools, ...record } = session;
+      snapshot: _snapshot, effort: _effort, failed: _failed, hostTools: _hostTools, needsResume: _needsResume, ...record } = session;
     const file = join(this.options.directory, `${session.id}.json`), temporary = `${file}.${randomUUID()}.tmp`;
     const operation = (this.writes.get(session.id) ?? Promise.resolve()).catch(() => {}).then(async () => {
       // Native snapshots can queue metadata while a pin write is pending. Read
@@ -184,7 +233,10 @@ export class PiEngine {
         },
         onExit: error => {
           const failed = session.native; session.native = undefined;
-          this.fail(session, error.message); void failed?.close();
+          session.needsResume = true;
+          this.recovery?.lost(session.id);
+          this.fail(session, error.message);
+          void (failed?.close() ?? Promise.resolve()).finally(() => this.recovery?.wake());
         },
       });
       try {
@@ -197,6 +249,10 @@ export class PiEngine {
       } catch (error) { await native.close(); throw error; }
       finally { session.starting = undefined; }
     })();
+  }
+  private async readHistory(session: Session): Promise<PiTurn[]> {
+    if (session.ephemeral) return session.turns ?? [];
+    return projectPiSnapshot(session, await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts")));
   }
   private async refresh(session: Session) { this.accept(session, await (await this.native(session)).snapshot()); return session.turns ?? []; }
   private accept(session: Session, snapshot: PiSnapshot) {
@@ -217,7 +273,7 @@ export class PiEngine {
     if (!awaitingAdmission) session.active = [...turns].reverse().find(turn => turn.status === "inProgress");
     for (const turn of turns) {
       const before = oldTurns.get(turn.id);
-      if (!before && turn.status === "inProgress" && oldActive?.id !== turn.id) this.notify("turn/started", { threadId: session.id, turn });
+      if (!before && turn.status === "inProgress" && (oldActive?.id !== turn.id || oldActive?._queueAdmission)) this.notify("turn/started", { threadId: session.id, turn });
       if (!before && turn.status !== "inProgress") continue; // Hydration does not replay completed user turns.
       const common = { threadId: session.id, turnId: turn.id };
       const oldItems = new Map<string, Value>((before?.items ?? []).map((item: Value) => [item.id, item]));
@@ -242,9 +298,12 @@ export class PiEngine {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: finished.id, tokenUsage: tokenUsage(snapshot, contextWindow) });
       this.notify("turn/completed", { threadId: session.id, turn: finished });
       this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
-      session.updatedAt = seconds(); session.pendingRecovery = false;
+      session.updatedAt = seconds(); session.pendingRecovery = !!snapshot.queue?.items.length;
       void this.save(session).catch(() => this.notify("warning", { message: "Pi catalog metadata could not be saved" }));
     }
+    if (!same(previousSnapshot?.queue, snapshot.queue) || !same(previousSnapshot?.inbox, snapshot.inbox))
+      this.notify("thread/queue/changed", { threadId: session.id });
+    this.scheduleQueue(session);
     if (session.active) {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: session.active.id,
         tokenUsage: tokenUsage(snapshot, contextWindow) });
@@ -253,6 +312,50 @@ export class PiEngine {
       if (snapshot.live.generation?.deferred && !same(previousSnapshot?.live.generation?.deferred, snapshot.live.generation.deferred))
         this.notify("warning", { threadId: session.id, message: "Pi is waiting for a deferred model response" });
       this.notify("thread/status/changed", { threadId: session.id, status: { type: "active", activeFlags: [] } });
+    }
+  }
+  private scheduleQueue(session: Session) {
+    if (this.closed || session.archived || session.needsResume || session.active || this.queueDrains.has(session.id)
+      || session.snapshot?.queue?.paused || !session.snapshot?.queue?.items.length) return;
+    this.queueDrains.add(session.id);
+    void this.serialize(session.id, () => this.dispatchQueue(session)).catch(() => {
+      this.notify("warning", { threadId: session.id, message: "Pi queued input is paused; review it before continuing" });
+    }).finally(() => { this.queueDrains.delete(session.id); this.scheduleQueue(session); });
+  }
+  private async dispatchQueue(session: Session, id?: string, explicit = false) {
+    const native = await this.native(session);
+    const item = await native.claimQueue(id, explicit);
+    if (!item) {
+      if (!explicit) { await this.refresh(session); return null; }
+      await this.refresh(session);
+      const delivered = id && session.turns?.find(turn => turn.id === id);
+      if (delivered) return delivered;
+      throw new Error("Pi queue changed or the thread is still active");
+    }
+    try {
+      await this.refreshHostTools(session);
+      const owner = this.queueOwners.get(item.id);
+      if (owner) this.attach(session, owner);
+      session.pendingRecovery = true;
+      session.preview ||= textOf(item.content).slice(0, 200); session.updatedAt = seconds();
+      await this.save(session);
+      // Bind platform tools before the scheduler can run. This is private
+      // admission state; only a committed native snapshot announces the Turn.
+      session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
+      await native.submit(item.content, { turnId: item.id, clientId: item.clientId, input: item.input,
+        additionalContext: item.additionalContext, createdAtMs: item.createdAtMs }, item.id);
+      await native.settleQueue(item.id);
+      this.queueOwners.delete(item.id);
+      await this.refresh(session);
+      return session.turns?.find(turn => turn.id === item.id);
+    } catch (error) {
+      // Native receipts, not the gateway ACK, decide whether replay is safe.
+      if (await native.execution(item.id)) await native.settleQueue(item.id);
+      else {
+        if (session.active?.id === item.id && session.active._queueAdmission) session.active = undefined;
+        await native.settleQueue(item.id, true);
+      }
+      await this.refresh(session); throw error;
     }
   }
   private fail(session: Session, message: string) {
@@ -413,6 +516,7 @@ export class PiEngine {
     return this.scheduleService;
   }
   request(method: string, params: Value, client: EngineClient): Promise<any> {
+    if (["turn/start", "turn/interrupt", "thread/archive", "thread/delete"].includes(method) && typeof params.threadId === "string") this.recovery?.handled(params.threadId);
     // Schedule mutations must not wait behind the admission they need to cancel.
     const key = method.startsWith("opencraft/schedules/") ? undefined
       : typeof params.threadId === "string" ? params.threadId : method.startsWith("config/") ? "config" : undefined;
@@ -420,6 +524,7 @@ export class PiEngine {
   }
   private async handle(method: string, params: Value, client: EngineClient, canAdmit?: () => boolean | Promise<boolean>): Promise<any> {
     await this.load(); if (this.closed) throw new Error("Pi engine is closed");
+    if (method === "opencraft/turn-recovery/read") return { recovery: this.recovery?.notice(params.threadId) ?? null };
     if (method.startsWith("opencraft/schedules/")) {
       const schedules = this.schedules();
       return method === "opencraft/schedules/list" ? schedules.list() : schedules.handle(method, params, null);
@@ -501,10 +606,17 @@ export class PiEngine {
       } catch (error) { this.sessions.delete(child.id); this.detach(child); await child.native?.close(); throw error; }
     }
     if (params.model && !String(params.model).startsWith("pi:")) throw new Error("This thread belongs to Pi; create a new thread to change engines");
-    if (method === "thread/read") { if (params.includeTurns) await this.refresh(session); return { thread: this.thread(session, params.includeTurns ? session.turns : []) }; }
+    if (method === "thread/read") {
+      if (params.initialTurnsPage) {
+        const turns = await this.readHistory(session);
+        return { thread: this.thread(session), initialTurnsPage: { ...projectedTurnsPage(this.thread(session, turns), {
+          threadId: session.id, limit: params.initialTurnsPage.limit ?? 10, sortDirection: "desc", itemsView: "full",
+        }), itemsPaginationByTurnId: {} } };
+      }
+      return { thread: this.thread(session, params.includeTurns ? await this.readHistory(session) : []) };
+    }
     if (method === "thread/turns/list" || method === "thread/items/list") {
-      await this.refresh(session);
-      const thread = this.thread(session, session.turns);
+      const thread = this.thread(session, await this.readHistory(session));
       return method === "thread/turns/list" ? { ...projectedTurnsPage(thread, { ...params, threadId: session.id }), itemsPaginationByTurnId: {} }
         : projectedItemsPage(thread, { ...params, threadId: session.id });
     }
@@ -513,7 +625,7 @@ export class PiEngine {
       if (params.path && params.path !== join(this.options.directory, `${session.id}.sqlite`)) throw new Error("Pi path must match this thread's native ledger");
       await this.refresh(session); const { native } = await this.configure(session, params);
       if (!session.owner || !session.active) this.attach(session, client);
-      native.resume();
+      this.recovery?.wake();
       const thread = this.thread(session, session.turns);
       const initial = params.initialTurnsPage ? projectedTurnsPage(thread, { ...params.initialTurnsPage, threadId: session.id }) : null;
       const cursors = projectedHistoryHeadCursors(thread);
@@ -557,12 +669,79 @@ export class PiEngine {
       }
       this.attach(session, client); await this.native(session); return { registered: tools.length };
     }
+    if (method.startsWith("thread/queue/")) {
+      if (session.ephemeral) throw new Error("Temporary Pi threads cannot own a durable message queue");
+      if (method === "thread/queue/list") {
+        const snapshot = session.native ? await session.native.snapshot() : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts"));
+        const cursor = params.cursor == null ? 0 : Number(params.cursor), limit = params.limit ?? 50;
+        if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new Error("Invalid Pi queue page");
+        const queue = snapshot.queue ?? { items: [], paused: false };
+        const data = queue.items.slice(cursor, cursor + Math.min(limit, 100)).map(item => queueProjection(item, queue.paused, queue.pauseReason));
+        return { data, nextCursor: cursor + data.length < queue.items.length ? String(cursor + data.length) : null,
+          ...(cursor === 0 ? { steering: snapshot.inbox.filter(item => item.mode === "steer").map(item => {
+            const metadata = item.entry?.data ?? {};
+            return { id: metadata.turnId, input: metadata.input, clientUserMessageId: metadata.clientId,
+              createdAt: metadata.createdAtMs, pausedReason: null, targetTurnId: metadata.steerTurnId };
+          }) } : {}) };
+      }
+      if (session.archived) throw new Error("Unarchive the Pi thread before changing its queue");
+      const native = await this.native(session);
+      const snapshot = await native.snapshot();
+      const queued = snapshot.queue?.items.find(item => item.id === params.queuedSubmissionId);
+      if (method === "thread/queue/add" || method === "thread/queue/update") {
+        const clientId = method === "thread/queue/update" ? queued?.clientId : params.clientUserMessageId;
+        if (typeof clientId !== "string" || !clientId.length || clientId.length > 1000) throw new Error("Queued input requires a valid client message identity");
+        if (method === "thread/queue/update" && !queued) throw new Error("Queued input is no longer editable");
+        const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+        if (!model) throw new Error("Pi model is unavailable");
+        if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
+        const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
+        const content = await compilePiInput(params.input, additionalContext, session.cwd, model);
+        const item: PiQueuedInput = { id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
+          input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
+        session.pendingRecovery = true; await this.save(session);
+        const result = method === "thread/queue/add" ? await native.enqueue(item) : await native.changeQueue("update", item.id, item);
+        this.queueOwners.set(item.id, client);
+        await this.refresh(session);
+        return { queuedSubmission: queueProjection(result as PiQueuedInput) };
+      }
+      if (method === "thread/queue/delete") {
+        const deleted = await native.changeQueue("delete", params.queuedSubmissionId);
+        this.queueOwners.delete(params.queuedSubmissionId); await this.refresh(session); return { deleted };
+      }
+      if (method === "thread/queue/reorder") {
+        await native.changeQueue("reorder", undefined, undefined, params.queuedSubmissionIds); await this.refresh(session); return {};
+      }
+      if (method === "thread/queue/start") {
+        if (queued) this.queueOwners.set(queued.id, client);
+        return { turn: await this.dispatchQueue(session, params.queuedSubmissionId, true) };
+      }
+      if (method === "thread/queue/steer") {
+        if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId) throw new Error("Pi steer requires expectedTurnId");
+        const id = params.queuedSubmissionId;
+        if (typeof id !== "string" || !id) throw new Error("Pi steer requires a queued input identity");
+        await native.steer(queued?.content ?? [], { turnId: id, steerTurnId: params.expectedTurnId, clientId: queued?.clientId,
+          input: queued?.input, additionalContext: queued?.additionalContext ?? null, createdAtMs: queued?.createdAtMs ?? Date.now() }, id, params.expectedTurnId, id);
+        this.queueOwners.delete(id); await this.refresh(session); return { turnId: params.expectedTurnId };
+      }
+      throw new Error(`Pi does not support ${method}`);
+    }
     if (method === "turn/start") {
       const clientId = typeof params.clientUserMessageId === "string" && params.clientUserMessageId.length ? params.clientUserMessageId : null;
       if (clientId && clientId.length > 1000) throw new Error("Client message identity is too long");
       const turnId = clientId ? `${session.id}:turn:client:${clientId}` : `${session.id}:turn:${randomUUID()}`;
       await this.refresh(session);
+      if (session.needsResume && session.active) {
+        await (await this.native(session)).abort(); await this.refresh(session); session.needsResume = false;
+      }
       const existing = clientId && session.turns?.find(turn => turn.id === turnId); if (existing) return { turn: existing };
+      const queued = session.snapshot?.queue?.items.find(item => item.id === turnId);
+      if (queued) {
+        if (!isDeepStrictEqual(queued.input, params.input) || !isDeepStrictEqual(queued.additionalContext, params.additionalContext ?? null))
+          throw new Error("Client message identity already belongs to different input");
+        return { turn: await this.dispatchQueue(session, turnId, true) };
+      }
+      if (clientId && await (await this.native(session)).execution(turnId)) throw new Error("This message identity has already been withdrawn");
       if (session.active) throw new Error("Pi thread already has an active turn");
       if (session.archived) throw new Error("Unarchive the Pi thread before executing");
       await this.refreshHostTools(session);
@@ -593,21 +772,42 @@ export class PiEngine {
         this.notify("turn/started", { threadId: session.id, turn });
         await native.submit(content, { turnId, clientId, input: params.input, additionalContext: params.additionalContext ?? null,
           createdAtMs, turnTrigger: params.turnTrigger ?? null }, turnId);
+        await native.unpauseQueue();
         await this.refresh(session);
       } catch (error) { if (!(error instanceof ScheduleAdmissionDeferred)) this.fail(session, (error as Error).message); throw error; }
       return { turn: session.turns?.find(turn => turn.id === turnId) ?? turn };
     }
+    if (method === "turn/steer") {
+      if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId) throw new Error("Pi steer requires expectedTurnId");
+      const clientId = typeof params.clientUserMessageId === "string" && params.clientUserMessageId.length ? params.clientUserMessageId : null;
+      if (clientId && clientId.length > 1000) throw new Error("Client message identity is too long");
+      if (session.archived) throw new Error("Unarchive the Pi thread before executing");
+      assertPiFields(params);
+      const native = await this.native(session);
+      const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+      if (!model) throw new Error("Pi model is unavailable");
+      if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
+      const content = await compilePiInput(params.input, params.additionalContext, session.cwd, model);
+      const requestId = clientId ? `${params.expectedTurnId}:steer:client:${clientId}` : `${params.expectedTurnId}:steer:${randomUUID()}`;
+      await native.steer(content, { turnId: requestId, steerTurnId: params.expectedTurnId, clientId, input: params.input,
+        additionalContext: params.additionalContext ?? null, createdAtMs: Date.now() }, requestId, params.expectedTurnId);
+      await this.refresh(session);
+      return { turnId: params.expectedTurnId };
+    }
     if (method === "turn/interrupt") {
+      this.recovery?.handled(session.id);
       if (params.turnId && session.active?.id !== params.turnId) throw new Error("Pi turn identity changed");
-      if (!session.active) return {};
-      await (await this.native(session)).abort(); await this.refresh(session); return {};
+      const native = await this.native(session); await native.changeQueue("pause");
+      if (!session.active) { await this.refresh(session); return {}; }
+      await native.abort(); await this.refresh(session); return {};
     }
     throw new Error(`Pi does not support ${method}`);
   }
   private detach(session: Session) { session.lease?.abort(); session.lease = undefined; session.owner = undefined; }
-  disconnect(client: EngineClient) { for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
+  disconnect(client: EngineClient) { for (const [id, owner] of this.queueOwners) if (owner === client) this.queueOwners.delete(id); for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
   async close() {
     this.closed = true;
+    await this.recovery?.close();
     await this.scheduleService?.close();
     await Promise.allSettled(this.operations.values());
     await Promise.allSettled([...this.sessions.values()].map(async session => {

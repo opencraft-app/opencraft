@@ -62,6 +62,7 @@ class WebSocketAppHostPort {
   failureDiagnostic: TransportFailureDiagnostic | undefined;
 
   get isClosed(): boolean { return this.closed; }
+  get isReady(): boolean { return this.phase === "ready" && !this.closed; }
 
   constructor(
     url: string,
@@ -193,53 +194,102 @@ class RenewableAppHostTransport implements DuplexTransport {
   private readonly statusListeners = new Set<(status: TransportStatus) => void>();
   private readonly recoveryListeners = new Set<() => void>();
   private currentStatus: TransportStatus = { state: "idle" };
-  private connectOperation: Promise<void> | null = null;
+  private attempt: { readonly controller: AbortController; readonly promise: Promise<void>;
+    cancel(reason: unknown): void } | null = null;
+  // Physical lease release is serialized independently of local attempt cancellation.
+  private closeBarrier: Promise<void> = Promise.resolve();
   private closed = false;
 
-  constructor(private readonly createLease: () => { transport: DuplexTransport; attemptId: string; diagnostic: () => TransportFailureDiagnostic | undefined }, private readonly onClose: () => void, private readonly beforeConnect?: () => Promise<void>) {}
+  constructor(private readonly createLease: () => { transport: DuplexTransport; attemptId: string; diagnostic: () => TransportFailureDiagnostic | undefined; subscribeStage(listener: (stage: "bridge" | "host") => void): () => void }, private readonly onClose: () => void, private readonly beforeConnect?: () => Promise<void>) {}
 
   get status(): TransportStatus { return this.currentStatus; }
 
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new Error("App Host transport is closed"));
+    if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Connection cancelled"));
+    if (this.attempt !== null) return this.attempt.promise;
     if (this.currentStatus.state === "open") return Promise.resolve();
-    if (this.connectOperation !== null) return this.connectOperation;
-    const operation = (async () => {
-      signal?.throwIfAborted();
-      await this.beforeConnect?.();
-      signal?.throwIfAborted();
-      if (this.closed) throw new Error("App Host transport is closed");
-      if (this.lease === null || this.currentStatus.state === "failed" || this.currentStatus.state === "closed") {
-        const previous = this.lease;
-        this.detachLease();
-        this.lease = null;
-        await previous?.close().catch(() => undefined);
-        if (this.closed) throw new Error("App Host transport is closed");
-        const acquired = this.createLease();
-        const next = acquired.transport;
-        this.lease = next;
-        this.removeMessageListener = next.subscribeMessage(frame => {
-          for (const listener of this.messageListeners) listener(frame);
-        });
-        this.removeStatusListener = next.subscribeStatus(status => {
-          const diagnostic = acquired.diagnostic();
-          this.setStatus({ ...status, attemptId: acquired.attemptId, ...(status.failure && diagnostic
-            ? { failure: { ...status.failure, diagnostic } } : {}) });
-        });
-        this.setStatus({ ...next.status, attemptId: acquired.attemptId });
-      }
-      await this.lease!.connect(signal);
-      if (this.closed) throw new Error("App Host transport is closed");
-    })().catch(cause => {
-      if (!this.closed && this.currentStatus.state !== "failed") {
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    void promise.catch(() => undefined);
+    const controller = new AbortController();
+    let removeStage: (() => void) | undefined;
+    const cleanup = () => { signal?.removeEventListener("abort", abort); removeStage?.(); };
+    const attempt = { controller, promise, cancel: (cause: unknown) => {
+      if (this.attempt !== attempt) return;
+      this.attempt = null;
+      cleanup();
+      // Detach callbacks and install the physical barrier before abort/status reentry.
+      this.retireLease();
+      controller.abort(cause);
+      reject(cause);
+      if (!this.closed && this.currentStatus.state !== "failed")
         this.setStatus({ state: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
-      }
-      throw cause;
-    }).finally(() => {
-      if (this.connectOperation === operation) this.connectOperation = null;
+    } };
+    const abort = () => attempt.cancel(signal?.reason ?? new Error("Connection cancelled"));
+    this.attempt = attempt;
+    signal?.addEventListener("abort", abort, { once: true });
+    const assertCurrent = () => {
+      if (this.closed || this.attempt !== attempt || controller.signal.aborted)
+        throw controller.signal.reason ?? new Error("Connection was superseded");
+    };
+    // One cancellable local wait per operation. Old external work can finish later,
+    // but every continuation checks its owner before allocating or publishing.
+    const revoked = new Promise<never>((_, fail) => {
+      controller.signal.addEventListener("abort", () => fail(controller.signal.reason), { once: true });
     });
-    this.connectOperation = operation;
-    return operation;
+    void revoked.catch(() => undefined);
+    const wait = async <T>(operation: Promise<T>): Promise<T> => {
+      const result = await Promise.race([operation, revoked]);
+      assertCurrent();
+      return result;
+    };
+    const run = async () => {
+      assertCurrent();
+      this.setStatus({ state: "connecting", connectionStage: "admission" });
+      assertCurrent();
+      await wait(Promise.resolve(this.beforeConnect?.()));
+      this.setStatus({ state: "connecting", connectionStage: "release" });
+      assertCurrent();
+      // Cancellation cannot bypass a physical close already started by an old lease.
+      this.retireLease();
+      await wait(this.closeBarrier);
+      const acquired = this.createLease();
+      assertCurrent();
+      const next = acquired.transport;
+      this.lease = next;
+      this.removeMessageListener = next.subscribeMessage(frame => {
+        if (this.lease !== next) return;
+        for (const listener of this.messageListeners) listener(frame);
+      });
+      this.removeStatusListener = next.subscribeStatus(status => {
+        if (this.lease !== next) return;
+        const diagnostic = acquired.diagnostic();
+        this.setStatus({ ...status, attemptId: acquired.attemptId, ...(status.failure && diagnostic
+          ? { failure: { ...status.failure, diagnostic } } : {}) });
+      });
+      // Install observers before I/O. Stage notifications grant no readiness.
+      removeStage = acquired.subscribeStage(stage => {
+        if (this.attempt === attempt) this.setStatus({ state: "connecting", connectionStage: stage, attemptId: acquired.attemptId });
+      });
+      assertCurrent();
+      await wait(next.connect(controller.signal));
+      assertCurrent();
+    };
+    void run().then(() => {
+      if (this.attempt !== attempt) return;
+      this.attempt = null;
+      cleanup();
+      resolve();
+    }, cause => { cleanup(); attempt.cancel(cause); });
+    return promise;
+  }
+
+  private retireLease(): void {
+    const previous = this.lease;
+    this.lease = null;
+    this.detachLease();
+    if (previous) this.closeBarrier = this.closeBarrier.then(() => previous.close()).catch(() => undefined);
   }
 
   send(frame: string, signal?: AbortSignal): Promise<void> {
@@ -271,11 +321,10 @@ class RenewableAppHostTransport implements DuplexTransport {
     this.closed = true;
     this.onClose();
     this.recoveryListeners.clear();
-    this.detachLease();
-    const lease = this.lease;
-    this.lease = null;
+    this.attempt?.cancel(new Error("App Host transport is closed"));
+    this.retireLease();
     this.setStatus({ state: "closing" });
-    await lease?.close().catch(() => undefined);
+    await this.closeBarrier;
     this.setStatus({ state: "closed" });
     this.messageListeners.clear();
     this.statusListeners.clear();
@@ -340,7 +389,17 @@ export function connectWebSocketAppHost(
           catch (error) { port.close(); throw error; }
         }
         const leaseOwner = current;
-        return { transport: leaseOwner.client.createTransport(hostId), attemptId: leaseOwner.port.attemptId, diagnostic: () => leaseOwner.port.failureDiagnostic };
+        return { transport: leaseOwner.client.createTransport(hostId), attemptId: leaseOwner.port.attemptId,
+          diagnostic: () => leaseOwner.port.failureDiagnostic,
+          subscribeStage(listener) {
+            const ready = (event: MessageEvent<unknown>) => {
+              if ((event.data as { type?: unknown })?.type === "ready") listener("host");
+            };
+            leaseOwner.port.addEventListener("message", ready);
+            listener(leaseOwner.port.isReady ? "host" : "bridge");
+            return () => leaseOwner.port.removeEventListener("message", ready);
+          },
+        };
       }, () => transports.delete(transport), options.beforeConnect);
       transports.add(transport);
       return transport;
@@ -348,6 +407,7 @@ export function connectWebSocketAppHost(
     close() {
       disposed = true;
       unsubscribeRecovery();
+      for (const transport of [...transports]) void transport.close().catch(() => undefined);
       current?.client.close();
       current = null;
     },

@@ -11,6 +11,7 @@ import {
   MAX_INLINE_BROWSER_IMAGE_BYTES,
   MAX_STAGED_BROWSER_FILE_BYTES,
   resolveBrowserAttachment,
+  resolveBrowserAttachmentForHost,
 } from "../../apps/workbench-web/src/runtime/browser-attachment-resolver";
 import {
   appServerMediaPath,
@@ -291,4 +292,135 @@ test("historical user attachments use the same Host media boundary as Markdown",
   const remote = resolveConversationMediaSource("https://example.test/upload.png", null, undefined, true);
   assert.equal(remote.directSource, "https://example.test/upload.png");
   assert.equal(remote.loadThroughHost, false);
+});
+
+function reconnectingHost() {
+  let snapshot = { phase: "reconnecting", connectionGeneration: 1, transport: { state: "connecting" }, error: null };
+  const listeners = new Set<() => void>();
+  const requests: import("@opencraft/appserver-protocol").AttachmentStageParams[] = [];
+  const host = {
+    getSnapshot: () => snapshot,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    resources: { attachments: {
+      capabilities: () => snapshot.phase === "ready" ? { version: 1, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 1024 ** 3 } : null,
+      async stage(request: import("@opencraft/appserver-protocol").AttachmentStageParams) {
+        requests.push(request);
+        return { ref: { id: request.clientAttachmentId, name: request.name, mimeType: request.mimeType, size: request.size, location: { kind: "host-file", path: "/staged/" + request.name } } };
+      },
+    } },
+  } as unknown as Parameters<typeof resolveBrowserAttachmentForHost>[0];
+  return { host, requests, listeners, transition(phase: string, generation = snapshot.connectionGeneration) {
+    snapshot = { ...snapshot, phase, connectionGeneration: generation, transport: { state: phase === "ready" ? "open" : "closed" } };
+    for (const listener of [...listeners]) listener();
+  } };
+}
+const tick = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("pasted text waits for original Host readiness, stages exact bytes and unblocks its same draft", async () => {
+  const { createComposerController } = await import("@opencraft/composer-core");
+  const { createConversationKey } = await import("@opencraft/chat-core");
+  const { attachmentPreviewSession } = await import("../../packages/composer-editor/src/attachment-preview-session");
+  const fixture = reconnectingHost();
+  const composer = createComposerController({ type: "existing-thread", key: createConversationKey("local", "text") }, { now: Date.now, createId: () => crypto.randomUUID() });
+  const file = new File(["长段文本\n".repeat(1000)], "pasted-text.txt", { type: "text/plain" });
+  const session = attachmentPreviewSession(composer);
+  session.addFiles([file], (selected, attachment, signal) => resolveBrowserAttachmentForHost(fixture.host, selected, attachment, undefined, signal));
+  const before = composer.getSnapshot().draft;
+  await tick();
+  assert.equal(fixture.requests.length, 0);
+  assert.equal(composer.getSnapshot().draft.attachments[0]?.lifecycle, "uploading");
+  assert.equal(composer.getSnapshot().canSubmit, false);
+  fixture.transition("ready", 2);
+  await tick();
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.requests[0]?.clientAttachmentId, before.attachments[0]?.id);
+  assert.deepEqual(fixture.requests[0]?.source, { kind: "client-bytes", dataBase64: Buffer.from(await file.arrayBuffer()).toString("base64") });
+  assert.equal(composer.getSnapshot().draft.id, before.id);
+  assert.equal(composer.getSnapshot().draft.attachments[0]?.lifecycle, "ready");
+  assert.equal(composer.getSnapshot().canSubmit, true);
+  assert.equal(fixture.listeners.size, 0);
+  composer.dispose();
+});
+
+test("interrupted staging restarts with the same identity even if reconnect completes before rejection", async () => {
+  for (const recoverFirst of [false, true]) {
+    const fixture = reconnectingHost(); fixture.transition("ready");
+    const stage = fixture.host.resources.attachments.stage;
+    let reject!: (error: Error) => void;
+    let attempts = 0;
+    fixture.host.resources.attachments.stage = (...args) => ++attempts === 1 ? new Promise((_, fail) => { reject = fail; }) : stage(...args);
+    const file = new File(["text"], "pasted-text.txt", { type: "text/plain" });
+    const result = resolveBrowserAttachmentForHost(fixture.host, file, pending(file));
+    await tick();
+    fixture.transition("reconnecting");
+    if (recoverFirst) fixture.transition("ready", 2);
+    reject(new Error("connection closed"));
+    await tick();
+    if (!recoverFirst) { assert.equal(attempts, 1); fixture.transition("ready", 2); }
+    assert.equal((await result).lifecycle, "ready");
+    assert.equal(attempts, 2);
+    assert.equal(fixture.requests[0]?.clientAttachmentId, "attachment-1");
+    assert.equal(fixture.listeners.size, 0);
+  }
+});
+
+test("stable Host refusal fails once and missing staging is not a reconnection", async () => {
+  const fixture = reconnectingHost(); fixture.transition("ready");
+  let attempts = 0;
+  fixture.host.resources.attachments.stage = async () => { attempts++; throw new Error("permission denied"); };
+  const file = new File(["text"], "pasted-text.txt", { type: "text/plain" });
+  await assert.rejects(resolveBrowserAttachmentForHost(fixture.host, file, pending(file)), /permission denied/);
+  assert.equal(attempts, 1);
+  fixture.host.resources.attachments.capabilities = () => null;
+  await assert.rejects(resolveBrowserAttachmentForHost(fixture.host, file, pending(file)), error => error instanceof BrowserAttachmentError && error.code === "HOST_FILE_STAGING_UNAVAILABLE");
+  assert.equal(fixture.listeners.size, 0);
+});
+
+test("aborted or disposed waiting attachments never stage after readiness", async () => {
+  for (const dispose of [false, true]) {
+    const fixture = reconnectingHost(), controller = new AbortController();
+    const file = new File(["text"], "pasted-text.txt", { type: "text/plain" });
+    const result = resolveBrowserAttachmentForHost(fixture.host, file, pending(file), undefined, controller.signal);
+    const failed = assert.rejects(result);
+    if (dispose) fixture.transition("disposed"); else controller.abort();
+    await failed;
+    fixture.transition("ready", 2);
+    await tick();
+    assert.equal(fixture.requests.length, 0);
+    assert.equal(fixture.listeners.size, 0);
+  }
+});
+
+test("offline inline images still resolve without acquiring a Host listener", async () => {
+  const fixture = reconnectingHost();
+  const file = new File(["png"], "photo.png", { type: "image/png" });
+  assert.equal((await resolveBrowserAttachmentForHost(fixture.host, file, pending(file))).lifecycle, "ready");
+  assert.equal(fixture.listeners.size, 0);
+  assert.equal(fixture.requests.length, 0);
+});
+
+
+test("a disconnected chunk upload restarts at zero with fresh upload ID and original attachment identity", async () => {
+  const fixture = reconnectingHost(); fixture.transition("ready");
+  const cap = fixture.host.resources.attachments.capabilities()!;
+  fixture.host.resources.attachments.capabilities = () => ({ ...cap, chunkBytes: 2 });
+  const chunks: import("@opencraft/appserver-protocol").AttachmentUploadParams[] = [];
+  const cancels: string[] = [];
+  fixture.host.resources.attachments.uploadCancel = async id => { cancels.push(id); return { removed: true }; };
+  fixture.host.resources.attachments.uploadChunk = async request => {
+    chunks.push(request);
+    if (chunks.length === 2) { fixture.transition("reconnecting"); throw new Error("connection closed"); }
+    const receivedBytes = request.offset + Buffer.from(request.dataBase64, "base64").length;
+    return { receivedBytes, ref: receivedBytes === request.size ? { id: request.clientAttachmentId, name: request.name, mimeType: request.mimeType, size: request.size, location: { kind: "host-file", path: "/staged/pasted-text.txt" } } : null };
+  };
+  const file = new File(["text"], "pasted-text.txt", { type: "text/plain" });
+  const result = resolveBrowserAttachmentForHost(fixture.host, file, pending(file));
+  await tick(); assert.equal(chunks.length, 2);
+  fixture.transition("ready", 2);
+  assert.equal((await result).lifecycle, "ready");
+  assert.deepEqual(chunks.map(chunk => chunk.offset), [0, 2, 0, 2]);
+  assert.notEqual(chunks[0]?.uploadId, chunks[2]?.uploadId);
+  assert.deepEqual(cancels, [chunks[0]?.uploadId]);
+  assert(chunks.every(chunk => chunk.clientAttachmentId === "attachment-1"));
+  assert.equal(fixture.listeners.size, 0);
 });

@@ -157,7 +157,12 @@ the successful first-page observation and already available catalog data.
 Short successful connections do not reset retry history: readiness must remain
 continuous for 60s. Visible foreground/online recovery hints can advance an
 already scheduled retry, at most once per five seconds per Host; they retain
-the escalation counter and coalesce with an active connection attempt. Explicit
+the escalation counter and retain one signal during an active connection attempt.
+A successful attempt consumes it; a failed or expired attempt can use it for
+one successor validation. Stage/absolute deadlines are rechecked on page wake
+and before initialization readiness is cached. Retired Web admission waits
+settle locally without releasing physical barriers; late results are fenced.
+Production budgets and executable cases are in the [recovery contract](connection-recovery-contract.md). Explicit
 user retry remains immediate and manual failures remain blocked.
 Protocol incompatibility is a permanent failure for the loaded client. The Web
 bridge sends the existing `fatal` envelope with `APP_HOST_PROTOCOL_MISMATCH` and
@@ -361,6 +366,11 @@ ID without creating another retry policy owner.
 
 ### Connection conformance and external waits
 
+The proposed [recovery transition contract](connection-recovery-contract.md)
+adds executable lifecycle-signal, progress and expiry cases. It is design/test
+work, not a change to the current retry policy. Its real-owner TODO assertions
+and strict failing mode explicitly track the remaining implementation gaps.
+
 An independent observable specification replays deterministic event traces through
 ConnectionLifecycleOwner, Runtime/RPC and Runtime/RPC/AppHost. Compare phase,
 error presence and timer ownership after every event, including suspended clocks,
@@ -406,3 +416,22 @@ real process/network/browser composition with synthetic protocol data; it does
 not claim live-user, real-model or physical-mobile acceptance.
 
 The Electron Main and Preload bundled together use `opencraft:get-window-fullscreen`, `opencraft:window-fullscreen-changed` and `opencraft:set-window-appearance` for internal window projection. The renderer methods, payloads, admission checks and window lifecycle are unchanged; these channel names do not alter persisted identities or the AppHost transport.
+
+### Remote Host visibility for new conversations
+
+A remote recipe may set `hideFromNewChat` in its existing server-owned JSON
+configuration. The remote connection editor saves this Host-level setting with
+its normal revision check; older records omit it and remain visible. An older
+editor omitting the field preserves a previously saved value. The management
+and authenticated catalog projections carry the preference to the live profile
+overlay; it is not copied into a second writable browser preference.
+
+New-conversation machine/Agent choices and automatic fallback exclude hidden
+Hosts, including a remembered selection with no existing Thread to restore.
+Starting a new conversation from a hidden Host chooses an eligible Host and does
+not carry the old Host's filesystem/project identity. Existing conversations,
+retained drafts, history catalogs, management Connect and execution admission
+remain available. Changing only this presentation setting does not reset the
+physical connection or interrupt executions. If no eligible target exists, the
+client exposes its existing hostless/management surface instead of silently
+selecting a hidden Host. Visibility is not an authorization policy.

@@ -5,6 +5,7 @@ const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'play
 const engines = playwright.default ?? playwright;
 const engine = process.env.OPENCRAFT_BROWSER_ENGINE === "webkit" ? engines.webkit : engines.chromium;
 const source=`import React from 'react';
+import {SafeLayout} from '@opencraft/design-system-web/safe-layout';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createComposerController} from '@opencraft/composer-core';
 import {OpenCraftComposer} from '@opencraft/composer-editor';
@@ -13,7 +14,7 @@ import '/apps/workbench-web/src/styles/app.scss';
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
 window.fixture={controller,sent:0};
 const queued=Array.from({length:6},(_,i)=>({id:'q'+i,preview:'Queued message '+i,state:'queued',operation:'idle',actionable:true,editableContent:{document:controller.getSnapshot().draft.document,attachments:[],context:[]}}));
-function App(){useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});return <div className='app-shell-root'><div style={{height:56}}>Header</div><div className='thread-scroll-layout' style={{height:'calc(100% - 56px)'}}><div className='thread-scroll'><div className='thread-scroll-footer' data-thread-scroll-footer='true'><div className='thread-scroll-footer__content thread-layout-width'><OpenCraftComposer controller={controller} queuedSubmissions={queued} placeholder='Write a message' onSubmit={()=>{window.fixture.sent++;return false}} onCancel={()=>{}}/></div></div><div style={{height:1600,flexShrink:0}}>Long conversation</div></div></div></div>}
+function App(){useTimelineViewportHost({kind:'browser',platform:'linux',safeArea:{left:0,right:0}});return <div className='app-shell-root has-browser-safe-layout'><SafeLayout className='app-shell-row' edges={['top','bottom']} style={{display:'block'}}><div style={{height:56}}>Header</div><div className='thread-scroll-layout' style={{height:'calc(100% - 56px)'}}><div className='thread-scroll'><div className='thread-scroll-footer' data-thread-scroll-footer='true'><div className='thread-scroll-footer__content thread-layout-width'><OpenCraftComposer controller={controller} queuedSubmissions={queued} placeholder='Write a message' onSubmit={()=>{window.fixture.sent++;return false}} onCancel={()=>{}}/></div></div><div style={{height:1600,flexShrink:0}}>Long conversation</div></div></div></SafeLayout></div>}
 createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom']},cacheDir:'node_modules/.vite-composer-keyboard',esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0},plugins:[{name:'fixture',resolveId:id=>id==='/keyboard.tsx'?id:null,load:id=>id==='/keyboard.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/keyboard.tsx"></script>')})}}]});
 await mkdir('.local/composer-keyboard',{recursive:true});await vite.listen();const browser=await engine.launch(process.env.OPENCRAFT_BROWSER_ENGINE === 'webkit' ? {} : {executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});const evidence=[];
@@ -163,6 +164,45 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  assert(Math.abs(geometry.top-180)<=1,`placement cannot feed back from a rendered rectangle: ${JSON.stringify(geometry)}`);
  assert.equal(geometry.height,440);evidence.push({theme,newera,readbackCounterexample:geometry});
  await page.evaluate(()=>{HTMLElement.prototype.getBoundingClientRect=(window as any).readActualRect;(window as any).setViewport(844,0)});
+ // B class: the visible canvas includes the status area while clientHeight
+ // excludes it. Preserve both raw inputs and test actual boxes.
+ await page.evaluate(()=>{
+  const root=document.documentElement;
+  Object.defineProperty(root,'clientHeight',{configurable:true,value:782});
+  root.dataset.windowHost='browser';root.dataset.windowDisplayMode='standalone';
+  root.dataset.windowEdgeStrategy='legacy-overlay-requested';
+  (window as any).setViewport(844,0);
+ });
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
+ const assertDocumentFlow=async()=>{
+  const frame=await page.evaluate(()=>{
+   const row=document.querySelector('.app-shell-row')!,r=row.getBoundingClientRect();
+   const send=document.querySelector('.opencraft-composer-submit')!.getBoundingClientRect();
+   return {paintHeight:r.height,contentBottom:r.bottom-parseFloat(getComputedStyle(row).paddingBottom),sendBottom:send.bottom,
+     html:getComputedStyle(document.documentElement).position,body:getComputedStyle(document.body).position,shell:getComputedStyle(document.querySelector('.app-shell-root')!).position};
+  });
+  assert.equal(frame.paintHeight,844);assert.equal(frame.contentBottom,844,'native height delta is not a second safe inset');
+  assert.equal(frame.html,'static');assert.equal(frame.body,'relative');assert.equal(frame.shell,'relative');
+  assert(frame.sendBottom<=844,JSON.stringify(frame));
+ };
+ await assertDocumentFlow();
+ const oldContent=await page.addStyleTag({content:'html,body,.app-shell-root{position:fixed!important}'});
+ await assert.rejects(assertDocumentFlow,'old fixed roots must fail the document-flow contract even at the same CSS height');
+ await oldContent.evaluate(e=>e.remove());await assertDocumentFlow();
+ const overlayEditor=await editor.elementHandle();const overlayDraft=await editor.innerText();
+ assert.equal(await page.evaluate(()=>document.documentElement.dataset.timelineViewportOccluded),'false');
+ await page.evaluate(()=>(window as any).setViewport(360,120));
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===360);
+ await editor.evaluate(e=>(e as HTMLElement).blur());
+ await page.waitForFunction(()=>document.documentElement.dataset.timelineKeyboardOpen==='false');
+ assert.equal(await page.evaluate(()=>document.documentElement.dataset.timelineViewportOccluded),'true');
+ assert.equal(await page.locator('.app-shell-root').evaluate(e=>e.getBoundingClientRect().height),360,'blur cannot expand over a still-reduced visual viewport');
+ await page.evaluate(()=>(window as any).setViewport(844,0));
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
+ assert.equal(await editor.innerText(),overlayDraft);assert(await overlayEditor!.evaluate(e=>e.isConnected));
+ await page.evaluate(()=>{document.documentElement.dataset.windowDisplayMode='tab';document.documentElement.dataset.windowEdgeStrategy='system-color-extension'});
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===782);
+ evidence.push({theme,newera,overlay:{cssCanvasHeight:844,clientHeight:782,visibleHeight:844,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabUsesExistingLayoutCapacity:782}});
  await context.close();
 
  }
@@ -172,7 +212,11 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  const nativePage=await nativeContext.newPage();await nativePage.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
  const nativeEditor=nativePage.locator('.opencraft-composer-editor');await nativeEditor.fill('Native viewport draft');
  for(const height of [844,540,280,440,844]){
-  await nativePage.setViewportSize({width:390,height});await nativePage.waitForTimeout(100);
+  await nativePage.setViewportSize({width:390,height});
+  await nativePage.waitForFunction(()=>{
+   const r=document.querySelector('.app-shell-root')!.getBoundingClientRect(),vv=visualViewport!;
+   return Math.abs(r.height-vv.height)<=1&&Math.abs(r.width-vv.width)<=1;
+  },undefined,{timeout:10_000});
   const measured=await nativePage.evaluate(()=>{const shell=document.querySelector('.app-shell-root')!,r=shell.getBoundingClientRect(),vv=visualViewport!;return {top:r.top+scrollY,left:r.left+scrollX,height:r.height,width:r.width,pageTop:vv.pageTop,pageLeft:vv.pageLeft,visualHeight:vv.height,visualWidth:vv.width,scrollY}});
   assert(Math.abs(measured.top-measured.pageTop)<=1);assert(Math.abs(measured.left-measured.pageLeft)<=1);
   assert(Math.abs(measured.height-measured.visualHeight)<=1);assert(Math.abs(measured.width-measured.visualWidth)<=1);

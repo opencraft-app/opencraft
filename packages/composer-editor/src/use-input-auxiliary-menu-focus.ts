@@ -65,6 +65,9 @@ export function useInputAuxiliaryMenuFocus(options: {
         }
       },
       onKeyDown(_event: KeyboardEvent<HTMLButtonElement>) { preserve.current = false; },
+      onMouseDown(event: MouseEvent<HTMLButtonElement>) {
+        if (preserve.current && editorHasFocus(latest.current.getEditor())) event.preventDefault();
+      },
     },
     contentProps: {
       onEscapeKeyDown(event: globalThis.KeyboardEvent) {
@@ -86,10 +89,8 @@ export function useInputAuxiliaryMenuFocus(options: {
           preserve.current = false;
           return;
         }
-        // Bubble after Radix records the inside press; cancelling capture would
-        // make its dismiss layer mistake a touch selection for an outside click.
-        // Menu items remain clickable/scrollable while the editor retains selection.
-        event.preventDefault();
+        // Retain focus at mousedown below. Cancelling pointerdown here can
+        // suppress WebKit's subsequent touch click and swallow item selection.
       },
       onMouseDownCapture(event: MouseEvent<HTMLDivElement>) {
         if (preserve.current) event.preventDefault();

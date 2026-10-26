@@ -25,8 +25,10 @@ export interface LocalAccountProvider {
   readonly label: string;
   readonly available: boolean;
   create(username: string, displayName: string, password: string): Promise<Principal>;
+  /** Trusted provisioning only: a durable operation reserves this subject before hashing. */
+  createWithId?(subject: string, username: string, displayName: string, password: string): Promise<Principal>;
   verify(username: string, password: string): Promise<Principal | null>;
-  resetPassword(username: string, password: string): Promise<void>;
+  resetPassword(username: string, password: string, assertCurrent?: () => void): Promise<void>;
   setEnabled(username: string, enabled: boolean): void;
   identity(username: string): Principal | null;
   labelFor(subject: string): string | null;

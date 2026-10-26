@@ -3,18 +3,23 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Kernel-released SQLite lock, independent of the account database and native thread locks. */
-export async function acquireCodexWriter(dataDirectory: string): Promise<() => void> {
+export async function acquireCodexWriter(dataDirectory: string, owner: "combined" | "accounts" | "runtime" = "combined"): Promise<() => void> {
   await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
   const root = await realpath(dataDirectory);
-  const path = join(root, ".codex-writer.sqlite");
-  const lock = new DatabaseSync(path);
+  const locks: DatabaseSync[] = [];
   try {
-    await chmod(path, 0o600);
-    lock.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
+    for (const name of owner === "accounts" ? [".codex-writer.sqlite"]
+      : owner === "runtime" ? [".codex-runtime.sqlite"] : [".codex-writer.sqlite", ".codex-runtime.sqlite"]) {
+      const path = join(root, name);
+      const lock = new DatabaseSync(path);
+      locks.push(lock);
+      await chmod(path, 0o600);
+      lock.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
+    }
     // Old embedded versions and orphaned CLI children do not hold our new lock.
     // Linux server migration must also check their actual CODEX_HOME before opening stores.
-    if (process.platform === "linux") {
-      const home = join(root, "runtime");
+    if (owner !== "accounts" && process.platform === "linux") {
+      const home = await realpath(join(root, "runtime")).catch(() => join(root, "runtime"));
       for (const pid of await readdir("/proc")) {
         if (!/^\d+$/u.test(pid) || Number(pid) === process.pid) continue;
         let command: string;
@@ -35,9 +40,9 @@ export async function acquireCodexWriter(dataDirectory: string): Promise<() => v
       }
     }
   } catch (error) {
-    lock.close();
+    for (const lock of locks.reverse()) lock.close();
     throw new Error(`Codex data directory is already owned or cannot be locked: ${root}`, { cause: error });
   }
   let released = false;
-  return () => { if (!released) { released = true; lock.close(); } };
+  return () => { if (!released) { released = true; for (const lock of locks.reverse()) lock.close(); } };
 }

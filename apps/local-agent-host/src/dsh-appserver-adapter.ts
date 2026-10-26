@@ -1,5 +1,6 @@
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { AppServerThread, AppServerTurn } from "@opencraft/appserver-protocol";
 import { randomUUID } from "node:crypto";
 import { projectedHistoryHeadCursors, projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
 import { homedir } from "node:os";
@@ -236,7 +237,7 @@ function titleFor(summary: DshSessionSummary): string {
   return typeof projected === "string" && projected.trim() !== "" ? projected.trim() : "New chat";
 }
 
-function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): RecordValue {
+function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): AppServerThread {
   const title = titleFor(summary);
   const timestamp = appTimestamp(summary.updatedAt);
   const cwd = summary.cwd ?? homedir();
@@ -267,7 +268,7 @@ function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): 
     agentRole: null,
     gitInfo: null,
     name: title,
-    turns,
+    turns: turns as unknown as AppServerTurn[],
   };
 }
 
@@ -328,6 +329,13 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  recovery?: import("@opencraft/host-recovery").InterruptedTurnRecovery;
+  recoveryOwner?: DshExecutionOwner;
+  observeRecoveryExecution?: NotificationSink;
+  get runtimeReady(): boolean { return this.engineReady; }
+  publishRecovery(threadId: string, recovery: import("@opencraft/appserver-protocol").TurnRecoveryNotice | null): void {
+    this.emit("opencraft/turn-recovery/updated", { threadId, recovery });
+  }
   private workspaceResolver?: {
     resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
   };
@@ -525,6 +533,7 @@ export class DshAppServerAdapter {
   close(): void { this.admission?.failAll(new Error("Local host closed")); this.abort.abort(); this.presentation.close(); this.interactions.close(); this.liveTools.clear(); this.latestTurns.clear(); this.sinks.clear(); }
 
   engineUnavailable(error: Error): void {
+    this.recovery?.lost();
     this.historyEpoch = randomUUID(); // Native recovery invalidates volatile projection/control state.
     this.admission?.failAll(error);
     this.engineReady = false;
@@ -536,7 +545,7 @@ export class DshAppServerAdapter {
     this.livePosition.clear();
     for (const [id, summary] of this.summaries) this.summaries.set(id, { ...summary, running: false });
   }
-  engineRecovered(): void { this.engineReady = true; }
+  engineRecovered(): void { this.engineReady = true; this.recovery?.wake(); }
   async reconnectStreams(): Promise<void> {
     if (!this.streamsStarted) return this.startStreams();
     await new Promise<void>((resolve, reject) => {
@@ -595,6 +604,8 @@ export class DshAppServerAdapter {
   }
 
   private emit(method: string, params: unknown): void {
+    // Durable execution facts cannot wait behind paced presentation text.
+    if (method === "turn/started" || method === "turn/completed") this.observeRecoveryExecution?.(method, params);
     nodeObserver('dsh').execution('dsh', method, params);
     this.presentation.emit(method, params);
   }
@@ -1234,6 +1245,7 @@ export class DshAppServerAdapter {
     if (!this.engineReady) throw new Error("DSH runtime is unavailable");
     const value = object(params);
     const sessionId = string(value.threadId);
+    if (!canAdmit && ["turn/start", "turn/steer", "turn/interrupt", "thread/goal/set", "thread/goal/clear", "thread/queue/add"].includes(method)) this.recovery?.handled(sessionId);
     if (method === "thread/resume") {
       const result = await this.dispatch(method, params);
       this.admission.reconnect(sessionId, owner);
@@ -1285,6 +1297,11 @@ export class DshAppServerAdapter {
       }
     }
     if (method === "turn/interrupt" || method === "turn/steer") {
+      if (method === "turn/interrupt" && this.recoveryOwner && this.authority.table.get(sessionId)?.connection === this.recoveryOwner) {
+        await this.dispatch(method, params);
+        this.admission.finish(sessionId, "interrupted", "userInterrupted");
+        return {};
+      }
       this.authority.assertOwner(sessionId, owner, string(value.turnId ?? value.expectedTurnId) || undefined);
       if (method === "turn/steer") return this.dispatch(method, params);
       const settling = (async () => {
@@ -1468,6 +1485,7 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
+              "opencraft/read-history": { version: 1, initialTurnsPage: true, boundedRecovery: true },
               [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true, pin: true },
               [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
               [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: !!this.threadEngine?.goal, usageAccounting: false },
@@ -1513,6 +1531,17 @@ export class DshAppServerAdapter {
       case "thread/read": {
         const sessionId = string(value.threadId);
         const summary = await this.summary(sessionId);
+        if (value.initialTurnsPage != null) {
+          const epoch = this.historyEpoch, request = object(value.initialTurnsPage);
+          const description = await this.threadEngine?.describe?.({ sessionId });
+          const history = await this.recoveryHistory(sessionId, value.historyCheckpoint, number(request.limit, 10), description?.historyHead);
+          if (epoch !== this.historyEpoch || !this.engineReady) throw new DshClientError("DSH_GENERATION_CHANGED", "DSH restarted during history read; retry required", true);
+          const selection = description?.selection;
+          return { thread: { ...makeThread(summary), ...(selection ? {
+            model: encodeModel(selection.provider, selection.model), modelProvider: "dsh", reasoningEffort: selection.reasoningEffort ?? null,
+          } : {}) }, initialTurnsPage: { data: history.pageTurns, nextCursor: history.nextCursor,
+            backwardsCursor: null, itemsPaginationByTurnId: {} }, historyRecovery: history.recovery };
+        }
         const turns = value.includeTurns === true ? await this.fullHistory(sessionId) : [];
         return { thread: makeThread(summary, turns) };
       }

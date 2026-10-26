@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { defineMessages } from "@opencraft/i18n";
 import { useIntl } from "@opencraft/i18n/react";
-import { AddIcon, MinusIcon, ChevronDownIcon, CheckIcon, FilesActivityIcon, TerminalIcon, AgentActivityIcon, TargetIcon } from "@opencraft/design-system-web/action-icons";
+import { ChevronDownIcon, CheckIcon, FilesActivityIcon, TextFileIcon, CodeFileIcon, TerminalIcon, AgentActivityIcon, TargetIcon } from "@opencraft/design-system-web/action-icons";
 import type { ConversationSummaryProps } from "@opencraft/workbench-panels-react";
 import { deriveThreadSummary } from "./model";
+import { presentSummaryFiles } from "./file-presentation";
 import "./styles.scss";
 
 const messages = defineMessages({
@@ -29,13 +30,14 @@ export default function ThreadSummaryContent({ context, viewState, onViewStateCh
   const intl = useIntl();
   const scroll = useRef<HTMLDivElement>(null);
   const model = useMemo(() => deriveThreadSummary(context.timeline), [context.timeline]);
+  const filePresentation = useMemo(() => presentSummaryFiles(model.files.map(file => file.path)), [model.files]);
   const t = (key: keyof typeof messages) => intl.formatMessage(messages[key]);
   useLayoutEffect(() => { if (scroll.current) scroll.current.scrollTop = viewState.scrollTop; }, [context.scopeKey]);
   const section = (id: string, title: string, count: ReactNode, content: ReactNode) => <section className="thread-summary__section" key={id}>
     <button type="button" className="thread-summary__section-heading" aria-expanded={!viewState.collapsed.has(id)}
       onClick={() => { const collapsed = new Set(viewState.collapsed); if (!collapsed.delete(id)) collapsed.add(id); onViewStateChange({ ...viewState, collapsed }); }}>
-      <span>{title}</span><span className="thread-summary__count">{count}</span>
       <ChevronDownIcon size={14} aria-hidden="true" className={viewState.collapsed.has(id) ? "is-collapsed" : undefined} />
+      <span>{title}</span>{count !== null ? <span className="thread-summary__count">{count}</span> : null}
     </button>
     {!viewState.collapsed.has(id) ? <div className="thread-summary__rows">{content}</div> : null}
   </section>;
@@ -52,12 +54,16 @@ export default function ThreadSummaryContent({ context, viewState, onViewStateCh
           {step.status === "complete" ? <CheckIcon size={14} aria-hidden="true" /> : <span className="thread-summary__step-dot" />}
         </span><span>{step.text}</span>
       </li>)}</ol>) : null}
-    {model.files.length ? section("files", t("files"), model.files.length,
-      <ul className="thread-summary__list">{model.files.map(file => <li key={file.path}><button type="button" className="thread-summary__row thread-summary__link" title={file.path}
+    {model.files.length ? section("files", t("files"), model.files.length, <>
+      {filePresentation.root ? <div className="thread-summary__root" title={filePresentation.root}><FilesActivityIcon size={14} aria-hidden="true" /><span dir="auto">{filePresentation.rootLabel}</span></div> : null}
+      <ul className="thread-summary__list">{model.files.map((file, index) => {
+        const display = filePresentation.files[index]!;
+        const FileIcon = /\.(?:[cm]?[jt]sx?|json|css|scss|html|py|rs|go|sh|ya?ml)$/iu.test(display.name) ? CodeFileIcon : TextFileIcon;
+        return <li key={file.path}><button type="button" className="thread-summary__row thread-summary__link thread-summary__file" title={file.path} data-file-kind={file.kind}
         disabled={!context.current || file.kind === "delete"} onClick={() => context.onOpenResource(file.path)}>
-        <FilesActivityIcon size={16} aria-hidden="true" /><span className="thread-summary__filename">{file.path.split(/[\\/]/u).at(-1)}<small>{file.path}</small></span>
-        <span className="thread-summary__file-kind" aria-label={file.kind === "add" ? t("added") : file.kind === "delete" ? t("deleted") : t("modified")}>{file.kind === "add" ? <AddIcon size={14} /> : file.kind === "delete" ? <MinusIcon size={14} /> : null}</span>
-      </button></li>)}</ul>) : null}
+        <FileIcon size={16} aria-hidden="true" /><span className="thread-summary__filename"><span className="thread-summary__file-label" dir="auto"><span>{display.stem}</span><span className="thread-summary__extension">{display.extension}</span></span>{display.directory ? <small dir="auto">{display.directory}</small> : null}</span>
+        {file.kind !== "unknown" ? <span className="thread-summary__file-kind" aria-label={file.kind === "add" ? t("added") : file.kind === "delete" ? t("deleted") : t("modified")}><span aria-hidden="true">{file.kind === "add" ? "A" : file.kind === "delete" ? "D" : "M"}</span></span> : null}
+      </button></li>; })}</ul></>) : null}
     {model.activities.length ? section("activity", t("activity"), model.activities.length,
       <ul className="thread-summary__list">{model.activities.map(activity => <li key={activity.id}>
         {activity.threadId ? <button type="button" className="thread-summary__row thread-summary__link" disabled={!context.current} onClick={() => context.onOpenThread(activity.threadId!)}>

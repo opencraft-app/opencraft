@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, schemaFingerprint, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { parseCodexAuthFileReference, readCodexAuthFile, type CodexAuthFileReference } from "./codex-auth-file.js";
+import { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
 const BASELINE = `
 CREATE TABLE pool_accounts (
@@ -618,14 +619,15 @@ export class AccountPoolStore {
     return token;
   }
 
-  authenticateHostToken(token: string): string | null {
+  authenticateHostToken(token: string, codexBrokerBaseUrl?: string): string | null {
     if (!token || token.length > 4096) return null;
     const presented = Buffer.from(token);
     let matched: string | null = null;
     for (const name of readdirSync(this.secretsDirectory)) {
       if (!name.startsWith("host-") || !name.endsWith(".json")) continue;
       const record = this.parseHostToken(readFileSync(join(this.secretsDirectory, name), "utf8"));
-      const expected = Buffer.from(record.token);
+      const expected = Buffer.from(codexBrokerBaseUrl === undefined ? record.token
+        : createCodexAccountPoolLaunch({ baseUrl: codexBrokerBaseUrl, hostToken: record.token }).auth.accessToken);
       if (expected.length === presented.length && timingSafeEqual(expected, presented)) matched = record.hostId;
     }
     return matched;

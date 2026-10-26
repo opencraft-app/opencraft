@@ -30,6 +30,8 @@ export interface SshServerDescriptor {
   readonly serverId: string;
   readonly displayName: string;
   readonly workspaceBrowseRoots: readonly string[];
+  /** Presentation only; existing conversations and connection admission are unchanged. */
+  readonly hideFromNewChat?: boolean;
 }
 export function parseSshServerDescriptors(value: unknown): readonly SshServerDescriptor[] {
   if (!Array.isArray(value) || value.length > 32) throw new Error("Invalid remote Server catalog");
@@ -41,7 +43,8 @@ export function parseSshServerDescriptors(value: unknown): readonly SshServerDes
       || typeof displayName !== "string" || !displayName.trim() || displayName.length > 100
       || !Array.isArray(workspaceBrowseRoots) || workspaceBrowseRoots.length > 16 || workspaceBrowseRoots.some(root => typeof root !== "string" || !root.startsWith("/"))) throw new Error("Invalid remote Server descriptor");
     ids.add(serverId);
-    return { serverId, displayName, workspaceBrowseRoots };
+    if (entry.hideFromNewChat !== undefined && typeof entry.hideFromNewChat !== "boolean") throw new Error("Invalid remote Server visibility");
+    return { serverId, displayName, workspaceBrowseRoots, ...(entry.hideFromNewChat === undefined ? {} : { hideFromNewChat: entry.hideFromNewChat }) };
   });
 }
 /** Authenticated management projection. Deliberately excludes all secrets and backend paths. */
@@ -61,6 +64,7 @@ export interface SshConnectionEdit {
   readonly username: string;
   readonly enabled: boolean;
   readonly workspaceBrowseRoots: readonly string[];
+  readonly hideFromNewChat?: boolean;
   /** Write-only; empty/omitted preserves the saved credential. Never in a View. */
   readonly password?: string;
 }
@@ -68,7 +72,7 @@ export function parseSshConnectionViews(value: unknown): readonly SshConnectionV
   const descriptors = parseSshServerDescriptors(value);
   return descriptors.map((descriptor, index) => {
     const row = (value as Record<string, unknown>[])[index]!;
-    if (Object.keys(row).some(k => !["serverId", "displayName", "workspaceBrowseRoots", "revision", "hostname", "port", "username", "enabled", "fingerprint", "state"].includes(k))
+    if (Object.keys(row).some(k => !["serverId", "displayName", "workspaceBrowseRoots", "revision", "hostname", "port", "username", "enabled", "fingerprint", "state", "hideFromNewChat"].includes(k))
       || !Number.isSafeInteger(row.revision) || Number(row.revision) < 1
       || typeof row.hostname !== "string" || row.hostname.length > 253 || !/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/u.test(row.hostname)
       || typeof row.username !== "string" || !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63}$/u.test(row.username)

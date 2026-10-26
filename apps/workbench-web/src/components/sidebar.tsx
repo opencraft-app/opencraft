@@ -3,7 +3,7 @@ import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, Compos
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
 import { createPortal } from "react-dom";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ThreadListModeItems } from "./thread-list-mode-menu";
 import { AvatarImage, type ThreadBadgeContribution, type ThreadListGroupingContribution, type ThreadListGroupingSnapshot, type ThreadListLabel } from "@opencraft/extension-react";

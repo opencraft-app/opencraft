@@ -51,10 +51,10 @@ rasterization and Native hardware remain separately reported platform acceptance
 Floating header controls consume the lighter variant of shared mobile-glass,
 with an internal optical rim/highlight and translucent fill; no outer shadow is permitted.
 Search/navigation keep their denser variant; opaque accessibility fallbacks and
-the existing hit areas, fade and control owners are unchanged.
+the existing hit areas and control owners are unchanged.
 
 Draft and conversation routes share this presentation. With touch density and Newera enabled, Shell presents the existing left/right sidebar and conversation-menu controls as floating glass circles, using the shared mobile-glass material and its opaque accessibility fallback. Visible title/pencil are suppressed; the capability-gated preview toggle keeps its existing position and command, and Rename retains the existing menu/writer/modal. Other routes, compact density and Newera-off retain their normal chrome. This scoped presentation replaces the neutral-button/titlebar appearance, not control ownership.
-Shell keeps its existing header measurements, safe-area clearance, 44px touch targets, stationary wide-touch sidebar portal, main-content lifetime and scroll geometry. Its existing pointer-transparent top-fade softly blends content toward the theme surface, without an opaque title strip or a new scroll observer. Preference or route changes do not remount the editor.
+Shell keeps its existing header measurements, safe-area clearance, 44px touch targets, stationary wide-touch sidebar portal, main-content lifetime and scroll geometry. Content between the floating controls stays clear: no full-width top-fade, tint veil or backdrop-blur is painted over it. The controls retain their own shared glass material; native system effects remain host-owned. Preference or route changes do not remount the editor.
 
 ### Contribution icon authority
 
@@ -134,8 +134,15 @@ as runtime. It shares mode resolution and preference-key priority, normalizes ol
 builtin aliases, never writes preferences, and marks unknown/hidden selections as
 fallback. Runtime projection takes over when themes load, including late plugin
 contributions. No persistent palette cache or parallel theme catalog is introduced.
-The legacy Apple status-bar-style meta is omitted; deprecated black-translucent is
-not used to claim arbitrary drawing beneath the status bar.
+The legacy Apple status-bar-style declaration remains the stable
+`black-translucent` overlay request described below; it is not rewritten on theme
+changes and does not prove native drawing capability. A separate early head
+script projects the generated catalog before application/diagnostic startup.
+Browser html/body paint the same opaque edge background before density or runtime
+initialization; live projection updates `theme-color` and `color-scheme` together
+with that background. Explicit modes override system changes; system preference
+continues to use the original media subscription. No new theme/cache owner is
+introduced.
 
 Projection reports requested colors, chosen host strategy and bootstrap/fallback/
 resolved phase. `systemAppearance: unobserved` is deliberate: DOM/meta/bridge writes
@@ -144,3 +151,56 @@ the existing viewport owner; no negative-position status strip or duplicate inse
 On current iOS, installed metadata and WebKit top-color sampling can affect native
 results. Device acceptance covers cold start, theme/system changes, SPA conversation
 navigation, foreground return and rotation, for both existing and fresh installs.
+
+
+The page's active ClientRuntime implements the narrow window-appearance projector;
+the appearance owner binds/unbinds this port without transferring theme state.
+WebRuntime/PwaRuntime/ElectronRuntime share the existing intent codec. Native
+fullscreen/input subscriptions retire with the runtime, while bootstrap head
+projection remains pure and native system pixels remain unobserved. See
+[ClientRuntime](../../docs/architecture/platform/client-runtime.md).
+
+
+### Standalone WebKit edge-color compatibility
+
+The document declares the legacy iOS `black-translucent` status-bar request and
+`viewport-fit=cover`. The presentation projector records
+`legacy-overlay-requested` only for a standalone/fullscreen browser document;
+this names an intent, not native acceptance or a measured full-screen viewport.
+Shell and drawer backgrounds keep their full painted boxes. SafeLayout consumes
+the top inset inside those boxes so controls stay clear of system content.
+The existing viewport owner retains keyboard geometry. No screen-height subtraction
+or guessed inset is introduced when the platform returns zero.
+
+Overlay requests and system-color sampling are exclusive document strategies.
+The sampling surface below is enabled only for `system-color-extension` (when the
+overlay request is absent). Host-owned native chrome does not select either web
+strategy. Bootstrap and live projection read the same declaration and report the
+same strategy; existing bounded viewport diagnostics separately report the request,
+sampling visibility and actual screen/layout/safe-content geometry. Those observations
+do not assert that the system painted the requested area.
+
+A single empty, aria-hidden document surface lives outside the application root,
+route lifetimes and transformed panels. The HTML head's existing presentation
+projection admits only the system-color-extension browser strategy in
+standalone/fullscreen display mode; CSS
+capability checks exclude engines without WebKit touch-callout/text clipping.
+Ordinary tabs, Electron, embedded and native-container hosts keep it disabled.
+This is a rendering compatibility hint, not an iOS version detector or promised
+system capability. It consumes the existing semantic Shell edge background from
+bootstrap through runtime/plugin theme changes, without a second color writer.
+
+The fixed surface exceeds the host's thin-border sampling threshold, carries a
+background style and clips it to empty text. It paints no strip over the page and
+receives no pointer/focus input. It does not reserve an inset, create a safe-area
+value, move controls, animate or write viewport/status-bar metadata. SafeLayout,
+keyboard geometry and native system rendering retain their respective owners.
+
+The existing window-appearance smoke verifies both declared policies at actual
+document startup and exclusion
+on Chromium and desktop WebKit. Its explicit iOS CSS predicate projection exercises
+the enabled WebKit styles, theme inheritance, hit testing and unchanged page pixels.
+Complete-application checks separately cover navigation and draft continuity.
+Native status-bar color/blur and physical full-bleed remain unobserved until
+separately verified on the installed target device; a smaller layout viewport is
+not repaired or hidden by this surface.

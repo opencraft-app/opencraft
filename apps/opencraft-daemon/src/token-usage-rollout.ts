@@ -1,35 +1,9 @@
-import { open, realpath } from "node:fs/promises";
-import { relative, isAbsolute } from "node:path";
+import { open } from "node:fs/promises";
 import { nativeUsageFact, nativeAcceptedInputFact, type NativeAcceptedInputFact } from "./token-usage-native-facts.js";
 import type { OpenCraftTokenUsageLedger } from "./token-usage-ledger.js";
 
-export class OversizedRolloutLineError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OversizedRolloutLineError";
-  }
-}
-
-export async function findNextNewline(
-  file: import("node:fs/promises").FileHandle,
-  from: number,
-  limit = 64 * 1024 * 1024,
-): Promise<number | null> {
-  const chunkSize = 64 * 1024;
-  const chunk = Buffer.alloc(chunkSize);
-  let offset = 0;
-  while (offset < limit) {
-    const toRead = Math.min(chunkSize, limit - offset);
-    const { bytesRead } = await file.read(chunk, 0, toRead, from + offset);
-    if (bytesRead === 0) return null;
-    const nl = chunk.subarray(0, bytesRead).indexOf(10);
-    if (nl !== -1) {
-      return from + offset + nl + 1;
-    }
-    offset += bytesRead;
-  }
-  throw new OversizedRolloutLineError("Usage rollout line exceeds 64 MiB limit without newline");
-}
+import { canonicalRolloutPath, findNextNewline, OversizedRolloutLineError, RolloutOutsideHomeError, type NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
+export { findNextNewline, OversizedRolloutLineError } from "@opencraft/native-history-node/codex-rollout-reader";
 
 export interface RolloutTurnIdentity {
   readonly provider: string | null;
@@ -185,6 +159,7 @@ export interface RolloutUsageResult {
 export async function replayRolloutUsage(options: {
   readonly path: string;
   readonly nativeHome: string;
+  readonly source?: NativeRolloutSource;
   readonly threadId: string;
   readonly ledger: OpenCraftTokenUsageLedger;
   readonly cursor?: number;
@@ -199,12 +174,13 @@ export async function replayRolloutUsage(options: {
   readonly onSourceTurn?: (key: {threadId:string;turnId:string}) => boolean;
   readonly onOversizedLine?: (mayContainFact: boolean, bytes: number) => void;
   readonly identity?: RolloutTurnIdentity;
+  /** Receipt-only cutover keeps native admission recovery without token writes. */
+  readonly counts?: boolean;
 }): Promise<RolloutUsageResult> {
   options.signal?.throwIfAborted();
-  const root = await realpath(options.nativeHome);
-  const path = await realpath(options.path);
-  const child = relative(root, path);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Usage rollout is outside native storage");
+  let path: string;
+  try { path = await canonicalRolloutPath(options.path, options.source?.nativeHome ?? options.nativeHome); }
+  catch (error) { if (error instanceof RolloutOutsideHomeError) throw new Error("Usage rollout is outside native storage"); throw error; }
   const file = await open(path, "r");
   try {
     const stat = await file.stat();
@@ -226,6 +202,8 @@ export async function replayRolloutUsage(options: {
       skipTo = await findNextNewline(file, cursor, 64 * 1024 * 1024);
     }
 
+    await options.source?.validate();
+    options.signal?.throwIfAborted();
     return options.ledger.commitReplayBatch(() => {
       const finish = (result: Omit<RolloutUsageResult, "skipped" | "oversizedFact"> & { skipped?: number; oversizedFact?: boolean }): RolloutUsageResult => {
         const full: RolloutUsageResult = { skipped: 0, oversizedFact: false, ...result };
@@ -265,7 +243,7 @@ export async function replayRolloutUsage(options: {
             provider: currentProvider,
             model: (turnId ? turnModels.get(turnId) : null) ?? (options.identity && options.identity.turnId === turnId ? options.identity.model : options.identity?.model) ?? null,
           };
-          const fact = nativeUsageFact(value, options.threadId, identity);
+          const fact = options.counts === false ? null : nativeUsageFact(value, options.threadId, identity);
           if (fact?.kind === "missing") { missing++; handled++; }
           if (fact?.kind === "source") {
             if (options.excludedTurnIds?.has(fact.source.turnId)) { committed = end; continue; }

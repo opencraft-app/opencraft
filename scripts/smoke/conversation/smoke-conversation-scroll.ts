@@ -400,6 +400,45 @@ try {
     }
   }
   console.log("Top inset and history feedback passed at narrow/wide widths, with toolbar clearance, in both scroll policies.");
+  // A renderer can grow before its row measurement transaction is delivered.
+  // Native flow must keep that content above the sticky input even then.
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?natural&longHistory`);
+    await page.waitForFunction(() => (window as any).api);
+    await page.evaluate(() => { (document.querySelector("#root > div") as HTMLElement).style.width = "100%"; });
+    await settle();
+    await page.evaluate(() => (window as any).complete());
+    await page.mouse.move(width / 2, 300);
+    await page.mouse.wheel(0, -100000);
+    await settle();
+    assert.equal(await page.locator('[data-probe="text-29"]').count(), 0, "upward history reading unmounts the latest answer");
+    await page.evaluate(() => (window as any).api.scrollToBottom());
+    await settle();
+    await page.evaluate(() => {
+      (window as any).delayTurnMeasurements = true;
+      (window as any).change(29, 1800);
+    });
+    await settle();
+    await page.evaluate(() => (window as any).api.scrollToBottom());
+    await settle();
+    const visibleTail = () => page.evaluate(() => {
+      const tail = document.querySelector('[data-probe="text-29"]')!.getBoundingClientRect();
+      const footer = document.querySelector(".thread-scroll-footer")!.getBoundingClientRect();
+      return { bottom: tail.bottom, footerTop: footer.top, scrollTop: document.querySelector(".thread-scroll")!.scrollTop };
+    });
+    const delayed = await visibleTail();
+    assert.ok(delayed.bottom <= delayed.footerTop, `delayed row measurement must not hide the tail: ${JSON.stringify(delayed)}`);
+    await page.locator(".thread-scroll-footer__content > div:last-child").evaluate((element: HTMLElement) => { element.style.height = "220px"; });
+    await settle();
+    const taller = await visibleTail();
+    assert.ok(taller.bottom <= taller.footerTop, "a taller input still reserves room for the unmeasured answer");
+    await page.evaluate(() => (window as any).flushTurnMeasurements());
+    await settle();
+    const settled = await visibleTail();
+    assert.ok(settled.bottom <= settled.footerTop, "measurement settlement retains the readable tail");
+  }
+  console.log("Delayed measurements passed: long latest answer and taller footer remain reachable at narrow/wide widths.");
   assert.deepEqual(errors, []);
   if (process.env.OPENCRAFT_SCROLL_CHECK_TOP_SPACE_ONLY !== "1") console.log("History fill passed in both policies: content shrink loads once, rerender does not reload, zero ResizeObserver warnings.");
 } finally {

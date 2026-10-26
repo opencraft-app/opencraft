@@ -22,6 +22,19 @@ existing ownership even when no restore target is pending. Web executes the
 unchanged synchronous/pending commit paths; Native retains measurement leases
 and frame scheduling. Neither platform adds another compensation policy.
 
+### Scroll state and geometry reads
+
+The scroll controller owns confirmed distance and animation state. State-only
+controls use `getState` and `subscribeState`; rendering or subscribing a bottom
+button must not sample DOM geometry. Measured snapshots remain available to
+geometry consumers, and platform scroll events and imperative commands still
+reconcile the physical, possibly clamped distance before publishing state.
+
+Footer padding is established on the first measurable height without reading
+post-write scroll geometry for compensation. Only subsequent eligible resizes
+measure and compensate; parked routes, active animations and explicit preserve
+suppression retain their existing rules.
+
 ### Initial history and display reuse
 
 Durable paginated providers that explicitly advertise initial-page support may
@@ -251,21 +264,20 @@ not merely because a conversation is retained in the cache.
 
 ### Recovery technical details
 
-Cold and retained-history recovery errors expose a collapsed native details
-panel. Runtime composition projects the existing transport/activation/history
-owners into an allowlisted presentation snapshot; it does not schedule retries.
-Connection failures carry the same local attempt ID as the server diagnostic
-report, a fixed occurrence time, socket phase/cause and optional close code.
-History/activation errors expose only a bounded machine code (or UNCLASSIFIED)
-and local observation time, never an error message, stack or payload. Runtime
-and transport states report current observations; recoveryPolicy describes the
-transport's existing automatic/manual classification, not proof a retry ran.
-Navigation fences expanded/copy state; successful authoritative recovery removes
-the panel. Copy uses the shared clipboard helper with legacy fallback and an
-announced failure. Narrow and themed layouts wrap technical fields while retaining
-history, scroll and drafts. Protocol mismatch still requires an update rather
-than a retry loop. The clipboard-only package export avoids importing renderers
-and their styles for this utility.
+Cold and retained-history recovery keep failure codes and progress in the
+allowlisted console/diagnostic snapshot. The conversation renders no reconnect
+failure notice, retry button, technical disclosure or copy action. A client
+protocol mismatch still shows the required update/reload instruction because
+retrying cannot repair an incompatible client.
+
+The Host-owned history scheduler continues retrying transient read failures while
+the conversation has visible/open demand. Backoff grows to sixty seconds with
+jitter; failures do not exhaust an attempt budget. Generic legacy server/internal
+RPC errors are retryable for history reads unless marked permanent. Missing or
+archived conversations, permission/validation errors and explicit non-retryable
+failures retain their existing handling. This policy never replays writes,
+reconnects a healthy Host or grants authority to cached history. Disposal, cache-only
+demand and connection replacement cancel pending work and fence late results.
 
 ## External conversation presentation and history reads
 
@@ -304,23 +316,18 @@ projection is independent of Turn streaming and does not authorize commands. It
 appears after 600ms, fades out in 350ms, uses theme colors, intercepts no input and
 preserves the mounted editor, draft, focus and selection. Reduced motion retains
 a static faint edge. Cold history uses the same Composer feedback instead of a
-central spinner; activation failures retain their retry action. The empty Composer placeholder shows “Reconnecting…” while its Host connects or
+central spinner. The empty Composer placeholder shows “Reconnecting…” while its Host connects or
 retries, and “Loading…” while the connected conversation is being restored. The
 existing recovery owner decides whether work is pending; stopped recovery and
-required updates keep their existing actions. The editor owns emptiness, so a
+required updates keep their update/reload instruction. The editor owns emptiness, so a
 draft (including transient IME text) hides this placeholder. Changing the
 placeholder preserves the same editor, focus, selection and draft; readiness
 restores the normal prompt. The border scan also retains its screen-reader label. No syncing/reconnecting notice is inserted into the transcript.
-Only a stopped/blocked recovery or required client update presents
-an actionable instruction in normal flow above the Composer, never over the
-transcript. Its diagnostic report stays collapsed. Elapsed time, attempts, retry
-deadlines and machine failure codes remain in the existing diagnostic snapshot;
-they do not add visible progress chrome or schedule work. Both cold and retained-history
-terminal failures render only the collapsed technical report and retry/update action;
-no progress presentation clock is mounted after recovery stops. Opening or copying
-the report consumes the existing allowlisted snapshot and never starts recovery.
-Authoritative recovery removes any manual action row; invalidation fences late observations.
-No remote error text, content, endpoint or credentials enter this report.
+Routine failures remain silent in both cold and retained-history layouts. Progress,
+elapsed time, attempts and machine codes remain diagnostic observations without
+visible controls or a presentation clock. Only a required client update appears
+above the Composer. Recovery and revalidation keep the same editor and transcript
+mounted, preserving draft, focus, selection and reading position.
 A fresh work item after a terminal failure starts a new history observation;
 its correlation ID and attempt count cannot inherit the completed report.
 Coalesced retries of an active work item still share the original observation.
@@ -329,7 +336,7 @@ Coalesced retries of an active work item still share the original observation.
 
 Recovery observations carry the local physical `attemptId` and `eventAtMs`; the server receipt time is not the client event time. `history-started`, `history-backoff`, and allowlisted slow/failed history RPC metadata are accepted by the diagnostic endpoint. A rejected metadata record is discarded instead of blocking later reports. No request params, conversation text, credentials, URLs or Thread IDs are added.
 
-The renderer logs the full allowlisted clipboard diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Copying details logs the exact copied snapshot. Loading UI stays concise and retains existing messages and drafts.
+The renderer logs the full allowlisted diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Loading UI stays concise and retains existing messages and drafts.
 
 A WebSocket Ping queued behind a large frame does not start a peer response deadline. The full heartbeat interval starts when the Ping write callback succeeds. Queued writes with decreasing buffered bytes retain the connection; four heartbeat intervals without write progress terminate as `heartbeat-write-stalled`. Delayed write, actual send, recovery and peer timeout diagnostics include the attempt ID, queued duration, buffered bytes and relevant timing; healthy idle heartbeats stay quiet. Closing a socket fences late write callbacks. This mitigates a demonstrated disconnect mechanism without claiming all reconnect failures have the same cause.
 
@@ -437,3 +444,73 @@ event to enter the checkpoint. Hidden geometry retains the previous distance.
 Scroll events from a detached port cannot overwrite the
 retained distance before listener cleanup. Response placement retains its own
 restore position.
+
+### Cancelling a retired baseline
+
+A logical Host reconnect can reuse the initialized client and physical socket.
+Binding hydration and Session read/resume must release their local single-flight
+slots on revocation, rather than await an old response or its deadline. Each
+operation checks its own identity before publishing data, errors, previews or
+notification-buffer cleanup. The scheduler's run signal reaches all initial
+history RPCs and strategies; an uncooperative strategy cannot retain local
+admission or later replace the new baseline. Cached transcript paint and drafts
+survive this handoff, while authoritative presentation waits for the new cut.
+A new baseline also retires old background/pagination context identities so an
+old same-generation reader cannot append after replacement. Cancellation is
+local ownership revocation, not a claim that remote execution stopped.
+
+
+Derived older-page, refresh and tail-drain requests own cancellable local waits.
+A new baseline, needs-resume transition, release or disposal settles those waits
+without waiting for a provider that ignores cancellation. Cancellation retains
+cached paint and clears the older-page loading indicator when its source is still
+current. Older/refresh requests share their initiating owner; a joining signal
+cancels only that caller's wait. Refresh cancellation returns false; older-page
+cancellation rejects with ABORTED. A queued independent intent waits for a previous
+operation to settle, including failure/cancellation, rather than inheriting its
+outcome. Their projection code loads on demand after admission and checks ownership
+again after module loading, so it is outside the mandatory startup graph.
+
+
+Canonical rereads after overlapping snapshot notifications (including non-delta
+item/turn lifecycle and Thread status) have a local elapsed deadline from
+the initial read start. Expiry settles the caller with a retryable TIMEOUT before
+any held old reply arrives, then revokes children and fences their late data.
+A new request checks expiry before joining, including before queued timer delivery;
+synchronous abort observers may already have admitted its successor. Initial quiet
+pagination keeps its per-RPC allowance, and explicit zero disables the configured
+deadline. Wall-clock corrections affect diagnostic timestamps, not these budgets.
+
+
+Pending View acquisition reserves residency demand before asynchronous binding
+publication. A queue/view observer cannot evict that binding before its lease is
+admitted, including with zero inactive-cache allowance. Optional older-history
+reads do not count as execution commands. The last retained View and observer
+leaving retires derived read waits while preserving the cached baseline, history
+source, execution work and healthy Host. A pending replacement acquisition or peer
+View/observer keeps a shared read alive. Local ABORTED retirement does not become
+a cached history error; genuine read failures retain their existing error behavior.
+A released lease cannot start another optional read. This is local cancellation,
+not remote execution cancellation or an automatic write retry.
+
+### Mounted content and virtual height
+
+In natural scrolling, the Web virtualizer's measured total is a minimum height for its spacer, including
+unmounted history. Mounted rows retain their natural block size: a renderer can
+grow while its row measurement is queued, so stale measurements must never let
+that content overflow the spacer and overlap the sticky Composer. Both the
+latest-row fast path and React project the same minimum; the viewport owner
+continues to own measurement transactions and reading-position compensation.
+Response-placement policy retains its explicitly measured height because its
+response spacer and follow transaction own the position during streaming.
+
+
+### Native questions while history is unavailable
+
+A received question/approval and its Host withdrawal remain live while history is
+loading, retrying or cancelled. The Workbench binding projects current interactions
+through nonauthoritative paint without replacing retained history or advancing its
+cursor. Replying uses the original native request context; it does not require
+reloading historical messages. A native withdrawal removes only its own prompt.
+New input remains subject to current history/execution admission. See the
+[native-channel contract](../platform/connection-recovery-contract.md#native-execution-channels-during-history-recovery).

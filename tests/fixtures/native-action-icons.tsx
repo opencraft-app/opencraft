@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Pressable, Text } from "react-native";
 import * as icons from "@opencraft/design-system-native/action-icons";
-import { WorkbenchHeader } from "../../apps/workbench-expo/src/components/workbench-header";
-import { WorkbenchSidebar } from "../../apps/workbench-expo/src/components/workbench-sidebar";
+import { WorkbenchHeader } from "../../apps/mobile/src/components/workbench-header";
+import { WorkbenchSidebar } from "../../apps/mobile/src/components/workbench-sidebar";
 import { NativeCodeRenderer } from "../../packages/chat-render-native/src/renderers/code";
 import { NativeImageGalleryProvider, useNativeImageGallery } from "../../packages/chat-render-native/src/renderers/image-gallery";
 

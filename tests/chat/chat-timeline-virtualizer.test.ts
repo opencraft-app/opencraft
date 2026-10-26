@@ -1353,3 +1353,60 @@ test("imperative scrolling cancels pending preservation and publishes the platfo
   assert.equal(controller.reportPlatformScroll("system").distanceFromBottomPx, 1_400);
   controller.dispose();
 });
+
+
+test("state-only scroll controls subscribe and read without measuring geometry", () => {
+  let distance = 300;
+  let reads = 0;
+  const controller = new TurnScrollController({
+    getMetrics: () => { reads++; return { distanceFromBottomPx: distance, viewportHeightPx: 600, scrollHeightPx: 2_000 }; },
+    writeDistanceFromBottomPx: (next) => { distance = Math.min(next, 1_400); },
+    now: () => 0,
+    requestFrame: () => 1,
+    cancelFrame: () => {},
+  }, distance);
+  const observed: number[] = [];
+  const release = controller.subscribeState(() => observed.push(controller.getState().distanceFromBottomPx));
+  assert.equal(reads, 0, "subscribing and reading state must not force a platform layout");
+  assert.equal(controller.getState().isScrolledFromBottom, true);
+  distance = 10;
+  controller.reportGeometry();
+  assert.equal(reads, 1, "state-only publication must not take a second measured snapshot");
+  assert.equal(controller.getState().isScrolledFromBottom, false);
+  controller.scrollToDistanceFromBottomPx(9_000, "instant");
+  assert.equal(controller.getState().distanceFromBottomPx, 1_400);
+  distance = 500;
+  controller.reportPlatformScroll("user");
+  assert.deepEqual(observed, [300, 10, 1_400, 500]);
+  release();
+  controller.reportGeometry();
+  assert.equal(observed.length, 4);
+  controller.dispose();
+});
+
+test("state reads retain pending layout preservation and reflect animation cancellation", () => {
+  let distance = 300;
+  let height = 2_000;
+  let nextFrame = 0;
+  const frames = new Map<number, (time: number) => void>();
+  const controller = new TurnScrollController({
+    getMetrics: () => ({ distanceFromBottomPx: distance, viewportHeightPx: 600, scrollHeightPx: height }),
+    writeDistanceFromBottomPx: (next) => { distance = next; },
+    now: () => 0,
+    requestFrame: (callback) => { frames.set(++nextFrame, callback); return nextFrame; },
+    cancelFrame: (id) => { frames.delete(id); },
+  }, distance);
+  controller.preserveScrollPositionForNextLayout();
+  height = 2_400;
+  controller.getState();
+  assert.equal(frames.size, 1, "state inspection must not consume pending restoration");
+  const [id, callback] = frames.entries().next().value!;
+  frames.delete(id); callback(16);
+  assert.equal(distance, 300);
+  controller.scrollToBottom();
+  assert.equal(controller.getState().isScrollAnimationActive, true);
+  controller.cancelScrollAnimation();
+  assert.equal(controller.getState().isScrollAnimationActive, false);
+  assert.equal(frames.size, 0);
+  controller.dispose();
+});

@@ -1,6 +1,10 @@
+import { useTurnNotifications } from "../runtime/turn-notifications-context";
 import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
+import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
+import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
+import { mobileConnectionMessages } from "./mobile-connection-settings";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";
@@ -72,6 +76,7 @@ export function HostlessWorkbench({
   const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
+  const turnNotifications = useTurnNotifications();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
@@ -79,6 +84,7 @@ export function HostlessWorkbench({
   const navigation = supervisor.navigation;
   const navigationSnapshot = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot, navigation.getSnapshot);
   const applicationRoute = navigationSnapshot.applicationRoute;
+  const desktopBackdrop = useApplicationDesktopBackdrop(applicationRoute);
   const routeHeader = useAppShellRouteHeader(JSON.stringify(applicationRoute));
   const settingsSection = applicationRoute.kind === "settings" ? applicationRoute.slug : null;
   const settingsOpen = settingsSection !== null;
@@ -104,7 +110,7 @@ export function HostlessWorkbench({
   const environmentSnapshot = useSyncExternalStore(supervisor.environmentDirectory.subscribe, supervisor.environmentDirectory.getSnapshot, supervisor.environmentDirectory.getSnapshot);
   const machines = useMemo(() => groupWorkInMachines(profileSnapshot.profiles, environmentSnapshot.entries), [profileSnapshot.profiles, environmentSnapshot.entries]);
   useEffect(() => {
-    if (profileSnapshot.profiles.some((profile) => profile.enabled)) window.location.reload();
+    if (profileSnapshot.profiles.some((profile) => profile.enabled && profile.hideFromNewChat !== true) && !reloadMobileWorkbench()) window.location.reload();
   }, [profileSnapshot]);
 
   useLayoutEffect(() => {
@@ -308,6 +314,7 @@ export function HostlessWorkbench({
         target={routeHeader.target}
       >
       <AppShell
+        surface={desktopBackdrop ? "application-desktop" : "default"}
         navigation={{
           settingsActive: routeSettingsOpen,
           updatesActive: routeSettingsOpen && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
@@ -323,7 +330,10 @@ export function HostlessWorkbench({
             signIn: authenticationPresentation.signIn,
             onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
             onRefresh: extensionProjection.account.provider.refresh,
-            onSignOut: extensionProjection.account.provider.signOut,
+            onSignOut: extensionProjection.account.provider.signOut ? async () => {
+                await turnNotifications?.beforeSignOut();
+                await extensionProjection.account?.provider.signOut?.();
+              } : undefined,
           },
           onOpenSettings: () => openSettings(),
           onOpenUpdates: () => openSettings('updates'),
@@ -368,6 +378,7 @@ export function HostlessWorkbench({
               : "hostless-workbench__main"
           }
         >
+            <ApplicationRouteMotion route={applicationRoute} includeConversation>
             {routeSettingsOpen ? (
               <section className="settings-page" aria-label="Settings">
                 {settingsContent}
@@ -383,12 +394,22 @@ export function HostlessWorkbench({
             ) : (
               <div className="hostless-workbench__empty-stage">
                 {extensionProjection.emptyWorkbenchNode ?? <section className="hostless-empty-view">
-                  <h1>暂无可用 Agent</h1>
-                  <p>你仍可以调整 OpenCraft 的设备设置。</p>
-                  <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                  {mobileContainer() ? <>
+                    <h1>{intl.formatMessage(mobileConnectionMessages.title)}</h1>
+                    <p>{intl.formatMessage(mobileConnectionMessages.description)}</p>
+                    <div className="hostless-empty-view__connection-actions">
+                      <Button variant="primary" onClick={() => openSettings("mobile-connection")}>{intl.formatMessage(mobileConnectionMessages.title)}</Button>
+                      <Button variant="secondary" onClick={() => openSettings()}>{intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}</Button>
+                    </div>
+                  </> : <>
+                    <h1>暂无可用 Agent</h1>
+                    <p>你仍可以调整 OpenCraft 的设备设置。</p>
+                    <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                  </>}
                 </section>}
               </div>
             )}
+            </ApplicationRouteMotion>
         </div>
       </AppShell>
       </AppShellRouteRegionsProvider>

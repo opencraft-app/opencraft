@@ -43,7 +43,7 @@ export async function startIndependentEngineHost(options) {
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     pi = new PiEngine({
       ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
-      directory: join(dataDirectory, 'pi'),
+      dataDirectory, directory: join(dataDirectory, 'pi'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
     });

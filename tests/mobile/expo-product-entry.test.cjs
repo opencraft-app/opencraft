@@ -3,16 +3,9 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, withProductEntryResolver, configureProduct } = require("../../apps/workbench-expo/product-entry.cjs");
-const appRoot = path.resolve(__dirname, "../../apps/workbench-expo");
-const base = require("../../apps/workbench-expo/app.json").expo;
-
-test("experimental full Web container is explicit and cannot silently replace a downstream product", () => {
-  assert.equal(resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "native" }), null);
-  assert.equal(resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "web" }), path.join(appRoot, "src/runtime/web-container-entry.ts"));
-  assert.throws(() => resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "unknown" }), /web or native/);
-  assert.throws(() => resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "web", OPENCRAFT_EXPO_PRODUCT_ENTRY: "product.ts" }), /not both/);
-});
+const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, withProductEntryResolver, configureProduct } = require("../../apps/mobile/product-entry.cjs");
+const appRoot = path.resolve(__dirname, "../../apps/mobile");
+const base = require("../../apps/mobile/app.json").expo;
 
 test("public Expo defaults preserve core config and do not select a product", () => {
   assert.equal(resolveProductEntry(appRoot, {}), null);
@@ -60,7 +53,7 @@ test("downstream routes retain Router entry and share one host SDK without redir
   assert.equal(context.originModulePath, "/product/view.tsx");
   const publicResolve = withProductEntryResolver(appRoot, null, delegate, "/product/routes.js", ["react"]);
   publicResolve(context, "react", "ios");
-  assert.equal(calls.at(-1).context, context);
+  assert.equal(calls.at(-1).context.originModulePath, path.join(appRoot, "index.ts"));
   publicResolve(context, "expo-router/_ctx", "ios");
   assert.equal(calls.at(-1).name, "expo-router/_ctx");
 });
@@ -95,4 +88,20 @@ test("Metro replaces only the root entry and delegates the existing resolver on 
   assert.equal(calls.length, 6);
   const fallback = withProductEntryResolver(appRoot, null, null);
   assert.equal(fallback({ ...context, resolveRequest: delegate }, "./src/runtime/app-entry", "web").filePath, "original");
+});
+
+// Multiple workspace React versions must not split hooks from the native renderer.
+test("shared hooks and the native renderer resolve React from the mobile host", () => {
+  const calls = [];
+  const delegate = (context, name) => { calls.push({ context, name }); return { type: "sourceFile", filePath: "delegated" }; };
+  const resolve = withProductEntryResolver(appRoot, null, delegate, null, ["react", "react-dom", "react-native"]);
+  for (const relative of ["../../packages/i18n/src/react.tsx", "../../node_modules/react-native/Libraries/Renderer/ReactFabric.js"]) {
+    const context = { originModulePath: path.resolve(appRoot, relative) };
+    for (const name of ["react", "react/jsx-runtime", "react-dom"]) {
+      resolve(context, name, "ios");
+      assert.equal(calls.at(-1).context.originModulePath, path.join(appRoot, "index.ts"));
+    }
+    resolve(context, "./local-helper", "ios");
+    assert.equal(calls.at(-1).context, context);
+  }
 });

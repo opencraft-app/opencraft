@@ -68,7 +68,8 @@ test("initialize cannot publish readiness when its reply is followed by connecti
   });
   const client = new JsonRpcAppServerClient({ hostId: "initialize-race", transport });
   try {
-    await assert.rejects(client.connect(initializeParams), /lost connection/);
+    await assert.rejects(client.connect(initializeParams), error =>
+      error instanceof AppServerClientError && error.code === "TRANSPORT_ERROR");
     assert.equal(client.initializeResult, null);
     assert.equal(client.connectionGeneration, 0);
   } finally { await client.close(); }

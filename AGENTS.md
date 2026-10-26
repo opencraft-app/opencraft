@@ -41,9 +41,9 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/platform-architecture.md) 与命中的专题文档 |
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更通过 `design/invariants.md` 索引维护对应专题 |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
-| iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先轻量核对 Metro、隧道与外网 iOS manifest，再给完整明文 `exps://` 链接，提醒用 Safari 打开；不为日常预览下载完整 bundle。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
-| Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/workbench-expo/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
-| Android 备案资料或临时局域网下载 | [Android 正式 APK](apps/workbench-expo/README.md#android-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
+| iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先轻量核对 Metro、隧道与外网 iOS manifest，再给完整明文 `exps://` 链接，提醒用 Safari 打开；不为日常预览下载完整 bundle。手机操作见 [Expo README](apps/mobile/README.md#iphone-真机快速体验) |
+| Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/mobile/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
+| Android 备案资料或临时局域网下载 | [Android 正式 APK](apps/mobile/README.md#android-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
 | 下游产品 Agent Console 共享实现 | [历史与消费契约](docs/upstream-history.md)；同步边界由下游产品工作区维护 |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
@@ -56,9 +56,9 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 
 ## 手机端入口
 
-- 公开 Expo 默认复用既有 RN Workbench/Composer 与直连 Host；显式下游产品入口由产品 runner 选择原 Router/账号/Bot。下游产品的 iOS 由 HeroUI Native 登录和操作控件、原生导航页面及 Bot 侧栏承载；账号与设置入口固定在侧栏底部，没有底栏。Bot 功能在 App 内打包的 frontend DOM runtime 中呈现；Android 是独立 React Native 工作台。手机平台、构建方式和产物先按 [Expo 路线表](apps/workbench-expo/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
-- 修改 iOS Shell 或内置 Bot 功能时，先读 [Expo 局部 Agent 入口](apps/workbench-expo/AGENTS.md)，由它路由 [Shell 状态](docs/mobile-shell.md)与[原生／DOM 桥接](docs/mobile-bot-bridge.md)；优先修改现有过时规则，避免把旧底栏、旧网页套壳等已失效方案追加成并列事实。
-- App 内功能的 JS/CSS 与 Worker 必须预制在安装包中；远程只提供 API 数据和媒体，禁止以网页或动态代码作为功能回退。原生设备能力经平台端口接入，外部账号、实名与订阅页面交给系统浏览器。具体边界见 [Embedded Bot bridge](docs/mobile-bot-bridge.md#native-audio-and-packaged-code)。
+- 公开 Expo 位于 apps/mobile，默认复用完整随包 Web Workbench；旧独立 RN 工作台已退役；显式下游产品入口由产品 runner 选择原 Router/账号/Bot。下游产品的 iOS 由 HeroUI Native 登录和操作控件、原生导航页面及 Bot 侧栏承载；账号与设置入口固定在侧栏底部，没有底栏。Bot 功能在 App 内打包的 frontend DOM runtime 中呈现；Android 同样使用产品已有随包 DOM 控制台，设备能力按实装声明。手机平台、构建方式和产物先按 [Expo 路线表](apps/mobile/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
+- 修改 iOS Shell 或内置 Bot 功能时，先读 [Expo 局部 Agent 入口](apps/mobile/AGENTS.md)，由它路由 [Shell 状态](docs/mobile-shell.md)与[原生／DOM 桥接](docs/mobile-bot-bridge.md)；优先修改现有过时规则，避免把旧底栏、旧网页套壳等已失效方案追加成并列事实。
+- 默认内置模式的 JS/CSS 与 Worker 必须预制在安装包中，远程只提供 API 数据和媒体。用户明确选择的自托管 HTTPS 网站模式遵循 [移动容器来源边界](docs/mobile-workbench-container.md)，不注入内置身份或原生权限桥接；不能在内置模式失败时自动切换远程网页。原生设备能力经平台端口接入，外部账号、实名与订阅页面交给系统浏览器。具体边界见 [Embedded Bot bridge](docs/mobile-bot-bridge.md#native-audio-and-packaged-code)。
 - 手机端请求、缓存和离线写入先按 [移动数据协调契约](docs/mobile-data-architecture.md) 区分读取、在线事务与可持久化草稿；不得把 TanStack Query 的内存缓存、WebView 的独立 JS 环境或普通重试称为全 App 持久请求队列。账号展示缓存必须按会话与区域隔离，退出登录清除。
 - 会话连续性按 [ChatUI 架构](docs/architecture/chat-ui/composer-and-drafts.md#跨桌面手机和平板的会话连续性)维护一个共享语义模型：Scope/View 身份、草稿保存与丢弃、前台追平条件属于共享包；桌面浏览器和手机/平板只适配存储、生命周期、手势与布局。V3 连接代次不能当持久 Replica 游标，旧消息缓存只可展示，不能授权发送或交互；任何私有缓存都要按账号和 Host 隔离，退出账号撤销对应作用域。不要因屏幕宽度另造一套业务状态机。
 - 手机端读取状态按“可展示数据、最后成功时间、后台刷新、错误、会话有效性”分别建模：已有同会话数据时，后台刷新不得清空数据或切回全屏 loading；短暂失败保留旧布局并给轻量重试。只有冷启动且没有可用数据时显示与最终页面结构接近的静态占位，避免卡片消失、列表跳动和闪动菊花。缓存身份只能用于展示；实名、支付及账号安全操作在当前服务端状态核实前不可凭旧缓存放行。成功写入后精确失效相关查询，401、退出或切换账号/区域清除对应作用域。头像等媒体的缓存键只在资源确实改变时更新，不能每次普通刷新都强制重载。
@@ -94,6 +94,16 @@ OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台
 ## UI 与设计系统
 
 新增或修改界面前，先读 [设计入口](design.md)，选择最接近的 Settings、任务/对象目录、Chat、Sidebar 或嵌入 App 范式，并查看对应真实消费者。执行方法见维护 Skill 的 [UI 工作流](.agents/skills/opencraft-maintenance/references/ui-design.md)：把范式落实为可见组合，从相关真实使用状态复核，记录实际看过的画面及判断；目录页继续按[组合规范与正反例](design/ui/collections.md)设计。默认延续 OpenCraft 现有设计语言，优先复用共享组件、交互原语和语义 token；缺少可复用能力时在正确 owner 扩展。用户明确指定视觉方向时按该方向调整，并保留可访问性与工作连续性。Token 数值仍由设计系统源码持有；隔离 App 的可用样式以实际宿主能力为准。不以无溢出、组件导入或生成截图代替视觉复核，不新增用户审批步骤。
+
+### 微交互与交互动效的质量要求
+
+- 微交互（Microinteraction Design）是触发、状态变化、反馈与结束/取消组成的完整交互；交互动效（Interaction Motion Design）是其随时间的呈现。将其视为功能完成度的一部分，不能以接入动画库、添加 `transition` 或静态截图好看代替打磨。具体设计与验收按 [微交互与动效](design.md#microinteractions-and-interaction-motion)。
+- 实现前列出本控件实际涉及的状态、触发和退出条件，区分领域值、手势预览与视觉进度；明确唯一写入者及提交/取消边界。拖动、跨档、松手、恢复默认、异步确认等不能靠同一布尔值或任意延时串联。
+- 共享动画基础设施与语义预设，按控件和交互阶段调参、编排。通用能力在现有共享 owner 扩展，局部特例留在控件内；不在业务中复制动画引擎、计时器或手势框架，也不把所有控件套用同一条曲线。是否采用弹簧、缓动或直接跟随由交互目的决定，不强制引入特定库。
+- 按下反馈、拖动跟随、离散吸附与松手恢复分别设计。直接操纵期间保持响应，不让装饰动画拖慢有效值、布局或命中区域；反向/中断从当前实际呈现续接，旧动画及迟到回调不得覆盖新意图。数值、填充、刻度、标签和相邻表面的变化围绕同一状态协调，不能各自跳变或重复反馈。
+- 精细度来自恰当的时序、层级和连续性；粒子、发光和最高档特效只在表达真实状态且有明确设计目的时使用，不作为默认质量标志。静止后应安静，不用持续装饰动画争夺阅读注意力。
+- 动效不得成为交互成功的必要条件：减少动态效果时保留完整操作、明确反馈和最终状态；键盘、触控、取消、禁用及卸载路径同样完整。草稿、焦点、选区、滚动与承载业务的组件身份必须保持。
+- 在真实消费者中查看全过程，至少覆盖本改动涉及的按住、跨档/边界、松手、取消、快速反向/重复触发和中断；核对减少动态效果、相关输入方式及主题/窄容器。记录实际看过的动态过程与问题，不能只检查终帧、CSS 参数、测试数量或截图。具体序列按影响选择，不建立每次修改都跑全站的门禁。
 
 ### 应用导航不变量
 

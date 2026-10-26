@@ -1,4 +1,5 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isWindowAppearanceMessage, applyNativeWindowAppearance, type WindowAppearanceMessage } from "./window-appearance.js";
 import { execFileSync, execFile, spawn } from "node:child_process";
@@ -26,12 +27,16 @@ import { BrowserPermissionPolicy } from "./browser-permissions.js";
 import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
 import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
+import { SqliteClientResources } from "@opencraft/document-storage/client-resources-sqlite";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
 import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 import { browserMetadataKeys as browserMetadataIdentity, normalizeBrowserMetadata } from "@opencraft/workbench-runtime/browser-metadata-identity";
 import { resolveCodexExecutable } from "./codex-executable.js";
+import { remoteServerOrigin } from '@opencraft/plugin-local-account/connections';
+import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
+import { humanLoginPage } from '../../../scripts/human-login-page.js';
 
 import {
   BrowserWindow,
@@ -74,17 +79,21 @@ const directoryPlan = resolveDesktopDirectoryPlan({
 });
 let desktopPaths!: DesktopDirectoryPlan;
 
+const thinServer = app.commandLine.getSwitchValue('server-url');
 let mainWindow: BrowserWindow | null = null;
+const remoteWindows = new Set<BrowserWindow>();
 let mainWebContents: WebContents | null = null;
 let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
 let browserPermissions!: BrowserPermissionPolicy;
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
+let localAccountHost: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 let sqliteDebugReader!: SqliteDebugReader;
 let uiPreferences!: DesktopUiPreferenceStore;
+let clientResourceStore: SqliteClientResources | undefined;
 const desktopLocale = createDesktopLocaleRuntime();
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
 const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
@@ -245,6 +254,21 @@ ipcMain.handle("opencraft:application-locale", (event, value: unknown) => {
 ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
   return uiPreferences.load(key);
+});
+function clientResources() {
+  return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
+}
+ipcMain.handle("opencraft:client-resource-read", (event, key) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().read(key);
+});
+ipcMain.handle("opencraft:client-resource-commit", (event, key, revision, record) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().compareAndSet(key, revision, record);
+});
+ipcMain.handle("opencraft:client-resource-clear-remote", (event, namespace) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
+  return clientResources().clearRemoteNamespace(namespace);
 });
 ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
@@ -487,17 +511,52 @@ function rendererRoot(): string {
     : join(app.getAppPath(), "../workbench-web/dist-electron");
 }
 
+async function openRemoteWindow(input: string, primary = false): Promise<void> {
+  const origin = remoteServerOrigin(input);
+  const partition = session.fromPartition('persist:opencraft-server-' + createHash('sha256').update(origin).digest('hex'));
+  partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  const window = new BrowserWindow({ title: `OpenCraft · ${origin}`, width: 1440, height: 960,
+    webPreferences: { session: partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
+      webSecurity: true, allowRunningInsecureContent: false } });
+  remoteWindows.add(window);
+  if (primary) { mainWindow = window; lifecycle.bindWindow(window); }
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//u.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!/^https?:\/\//u.test(url)) event.preventDefault();
+  });
+  window.once('closed', () => { remoteWindows.delete(window); if (mainWindow === window) mainWindow = null; });
+  try { await window.loadURL(origin); }
+  catch (error) { if (!window.isDestroyed()) window.destroy(); throw error; }
+}
+
 async function ensureLoopbackHost(): Promise<string> {
   if (rendererOrigin !== null) return rendererOrigin;
-  loopbackHost = await createWorkbenchStaticServer({
-    root: rendererRoot(),
-  });
-  const address = await loopbackHost.listen({ host: "127.0.0.1", port: 0 });
-  rendererOrigin = `http://127.0.0.1:${address.port}`;
-  return rendererOrigin;
+  localAccountHost = await createDesktopAccountHost(join(desktopPaths.userDataDirectory, 'human-account'), humanLoginPage, { openRemote: origin => openRemoteWindow(origin) });
+  try {
+    loopbackHost = await createWorkbenchStaticServer({
+      root: rendererRoot(),
+      accountService: localAccountHost,
+    });
+    const address = await loopbackHost.listen({ host: "127.0.0.1", port: 0 });
+    rendererOrigin = `http://127.0.0.1:${address.port}`;
+    localAccountHost.setOrigin(rendererOrigin);
+    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_desktop_owner', value: localAccountHost.browserProof,
+      httpOnly: true, sameSite: 'strict', path: '/' });
+    await session.defaultSession.cookies.set({ url: rendererOrigin, name: 'oc_human', value: localAccountHost.browserSessionToken,
+      httpOnly: true, sameSite: 'lax', path: '/' });
+    return rendererOrigin;
+  } catch (error) {
+    await loopbackHost?.close().catch(() => {}); loopbackHost = null;
+    localAccountHost.close(); localAccountHost = null; rendererOrigin = null;
+    throw error;
+  }
 }
 
 async function createMainWindow(): Promise<void> {
+  if (thinServer) { await openRemoteWindow(thinServer, true); return; }
   const origin = await ensureLoopbackHost();
   const initialBackgroundColor = process.platform === "darwin"
     ? TRANSPARENT_WINDOW_BACKGROUND
@@ -629,11 +688,14 @@ const lifecycle = new DesktopLifecycle({
     desktopLocale.dispose();
     await nativeSpeech.close();
     uiPreferences.close();
+    clientResourceStore?.close();
     connectorConfiguration?.close();
     extensionData?.close();
     const productErrors: unknown[] = [];
     try { desktopProductSession?.dispose(); } catch (error) { productErrors.push(error); }
     desktopProductSession = null;
+    for (const window of remoteWindows) if (!window.isDestroyed()) window.destroy();
+    remoteWindows.clear();
     const daemon = daemonManager;
     const loopback = loopbackHost;
     for (const bridge of [...daemonBridges]) bridge.close();
@@ -642,6 +704,8 @@ const lifecycle = new DesktopLifecycle({
     loopbackHost = null;
     rendererOrigin = null;
     const results = await Promise.allSettled([daemon?.shutdown(), loopback?.close()]);
+    try { localAccountHost?.close(); } catch (error) { productErrors.push(error); }
+    localAccountHost = null;
     const errors = results.filter(result => result.status === "rejected");
     if (errors.length || productErrors.length) throw new AggregateError([...productErrors, ...errors.map(result => result.reason)], "Desktop shutdown failed");
   },
@@ -680,7 +744,8 @@ async function bootstrap(): Promise<void> {
     app.quit();
     return;
   }
-  daemonManager = new OpenCraftDaemonClientManager({
+  if (thinServer) remoteServerOrigin(thinServer);
+  daemonManager = thinServer ? null : new OpenCraftDaemonClientManager({
     endpoint: desktopPaths.daemonEndpoint,
     tokenPath: desktopPaths.daemonTokenPath,
     runtimeDirectory: desktopPaths.runtimeDirectory,
@@ -694,6 +759,12 @@ async function bootstrap(): Promise<void> {
       ? join(process.resourcesPath, "runtime/dsh/opencraft-capability-plugin.mjs")
       : join(app.getAppPath(), "../local-agent-host/src/dsh-capability-plugin.mjs"),
     dataDirectory: desktopPaths.dshDataDirectory,
+    humanAccountDirectory: join(desktopPaths.userDataDirectory, 'human-account'),
+    createHumanSession: async () => {
+      if (!rendererOrigin) return undefined;
+      const cookies = await session.defaultSession.cookies.get({ url: rendererOrigin, name: 'oc_human' });
+      return cookies.length === 1 ? cookies[0]!.value : undefined;
+    },
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
     codexExecutable: resolveCodexExecutable({

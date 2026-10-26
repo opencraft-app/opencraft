@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
-import { packageResourceGraph } from "../../apps/workbench-expo/scripts/packaged-resources.mjs";
+import { packageResourceGraph } from "../../apps/mobile/scripts/packaged-resources.mjs";
 
 test("packaged workers and nested resources remain local and executable", () => {
   const assets = [

@@ -38,7 +38,7 @@ function ConversationBrowserResources({ store, hostId, threadId, unavailable, on
       notices.error({ key: `browser-resources:${hostId}:${threadId}`, message: intl.formatMessage({ id: "sidebar.browser.failed", defaultMessage: "Could not update browser tabs. Try again." }) });
     }
   };
-  return <DropdownMenu.Root modal={false} open={open} onOpenChange={value => store.update({ hostId, threadId, kind: "resources" }, value)}>
+  return <DropdownMenu.Root open={open} onOpenChange={value => store.update({ hostId, threadId, kind: "resources" }, value)}>
     <DropdownMenu.Trigger asChild><button type="button" className="sidebar-browser-resources" aria-label={label} title={label}
       onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}>
       <GlobeIcon size={14} aria-hidden="true" /><span>{tabs.length}</span>

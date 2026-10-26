@@ -251,10 +251,9 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
         aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         aria-current={config.settingsActive ? "page" : undefined} onClick={() => {
-          // Settings replaces this slot with category navigation. Keep the mobile
-          // drawer available until the user chooses a destination within it.
-          if (mobile) config.onOpenSettings();
-          else onInvoke(config.onOpenSettings);
+          // Opening a destination retires the floating applications drawer.
+          // Its retained panel must not obscure the settings controls on phones.
+          onInvoke(config.onOpenSettings);
         }}>
         <LiquidGlassBackdrop /><NavigationIcon name="settings" selected={config.settingsActive} />
       </button>

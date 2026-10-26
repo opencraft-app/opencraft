@@ -6,7 +6,7 @@ Turn、原生 queue 或 goal 的生命周期。Codex 在这里是实际执行引
 
 ## 所有权
 
-- [核心进程](../../apps/codex-core/src/main.ts)持有 CLI、账户池和维护生命周期。
+- [核心进程](../../apps/codex-core/src/main.ts)默认持有 CLI、账户池和维护生命周期；显式拆分后仅持账号，独立 APP Server owner 持 CLI/runtime。
 - [引擎适配器](../../apps/opencraft-daemon/src/codex-engine-adapter.ts)持有逻辑客户端映射、初始化、订阅与 OpenCraft Host 能力。
 - [账户服务](../../packages/account-pool-host/src/codex-account-service.ts)管理账户元数据、私有凭据和维护请求；内嵌与独立 core 复用同一实现。
 - [桌面 daemon 客户端](../../apps/workbench-electron/src/daemon-client.ts)透传显式 core endpoint；默认内嵌模式保持独立。
@@ -17,7 +17,7 @@ Turn、原生 queue 或 goal 的生命周期。Codex 在这里是实际执行引
 - 数据目录使用 SQLite EXCLUSIVE 持有式事务保证单 writer；Linux 额外检查占用相同 `CODEX_HOME` 的旧版或孤儿 CLI，不删除活进程的锁文件。
 - core 不可用时明确失败，不启动第二个 writer，不自动重放结果未知的写入。
 - 关闭服务时等待账户请求、用量维护与代理异步处理结束，再释放存储和 writer 锁。
-- 网页、网关和 daemon 的普通升级与 core/CLI 维护分别处理；core 重启仍可能中断任务。
+- 网页、网关和 daemon 的普通升级与 core/CLI 维护分别处理；未拆分 core 重启仍可能中断任务。拆分形态保持 APP Server PID，账号 Core 排空代理流再退出；三步总体方案、失败边界与上线回退由正式服务文档统一维护。
 
 ## 验证范围
 
