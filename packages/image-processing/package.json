@@ -11,7 +11,7 @@
     "./browser": "./src/browser.ts"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis": "4.0.5",
     "@jsquash/oxipng": "2.3.0"
   }
 }
