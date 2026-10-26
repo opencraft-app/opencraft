@@ -23,6 +23,7 @@ import type {
 } from "../window-chrome";
 import { useAppShellLayoutMotion } from "./app-shell";
 import { useShellPresentation } from "./shell-presentation";
+import { NavigationIcon } from "./shell-navigation/navigation-action";
 import { ToolbarDockCapacityContext } from "./toolbar-dock-state";
 import { toolbarDockCapacity } from "./toolbar-dock-model";
 
@@ -338,9 +339,12 @@ export function AppShellHeader({
           aria-hidden="true"
           className="app-shell-header__end-measure"
         >
-          {showRightPanelAction || headerAction ? (
+          {showRightPanelAction || headerAction || presentation?.applicationsAction ? (
             <div className="app-shell-header__end-actions"><div className="app-shell-header__action-group">
               {headerAction ? headerActionSizing ?? Array.from({ length: headerActionCount }, (_, index) => <span key={index} className="chrome-button" />) : null}
+              {presentation?.applicationsAction ? <span className="chrome-button">
+                <NavigationIcon name={presentation.applicationsAction.icon} selected={presentation.applicationsAction.active} />
+              </span> : null}
               {showRightPanelAction ? <span className="chrome-button app-shell-header__right-panel-toggle">
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
               </span> : null}
@@ -383,6 +387,22 @@ export function AppShellHeader({
             <div className="app-shell-header__action-group">
             <LiquidGlassBackdrop />
             {headerAction}
+            {presentation?.applicationsAction ? (
+              <button
+                className="chrome-button app-shell-header__applications"
+                type="button"
+                data-action-id="shell.applications.header"
+                aria-label={presentation.applicationsAction.title}
+                aria-current={presentation.applicationsAction.active ? "page" : undefined}
+                title={presentation.applicationsAction.title}
+                onClick={() => {
+                  presentation.dismissSidebarAfterSelection();
+                  presentation.applicationsAction?.onInvoke();
+                }}
+              >
+                <NavigationIcon name={presentation.applicationsAction.icon} selected={presentation.applicationsAction.active} />
+              </button>
+            ) : null}
             {showRightPanelAction ? (
               <button
                 className="chrome-button app-shell-header__right-panel-toggle"

@@ -796,12 +796,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   width: max-content;
   > .application-brand { flex: 0 0 auto; padding-inline: 6px; }
 }
-// Desktop browser branding consumes the same rail center as navigation glyphs.
-// Mobile has labeled drawers; native desktop keeps its host-owned safe inset.
-.has-unified-sidebar[data-opencraft-window-type="browser"]:not(.has-mobile-sidebar-gestures)
-  .app-shell-header__window-controls-rail[data-navigation-brand] > .application-brand {
-  padding-inline-start: max(0px, calc(var(--shell-sidebar-icon-rail-width) / 2 - var(--window-controls-padding-start) - var(--application-brand-mark-size) / 2));
-}
 // Shared header surface removes the empty material band above application pages.
 .has-unified-sidebar {
   &[data-opencraft-window-type="browser"] .app-shell-header {

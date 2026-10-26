@@ -1,5 +1,15 @@
 # Workbench invariants: Shell and layout
 
+## Sidebar reading width without an icon rail
+
+The unified desktop sidebar measures one context column and a normal-flow
+horizontal bottom action row. Default and minimum widths describe the reading
+column itself, without an additional vertical icon-rail allowance. Saved user
+widths remain valid. Header action measurement includes Applications; docking,
+held resize, context portals and mobile gesture/safe-area owners retain their
+existing geometry and lifecycle.
+
+
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
 ## Owned DOM projection names
