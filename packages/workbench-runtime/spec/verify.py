@@ -113,6 +113,14 @@ CASES = [
     ('NotificationFanout-Repeat', 'AtMostOnce'),
     ('NotificationFanout-Drop', 'Conservation'),
     ('NotificationFanout-NoFairness', 'temporal:FanoutTermination'),
+    ('ObserverAdmission', None),
+    ('ObserverAdmission-Live', 'AdmittedOnly'),
+    ('ObserverAdmission-Incarnation', 'RegistrationOwnership'),
+    ('ObserverAdmission-Token', 'TokenOwnership'),
+    ('ObserverAdmission-Clear', 'ClearRevokes'),
+    ('ObserverAdmission-Repeat', 'AtMostOnce'),
+    ('ObserverAdmission-Drop', 'Conservation'),
+    ('ObserverAdmission-NoFairness', 'temporal:ObserverTermination'),
 
 ]
 

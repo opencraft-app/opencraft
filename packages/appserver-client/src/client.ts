@@ -23,6 +23,7 @@ import {
 
 import { elapsedNow } from "./clock";
 import { AppServerClientError, AppServerRpcError } from "./errors";
+import { ClientObserverList } from "./observer-list";
 import type { DuplexTransport, TransportStatus } from "./transport";
 
 export interface AppServerClientClock {
@@ -248,8 +249,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly notificationListeners = new Set<NotificationSubscription>();
   private readonly nativeNotificationListeners = new Map<NotificationSubscription["listener"], NotificationSubscription>();
   private readonly notificationInterceptors = new Set<AppServerNotificationInterceptor>();
-  private readonly protocolErrorListeners = new Set<(error: Error) => void>();
-  private readonly requestLifecycleListeners = new Set<(event: AppServerRequestLifecycleEvent) => void>();
+  private readonly protocolErrorListeners = new ClientObserverList<Error>();
+  private readonly requestLifecycleListeners = new ClientObserverList<AppServerRequestLifecycleEvent>();
   private readonly serverRequestHandlers = new Map<string, ServerRequestHandler>();
   private readonly serverRequestInterceptors = new Set<AppServerServerRequestInterceptor>();
   private readonly activeServerRequests = new Set<ActiveServerRequest>();
@@ -486,8 +487,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   subscribeProtocolError(listener: (error: Error) => void): () => void {
-    this.protocolErrorListeners.add(listener);
-    return () => this.protocolErrorListeners.delete(listener);
+    return this.protocolErrorListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
@@ -495,8 +495,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   subscribeRequestLifecycle(listener: (event: AppServerRequestLifecycleEvent) => void): () => void {
-    this.requestLifecycleListeners.add(listener);
-    return () => this.requestLifecycleListeners.delete(listener);
+    return this.requestLifecycleListeners.subscribe(listener);
   }
 
   getPendingRequestCount(): number {
@@ -696,7 +695,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
             try {
               if (delivered) throw new AppServerClientError("PROTOCOL_ERROR", `AppServer notification subscription called next twice for ${notification.method}`);
               delivered = true;
-              subscription.listener(notification);
+              const listener = subscription.listener;
+              listener(notification);
             } catch (error) {
               this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", `AppServer notification listener failed for ${notification.method}`, { cause: error }));
             }
@@ -845,13 +845,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private emitProtocolError(error: Error): void {
-    for (const listener of this.protocolErrorListeners) {
-      try {
-        listener(error);
-      } catch {
-        // Observability hooks must never corrupt request or transport state.
-      }
-    }
+    this.protocolErrorListeners.emit(error);
   }
 
   private lifecycleBase(pending: PendingRequest): RequestLifecycleBase {
@@ -864,12 +858,6 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private emitRequestLifecycle(event: AppServerRequestLifecycleEvent): void {
-    for (const listener of this.requestLifecycleListeners) {
-      try {
-        listener(event);
-      } catch {
-        // Matches Desktop's listener isolation without imposing a logger.
-      }
-    }
+    this.requestLifecycleListeners.emit(event);
   }
 }

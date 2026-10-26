@@ -505,3 +505,28 @@ three test-only adapter mutations corrupt admission, unsubscribe targeting and
 the guarded lost-connection continuation. They do not send fake extra native
 inputs or run a substitute Client implementation. Each failure is reduced using
 the same oracle and can be replayed without the mutation through the CLI.
+
+## Non-authoritative observer admission
+
+`ObserverAdmission.tla` models a finite cut for one emission, two consumers,
+two registration incarnations per consumer and registry clearing. The positive
+graph has 1763 distinct states; seven exact negative controls must fail their
+named safety/liveness property. Completion assumes finite callback work.
+Physical generation is deliberately absent: diagnostic and lifecycle consumers
+must observe request failure after transport loss. Actual Client/Cordis tests
+check that distinction, queued/started cancellation, exception isolation and
+close ordering. Nested emissions and the complete TypeScript implementation are
+not proved by this one-emission model.
+
+The eighth CLI suite drives actual Client diagnostic/lifecycle emissions through
+MemoryTransport, with two consumers per lane, registration churn, old tokens,
+observer exceptions and synchronous self/peer/cancel/close reentry. An inert first
+subscriber records the current admission cut before scripted observers; no
+private registry state is inspected. Native diagnostic inputs, observer
+emissions/deliveries and RPC intents/frames are counted separately. Three
+test-only adapter corruptions cover admission, stale unsubscribe targeting and
+dropping terminal observations. Ordinary replay removes these corruptions.
+
+```
+npm run test:recovery-chaos -- --suite observers --seed 0 --cases 1000 --steps 120 --output /tmp/recovery-observers
+```
