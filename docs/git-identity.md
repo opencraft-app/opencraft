@@ -15,6 +15,8 @@ exact host. AES-256-GCM authenticates an unambiguous version/account/host/field
 tuple. A missing key on a nonempty database fails recovery. Clearing retains a
 revision tombstone, so a stale writer cannot recreate an earlier generation.
 Only sanitized status, identity and public signing metadata reach the browser.
+Managed data-directory aliases resolve once to the existing private directory;
+database and key files still refuse symlinks and retain owner-only permissions.
 
 `GitIdentityBroker` returns `configured`, `unconfigured`, `unavailable` or
 `expired`. Only an authoritative absent binding or explicitly unowned execution

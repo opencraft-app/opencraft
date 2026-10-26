@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -12,6 +12,15 @@ import { createMemoryGitSigner, generateGitSigningKey, sshString } from '../../s
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 const credential = () => ({ identity: { username: 'synthetic', name: 'Synthetic Employee', email: 'synthetic@example.test' }, token: 'synthetic-token-only', signing: null });
+test('a managed data-directory alias shares its canonical vault but never follows a key symlink', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-vault-alias-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const physical = join(root, 'physical'), alias = join(root, 'alias'); await mkdir(physical, { mode: 0o700 }); await symlink(physical, alias);
+  const first = new EmployeeGitVaultStore(alias); first.write('employee:1', 'github.com', 0, credential()); first.close();
+  const second = new EmployeeGitVaultStore(physical); assert.equal(second.status('employee:1', 'github.com').revision, 1); second.close();
+  const key = join(physical, 'employee-git-vault.key'); assert.equal((await stat(key)).mode & 0o077, 0);
+  await rename(key, key + '.saved'); await symlink(key + '.saved', key);
+  assert.throws(() => new EmployeeGitVaultStore(alias));
+});
 test('vault encrypts, binds account/host with AAD, persists CAS tombstones and rejects checksum mismatch', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-vault-test-')); t.after(() => rm(root, { recursive: true, force: true }));
   let store = new EmployeeGitVaultStore(root);
