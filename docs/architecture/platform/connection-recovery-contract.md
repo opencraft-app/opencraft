@@ -257,9 +257,9 @@ This includes non-delta item/turn lifecycle, item updates and Thread status; an
 older buffered start must not overwrite the complete answer or terminal state
 already present in the snapshot. The same notification classification triggers
 the reread and supersedes observations represented by its new canonical cut.
-Settings, non-snapshot observations and admitted server requests remain buffered
-for exactly one release; they are not discarded with superseded history. That
-retry phase has an elapsed deadline measured from initial read admission. Its
+Non-snapshot presentation observations remain buffered for one release and are
+not discarded with superseded history. Live execution settings and native server
+requests have independent owners, as described below. That retry phase has an elapsed deadline measured from initial read admission. Its
 local owner settles with TIMEOUT and aborts child waits when the deadline expires,
 even if an in-progress reread ignores cancellation. Joining/continuing also checks
 expiry before overdue timer delivery. Initial quiet pagination retains its
@@ -398,3 +398,54 @@ original identity; an unknown write never retries. Negative controls couple
 activation to historical Resume or omit final client admission, and preserve the
 exact violated invariant during shrinking and replay. This suite does not model
 all server permissions, settings notifications, physical sockets or phone timing.
+
+
+## Native execution channels during history recovery
+
+Presentation Read owns history transactions and snapshot supersession. It cannot
+own `thread/settings/updated`, native request admission, a user response to that
+request, or its Host withdrawal. Settings are projected immediately; both the
+metadata activation ACK and legacy combined Resume preserve fields observed after
+their own admission. A cancelled history cannot erase that live observation.
+
+Each incoming JSON-RPC request has one client-local response context with a native
+lifetime signal and retirement outcome (`answered`, `resolved`, or `lost`). The
+context settles and releases its owner before synchronous retirement observers.
+Host resolution and loss iterate only contexts present at their own boundary;
+same wire-id successors admitted by observers have independent owners. Every held
+interceptor continuation rechecks that context before entering another interceptor
+or handler. After response serialization, the client checks the exact context and
+receiving connection again immediately before transport admission. Retiring an
+already admitted send is best effort at the transport; this is not a remote
+rollback or a guarantee that an already transmitted response can be recalled.
+
+The interaction Broker owns the prompt through that exact context, not through a
+possibly delayed Thread notification. Withdrawal frees its slot, forgets its old
+choice and settles local work before publishing removal; late cleanup cannot clear
+a successor with the same id. Connection loss retains the existing explicit-choice
+ledger contract for actual server redelivery, including unresolved delivery. A
+new interaction is distinguished by its full identity and parameters. No ordinary
+execution mutation gains replay permission from this ledger.
+
+Workbench projects current native interactions and changed execution metadata into
+its nonauthoritative paint while retaining the existing transcript and cursor.
+This listener belongs to the binding, so a failed/cancelled history operation does
+not cancel it. Replying to a Broker-owned native interaction does not initiate or
+wait for a historical baseline. New submissions and other baseline-gated commands
+retain their existing current-generation baseline and final beforeSend checks.
+
+`ExecutionChannels.tla` checks native progress under fair handler/answer processing
+without assuming the history server ever replies, plus cancellation conservation,
+live metadata, stale handler and same-id cleanup safety. Its eight positive/negative
+configurations include a missing-fairness control. Older independent activation and
+snapshot models remain bounded historical/transaction abstractions; their request
+reservations do not establish native-request progress during an indefinitely held
+Read. None of these models is a TypeScript refinement proof.
+
+The `execution` chaos suite drives actual Client, Session and Broker instances with
+held and late Read replies, cancellation, settings, numeric/string request ids,
+withdrawal and human responses. A native-only fair suffix answers questions before
+releasing history. Deliberate old buffering controls must reproduce their exact
+violations after shrinking and replay. The existing hydration suite and Workbench
+regressions separately cover new-input baseline admission and unknown-write policy;
+synthetic browser checks are separate from physical phone/network verification.

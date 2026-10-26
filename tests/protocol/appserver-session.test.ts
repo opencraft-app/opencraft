@@ -797,7 +797,7 @@ test("legacy Resume projects inline thread.turns without secondary history reque
   }
 });
 
-test("notifications and server requests stay buffered until the View commit", async () => {
+test("history notifications wait for View commit while native requests proceed", async () => {
   const harness = await createHarness({
     initialTurnsPage: { data: [], nextCursor: null },
     emitDuringResume: true,
@@ -815,7 +815,7 @@ test("notifications and server requests stay buffered until the View commit", as
     const view = await harness.runtime.resume.resume({ threadId: "thread-one" });
     assert.equal(view.resumeState, "resumed");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(observedStates, ["resumed", "resumed"]);
+    assert.deepEqual(observedStates, ["resuming", "resumed"]);
     assert.equal(harness.runtime.views.get("thread-one")?.notificationRevision, 1);
     assert.deepEqual(harness.approvalResponses, [{ decision: "accept" }]);
   } finally {

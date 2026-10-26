@@ -362,6 +362,13 @@ export class ThreadResumeCoordinatorService extends Service {
     this.executionFieldRevisions.set(threadId, revisions);
   }
 
+  private preserveLiveExecution(threadId: string, since: number, current: ThreadExecutionProjection, projected: ThreadExecutionProjection): ThreadExecutionProjection {
+    return Object.fromEntries(Object.entries(projected).map(([key, value]) => [key,
+      (this.executionFieldRevisions.get(threadId)?.get(key as keyof ThreadExecutionProjection) ?? 0) > since
+        ? current[key as keyof ThreadExecutionProjection] : value,
+    ])) as unknown as ThreadExecutionProjection;
+  }
+
   private executionFromRead(threadId: string, generation: number, metadata: AppServerThread, current: ThreadExecutionProjection): ThreadExecutionProjection {
     if (this.activatedGenerations.get(threadId) === generation && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner") return current;
     const observed = this.executionFieldRevisions.get(threadId);
@@ -793,10 +800,7 @@ export class ThreadResumeCoordinatorService extends Service {
         this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
         if (execution && this.ctx.threadViews.get(threadId)) this.ctx.threadViews.update(threadId, view => ({
           ...view,
-          execution: Object.fromEntries(Object.entries(execution).map(([key, value]) => [key,
-            (this.executionFieldRevisions.get(threadId)?.get(key as keyof ThreadExecutionProjection) ?? 0) > executionRevision
-              ? view.execution[key as keyof ThreadExecutionProjection] : value,
-          ])) as unknown as ThreadExecutionProjection,
+          execution: this.preserveLiveExecution(threadId, executionRevision, view.execution, execution),
           resumeState: "resumed", streamRole: this.ctx.threadStreamOwnership.get(threadId),
         }));
         operation.assertCurrent();
@@ -857,6 +861,7 @@ export class ThreadResumeCoordinatorService extends Service {
         const oldestLoadedTurnId = turns[0]?.id ?? null;
         return {
           ...projected,
+          execution: this.preserveLiveExecution(threadId, executionRevision, current.execution, projected.execution),
           connectionGeneration: generation,
           resumeState: "resumed",
           streamRole: { role: "owner" },

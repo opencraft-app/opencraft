@@ -452,6 +452,7 @@ interface ConversationBinding {
   readonly runtime: ConversationRuntime;
   readonly navigation: ConversationNavigationSource;
   removeRuntimeListener: () => void;
+  removeLiveViewListener: () => void;
   removeQueueListener: () => void;
   queueRefreshOperation: Promise<void> | null;
   queueRefreshRequested: boolean;
@@ -798,6 +799,7 @@ export function createAppServerWorkbenchRuntime(
     binding.disposed = true;
     bindings.delete(binding.threadId);
     binding.removeRuntimeListener();
+    binding.removeLiveViewListener();
     binding.removeQueueListener();
     binding.navigation.dispose();
     binding.runtime.dispose();
@@ -1077,7 +1079,9 @@ export function createAppServerWorkbenchRuntime(
           () => currentCommandPort.interrupt(key, turnId, provenance),
         ),
         continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId), true),
-        respond: (key, response) => afterAuthoritativeBaseline(() => currentCommandPort.respond(key, response)),
+        // The Broker validates the exact native request context. Historical
+        // authority cannot grant or revoke its already-admitted reply channel.
+        respond: (key, response) => currentCommandPort.respond(key, response),
         updateQueuedSubmission: (key, id, input) => afterAuthoritativeBaseline(
           () => currentCommandPort.updateQueuedSubmission(key, id, input),
         ),
@@ -1155,6 +1159,7 @@ export function createAppServerWorkbenchRuntime(
         runtime: conversation,
         navigation,
         removeRuntimeListener: () => undefined,
+        removeLiveViewListener: () => undefined,
         removeQueueListener: () => undefined,
         queueRefreshOperation: null,
         queueRefreshRequested: false,
@@ -1176,6 +1181,26 @@ export function createAppServerWorkbenchRuntime(
         acceptedTurnIds: new Set(),
         disposed: false,
       };
+      let liveView = currentSession.views.get(threadId);
+      binding.removeLiveViewListener = currentSession.views.subscribeThread(threadId, () => {
+        const view = currentSession.views.get(threadId), previous = liveView;
+        liveView = view;
+        if (!view || binding.disposed || session !== currentSession || client !== currentClient) return;
+        const value = projectThreadViewForReplica(view, binding.projectionCache);
+        const retained = binding.replica.get(threadId);
+        if (!retained || typeof retained !== "object" || Array.isArray(retained)
+          || typeof value !== "object" || !value || Array.isArray(value) || !("execution" in value)) {
+          binding.replica.reportPreview(threadId, value);
+          return;
+        }
+        // A native interaction/settings update is visible before (and after a
+        // failed) history read. Retained transcript, cursor and revision remain
+        // owned by their baseline; this paint cannot grant history authority.
+        binding.replica.reportPreview(threadId, { ...retained,
+          ...(previous?.execution !== view.execution ? { execution: value.execution } : {}),
+          pendingInteractions: value.pendingInteractions,
+        });
+      });
       let previousActivity = bindingActivity(binding);
       binding.removeRuntimeListener = conversation.subscribe(() => {
         if (binding.disposed) return;

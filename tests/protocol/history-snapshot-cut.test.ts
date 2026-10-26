@@ -27,7 +27,7 @@ for (const overlap of overlaps) test(`canonical history cannot regress after buf
       peer.send(encodeJsonRpcMessage({ method: "fixture/observation", params: { threadId: "a" } }));
       peer.send(encodeJsonRpcMessage({ id: "interaction", method: "fixture/interaction", params: { threadId: "a" } }));
     }
-    assert.equal(delivered, 0, "a reread cannot prematurely release a buffered request");
+    assert.equal(delivered, reads === 1 ? 0 : 1, "native request delivery is independent of the canonical reread");
     send({ thread: { id: "a", sessionId: "a", cwd: "/workspace", model: "disk-model", historyMode: "message-window", turns: [], status: { type: "idle" } },
       initialTurnsPage: { data: [canonicalTurn], nextCursor: null } });
   } });

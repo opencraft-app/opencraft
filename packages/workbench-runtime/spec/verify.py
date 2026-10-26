@@ -74,6 +74,14 @@ CASES = [
     ('SnapshotCut-Lifecycle', 'CanonicalCut'),
     ('SnapshotCut-Requests', 'RequestConserved'),
     ('SnapshotCut-NoFairness', 'temporal:ReadProgress'),
+    ('ExecutionChannels', None),
+    ('ExecutionChannels-Settings', 'LiveMetadata'),
+    ('ExecutionChannels-ACK', 'LiveMetadata'),
+    ('ExecutionChannels-Cancel', 'NativeConserved'),
+    ('ExecutionChannels-Handler', 'RetiredHandler'),
+    ('ExecutionChannels-Cleanup', 'SuccessorOwner'),
+    ('ExecutionChannels-Gate', 'temporal:NativeProgress'),
+    ('ExecutionChannels-NoFairness', 'temporal:NativeProgress'),
 ]
 
 

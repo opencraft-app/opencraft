@@ -503,3 +503,14 @@ latest-row fast path and React project the same minimum; the viewport owner
 continues to own measurement transactions and reading-position compensation.
 Response-placement policy retains its explicitly measured height because its
 response spacer and follow transaction own the position during streaming.
+
+
+### Native questions while history is unavailable
+
+A received question/approval and its Host withdrawal remain live while history is
+loading, retrying or cancelled. The Workbench binding projects current interactions
+through nonauthoritative paint without replacing retained history or advancing its
+cursor. Replying uses the original native request context; it does not require
+reloading historical messages. A native withdrawal removes only its own prompt.
+New input remains subject to current history/execution admission. See the
+[native-channel contract](../platform/connection-recovery-contract.md#native-execution-channels-during-history-recovery).
