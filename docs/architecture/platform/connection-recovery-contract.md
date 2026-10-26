@@ -966,3 +966,52 @@ remain separately recorded. Controlled microtask drains and finite tapes bound
 these tests; they are not arbitrary-network, physical-device or whole-program
 correctness claims. Public Node async_hooks separately checks actual default timer
 creation/destruction without reading or mutating class fields.
+
+### Native message publication and forwarding ownership
+
+Native message observers use a finite cut of registration instances. Adding or
+replacing a same-function observer enters the next publication; an old removal
+handle cannot revoke its successor. Observations run synchronously as bare calls
+and cannot interrupt peers or classify the native link as failed. Genuine current
+WebSocket decode errors still fail their native connection. Publication admission
+occurs at the scheduled Memory delivery or completed WebSocket decode, rather
+than when a remote frame first arrives.
+
+Core DuplexTransport providers expose optional captureMessageScope(). A forwarding
+wrapper captures its native guard on entry and rechecks it before each observer.
+The guard belongs to native delivery ownership and is invalidated before queued
+status observation. It is only for synchronous forwarding, with no validity
+promise after the callback, send authority or wire field. Core Memory, WebSocket,
+Replay, Recording, Deferred, AppHost channel and renewable browser wrappers
+preserve that ownership. Legacy opaque providers without the optional capability
+retain a current-label fallback; invisible native open/open ABA cannot be proven
+away for such a provider.
+
+This distinction is required by an actual Deferred + Replay counterexample:
+while native status callbacks queue, both native and wrapper labels can be open
+and the wrapper's observed version remains unchanged after native replacement.
+A new owner's open status cannot authorize the old frame. Recording attachment
+identity alone also cannot detect replacement of its underlying native peer.
+These wrappers compose the native guard with their own delegate, tap or lease.
+
+AppHost captures each Host observer cut before callbacks, queues publications
+in order, and invalidates in-flight data at native non-open status admission.
+A transient frame scope also exposes its retirement snapshot to a same-stack
+connect, so it cannot join an obsolete open lease before queued observations run.
+Bridge retirement captures every Host registry before the first callback; terminal
+notifications remain conserved after the port closes. Frame scopes are removed
+in finally. An old bucket removal cannot delete a newer Host registry.
+Only the channel's own acknowledgement grants data/send ownership. Non-open
+status retires that grant; a shared open status cannot restore it. Retirement
+inside the open callback rejects startup with its native failure classification.
+The browser wrapper also uses the shared status-observer primitive, so a throwing
+terminal observer cannot hide loss from an actual Client's pending RPC.
+
+NativeMessagePublication and HostTerminalPublication check bounded portions of
+these obligations. They do not establish TypeScript refinement or the full
+queue/lease product. Actual protocol tests cover nested terminal ordering, native
+Blob completion, same-frame renewal, startup failure classification and live
+Client request settlement. The message chaos suite uses actual five-adapter
+paths with an independent admission oracle, explicit reentry/healing and saved
+same-rule shrinking. No new RPC replay or conclusion that this is the sole cause
+of the original phone incident follows from these results.

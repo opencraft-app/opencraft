@@ -734,3 +734,49 @@ separate evidence, including separately retained teardown failures. Selected
 source/lock hashes bind artifacts. Upper LCG bits select event families so a
 single seed combines clock, cancellation and observer actions instead of retaining
 a low-bit parity split.
+
+NativeMessagePublication separates the native frame owner from the owner most
+recently observed through queued status callbacks. It bounds one decoded frame,
+two native owners and one peer registration replacement. Its 57 positive states
+check decoded admission, each callback's native authority, a finite registration
+cut, observer-versus-decoder failure classification and local completion after
+decode. Seven controls include an observed-epoch fence: both status labels can
+be open while observedOwner remains 1 and nativeOwner is already 2. That fence
+must fail CurrentFrameOwner. Decoder completion itself has no fairness promise;
+only the local work after a result is available is assumed cooperative.
+
+HostTerminalPublication bounds one bridge retirement and two Host registries.
+Its nine positive states check capture of all registries before callbacks,
+exception isolation, terminal delivery after the bridge is closed and cleanup.
+Four controls weaken exception isolation, use a late registry cut, gate terminal
+on an already closed bridge, or remove local fairness. It does not model nested
+FIFO publications, arbitrary port behavior or TypeScript refinement.
+
+These are separate required contracts. Core implementations now compose native
+captureMessageScope guards through forwarding wrappers; a queued observed epoch
+cannot replace that authority. The capability is optional for legacy compatibility,
+so an opaque provider without it still cannot prove invisible native open/open ABA
+away. Actual tests add non-open Host states and grant/startup, nested FIFO, Blob
+and real Client settlement boundaries outside these two finite models.
+
+The fifteenth suite, message, uses an input-driven registration/order oracle with
+explicit compound message actions and explicit fresh healing. It runs actual
+Memory, raw WebSocket, Deferred, AppHost channel and exported browser AppHost
+chains. Empty input creates no native work; cleanup only closes existing fixtures.
+Frames, observations, opens, renewals and heals are counted separately from saved
+events. Heal acquires a fresh fixture and proves native message delivery; actual
+Client usable RPC progress is a separate concrete regression, not implied by
+that synthetic delivery alone. Selected source/lock hashes bind CLI artifacts.
+
+```
+npm run test:recovery-chaos -- --suite message --seed 0 --cases 1000 --steps 120 --output /tmp/message-chaos
+npm run test:recovery-chaos -- --suite message --mutant stale-observation --seed 0 --output /tmp/message-control
+npm run test:recovery-chaos -- --replay /tmp/message-control/failure-minimal.json --output /tmp/message-replay
+```
+
+Three observation controls exercise dropped peers, stale delivery and hidden heal
+settlement without changing production classes. They must fail exact rules,
+shrink under the same rule and replay normally. Actual unchanged old-source runs
+are separate evidence. The random suite does not cover arbitrary providers,
+parent-terminal failure or queued status ABA by itself; deterministic actual
+composition regressions remain required for those boundaries.

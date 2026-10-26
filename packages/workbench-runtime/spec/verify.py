@@ -10,6 +10,20 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ("NativeMessagePublication-Observed", "CurrentFrameOwner"),
+    ('NativeMessagePublication', None),
+    ('NativeMessagePublication-Publication', 'AdmissionOwned'),
+    ('NativeMessagePublication-Callback', 'CurrentFrameOwner'),
+    ('NativeMessagePublication-Live', 'AdmittedOnly'),
+    ('NativeMessagePublication-Exception', 'ObserverNotNativeFailure'),
+    ('NativeMessagePublication-Decode', 'DecodeFailureOwned'),
+    ('NativeMessagePublication-NoFairness', 'temporal:DecodedProgress'),
+    ('HostTerminalPublication', None),
+    ('HostTerminalPublication-Exception', 'ExceptionIsolated'),
+    ('HostTerminalPublication-Live', 'AdmittedOnly'),
+    ('HostTerminalPublication-Closed', 'TerminalConserved'),
+    ('HostTerminalPublication-NoFairness', 'temporal:TerminalProgress'),
+
     ('ReplayDrainAdmission', None),
     ('ReplayDrainAdmission-LateJoin', 'AdmissionHasWorker'),
     ('ReplayDrainAdmission-Cleanup', 'CompletionOwned'),

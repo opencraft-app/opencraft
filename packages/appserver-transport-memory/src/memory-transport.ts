@@ -2,7 +2,7 @@ import type {
   DuplexTransport,
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
-import { TransportStatusObservers } from "@opencraft/appserver-client/transport";
+import { ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 export interface InMemoryAppServerPeer {
   send(frame: string): void;
@@ -36,7 +36,7 @@ interface MemoryConnection {
 export class MemoryTransport implements DuplexTransport {
   private readonly server: InMemoryAppServer;
   private readonly schedule: (callback: () => void) => void;
-  private readonly messageListeners = new Set<(frame: string) => void>();
+  private readonly messageListeners = new ClientObserverList<string>();
   private readonly statusListeners = new TransportStatusObservers();
   private currentStatus: TransportStatus = { state: "idle" };
 
@@ -66,10 +66,7 @@ export class MemoryTransport implements DuplexTransport {
         send: frame => {
           if (!this.isOpen(owner)) return;
           this.schedule(() => {
-            for (const listener of this.messageListeners) {
-              if (!this.isOpen(owner)) return;
-              listener(frame);
-            }
+            this.messageListeners.emit(frame, () => this.isOpen(owner));
           });
         },
         close: reason => {
@@ -120,9 +117,12 @@ export class MemoryTransport implements DuplexTransport {
     await this.server.receive(frame, owner.peer);
   }
 
+  captureMessageScope(): () => boolean {
+    const owner = this.connection;
+    return () => owner !== null && this.isOpen(owner);
+  }
   subscribeMessage(listener: (frame: string) => void): () => void {
-    this.messageListeners.add(listener);
-    return () => this.messageListeners.delete(listener);
+    return this.messageListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
