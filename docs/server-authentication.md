@@ -51,7 +51,7 @@ node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {rand
 
 ### 桌面与远端连接
 
-标准桌面首次运行由可信 Main 自动建立本机 Human，不要求注册密码。Main 在私有 loopback 会话中设置 HttpOnly 本机证明和核心登录 cookie；Daemon 校验 Main 传入的核心会话，拒绝 renderer 自报 Human ID。账号管理仍由插件提供；绑定本地密码后，该登录方式属于同一 Human。原始桌面 owner 保留既有客户端草稿命名空间；其他账号的缓存使用 authority + Human 分区。撤权或会话失效会退休原连接。
+标准桌面首次运行由可信 Main 自动建立本机 Human，不要求注册密码。Main 在私有 loopback 会话中设置 HttpOnly 本机证明和核心登录 cookie；Daemon 校验 Main 传入的核心会话，拒绝 renderer 自报 Human ID。账号管理仍由插件提供；绑定本地密码后，该登录方式属于同一 Human。原始桌面 owner 保留既有客户端草稿命名空间；其他账号的缓存使用 authority + Human 分区。撤权或会话失效会退休原连接。客户端只持久化服务器账号能力的authority标记，不缓存已登录Actor或本机证明；离线首次启动不阻断Shell，但未经确认的身份使用独立空作用域，不展示上次Human的私有副本。联网后重新验证再恢复其缓存。
 
 桌面账号页的“连接其他服务器”打开独立会话窗口；启动参数 `--server-url=https://workbench.example.com` 则直接进入远端薄客户端，不启动本机 Daemon。每个 Server origin 使用独立浏览器 partition，远端页面没有本机 preload/IPC 权限。目标服务器验证自己的 Human 和成员；不会按名字自动合并本机与远端身份。地址须为 HTTPS origin，回环调试可用 HTTP。
 

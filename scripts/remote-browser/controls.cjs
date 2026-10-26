@@ -1,4 +1,5 @@
 'use strict';
+const { mergeTouchMoves } = require('@opencraft/remote-interaction/touch');
 
 // A page has one ordered control stream. Only adjacent, not-yet-dispatched
 // pointer positions may replace one another; adjacent wheel deltas accumulate.
@@ -24,7 +25,8 @@ function createControls(command, getDocument = () => undefined) {
         return Number.isFinite(a) && Number.isFinite(b) && a * b >= 0 && Math.abs(a + b) <= 10000;
       });
       if (move || mergeWheel) {
-        previous.message = wheel ? { ...message, input: { ...message.input, ...deltas } } : message;
+        previous.message = wheel ? { ...message, input: { ...message.input, ...deltas } }
+          : message.input.type === 'touchMove' ? { ...message, input: mergeTouchMoves(previous.message.input, message.input) } : message;
         return previous.operation;
       }
     }

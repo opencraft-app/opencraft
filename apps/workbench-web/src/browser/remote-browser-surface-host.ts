@@ -1,3 +1,4 @@
+import { mergeTouchMoves } from '@opencraft/remote-interaction/touch';
 import { AdaptiveInputWindow, CreditWindow } from '@opencraft/remote-interaction';
 import { WebSocketMediaReceiver } from '@opencraft/remote-interaction/websocket';
 import { browserPresentationClipPath } from "./browser-presentation-geometry";
@@ -640,24 +641,29 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     const send = (input: any) => {
       if (this.acceptsInput(p) && (p.control.controller && p.control.kind === 'human' || p.acquiring?.kind === 'human')) inputQueue.push({ ...input, document: p.document });
     };
-    let move: PointerEvent | null = null, raf = 0, touchMoved = false;
+    let move: PointerEvent | null = null, raf = 0, touchMotion: any = null;
     const captured = new Set<number>();
     const contacts = new Map<number, { id: number; x: number; y: number; radiusX: number; radiusY: number; force: number }>();
-    let touchModifiers: unknown[] = [];
     const contact = (event: PointerEvent, id = contacts.get(event.pointerId)!.id) => {
       const r = canvas.getBoundingClientRect(), scale = r.width / p.width;
       return { id, ...point(event), radiusX: Math.min(1000, (event.width || 2) / scale / 2),
         radiusY: Math.min(1000, (event.height || 2) / scale / 2), force: event.pressure };
     };
-    const sendTouch = (type: string, event?: PointerEvent) => send({ type, touchPoints: [...contacts.values()],
-      modifiers: event ? modifiers(event) : touchModifiers, menuIntent: p.menuIntent });
+    const touchFrame = (type: string, event: PointerEvent) => ({ type, time: event.timeStamp, touchPoints: [...contacts.values()],
+      modifiers: modifiers(event), menuIntent: p.menuIntent });
+    const sendTouch = (type: string, event: PointerEvent) => send(touchFrame(type, event));
+    const sampleTouch = (event: PointerEvent) => {
+      contacts.set(event.pointerId, contact(event));
+      const sample = touchFrame('touchMove', event);
+      touchMotion = touchMotion ? mergeTouchMoves(touchMotion, sample) : sample;
+    };
     const flushMove = () => {
       cancelAnimationFrame(raf); raf = 0;
-      if (touchMoved) { touchMoved = false; sendTouch('touchMove'); }
+      if (touchMotion) { send(touchMotion); touchMotion = null; }
       if (move) { send({ type: 'mouseMove', ...point(move), pointerType: move.pointerType, modifiers: [...modifiers(move), ...(move.buttons & 1 ? ['leftButtonDown'] : [])] }); move = null; }
     };
     p.resetPointers = () => {
-      move = null; touchMoved = false; contacts.clear(); cancelAnimationFrame(raf); raf = 0;
+      move = null; touchMotion = null; contacts.clear(); cancelAnimationFrame(raf); raf = 0;
       p.gestureActive = false; const ids = [...captured]; captured.clear();
       for (const id of ids) if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     };
@@ -667,7 +673,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       if (intent && Math.hypot(event.clientX - intent.x, event.clientY - intent.y) > 10) p.keyboardIntent = null;
       if (event.pointerType === 'touch' && p.multiTouch) {
         if (!contacts.has(event.pointerId)) return;
-        contacts.set(event.pointerId, contact(event)); touchModifiers = modifiers(event); touchMoved = true;
+        const coalesced = event.getCoalescedEvents?.();
+        for (const sample of coalesced?.length ? coalesced : [event]) sampleTouch(sample);
       } else {
         if (event.pointerType === 'touch' && !event.isPrimary) return;
         move = event;
@@ -693,7 +700,11 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     listen('pointerup', (event: PointerEvent) => {
       if (event.pointerType === 'touch' && p.multiTouch) {
         if (!contacts.has(event.pointerId)) return;
-        contacts.set(event.pointerId, contact(event)); touchMoved = true; touchModifiers = modifiers(event); flushMove();
+        const previous = contacts.get(event.pointerId)!, released = contact(event);
+        // Up is an edge, not a new stationary motion sample. Preserve a real
+        // changed release location once, with its original event time.
+        if (released.x !== previous.x || released.y !== previous.y) sampleTouch(event);
+        flushMove();
         contacts.delete(event.pointerId); sendTouch('touchEnd', event);
       } else {
         if (event.pointerType === 'touch' && !event.isPrimary) return;

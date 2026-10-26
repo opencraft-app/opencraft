@@ -4,6 +4,22 @@ import { Context } from "@deepseek-ai/cordis";
 import { ConversationSummaryService, createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import type { TimelineBlock, TimelineSnapshot } from "@opencraft/chat-core";
 import { deriveThreadSummary } from "../../plugins/thread-summary/src/model";
+import { presentSummaryFiles } from "../../plugins/thread-summary/src/file-presentation";
+
+test("file presentation removes only shared directory segments and preserves disambiguation and extensions", () => {
+  const display = presentSummaryFiles(["/workspace/project/src/a.ts", "/workspace/project/tests/a.ts", "/workspace/project/.env"]);
+  assert.equal(display.root, "/workspace/project");
+  assert.equal(display.rootLabel, "project");
+  assert.deepEqual(display.files, [
+    { name: "a.ts", stem: "a", extension: ".ts", directory: "src" },
+    { name: "a.ts", stem: "a", extension: ".ts", directory: "tests" },
+    { name: ".env", stem: ".env", extension: "", directory: "" },
+  ]);
+  assert.equal(presentSummaryFiles(["src/a.ts", "src-other/a.ts"]).root, "");
+  assert.equal(presentSummaryFiles(["C:\\project\\src\\a.ts", "C:\\project\\tests\\a.ts"]).root, "C:/project");
+  assert.equal(presentSummaryFiles(["/workspace/project/README"]).files[0]?.extension, "");
+  assert.deepEqual(presentSummaryFiles([]).files, []);
+});
 
 function history(blocks: unknown[]): TimelineSnapshot {
   return { frames: [{ blocks, changeSummary: null }] } as unknown as TimelineSnapshot;

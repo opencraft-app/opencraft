@@ -45,21 +45,41 @@ export async function discoverLocalAccountProduct(fetcher: typeof fetch, options
   readonly legacyLocalNamespace?: string;
   readonly events?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
   readonly changed?: () => void;
+  readonly capabilityCache?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+  readonly capabilityCacheKey?: string;
 } = {}): Promise<ClientWorkbenchProduct | undefined> {
-  const initial = await fetcher('/__opencraft_account/status', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(5000) });
-  if (initial.status === 404 || !initial.headers.get('content-type')?.includes('application/json')) return undefined;
-  if (!initial.ok) throw new Error('Account identity unavailable');
-  const current = identity(await initial.json());
-  if (!current.actor) return undefined;
+  const cache = options.capabilityCache ?? (typeof window === 'undefined' ? undefined : (() => {
+    try { return window.localStorage; } catch { return undefined; }
+  })());
+  const key = options.capabilityCacheKey ?? 'opencraft.account-authority.v1';
+  let authority: string | null = null;
+  try { authority = cache?.getItem(key) ?? null; } catch { /* storage can be unavailable */ }
+  if (authority && (authority.length > 512 || !authority.trim())) authority = null;
+  let current: AccountIdentity;
+  try {
+    const initial = await fetcher('/__opencraft_account/status', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (initial.status === 404 || (initial.ok && !initial.headers.get('content-type')?.includes('application/json'))) {
+      try { cache?.removeItem(key); } catch { /* optional capability marker */ }
+      return undefined;
+    }
+    if (!initial.ok) throw new Error('Account identity unavailable');
+    current = identity(await initial.json());
+    try { cache?.setItem(key, current.authority); } catch { /* no credentials or Human identity are cached here */ }
+  } catch {
+    if (!authority) return undefined;
+    // Persist only the authority capability, never a cached Actor or native-owner proof.
+    // An unverified offline start cannot open the last Human's private projections.
+    current = { authority, actor: null, native: false, desktopOwner: false };
+  }
   return { async create() {
     const events = options.events ?? window;
     const scope = new HumanClientScope(current, async signal => {
       const response = await fetcher('/__opencraft_account/status', { credentials: 'same-origin', cache: 'no-store', signal });
       if (!response.ok) throw new Error('Account identity unavailable'); return response.json();
     }, options.changed ?? (() => window.location.reload()), options.legacyLocalNamespace);
-    events.addEventListener('focus', scope.refresh); events.addEventListener('pageshow', scope.refresh);
+    events.addEventListener('focus', scope.refresh); events.addEventListener('pageshow', scope.refresh); events.addEventListener('online', scope.refresh);
     return { persistenceScope: scope, preflight: scope.refresh, extensions: () => [], dispose() {
-      events.removeEventListener('focus', scope.refresh); events.removeEventListener('pageshow', scope.refresh); scope.dispose();
+      events.removeEventListener('focus', scope.refresh); events.removeEventListener('pageshow', scope.refresh); events.removeEventListener('online', scope.refresh); scope.dispose();
     } };
   } };
 }
