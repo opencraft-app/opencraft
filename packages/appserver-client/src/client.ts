@@ -61,6 +61,11 @@ export interface AppServerClientConfig {
  */
 export interface ServerRequestResponseContext {
   readonly delivered: Promise<void>;
+  /** Native request lifetime, independent of any history/view operation.
+   * Aborts after this exact context retires; inspect retirement to distinguish
+   * Host resolution, a sent answer and connection loss. */
+  readonly signal: AbortSignal;
+  readonly retirement: "answered" | "resolved" | "lost" | null;
 }
 
 export type ServerRequestHandler = (
@@ -106,6 +111,7 @@ interface PendingRequest {
 }
 
 interface MutableServerRequestResponseContext extends ServerRequestResponseContext {
+  retirement: ServerRequestResponseContext["retirement"];
   resolve(): void;
   reject(error: Error): void;
 }
@@ -118,7 +124,7 @@ interface ActiveServerRequest {
   phase: "handling" | "sending";
 }
 
-function createServerRequestResponseContext(): MutableServerRequestResponseContext {
+function createServerRequestResponseContext(signal: AbortSignal): MutableServerRequestResponseContext {
   let resolve!: () => void;
   let reject!: (error: Error) => void;
   const delivered = new Promise<void>((resolvePromise, rejectPromise) => {
@@ -129,7 +135,7 @@ function createServerRequestResponseContext(): MutableServerRequestResponseConte
   // promise for interested owners without producing an unhandled rejection
   // when a legacy handler ignores the optional lifecycle detail.
   void delivered.catch(() => undefined);
-  return { delivered, resolve, reject };
+  return { delivered, signal, retirement: null, resolve, reject };
 }
 
 function utf8ResponseBytes(frame: string): number {
@@ -530,11 +536,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
       if (notification.method === "serverRequest/resolved") {
         const { requestId, threadId } = notification.params as { readonly requestId?: unknown; readonly threadId?: unknown };
         if (typeof requestId === "string" || typeof requestId === "number") {
-          for (const active of this.activeServerRequests) {
+          for (const active of [...this.activeServerRequests]) {
             const requestThreadId = (active.request.params as { readonly threadId?: unknown } | null)?.threadId;
             if (active.revision !== this.transportRevision || typeof active.request.id !== typeof requestId || active.request.id !== requestId) continue;
             if (typeof threadId === "string" && typeof requestThreadId === "string" && threadId !== requestThreadId) continue;
-            this.settleServerRequest(active);
+            this.settleServerRequest(active, undefined, "resolved");
           }
         }
       }
@@ -585,9 +591,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private async answerServerRequest(request: JsonRpcRequest): Promise<void> {
-    const responseContext = createServerRequestResponseContext();
+    const controller = new AbortController();
+    const responseContext = createServerRequestResponseContext(controller.signal);
     const active: ActiveServerRequest = {
-      request, revision: this.transportRevision, controller: new AbortController(),
+      request, revision: this.transportRevision, controller,
       context: responseContext, phase: "handling",
     };
     this.activeServerRequests.add(active);
@@ -614,7 +621,15 @@ export class JsonRpcAppServerClient implements AppServerClient {
     }
     active.phase = "sending";
     try {
-      await this.transport.send(encodeJsonRpcMessage(response), active.controller.signal);
+      const frame = encodeJsonRpcMessage(response);
+      // Serialization may execute user-defined data accessors. Recheck the
+      // exact native owner after it, immediately before transport admission.
+      if (!this.activeServerRequests.has(active)) return;
+      if (this.closed || active.revision !== this.transportRevision || this.transport.status.state !== "open") {
+        this.settleServerRequest(active, new AppServerClientError("TRANSPORT_ERROR", "AppServer request lost its connection before response admission"));
+        return;
+      }
+      await this.transport.send(frame, active.controller.signal);
       this.settleServerRequest(active);
     } catch (sendError) {
       const deliveryError = new AppServerClientError(
@@ -626,16 +641,17 @@ export class JsonRpcAppServerClient implements AppServerClient {
     }
   }
 
-  private settleServerRequest(active: ActiveServerRequest, error?: Error): boolean {
+  private settleServerRequest(active: ActiveServerRequest, error?: Error, retirement: "answered" | "resolved" = "answered"): boolean {
     if (!this.activeServerRequests.delete(active)) return false;
-    active.controller.abort();
+    active.context.retirement = error === undefined ? retirement : "lost";
     if (error === undefined) active.context.resolve();
     else active.context.reject(error);
+    active.controller.abort(error);
     return true;
   }
 
   private invalidateServerRequests(error: Error): void {
-    for (const active of this.activeServerRequests) this.settleServerRequest(active, error);
+    for (const active of [...this.activeServerRequests]) this.settleServerRequest(active, error);
   }
 
   private dispatchNotification(notification: AppServerNotification): void {
@@ -682,6 +698,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   ): Promise<unknown> {
     const interceptors = [...this.serverRequestInterceptors];
     const dispatch = async (index: number): Promise<unknown> => {
+      if (context.signal.aborted) throw new AppServerClientError("ABORTED", "AppServer request was retired before handler admission");
       if (index >= interceptors.length) {
         const handler = this.serverRequestHandlers.get(request.method);
         if (handler === undefined) {

@@ -369,3 +369,25 @@ settings and non-snapshot observations across rereads. Set
 `OPENCRAFT_HISTORY_SNAPSHOT_OVERLAP=1` for the installed full-Web derived-history
 smoke to inject the old empty start ahead of the complete answer. Its synthetic
 physical endpoint does not stand in for a paid model or physical phone.
+
+
+### Native execution channels
+
+`ExecutionChannels.tla` adds a separate current contract for live settings, native
+request handling/reply, Read cancellation, same-id replacement and retired handler
+admission. Native fairness excludes ReadReply: a history server may remain held
+forever while the native answer must progress. Eight configurations exercise the
+positive contract, old history-gated admission, dropped settings/cancellation,
+stale ACK, stale handler, successor cleanup and missing fairness. Older request
+reservations in ActivationHistory/SnapshotCut do not prove this progress property.
+This is an independent finite abstraction; actual Client/Session/Broker chaos and
+Workbench regressions provide separate implementation evidence.
+
+Run deterministic implementation chaos with `npm run test:recovery-chaos -- --suite
+execution --seed 0 --cases 1000 --steps 120 --output /tmp/execution-chaos`. Controls
+`--mutant buffer-native` and `--mutant buffer-settings` must fail with NATIVE_REQUEST
+and LIVE_SETTINGS respectively. The ordinary replay command uses `--replay
+/path/to/failure-minimal.json` and should pass after removing the injected control.
+Artifacts include generator version, seed, original/minimal trace and relevant
+source hashes. Deliberate controls require the same invariant during shrinking;
+a harness failure is not a valid detected production regression.

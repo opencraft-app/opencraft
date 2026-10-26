@@ -21,7 +21,7 @@ export interface PendingInteractionStore {
 
 export interface AppServerInteractionBrokerConfig {
   readonly hostId: string;
-  readonly client: Pick<AppServerClient, "handleServerRequest" | "interceptServerRequest" | "subscribeNotification" | "subscribeStatus">;
+  readonly client: Pick<AppServerClient, "handleServerRequest" | "interceptServerRequest" | "subscribeStatus">;
   readonly store: PendingInteractionStore;
   readonly ledger?: AppServerInteractionLedger;
   readonly now?: () => number;
@@ -33,6 +33,9 @@ interface DeferredServerRequest<TMethod extends AppServerServerMethod = AppServe
   resolve(value: AppServerServerRequestResult<TMethod>): void;
   reject(error: Error): void;
   readonly delivered: Promise<void>;
+  readonly context: ServerRequestResponseContext;
+  removeRetirementListener(): void;
+  response?: InteractionResponse;
 }
 
 export class AppServerInteractionError extends Error {
@@ -211,7 +214,6 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
   private readonly pending = new Map<string, DeferredServerRequest>();
   private readonly removeHandlers: (() => void)[];
   private readonly removeStatus: () => void;
-  private readonly removeNotification: () => void;
   private disposed = false;
 
   constructor(config: AppServerInteractionBrokerConfig) {
@@ -245,18 +247,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
         this.failAll(new AppServerInteractionError("DISCONNECTED", status.reason ?? "AppServer disconnected"));
       }
     });
-    this.removeNotification = config.client.subscribeNotification((notification) => {
-      if (notification.method !== "serverRequest/resolved") return;
-      const params = notification.params as { readonly requestId?: unknown; readonly threadId?: unknown };
-      if ((typeof params.requestId !== "string" && typeof params.requestId !== "number") || typeof params.threadId !== "string") return;
-      const requestId = encodeServerRequestId(params.requestId);
-      const pending = this.pending.get(requestId);
-      if (pending === undefined || pending.interaction.threadId !== params.threadId) return;
-      this.ledger.forget(pending.interaction);
-      this.pending.delete(requestId);
-      this.store.removePendingInteraction(pending.interaction.threadId, requestId);
-      pending.resolve(cancelledResult(pending) as never);
-    });
+
   }
 
   async respond(key: ConversationKey, response: InteractionResponse): Promise<void> {
@@ -268,21 +259,17 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       throw new AppServerInteractionError("REQUEST_NOT_FOUND", `Pending interaction ${response.requestId} was not found`);
     }
     const result = responseResult(pending, response);
+    if (pending.context.signal.aborted) throw new AppServerInteractionError("REQUEST_NOT_FOUND", "Native request has retired");
     this.ledger.remember(pending.interaction, response);
+    pending.response = response;
     pending.resolve(result as never);
     await pending.delivered;
-    this.ledger.markDelivered(pending.interaction, response);
-    if (this.pending.get(response.requestId) === pending) {
-      this.pending.delete(response.requestId);
-      this.store.removePendingInteraction(pending.interaction.threadId, response.requestId);
-    }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const remove of this.removeHandlers.reverse()) remove();
-    this.removeNotification();
     this.removeStatus();
     this.failAll(new AppServerInteractionError("DISCONNECTED", "Interaction broker disposed"));
   }
@@ -293,7 +280,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     id: JsonRpcId,
     context: ServerRequestResponseContext,
   ): Promise<AppServerServerRequestResult<TMethod>> {
-    if (this.disposed) return Promise.reject(new AppServerInteractionError("DISCONNECTED", "Interaction broker is disposed"));
+    if (this.disposed || context.signal.aborted) return Promise.reject(new AppServerInteractionError("DISCONNECTED", "Interaction request is no longer active"));
     const requestId = encodeServerRequestId(id);
     if (this.pending.has(requestId)) {
       return Promise.reject(new AppServerInteractionError("DUPLICATE_REQUEST", `Duplicate AppServer request ${requestId}`));
@@ -309,10 +296,10 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     const remembered = this.ledger.recall(interaction);
     if (remembered !== null) {
       const result = responseResult({ method, interaction }, remembered.response);
-      void context.delivered.then(
-        () => this.ledger.markDelivered(interaction, remembered.response),
-        () => undefined,
-      );
+      context.signal.addEventListener("abort", () => {
+        if (context.retirement === "resolved") this.ledger.forget(interaction);
+        else if (context.retirement === "answered") this.ledger.markDelivered(interaction, remembered.response);
+      }, { once: true });
       return Promise.resolve(result as AppServerServerRequestResult<TMethod>);
     }
     return new Promise<AppServerServerRequestResult<TMethod>>((resolve, reject) => {
@@ -322,22 +309,40 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
         resolve,
         reject,
         delivered: context.delivered,
+        context,
+        removeRetirementListener: () => context.signal.removeEventListener("abort", retire),
+      };
+      const retire = () => {
+        if (this.pending.get(requestId) !== deferred) return;
+        // Release the exact native owner and settle before synchronous View
+        // observers can admit a successor with the same wire id.
+        this.pending.delete(requestId);
+        deferred.removeRetirementListener();
+        if (context.retirement === "resolved") this.ledger.forget(interaction);
+        else if (context.retirement === "answered" && deferred.response) this.ledger.markDelivered(interaction, deferred.response);
+        if (context.retirement === "lost") reject(new AppServerInteractionError("DISCONNECTED", "Native request lost its connection"));
+        else resolve(cancelledResult(deferred as DeferredServerRequest) as AppServerServerRequestResult<TMethod>);
+        this.store.removePendingInteraction(interaction.threadId, requestId);
       };
       this.pending.set(requestId, deferred as DeferredServerRequest);
+      context.signal.addEventListener("abort", retire, { once: true });
       try {
         this.store.upsertPendingInteraction(interaction);
       } catch (error) {
-        this.pending.delete(requestId);
+        if (this.pending.get(requestId) === deferred) this.pending.delete(requestId);
+        deferred.removeRetirementListener();
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
   }
 
   private failAll(error: Error): void {
-    for (const [requestId, pending] of this.pending) {
-      this.store.removePendingInteraction(pending.interaction.threadId, requestId);
-      pending.reject(error);
-    }
+    const pending = [...this.pending.entries()];
     this.pending.clear();
+    for (const [requestId, request] of pending) {
+      request.removeRetirementListener();
+      request.reject(error);
+      this.store.removePendingInteraction(request.interaction.threadId, requestId);
+    }
   }
 }

@@ -8,9 +8,7 @@ declare module "@deepseek-ai/cordis" {
   }
 }
 
-type BufferedAction =
-  | { type: "notification"; method: string; replay(): void }
-  | { type: "request"; replay(): void; reject(error: Error): void };
+type BufferedAction = { method: string; replay(): void };
 
 function isHistoryDelta(method: string): boolean {
   return method.startsWith("item/") && /(?:\/delta|Delta)$/.test(method);
@@ -47,27 +45,14 @@ export class ResumeNotificationBufferService extends Service {
     const removeNotification = config.client.interceptNotification((notification, next) => {
       const threadId = resolveThreadId(notification.params);
       const buffer = threadId === null ? undefined : this.buffers.get(threadId);
-      // Request-scoped paint data is not execution replay. The coordinator
-      // checks its token; buffering it would make REST paint wait for Resume.
-      if (buffer === undefined || notification.method === "thread/history/preview") next();
-      else buffer.push({ type: "notification", method: notification.method, replay: next });
-    });
-    const removeRequest = config.client.interceptServerRequest((request, next) => {
-      const threadId = resolveThreadId(request.params);
-      const buffer = threadId === null ? undefined : this.buffers.get(threadId);
-      if (buffer === undefined || request.method === "currentTime/read") return next();
-      return new Promise<unknown>((resolve, reject) => {
-        buffer.push({
-          type: "request",
-          replay: () => void next().then(resolve, reject),
-          reject: (error) => reject(error),
-        });
-      });
+      // Preview tokens, execution settings and native withdrawal are owned
+      // outside presentation history; Read retirement cannot delay them.
+      if (buffer === undefined || ["thread/history/preview", "thread/settings/updated", "serverRequest/resolved"].includes(notification.method)) next();
+      else buffer.push({ method: notification.method, replay: next });
     });
     ctx.effect(() => () => {
       removeNotification();
-      removeRequest();
-      this.rejectAll(new Error("Resume notification buffer disposed"));
+      this.buffers.clear();
     });
   }
 
@@ -80,19 +65,19 @@ export class ResumeNotificationBufferService extends Service {
   }
 
   hasDeltas(threadId: string): boolean {
-    return this.buffers.get(threadId)?.some(action => action.type === "notification" && isHistoryDelta(action.method)) ?? false;
+    return this.buffers.get(threadId)?.some(action => isHistoryDelta(action.method)) ?? false;
   }
 
   /** Snapshot lifecycle updates have no ordering token relative to a Read.
    * Use the same set for invalidation and supersession, including non-deltas. */
   hasSnapshotOverlap(threadId: string): boolean {
-    return this.buffers.get(threadId)?.some(action => action.type === "notification" && isSnapshotHistoryNotification(action.method)) ?? false;
+    return this.buffers.get(threadId)?.some(action => isSnapshotHistoryNotification(action.method)) ?? false;
   }
 
-  /** A new canonical read supersedes earlier notifications, but never drops requests. */
+  /** A new canonical read supersedes only observations represented by its snapshot. */
   supersedeNotifications(threadId: string): void {
     const actions = this.buffers.get(threadId);
-    if (actions) this.buffers.set(threadId, actions.filter(action => action.type === "request" || !isSnapshotHistoryNotification(action.method)));
+    if (actions) this.buffers.set(threadId, actions.filter(action => !isSnapshotHistoryNotification(action.method)));
   }
 
   release(threadId: string): number {
@@ -102,14 +87,10 @@ export class ResumeNotificationBufferService extends Service {
     return actions.length;
   }
 
-  discard(threadId: string, error = new Error(`Resume for ${threadId} was discarded`)): number {
+  discard(threadId: string, _error?: Error): number {
     const actions = this.buffers.get(threadId) ?? [];
     this.buffers.delete(threadId);
-    for (const action of actions) if (action.type === "request") action.reject(error);
     return actions.length;
   }
 
-  private rejectAll(error: Error): void {
-    for (const threadId of [...this.buffers.keys()]) this.discard(threadId, error);
-  }
 }

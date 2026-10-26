@@ -92,15 +92,17 @@ test("activation failure preserves readable history and its error projection", a
   } finally { await f.close(); }
 });
 for (const failed of [false, true]) test(`activation ${failed ? "error" : "ACK"} cannot release the current read buffer`, async () => {
-  const f = await fixture(); let delivered = 0;
+  const f = await fixture(); let delivered = 0, observations = 0;
+  f.client.subscribeNotification(n => { if (n.method === "fixture/observation") observations++; });
   f.client.interceptServerRequest(async (request, next) => { if (request.method !== "fixture/interaction") return next(); delivered++; return { ok: true }; });
   try {
     const activating = f.session.resume.activate({ threadId: "a" }); const outcome = activating.catch(() => undefined); await until(() => f.actors.length === 1);
     f.holdReads(); const reading = f.session.resume.read("a"); await until(() => f.heldReads.length === 1);
-    f.notify("fixture/interaction", { threadId: "a" }, "server-request"); for (let i = 0; i < 4; i++) await flush(); assert.equal(delivered, 0);
-    if (failed) f.actors[0]!.fail(); else f.actors[0]!.reply(); await outcome; assert.equal(delivered, 0);
+    f.notify("fixture/interaction", { threadId: "a" }, "server-request"); f.notify("fixture/observation", { threadId: "a" });
+    for (let i = 0; i < 4; i++) await flush(); assert.equal(delivered, 1); assert.equal(observations, 0);
+    if (failed) f.actors[0]!.fail(); else f.actors[0]!.reply(); await outcome; assert.equal(delivered, 1); assert.equal(observations, 0);
     f.releaseReads(); await reading; await until(() => delivered === 1); await until(() => f.serverResponses.some(value => (value as { id?: unknown }).id === "server-request"));
-    assert.equal(delivered, 1);
+    assert.equal(delivered, 1); assert.equal(observations, 1);
   } finally { await f.close(); }
 });
 test("a held older read cannot overwrite accepted execution metadata", async () => {
