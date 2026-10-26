@@ -205,7 +205,7 @@
     "test:appserver:lab": "tsx --test tests/protocol/appserver-lab*.test.ts",
     "smoke:conversation-history-refresh": "tsx scripts/smoke/conversation/smoke-conversation-history-refresh.ts",
     "test:chat": "tsx --test tests/chat/conversation-outbox.test.ts tests/shell/workbench-presentation-activity.test.tsx tests/chat/chat-*.test.ts tests/chat/thread-attention.test.ts tests/chat/thread-read-receipt-*.test.ts tests/chat/conversation-history-order.test.ts tests/composer/composer-core.test.ts tests/composer/opencraft-composer-codec.test.ts tests/composer/opencraft-composer-attachment-focus.test.ts tests/composer/opencraft-composer-attachment-preview.test.ts",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:git-identity",
     "check:hover": "node scripts/check-hover-policy.mjs",
     "test:hover": "node --test tests/tooling/hover-policy.test.mjs && tsx scripts/smoke/shell/smoke-touch-hover.ts",
     "check:boundaries": "npm run check:typography && npm run check:hover && node scripts/check-platform-boundaries.mjs",
@@ -257,7 +257,7 @@
     "test:file-preview": "tsx --test tests/resources/file-preview-core.test.ts tests/resources/structured-preview.test.ts tests/resources/office-legacy-word.test.ts",
     "smoke:office-preview": "tsx scripts/smoke/resources/smoke-office-preview.ts",
     "smoke:office-resources": "tsx scripts/smoke/resources/smoke-office-resources.ts",
-    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts",
+    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity",
     "test:mcp-apps": "tsx --test tests/extensions/mcp-app-host.test.ts tests/extensions/mcp-app-builder.test.ts",
     "smoke:mcp-apps": "tsx scripts/smoke/extensions/smoke-mcp-app-host.ts",
     "smoke:host-composer-commands": "tsx scripts/smoke/execution/smoke-host-composer-commands.ts",
@@ -278,7 +278,9 @@
     "smoke:safe-layout-host": "OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY=1 tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts",
     "test:web-push": "node --import tsx --test tests/server/web-push.test.ts tests/shell/pwa-turn-push.test.ts tests/shell/turn-notification-controller.test.ts",
     "smoke:derived-history": "node --import tsx scripts/smoke/conversation/smoke-derived-history.ts",
-    "test:client-resources": "tsx --test tests/storage/client-resources.test.ts"
+    "test:client-resources": "tsx --test tests/storage/client-resources.test.ts",
+    "test:git-identity": "tsx --test tests/identity/git-vault.test.ts tests/identity/git-identity-broker.test.ts tests/identity/git-identity-origin.test.ts",
+    "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node scripts/employee-git-vault-store.ts scripts/git-identity*.ts"
   },
   "dependencies": {
     "react": "19.3.1",

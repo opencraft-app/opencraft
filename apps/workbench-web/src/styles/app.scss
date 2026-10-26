@@ -202,6 +202,76 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   overflow-wrap: anywhere;
 }
 
+.conversation-unavailable-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 92px;
+  padding: 20px 4px;
+  color: var(--color-text-secondary);
+
+  &__icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--color-background-button-secondary);
+    color: var(--color-text-tertiary);
+  }
+
+  &__copy {
+    min-width: 0;
+
+    strong {
+      display: block;
+      color: var(--color-text);
+      font: var(--typography-body-font);
+      font-weight: var(--typography-primary-action-weight);
+    }
+
+    p {
+      margin: 4px 0 0;
+      font: var(--typography-metadata-font);
+      letter-spacing: var(--typography-metadata-tracking);
+      line-height: var(--typography-metadata-line-height);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__restore {
+    display: inline-flex;
+    min-height: var(--size-control-hit-min);
+    align-items: center;
+    gap: 6px;
+    padding: 0 11px;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    background: var(--color-background-button-secondary);
+    color: var(--color-text-button-secondary);
+    font: var(--typography-control-compact-font);
+    cursor: pointer;
+
+    @include controls.hover-capable {
+      &:hover { background: var(--color-background-button-secondary-hover); }
+    }
+
+    &:active { background: var(--color-background-button-secondary-active); }
+    &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+    &:disabled { cursor: default; opacity: var(--opacity-control-disabled); }
+  }
+
+  @media (max-width: 520px) {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding-inline: 0;
+
+    &__restore { grid-column: 2; justify-self: start; }
+  }
+}
+
 body {
   @include typography.role(body, primary);
   @include typography.rendering-policy;
@@ -3649,6 +3719,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 }
 
 .settings-control-actions--start { justify-content: flex-start; }
+.settings-control-actions--wrap { flex-wrap: wrap; }
 .settings-control-actions--between { justify-content: space-between; }
 .settings-control-actions--end { justify-content: flex-end; }
 

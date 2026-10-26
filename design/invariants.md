@@ -280,3 +280,7 @@ and live appearance projector share catalog, mode, document background and color
 hints. See [Shell layout](invariants/shell-and-layout.md) and
 [appearance](invariants/appearance-and-controls.md). Native status pixels still
 require device acceptance.
+
+## Settings action and stacked-row layout
+
+SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment.

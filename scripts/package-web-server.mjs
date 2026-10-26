@@ -15,8 +15,9 @@ import semver from 'semver';
 import { assertHeadlessWebRelease } from './headless-web-release.mjs';
 import { parseNpmPackResult } from './web-deployment/npm-pack-result.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, assertPackageName } from './web-deployment/package-identity.mjs';
+import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs') }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [] }) {
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
   if (!['daemon', 'headless'].includes(executionProfile) || (!execution && executionProfile !== 'daemon')) throw new Error('Invalid execution profile');
@@ -79,6 +80,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await chmod(join(packageRoot,'runtime/observe-cli.mjs'),0o755);
   await writeFile(join(packageRoot,'package.json'),JSON.stringify(manifest,null,2));
   if (execution) {
+    await buildGitIdentityRuntime(join(packageRoot, 'runtime'), additionalGitRuntimeEntries);
     await mkdir(join(packageRoot, 'execution'));
     for (const [entry, target, format] of [
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
@@ -87,6 +89,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
       ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs', 'esm'],
       ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs', 'esm'],
+      ['scripts/server-deployment/acp-host.mjs', 'acp-host.mjs', 'esm'],
     ]) {
       await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(packageRoot, 'execution', target),
         bundle: true, platform: 'node', format, target: 'node22', define:{'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
@@ -125,11 +128,12 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.os = [process.platform];
     manifest.cpu = [process.arch];
     manifest.opencraftExecution = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
-      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1 } : {}) };
+      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1 } : {}) };
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-dsh-host.service'), join(packageRoot, 'opencraft-dsh-host.service'));
+    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
   const { stdout } = await promisify(execFile)('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
