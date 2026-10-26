@@ -1078,6 +1078,7 @@ export function Conversation({
                             initialRestoreState={initialRestoreSnapshot?.virtualizedTurnList ?? null}
                             initialDistanceFromBottomPx={normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx)}
                             preserveMeasuredTurnViewport
+                            expandToMountedContent
                             onApiChange={handleVirtualizerApiChange}
                             onVisibleContentReady={onVisibleContentReady}
                             onContentLayoutCommitted={loadOlderUntilScrollable}

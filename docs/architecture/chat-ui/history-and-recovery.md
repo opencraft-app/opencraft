@@ -492,3 +492,14 @@ View/observer keeps a shared read alive. Local ABORTED retirement does not becom
 a cached history error; genuine read failures retain their existing error behavior.
 A released lease cannot start another optional read. This is local cancellation,
 not remote execution cancellation or an automatic write retry.
+
+### Mounted content and virtual height
+
+In natural scrolling, the Web virtualizer's measured total is a minimum height for its spacer, including
+unmounted history. Mounted rows retain their natural block size: a renderer can
+grow while its row measurement is queued, so stale measurements must never let
+that content overflow the spacer and overlap the sticky Composer. Both the
+latest-row fast path and React project the same minimum; the viewport owner
+continues to own measurement transactions and reading-position compensation.
+Response-placement policy retains its explicitly measured height because its
+response spacer and follow transaction own the position during streaming.

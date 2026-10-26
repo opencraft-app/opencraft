@@ -53,6 +53,8 @@ export interface VirtualizedConversationTurnsProps {
   readonly initialDistanceFromBottomPx: number;
   readonly getBottomScrollPaddingPx?: () => number;
   readonly preserveMeasuredTurnViewport: boolean;
+  /** Natural scrolling keeps mounted content in flow while measurements catch up. */
+  readonly expandToMountedContent?: boolean;
   readonly getPendingRestoreScrollDistanceFromBottomPx?: () => number | null;
   readonly restoreScrollDistanceFromBottomPx?: () => void;
   readonly onLatestTurnMeasurement?: (
@@ -132,6 +134,7 @@ export function VirtualizedConversationTurns({
   initialDistanceFromBottomPx,
   getBottomScrollPaddingPx = noResponsePadding,
   preserveMeasuredTurnViewport,
+  expandToMountedContent = false,
   getPendingRestoreScrollDistanceFromBottomPx,
   restoreScrollDistanceFromBottomPx,
   onLatestTurnMeasurement,
@@ -374,7 +377,7 @@ export function VirtualizedConversationTurns({
         transaction.canUseLatestTurnFastPath &&
         virtualizerSpacerRef.current !== null
       ) {
-        virtualizerSpacerRef.current.style.height = `${transaction.layout.totalHeightPx}px`;
+        virtualizerSpacerRef.current.style[expandToMountedContent ? "minHeight" : "height"] = `${transaction.layout.totalHeightPx}px`;
         commit();
         finishTurnMeasurementTransaction(transaction);
       } else {
@@ -643,7 +646,9 @@ export function VirtualizedConversationTurns({
     <div
       className="thread-virtualizer-spacer"
       ref={virtualizerSpacerRef}
-      style={{ height: windowSlice.totalHeightPx }}
+      // Measured virtual space is a floor. Mounted content can grow before its
+      // ResizeObserver transaction arrives; it must still push the footer down.
+      style={expandToMountedContent ? { minHeight: windowSlice.totalHeightPx } : { height: windowSlice.totalHeightPx }}
     >
       <div
         className="thread-virtualizer-window"
