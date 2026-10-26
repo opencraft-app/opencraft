@@ -9,7 +9,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { build } from 'esbuild';
 import { assertExecutionNativePayload } from './server-deployment/native-preflight.mjs';
-import { copyMcpAppRuntime, copyPiRuntime } from './package-mcp-app-runtime.mjs';
+import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
+import { copyMcpAppRuntime, copyPiRuntime, copyPiShellRuntime } from './package-mcp-app-runtime.mjs';
 import { copySshRuntime } from './package-ssh-runtime.mjs';
 import semver from 'semver';
 import { assertHeadlessWebRelease } from './headless-web-release.mjs';
@@ -97,10 +98,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
         ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
     }
+    await buildPiShellRuntime(join(packageRoot, 'execution'));
     if (executionProfile === 'headless') {
       await packageBrowserRuntime(join(packageRoot, 'runtime/browser'));
       await copySshRuntime(join(packageRoot, 'execution/native/node_modules'));
-      const appRuntime = { ...await copyMcpAppRuntime(join(packageRoot, 'node_modules')), ...await copyPiRuntime(join(packageRoot, 'node_modules')) };
+      const appRuntime = { ...await copyMcpAppRuntime(join(packageRoot, 'node_modules')), ...await copyPiRuntime(join(packageRoot, 'node_modules')), ...await copyPiShellRuntime(join(packageRoot, 'node_modules')) };
       manifest.dependencies = { ...manifest.dependencies, ...appRuntime };
       manifest.bundleDependencies = [...(manifest.bundleDependencies || []), ...Object.keys(appRuntime)];
     }

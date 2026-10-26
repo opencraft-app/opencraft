@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { PiShellWorker, PiShellDoc, shellText, shellDescription } from "./shell.js";
 import { isDeepStrictEqual } from "node:util";
 import { PiQueueDoc, type PiQueueState, type PiQueuedInput } from "./queue.js";
 import { piSkillsPrompt } from "./skills.js";
@@ -33,6 +35,9 @@ const InstructionDoc = defineDoc<{ base: string | null; developer: string | null
   kind: "opencraft.instructions", version: 1, scope: "conversation", history: "rewindable", fork: "asOf",
   initial: () => ({ base: null, developer: null }),
 });
+// Pi 1.3.0's admission kernel is used inside the same transaction as the shell
+// receipt: it starts idle runs and preserves inbox ordering, with stop checked atomically.
+const nativeAdmissions = () => import(new URL("./harness/submissions.js", import.meta.resolve("@earendil-works/pi-durable")).href);
 const defaultPreamble = "You are a coding assistant. Complete the user task using the available tools. Preserve existing work.";
 
 /** One native durable owner. It publishes committed snapshots, never a second execution ledger. */
@@ -49,6 +54,12 @@ export class PiDurableSession {
   private readonly submissions = new Map<number, SubmissionRecord>();
   private tasks = new Map<number, TaskRecord<any, any, any>>();
   private reads: Promise<unknown> = Promise.resolve();
+  private shell!: PiShellWorker;
+  private shellSchema!: Value;
+  private shellEvents: Promise<unknown> = Promise.resolve();
+  private shellLaunches = 0;
+  private readonly shellWaiters = new Map<string, () => void>();
+  private readonly earlyShellNotifications = new Map<string, Value[]>();
   private replaceTools!: (tools: Value[]) => void;
   private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
     ephemeral?: boolean; inherited?: PiForkContext;
@@ -61,7 +72,22 @@ export class PiDurableSession {
   private async open() {
     if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
       retries: { retries: 12, minTimeout: 1000, maxTimeout: 1000 } });
-    const registry = createRegistry(); registry.install(CodingTools);
+    this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
+      onNotification: event => { this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }); },
+      onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
+    });
+    this.shellSchema = (await this.shell.start()).parameters;
+    const registry = createRegistry();
+    // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
+    registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
+    registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
+      defineTool({ name: "interactive_shell", description: shellDescription, parameters: this.shellSchema as any,
+        execute: (args: any, api: any, ctx: Context) => this.executeShell(args, api, ctx) }),
+      defineTool({ name: "bash", description: "Run a bash command in a managed PTY. Returns a sessionId immediately while the command continues; completion arrives automatically. Query, send input, or stop with interactive_shell. timeout is in seconds. Long commands do not block user steering.",
+        parameters: { type: "object", properties: { command: { type: "string" }, timeout: { type: "number", exclusiveMinimum: 0, maximum: 2147483.647 }, yield_time_ms: { type: "integer", minimum: 0, maximum: 10000 } }, required: ["command"], additionalProperties: false } as any,
+        structuredOutputSchema: { type: "object", properties: { output: { type: "string" }, truncated: { type: "boolean" }, exitCode: { type: "number" }, sessionId: { type: "string" } }, required: ["output", "truncated"] } as any,
+        execute: (args: any, api: any, ctx: Context) => this.executeShell({ command: args.command, ...(args.timeout == null ? {} : { timeout: args.timeout * 1000 }) }, api, ctx, args.yield_time_ms ?? 1000) }),
+    ] }));
     registry.install(defineExtension({ name: "opencraft", sections: [
       section("preamble", async input => (await input.read.snapshot(InstructionDoc, input.conversationId, context))?.base ?? defaultPreamble, { tag: false }),
       section("workspace", input => {
@@ -118,6 +144,7 @@ export class PiDurableSession {
       }
     }).catch(() => {});
     this.root = await this.harness.root(context);
+    await this.interruptShells("Shell owner restarted; the previous command was interrupted and was not replayed.", false);
     if (this.options.inherited) {
       const inherited = this.options.inherited;
       await this.instructions(inherited.base ?? undefined, inherited.developer ?? undefined);
@@ -130,9 +157,149 @@ export class PiDurableSession {
       for (const event of events) if (event.type === "submission") this.submissions.set(event.record.id, event.record);
       await this.options.onSnapshot(await this.snapshot());
     });
+    await this.deliverShellNotifications();
     void this.stream.closed.then(end => {
       if (!this.closed && end.reason === "listener_error") this.options.onExit(end.error);
     });
+  }
+  private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
+    if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
+    const isLaunch = typeof args.command === "string" || args.spawn != null || args.mode === "monitor" && args.sessionId == null;
+    if (isLaunch && this.shellLaunches >= 8) throw new Error("Too many concurrent shell launches");
+    if (isLaunch) this.shellLaunches++;
+    try {
+    if (isLaunch) await this.root.commit(async tx => {
+      const doc = await tx.doc(PiShellDoc, this.root.id);
+      if (doc.records.filter(record => record.state === "running").length + this.shellLaunches > 8) throw new Error("Stop an existing shell session before starting another");
+      if (doc.records.length >= 40 && !doc.records.some(record => record.state !== "running" && record.notified))
+        throw new Error("Shell session history is full");
+      doc.paused = false;
+    }, context);
+    if (typeof args.sessionId === "string") {
+      const record = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === args.sessionId), context);
+      if (!record) return { output: [{ type: "text" as const, text: "Shell session does not belong to this conversation" }], isError: true };
+      if (record.generation !== this.shell.generation || record.state !== "running")
+        return { output: [{ type: "text" as const, text: `Session ${record.id}: ${record.state}\n${record.output}` }], isError: record.state === "interrupted" || record.isError };
+    }
+    const cwd = (await api.agent(ctx)).cwd ?? this.options.cwd;
+    const params = { ...args, cwd: args.cwd ?? cwd,
+      ...(isLaunch && args.mode == null ? { mode: "dispatch" } : {}),
+      ...(isLaunch && (args.mode == null || args.mode === "dispatch") ? { background: true, handsFree: { ...args.handsFree, autoExitOnQuiet: false } } : {}),
+      ...(isLaunch && args.mode === "monitor" ? { background: true } : {}),
+    };
+    const result = await this.shell.call(params, ctx.abortSignal);
+    const id = result.details?.sessionId;
+    if (isLaunch && !result.isError && typeof id === "string") {
+      await this.root.commit(async tx => {
+        const doc = await tx.doc(PiShellDoc, this.root.id);
+        const live = await tx.doc(LiveDoc, this.root.id);
+        const input = live.run?.inputs[0] === undefined ? undefined : await this.storage.submission(live.run.inputs[0], context);
+        while (doc.records.length >= 40) {
+          const index = doc.records.findIndex(record => record.state !== "running" && record.notified);
+          if (index < 0) throw new Error("Shell session history is full");
+          doc.records.splice(index, 1);
+        }
+        doc.records.push({ id, state: "running", command: args.command ?? "spawn", output: shellText(result).slice(-16384),
+          detached: waitMs == null || waitMs === 0, createdAtMs: Date.now(), generation: this.shell.generation, ...(input?.requestId ? { turnId: input.requestId } : {}) });
+      }, context);
+      const early = this.earlyShellNotifications.get(id);
+      if (early) { this.earlyShellNotifications.delete(id); for (const event of early) await this.shellNotification(event); }
+      if (waitMs != null && waitMs > 0) {
+        let wake!: () => void;
+        const completed = new Promise<void>(resolve => { wake = resolve; });
+        this.shellWaiters.set(id, wake);
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const cancel = () => wake();
+        ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
+        try {
+          const state = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === id)?.state, context);
+          if (state === "running") await Promise.race([completed, new Promise<void>(resolve => { deadline = setTimeout(resolve, waitMs); })]);
+        } finally { clearTimeout(deadline); this.shellWaiters.delete(id); ctx.abortSignal?.removeEventListener("abort", cancel); }
+        const finished = await this.root.commit(async tx => {
+          const record = (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === id)!;
+          if (record.state === "completed") { record.notified = true; return { output: record.rawOutput ?? record.output, isError: record.isError, truncated: record.truncated ?? false, exitCode: record.exitCode }; }
+          record.detached = true; return null;
+        }, context);
+        if (finished) return { output: [{ type: "text" as const, text: finished.output }], isError: finished.isError,
+          structuredOutput: { output: finished.output, truncated: finished.truncated, ...(finished.exitCode == null ? {} : { exitCode: finished.exitCode }) } };
+        await this.deliverShellNotifications();
+      }
+    }
+    return { output: result.content ?? [], isError: result.isError, ...(result.details ? { details: result.details } : {}),
+      ...(waitMs == null ? {} : { structuredOutput: { output: shellText(result), truncated: false, ...(typeof id === "string" ? { sessionId: id } : {}) } }) } as any;
+    } finally { if (isLaunch) this.shellLaunches--; }
+  }
+  private async shellNotification(event: Value) {
+    if (this.closed || !this.root || !event.triggerTurn) return;
+    const message = event.message;
+    const id = message?.details?.sessionId;
+    if (typeof id !== "string" || typeof message.content !== "string") return;
+    const found = await this.root.commit(async tx => {
+      const doc = await tx.doc(PiShellDoc, this.root.id);
+      const record = doc.records.find(record => record.id === id);
+      if (!record) return false;
+      if (record.state !== "running") return true;
+      if (message.customType === "interactive-shell-monitor-event") {
+        if (doc.paused || !Number.isSafeInteger(message.details.eventId)) return true;
+        const requestId = `pi-shell:${record.generation}:${id}:event:${message.details.eventId}`;
+        if (!await tx.submissionByRequest(this.root.id, requestId)) {
+          const { admitSubmission } = await nativeAdmissions();
+          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: message.content.slice(-16384),
+            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
+            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+        }
+        return true;
+      }
+      record.state = "completed"; record.output = message.content.slice(-16384);
+      if (typeof event.commandResult?.output === "string") {
+        record.rawOutput = event.commandResult.output.slice(-16384);
+        if (message.customType === "interactive-shell-monitor-lifecycle" && record.rawOutput) record.output = (record.output + "\nOutput:\n" + record.rawOutput).slice(-16384);
+        record.truncated = event.commandResult.truncated === true;
+        if (typeof event.commandResult.exitCode === "number") record.exitCode = event.commandResult.exitCode;
+      }
+      record.isError = (message.details?.completion ?? message.details)?.exitCode != null && (message.details?.completion ?? message.details).exitCode !== 0
+        || (message.details?.completion ?? message.details)?.timedOut === true || (message.details?.completion ?? message.details)?.cancelled === true;
+      if (doc.paused) record.notified = true;
+      return true;
+    }, context);
+    this.shellWaiters.get(id)?.();
+    if (!found) {
+      const pending = this.earlyShellNotifications.get(id) ?? [];
+      if (this.earlyShellNotifications.size < 16 && pending.length < 16) { pending.push(event); this.earlyShellNotifications.set(id, pending); }
+      return;
+    }
+    await this.deliverShellNotifications();
+  }
+  private async interruptShells(reason: string, notify: boolean, generation?: string) {
+    if (!this.root || this.closed) return;
+    await this.root.commit(async tx => {
+      const doc = await tx.doc(PiShellDoc, this.root.id);
+      for (const record of doc.records) if (record.state === "running" && (generation === undefined || record.generation === generation)) {
+        record.state = "interrupted"; record.output = reason + "\n" + record.output;
+        if (doc.paused || !record.detached) record.notified = true;
+      }
+    }, context);
+    if (notify) await this.deliverShellNotifications();
+  }
+  private async deliverShellNotifications() {
+    if (this.closed) return;
+    const records = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records
+      .filter(record => record.state !== "running" && !record.notified && record.detached).map(record => record.id), context);
+    for (const id of records) {
+      if (this.closed) break;
+      await this.root.commit(async tx => {
+        const doc = await tx.doc(PiShellDoc, this.root.id);
+        const record = doc.records.find(record => record.id === id);
+        if (doc.paused || !record || record.notified) return;
+        const requestId = `pi-shell:${record.generation}:${record.id}`;
+        const { admitSubmission } = await nativeAdmissions();
+        await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
+          entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
+          { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+        record.notified = true;
+      }, context);
+    }
+    if (records.length) this.harness.resume();
   }
   private async pages<T>(read: (cursor: any) => Promise<{ items: readonly T[]; next?: any }>): Promise<T[]> {
     const values: T[] = []; let cursor: any;
@@ -345,10 +512,15 @@ export class PiDurableSession {
     await this.root.commit(tx => tx.appendEntry(this.root.id, { kind: "opencraft.systemRecovery",
       data: { turnId, inputId, sourceKind: "system", createdAtMs: Date.now() } }), context);
   }
-  async abort() { await this.root.abort(context); }
+  async abort() {
+    await this.root.commit(async tx => { const doc = await tx.doc(PiShellDoc, this.root.id); doc.paused = true; }, context);
+    await this.root.abort(context);
+    await this.shell?.stop();
+    await this.interruptShells("Stopped by the user; the command was not replayed.", false);
+  }
   async close() {
     if (this.closed) return; this.closed = true;
-    try { try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
+    try { await this.shell?.stop(); await this.shellEvents.catch(() => {}); try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
     finally {
       try { await Promise.all([...this.environments.values()].map(env => env.cleanup(context))); }
       finally { await this.release?.(); }

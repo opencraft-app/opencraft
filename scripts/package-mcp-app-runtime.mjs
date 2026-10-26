@@ -51,3 +51,5 @@ export async function copyServerRuntime(destination, roots) {
 
 export const copyMcpAppRuntime = destination => copyServerRuntime(destination, ["quickjs-emscripten-core", "@jitl/quickjs-wasmfile-release-sync"]);
 export const copyPiRuntime = destination => copyServerRuntime(destination, ["@earendil-works/pi-coding-agent", "@earendil-works/pi-durable", "@earendil-works/pi-ai", "@earendil-works/chord"]);
+
+export const copyPiShellRuntime = destination => copyServerRuntime(destination, ["pi-interactive-shell", "@earendil-works/pi-tui"]);

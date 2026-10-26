@@ -1,3 +1,4 @@
+import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 #!/usr/bin/env node
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -11,7 +12,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { build } from "esbuild";
-import { copyMcpAppRuntime, copyPiRuntime } from "./package-mcp-app-runtime.mjs";
+import { copyMcpAppRuntime, copyPiRuntime, copyPiShellRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
@@ -37,6 +38,7 @@ export function headlessWebHostDefinitions() {
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
+  await buildPiShellRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
@@ -73,6 +75,7 @@ async function copyRuntimeModules(stageRoot) {
   await copySshRuntime(join(stageRoot, "node_modules"));
   await copyMcpAppRuntime(join(stageRoot, "node_modules"));
   await copyPiRuntime(join(stageRoot, "node_modules"));
+  await copyPiShellRuntime(join(stageRoot, "node_modules"));
   const desktop = JSON.parse(await readFile(join(repositoryRoot, "apps/workbench-electron/package.json"), "utf8"));
   const sourceBase = join(repositoryRoot, "apps/workbench-electron");
   const modules = desktop.build.extraResources.filter((entry) =>

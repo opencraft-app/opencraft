@@ -67,6 +67,7 @@ export class PiEngine {
     "opencraft/read-history": { version: 1, initialTurnsPage: true },
     "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
+    "opencraft/pi-shell": { version: 1, extension: "pi-interactive-shell", extensionVersion: "0.17.1", dispatch: true, monitor: true, input: true, yieldingBash: true, foregroundTui: false },
     "opencraft/scoped-model-catalog": { version: 1 },
     "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true },
     [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
@@ -948,7 +949,6 @@ export class PiEngine {
       this.recovery?.handled(session.id);
       if (params.turnId && session.active?.id !== params.turnId) throw new Error("Pi turn identity changed");
       const native = await this.native(session); await native.changeQueue("pause");
-      if (!session.active) { await this.refresh(session); return {}; }
       await native.abort(); await this.refresh(session); return {};
     }
     throw new Error(`Pi does not support ${method}`);

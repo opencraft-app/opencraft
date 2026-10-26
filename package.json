@@ -266,7 +266,7 @@
     "check:icons": "tsx scripts/generate-native-control-icons.tsx --check && node scripts/check-interface-icons.mjs",
     "smoke:control-icons": "node scripts/smoke/shell/smoke-native-control-icons.mjs",
     "generate:control-icons": "tsx scripts/generate-native-control-icons.tsx",
-    "test:pi-engine": "tsx --test tests/execution/pi-durable-engine.test.ts tests/execution/pi-model-configuration.test.ts tests/execution/pi-runtime-packaging.test.mjs",
+    "test:pi-engine": "tsx --test tests/execution/pi-durable-engine.test.ts tests/execution/pi-interactive-shell.test.ts tests/execution/pi-model-configuration.test.ts tests/execution/pi-runtime-packaging.test.mjs",
     "test:im": "tsx --test tests/extensions/wecom-history.test.ts tests/extensions/im-read-tools.test.ts tests/extensions/im-multi-engine.test.ts tests/extensions/im-switchboard.test.ts tests/extensions/im-programmable.test.ts tests/extensions/im-tool-reply.test.ts tests/execution/session-capabilities.test.ts tests/extensions/wecom-plugin.test.ts",
     "test:session-capabilities": "tsx --test tests/execution/session-capabilities.test.ts",
     "test:hover-policy": "node --test tests/tooling/hover-policy.test.mjs",
