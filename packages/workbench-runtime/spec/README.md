@@ -562,3 +562,40 @@ separate counts. A completed handler for a withdrawn request is not a wire reply
 Seeds and selected source hashes identify the actual run; shrinking preserves the
 exact rule and normal replay removes the test corruption. Existing execution and
 fanout suites retain their separate history/connection/consumer scopes.
+
+
+`TransportObservers.tla` distinguishes state snapshots, mandatory terminal
+events and successor initialization admission. The positive graph has 2936 states:
+one primary connection, three publication versions, one changing observer with
+two incarnations, one persistent Client consumer, an optional held request and
+one successor initialization. FIFO processing preserves cuts captured at enqueue.
+Terminal invalidation survives a successor snapshot; a new Client slot is admitted
+after the old publication drains. Finite callbacks, fair native open/processing and
+fair successor initialization ACK are explicit assumptions. Twelve controls must
+fail their exact properties, including terminal gating, early cleanup, early slot
+allocation and missing initialization fairness. RPC timeout/history fairness is
+not required for local failure delivery. This is not a TypeScript refinement or
+an exhaustive model of initial samples, socket generations and all adapters.
+
+The tenth CLI suite uses actual WebSocketTransport and a controlled socket, with
+two consumers, independent public status/Promise observations and no private-map
+inspection. Generator v2 adds terminal-callback successor-connect and peer changes.
+Its oracle conserves terminal events, orders publications separately from requested
+samples and retains enqueue cuts across reentry. Healing is an explicit saved event,
+not an invisible suffix. Cleanup checks owned Promise settlement. Empty traces
+allocate no connection. Physical inputs (including ignored late events and close
+ACKs), intents, publications, deliveries and samples have separate counters. Every
+suite records selected source hashes including its lockfile.
+
+```
+npm run test:recovery-chaos -- --suite transport --seed 0 --cases 1000 --steps 120 --output /tmp/transport-chaos
+npm run test:recovery-chaos -- --suite transport --mutant orphan-connect --seed 0 --output /tmp/transport-control
+npm run test:recovery-chaos -- --replay /tmp/transport-control/failure-minimal.json --output /tmp/transport-replay
+```
+
+Controls `orphan-connect`, `stale-token`, `stale-status` and `drop-peer` must fail
+at their exact rule and replay normally without corruption. A dropped peer on local
+close may fail with no socket allocation; it is a status-publication counterexample,
+not a native RPC input. Separate actual Client/Memory/Cordis tests check held-RPC
+loss, closing before ACK and successor initialization reentry. Five-adapter tests
+also check initial samples, permanent cleanup and queued peer replacement.

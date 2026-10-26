@@ -12,16 +12,23 @@ export class ClientObserverList<T> {
     };
   }
 
-  emit(value: T): void {
-    for (const registration of [...this.registrations.values()]) {
-      if (this.registrations.get(registration.listener) !== registration) continue;
-      const listener = registration.listener;
-      try { listener(value); }
-      catch {
-        // Diagnostics and lifecycle observers must never interrupt a peer,
-        // native request admission, cancellation or completion.
+  emit(value: T, isCurrent: () => boolean = () => true): void {
+    this.capture(value, isCurrent)();
+  }
+
+  capture(value: T, isCurrent: () => boolean = () => true): () => void {
+    const admission = [...this.registrations.values()];
+    return () => {
+      for (const registration of admission) {
+        if (!isCurrent()) return;
+        if (this.registrations.get(registration.listener) !== registration) continue;
+        const listener = registration.listener;
+        try { listener(value); }
+        catch {
+          // Observations cannot interrupt peers or native lifecycle work.
+        }
       }
-    }
+    };
   }
 
   clear(): void { this.registrations.clear(); }

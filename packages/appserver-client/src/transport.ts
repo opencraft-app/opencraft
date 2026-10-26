@@ -1,4 +1,5 @@
 import type { MessageSender } from "@opencraft/appserver-protocol";
+import { ClientObserverList } from "./observer-list";
 
 /** Trusted in-process context. Never decoded from a Renderer frame. */
 export interface TransportSubmissionContext {
@@ -72,6 +73,35 @@ export interface DuplexTransport {
   close(): Promise<void>;
 }
 
+/** Transport state belongs to the adapter. Observations cannot interrupt native
+ * settlement or peers, and an obsolete publication stops after synchronous reentry. */
+export class TransportStatusObservers {
+  private readonly listeners = new ClientObserverList<TransportStatus>();
+  private readonly publications: (() => void)[] = [];
+  private publishing = false;
+  subscribe(listener: (status: TransportStatus) => void, initial?: TransportStatus): () => void {
+    const remove = this.listeners.subscribe(listener);
+    if (initial !== undefined) {
+      try { listener(initial); } catch { /* Initial samples have no transport authority. */ }
+    }
+    return remove;
+  }
+  emit(status: TransportStatus, isCurrent: () => boolean): void {
+    // Terminal events revoke an old connection even if a consumer starts its
+    // successor. Drain them before publishing the successor's observations.
+    const terminal = status.state === "closing" || status.state === "closed" || status.state === "failed";
+    this.publications.push(this.listeners.capture(status, () => terminal || isCurrent()));
+    this.drain();
+  }
+  clear(): void { this.publications.push(() => this.listeners.clear()); this.drain(); }
+  private drain(): void {
+    if (this.publishing) return;
+    this.publishing = true;
+    try { while (this.publications.length) this.publications.shift()!(); }
+    finally { this.publishing = false; }
+  }
+}
+
 function connectionAbort(signal?: AbortSignal, message = "Connection cancelled"): Error {
   const reason = (signal as (AbortSignal & { readonly reason?: unknown }) | undefined)?.reason;
   if (reason instanceof Error) return reason;
@@ -121,7 +151,7 @@ export class DeferredDuplexTransport implements DuplexTransport {
   private current: TransportStatus = { state: "idle" };
   private readonly owner = new AbortController();
   private readonly messages = new Set<(frame: string) => void>();
-  private readonly statuses = new Set<(status: TransportStatus) => void>();
+  private readonly statuses = new TransportStatusObservers();
   private readonly recovery = new Set<() => void>();
   private delegate: DuplexTransport | null = null;
   private attempt: { readonly promise: Promise<void>; cancel(cause: unknown): void } | null = null;
@@ -133,7 +163,7 @@ export class DeferredDuplexTransport implements DuplexTransport {
   private publish(status: TransportStatus): void {
     if (this.current === status) return;
     this.current = status;
-    for (const listener of this.statuses) listener(status);
+    this.statuses.emit(status, () => this.current === status);
   }
   private retireDelegate(): void {
     this.releases.splice(0).forEach(release => release());
@@ -218,7 +248,7 @@ export class DeferredDuplexTransport implements DuplexTransport {
     else await this.delegate.send(frame, signal);
   }
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => { this.messages.delete(listener); }; }
-  subscribeStatus(listener: (status: TransportStatus) => void): () => void { this.statuses.add(listener); return () => { this.statuses.delete(listener); }; }
+  subscribeStatus(listener: (status: TransportStatus) => void): () => void { return this.statuses.subscribe(listener); }
   subscribeRecoveryHint(listener: () => void): () => void { this.recovery.add(listener); return () => { this.recovery.delete(listener); }; }
   close(): Promise<void> {
     if (this.closing) return this.closing;
