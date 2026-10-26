@@ -61,6 +61,8 @@ export interface ConversationCommandPort {
     key: ConversationKey,
     turnId: TurnId,
     provenance?: TurnInterruptProvenance,
+    /** Client-local final admission; never serialized into the native RPC. */
+    options?: { readonly canDispatch: () => boolean },
   ): Promise<void>;
   continueTurn(key: ConversationKey, turnId: TurnId): Promise<SubmissionReceipt>;
   respond(key: ConversationKey, response: InteractionResponse): Promise<void>;

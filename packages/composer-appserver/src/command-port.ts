@@ -370,13 +370,13 @@ export function createAppServerConversationCommandPort(
         throw cause;
       }
     },
-    async interrupt(key, turnId, provenance) {
-      if (key.hostId !== config.hostId) {
-        throw new AppServerConversationCommandError(
-          "HOST_MISMATCH",
-          "Conversation belongs to a different Host",
-        );
-      }
+    async interrupt(key, turnId, provenance, options) {
+      const assertCurrent = () => {
+        assertConversationHost(key);
+        if (config.canRequest?.("turn/interrupt") === false) throw new Error("此连接暂不支持该操作");
+        if (options?.canDispatch() === false) throw new AppServerClientError("ABORTED", "Stop request was cancelled before sending");
+      };
+      assertCurrent();
       config.onInterrupt?.({
         hostId: key.hostId,
         threadId: key.threadId,
@@ -391,7 +391,7 @@ export function createAppServerConversationCommandPort(
       await config.client.request("turn/interrupt", {
         threadId: key.threadId,
         turnId,
-      });
+      }, { beforeSend: assertCurrent });
     },
     async continueTurn(key) {
       assertConversationHost(key);
