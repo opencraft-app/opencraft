@@ -1,5 +1,5 @@
-import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 #!/usr/bin/env node
+import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
 import { spawn } from "node:child_process";
