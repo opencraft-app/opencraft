@@ -449,3 +449,31 @@ releasing history. Deliberate old buffering controls must reproduce their exact
 violations after shrinking and replay. The existing hydration suite and Workbench
 regressions separately cover new-input baseline admission and unknown-write policy;
 synthetic browser checks are separate from physical phone/network verification.
+
+
+### Native response evidence and fixture progress
+
+Execution chaos generator 3 derives expected wire replies from each human intent,
+independently of the production response mapper. The oracle checks count, exact
+typed request id and complete response structure, including ordered answer values
+and unexpected errors. Object property order is immaterial. The fixture submits
+answers sequentially and observes each delivery before its next intent; it does
+not impose a general JSON-RPC response-ordering requirement on concurrent work.
+
+An immediately cooperative in-memory native transport has no external response
+wait. The harness drains its known event-loop turns and reports NATIVE_PROGRESS
+if the local answer still waits, while history remains deliberately unavailable.
+It observes rejection without an unhandled Promise, bounds local Read settlement
+and cleanup in the same fixture, and preserves the original violation if cleanup
+also fails. This is a fixture progress check, not a new production timeout or a
+physical-network latency bound. Bootstrap and environmental fairness retain their
+separate suite contracts.
+
+Count-only controls previously accepted a wrong answer and wrong wire id; a held
+native handler left the old harness waiting until an external release. These are
+verified tool blind spots, not evidence that production currently emits those
+wrong replies. New wrong-answer, typed-id and history-gated-response controls must
+fail their exact rules, shrink without a cleanup failure, and pass normal replay.
+Artifacts retain runtime version/platform/architecture with generator and source
+hashes. The existing independent ExecutionChannels NativeProgress contract is
+unchanged; stronger executable evidence does not turn it into a TS refinement proof.

@@ -391,3 +391,15 @@ and LIVE_SETTINGS respectively. The ordinary replay command uses `--replay
 Artifacts include generator version, seed, original/minimal trace and relevant
 source hashes. Deliberate controls require the same invariant during shrinking;
 a harness failure is not a valid detected production regression.
+
+
+Execution generator 3 strengthens the separate implementation evidence: typed id,
+full human-answer correspondence and local native progress are distinct oracles.
+New `wrong-native-answer`, `wrong-response-id` and `history-gated-response` controls
+must fail NATIVE_CONTENT, NATIVE_RESPONSE_ID and NATIVE_PROGRESS respectively. The
+wrong-id control preserves the textual value while switching numeric/string type.
+Shrinking preserves the exact rule and normal replay must pass. Object key order
+is not part of correspondence; answer-array order is. The cooperative memory
+fixture drains event-loop turns instead of waiting forever for a broken native
+answer; it does not establish a production latency bound. Existing finite models
+are unchanged and their prior exact hashes retain their independent proof scope.

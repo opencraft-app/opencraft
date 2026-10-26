@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { ChaosViolation, generateRecoveryChaos, parseRecoveryTrace, shrinkChaosFailure, simulateRecovery } from "../tests/protocol/fixtures/recovery-chaos";
 import { generateHistoryChaos, parseHistoryTrace, simulateHistoryRecovery } from "../tests/protocol/fixtures/history-recovery-chaos";
 import { generateHydrationChaos, parseHydrationTrace, simulateHydrationRecovery } from "../tests/protocol/fixtures/hydration-recovery-chaos";
-import { generateExecutionChaos, parseExecutionTrace, simulateExecutionRecovery } from "../tests/protocol/fixtures/execution-recovery-chaos";
+import { generateExecutionChaos, parseExecutionTrace, simulateExecutionRecovery, type ExecutionChaosMutant } from "../tests/protocol/fixtures/execution-recovery-chaos";
 const {values}=parseArgs({options:{seed:{type:"string",default:"20261025"},cases:{type:"string",default:"100"},steps:{type:"string",default:"120"},output:{type:"string"},replay:{type:"string"},mutant:{type:"string"},suite:{type:"string"}}});
 function integer(value:string,name:string,maximum:number) {
   const n=Number(value);if(!Number.isSafeInteger(n) || n<0 || n>maximum) throw Error(`Invalid ${name}: expected an integer in 0..${maximum}`);return n;
@@ -14,10 +14,10 @@ const seed=integer(values.seed!,"seed",0xffffffff),cases=integer(values.cases!,"
 const replay=values.replay?JSON.parse(await readFile(values.replay,"utf8")):null;
 const suite=replay?.suite??values.suite??"host";
 if(!["host","history","hydration","execution"].includes(suite) || (replay?.suite && values.suite && values.suite!==replay.suite))throw Error("Invalid or conflicting chaos suite");
-if(values.mutant && !(suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:suite==="execution"?["buffer-native","buffer-settings"]:["sticky-read","coupled-activation","early-dispatch","delta-only"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
+if(values.mutant && !(suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:suite==="execution"?["buffer-native","buffer-settings","wrong-native-answer","wrong-response-id","history-gated-response"]:["sticky-read","coupled-activation","early-dispatch","delta-only"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
 const hostOptions=values.mutant?{mutant:values.mutant as "sticky-initialize" | "replay-mutation" | "wall-clock-budget"}:{};
 const hydrationOptions=values.mutant?{mutant:values.mutant as "sticky-read" | "coupled-activation" | "early-dispatch" | "delta-only"}:{};
-const executionOptions=values.mutant?{mutant:values.mutant as "buffer-native" | "buffer-settings"}:{};
+const executionOptions=values.mutant?{mutant:values.mutant as ExecutionChaosMutant}:{};
 const historyOptions=values.mutant?{mutant:"lost-admission" as const}:{};
 const output=path.resolve(values.output??path.join(process.env.TMPDIR??"/tmp",`opencraft-recovery-chaos-${process.pid}`));
 await mkdir(output,{recursive:true});
@@ -27,7 +27,7 @@ const sourcePaths=["scripts/recovery-chaos.ts", "tests/protocol/fixtures/recover
     ["packages/appserver-client/src/client.ts","packages/appserver-client/src/transport.ts","packages/workbench-runtime/src/connection-lifecycle.ts"])];
 const sourceSha256=Object.fromEntries(await Promise.all(sourcePaths.map(async file=>[file,
   createHash("sha256").update(await readFile(new URL(`../${file}`,import.meta.url))).digest("hex")])));
-const provenance={suite,generatorVersion:suite==="host"?3:suite==="hydration"?3:suite==="execution"?2:1,sourceSha256};
+const provenance={runtime:{node:process.versions.node,platform:process.platform,arch:process.arch},suite,generatorVersion:suite==="host"?3:suite==="hydration"?3:suite==="execution"?3:1,sourceSha256};
 const replaySeed=replay?.seed===undefined?seed:integer(String(replay.seed),"replay seed",0xffffffff);
 const count=replay?1:cases;
 if(count===0)throw Error("At least one case is required");
