@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis": "4.0.5",
     "@shikijs/core": "4.5.0",
     "@shikijs/engine-javascript": "4.5.0",
     "@shikijs/langs": "4.5.0",

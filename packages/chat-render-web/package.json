@@ -13,19 +13,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencraft/design-system": "0.1.0",
-    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis": "4.0.5",
     "@mermaid-js/layout-elk": "0.2.3",
     "@opencraft/chat-document": "0.1.0",
     "@opencraft/chat-render-react": "0.1.0",
+    "@opencraft/design-system": "0.1.0",
+    "@opencraft/design-system-web": "0.1.0",
     "@opencraft/i18n": "0.1.0",
     "@radix-ui/react-context-menu": "^2.4.1",
     "@radix-ui/react-tooltip": "^1.4.1",
-    "katex": "0.19.0",
+    "katex": "^0.19.0",
     "mermaid": "11.17.2",
     "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "@opencraft/design-system-web": "0.1.0"
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
