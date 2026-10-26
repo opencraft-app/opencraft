@@ -1,1 +1,3 @@
 tests/fixtures/structured/*.csv whitespace=cr-at-eol
+
+vendor/electron/** -text
