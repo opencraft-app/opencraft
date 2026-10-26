@@ -18,7 +18,13 @@
     "./server": {
       "types": "./src/media-flow.d.cts",
       "default": "./src/media-flow.cjs"
+    },
+    "./touch": {
+      "types": "./src/touch-samples.d.cts",
+      "default": "./src/touch-samples.cjs"
     }
   },
-  "scripts": { "typecheck": "tsc --noEmit" }
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
 }

@@ -126,3 +126,13 @@ test('adaptive ACK window keeps 100ms continuous motion flowing while edges stay
   assert.equal(seen[0].type, 'touchStart'); assert.equal(seen.at(-1)!.type, 'touchEnd');
   assert(policy.limit <= 12); assert.equal(await queue.idle(), true);
 });
+
+test('client merges keep a tiny timed tail instead of losing fling samples', async () => {
+ let release!:()=>void;const gate=new Promise<void>(r=>release=r),seen:any[]=[];
+ const queue=new RemoteBrowserInputQueue(async input=>{seen.push(input);await gate},()=>assert.fail('overflow'));
+ queue.push({type:'touchStart'});queue.push({type:'keyDown'});
+ for(let i=1;i<=1000;i++)queue.push({type:'touchMove',time:i,touchPoints:[{id:1,x:i,y:40}]});
+ queue.push({type:'touchEnd',time:1001,touchPoints:[]});await tick();release();await queue.idle();
+ const move=seen.find(v=>v.type==='touchMove');assert.equal(move.time,1000);
+ assert.deepEqual(move.history.map((v:any)=>v.time),[998,999]);assert.equal(seen.at(-1).time,1001);
+});

@@ -1,4 +1,5 @@
 'use strict';
+const { MAX_TOUCH_SAMPLES, TOUCH_SAMPLE_WINDOW_MS } = require('@opencraft/remote-interaction/touch');
 
 const MAX_TOUCH_POINTS = 10;
 const types = new Set(['touchStart', 'touchMove', 'touchEnd', 'touchCancel']);
@@ -82,17 +83,18 @@ function points(input) {
 
 // The worker selects Chromium's per-contact dispatcher. Its touchStart/touchEnd
 // describe changed contacts; the wire carries complete active-contact snapshots.
-function createTouchInput(dispatch) {
-  let active = new Map(), tail = Promise.resolve();
+function createTouchInput(dispatch, now = () => performance.timeOrigin + performance.now(), getDocument = () => undefined) {
+  let active = new Map(), tail = Promise.resolve(), clock = null;
   const enqueue = operation => {
     const result = tail.then(operation); tail = result.catch(() => {}); return result;
   };
   const reset = async () => {
-    if (!active.size) return;
+    if (!active.size) { clock = null; return; }
     try { await dispatch({ type: 'touchCancel', touchPoints: [] }); }
-    finally { active.clear(); }
+    finally { active.clear(); clock = null; }
   };
   const apply = async input => {
+    const document = getDocument();
     const next = points(input), nextIds = new Set(next.map(p => p.id));
     if (input.type === 'touchCancel') {
       if (next.length) throw new Error('Invalid touch cancellation');
@@ -108,14 +110,57 @@ function createTouchInput(dispatch) {
       || input.type === 'touchEnd' && (added.length || removed.length !== 1)) throw new Error('Invalid touch sequence');
     const touchPoints = input.type === 'touchStart' ? added : input.type === 'touchEnd' ? (next.length ? removed : []) : next;
     const modifiers = (Array.isArray(input.modifiers) ? input.modifiers : []).reduce((bits, modifier) => bits | ({ alt: 1, control: 2, meta: 4, shift: 8 }[modifier] ?? 0), 0);
+    // Viewer time is a relative monotonic clock, never a trusted wall clock.
+    // Anchor once per gesture on the server; native ACK/queue jitter must not
+    // masquerade as the user's speed. Legacy senders remain untimed.
+    const timed = active.size ? clock !== null : input.time !== undefined;
+    const wall = now();
+    const nextClock = timed ? { ...(clock ?? { origin: input.time, native: wall, last: input.time }) } : null;
+    const history = input.history ?? [];
+    if (!Array.isArray(history) || history.length >= MAX_TOUCH_SAMPLES
+      || history.length && (input.type !== 'touchMove' || next.length !== 1 || !timed)) throw new Error('Invalid touch history');
+    const samples = [];
+    let timestamp;
+    if (timed) {
+      if (!Number.isFinite(input.time) || input.time < 0 || input.time > Number.MAX_SAFE_INTEGER
+        || input.time < nextClock.last) throw new Error('Invalid touch time');
+      let previous = nextClock.last;
+      for (const sample of history) {
+        const geometry = points({ type: 'touchMove', touchPoints: sample?.touchPoints });
+        if (geometry.length !== 1 || geometry[0].id !== next[0].id) throw new Error('Invalid touch history');
+        if (!Number.isFinite(sample.time) || sample.time < nextClock.origin || sample.time > input.time
+          || input.time - sample.time > TOUCH_SAMPLE_WINDOW_MS) throw new Error('Invalid touch time');
+        if (sample.time <= nextClock.last) continue;
+        if (sample.time <= previous) throw new Error('Invalid touch time');
+        previous = sample.time;
+        const nativeTime = nextClock.native + sample.time - nextClock.origin;
+        if (nativeTime > wall + 1000 || nativeTime < wall - 25000) throw new Error('Invalid touch time');
+        samples.push({ type: 'touchMove', touchPoints: geometry, modifiers, timestamp: nativeTime / 1000 });
+      }
+      const nativeTime = nextClock.native + input.time - nextClock.origin;
+      if (nativeTime > wall + 1000 || nativeTime < wall - 25000) throw new Error('Invalid touch time');
+      timestamp = nativeTime / 1000;
+    }
     try {
-      await dispatch({ type: input.type, touchPoints, modifiers });
+      // A bounded real tail is available to restore native velocity after
+      // coalescing. No old gesture replay, guessed velocity or wheel.
+      const checkedDispatch = event => {
+        if (document !== getDocument()) throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED', retryable: true });
+        return dispatch(event);
+      };
+      // Dense delivered samples already define native velocity. Only bridge a
+      // coalescing gap that would reset Chromium's 40ms movement history, using
+      // the newest genuine predecessor. Never replay every retained sample.
+      if (timed && input.type === 'touchMove' && input.time - nextClock.last >= 40 && samples.length)
+        await checkedDispatch(samples.at(-1));
+      await checkedDispatch({ type: input.type, touchPoints, modifiers, ...(timed ? { timestamp } : {}) });
       active = new Map(next.map(p => [p.id, p]));
+      clock = active.size && timed ? { ...nextClock, last: input.time } : null;
     } catch (error) {
       // A failed ACK may follow native acceptance. Do not leave contacts held
       // or retry a press into a different document.
       try { await dispatch({ type: 'touchCancel', touchPoints: [] }); } catch {}
-      active.clear(); throw error;
+      active.clear(); clock = null; throw error;
     }
   };
   return {
