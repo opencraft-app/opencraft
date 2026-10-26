@@ -27,7 +27,7 @@ try {
   page.on("pageerror", error => errors.push(error.message)); await page.addInitScript("window.__name=value=>value");
   await page.goto(`${vite.resolvedUrls!.local[0]}?dictation&pickerFocus&addMenu&mode=${test.mode}`);
   await page.waitForFunction(() => typeof (window as any).setTouch === "function");
-  await page.evaluate(async ({ touch, newera }) => { await (window as any).setTouch(touch); await (window as any).setNewera(newera); }, test);
+  await page.evaluate(async ({ touch, newera }) => { await (window as any).setTouch(touch && newera); }, test);
   const editor = page.locator(".opencraft-composer-editor"), shell = page.locator(".opencraft-composer-shell"), mic = page.locator(".opencraft-voice-input-action"), voice = page.locator(".opencraft-composer-voice-footer"), outside = page.getByLabel("Outside input");
   const activate = async (target: any) => test.touch ? target.tap() : target.click();
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

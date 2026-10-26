@@ -32,7 +32,7 @@ try {
     await page.addInitScript("window.__name=value=>value");
     await page.goto(`${vite.resolvedUrls!.local[0]}?addMenu&pickerFocus&mode=${test.mode}&palette=${test.palette}`);
     await page.waitForFunction(() => typeof (window as any).setTouch === "function");
-    await page.evaluate(async ({ touch, newera }) => { await (window as any).setTouch(touch); await (window as any).setNewera(newera); }, test);
+    await page.evaluate(async ({ touch, newera }) => { await (window as any).setTouch(touch && newera); }, test);
     const editor = page.locator(".opencraft-composer-editor"), shell = page.locator(".opencraft-composer-shell");
     const add = page.locator(".opencraft-composer-footer__attachment > button").first();
     const menu = page.locator(".opencraft-composer-add-menu"), outside = page.getByLabel("Outside input");

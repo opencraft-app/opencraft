@@ -14,7 +14,7 @@ import {useTimelineViewportHost} from '/apps/workbench-web/src/timeline-viewport
 import * as theme from '@opencraft/design-system/theme-engine';
 import '/apps/workbench-web/src/styles/app.scss';
 const params=new URLSearchParams(location.search), mode=params.get('theme')||'light';
-document.documentElement.dataset.theme=mode;document.documentElement.dataset.uiDensity=params.has('desktop')?'compact':'touch';document.documentElement.dataset.touchNewera=params.has('ordinary')?'off':'on';
+document.documentElement.dataset.theme=mode;document.documentElement.dataset.uiDensity=params.has('desktop')||params.has('ordinary')?'compact':'touch';
 for(const [key,value] of Object.entries(theme.buildOpenCraftThemeCssProperties(mode,theme.opencraftNeutralThemePalette[mode])))document.documentElement.style.setProperty(key,value);
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
 window.fixture={controller};

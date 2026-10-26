@@ -5,6 +5,7 @@ import { createComposerController, composerDocumentToPlainText } from "@opencraf
 import { OpenCraftComposer } from "@opencraft/composer-editor";
 import * as themes from "@opencraft/design-system/theme-engine";
 import { ScrollToBottomButton } from "../../apps/workbench-web/src/components/scroll-to-bottom-button";
+import { TouchDensitySetting } from "../../apps/workbench-web/src/components/touch-density-setting";
 import { ChatSettings } from "../../apps/workbench-web/src/components/chat-settings";
 import { openWorkbenchUiPreferences, UiPreferencesProvider, useUiPreferencesRuntime } from "../../apps/workbench-web/src/runtime/ui-preferences-runtime";
 import { bindInteractionDensity } from "../../apps/workbench-web/src/runtime/interaction-density";
@@ -45,7 +46,7 @@ function Fixture() {
  const [recovering,setRecovering] = useState(false);
  const [queueVisible,setQueueVisible] = useState(false);
  useEffect(() => {
-   Object.assign(window, { setRecovering, setComposerVisible, composerController: controller, setWorking, setQueue: setQueueVisible, setNewera: (on: boolean) => preferences.set("chat.touchNewera", on), setTouch: (on: boolean) => preferences.set("interface.touchFriendly", on ? "on" : "off") });
+   Object.assign(window, { setRecovering, setComposerVisible, composerController: controller, setWorking, setQueue: setQueueVisible, setTouchMode: (value: "auto" | "on" | "off") => preferences.set("interface.touchFriendly", value), setTouch: (on: boolean) => preferences.set("interface.touchFriendly", on ? "on" : "off") });
    return bindInteractionDensity(document, preferences);
  }, [preferences]);
  return <main style={{ minHeight: "100dvh", padding: 12, background: "var(--color-background-primary)", color: "var(--color-text)" }}>
@@ -66,6 +67,7 @@ function Fixture() {
       endActions={params.has("dictation") ? <Voice mutations={mutations} disabled={false} platform="web" /> : <button className="opencraft-composer-icon-button opencraft-voice-input-action" data-voice-input-state="error" aria-label="Fixture microphone">🎤</button>} />}
   </div>
   {params.has("pickerFocus") && <input id="outside-input" aria-label="Outside input" style={{position:"fixed",left:4,top:4,width:60}} />}
+  <TouchDensitySetting />
   <ChatSettings />
  </main>;
 }
@@ -74,7 +76,7 @@ function EntryFixture() {
  useEffect(() => {
    let disposed=false;
    let current: Awaited<ReturnType<typeof openWorkbenchUiPreferences>> | null=null;
-   void openWorkbenchUiPreferences({presentation:params.get("entry")==="embedded"?"embedded":"standalone"}).then(runtime=>{
+   void openWorkbenchUiPreferences().then(runtime=>{
      if(disposed){void runtime.close();return;}
      current=runtime;setPreferences(runtime);
    });

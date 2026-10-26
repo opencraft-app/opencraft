@@ -13,7 +13,7 @@ try {
   await page.goto(`${vite.resolvedUrls!.local[0]}?palette=${palette}&mode=${mode}`);
   await page.waitForFunction(()=>typeof(window as any).setTouch==="function");
   await page.evaluate(()=>{document.documentElement.dataset.timelineTracksVisualViewport="true";document.documentElement.style.setProperty("--timeline-visual-viewport-height","500px")});
-  await page.evaluate(async variant=>{await(window as any).setTouch(variant!=="desktop");await(window as any).setNewera(variant==="newera");await(window as any).setQueue(true)},variant);
+  await page.evaluate(async variant=>{await(window as any).setTouch(variant==="newera");await(window as any).setQueue(true)},variant);
   const rail=page.locator('.opencraft-composer-attached-rail'),shell=page.locator('.opencraft-composer-shell'),editor=page.locator('.opencraft-composer-editor');
   await page.locator('.opencraft-composer-queue-item').waitFor();
   const originalEditor=await editor.elementHandle();

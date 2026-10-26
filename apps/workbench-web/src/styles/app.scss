@@ -12567,8 +12567,8 @@ html[data-window-host="browser"] body {
   }
 }
 
-// Optional touch presentation; the same editor, draft and commands stay mounted.
-:root[data-ui-density="touch"][data-touch-newera="on"] {
+// Unified touch presentation; the same editor, draft and commands stay mounted.
+:root[data-ui-density="touch"] {
   // Arrow and working dots are projections of the same floating control.
   .thread-scroll-to-bottom-button {
     width: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
@@ -12741,7 +12741,7 @@ html[data-window-host="browser"] body {
 .deferred-view { min-height: 120px; display: grid; place-items: center; color: var(--color-text-secondary); }
 
 // Floating conversation chrome shares control owners with ordinary chrome.
-:root[data-ui-density="touch"][data-touch-newera="on"] {
+:root[data-ui-density="touch"] {
   .app-shell-root:has(.app-shell-header[data-app-shell-conversation-header="true"]) {
     --height-toolbar: var(--height-shell-header-mobile);
   }
@@ -13049,7 +13049,7 @@ html[data-window-host="browser"] body {
 // Empty idle touch drafts use a single row without a model entrance. Editor
 // focus opens the ordinary footer; content retains its own expansion policy.
 .opencraft-composer-collapsed-fast { display: none; color: var(--color-text-accent); }
-:root[data-ui-density="touch"][data-touch-newera="on"] .opencraft-composer-stack[data-composer-layout="auto-single-line"]:has(.opencraft-composer-footer[data-input-mode="standard"]) {
+:root[data-ui-density="touch"] .opencraft-composer-stack[data-composer-layout="auto-single-line"]:has(.opencraft-composer-footer[data-input-mode="standard"]) {
   .opencraft-composer-input-row { flex: 0 1 auto; }
   .opencraft-composer-editor { min-height: 1lh; text-align: start; }
   // Add already owns attachments. Avoid a duplicate action consuming the
@@ -13117,7 +13117,7 @@ $shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-grou
   top: 50%; bottom: auto; height: var(--size-toolbar-dock-action);
   transform: translateY(-50%);
 }
-:root[data-ui-density="touch"][data-touch-newera="on"] .app-shell-header[data-app-shell-conversation-header="true"] .app-shell-header__action-group > .ui-liquid-glass { height: 100%; }
+:root[data-ui-density="touch"] .app-shell-header[data-app-shell-conversation-header="true"] .app-shell-header__action-group > .ui-liquid-glass { height: 100%; }
 
 .thread-scroll-to-bottom-button {
   @include material.liquid;

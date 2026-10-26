@@ -1,18 +1,14 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSwitch } from "@opencraft/extension-react";
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
-import { useAsyncNotices } from "./async-notices";
 import { TurnNotificationSettings } from "./turn-notification-settings";
 
 export function ChatSettings() {
   const intl = useIntl();
-  const notices = useAsyncNotices();
   const preferences = useUiPreferencesRuntime();
   const defaultFollowUpAction = useDefaultFollowUpAction();
-  const preferenceState = useSyncExternalStore(preferences.subscribe, preferences.getSnapshot, preferences.getSnapshot);
-  const [neweraSaving, setNeweraSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [saving, setSaving] = useState(false);
   const label = intl.formatMessage({ id: "settings.chat.immediateFollowUp", defaultMessage: "Follow up immediately while responding" });
@@ -20,20 +16,6 @@ export function ChatSettings() {
   return <>
     <SettingsPageHeader title={intl.formatMessage({ id: "settings.chat", defaultMessage: "Chat" })} />
     <SettingsGroup>
-      <SettingsRow
-        label={intl.formatMessage({ id: "settings.chat.touchNewera", defaultMessage: "Touch Newera experience" })}
-        description={intl.formatMessage({ id: "settings.chat.touchNewera.description", defaultMessage: "A subtle glass composer for touch layouts. One line when idle; focusing the input expands it automatically. On by default in the standalone touch workbench; off by default when embedded." })}
-        controlWidth="compact"
-      >
-        <SettingsSwitch label={intl.formatMessage({ id: "settings.chat.touchNewera", defaultMessage: "Touch Newera experience" })}
-          checked={preferenceState.values["chat.touchNewera"]} disabled={neweraSaving}
-          onCheckedChange={(checked) => {
-            setNeweraSaving(true);
-            void preferences.set("chat.touchNewera", checked)
-              .catch(() => notices.error({ key: "chat:touch-newera", message: intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." }) }))
-              .finally(() => setNeweraSaving(false));
-          }} />
-      </SettingsRow>
       <SettingsRow
         label={label}
         description={intl.formatMessage({ id: "settings.chat.immediateFollowUp.description", defaultMessage: "New messages guide the current response. Turn this off to queue them for the next response. Temporary side chats always follow up immediately." })}

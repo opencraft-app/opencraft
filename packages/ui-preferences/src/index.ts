@@ -9,7 +9,6 @@ export interface UiPreferenceValues {
   readonly "chat.modelSelections": Readonly<Record<string, { readonly model: string; readonly effort: string | null; readonly serviceTier?: string | null }>>;
   readonly "chat.defaultFollowUpAction": "steer" | "queue";
   readonly "chat.turnNotifications": boolean;
-  readonly "chat.touchNewera": boolean;
   readonly "shell.toolbarDocks": Readonly<Record<string, readonly string[]>>;
   readonly "shell.applicationsPinned": boolean;
   readonly "shell.accountPinned": boolean;
@@ -81,9 +80,6 @@ export const uiPreferenceDefinitions = Object.freeze({
     key: "interface.touchFriendly", scope: "installation", defaultValue: "auto",
     parse: (value: unknown): "auto" | "on" | "off" | null =>
       value === "auto" || value === "on" || value === "off" ? value : null,
-  },
-  "chat.touchNewera": {
-    key: "chat.touchNewera", scope: "installation", defaultValue: false, parse: booleanValue,
   },
   "chat.turnNotifications": {
     key: "chat.turnNotifications", scope: "installation", defaultValue: false,

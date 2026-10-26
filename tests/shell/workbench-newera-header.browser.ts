@@ -36,7 +36,7 @@ try {
  const context=await browser.newContext({viewport:{width,height:844},hasTouch:true,isMobile:width<640});
  await context.addInitScript(()=>{(window as any).__name=(v:unknown)=>v});
  const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.stack)});
- await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on'});await page.evaluate(theme=>(window as any).fixture.setThemePreference(theme),theme);await page.waitForTimeout(350);
+ await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';});await page.evaluate(theme=>(window as any).fixture.setThemePreference(theme),theme);await page.waitForTimeout(350);
  const controls=page.locator('.app-shell-header__window-controls button:visible, .app-shell-header__end-actions button:visible, .app-shell-touch-sidebar-toggle button:visible');
  assert.equal(await controls.count(),3,'sidebar, menu and preview');assert.equal(await page.locator('.thread-header-title').isVisible(),false);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
  const bounds=await controls.evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,y:r.y,width:r.width,height:r.height,filter:s.backdropFilter,shadow:s.boxShadow}}));
@@ -94,9 +94,9 @@ try {
 
  if(width===390){await page.emulateMedia({forcedColors:'active'});assert.ok((await lenses.evaluateAll(es=>es.map(e=>getComputedStyle(e,'::before').backdropFilter))).every(v=>v==='none'));await page.emulateMedia({forcedColors:'none'});}
 
- await page.evaluate(()=>document.documentElement.dataset.touchNewera='off');assert.equal(await page.locator('.thread-header-title').isVisible(),true);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
+ await page.evaluate(()=>document.documentElement.dataset.uiDensity='compact');assert.equal(await page.locator('.thread-header-title').isVisible(),true);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
  await trigger.click();assert.equal(await page.getByRole('menuitem',{name:'Open preview panel',exact:true}).count(),0);await page.keyboard.press('Escape');
- await page.evaluate(()=>{document.documentElement.dataset.uiDensity='compact';document.documentElement.dataset.touchNewera='on'});await page.waitForTimeout(100);assert.equal(await page.locator('.thread-header-title').isVisible(),true);
+ await page.evaluate(()=>{document.documentElement.dataset.uiDensity='compact';});await page.waitForTimeout(100);assert.equal(await page.locator('.thread-header-title').isVisible(),true);
  await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';(window as any).fixture.setConversation(false)});await page.waitForTimeout(100);assert.equal(await page.locator('.thread-header-title').isVisible(),true);
  assert.equal(await page.evaluate(()=>(window as any).editor===document.querySelector('input')),true);assert.equal(await page.getByLabel('Draft').inputValue(),'Retained draft');assert.deepEqual(errors,[]);
  evidence.push({width,theme,bounds,optics,fade,errors});await context.close();
@@ -210,7 +210,7 @@ try {
  for(const theme of ['light','dark']){
   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
   const page=await context.newPage();await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});
-  await page.evaluate(theme=>{(window as any).fixture.setThemePreference(theme);document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on';document.documentElement.style.setProperty('--safe-layout-inset-top','62px');},theme);
+  await page.evaluate(theme=>{(window as any).fixture.setThemePreference(theme);document.documentElement.dataset.uiDensity='touch';document.documentElement.style.setProperty('--safe-layout-inset-top','62px');},theme);
   const read=()=>page.evaluate(()=>{const scroller=document.querySelector('[data-scroll]')!,surface=document.querySelector('.thread-scroll-surface')!,header=document.querySelector('.app-shell-header')!,fade=document.querySelector('.main-content-top-fade')!,main=document.querySelector('.main-content-surface')!;return{mainTop:main.getBoundingClientRect().top,scrollTop:scroller.getBoundingClientRect().top,contentTop:surface.getBoundingClientRect().top,firstTop:surface.firstElementChild!.getBoundingClientRect().top,headerTop:header.getBoundingClientRect().top,bottom:main.getBoundingClientRect().bottom,fadeTop:fade.getBoundingClientRect().top,fadeHeight:fade.getBoundingClientRect().height,display:getComputedStyle(fade).display,filter:getComputedStyle(fade).backdropFilter,mask:getComputedStyle(fade).maskImage,pointer:getComputedStyle(fade).pointerEvents}});
   await page.getByLabel('Draft').fill('Keep scroll-under draft');const editor=await page.getByLabel('Draft').elementHandle();
   const start=await read();assert.equal(start.scrollTop,0);assert.equal(start.fadeTop,0);assert.equal(start.headerTop,62);assert.equal(start.bottom,844);assert(start.firstTop>62+48);assert.equal(start.fadeHeight,0);assert.equal(start.display,'none');assert.equal(start.filter,'none');assert.equal(start.mask,'none');assert.equal(start.pointer,'none');
@@ -227,7 +227,7 @@ try {
  const fallbackContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await fallbackContext.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((property:string,value?:string)=>property==='-webkit-backdrop-filter'?true:value===undefined?supports(property):supports(property,value)) as typeof CSS.supports});
  const fallbackPage=await fallbackContext.newPage();await fallbackPage.goto(vite.resolvedUrls!.local[0]!);await fallbackPage.getByLabel('Draft').waitFor({timeout:60000});
- await fallbackPage.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on'});
+ await fallbackPage.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';});
  const fallbackLenses=fallbackPage.locator('.app-shell-header .ui-liquid-glass:visible, .app-shell-touch-sidebar-toggle .ui-liquid-glass:visible');
  const fallback=await fallbackLenses.evaluateAll(es=>es.map(e=>({map:!!e.querySelector('feImage'),filter:getComputedStyle(e,'::before').backdropFilter,shadow:getComputedStyle(e).boxShadow,rim:getComputedStyle(e,'::before').boxShadow})));
  assert.equal(fallback.length,2);assert.ok(fallback.every(e=>!e.map&&e.filter.includes('blur(12px)')&&!e.filter.includes('url(')),'syntax-only URL engines must retain the working CSS fallback');

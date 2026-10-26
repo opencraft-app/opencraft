@@ -38,7 +38,7 @@ import{AsyncNoticesProvider}from'/apps/workbench-web/src/components/async-notice
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();const ctx=new Context();await ctx.plugin(WorkbenchPanelService);const panels=ctx.workbenchPanels;const key=createConversationKey('fixture-host','parent');
 const params=new URLSearchParams(location.search);const mobile=params.has('mobile');
-if(mobile){document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on';setThemePreference(params.get('theme')==='dark'?'dark':'light');}
+if(mobile){document.documentElement.dataset.uiDensity='touch';;setThemePreference(params.get('theme')==='dark'?'dark':'light');}
 const controller=createComposerController({type:'existing-thread',key},{now:Date.now,createId:()=>crypto.randomUUID()});const closed=[];const submitted=[];
 await ctx.plugin(WorkbenchPanelRendererRegistryService);
 await ctx.plugin(TimelineBlockRendererRegistryService);await ctx.plugin(BuiltinTimelineRendererPlugin);
@@ -222,10 +222,10 @@ try {
       assert.match(await editor.innerText(), /Keep this mobile draft/);
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
       await page.getByRole('button', { name: 'Close Agent', exact: true }).tap();
-      await page.evaluate(() => { document.documentElement.dataset.touchNewera = 'off'; });
+      await page.evaluate(() => { document.documentElement.dataset.uiDensity='compact'; });
       await page.locator('.browser-panel__toolbar').waitFor();
       assert.equal(await dock.count(), 0);
-      await page.evaluate(() => { document.documentElement.dataset.touchNewera = 'on'; });
+      await page.evaluate(() => { document.documentElement.dataset.uiDensity='touch'; });
       await dock.waitFor();
       await page.setViewportSize({ width: 1280, height: 844 });
       await page.locator('.browser-panel__toolbar').waitFor();

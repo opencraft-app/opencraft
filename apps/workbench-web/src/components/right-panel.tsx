@@ -42,7 +42,7 @@ import { useAppShellLayoutMotion } from "./app-shell";
 import { useShellPresentation } from "./shell-presentation";
 import { PanelPresentationContext } from "./panel-presentation";
 import { PanelNavigationContext } from "./panel-navigation";
-import { useNeweraBrowserLayout } from "./use-newera-browser-layout";
+import { useTouchBrowserLayout } from "./use-touch-browser-layout";
 import {
   reorderPanelTabPreview,
   resolvePanelTabCommit,
@@ -353,7 +353,7 @@ export function RightPanel({
   const region = "right" as const;
   const regionState = state[region];
   const presentation = useShellPresentation();
-  const newera = useNeweraBrowserLayout();
+  const newera = useTouchBrowserLayout();
   const fullWidth = hostPresentationActive === undefined
     ? presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth
     : state.rightPanelFullWidth;

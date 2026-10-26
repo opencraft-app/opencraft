@@ -205,12 +205,30 @@ export function SegmentedControl({
   appearance = "toolbar",
   className,
 }: SegmentedControlProps) {
+  const focusValue = options.find(option => option.value === value && !option.disabled)?.value
+    ?? options.find(option => !option.disabled)?.value;
   return (
     <div
       className={classes("segmented-control", className)}
       data-appearance={appearance}
       role="radiogroup"
       aria-label={label}
+      onKeyDown={event => {
+        if (disabled || event.altKey || event.ctrlKey || event.metaKey
+          || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+        const group = event.currentTarget;
+        const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button[role="radio"]:not(:disabled)'));
+        const index = buttons.indexOf(group.ownerDocument.activeElement as HTMLButtonElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const rtl = group.ownerDocument.defaultView?.getComputedStyle(group).direction === "rtl";
+        const previous = event.key === "ArrowUp" || event.key === (rtl ? "ArrowRight" : "ArrowLeft");
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+          : (index + (previous ? -1 : 1) + buttons.length) % buttons.length;
+        const target = buttons[next]!;
+        target.focus();
+        onValueChange(target.dataset.value!);
+      }}
     >
       {options.map((option) => (
         <button
@@ -218,6 +236,8 @@ export function SegmentedControl({
           type="button"
           role="radio"
           aria-checked={value === option.value}
+          data-value={option.value}
+          tabIndex={!disabled && focusValue === option.value ? 0 : -1}
           disabled={disabled || option.disabled}
           onClick={() => onValueChange(option.value)}
         >

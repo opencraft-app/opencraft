@@ -28,7 +28,7 @@ try {
       (window as any).setViewport = (height: number, offsetTop = 0) => {
         Object.assign(viewport, { height, offsetTop }); viewport.dispatchEvent(new Event("resize")); viewport.dispatchEvent(new Event("scroll"));
       };
-      document.addEventListener("DOMContentLoaded", () => { document.documentElement.dataset.uiDensity = "touch"; document.documentElement.dataset.touchNewera = "on"; });
+      document.addEventListener("DOMContentLoaded", () => { document.documentElement.dataset.uiDensity = "touch";; });
     }, device);
     const page = await context.newPage(); activePage = page; const errors: string[] = [];
     page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });

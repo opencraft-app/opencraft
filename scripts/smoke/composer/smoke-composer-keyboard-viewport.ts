@@ -21,7 +21,7 @@ await mkdir('.local/composer-keyboard',{recursive:true});await vite.listen();con
 try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'});
  await context.addInitScript(()=>{const v=new EventTarget();Object.assign(v,{width:390,height:844,offsetTop:0,offsetLeft:0,scale:1});Object.defineProperty(window,'visualViewport',{value:v});(window as any).setViewport=(height:number,offsetTop:number,emit=true)=>{Object.assign(v,{height,offsetTop});if(emit){v.dispatchEvent(new Event('resize'));v.dispatchEvent(new Event('scroll'))}}});
- const page=await context.newPage();await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);const editor=page.locator('.opencraft-composer-editor');await editor.waitFor();await page.evaluate(({theme,newera})=>{document.documentElement.dataset.theme=theme;document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera=newera?'on':'off'}, {theme,newera});
+ const page=await context.newPage();await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);const editor=page.locator('.opencraft-composer-editor');await editor.waitFor();await page.evaluate(({theme,newera})=>{document.documentElement.dataset.theme=theme;document.documentElement.dataset.uiDensity=newera?'touch':'compact'}, {theme,newera});
  // Native selection stays owned by the editor while the conversation and visual
  // viewport move independently. This checks DOM geometry, not iOS caret pixels.
  await editor.fill('解决');
