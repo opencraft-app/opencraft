@@ -5,6 +5,43 @@ revocable Web/client/Deferred waits, elapsed-time deadlines and initialization c
 also express environmental constraints abstracted by the independent model;
 they are not an implementation refinement proof or a phone latency guarantee.
 
+## Notification dispatch admission and subscription identity
+
+Each validated notification dispatch captures a finite set of subscription
+registrations before calling transport-wide interceptors or consumers. A
+consumer may synchronously subscribe, unsubscribe, replace another consumer or
+close the connection. New registrations can receive the next native input;
+they cannot inherit or repeatedly visit the dispatch already in progress.
+Removing and re-adding the same function creates a new registration identity.
+A retired unsubscribe handle can only revoke its original identity.
+
+Native same-function subscriptions retain their existing deduplication behavior:
+duplicate handles share one registration and retiring either removes that
+registration. Scoped subscriptions remain independent. All consumers retain
+exception isolation and subscription-local deferred delivery remains at most
+once. A global interceptor retains this original admission cut rather than
+looking up newly registered consumers when its continuation eventually runs.
+
+Connection loss revokes pending delivery immediately, including the interval
+before any successor initialization increments `connectionGeneration`.
+Dispatch and scoped continuations check physical transport revision, open
+status, initialization generation and Client lifetime. A deferred callback
+cannot publish an old native observation through a new subscription or a lost
+connection. This does not replay dropped retired observations or grant remote
+execution authority.
+
+`NotificationFanout` independently models one input, two consumers, two
+registration incarnations each, one physical loss and optional reinitialization.
+The positive model checks admission, retirement, token ownership, conservation,
+at-most-once delivery and conditional finite completion. Eight exact negative
+controls cover live/late admission, retired registrations, physical loss, stale
+unsubscribe, duplicate delivery, dropping and absent fairness. Callback
+termination and eventual invocation of admitted continuations are environmental
+assumptions; recursively generating unbounded new native inputs, preprocessing
+observer reentry, arbitrary callback programs and other observer buses are not
+proved. The actual Client `fanout` chaos suite and raw/Cordis regressions supply
+separate implementation evidence, not a TypeScript refinement proof.
+
 The [finite TLA+ model and verifier](../../../packages/workbench-runtime/spec/README.md)
 cover two Hosts, one shared socket, two connection epochs and one Thread baseline.
 Safety and conditional recurring liveness are checked separately, including
@@ -258,7 +295,8 @@ older buffered start must not overwrite the complete answer or terminal state
 already present in the snapshot. The same notification classification triggers
 the reread and supersedes observations represented by its new canonical cut.
 Non-snapshot presentation observations remain buffered for one release and are
-not discarded with superseded history. Live execution settings and native server
+not discarded with superseded history. This is a Session projection buffer; it
+does not intercept the shared Client notification lane or another consumer. Live execution settings and native server
 requests have independent owners, as described below. That retry phase has an elapsed deadline measured from initial read admission. Its
 local owner settles with TIMEOUT and aborts child waits when the deadline expires,
 even if an in-progress reread ignores cancellation. Joining/continuing also checks
@@ -515,3 +553,69 @@ progress before unrelated work is released. Four deliberate controls must fail
 at the named rule; shrinking preserves that rule and ordinary replay must pass.
 The loopback server is cooperative and enforces exact targets for this fixture;
 these results do not certify every provider or physical phone behavior.
+
+
+## Projection subscription ownership
+
+A Session owns its historical projection, not the shared Client's notification
+delivery schedule. The Client fans out a native observation once; Workbench
+resource owners, catalogs, completion subscribers and other Sessions may observe
+it before this Session's Read finishes. In particular an archived/deleted Thread
+can retire its local Read and unsent controls without waiting for that Read's
+reply. Restoration remains an explicit resource action; a late old Read cannot
+replace current unavailability or a newly restored baseline. A transition from
+unavailable to available schedules current history only for an existing demanded
+binding. Reselecting the same route is not required. Duplicate availability
+observations are idempotent and cannot invalidate that new recovery. A restoration
+ACK updates availability only if its captured resource revision and Client/physical
+generation are still current; a newer native deletion must win.
+
+`AppServerClient.subscribeNotification` accepts an optional client-local
+`intercept` for that subscription only. Its deferred `next` delivers only to the
+original live subscription on the receiving physical generation, at most once.
+Consumer exceptions, including deferred failures, use the existing isolated
+protocol-error channel. They do not prevent another consumer from receiving the
+event or fail an unrelated history request. Cordis forwards this option. It is
+not an RPC option and must never be serialized. Explicit transport-wide
+`interceptNotification` remains available for transport-level policy; a Session
+history buffer does not install one.
+
+The coordinator registers its projection callback through this scoped option.
+Buffer begin/release/discard and the existing snapshot classification still
+control only that callback. Preview, execution settings and native withdrawal
+retain their immediate projection behavior. Other projection observations retain
+ordered release; only canonical snapshot observations are superseded by a quiet
+reread. Hook start/completion and custom ephemeral projections are not silently
+removed with old snapshot events. Release never republishes an event to native
+resource owners or a peer Session.
+
+`ProjectionNotifications.tla` independently models one observation, two Session
+consumers, a held Read, local cancellation, subscription retirement and two
+physical generations. Read replies have no fairness; receiving the current
+native event has weak fairness for progress. Eight configurations check native
+delivery, peer independence, no global replay, projection lease and conservation
+with exact global/peer gate, replay, retired/generation, drop and missing-fairness
+controls. This does not model full payloads, arbitrary load, every reentry or
+TypeScript refinement; existing ownership/cut models remain separate.
+
+The `projection` chaos suite runs actual Workbench/Client and two peer Sessions
+sharing one Client. Input-derived token/order oracles check native delivery,
+resource authority/retirement, per-consumer projection and isolated failures
+before releasing Read replies. A controlled healthy suffix checks remaining
+projection conservation and canonical cuts. The server enforces only fixture
+behavior; these results do not prove physical-phone or provider behavior. Known
+late replies to cancelled RPCs remain separate diagnostics and cannot be counted
+as a deliberate projector failure. Five controls (`global-buffer`, `peer-buffer`,
+`native-replay`, `drop-projection`, `missing-restore-wake`) must fail their exact rule, shrink with that
+rule and replay normally without injection.
+
+
+`ResourceAvailability.tla` separately models one restoration transaction and a
+fixed View demand, native restore/delete ordering, the mutation's captured epoch,
+idempotence and current Read admission. Old Read replies have no fairness. Six
+configurations require current restoration progress or a later native deletion,
+and reject stale ACK resurrection, missing wake, duplicate epochs and fabricated
+Read demand; the final control removes scheduling fairness. Later resource
+recreation and arbitrary demand changes are outside this finite transaction.
+Executable held-ACK, no-View, reentrant restore and full-Web cases substantiate
+the implementation mapping independently of that model.

@@ -7,6 +7,8 @@ import { generateHistoryChaos, parseHistoryTrace, simulateHistoryRecovery } from
 import { generateHydrationChaos, parseHydrationTrace, simulateHydrationRecovery } from "../tests/protocol/fixtures/hydration-recovery-chaos";
 import { generateExecutionChaos, parseExecutionTrace, simulateExecutionRecovery, type ExecutionChaosMutant } from "../tests/protocol/fixtures/execution-recovery-chaos";
 import { generateStopChaos, parseStopTrace, simulateStopRecovery, type StopChaosMutant } from "../tests/protocol/fixtures/stop-recovery-chaos";
+import { generateProjectionChaos, parseProjectionTrace, simulateProjectionNotifications, type ProjectionChaosMutant } from "../tests/protocol/fixtures/projection-notification-chaos";
+import { generateFanoutChaos, parseFanoutTrace, simulateNotificationFanout, type FanoutChaosMutant } from "../tests/protocol/fixtures/notification-fanout-chaos";
 const {values}=parseArgs({options:{seed:{type:"string",default:"20261025"},cases:{type:"string",default:"100"},steps:{type:"string",default:"120"},output:{type:"string"},replay:{type:"string"},mutant:{type:"string"},suite:{type:"string"}}});
 function integer(value:string,name:string,maximum:number) {
   const n=Number(value);if(!Number.isSafeInteger(n) || n<0 || n>maximum) throw Error(`Invalid ${name}: expected an integer in 0..${maximum}`);return n;
@@ -14,18 +16,20 @@ function integer(value:string,name:string,maximum:number) {
 const seed=integer(values.seed!,"seed",0xffffffff),cases=integer(values.cases!,"cases",100_000),steps=integer(values.steps!,"steps",10_000);
 const replay=values.replay?JSON.parse(await readFile(values.replay,"utf8")):null;
 const suite=replay?.suite??values.suite??"host";
-if(!["host","history","hydration","execution","stop"].includes(suite) || (replay?.suite && values.suite && values.suite!==replay.suite))throw Error("Invalid or conflicting chaos suite");
-if(values.mutant && !(suite==="stop"?["history-gated-stop","prompt-gated-stop","retarget-stop","replay-stop"]:suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:suite==="execution"?["buffer-native","buffer-settings","wrong-native-answer","wrong-response-id","history-gated-response"]:["sticky-read","coupled-activation","early-dispatch","delta-only"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
+if(!["host","history","hydration","execution","stop","projection","fanout"].includes(suite) || (replay?.suite && values.suite && values.suite!==replay.suite))throw Error("Invalid or conflicting chaos suite");
+if(values.mutant && !(suite==="fanout"?["live-admission","stale-token","lost-continuation"]:suite==="projection"?["global-buffer","peer-buffer","native-replay","drop-projection","missing-restore-wake"]:suite==="stop"?["history-gated-stop","prompt-gated-stop","retarget-stop","replay-stop"]:suite==="host"?["sticky-initialize","replay-mutation","wall-clock-budget"]:suite==="history"?["lost-admission"]:suite==="execution"?["buffer-native","buffer-settings","wrong-native-answer","wrong-response-id","history-gated-response"]:["sticky-read","coupled-activation","early-dispatch","delta-only"]).includes(values.mutant))throw Error("Unknown negative control for this suite");
 const hostOptions=values.mutant?{mutant:values.mutant as "sticky-initialize" | "replay-mutation" | "wall-clock-budget"}:{};
 const hydrationOptions=values.mutant?{mutant:values.mutant as "sticky-read" | "coupled-activation" | "early-dispatch" | "delta-only"}:{};
 const executionOptions=values.mutant?{mutant:values.mutant as ExecutionChaosMutant}:{};
 const stopOptions=values.mutant?{mutant:values.mutant as StopChaosMutant}:{};
+const projectionOptions=values.mutant?{mutant:values.mutant as ProjectionChaosMutant}:{};
+const fanoutOptions=values.mutant?{mutant:values.mutant as FanoutChaosMutant}:{};
 const historyOptions=values.mutant?{mutant:"lost-admission" as const}:{};
 const output=path.resolve(values.output??path.join(process.env.TMPDIR??"/tmp",`opencraft-recovery-chaos-${process.pid}`));
 await mkdir(output,{recursive:true});
-const started=Date.now(),coverage:Record<string,number>={};let events=0,wires=0,ready=0,historyRuns=0,historyCompleted=0,nativeReplies=0,stopIntents=0;
+const started=Date.now(),coverage:Record<string,number>={};let events=0,wires=0,ready=0,historyRuns=0,historyCompleted=0,nativeReplies=0,stopIntents=0,nativeEvents=0,requestedReads=0,notificationDeliveries=0;
 const sourcePaths=["scripts/recovery-chaos.ts", "tests/protocol/fixtures/recovery-chaos.ts", "packages/workbench-runtime/src/recovery-clock.ts", "packages/appserver-client/src/clock.ts",
-  ...(suite==="stop"?["tests/protocol/fixtures/stop-control.ts","tests/protocol/fixtures/stop-recovery-chaos.ts","tests/protocol/fixtures/execution-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/connection-lifecycle.ts","packages/appserver-client/src/client.ts","packages/composer-appserver/src/command-port.ts","packages/composer-appserver/src/interaction-broker.ts","packages/chat-runtime/src/ports.ts","packages/chat-runtime/src/replica-conversation-runtime.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/notification-buffer.ts"]:suite==="execution"?["tests/protocol/fixtures/execution-recovery-chaos.ts","tests/protocol/fixtures/execution-channels.ts","packages/appserver-client/src/client.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/view-store.ts","packages/composer-appserver/src/interaction-broker.ts","packages/composer-appserver/src/interaction-ledger.ts"]:suite==="hydration"?["tests/protocol/fixtures/hydration-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/recovery-policy.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/history-strategies.ts","packages/appserver-session/src/projectors.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/replica-adapter.ts","packages/composer-appserver/src/command-port.ts","packages/chat-runtime/src/replica-conversation-runtime.ts","packages/appserver-client/src/client.ts"]:suite==="history"?["tests/protocol/fixtures/history-recovery-chaos.ts","packages/workbench-runtime/src/recovery-policy.ts"]:
+  ...(suite==="fanout"?["package-lock.json","tests/protocol/fixtures/notification-fanout-chaos.ts","tests/protocol/fixtures/execution-channels.ts","packages/appserver-client/src/client.ts","packages/appserver-transport-memory/src/index.ts","packages/appserver-transport-memory/src/memory-transport.ts"]:suite==="projection"?["tests/protocol/fixtures/projection-notification-chaos.ts","tests/protocol/fixtures/execution-channels.ts","tests/protocol/fixtures/execution-recovery-chaos.ts","packages/appserver-client/src/client.ts","packages/appserver-client/src/cordis-service.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/cordis-runtime.ts","packages/appserver-session/src/view-store.ts","packages/appserver-session/src/projectors.ts","packages/workbench-runtime/src/appserver-runtime.ts"]:suite==="stop"?["tests/protocol/fixtures/stop-control.ts","tests/protocol/fixtures/stop-recovery-chaos.ts","tests/protocol/fixtures/execution-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/connection-lifecycle.ts","packages/appserver-client/src/client.ts","packages/composer-appserver/src/command-port.ts","packages/composer-appserver/src/interaction-broker.ts","packages/chat-runtime/src/ports.ts","packages/chat-runtime/src/replica-conversation-runtime.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/notification-buffer.ts"]:suite==="execution"?["tests/protocol/fixtures/execution-recovery-chaos.ts","tests/protocol/fixtures/execution-channels.ts","packages/appserver-client/src/client.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/view-store.ts","packages/composer-appserver/src/interaction-broker.ts","packages/composer-appserver/src/interaction-ledger.ts"]:suite==="hydration"?["tests/protocol/fixtures/hydration-recovery-chaos.ts","packages/workbench-runtime/src/appserver-runtime.ts","packages/workbench-runtime/src/recovery-policy.ts","packages/appserver-session/src/resume-coordinator.ts","packages/appserver-session/src/history-strategies.ts","packages/appserver-session/src/projectors.ts","packages/appserver-session/src/notification-buffer.ts","packages/appserver-session/src/replica-adapter.ts","packages/composer-appserver/src/command-port.ts","packages/chat-runtime/src/replica-conversation-runtime.ts","packages/appserver-client/src/client.ts"]:suite==="history"?["tests/protocol/fixtures/history-recovery-chaos.ts","packages/workbench-runtime/src/recovery-policy.ts"]:
     ["packages/appserver-client/src/client.ts","packages/appserver-client/src/transport.ts","packages/workbench-runtime/src/connection-lifecycle.ts"])];
 const sourceSha256=Object.fromEntries(await Promise.all(sourcePaths.map(async file=>[file,
   createHash("sha256").update(await readFile(new URL(`../${file}`,import.meta.url))).digest("hex")])));
@@ -33,11 +37,11 @@ const provenance={runtime:{node:process.versions.node,platform:process.platform,
 const replaySeed=replay?.seed===undefined?seed:integer(String(replay.seed),"replay seed",0xffffffff);
 const count=replay?1:cases;
 if(count===0)throw Error("At least one case is required");
-interface Result {events:number;coverage:Record<string,number>;wires?:number;ready?:number;historyRuns?:number;historyCompleted?:number;nativeReplies?:number;stopIntents?:number}
+interface Result {events:number;coverage:Record<string,number>;wires?:number;ready?:number;historyRuns?:number;historyCompleted?:number;nativeReplies?:number;stopIntents?:number;nativeEvents?:number;requestedReads?:number;notificationDeliveries?:number}
 async function execute<T>(trace:readonly T[],caseSeed:number,run:(events:readonly T[])=>Promise<Result>) {
   try {
     const result=await run(trace);events+=result.events;wires+=result.wires??0;ready+=result.ready??0;
-    historyRuns+=result.historyRuns??0;historyCompleted+=result.historyCompleted??0;nativeReplies+=result.nativeReplies??0;stopIntents+=result.stopIntents??0;
+    historyRuns+=result.historyRuns??0;historyCompleted+=result.historyCompleted??0;nativeReplies+=result.nativeReplies??0;stopIntents+=result.stopIntents??0;nativeEvents+=result.nativeEvents??0;requestedReads+=result.requestedReads??0;notificationDeliveries+=result.notificationDeliveries??0;
     for(const [key,value] of Object.entries(result.coverage))coverage[key]=(coverage[key]??0)+value;
     return true;
   }catch(error) {
@@ -53,7 +57,11 @@ async function execute<T>(trace:readonly T[],caseSeed:number,run:(events:readonl
 }
 for(let i=0;i<count;i++) {
   const caseSeed=replay?replaySeed:(seed+i)>>>0;
-  const passed=suite==="stop"
+  const passed=suite==="fanout"
+    ?await execute(replay?parseFanoutTrace(replay.events??replay):generateFanoutChaos(caseSeed,steps),caseSeed,trace=>simulateNotificationFanout(trace,fanoutOptions))
+    :suite==="projection"
+    ?await execute(replay?parseProjectionTrace(replay.events??replay):generateProjectionChaos(caseSeed,steps),caseSeed,trace=>simulateProjectionNotifications(trace,projectionOptions))
+    :suite==="stop"
     ?await execute(replay?parseStopTrace(replay.events??replay):generateStopChaos(caseSeed,steps),caseSeed,trace=>simulateStopRecovery(trace,stopOptions))
     :suite==="execution"
     ?await execute(replay?parseExecutionTrace(replay.events??replay):generateExecutionChaos(caseSeed,steps),caseSeed,trace=>simulateExecutionRecovery(trace,executionOptions))
@@ -66,6 +74,6 @@ for(let i=0;i<count;i++) {
 }
 if(!process.exitCode) {
   const result={schema:1,...provenance,passed:true,seed:replay?replaySeed:seed,cases:count,events,
-    ...(suite==="stop"?{historyRuns,stopIntents,wires}:suite==="execution"?{historyRuns,nativeReplies}:suite!=="host"?{historyRuns,historyCompleted}:{wires,ready}),coverage,elapsedMs:Date.now()-started};
+    ...(suite==="fanout"?{nativeEvents,notificationDeliveries}:suite==="projection"?{historyRuns,requestedReads,nativeEvents}:suite==="stop"?{historyRuns,stopIntents,wires}:suite==="execution"?{historyRuns,nativeReplies}:suite!=="host"?{historyRuns,historyCompleted}:{wires,ready}),coverage,elapsedMs:Date.now()-started};
   await writeFile(path.join(output,"results.json"),JSON.stringify(result,null,2)+"\n");console.log(JSON.stringify({...result,output}));
 }

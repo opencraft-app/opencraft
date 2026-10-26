@@ -750,6 +750,14 @@ export async function createWorkbenchWebServer({
       admissionStatus = local ? 204 : authService?.invalidSession(request) ? 401 : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204;
       submissionContext = local ? { sender: null } : identityService ? identityService.connectionContext(request) : { sender: null };
       principal = local ? null : accessService?.authenticate(request);
+      if (principal && submissionContext) {
+        const claimed = submissionContext.executionPrincipal;
+        if (claimed && (claimed.provider !== principal.provider || claimed.subject !== principal.subject)) throw new Error("Conflicting execution principal");
+        submissionContext = { ...submissionContext,
+          executionPrincipal: { provider: principal.provider, subject: principal.subject,
+            ...(submissionContext.sender ? { loginName: submissionContext.sender.loginName } : {}) },
+          validUntil: Math.min(submissionContext.validUntil ?? Infinity, principal.expiresAt) };
+      }
       if (submissionContext !== null && (typeof submissionContext !== 'object'
         || (submissionContext.validUntil !== undefined && !Number.isFinite(submissionContext.validUntil)))) throw new Error("Invalid connection identity context");
     } catch {

@@ -637,3 +637,36 @@ leases still expire on disconnect and cannot authorize replay of unknown effects
 See [server updates](web-deployment.md#独立-pi-执行-host) for configuration and the
 one-time migration. Updating the execution Host itself is separate from ordinary
 website/gateway/entry updates.
+
+
+## Immutable execution identity
+
+Trusted ingress carries `executionPrincipal` separately from the displayed message sender.
+The provider subject is the identity key; login labels are audit data. Host SQLite v15
+preserves the original submission before queue admission, and records a Turn execution
+lease before sending a native start. Queue edits, dequeue operators and steer messages
+do not replace that identity. A steer records its own author without changing the Turn.
+Finished executions cannot lend their identity to later Turns; internal schedules, goals
+and anonymous starts have no employee authority. Historical queue records without a
+principal remain unknown instead of borrowing one from chat history.
+
+`ExecutionLeaseReader` borrows a read-only Host connection. Exact execution ID plus
+optional generation can query a lease; thread ID alone is insufficient. The job-origin
+port additionally requires a trusted native incarnation and tool-root process birth time
+with an uncertainty interval. The complete interval must fit exactly one execution;
+boundaries, overlaps and unknown delivery return unknown. Closed executions return
+expired. Only a known active execution without a human principal returns unowned.
+The caller owns native-process attestation and readiness/reconciliation after a lost
+connection. These APIs do not provide isolation against hostile processes sharing a UID.
+
+Queue ingress into an independent engine remains pending until its native receipt
+confirms a queue creation at or after the trusted capture. An older duplicate
+receipt cannot backfill a historical principal from its present operator. Replayed
+accepted input IDs reuse the original execution interval.
+
+A persisted active row is a last observation. `LiveExecutionLeaseReader` additionally
+requires a bounded native Turn read before personal credential admission, then
+rechecks the original execution after the asynchronous read. Missed completion
+returns expired; read failures return unknown. The native probes use only a
+latest-Turn history read, never resume or subscribe, and ignore unsolicited native
+interaction requests without responding to them.

@@ -18,6 +18,8 @@ export function executionChannelsFixture(schedule?: (run: () => void) => void) {
     } else if (request.method === "thread/resume") {
       activations++; const result = { thread: thread(), model, modelProvider: "fixture", cwd: "/workspace", runtimeWorkspaceRoots: [], approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: {}, streamRole: { role: "owner" } };
       if (hold) held.push(() => send(result)); else send(result);
+    } else if (request.method === "thread/unarchive") {
+      const result = { thread: thread() }; if (hold) held.push(() => send(result)); else send(result);
     } else send(request.method.endsWith("/list") ? { data: [], nextCursor: null } : {});
   } } });
   const emit = (method: string, params: unknown) => peer.send(encodeJsonRpcMessage({ method, params }));
