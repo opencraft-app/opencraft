@@ -20,7 +20,8 @@
     "@opencraft/ui-preferences": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
-    "@opencraft/plugin-local-account": "0.1.0"
+    "@opencraft/plugin-local-account": "0.1.0",
+    "ws": "^8.18.3"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && node build-host.mjs",
@@ -123,7 +124,7 @@
         "NSSpeechRecognitionUsageDescription": "将语音转换为输入文字；系统不支持端侧识别时可能使用 Apple 语音服务。"
       },
       "category": "public.app-category.developer-tools",
-      "icon": "../workbench-expo/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png",
+      "icon": "assets/icon.png",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "target": [
@@ -133,7 +134,7 @@
     },
     "linux": {
       "category": "Development",
-      "icon": "../workbench-expo/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png",
+      "icon": "assets/icon.png",
       "executableName": "opencraft",
       "maintainer": "OpenCraft <maintainers@opencraft.app>",
       "vendor": "OpenCraft",

@@ -27,6 +27,12 @@ does not imply that private plugin directories or all client dependencies moved.
 
 `opencraft.account` 是随包编译的第一方服务端插件（`@opencraft/plugin-local-account/server`）。每个部署的数据目录独立保存账号和密码摘要，不依赖官方账号中心或联网账号服务；不同部署的同名账号不是同一身份，浏览器登录态也不能跨部署复用。
 
+账号、初始化与邀请页面在 Workbench 启动前由该插件独立呈现，消费
+`@opencraft/design-system/document.web` 的主题编译器、字体角色和表单控件，
+不加载聊天运行时或账号数据快照。Settings 入口传递当前界面语言；直接访问
+使用请求语言，由页面作用域的 IntlRuntime 格式化现有英文与中文文案。
+成员与连接操作在原控件内反馈，错误在独立通知层呈现，不挤动表单或清除草稿。
+
 插件拥有用户名规范、密码策略、scrypt 验证及改密/禁用的凭据版本证明。核心通过窄存储端口保留既有 `human-logins.sqlite` v1 表与 checksum，继续拥有浏览器登录态、自然人绑定和授权；核心不导入插件。已有账号、密码、local subject、绑定及权限无需迁移或重新注册。
 
 配置 `local: true` 由服务器启用随包插件；`false` 禁用本地登录并撤销原本地浏览器登录态，OIDC 登录与 Actor 权限独立。普通服务重启保留有效登录态。插件缺失或停用不能关闭成员准入，未完成的密码验证/创建在插件释放后不会写入或签发登录态。服务端激活的 disposer 只退休自身代次并撤销本地登录，不改变其他身份或权限。
@@ -53,7 +59,22 @@ node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {rand
 
 标准桌面首次运行由可信 Main 自动建立本机 Human，不要求注册密码。Main 在私有 loopback 会话中设置 HttpOnly 本机证明和核心登录 cookie；Daemon 校验 Main 传入的核心会话，拒绝 renderer 自报 Human ID。账号管理仍由插件提供；绑定本地密码后，该登录方式属于同一 Human。原始桌面 owner 保留既有客户端草稿命名空间；其他账号的缓存使用 authority + Human 分区。撤权或会话失效会退休原连接。客户端只持久化服务器账号能力的authority标记，不缓存已登录Actor或本机证明；离线首次启动不阻断Shell，但未经确认的身份使用独立空作用域，不展示上次Human的私有副本。联网后重新验证再恢复其缓存。
 
-桌面账号页的“连接其他服务器”打开独立会话窗口；启动参数 `--server-url=https://workbench.example.com` 则直接进入远端薄客户端，不启动本机 Daemon。每个 Server origin 使用独立浏览器 partition，远端页面没有本机 preload/IPC 权限。目标服务器验证自己的 Human 和成员；不会按名字自动合并本机与远端身份。地址须为 HTTPS origin，回环调试可用 HTTP。
+桌面欢迎页的“连接已有服务器”在当前 Workbench 添加远端连接。Main 使用每个 origin
+独立的浏览器 partition，验证 `/appserver` 执行准入，需要登录时显示临时认证窗口。
+目标服务器及其身份插件拥有身份与资源授权；桌面不要求某种登录方式、Actor 发现接口或
+企业插件私有会话接口。本机 Human 不授予远端权限，也不按同名合并身份。
+Main 将当前登录凭据快照绑定到随机的客户端作用域，该标识不声称是 Human 或持久身份。
+本地 Renderer 仅保存 origin 与作用域标识，不接收密码或 Cookie；
+`opencraft.desktop-server` provider 通过 Main 转发标准 AppServer 协议。
+初始化握手通过后才保存 Host 并在当前窗口进入远端新草稿，原草稿保留。
+取消或离开欢迎页会终止登录与预检；晚到的结果不能保存或导航。
+认证窗口验证后关闭，不在其中继续加载远端 Workbench。应用重新启动或 Renderer 重建时，
+从当前浏览器会话重新验证并创建新作用域，不恢复旧作用域的私有缓存或目录根。
+短暂断线通过原有连接恢复策略重试，继续使用同一凭据快照，不跟随浏览器 Cookie 切换账号。
+授权拒绝会退休原作用域及其投影；重新配置须重新验证。
+403、HTML 和执行服务错误均不能作为准入。原生 owner 释放时清除凭据快照与连接。
+
+旧桌面账号页的“连接其他服务器”仍打开独立会话窗口；启动参数 `--server-url=https://workbench.example.com` 则直接进入远端薄客户端，不启动本机 Daemon。每个 Server origin 使用独立浏览器 partition，远端页面没有本机 preload/IPC 权限。目标服务器验证自己的 Human 和成员；不会按名字自动合并本机与远端身份。地址须为 HTTPS origin，回环调试可用 HTTP。
 
 远程多人 WebUI 使用标准 Headless 启动入口和上述 `/setup`，与桌面入口共用插件和核心契约。本次不增加桌面里启停公网 WebUI 的按钮；也不启动另一份进程冒充同一个执行 Host。执行进程、系统用户与容器隔离暂不实施。
 

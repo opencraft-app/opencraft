@@ -7,6 +7,7 @@ import type { Principal } from '@opencraft/identity-core';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import { accountPage } from './page.js';
 import { remoteServerOrigin } from './connections.js';
+import { serverDocumentStyles } from '@opencraft/design-system/document.web';
 
 export const ACCOUNT_BASE = '/__opencraft_account';
 const checksum = (text: string) => createHash('sha256').update(text).digest();
@@ -62,6 +63,10 @@ export class LocalAccountApplication {
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const url = new URL(request.url ?? '/', this.origin), path = url.pathname;
     if (path !== '/setup' && path !== ACCOUNT_BASE && !path.startsWith(ACCOUNT_BASE + '/')) return false;
+    if (request.method === 'GET' && path === ACCOUNT_BASE + '/styles.css') {
+      response.writeHead(200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' });
+      response.end(serverDocumentStyles); return true;
+    }
     const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
       'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
     try {
@@ -74,8 +79,9 @@ export class LocalAccountApplication {
         }
         const nonce = randomBytes(24).toString('base64url');
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'referrer-policy': 'no-referrer',
-          'x-content-type-options': 'nosniff', 'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'` });
-        response.end(accountPage({ nonce, native, setup: path === '/setup' })); return true;
+          'x-content-type-options': 'nosniff', 'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'` });
+        response.end(await accountPage({ nonce, native, setup: path === '/setup',
+          locale: url.searchParams.get('locale') ?? request.headers['accept-language']?.split(',')[0]?.split(';')[0] })); return true;
       }
       if (request.method === 'GET' && path === ACCOUNT_BASE + '/status') {
         const login = this.options.auth.currentLogin(request), setup = this.options.management.status();

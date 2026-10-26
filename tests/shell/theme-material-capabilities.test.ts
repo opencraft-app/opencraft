@@ -8,6 +8,26 @@ import { buildOpenCraftThemeCssProperties as build, opencraftNeutralThemePalette
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
 import { isWindowAppearanceMessage, resolveWindowAppearance } from "../../apps/workbench-electron/src/window-appearance";
 
+test("secondary button labels remain readable on both neutral theme surfaces", () => {
+  const rgb = (value: string) => value.startsWith('#')
+    ? [1, 3, 5].map(start => Number.parseInt(value.slice(start, start + 2), 16))
+    : value.match(/[\d.]+/g)!.map(Number);
+  const luminance = (color: number[]) => color.slice(0, 3).map(channel => {
+    const value = channel / 255;
+    return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+  }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0);
+  for (const mode of ['light', 'dark'] as const) {
+    const properties = build(mode);
+    const surface = rgb(properties['--color-background-surface']!);
+    const fill = rgb(properties['--color-background-button-secondary']!);
+    const alpha = fill[3] ?? 1;
+    const background = fill.slice(0, 3).map((channel, index) => channel * alpha + surface[index]! * (1 - alpha));
+    const foreground = rgb(properties['--color-text-button-secondary']!);
+    const values = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+    assert((values[1]! + .05) / (values[0]! + .05) >= 4.5, `${mode}: secondary button contrast`);
+  }
+});
+
 test("optional theme surfaces override only named semantic roles and reset to defaults", () => {
   for (const mode of ["light", "dark"] as const) {
     const base = opencraftNeutralThemePalette[mode];
