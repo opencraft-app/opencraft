@@ -22,6 +22,19 @@ existing ownership even when no restore target is pending. Web executes the
 unchanged synchronous/pending commit paths; Native retains measurement leases
 and frame scheduling. Neither platform adds another compensation policy.
 
+### Scroll state and geometry reads
+
+The scroll controller owns confirmed distance and animation state. State-only
+controls use `getState` and `subscribeState`; rendering or subscribing a bottom
+button must not sample DOM geometry. Measured snapshots remain available to
+geometry consumers, and platform scroll events and imperative commands still
+reconcile the physical, possibly clamped distance before publishing state.
+
+Footer padding is established on the first measurable height without reading
+post-write scroll geometry for compensation. Only subsequent eligible resizes
+measure and compensate; parked routes, active animations and explicit preserve
+suppression retain their existing rules.
+
 ### Initial history and display reuse
 
 Durable paginated providers that explicitly advertise initial-page support may
@@ -431,3 +444,73 @@ event to enter the checkpoint. Hidden geometry retains the previous distance.
 Scroll events from a detached port cannot overwrite the
 retained distance before listener cleanup. Response placement retains its own
 restore position.
+
+### Cancelling a retired baseline
+
+A logical Host reconnect can reuse the initialized client and physical socket.
+Binding hydration and Session read/resume must release their local single-flight
+slots on revocation, rather than await an old response or its deadline. Each
+operation checks its own identity before publishing data, errors, previews or
+notification-buffer cleanup. The scheduler's run signal reaches all initial
+history RPCs and strategies; an uncooperative strategy cannot retain local
+admission or later replace the new baseline. Cached transcript paint and drafts
+survive this handoff, while authoritative presentation waits for the new cut.
+A new baseline also retires old background/pagination context identities so an
+old same-generation reader cannot append after replacement. Cancellation is
+local ownership revocation, not a claim that remote execution stopped.
+
+
+Derived older-page, refresh and tail-drain requests own cancellable local waits.
+A new baseline, needs-resume transition, release or disposal settles those waits
+without waiting for a provider that ignores cancellation. Cancellation retains
+cached paint and clears the older-page loading indicator when its source is still
+current. Older/refresh requests share their initiating owner; a joining signal
+cancels only that caller's wait. Refresh cancellation returns false; older-page
+cancellation rejects with ABORTED. A queued independent intent waits for a previous
+operation to settle, including failure/cancellation, rather than inheriting its
+outcome. Their projection code loads on demand after admission and checks ownership
+again after module loading, so it is outside the mandatory startup graph.
+
+
+Canonical rereads after overlapping snapshot notifications (including non-delta
+item/turn lifecycle and Thread status) have a local elapsed deadline from
+the initial read start. Expiry settles the caller with a retryable TIMEOUT before
+any held old reply arrives, then revokes children and fences their late data.
+A new request checks expiry before joining, including before queued timer delivery;
+synchronous abort observers may already have admitted its successor. Initial quiet
+pagination keeps its per-RPC allowance, and explicit zero disables the configured
+deadline. Wall-clock corrections affect diagnostic timestamps, not these budgets.
+
+
+Pending View acquisition reserves residency demand before asynchronous binding
+publication. A queue/view observer cannot evict that binding before its lease is
+admitted, including with zero inactive-cache allowance. Optional older-history
+reads do not count as execution commands. The last retained View and observer
+leaving retires derived read waits while preserving the cached baseline, history
+source, execution work and healthy Host. A pending replacement acquisition or peer
+View/observer keeps a shared read alive. Local ABORTED retirement does not become
+a cached history error; genuine read failures retain their existing error behavior.
+A released lease cannot start another optional read. This is local cancellation,
+not remote execution cancellation or an automatic write retry.
+
+### Mounted content and virtual height
+
+In natural scrolling, the Web virtualizer's measured total is a minimum height for its spacer, including
+unmounted history. Mounted rows retain their natural block size: a renderer can
+grow while its row measurement is queued, so stale measurements must never let
+that content overflow the spacer and overlap the sticky Composer. Both the
+latest-row fast path and React project the same minimum; the viewport owner
+continues to own measurement transactions and reading-position compensation.
+Response-placement policy retains its explicitly measured height because its
+response spacer and follow transaction own the position during streaming.
+
+
+### Native questions while history is unavailable
+
+A received question/approval and its Host withdrawal remain live while history is
+loading, retrying or cancelled. The Workbench binding projects current interactions
+through nonauthoritative paint without replacing retained history or advancing its
+cursor. Replying uses the original native request context; it does not require
+reloading historical messages. A native withdrawal removes only its own prompt.
+New input remains subject to current history/execution admission. See the
+[native-channel contract](../platform/connection-recovery-contract.md#native-execution-channels-during-history-recovery).

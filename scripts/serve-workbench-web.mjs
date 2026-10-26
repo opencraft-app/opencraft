@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
+import { serveNotModified } from "./web-asset-cache.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
@@ -360,6 +361,7 @@ async function serveFile(request, response, path, pathname) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
+  if (serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;
@@ -395,6 +397,7 @@ export async function createWorkbenchWebServer({
   actorCollaborationService = null,
   turnPushService = null,
   authService = null,
+  accountService = null,
   observability = null,
   mcpAppsService = null,
   getImService = () => null,
@@ -470,6 +473,10 @@ export async function createWorkbenchWebServer({
       const local = !!localAccess?.origin(request);
       if (!local && !["/health", "/__opencraft_health"].includes(url.pathname)) await accessService?.prepare?.(request);
       // Login/callback endpoints must remain reachable before instance admission.
+      if (url.pathname === '/setup' || url.pathname === '/__opencraft_account' || url.pathname.startsWith('/__opencraft_account/')) {
+        if (accountService && await accountService.handle(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
       if (url.pathname === '/__opencraft_auth' || url.pathname.startsWith('/__opencraft_auth/')) {
         if (authService && await authService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;

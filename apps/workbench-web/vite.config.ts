@@ -4,6 +4,7 @@ import { browserTargets } from "../../config/browser-compatibility.mjs";
 import { browserCompatibility } from "./browser-compatibility.vite";
 import { workspaceDependencies } from "./workspace-dependencies.vite";
 import { startupResources } from "./startup-resources.vite";
+import { startupResourceHints } from "./startup-resource-hints.vite";
 import type { StartupResourcePolicy } from "./startup-resource-policy.vite";
 import { optionalWebAssets } from "./optional-web-assets";
 import { productPublicAssets } from "./product-public-assets.mjs";
@@ -373,6 +374,7 @@ export function createWorkbenchWebConfig(
       releaseMetadata(webRelease),
       productPublicAssets(workspaceRoot, process.env.OPENCRAFT_PRODUCT_PUBLIC_DIR),
       ...(!isElectronRenderer ? [startupResources(features.startupResourcePolicy)] : []),
+      ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [startupResourceHints(features.startupResourcePolicy)] : []),
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild ? [optionalWebAssets()] : []),
       ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
       ...(embeddedWorkbenchEntryPath ? [embeddedWorkbenchDevEntry(embeddedWorkbenchEntryPath)] : []),

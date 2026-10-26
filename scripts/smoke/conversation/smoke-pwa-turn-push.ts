@@ -42,6 +42,17 @@ try{
   await page.waitForFunction(()=>(window as any).__turnNotificationFixture.notificationSettings().delivery==='background');
   assert.equal(await toggle.count(),1);await toggle.click();await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='false');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.goto(origin+'/?push=1&denied=1');
+  await page.waitForFunction(()=>!!(window as any).__turnNotificationFixture && !(window as any).__turnNotificationFixture.notificationSettings().busy);
+  assert.equal(await toggle.isEnabled(),true,'blocked permission must offer feedback and permit recovery');
+  await toggle.click();
+  await page.getByText('尚未获得通知权限，你可以稍后重新开启。').waitFor();
+  assert.equal(await toggle.getAttribute('aria-checked'),'false');
+  await page.evaluate(()=>(window as any).__turnNotificationFixture.permission('granted'));
+  await toggle.click();
+  await page.waitForFunction(()=>document.querySelector('[aria-label="轮次结束提醒"]')?.getAttribute('aria-checked')==='true');
+  await page.screenshot({path:join(artifacts,`${width}-${scheme}-permission-recovered.png`),fullPage:true});
+  await toggle.click();
   assert.deepEqual(errors,[]);await context.close();
  }
  const ordinary=await browser.newContext();const ordinaryPage=await ordinary.newPage();await ordinaryPage.addInitScript('window.__name=value=>value');await ordinaryPage.goto(origin);await ordinaryPage.getByRole('switch',{name:'轮次结束提醒',exact:true}).waitFor();assert.equal(await ordinaryPage.getByRole('switch',{name:'后台轮次通知',exact:true}).count(),0);assert.equal(await ordinaryPage.getByRole('switch',{name:'轮次结束提醒',exact:true}).count(),1);await ordinary.close();

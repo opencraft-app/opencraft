@@ -28,16 +28,17 @@ Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
 Requested standalone/fullscreen browser overlay documents keep html/body and the
-main Shell in document flow. The existing Web viewport owner sizes the canvas
-from the positive minimum of observed `innerHeight` and unzoomed VisualViewport
-height, retaining the last unzoomed extent during pinch. A requested overlay
-is not proof of native acceptance; status-excluded `clientHeight` is not the
-visible canvas bound.
+main Shell in document flow. At rest, CSS `100vh` owns the complete canvas;
+status-excluded `innerHeight`, `clientHeight` or VisualViewport reports must not
+replace that resting extent. The existing viewport owner signals actual geometric
+contraction separately from keyboard focus; only the contracted Shell uses its
+available height. Pinch alone does not contract the canvas, and blur does not end
+an observed contraction. No second measured-canvas variable is introduced.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
-document roots or main Shell: a full CSS rectangle can still be clipped by the
-native fixed viewport. SafeLayout allocates the main content bottom once; independent
-drawer action surfaces keep their own allocation. Do not add a CSS/client metric
-difference as padding; size document and foreground from measured visibility.
+document roots or main Shell. SafeLayout allocates the main content bottom once;
+independent drawer action surfaces keep their own allocation. Do not add a
+CSS/client metric difference as padding or subtract a status strip from the full
+canvas. Native overlay acceptance and physical pixels still require device evidence.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for
@@ -56,14 +57,26 @@ by the row's allocated top inset. That exact CSS inset is added to the transcrip
 initial content padding (and the new-task layout's top reserve), not subtracted
 from the scrollport. At scroll start the first content remains clear of system
 and app controls; on scroll, the same mounted text can pass behind the status
-area. The existing Shell top fade becomes a masked theme veil/backdrop blur over
-this full area and accepts no input. The header hit targets retain their original
+area. Touch conversation chrome has no full-width Shell veil or backdrop-blur
+overlay above this reading plane. The header hit targets retain their original
 safe position. Adjacent preview tools retain that safe origin and the original
 remaining height; only the reading plane extends under the edge. No scroll
 threshold, duplicate transcript, screen arithmetic,
 viewport owner or resize/scroll observer is introduced. Settings, other routes,
 Sidecar and native desktop keep their existing allocations. Device status-bar
 compositing still requires physical acceptance.
+
+For existing touch conversations, reading also extends through the row's allocated
+bottom inset. The main surface and reading viewport bleed by that exact CSS
+allocation, while `main-content-body` retains its protected rectangle as the single
+Composer overlay anchor. Its children may paint beyond that rectangle only within
+the full-bleed main surface's clip. Preview tools and body-level browser Composer
+portals retain the same protected geometry. The inline footer places the same
+allocated space inside the expanded scrollport, preserving the Composer's original
+bottom position while transcript paint can continue beneath it. This is not a
+second device-inset lookup or a canvas/client metric tail. New-thread and ordinary
+routes retain their protected frame; keyboard projection still owns when the
+allocation becomes zero. Test full scrollport paint as well as Composer placement.
 
 ### Shared safe layout container
 
@@ -82,7 +95,9 @@ container. The fixed header consumes the same host top source. Electron keeps it
 native window control reservations. Bounded diagnostics report the top-allocation
 flag separately from resolved padding. The drawer frame owns top/left; its native
 scrollport paints to the bottom edge, with end padding that lets the final row
-scroll above the floating actions and device inset. Only the floating action
+scroll above the floating actions and device inset. Intermediate rows may scroll
+behind those actions; their transparent hosts must not reserve an external margin
+or a full-width bottom plate. Only the floating action
 hosts allocate the bottom safe edge; moving that inset back to the whole drawer
 would hard-clip the scrolling list above the physical bottom. The existing 16px
 action clearance is retained in the hosts' minimum reserve, not duplicated by
@@ -94,6 +109,18 @@ zero while the software keyboard occupies the bottom edge. Drawer action surface
 remain independent; full-screen modal surfaces allocate their own edges. Document geometry and
 physical host drawing acceptance are separate: this primitive cannot promise
 that an opaque system status strip becomes part of the document viewport.
+
+In portrait Apple standalone browsers with Safari 27-era `:heading` support,
+Shell adds 24 CSS pixels of content clearance below the device top inset. The
+existing window-presentation projection identifies standalone mode, including
+Apple's navigator flag; touch-callout and heading support bound the CSS adapter.
+These capabilities are a compatibility proxy, not an exact iOS version. The
+row, floating drawer, header and transcript's initial content consume the same
+top allocation. Canvas extent, full-bleed background, scroll-under, status-bar
+metadata and keyboard/bottom allocation are unchanged. Tabs, landscape, native
+hosts and engines without these capabilities retain their existing spacing.
+This avoids the native progressive-blur band; it does not disable the system
+effect, and physical iOS 27 acceptance remains separate from browser simulation.
 
 Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
@@ -308,19 +335,26 @@ Personal intent uses validated UiPreferencesRuntime storage keyed by account sco
 Customization drag keeps the source slot in layout and paints a noninteractive, unscaled DragOverlay in the presentation root outside modal transforms/clipping. The active source never uses another list's sortable transform. Pointer hit testing first selects a zone, then its rows; nonempty parent zones do not compete with their children. Keyboard targets rows or empty zones. Draft membership changes only on drop, cancellation leaves it unchanged, and release has no source-return animation.
 
 - Sidebar More menus open on a completed touch tap, after the browser has retained
-  the gesture as a click. Touch down alone never opens them; movement beyond
-  10 CSS pixels, ancestor scrolling, cancellation, another pointer, release
-  outside the hit area or a hold beyond 500ms invalidates that tap. These guards
+  the gesture as a click. Touch down alone never opens them; native dragging,
+  ancestor scrolling, cancellation, another pointer, release
+  outside the hit area or a native context-menu gesture invalidates that tap. These guards
   never prevent native scrolling. Row long-press/right-click and Radix keyboard,
   focus, dismissal and the single Sidebar menu owner remain unchanged.
 
 
 Web dropdown consumers use design-system-web/dropdown-menu. Direct touch/pen
-opens only after a valid completed tap; movement, ancestor scrolling, cancel,
-multiple pointers, release outside or holding invalidates it. Native pan remains
+opens only after a valid completed tap; native dragging, ancestor scrolling, cancel,
+multiple pointers, release outside or a native context-menu gesture invalidates it.
+A press that the browser completes as a click remains usable despite tolerated
+finger drift or duration; fixed pixel/time cutoffs must not silently discard it. Native pan remains
 available. Radix owns mouse, keyboard, nested menus, focus and dismissal. Composer
 model, permission and Add controls preserve the editor focus and selection on
 touch; opening one retires the other picker without a delayed activation.
+The shared trigger withholds Radix's eager touch handler without cancelling native
+pointerdown, which must remain available for WebKit to complete its click. Editor
+focus retention cancels compatibility mousedown instead, including menu items;
+it must not suppress the native touch click. The Radix trigger retains its same
+button, ref, accessibility, mouse and keyboard ownership through the shared Slot.
 
 
 Keyboard acceptance must not manufacture a visible window by cropping at the
@@ -369,3 +403,25 @@ ElectronRuntime. Shell consumes their document projection instead of owning PWA
 or preload listeners. Shared appearance preference/catalog, real navigation and
 viewport geometry retain their existing owners. See
 [ClientRuntime](../../docs/architecture/platform/client-runtime.md).
+
+
+### Menu outside-interaction contract
+
+Dropdown and context command menus share design-system-web content and an invisible
+dismiss surface in their existing portal. On both mouse and touch Web, the first
+outside primary click only dismisses the open menu; navigation, another trigger,
+editor focus and voice holds require a new contact. The outside contact remains
+on the surface through its native click, without cancelling native touch
+pointerdown. Context-menu cancellation, nested submenu selection, Escape and
+Dialog handoff retain Radix ownership. Surfaces unmount with their root content.
+
+The shared Root does not expose Radix `modal`: command menus use Radix's
+normal nonmodal focus lifecycle and a mandatory outside-contact surface. There
+is no document-wide pointer lock, hidden-page state or focus trap to race with a
+subsequent Dialog. Boundary checks reject raw Radix menu imports in consumers.
+Editor auxiliary menus
+retain their nonmodal focus lease, original editor, selection, draft and software
+keyboard continuity. Ordinary action menus retain their Radix focus policy. The
+surface is transparent and takes its stacking level from the actual menu content;
+there is no additional Dialog or copied business menu. Tooltip/hover previews and
+editing autocomplete are separate interactions and do not use this contract.

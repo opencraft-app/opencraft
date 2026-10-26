@@ -80,7 +80,7 @@ export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel,
     </div>
   );
   return <>
-    <DropdownMenu.Root modal={false} open={open} onOpenChange={next => { if (next) setModelsOpen(false); onOpenChange(next); }}>
+    <DropdownMenu.Root open={open} onOpenChange={next => { if (next) setModelsOpen(false); onOpenChange(next); }}>
       <div className="opencraft-composer-picker opencraft-composer-picker--intelligence">
         <DropdownMenu.Trigger asChild>
           <button {...focus.triggerProps} className="opencraft-composer-mode opencraft-composer-mode--intelligence opencraft-composer-mode--depth"

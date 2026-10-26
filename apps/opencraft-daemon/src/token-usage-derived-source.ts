@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
-import { open, realpath } from "node:fs/promises";
-import { isAbsolute, relative } from "node:path";
 import { normalizeUsageCounts, type UsageCounts } from "./token-usage-ledger.js";
-import { findNextNewline } from "./token-usage-rollout.js";
+import { readRolloutIncrement, type NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 type Counts = readonly (string | null)[];
 export type RetainedUsageEvent =
@@ -76,46 +74,23 @@ export function parseUsageEvent(state: UsageParserState, event: RetainedUsageEve
 
 export interface RetainedRead { cursor: number; identity: string; events: { key: string; at: number; event: RetainedUsageEvent }[]; missing: boolean; more: boolean; bytes: number }
 /** At most one MiB plus a bounded newline search. A partial tail is retried. */
-export async function readUsageIncrement(options: { path: string; nativeHome: string; threadId: string; cursor: number; identity: string | null }): Promise<RetainedRead> {
-  const root = await realpath(options.nativeHome), path = await realpath(options.path), child = relative(root, path);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Usage source outside native home");
-  const file = await open(path, "r");
-  try {
-    const stat = await file.stat(), identity = `${stat.dev}:${stat.ino}`;
-    if (options.cursor > stat.size || (options.identity !== null && options.identity !== identity)) throw new Error("Usage source replaced");
-    const buffer = Buffer.alloc(Math.min(1024 * 1024, stat.size - options.cursor));
-    const { bytesRead } = await file.read(buffer, 0, buffer.length, options.cursor);
-    let cursor = options.cursor, start = 0, missing = false;
-    const events: RetainedRead["events"] = [];
-    for (let i = 0; i < bytesRead; i++) {
-      if (buffer[i] !== 10) continue;
-      const line = buffer.subarray(start, i).toString("utf8"); start = i + 1; cursor = options.cursor + start;
-      const head=line.slice(0,65536),tag=head.match(/"type"\s*:\s*"([^"]+)"/)?.[1];
-      if(!tag||!["session_meta","turn_context","token_usage_record","event_msg"].includes(tag))continue;
-      if(tag==="event_msg"){
-        const subtype=head.match(/"payload"\s*:\s*\{\s*"type"\s*:\s*"([^"]+)"/)?.[1];
-        if(subtype&&!["token_count","task_started","task_complete","turn_aborted","task_failed"].includes(subtype))continue;
-      }
-      try {
-        const value = JSON.parse(line), event = retainUsageEvent(value);
-        if (event) {
-          const at = Date.parse(value.timestamp);
-          if (!Number.isSafeInteger(at) || at < 0) { missing = true; continue; }
-          const key = createHash("sha256").update(JSON.stringify(event.kind==="response"?[options.threadId,"response",...event.data.slice(0,3)]:[options.threadId, at, event])).digest("hex");
-          events.push({ key, at, event });
-        }
-      } catch { missing = true; }
-      if (events.length >= 128) break;
-    }
-    if (start === 0 && bytesRead === 1024 * 1024) {
-      const end = await findNextNewline(file, options.cursor);
-      if (end !== null) {
-        // Body/tool lines may be large; only metering-like lines create a gap.
-        const head=buffer.subarray(0,65536).toString("utf8"),tag=head.match(/"type"\s*:\s*"([^"]+)"/)?.[1];
-        missing=!!tag&&(["session_meta","turn_context","token_usage_record"].includes(tag)||(tag==="event_msg"&&/"payload"\s*:\s*\{\s*"type"\s*:\s*"(?:token_count|task_started|task_complete|task_failed|turn_aborted)"/.test(head)));
-        cursor = end;
-      }
-    }
-    return { cursor, identity, events, missing, more: cursor < stat.size, bytes: bytesRead };
-  } finally { await file.close(); }
+export async function readUsageIncrement(options: { path: string; nativeHome: string; source?: NativeRolloutSource; threadId: string; cursor: number; identity: string | null }): Promise<RetainedRead> {
+  const selected = (head: string): boolean => {
+    const tag = head.match(/"type"\s*:\s*"([^"]+)"/)?.[1];
+    if (!tag || !["session_meta", "turn_context", "token_usage_record", "event_msg"].includes(tag)) return false;
+    if (tag !== "event_msg") return true;
+    const subtype = head.match(/"payload"\s*:\s*\{\s*"type"\s*:\s*"([^"]+)"/)?.[1];
+    return !subtype || ["token_count", "task_started", "task_complete", "turn_aborted", "task_failed"].includes(subtype);
+  };
+  return readRolloutIncrement({ ...options, select: selected, oversized: selected,
+    retain(value): RetainedRead["events"][number] | null {
+      const event = retainUsageEvent(value);
+      if (!event) return null;
+      const at = Date.parse(value.timestamp);
+      if (!Number.isSafeInteger(at) || at < 0) throw new Error("Invalid usage timestamp");
+      const key = createHash("sha256").update(JSON.stringify(event.kind === "response"
+        ? [options.threadId, "response", ...event.data.slice(0, 3)] : [options.threadId, at, event])).digest("hex");
+      return { key, at, event };
+    },
+  });
 }

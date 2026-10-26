@@ -1,0 +1,23 @@
+# Optional explicit multi-generation topology. Install only after a verified migration.
+# Requires privileges for sibling transient units (and cold-validation BindPaths).
+# APP/native UID and GID are pinned to the account data-directory owner; tools keep that identity.
+[Unit]
+Description=OpenCraft Codex generation routing owner
+After=network.target opencraft-codex-core.service
+Wants=opencraft-codex-core.service
+
+[Service]
+Type=simple
+UMask=0077
+# The service creates its shared socket parent. RuntimeDirectory cleanup would
+# unlink live sibling APP sockets, and recursive ownership changes break other UIDs.
+WorkingDirectory=/srv/opencraft
+# These fixed paths are independently installed; CI must not repoint them.
+ExecStart=/usr/bin/node /opt/opencraft/codex-routing/generations.cjs --endpoint /run/opencraft-codex-routing/control.sock --core-endpoint /run/opencraft-codex-core/control.sock --token-file /var/lib/opencraft/daemon.token --data-directory /var/lib/opencraft/codex --registry-directory /var/lib/opencraft-codex-routing --systemd-scope system --bootstrap-file /etc/opencraft/codex-generation-bootstrap.json
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=infinity
+
+[Install]
+WantedBy=multi-user.target

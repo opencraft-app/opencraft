@@ -1,4 +1,9 @@
-import { serializeHistoryReply } from "@opencraft/appserver-client";
+import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
+import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
+import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
+import { TranscriptReadCache } from "@opencraft/native-history-node";
+import { CodexNativeStorage } from "./codex-native-storage.js";
+import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
@@ -7,12 +12,12 @@ import { TokenUsageStateDatabase } from "./token-usage-state-database.js";
 import { TokenUsageTelemetry } from "./token-usage-telemetry.js";
 import { TokenUsageQueryService } from "./token-usage-query-service.js";
 import { TokenUsageQueryError } from "./token-usage-query.js";
-import { COLLABORATION_METHOD, CONVERSATION_TOOLS } from "@opencraft/appserver-protocol/collaboration";
+import { COLLABORATION_METHOD, CONVERSATION_TOOLS, THREAD_ORCHESTRATION_TOOLS, type ThreadOrchestrationSnapshot } from "@opencraft/appserver-protocol/collaboration";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort, type ScheduleExecutionEvent } from "./conversation-schedules.js";
 import { CONVERSATION_SCHEDULES, CONVERSATION_SCHEDULES_EXTENSION, type ConversationScheduleRun } from "@opencraft/appserver-protocol";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -79,6 +84,11 @@ import {
   type CodexMaintenanceClientFactory,
 } from "@opencraft/account-pool-host";
 
+function nativeHistoryTooLarge(error: unknown): boolean {
+  const value = error as { code?: number; data?: { code?: string } } | null;
+  return isHistoryResponseTooLargeError(error) || value?.code === -32072 || value?.data?.code === "HISTORY_RESPONSE_TOO_LARGE";
+}
+
 type RpcRecord = Record<string, unknown>;
 
 interface PendingRequest {
@@ -131,9 +141,12 @@ interface SharedCodexRoutingOptions {
   readonly collaboration?: {
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
     continued?(threadId: string, fromTurnId: string, turnId: string): void;
+    continuing?(threadId:string,fromTurnId:string,inputId:string):void;
+    inputDelegation?(threadId:string,inputId:string,expectedTurnId?:string):string|null;
     prepare?(context: NonNullable<TransportSubmissionContext["actorContext"]>, input: readonly unknown[]): Promise<unknown>;
     command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>): Promise<unknown>;
-    authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string): void;
+    authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string, input?: readonly unknown[]): void;
+    orchestration?: { available?():boolean; tool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>; observed(snapshot:ThreadOrchestrationSnapshot):void };
     started(threadId: string, inputId: string, turnId: string): void;
     tool(threadId: string, turnId: string, name: string, args: Record<string, unknown>): Promise<unknown>;
   };
@@ -251,6 +264,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly initializedClients = new Set<string>();
   private readonly clientEpochs = new Map<string, number>();
   private readonly threadClients = new Map<string, Set<string>>();
+  private readonly historyWatchers = new Map<string, Set<string>>();
   /** The one native stdio connection is not one subscription per logical Client. */
   private readonly nativeSubscribedThreads = new Set<string>();
   private readonly ephemeralThreads = new Set<string>();
@@ -268,10 +282,23 @@ export class CodexEngineAdapter implements DuplexTransport {
   private recovery: InterruptedTurnRecovery | null = null;
   private coreReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private coreReinitializing = false;
+  private generationFenceEpoch = 0;
+  private generationRoutingEpoch = "";
+  private generationDefaultId: string | null = null;
+  private generationLegacyId: string | null = null;
+  private readonly generationFencedIds = new Set<string>();
+  private readonly generationRoutes = new Map<string, string>();
+  private generationGoalScan = 0;
+  private generationDiscoveryComplete = false;
+  private readonly generationReconciling = new Map<string, ReturnType<typeof setTimeout> | null>();
+  private readonly generationLosses = new Set<string>();
+  private readonly generationIncarnations = new Map<string, number>();
+  private generationUsageTimer: ReturnType<typeof setInterval> | undefined;
   private queue: OpenCraftHostQueue | null = null;
   private schedules: ConversationSchedules | null = null;
   private hostState: OpenCraftHostStateDatabase | null = null;
   private tokenUsageState: TokenUsageStateDatabase | null = null;
+  private tokenUsageAttemptWriter: TokenUsageAttemptWriter | null = null;
   private tokenUsageStorageUnavailable = false;
   private tokenUsage: CodexTokenUsageRuntime | null = null;
   private tokenUsageQueries: TokenUsageQueryService | null = null;
@@ -291,6 +318,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly tasks: TasksService | null;
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
+  private transcriptCache: TranscriptReadCache | null = null;
   private readonly nativeTransport: DuplexTransport | null;
   private releaseOverlays: (() => void) | null = null;
   private releaseWriter: (() => void) | null = null;
@@ -331,11 +359,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     });
     if (options.kind !== "remote" && options.coreHostOverlays && !options.coreEndpoint) throw new Error("Host overlays require an explicit core endpoint");
     this.nativeCore = options.kind !== "remote" && options.coreEndpoint && options.coreHostOverlays
-      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "") : null;
+      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "", createHash("sha256").update(options.dataDirectory).digest("hex")) : null;
     this.nativeTransport = this.nativeCore
       ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore) : this.nativeCore : null;
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
-      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot()) : null;
+      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot(),
+        (method, params, clientId) => this.admissionRejected(method, params, clientId, "maintenance")) : null;
     if (this.coreBridge) {
       // A core client must not create local stores or a second queue/account writer.
       this.tasks = null;
@@ -352,7 +381,27 @@ export class CodexEngineAdapter implements DuplexTransport {
             request: (method, params) => this.requestPhysical(method, params, 120_000) })
         : null
       : new LocalAttachmentStagingService(join(options.dataDirectory, "attachments"));
+    if (this.nativeCore) {
+      this.generationUsageTimer = setInterval(() => {
+        if (this.physicalInitialized && !this.closeOperation) void this.nativeCore!.publishGenerationUsage(() => this.generationUsageSnapshot(), state => this.applyGenerationFences(state)).catch(() => {});
+      }, 5_000);
+      this.generationUsageTimer.unref();
+    }
   }
+
+  private readonly orchestrationControl = new CodexOrchestrationControl({
+    supported: () => this.nativeCore?.supportsOrchestration === true,
+    incarnation: () => this.nativeCore?.callbackIncarnation ?? null,
+    routed: () => this.nativeCore?.supportsOrchestrationRouting === true,
+    request: (method, params, admit) => this.requestPhysical(method, params, 30_000, undefined, undefined, admit),
+    read: async (threadId, limit) => {
+      if (!this.transcriptCache) throw new OrchestrationControlError(503, "Read-only conversation history is unavailable");
+      const cached = await this.transcriptCache.read(threadId, limit);
+      return { thread: { ...cached.thread, turns: [...cached.initialTurnsPage.data].reverse() } };
+    },
+    recovery: threadId => this.recovery?.snapshot(threadId) ?? null,
+    pendingInput: threadId => { const rows = this.queue?.list(threadId) ?? []; return rows.some(row => row.state === "unknown") ? "unknown" : rows.some(row => ["queued", "dispatching", "steering"].includes(row.state)) ? "pending" : false; },
+  });
 
   private get physicalAvailable(): boolean {
     return this.options.kind === "remote" ? this.options.transport.status.state === "open"
@@ -456,14 +505,64 @@ export class CodexEngineAdapter implements DuplexTransport {
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     this.hostState = new OpenCraftHostStateDatabase(dataRoot);
+    const adapter = this;
+    const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
+      () => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
+    this.transcriptCache = new TranscriptReadCache(dataRoot, {
+      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
+      resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
+      readThread: async threadId => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread as AppServerThread,
+      listTurns: async (threadId, cursor, limit) => {
+        const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
+          threadId, cursor, limit, itemsView, sortDirection: "desc",
+        }) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
+        let page;
+        try { page = await request("full"); }
+        catch (error) {
+          if (!nativeHistoryTooLarge(error)) throw error;
+          page = await request("notLoaded");
+        }
+        for (const turn of page.data) if (turn.itemsView === "notLoaded") {
+          const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
+          let itemCursor: string | null = null, budget = 100;
+          const seen = new Set<string>();
+          do {
+            let response: any;
+            for (;;) {
+              try { response = await this.requestPhysical("thread/items/list", { threadId, turnId: turn.id,
+                cursor: itemCursor, limit: budget, sortDirection: "asc" }); break; }
+              catch (error) {
+                if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
+                budget = Math.max(1, Math.floor(budget / 2));
+              }
+            }
+            if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
+              throw new Error("Invalid native Item page");
+            for (const entry of response.data) {
+              const item = record(entry.item ?? entry);
+              if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turn.id)) throw new Error("Invalid native Item");
+              items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
+            }
+            itemCursor = response.nextCursor;
+            if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
+            if (itemCursor !== null) seen.add(itemCursor);
+          } while (itemCursor !== null);
+          turn.items = items; turn.itemsView = "full";
+        }
+        return page;
+      },
+    }, { measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
     try {
       const telemetry=new TokenUsageTelemetry();
       this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
-      this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry), {
+      if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageAttemptWriter=new TokenUsageAttemptWriter({entry:this.options.tokenUsage.queryWorkerEntry,directory:dataRoot,serverId:this.options.tokenUsage.serverId,projectLegacy:this.options.tokenUsage.derivedQueries?false:undefined});
+      this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry,{projectLegacy:this.options.tokenUsage?.derivedQueries?false:undefined}), {
         request:(method,params)=>this.requestPhysical(method,params,5000),
+        source:(threadId,path)=>nativeStorage.resolve(threadId,path),
         submission:this.options.tokenUsage?.submission,
         diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
         derived:this.options.tokenUsage?.derivedQueries,
+        writes:this.tokenUsageAttemptWriter??undefined,
       });
       if(this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries=this.options.tokenUsage.derivedQueries;
       else if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageQueries=new TokenUsageQueryService({entry:this.options.tokenUsage.queryWorkerEntry,databasePath:join(dataRoot,"token-usage.sqlite"),serverId:this.options.tokenUsage.serverId,telemetry});
@@ -492,6 +591,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         await this.prepareSessionMcp(turn.threadId);
         if (!current()) return null;
         const inputId = turn.inputId!;
+        this.options.collaboration?.continuing?.(turn.threadId,turn.turnId,inputId);
         const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
         this.tokenUsage?.submission(identity);
         const response = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit));
@@ -499,6 +599,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         return string(record(response.turn).id) || null;
       },
       changed: (threadId, recovery) => {
+        const state = this.recovery?.snapshot(threadId);
+        if (state && ["interrupted", "preparing", "dispatching", "exhausted", "unconfirmed"].includes(state.state)) this.options.collaboration?.orchestration?.observed({
+          threadId, turnId: state.turnId, rootTurnId: state.rootTurnId, state: state.state === "exhausted" ? "exhausted" : state.state === "unconfirmed" ? "unconfirmed" : "recovering",
+        });
         for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
       },
     });
@@ -615,20 +719,68 @@ export class CodexEngineAdapter implements DuplexTransport {
   async send(frame: string): Promise<void> { return this.sendWithContext(frame, { sender: null }); }
 
   private readonly admissionsInFlight = new Map<number, string>();
+  private readonly generationAdmissionsInFlight = new Map<number, string>();
   private maintenanceSequence = 0;
   private admissionPaused(): boolean { return this.options.kind !== "remote" && codexAdmissionPaused(this.options.dataDirectory); }
+  private rejectedAdmissions = 0;
+  private admissionRejected(method: string, params: unknown, clientId: string, reason: "maintenance" | "generation-fence"): void {
+    const threadId = record(params).threadId;
+    const entry = { event: "codex-admission-rejected", reason, method, clientId, pid: process.pid,
+      threadId: typeof threadId === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(threadId) ? threadId : null,
+      rejectedAdmissions: ++this.rejectedAdmissions };
+    // Diagnostic sink failures must never change the admission decision or response.
+    try { this.diagnostic(entry); }
+    catch { console.warn("[codex-admission-audit] diagnostic sink unavailable"); }
+  }
   private maintenanceSnapshot(): CodexMaintenanceSnapshot {
     const queue = this.queue?.maintenanceCounts();
     const pending = [...this.pending.values()].filter(request => isCodexAdmission(request.method, request.params))
       .map(request => codexAdmissionKey(request.method, request.params, JSON.stringify([request.clientId, request.originalId])));
     const internal = [...this.internalRequests.entries()].filter(([, request]) => isCodexAdmission(request.method, request.params))
       .map(([id, request]) => codexAdmissionKey(request.method, request.params, id));
-    return { paused: this.admissionPaused(),
+    return { paused: this.admissionPaused(), rejectedAdmissions: this.rejectedAdmissions,
       pendingAdmissions: new Set([...this.admissionsInFlight.values(), ...(this.coreBridge?.pendingAdmissionKeys ?? []),
         ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
       queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
       pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + (this.coreBridge?.pendingApprovals ?? 0),
       capacityRetries: this.capacityRetries.size };
+  }
+
+  private applyGenerationFences(state: import("@opencraft/account-pool-host").CodexGenerationFenceState): void {
+    if (!state || typeof state.routingEpoch !== "string" || !Number.isSafeInteger(state.fenceEpoch) || !Array.isArray(state.fencedGenerationIds)) return;
+    if (this.generationRoutingEpoch !== state.routingEpoch) {
+      this.generationRoutingEpoch = state.routingEpoch; this.generationFenceEpoch = 0; this.generationRoutes.clear(); this.generationIncarnations.clear(); this.generationLosses.clear();
+    }
+    if (state.fenceEpoch < this.generationFenceEpoch) return;
+    this.generationFenceEpoch = state.fenceEpoch; this.generationFencedIds.clear();
+    for (const id of state.fencedGenerationIds) this.generationFencedIds.add(id);
+    this.generationDefaultId = state.defaultGenerationId; this.generationLegacyId = state.legacyGenerationId;
+    for (const row of state.routes ?? []) this.generationRoutes.set(row.threadId, row.generationId);
+  }
+  private isGenerationAdmission(method: unknown, params: unknown): boolean {
+    return isCodexAdmission(method, params) || method === CONVERSATION_SCHEDULES.save
+      || (method === CONVERSATION_SCHEDULES.action && ["resume", "run-now"].includes(string(record(params).action)));
+  }
+  private generationAdmissionBlocked(params: unknown): boolean {
+    if (!this.generationFencedIds.size) return false;
+    const p = record(params), threadId = string(p.threadId);
+    const generation = threadId ? this.generationRoutes.get(threadId) ?? this.generationLegacyId : this.generationDefaultId;
+    return !generation || this.generationFencedIds.has(generation);
+  }
+
+  private generationUsageSnapshot(): { routingEpoch: string; blockedThreadIds: string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number } {
+    const blocked = new Set<string>([...this.activeTurns.keys(), ...(this.queue?.pendingThreads() ?? []), ...this.activeGoalThreads, ...this.capacityRetries.keys(), ...(this.recovery?.pendingThreadIds() ?? []), ...this.generationReconciling.keys(), ...(this.threadTitles?.pendingThreadIds() ?? []), ...this.generationAdmissionsInFlight.values()]);
+    for (const schedule of this.schedules?.list().schedules ?? []) if (schedule.status === "active" || schedule.needsReview) blocked.add(schedule.threadId);
+    let unscopedBusy = false;
+    for (const request of [...this.pending.values(), ...this.internalRequests.values()]) {
+      if (!isCodexAdmission(request.method, request.params)) continue;
+      const threadId = string(request.params.threadId);
+      if (threadId) blocked.add(threadId); else if (!["thread/start", "command/exec", "process/spawn"].includes(request.method)) unscopedBusy = true;
+    }
+    for (const request of this.serverRequests.values()) {
+      if (request.threadId) blocked.add(request.threadId); else unscopedBusy = true;
+    }
+    return { routingEpoch: this.generationRoutingEpoch, acknowledgedFenceEpoch: this.generationFenceEpoch, blockedThreadIds: [...blocked], unscopedBusy, discoveryComplete: this.generationDiscoveryComplete && !this.coreReinitializing && this.physicalInitialized && this.statusValue.state === "open" };
   }
 
   async sendWithContext(frame: string, context: TransportSubmissionContext): Promise<void> {
@@ -638,11 +790,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.statusValue.state !== "open" || !this.physicalAvailable || this.coreReinitializing) throw new Error("Codex Engine is not connected");
     const message = record(JSON.parse(frame));
-    const admission = isCodexAdmission(message.method, message.params) ? ++this.maintenanceSequence : null;
+    const admission = this.isGenerationAdmission(message.method, message.params) ? ++this.maintenanceSequence : null;
     if (admission !== null) this.admissionsInFlight.set(admission, codexAdmissionKey(String(message.method), message.params,
       JSON.stringify([message[LOGICAL_CLIENT_FIELD], message.id])));
+    if (admission !== null && typeof record(message.params).threadId === "string") this.generationAdmissionsInFlight.set(admission, string(record(message.params).threadId));
     try { await this.sendClientMessage(message, context); }
-    finally { if (admission !== null) this.admissionsInFlight.delete(admission); }
+    finally { if (admission !== null) { this.admissionsInFlight.delete(admission); this.generationAdmissionsInFlight.delete(admission); } }
   }
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
@@ -664,11 +817,38 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    const historyParams = record(message.params);
+    const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
+    const cachedPage = message.method === "thread/turns/list" && historyParams.sortDirection === "desc"
+      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:"));
+    if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
+      try {
+        const limit = cachedRead ? record(historyParams.initialTurnsPage).limit : historyParams.limit;
+        const result = cachedRead ? await this.transcriptCache.read(threadId, typeof limit === "number" ? limit : 10, () => {
+          if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+            this.watchHistory(threadId, clientId);
+        }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full")
+          : await this.transcriptCache.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full");
+        if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
+        if (historyParams.watch === true) this.watchHistory(threadId, clientId);
+        const projected = projectThreadMessageResult(this.projectSender, string(message.method), historyParams, result);
+        this.emit({ id, result: this.messageAttachments
+          ? projectThreadAttachmentResult(this.messageAttachments, string(message.method), historyParams, projected) : projected }, clientId);
+      } catch (error) {
+        if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+          this.emit({ id, error: { code: -32000, message: errorMessage(error) } }, clientId);
+      }
+      return;
+    }
     if (id !== null && message.method === CODEX_MAINTENANCE_READ) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       this.emit({ id, result: this.maintenanceSnapshot() }, clientId); return;
     }
-    if (isCodexAdmission(message.method, message.params) && this.admissionPaused()) {
+    const maintenanceRejected = isCodexAdmission(message.method, message.params) && this.admissionPaused();
+    if (maintenanceRejected || (this.isGenerationAdmission(message.method, message.params) && this.generationAdmissionBlocked(message.params))) {
+      this.admissionRejected(String(message.method), message.params, clientId, maintenanceRejected ? "maintenance" : "generation-fence");
       if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
       return;
     }
@@ -755,13 +935,21 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
         return;
       }
+      if (message.method.startsWith("opencraft/orchestration/")) {
+        try { const result = await this.orchestrationControl.handle(message.method, record(message.params), context); this.emit({ id, result }, clientId); }
+        catch (error) { this.emit({ id, error: { code: error instanceof OrchestrationControlError ? error.code : -32000, message: errorMessage(error) } }, clientId); }
+        return;
+      }
+      if (Object.keys(record(message.params)).some(key => key.startsWith("__opencraftOrchestration") || key === "__opencraftDelegationId")) {
+        this.emit({ id, error: { code: 403, message: "Orchestration metadata requires its trusted control lane" } }, clientId); return;
+      }
       if (message.method === "opencraft/turn-recovery/read") {
         const threadId = string(record(message.params).threadId);
         this.emit({ id, result: { recovery: this.recovery?.notice(threadId) ?? null } }, clientId);
         return;
       }
       if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
-        this.recovery?.handled(string(record(message.params).threadId));
+        if (!context.collaborationRequestId) this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
       }
       if (this.options.kind === "remote" && this.pending.size >= 1024) {
         this.emit({ id, error: { code: -32000, message: "Remote request limit exceeded" } }, clientId);
@@ -910,11 +1098,11 @@ export class CodexEngineAdapter implements DuplexTransport {
             if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
             this.recordSender(params, context); // Rechecks validity after the final await.
             params = {...params,clientUserMessageId:string(params.clientUserMessageId)||`input:${randomUUID()}`};
-            if (message.method === "turn/start" && context.actorContext && this.options.collaboration) {
+            if ((message.method === "turn/start" || message.method === "turn/steer") && context.actorContext && this.options.collaboration) {
               const inputId = string(params.clientUserMessageId) || `input:${randomUUID()}`;
               params = {...params, clientUserMessageId: inputId};
               context.resourceOwner?.assertCurrent();
-              this.options.collaboration.authorize(context.actorContext, string(params.threadId), inputId);
+              this.options.collaboration.authorize(context.actorContext, string(params.threadId), inputId, prepared.input);
             }
             if (prepared.attachments.length > 0) this.attachmentRecords().record(
               string(params.threadId), string(params.clientUserMessageId), prepared.attachments);
@@ -936,14 +1124,19 @@ export class CodexEngineAdapter implements DuplexTransport {
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
         if (message.method === "turn/start" || message.method === "turn/steer") {
           const inputId = string(params.clientUserMessageId);
+          const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
           try {
             const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
             const trusted=this.options.tokenUsage?.submission?.(string(params.threadId),inputId);
             pending.usageAttemptId=randomUUID();
-            this.tokenUsage?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:actor?.id??trusted?.actorId??null,
-              actorKind:actor?.kind??trusted?.actorKind??"unknown",mode:message.method === "turn/start" ? "start":"steer",
-              sourceKind:actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()});
+            await usageRuntime?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:trusted?.sourceKind==="system"?trusted.actorId:actor?.id??trusted?.actorId??null,
+              actorKind:trusted?.sourceKind==="system"?trusted.actorKind:actor?.kind??trusted?.actorKind??"unknown",mode:message.method === "turn/start" ? "start":"steer",
+              sourceKind:trusted?.sourceKind === "system" ? "system" : actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()});
           } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); }
+          if(!this.initializedClients.has(clientId)||this.clientEpoch(clientId)!==requestClientEpoch||this.statusValue.state!=="open"||physicalGeneration!==this.sessionMcpGeneration){
+            if(pending.usageAttemptId)usageRuntime?.attemptOutcome(pending.usageAttemptId,"rejected");return;
+          }
+          try{this.validateSubmissionContext(context);}catch(error){if(pending.usageAttemptId)usageRuntime?.attemptOutcome(pending.usageAttemptId,"rejected");throw error;}
         }
         // Native fork has no fixed deadline in Workbench. Preserve that
         // contract; its ledger is still bounded by the admission limit and
@@ -992,6 +1185,9 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.coreBridge) return this.coreBridge.close();
     if (this.closeOperation !== null) return this.closeOperation;
+    clearInterval(this.generationUsageTimer);
+    for (const timer of this.generationReconciling.values()) if (timer) clearTimeout(timer);
+    this.generationReconciling.clear();
     this.threadTitles?.close();
     if(!this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries?.close();
     this.tokenUsageQueries=null;
@@ -1005,6 +1201,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.remoteGoalCapability = null;
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
+      await this.transcriptCache?.close(); this.transcriptCache = null;
       this.durableCatalog?.close(); this.durableCatalog = null;
       await this.recovery?.close(); this.recovery = null;
       await this.schedules?.close(); this.schedules = null;
@@ -1042,6 +1239,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.queue = null;
       this.identity?.close();
       this.identity = null;
+      await this.tokenUsageAttemptWriter?.close();this.tokenUsageAttemptWriter=null;
       this.tokenUsageState?.close();this.tokenUsageState=null;this.tokenUsageStorageUnavailable=false;
       this.hostState?.close();
       this.hostState = null;
@@ -1057,6 +1255,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.initializedClients.clear();
       this.clientEpochs.clear();
       this.threadClients.clear();
+      this.historyWatchers.clear();
       for (const timer of this.nativeReleaseTimers.values()) clearTimeout(timer);
       this.nativeReleaseTimers.clear();
       this.nativeSubscribedThreads.clear();
@@ -1205,6 +1404,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
+          "opencraft/read-history": { version: 1 },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };
@@ -1234,6 +1434,27 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly receivePhysicalLine = (line: string): void => {
     let message: RpcRecord;
     try { message = record(JSON.parse(line)); } catch { return; }
+    const generation = record(message.__opencraftGeneration), fences = record(generation.fences);
+    delete message.__opencraftGeneration;
+    if (typeof generation.routingEpoch === "string" && fences.routingEpoch === generation.routingEpoch) this.applyGenerationFences(fences as unknown as import("@opencraft/account-pool-host").CodexGenerationFenceState);
+    if (generation.routingEpoch === this.generationRoutingEpoch && typeof generation.threadId === "string" && typeof generation.generationId === "string") this.generationRoutes.set(generation.threadId, generation.generationId);
+    if (generation.routingEpoch === this.generationRoutingEpoch && typeof generation.generationId === "string" && Number.isSafeInteger(generation.incarnation)) {
+      const known = this.generationIncarnations.get(generation.generationId) ?? 0;
+      if (Number(generation.incarnation) < known) return;
+      this.generationIncarnations.set(generation.generationId, Number(generation.incarnation));
+    }
+    if (message.method === "opencraft/codex/generation/lost") {
+      const params = record(message.params), key = JSON.stringify([generation.routingEpoch, params.generationId, params.incarnation, params.connectionEpoch]);
+      if (generation.routingEpoch !== this.generationRoutingEpoch || this.generationLosses.has(key)) return;
+      this.generationLosses.add(key);
+      const candidates = new Set(Array.isArray(params.threadIds) ? params.threadIds.filter((id): id is string => typeof id === "string") : []);
+      const affected = new Set([...this.activeTurns.keys(), ...this.nativeSubscribedThreads, ...this.activeGoalThreads,
+        ...(this.queue?.pendingThreads() ?? []), ...(this.recovery?.pendingThreadIds() ?? [])]);
+      for (const id of affected) if (candidates.has(id) || this.generationRoutes.get(id) === params.generationId) {
+        this.recovery?.lost(id); this.activeTurns.delete(id); this.nativeSubscribedThreads.delete(id); this.reconcileGenerationThread(id);
+      }
+      this.recovery?.wake(); return;
+    }
     const id = responseId(message.id);
     if (id !== null) {
       const internal = this.internalRequests.get(String(id));
@@ -1247,7 +1468,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             this.nativeSubscribedThreads.add(internal.threadId);
             this.cancelNativeRelease(internal.threadId);
           }
-          if (internal.method === "turn/start") this.options.collaboration?.started(string(internal.params.threadId),string(internal.params.clientUserMessageId),string(record(record(message.result).turn).id));
+          if (internal.method === "turn/start" || internal.method === "turn/steer") this.options.collaboration?.started(string(internal.params.threadId),string(internal.params.clientUserMessageId),string(record(record(message.result).turn).id)||string(record(message.result).turnId));
           this.observeUsageAcceptance(internal.method,internal.params,message.result);
           this.observeMetadataResult(internal.method, internal.params, message.result);
           internal.resolve(message.result);
@@ -1287,7 +1508,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           } };
         }
         if ("result" in message) {
-          if (pending.method === "turn/start") this.options.collaboration?.started(string(pending.params.threadId),string(pending.params.clientUserMessageId),string(record(record(message.result).turn).id));
+          if (pending.method === "turn/start" || pending.method === "turn/steer") this.options.collaboration?.started(string(pending.params.threadId),string(pending.params.clientUserMessageId),string(record(record(message.result).turn).id)||string(record(message.result).turnId));
           this.observeUsageAcceptance(pending.method,pending.params,message.result);
           if (pending.method === "thread/goal/get" || pending.method === "thread/goal/set") {
             this.noteGoal(string(pending.params.threadId), record(message.result).goal);
@@ -1320,13 +1541,18 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
         if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
           this.projectSender, pending.method, pending.params, message.result) };
-        if (this.validClientRequest(pending)) this.emit({
+        const emitReply = () => { if (this.validClientRequest(pending)) this.emit({
           ...message,
           ...(this.messageAttachments && "result" in message ? {
             result: projectThreadAttachmentResult(this.messageAttachments, pending.method, pending.params, message.result),
           } : {}),
           id: pending.originalId,
-        }, pending.clientId, pending.method);
+        }, pending.clientId, pending.method); };
+        if ("result" in message && ["thread/archive", "thread/delete"].includes(pending.method) && this.transcriptCache)
+          void this.transcriptCache.invalidate(string(pending.params.threadId)).then(emitReply, () => {
+            if (this.validClientRequest(pending)) this.emit({ id: pending.originalId, error: { code: -32000, message: "Transcript cleanup failed" } }, pending.clientId);
+          });
+        else emitReply();
         if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
           const threadId = pending.method === "thread/start" || pending.method === "thread/fork"
             ? string(record(record(message.result).thread).id) : string(pending.params.threadId);
@@ -1342,11 +1568,15 @@ export class CodexEngineAdapter implements DuplexTransport {
     try { this.tokenUsage?.notification(string(message.method),record(message.params)); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
     if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
     this.durableCatalog?.observe(string(message.method), message.params);
-    if (message.method === "thread/archived" || message.method === "thread/deleted") this.schedules?.suspend(threadId);
+    if (message.method === "thread/archived" || message.method === "thread/deleted") {
+      this.schedules?.suspend(threadId);
+      void this.transcriptCache?.invalidate(threadId).catch(() => this.diagnostic({ event: "thread-cache-cleanup-failed" }));
+    }
     if (message.method === "turn/started" && threadId) {
       const turnId = string(record(record(message.params).turn).id);
       if (turnId) this.activeTurns.set(threadId, turnId);
       if (!this.ephemeralThreads.has(threadId) && !this.threadTitles?.owns(threadId)) this.recovery?.started(threadId, turnId);
+      if (turnId) this.options.collaboration?.orchestration?.observed({threadId,turnId,rootTurnId:this.recovery?.snapshot(threadId)?.rootTurnId??turnId,state:"active"});
       const retry = this.capacityRetries.get(threadId);
       if (retry && !retry.inFlight && retry.autoTurnId !== turnId) this.clearCapacityRetry(threadId);
     }
@@ -1354,6 +1584,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.activeTurns.delete(threadId);
       const turn = record(record(message.params).turn);
       this.recovery?.finished(threadId, string(turn.id));
+      const recovery = this.recovery?.snapshot(threadId);
+      if ((!recovery || recovery.turnId===string(turn.id)) && (!recovery || !["interrupted", "preparing", "dispatching"].includes(recovery.state))) this.options.collaboration?.orchestration?.observed({
+        threadId, turnId: string(turn.id) || null, rootTurnId: recovery?.rootTurnId ?? (string(turn.id) || null),
+        state: turn.status === "completed" ? "completed" : turn.status === "failed" ? "failed" : recovery?.handledReason === "user_stop" ? "interrupted_by_user" : "unconfirmed",
+        summary: (Array.isArray(turn.items) ? turn.items : []).map(record).filter(item => item.type === "agentMessage").map(item => string(item.text)).join("\n").slice(-4096),
+      });
       if (["completed", "failed", "interrupted"].includes(string(turn.status))) for (const listener of this.scheduleObservers) listener({
         threadId, turnId: string(turn.id), state: turn.status === "completed" && !turn.error ? "completed" : "failed",
       });
@@ -1428,6 +1664,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (string(record(record(result).thread).id) !== threadId) return;
       this.subscribeThread(threadId, pending.clientId);
       this.claimInteractionOwner(threadId, pending.clientId);
+    } else if (pending.method === "thread/read" && pending.params.watch === true) {
+      // Reading may observe an already-running stream, but never owns its
+      // execution or pending interactions and never loads a native engine.
+      this.watchHistory(string(pending.params.threadId), pending.clientId);
     } else if (pending.method === "turn/start") {
       this.subscribeThread(string(pending.params.threadId), pending.clientId);
     }
@@ -1455,19 +1695,24 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const params = record(message.params);
-    if (message.method === "item/tool/call" && CONVERSATION_TOOLS.some(t=>t.name===params.tool) && (params.namespace === undefined || params.namespace === null || params.namespace === "")) {
+    if (message.method === "item/tool/call" && [...CONVERSATION_TOOLS, ...THREAD_ORCHESTRATION_TOOLS].some(t=>t.name===params.tool) && (params.namespace === undefined || params.namespace === null || params.namespace === "")) {
       const key=String(id),token=Symbol(key);
       if(this.collaborationCalls.has(key)) return;
-      if(this.collaborationCalls.size>=16) {void this.writePhysical({id,result:{success:false,contentItems:[{type:"inputText",text:"Conversation tool limit exceeded"}]}})?.catch(()=>{});return;}
+      if(this.collaborationCalls.size>=16) {void this.writePhysical({id,...(message.__opencraftCallbackIncarnation?{__opencraftCallbackIncarnation:message.__opencraftCallbackIncarnation,__opencraftToolCallKey:message.__opencraftToolCallKey}:{}),result:{success:false,contentItems:[{type:"inputText",text:"Conversation tool limit exceeded"}]}})?.catch(()=>{});return;}
       this.collaborationCalls.set(key,token);
       const respond = (success: boolean, value: unknown) => {
-        if(this.collaborationCalls.get(key)!==token || this.statusValue.state!=="open")return;
-        return this.writePhysical({id,result:{success,contentItems:[{type:"inputText",text:JSON.stringify(value)}]}});
+        if(this.collaborationCalls.get(key)!==token || this.statusValue.state!=="open" || this.options.collaboration?.orchestration?.available?.()===false)return;
+        return this.writePhysical({id,...(message.__opencraftCallbackIncarnation ? {__opencraftCallbackIncarnation:message.__opencraftCallbackIncarnation,__opencraftToolCallKey:message.__opencraftToolCallKey} : {}),result:{success,contentItems:[{type:"inputText",text:JSON.stringify(value)}]}});
       };
       void Promise.resolve().then(()=>{
         if (!this.options.collaboration) throw new Error("Conversation tools unavailable");
+        if (THREAD_ORCHESTRATION_TOOLS.some(tool=>tool.name===params.tool) || message.__opencraftToolCallKey && this.options.collaboration.orchestration) {
+          if (!this.nativeCore || !this.options.collaboration.orchestration || !message.__opencraftToolCallKey || !message.__opencraftCallbackIncarnation) throw new OrchestrationControlError(503,"Thread orchestration requires an independent callback-capable Engine Host");
+          if (!message.__opencraftDelegationId) throw new OrchestrationControlError(403,"A bounded user delegation is required");
+          return this.options.collaboration.orchestration.tool(string(params.threadId),string(params.turnId),string(message.__opencraftToolCallKey),string(params.tool),record(params.arguments),string(message.__opencraftDelegationId)||undefined,string(message.__opencraftCallbackIncarnation)||undefined);
+        }
         return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
-      }).then(value=>respond(true,value),()=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying."})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
+      }).then(value=>respond(true,value),(error:unknown)=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status:typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
       return;
     }
     const key = JSON.stringify(id);
@@ -1515,6 +1760,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private threadTargets(threadId: string): string[] {
     const targets = new Set(this.threadClients.get(threadId) ?? []);
+    for (const id of this.historyWatchers.get(threadId) ?? []) targets.add(id);
     // A join begins before native resume is sent. The Client's resume buffer
     // holds these events until its authoritative snapshot has been committed.
     for (const request of this.pending.values()) {
@@ -1536,6 +1782,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const clients = this.threadClients.get(threadId);
+    const watchers = this.historyWatchers.get(threadId);
+    watchers?.delete(clientId);
+    if (watchers?.size === 0) this.historyWatchers.delete(threadId);
     const wasSubscribed = clients?.delete(clientId) ?? false;
     if (clients?.size === 0) this.threadClients.delete(threadId);
     for (const request of this.pending.values()) {
@@ -1583,7 +1832,10 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private canReleaseNativeSubscription(threadId: string): boolean {
     return this.statusValue.state === "open" && this.nativeSubscribedThreads.has(threadId)
-      && this.threadTargets(threadId).length === 0 && !this.hasHostThreadDemand(threadId);
+      && (this.threadClients.get(threadId)?.size ?? 0) === 0
+      && ![...this.pending.values()].some(request => request.params.threadId === threadId
+        && (request.method === "thread/resume" || request.method === "turn/start") && this.validClientRequest(request))
+      && !this.hasHostThreadDemand(threadId);
   }
 
   private scheduleNativeRelease(threadId: string, minimumDelayMs = 0): void {
@@ -1628,6 +1880,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       });
   }
 
+  private watchHistory(threadId: string, clientId: string): void {
+    if (!threadId) return;
+    let clients = this.historyWatchers.get(threadId);
+    if (!clients) { clients = new Set(); this.historyWatchers.set(threadId, clients); }
+    clients.add(clientId);
+  }
+
   private subscribeThread(threadId: string, clientId: string): void {
     if (!threadId) return;
     this.cancelNativeRelease(threadId);
@@ -1637,6 +1896,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
+    for (const [threadId, clients] of this.historyWatchers) {
+      clients.delete(clientId);
+      if (clients.size === 0) this.historyWatchers.delete(threadId);
+    }
     this.desktopService?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
     this.clientEpochs.delete(clientId);
     this.initializedClients.delete(clientId);
@@ -1827,15 +2090,20 @@ export class CodexEngineAdapter implements DuplexTransport {
     throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
   }
 
-  private requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
+  private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
-    if(usageAttemptId)this.tokenUsage?.attempt(usageAttemptId,string(params.threadId),string(params.clientUserMessageId),method==="turn/start"?"start":"steer",usageIdentity);
-    const unknown=()=>{if(usageAttemptId)this.tokenUsage?.attemptOutcome(usageAttemptId,"unknown");};
+    const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
+    if(usageAttemptId)await usageRuntime?.attempt(usageAttemptId,string(params.threadId),string(params.clientUserMessageId),method==="turn/start"?"start":"steer",usageIdentity);
+    if(signal?.aborted||this.statusValue.state!=="open"||!this.physicalAvailable||physicalGeneration!==this.sessionMcpGeneration){
+      if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"rejected");
+      throw new RecoveryNotSubmitted("Codex request retired before native submission");
+    }
+    const unknown=()=>{if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"unknown");};
     return new Promise((resolve, reject) => {
       const cleanup = () => signal?.removeEventListener("abort", cancel);
       const cancel = () => {
@@ -1988,9 +2256,31 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
 
+  private reconcileGenerationThread(threadId: string): void {
+    if (this.closeOperation || this.generationReconciling.has(threadId)) return;
+    this.generationReconciling.set(threadId, null);
+    const inspect = () => {
+      if (this.closeOperation) { this.generationReconciling.delete(threadId); return; }
+      void this.withThreadOperation(threadId, async () => {
+        await this.queueThreadIsIdle(threadId);
+        const result = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }));
+        const goal = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        this.noteGoal(threadId, goal.goal);
+        this.receivePhysicalLine(JSON.stringify({ method: "thread/status/changed", params: { threadId, status: record(result.thread).status } }));
+        this.generationReconciling.delete(threadId); this.recovery?.wake(); this.scheduleQueueMaintenance(threadId);
+        if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
+      }).catch(() => {
+        if (this.closeOperation) { this.generationReconciling.delete(threadId); return; }
+        const timer = setTimeout(inspect, 1_000); timer.unref(); this.generationReconciling.set(threadId, timer);
+      });
+    };
+    inspect();
+  }
+
   private async inspectInterruptedTurn(turn: Readonly<RecoveryTurn>): Promise<"live" | "lost" | "finished" | "handled" | "unknown"> {
     if (!this.physicalInitialized || this.statusValue.state !== "open") return "unknown";
-    if (this.queue?.firstUnsettled(turn.threadId)) return "handled";
+    const queued=this.queue?.firstUnsettled(turn.threadId);
+    if (queued && !this.knownSystemInput(turn.threadId,queued.clientUserMessageId)) return "handled";
     const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
     const thread = record(result.thread);
     if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
@@ -2012,7 +2302,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.coreReconnectTimer = setTimeout(() => {
       this.coreReconnectTimer = null;
       void (async () => {
-        this.coreReinitializing = true;
+        this.coreReinitializing = true; this.generationDiscoveryComplete = false; ++this.generationGoalScan;
         await this.nativeTransport!.connect();
         if (this.closeOperation) return;
         this.activeTurns.clear(); this.nativeSubscribedThreads.clear();
@@ -2116,6 +2406,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
   private async discoverActiveGoals(): Promise<void> {
+    const scan = ++this.generationGoalScan; this.generationDiscoveryComplete = false;
     let cursor: string | null = null;
     for (let page = 0; page < 1_000 && this.statusValue.state === "open"; page++) {
       const response = record(await this.requestPhysical("thread/list", {
@@ -2129,7 +2420,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.noteGoal(threadId, result.goal);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
       }
-      if (response.nextCursor === null) return;
+      if (response.nextCursor === null) { if (scan === this.generationGoalScan) this.generationDiscoveryComplete = true; return; }
       if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) throw new Error("Codex Thread list did not advance");
       cursor = response.nextCursor;
     }
@@ -2293,6 +2584,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     await this.reconcileQueue(threadId);
     const first = queue.firstAwaitingAdmission(threadId);
     if (!first || first.state !== "queued") return;
+    const recovery=this.recovery?.snapshot(threadId);
+    if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
       if (this.options.collaborationInput?.available() === false) return;
       const mode = this.options.collaborationInput?.mode(first.clientUserMessageId);
@@ -2309,7 +2602,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     await this.dispatchQueuedStart(threadId, first.id);
   }
 
+  private knownSystemInput(threadId:string,inputId:string):boolean {
+    return this.options.tokenUsage?.submission?.(threadId,inputId)?.sourceKind==='system'||this.tokenUsage?.ledger.storedSubmission(threadId,inputId)?.sourceKind==='system';
+  }
   private queuedUsageIdentity(context:TransportSubmissionContext|undefined,threadId:string,inputId:string,mode:"start"|"steer"):UsageSubmission|undefined {
+    const trusted=this.options.tokenUsage?.submission?.(threadId,inputId);
+    if(trusted?.sourceKind==="system")return {...trusted,mode};
     if(!context)return undefined;
     let actor:{id:string;kind:"human"|"session"}|null=null;
     try{actor=context.actorContext?this.options.tokenUsage?.actor(context.actorContext)??null:null;}
@@ -2435,7 +2733,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         const row = this.hostState!.transaction(() => {
           this.recordSender(params, context);
-          if (context.actorContext && this.options.collaboration && !actorClientId.startsWith('actor-input:')) {context.resourceOwner?.assertCurrent();this.options.collaboration.authorize(context.actorContext, threadId, string(params.clientUserMessageId));}
+          if (context.actorContext && this.options.collaboration && !actorClientId.startsWith('actor-input:')) {context.resourceOwner?.assertCurrent();this.options.collaboration.authorize(context.actorContext, threadId, string(params.clientUserMessageId), Array.isArray(params.input) ? params.input : []);}
           return queue.add(threadId, string(params.clientUserMessageId), params.input as readonly unknown[]);
         });
         result = { queuedSubmission: this.queueProjection(row) };
@@ -2582,10 +2880,15 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
     if (message.method === "turn/start") await this.prepareSessionMcp(string(record(message.params).threadId));
+    if ((this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && (message.method === "turn/start" || message.method === "turn/steer")) {
+      const params=record(message.params),delegationId=this.options.collaboration?.inputDelegation?.(string(params.threadId),string(params.clientUserMessageId),string(params.expectedTurnId)||undefined);
+      message={...message,params:{...params,__opencraftDelegationId:delegationId??null}};
+    }
     if (this.options.collaboration && message.method === "thread/start") {
       const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
-      const names = new Set<string>(CONVERSATION_TOOLS.map(t=>t.name));
-      message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...CONVERSATION_TOOLS.map(t=>({type:"function",...t}))]}};
+      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS] : CONVERSATION_TOOLS;
+      const names = new Set<string>(owned.map(t=>t.name));
+      message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...owned.map(t=>({type:"function",...t}))]}};
     }
     // Product default, not a second reasoning owner: all native starts (also
     // Host queue delivery) request returned summaries. Explicit null keeps

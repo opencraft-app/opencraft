@@ -3,7 +3,7 @@ import { CopyIcon as Copy } from "@opencraft/design-system-web/action-icons";
 import { chatFileCitationPresentation, chatReferenceTarget, useSettledResourceTarget, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-react";
 import { FormattedMessage } from "@opencraft/i18n/react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ExternalLinkIcon as ExternalLink, GlobeIcon as Globe2 } from "@opencraft/design-system-web/action-icons";
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";

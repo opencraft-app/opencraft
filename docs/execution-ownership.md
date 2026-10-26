@@ -133,6 +133,8 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 恢复已有会话时，历史读取独立完成并呈现；capability 声明可在后台准备。失败不清空已恢复历史、不删除已有 Thread。用户执行时重试所需准备，并在提交位置呈现失败。
 
+用户命令的 metadata-only `activate` 与只读历史恢复分别持有等待；旧激活 ACK 不阻塞新的 readonly baseline。激活 ACK 只提交 execution/stream 字段，保留当前历史 source、cursor 和其间观测到的 live settings。准备 await 后重新核对当前 baseline，并在首个写入发送前复核本地资格；创建/fork 已确认后的失败属于部分效果，不能归类为全未发送。完整 historical Resume 与 legacy message-window 保留原组合契约。详见[恢复契约](architecture/platform/connection-recovery-contract.md#execution-activation-and-current-presentation)。
+
 执行准入必须保证检查与提交之间绑定没有变化。Capability 替换和执行准入复用 Host 的 ThreadLifecycle 队列；引擎执行权继续由 execution authority 管理。不能只在 `await validate` 前检查“当前没有执行”，随后无条件卸载工具。
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。
@@ -345,10 +347,39 @@ The `runtime/engines/list` endpoint describes the enabled engine registry.
 `plugins/pi-engine` embeds the pinned experimental `pi-durable` 1.3.0 SDK in the
 server execution owner. It does not start the legacy Pi CLI RPC process. The owner
 holds each session's SQLite database, writer lock, scheduler and model/tool environment.
-For providers without a server queue, the browser outbox holds follow-ups while
-the current Turn is active and preserves input identity across baseline recovery.
-Pi publishes native idle status when a Turn settles so waiting local follow-ups
-can be admitted after the current execution completes.
+Pi exposes the shared durable queue and atomic queue-to-steer APIs. Pending message
+custody lives in the native conversation's `opencraft.queue` document; native
+submissions remain the sole execution receipts. Queue updates, removal and exact
+reordering are native commits. Atomic queued steer checks the target live run,
+removes custody and admits native steering in one transaction. A stale target or
+already-dispatched input is rejected without changing its destination. Stable
+client identities reconcile admission after lost ACKs or owner restart; a discarded
+message retains a native tombstone and cannot reappear on retry. Reading history or
+the queue does not start a dormant execution owner.
+
+A single per-thread dispatcher claims pending input only when idle. A native receipt
+retires stale claimed custody even if its ACK was lost. Without such a receipt, a
+failed send pauses the queue for an explicit retry. Stop pauses pending messages
+before aborting the active Turn; queued messages survive restart and can be edited,
+removed or explicitly resumed. Successful new direct input resumes normal queue
+processing. Temporary threads cannot own durable queues.
+
+Pi publishes native idle status when a Turn settles and supports `turn/steer`.
+`expectedTurnId` is checked against the native live run in the admission transaction.
+Steers are consumed at native tool/final boundaries; current model requests and
+tools continue under their original owner. Client message identity deduplicates
+retries, including after restart and completion, and rejects conflicting content.
+Original input blocks, context and the target Turn are preserved in native records;
+a display-only admission entry retains them when stop withdraws an unplaced input.
+All corresponding native submissions project into the same OpenCraft Turn.
+
+Native steering projection distinguishes inbox admission (`pending`), actual
+context placement (`accepted`) and withdrawal before placement (`cancelled`). The
+shared timeline defers to that native state rather than treating a transport ACK
+as consumption. The existing message status slot presents these states; queue and
+steer remain separate available actions, preserving the user's sending preference.
+The browser outbox still handles disconnected custody and never replays an unknown
+outcome as a new native execution.
 Closing the owner suspends work; explicit stop aborts it. On startup the owner checks
 recovery hints against native durable records and resumes unfinished inputs. Native
 entries, submissions and committed partials are the history authority; the adjacent

@@ -21,13 +21,16 @@ const base: UserMessageTimelineBlock = { type: "user-message", id: "base", sourc
 const file = { type: "file" as const, id: "f", name: "index.ts", target: "/workspace/index.ts", mimeType: null, startLine: 4, endLine: 8 };
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#2876c7"/></svg>')}`;
 const cases: [string, Partial<UserMessageTimelineBlock>][] = [
-  ["goal", { ...deriveUserMessageSemantics("## Code review guidelines: private context\n## My request: first\n## My request for Codex: /goal Ship the release"), sender: { kind: "employee", loginName: "reviewer" } }],
+  ["goal", { sentAtMs: 1_700_000_000_000, ...deriveUserMessageSemantics("## Code review guidelines: private context\n## My request: first\n## My request for Codex: /goal Ship the release"), sender: { kind: "employee", loginName: "reviewer" } }],
   ["empty", {}], ["review", { reviewMode: true }], ["prior", { referencesPriorConversation: true }],
   ["image", { content: [{ type: "image", source: image, detail: null }] }],
   ["file", { attachments: [file], content: [{ type: "mention", name: "index.ts", path: file.target }] }],
   ["context", { content: [{ type: "skill", name: "review", path: "/skills/review/SKILL.md" }] }],
   ["failed", { message: "Retry this", deliveryStatus: "failed" }],
   ["sending", { message: "Sending this", deliveryStatus: "sending" }],
+  ["steer-pending", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "pending", deliveryStatus: "sent" }],
+  ["steer-accepted", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "accepted", deliveryStatus: "sent" }],
+  ["steer-cancelled", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "cancelled", deliveryStatus: "sent" }],
   ["comment", { commentCount: 1, attachments: [{ type: "comment", id: "c", label: "note", target: null, body: "fix", line: null }] }],
   ["audio", { content: [{ type: "audio", source: "data:audio/wav;base64,UklGRg==" }] }],
 ];

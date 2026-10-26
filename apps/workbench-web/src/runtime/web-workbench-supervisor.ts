@@ -148,6 +148,8 @@ import {
 } from "./workbench-navigation-transaction";
 
 import { appServerUrl, BoundedCheckpointMap, BrowserDisplayContinuity, createWebWorkbenchCommands, createWorkbenchQueryClient, currentProductDatabaseName, currentProductStorageKey, readLocalPreference, currentWorkbenchPlatform, hostDefinitionProfile, HostlessWebWorkbenchApplicationSupervisor, parseWebHostDefinitions, persistProvisionedHost, profileDescriptor, provisionWebSocketHost, refreshBundledHostProfiles, rememberedThreadId, WebWorkbenchApplicationSupervisor, WebWorkbenchSupervisorOptions } from './workbench-application-services';
+import { ClientResources } from "@opencraft/document-storage/client-resources";
+import { openClientResourcePersistence } from "./client-resource-persistence";
 export async function createWebWorkbenchApplicationSupervisor(
   browserToolHost: BrowserDynamicToolHost,
   terminalToolHost: ConversationTerminalToolHost,
@@ -265,6 +267,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     const localClientScope = clientProduct?.persistenceScope ? null : new LocalClientPersistenceScope(platformAccounts, serverStorageKey("local"));
     if (localClientScope) startupRollback.push(() => localClientScope.dispose());
     const clientPersistenceScope = clientProduct?.persistenceScope ?? localClientScope!;
+    const clientResources = new ClientResources(
+      openClientResourcePersistence(currentProductDatabaseName("opencraft-client-resources")),
+      JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
+    );
+    const stopClientResourceScope = clientPersistenceScope.subscribe(() => clientResources.setNamespace(
+      JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
+    ));
+    startupRollback.push(stopClientResourceScope, () => clientResources.close());
     // Existing task View continuity remains its sole persistence owner. Bot
     // content uses a separate account-bound adapter; an old account cannot
     // read or write through it after its credential scope is revoked.
@@ -476,6 +486,10 @@ export async function createWebWorkbenchApplicationSupervisor(
         });
       });
     }
+    if (platform === 'electron') {
+      await extensions.loadOptional('opencraft.account', async () =>
+        (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
+    }
     if (headlessAppHost !== null) {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
@@ -653,6 +667,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => authenticationFiber.dispose(),
     () => environmentFiber.dispose(),
     stopBotDraftScope,
+    stopClientResourceScope,
+    () => clientResources.close(),
     () => clientProduct?.dispose(),
     () => localClientScope?.dispose(),
     disconnectAppearanceThemes,
@@ -711,6 +727,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectionProviders.providers,
     );
     const hostless: HostlessWebWorkbenchApplicationSupervisor = {
+      clientResources,
       setConversationPresentationActive,
       connectors,
       connectorManager,
@@ -1192,6 +1209,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
+    clientResources,
     managedHostCatalog: sshManagement,
     cordis,
     appServerRegistry,

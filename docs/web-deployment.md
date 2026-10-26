@@ -219,7 +219,7 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 
 稳定入口的安装和回退共用 execution profile 解释：带完整 v1 执行元数据（protocolVersion、platform、arch、nodeAbi）且包含非空 gateway、daemon、DSH capability payload 的旧包，未声明 profile 且没有 Headless 网站或独立 DSH Host 标识时按历史 daemon 契约识别。没有 execution 元数据的纯网站包仍是独立网站；显式未知或无效 profile 不按 daemon 回退。网站独立更新只核验发行 profile，不额外要求执行平台/ABI 与网站主机一致；显式启用受管执行后，原有平台/ABI、原生 payload、活动任务、数据和切换检查继续由执行部署负责。真正不同 profile 的迁移仍须单独安排。本兼容逻辑属于固定启动器，网站热更新不会替换已安装的旧启动器；已有入口须经后续修复版的入口维护才能生效。
 
-默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主和 APP Server/CLI 自身升级仍需任务自然排空，多代并行与自动续跑分别实施。
+默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
 
 SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
 

@@ -2,7 +2,7 @@ import type { PointerEventHandler } from "react";
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil, DeleteIcon as Trash2 } from "@opencraft/design-system-web/action-icons";
 import { useAsyncNotices } from "./async-notices";
 import { useIntl } from "@opencraft/i18n/react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ArchiveIcon as Archive, ForkIcon as GitFork, PinIcon as Pin, PinOffIcon as PinOff } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -140,7 +140,6 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
   const { onFork, onArchive, onSetPinned } = owner.callbacks;
   const { busy, forking } = owner.activity(target);
   const modalHandoff = useRef(false);
-  const [touchContext, setTouchContext] = useState(false);
   const run = (operation: () => Promise<void>, action: "fork" | "archive" | "pin" | "delete" | "copy" | "other" = "other") => { void owner.run(target, operation, action); };
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
@@ -163,17 +162,8 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
   return <>
     <div className="sidebar-activity-row" data-has-menu={hasMenu ? "true" : "false"}>
       {/* Keep the dropdown outside this trigger: portal pointer events still bubble through the React tree. */}
-      <ContextMenu.Root modal={touchContext} open={!disabled && hasMenu && openMenuKind === "context"} onOpenChange={open => onOpenMenuChange("context", open)}>
-        <ContextMenu.Trigger asChild disabled={disabled || !hasMenu} onPointerDown={event => {
-          setTouchContext(event.pointerType === "touch");
-          onPointerDown?.(event);
-        }}
-          onClickCapture={event => {
-            // Touch release retains its original target even after a context menu opens.
-            if (openMenuKind === "context" && "pointerType" in event.nativeEvent && event.nativeEvent.pointerType === "touch") {
-              event.preventDefault(); event.stopPropagation();
-            }
-          }}>
+      <ContextMenu.Root open={!disabled && hasMenu && openMenuKind === "context"} onOpenChange={open => onOpenMenuChange("context", open)}>
+        <ContextMenu.Trigger asChild disabled={disabled || !hasMenu} onPointerDown={onPointerDown}>
           <div className="sidebar-activity-row__target">{children}</div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={onMenuCloseAutoFocus}>
@@ -181,7 +171,7 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
           {contextMenuExtra ? <><ContextMenu.Separator />{contextMenuExtra}</> : null}
         </ContextMenu.Content></ContextMenu.Portal>
       </ContextMenu.Root>
-      <DropdownMenu.Root modal={false} open={!disabled && hasMenu && openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
+      <DropdownMenu.Root open={!disabled && hasMenu && openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
         {hasMenu ? <DropdownMenu.Trigger asChild>
           <button type="button" className="sidebar-activity-item__menu-trigger" aria-describedby={activityLabelId} aria-label={intl.formatMessage(forking ? { id: "sidebar.thread.forking", defaultMessage: "Creating branch for {title}" } : { id: "sidebar.thread.actions", defaultMessage: "Actions for {title}" }, { title: target.title })} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy || disabled}>
             {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal className="sidebar-activity-item__menu-dots" size={14} aria-hidden="true" />}

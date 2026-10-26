@@ -21,9 +21,13 @@ CREATE TABLE token_usage_legacy_import (
 const THREAD_QUERY_INDEX = `
 CREATE INDEX token_usage_turns_thread_query ON token_usage_turns(server_id,thread_id,started_ms,turn_id);
 `;
+export const TOKEN_USAGE_RECENCY_INDEX = `
+CREATE INDEX token_usage_sources_observed_query ON token_usage_sources(server_id,observed_ms);
+`;
 export const TOKEN_USAGE_STATE_MIGRATIONS = [
   { version: 1, name: "isolated-token-usage", sql: SCHEMA },
   { version: 2, name: "token-usage-thread-query-index", sql: THREAD_QUERY_INDEX },
+  { version: 3, name: "token-usage-source-recency-index", sql: TOKEN_USAGE_RECENCY_INDEX },
 ] as const;
 
 /** One physical metering store per Host, independent of queue/identity locks.
@@ -36,7 +40,7 @@ export class TokenUsageStateDatabase {
   readonly outcome: DatabaseOutcome;
   constructor(directory: string, legacyPath?: string) {
     const managed = openManagedDatabase({ path: join(directory, "token-usage.sqlite"),
-      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX) });
+      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX + TOKEN_USAGE_RECENCY_INDEX) });
     this.database = managed.database;
     this.outcome = managed.outcome;
     try { if (legacyPath) this.importLegacy(legacyPath); }

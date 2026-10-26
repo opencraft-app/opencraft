@@ -21,13 +21,24 @@ import {
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 
+import { elapsedNow } from "./clock";
 import { AppServerClientError, AppServerRpcError } from "./errors";
 import type { DuplexTransport, TransportStatus } from "./transport";
 
 export interface AppServerClientClock {
+  /** Absolute diagnostic timestamps. Legacy single-clock adapters also supply elapsed time here. */
   now(): number;
+  /** Nondecreasing elapsed time for budgets and durations; includes simulated suspension. */
+  elapsedNow?(): number;
   setTimeout(callback: () => void, delayMs: number): ReturnType<typeof globalThis.setTimeout>;
   clearTimeout(timerId: ReturnType<typeof globalThis.setTimeout>): void;
+}
+
+/** Client-local admission; callbacks are never part of protocol/bridge options. */
+export interface AppServerClientRequestOptions extends AppServerRequestOptions {
+  /** Synchronous final check after lifecycle observers and serialization.
+   * Throw to reject before transport admission; the original error is preserved. */
+  beforeSend?(): void;
 }
 
 export interface AppServerClientConfig {
@@ -50,6 +61,11 @@ export interface AppServerClientConfig {
  */
 export interface ServerRequestResponseContext {
   readonly delivered: Promise<void>;
+  /** Native request lifetime, independent of any history/view operation.
+   * Aborts after this exact context retires; inspect retirement to distinguish
+   * Host resolution, a sent answer and connection loss. */
+  readonly signal: AbortSignal;
+  readonly retirement: "answered" | "resolved" | "lost" | null;
 }
 
 export type ServerRequestHandler = (
@@ -81,17 +97,21 @@ interface PendingRequest {
   method: string;
   priority: AppServerRequestOptions["priority"];
   queuedAtMs: number;
+  queuedElapsedAtMs: number;
   startedAtMs: number;
+  startedElapsedAtMs: number;
   params: unknown;
   timeoutMs: number;
   preparationTurnId?: string;
   resolve(value: unknown): void;
   reject(error: Error): void;
   timerId: ReturnType<typeof globalThis.setTimeout> | null;
+  timerTicket: number;
   removeAbortListener(): void;
 }
 
 interface MutableServerRequestResponseContext extends ServerRequestResponseContext {
+  retirement: ServerRequestResponseContext["retirement"];
   resolve(): void;
   reject(error: Error): void;
 }
@@ -104,7 +124,7 @@ interface ActiveServerRequest {
   phase: "handling" | "sending";
 }
 
-function createServerRequestResponseContext(): MutableServerRequestResponseContext {
+function createServerRequestResponseContext(signal: AbortSignal): MutableServerRequestResponseContext {
   let resolve!: () => void;
   let reject!: (error: Error) => void;
   const delivered = new Promise<void>((resolvePromise, rejectPromise) => {
@@ -115,7 +135,7 @@ function createServerRequestResponseContext(): MutableServerRequestResponseConte
   // promise for interested owners without producing an unhandled rejection
   // when a legacy handler ignores the optional lifecycle detail.
   void delivered.catch(() => undefined);
-  return { delivered, resolve, reject };
+  return { delivered, signal, retirement: null, resolve, reject };
 }
 
 function utf8ResponseBytes(frame: string): number {
@@ -135,6 +155,7 @@ function utf8ResponseBytes(frame: string): number {
 let clientIncarnationSequence = 0;
 const systemClock: AppServerClientClock = {
   now: () => Date.now(),
+  elapsedNow,
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (timerId) => globalThis.clearTimeout(timerId),
 };
@@ -177,16 +198,16 @@ export interface AppServerClient {
   readonly status: TransportStatus;
   readonly initializeResult: AppServerInitializeResponse | null;
   readonly connectionGeneration: number;
-  connect(params: AppServerInitializeParams, signal?: AbortSignal): Promise<AppServerInitializeResponse>;
+  connect(params: AppServerInitializeParams, signal?: AbortSignal, assertCurrent?: () => void): Promise<AppServerInitializeResponse>;
   request<TMethod extends AppServerMethod>(
     method: TMethod,
     params: AppServerMethodParams<TMethod>,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<AppServerMethodResult<TMethod>>;
   requestRaw<TResult = unknown>(
     method: string,
     params: unknown,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<TResult>;
   subscribeNotification(listener: (notification: AppServerNotification) => void): () => void;
   interceptNotification(interceptor: AppServerNotificationInterceptor): () => void;
@@ -209,6 +230,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly transport: DuplexTransport;
   private readonly requestTimeoutMs: number;
   private readonly clock: AppServerClientClock;
+  private elapsedTime() { return this.clock.elapsedNow?.() ?? this.clock.now(); }
   private readonly createRequestId: () => JsonRpcId;
   private readonly maxPendingRequests: number;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
@@ -226,7 +248,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private transportRevision = 0;
   private closed = false;
   private initialized: AppServerInitializeResponse | null = null;
-  private initializePromise: Promise<AppServerInitializeResponse> | null = null;
+  private initializationSignal: AbortSignal | undefined;
+  private initialization: { readonly promise: Promise<AppServerInitializeResponse>; cancel(cause: unknown): void } | null = null;
 
   constructor(config: AppServerClientConfig) {
     this.hostId = config.hostId;
@@ -248,7 +271,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   get initializeResult(): AppServerInitializeResponse | null {
-    return this.initialized;
+    return this.initializationSignal?.aborted ? null : this.initialized;
   }
 
   get connectionGeneration(): number {
@@ -258,37 +281,64 @@ export class JsonRpcAppServerClient implements AppServerClient {
   async connect(
     params: AppServerInitializeParams,
     signal?: AbortSignal,
+    assertCurrent?: () => void,
   ): Promise<AppServerInitializeResponse> {
     if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
-    if (this.transport.status.state === "open" && this.initialized !== null) return this.initialized;
-    if (this.initializePromise !== null) return this.initializePromise;
-    // Transport status observers may synchronously call connect again.
-    // Own the shared initialization before entering any transport code.
-    const operation = Promise.resolve().then(async () => {
-      if (this.closed) throw new AppServerClientError("CLOSED", "AppServer client is closed");
-      if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
-      await this.transport.connect(signal);
+    if (signal?.aborted) throw new AppServerClientError("ABORTED", "AppServer connection was aborted");
+    assertCurrent?.();
+    const initialized = this.initializeResult;
+    if (this.transport.status.state === "open" && initialized !== null) return initialized;
+    if (this.initialization !== null) return this.initialization.promise;
+    let resolve!: (result: AppServerInitializeResponse) => void, reject!: (cause: unknown) => void;
+    const promise = new Promise<AppServerInitializeResponse>((done, fail) => { resolve = done; reject = fail; });
+    void promise.catch(() => undefined);
+    const controller = new AbortController();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const attempt = { promise, cancel: (cause: unknown) => {
+      if (this.initialization !== attempt) return;
+      // Release this LOCAL slot before lower-layer abort/status observers reenter.
+      this.initialization = null;
+      cleanup();
+      reject(cause);
+      controller.abort(cause);
+    } };
+    const abort = () => attempt.cancel(new AppServerClientError("ABORTED", "AppServer connection was aborted"));
+    this.initialization = attempt;
+    signal?.addEventListener("abort", abort, { once: true });
+    const check = () => {
+      if (this.closed || this.initialization !== attempt || controller.signal.aborted)
+        throw controller.signal.reason ?? new AppServerClientError("CLOSED", "AppServer initialization was revoked");
+      assertCurrent?.();
+    };
+    // Uncooperative lower-layer work may finish later; it cannot retain the local
+    // operation or publish through its successor. Physical barriers stay below.
+    void Promise.resolve().then(async () => {
+      check();
+      await this.transport.connect(controller.signal);
+      check();
       const revision = this.transportRevision;
-      const result = await this.request("initialize", params, { signal, priority: "user-blocking" });
+      const result = await this.request("initialize", params, { signal: controller.signal, priority: "user-blocking" });
       if (this.closed || revision !== this.transportRevision || this.transport.status.state !== "open") {
         throw new AppServerClientError("TRANSPORT_ERROR", "AppServer initialization belongs to a lost connection");
       }
+      // A resumed page must validate its owner deadline before caching readiness.
+      check();
+      // The owner may still revoke its handoff after this Promise resolves.
+      // Ordinary callers' completed connect cancellation remains a no-op.
+      this.initializationSignal = assertCurrent ? signal : undefined;
       this.initialized = result;
       this.generation += 1;
-      return result;
-    });
-    this.initializePromise = operation;
-    try {
-      return await operation;
-    } finally {
-      if (this.initializePromise === operation) this.initializePromise = null;
-    }
+      this.initialization = null;
+      cleanup();
+      resolve(result);
+    }).catch(cause => attempt.cancel(cause));
+    return promise;
   }
 
   request<TMethod extends AppServerMethod>(
     method: TMethod,
     params: AppServerMethodParams<TMethod>,
-    options?: AppServerRequestOptions,
+    options?: AppServerClientRequestOptions,
   ): Promise<AppServerMethodResult<TMethod>> {
     return this.requestRaw<AppServerMethodResult<TMethod>>(method, params, options);
   }
@@ -296,7 +346,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   requestRaw<TResult = unknown>(
     method: string,
     params: unknown,
-    options: AppServerRequestOptions = {},
+    options: AppServerClientRequestOptions = {},
   ): Promise<TResult> {
     if (this.closed) return Promise.reject(new AppServerClientError("CLOSED", "AppServer client is closed"));
     if (this.transport.status.state !== "open") {
@@ -322,6 +372,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const request: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
     const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
     const queuedAtMs = this.clock.now();
+    const queuedElapsedAtMs = this.elapsedTime();
 
     return new Promise<TResult>((resolve, reject) => {
       const abort = () => {
@@ -339,23 +390,20 @@ export class JsonRpcAppServerClient implements AppServerClient {
         method,
         priority: options.priority,
         queuedAtMs,
+        queuedElapsedAtMs,
         startedAtMs: queuedAtMs,
+        startedElapsedAtMs: queuedElapsedAtMs,
         params,
         timeoutMs,
         resolve: (value) => resolve(value as TResult),
         reject,
-        timerId: timeoutMs > 0
-          ? this.clock.setTimeout(() => {
-              this.rejectPending(
-                id,
-                new AppServerClientError("TIMEOUT", `AppServer request ${method} timed out after ${timeoutMs} ms`),
-                "timed-out",
-              );
-            }, timeoutMs)
-          : null,
+        timerId: null,
+        timerTicket: 0,
         removeAbortListener: () => options.signal?.removeEventListener("abort", abort),
       };
       this.pending.set(id, pending);
+      if (timeoutMs > 0) this.armRequestTimeout(pending, timeoutMs,
+        `AppServer request ${method} timed out after ${timeoutMs} ms`);
       this.emitRequestLifecycle({
         type: "queued",
         hostId: this.hostId,
@@ -366,6 +414,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       });
       if (this.pending.get(id) !== pending) return;
       pending.startedAtMs = this.clock.now();
+      pending.startedElapsedAtMs = this.elapsedTime();
       this.emitRequestLifecycle({
         type: "started",
         hostId: this.hostId,
@@ -373,7 +422,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         method,
         priority: options.priority,
         startedAtMs: pending.startedAtMs,
-        queueWaitMs: pending.startedAtMs - pending.queuedAtMs,
+        queueWaitMs: Math.max(0, pending.startedElapsedAtMs - pending.queuedElapsedAtMs),
         params,
         timeoutMs,
       });
@@ -388,6 +437,14 @@ export class JsonRpcAppServerClient implements AppServerClient {
       };
       try {
         const frame = encodeJsonRpcMessage(request);
+        if (this.pending.get(id) !== pending) return;
+        try { options.beforeSend?.(); }
+        catch (cause) {
+          if (this.pending.get(id) === pending) this.rejectPending(id,
+            cause instanceof Error ? cause : new Error("AppServer request admission failed", { cause }), "failed");
+          return;
+        }
+        // Admission itself can synchronously cancel/dispose or admit a successor.
         if (this.pending.get(id) !== pending) return;
         void Promise.resolve(this.transport.send(frame, pending.controller.signal)).catch(fail);
       } catch (error) { fail(error); }
@@ -443,6 +500,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     if (this.closed) return;
     this.closed = true;
     this.initialized = null;
+    this.initialization?.cancel(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.rejectAllPending(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.invalidateServerRequests(new AppServerClientError("CLOSED", "AppServer client closed"));
     this.removeMessageListener();
@@ -478,11 +536,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
       if (notification.method === "serverRequest/resolved") {
         const { requestId, threadId } = notification.params as { readonly requestId?: unknown; readonly threadId?: unknown };
         if (typeof requestId === "string" || typeof requestId === "number") {
-          for (const active of this.activeServerRequests) {
+          for (const active of [...this.activeServerRequests]) {
             const requestThreadId = (active.request.params as { readonly threadId?: unknown } | null)?.threadId;
             if (active.revision !== this.transportRevision || typeof active.request.id !== typeof requestId || active.request.id !== requestId) continue;
             if (typeof threadId === "string" && typeof requestThreadId === "string" && threadId !== requestThreadId) continue;
-            this.settleServerRequest(active);
+            this.settleServerRequest(active, undefined, "resolved");
           }
         }
       }
@@ -515,7 +573,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         ...this.lifecycleBase(pending),
         type: "failed",
         endedAtMs,
-        durationMs: endedAtMs - pending.startedAtMs,
+        durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         error,
         get responseBytes() { return utf8ResponseBytes(frame); },
       });
@@ -525,7 +583,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         ...this.lifecycleBase(pending),
         type: "completed",
         endedAtMs,
-        durationMs: endedAtMs - pending.startedAtMs,
+        durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         result: message.result,
         get responseBytes() { return utf8ResponseBytes(frame); },
       });
@@ -533,9 +591,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private async answerServerRequest(request: JsonRpcRequest): Promise<void> {
-    const responseContext = createServerRequestResponseContext();
+    const controller = new AbortController();
+    const responseContext = createServerRequestResponseContext(controller.signal);
     const active: ActiveServerRequest = {
-      request, revision: this.transportRevision, controller: new AbortController(),
+      request, revision: this.transportRevision, controller,
       context: responseContext, phase: "handling",
     };
     this.activeServerRequests.add(active);
@@ -562,7 +621,15 @@ export class JsonRpcAppServerClient implements AppServerClient {
     }
     active.phase = "sending";
     try {
-      await this.transport.send(encodeJsonRpcMessage(response), active.controller.signal);
+      const frame = encodeJsonRpcMessage(response);
+      // Serialization may execute user-defined data accessors. Recheck the
+      // exact native owner after it, immediately before transport admission.
+      if (!this.activeServerRequests.has(active)) return;
+      if (this.closed || active.revision !== this.transportRevision || this.transport.status.state !== "open") {
+        this.settleServerRequest(active, new AppServerClientError("TRANSPORT_ERROR", "AppServer request lost its connection before response admission"));
+        return;
+      }
+      await this.transport.send(frame, active.controller.signal);
       this.settleServerRequest(active);
     } catch (sendError) {
       const deliveryError = new AppServerClientError(
@@ -574,16 +641,17 @@ export class JsonRpcAppServerClient implements AppServerClient {
     }
   }
 
-  private settleServerRequest(active: ActiveServerRequest, error?: Error): boolean {
+  private settleServerRequest(active: ActiveServerRequest, error?: Error, retirement: "answered" | "resolved" = "answered"): boolean {
     if (!this.activeServerRequests.delete(active)) return false;
-    active.controller.abort();
+    active.context.retirement = error === undefined ? retirement : "lost";
     if (error === undefined) active.context.resolve();
     else active.context.reject(error);
+    active.controller.abort(error);
     return true;
   }
 
   private invalidateServerRequests(error: Error): void {
-    for (const active of this.activeServerRequests) this.settleServerRequest(active, error);
+    for (const active of [...this.activeServerRequests]) this.settleServerRequest(active, error);
   }
 
   private dispatchNotification(notification: AppServerNotification): void {
@@ -630,6 +698,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   ): Promise<unknown> {
     const interceptors = [...this.serverRequestInterceptors];
     const dispatch = async (index: number): Promise<unknown> => {
+      if (context.signal.aborted) throw new AppServerClientError("ABORTED", "AppServer request was retired before handler admission");
       if (index >= interceptors.length) {
         const handler = this.serverRequestHandlers.get(request.method);
         if (handler === undefined) {
@@ -659,6 +728,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
     this.transportRevision += 1;
     this.initialized = null;
     const reason = status.reason == null ? "AppServer transport closed" : `AppServer transport closed: ${status.reason}`;
+    this.initialization?.cancel(new AppServerClientError("TRANSPORT_ERROR", reason));
     this.rejectAllPending(new AppServerClientError("TRANSPORT_ERROR", reason), "failed");
     this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", reason));
   }
@@ -677,13 +747,23 @@ export class JsonRpcAppServerClient implements AppServerClient {
         pending.preparationTurnId = params.turnId as string;
       } else if (pending.preparationTurnId === undefined || pending.preparationTurnId !== params.turn?.id) continue;
       // Context preparation is model work, not a stalled RPC. Extend only for
-      // the matching thread and never beyond a bounded absolute deadline.
-      const remaining = Math.max(0, pending.startedAtMs + Math.max(pending.timeoutMs, 180_000) - this.clock.now());
+      // the matching thread and never beyond a bounded elapsed deadline.
+      const remaining = Math.max(0, pending.startedElapsedAtMs + Math.max(pending.timeoutMs, 180_000) - this.elapsedTime());
       const delay = started ? remaining : Math.min(remaining, pending.timeoutMs);
-      if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
-      pending.timerId = this.clock.setTimeout(() => this.rejectPending(pending.id,
-        new AppServerClientError("TIMEOUT", `AppServer request ${pending.method} timed out during context preparation`), "timed-out"), delay);
+      this.armRequestTimeout(pending, delay,
+        `AppServer request ${pending.method} timed out during context preparation`);
     }
+  }
+
+  private armRequestTimeout(pending: PendingRequest, delayMs: number, message: string): void {
+    // Fence even clock adapters that may deliver retired callbacks. The request
+    // object and its timer revision must both still own the timeout decision.
+    const ticket = ++pending.timerTicket;
+    if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
+    pending.timerId = this.clock.setTimeout(() => {
+      if (this.pending.get(pending.id) !== pending || pending.timerTicket !== ticket) return;
+      this.rejectPending(pending.id, new AppServerClientError("TIMEOUT", message), "timed-out");
+    }, delayMs);
   }
 
   private rejectPending(
@@ -704,13 +784,14 @@ export class JsonRpcAppServerClient implements AppServerClient {
       ...this.lifecycleBase(pending),
       type,
       endedAtMs,
-      durationMs: endedAtMs - pending.startedAtMs,
+      durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
       error,
     });
   }
 
   private cleanupPending(id: JsonRpcId, pending: PendingRequest): void {
     this.pending.delete(id);
+    ++pending.timerTicket;
     if (pending.timerId !== null) this.clock.clearTimeout(pending.timerId);
     pending.removeAbortListener();
   }

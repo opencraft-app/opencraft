@@ -997,5 +997,18 @@
   "mobile.connection.failed": "Sambungan tidak dapat disimpan. Semak alamat dan cuba lagi.",
   "page.shareLink": "Kongsi pautan",
   "page.linkCopied": "Pautan disalin",
-  "page.shareFailed": "Tidak dapat berkongsi pautan. Cuba lagi."
+  "page.shareFailed": "Tidak dapat berkongsi pautan. Cuba lagi.",
+  "chat.steer.sending": "Sedang menghantar…",
+  "chat.steer.waiting": "Menunggu langkah semasa selesai",
+  "chat.steer.accepted": "Ditambahkan pada respons semasa",
+  "chat.steer.cancelled": "Dibatalkan",
+  "chat.steer.declined": "Tidak ditambahkan",
+  "chat.queue.pausedAfterStop": "Dijeda selepas dihentikan. Sambung apabila sedia.",
+  "chat.queue.pausedAfterFailure": "Mesej tidak dihantar. Sambung untuk mencuba lagi.",
+  "localAccount.title": "Akaun dan ahli",
+  "localAccount.description": "Log masuk ke pelayan ini dan urus ahlinya.",
+  "localAccount.identity": "Identiti Human",
+  "localAccount.identity.description": "Kaedah log masuk yang disahkan berkongsi Human yang sama. Keahlian pelayan mengawal akses.",
+  "localAccount.manage": "Urus akaun",
+  "localAccount.unavailable": "Pelayan ini belum mendayakan pemalam akaun tempatan."
 }

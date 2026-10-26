@@ -258,3 +258,11 @@ owner, persistence store or inference request is introduced. History may be part
 structured plan/file records and explicit agent states contribute. Terminal completion never
 implies completion of a background process. Desktop and narrow presentation reuse the same
 controlled disclosure/scroll state while the conversation DOM stays mounted.
+
+The summary is a compact utility list. File rows use shared document/code glyphs,
+single-line names with a retained extension, and quiet A/M/D markers only when
+structured history supplies a known change kind. A shared directory is shown once;
+remaining relative directories distinguish equal names. Full original paths remain
+in tooltips and resource callbacks. The presentation does not resolve filesystem
+paths or infer a workspace root. Keyboard focus and touch targets remain available
+in the floating panel and adaptive sheet, including read-only history.

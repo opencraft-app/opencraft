@@ -6,6 +6,38 @@ import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const thread = (id: string) => ({ id, sessionId: id, name: id, cwd: "/workspace", path: `/rollouts/${id}`, historyMode: "paginated", status: { type: "idle" }, turns: [] });
 
+for(const stage of ["queued","history"] as const)test(`Runtime subscriber disposal during ${stage} releases retryRestore without another read`,async()=>{
+  const requests:string[]=[];
+  const transport=new MemoryTransport({receive(frame,peer){
+    const message=JSON.parse(frame);if(message.id===undefined)return;requests.push(message.method);
+    const result=message.method==="initialize"?{codexHome:"/fixture",platformFamily:"unix",platformOs:"linux",userAgent:"subscriber"}:
+      message.method==="thread/read"?{thread:thread("thread-created")}:
+      message.method.endsWith("/list")?{data:[],nextCursor:null}:{};
+    peer.send(JSON.stringify({id:message.id,result}));
+  }});
+  const runtime=createAppServerWorkbenchRuntime({hostId:"subscriber-dispose",transport,autoReconnect:false});
+  let remove:()=>void=()=>undefined;
+  try {
+    await runtime.connect();const lease=await runtime.acquireThread("thread-created");
+    for(let i=0;i<20 && !lease.getSnapshot().authoritative;i++)await tick();assert.equal(lease.getSnapshot().authoritative,true);
+    await tick();
+    const reads=requests.filter(method=>method==="thread/read").length;
+    let disposal:Promise<void>|undefined,settled=false;
+    remove=runtime.subscribe(()=>{
+      if(!disposal && runtime.getSnapshot().residentThreads.find(value=>value.threadId==="thread-created")?.recovery?.stage===stage) {
+        // Set the guard before dispose synchronously publishes its own state.
+        remove();disposal=runtime.dispose();
+      }
+    });
+    let retry!:Promise<void>;
+    assert.doesNotThrow(()=>{retry=lease.retryRestore().then(()=>{settled=true;});});
+    await tick();assert.ok(disposal);await disposal;await tick();
+    assert.equal(settled,true,"public retry caller cannot remain pending after Runtime disposal");
+    assert.equal(requests.filter(method=>method==="thread/read").length,reads);
+    await retry;
+  }finally{remove();await runtime.dispose();}
+});
+
 test("Host and active Thread recover independently of a rejected Thread and stalled watch", async () => {
   let peer!: InMemoryAppServerPeer;
   let recovering = false;
@@ -19,8 +51,7 @@ test("Host and active Thread recover independently of a rejected Thread and stal
       requests.push(message.method);
       const send = (result: unknown) => reply.send(JSON.stringify({ id: message.id, result }));
       if (message.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "recovery-test" });
-      else if (message.method === "thread/read") send({ thread: thread(message.params.threadId) });
-      else if (message.method === "thread/resume") {
+      else if (message.method === "thread/read") {
         resumedIds.push(message.params.threadId);
         if (recovering && message.params.threadId === "missing") {
           reply.send(JSON.stringify({ id: message.id, error: { code: -32000, message: "Thread no longer exists" } }));
@@ -53,7 +84,7 @@ test("Host and active Thread recover independently of a rejected Thread and stal
     assert.equal(runtime.getSnapshot().phase, "ready");
     for (let i = 0; i < 10; i++) await tick();
     assert.equal(healthy.getSnapshot().authoritative, true);
-    assert.equal(healthy.getSnapshot().execution.serviceTier, "fast", "reconnect restores speed from the Host");
+    assert.equal(healthy.getSnapshot().execution.serviceTier, null, "a read does not invent execution configuration");
     assert.equal(runtime.getThreadResidency("missing")?.phase, "error");
     assert.deepEqual(resumedIds.slice(recoveryStart), ["healthy", "missing"], "visible first; cache residency alone creates no recovery read");
     const reopened = await runtime.acquireThread("cache-only");
@@ -77,8 +108,7 @@ for (const mode of ["acquire", "retry"] as const) {
       methods.push(request.method);
       const send = (result: unknown) => peer.send(JSON.stringify({id:request.id,result}));
       if (request.method === "initialize") { initializes++;send({codexHome:"/tmp",platformFamily:"unix",platformOs:"linux",userAgent:"timeout-test"}); }
-      else if (request.method === "thread/read") send({thread:thread("history")});
-      else if (request.method === "thread/resume") {
+      else if (request.method === "thread/read") {
         resumes++; if (drop) { drop=false;return; }
         send({thread:thread("history"),model:"test",modelProvider:"test",cwd:"/workspace",serviceTier:"default",
           reasoningEffort:"medium",approvalsReviewer:"user",runtimeWorkspaceRoots:["/workspace"],instructionSources:[],
@@ -123,8 +153,7 @@ for (const [label, data, persistent, expected] of [
       methods.push(request.method);
       const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
       if (request.method === "initialize") { initializes++; send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "rpc-recovery-test" }); }
-      else if (request.method === "thread/read") send({ thread: thread("history") });
-      else if (request.method === "thread/resume") {
+      else if (request.method === "thread/read") {
         resumes++;
         if ((persistent && resumes < expected) || resumes === 1) {
           peer.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "history unavailable", data } }));
@@ -156,7 +185,7 @@ for (const [label, data, persistent, expected] of [
   });
 }
 
-test("making a cold Thread visible does not resume a healthy peer; connection loss still restores both", async () => {
+test("making a cold Thread visible does not reread a healthy peer; connection loss still restores both", async () => {
   let peer!: InMemoryAppServerPeer;
   let completeCold: (() => void) | undefined;
   const resumes: string[] = [];
@@ -168,8 +197,7 @@ test("making a cold Thread visible does not resume a healthy peer; connection lo
       if (request.id === undefined) return;
       const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
       if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "visibility-test" });
-      else if (request.method === "thread/read") send({ thread: thread(request.params.threadId) });
-      else if (request.method === "thread/resume") {
+      else if (request.method === "thread/read") {
         const id = request.params.threadId;
         resumes.push(id);
         const finish = () => send({ thread: thread(id), model: "test", modelProvider: "test", cwd: "/workspace",
@@ -200,7 +228,7 @@ test("making a cold Thread visible does not resume a healthy peer; connection lo
     cold.setRecoveryVisibility(true);
     cold.setRecoveryVisibility(true);
     for (let i = 0; i < 10; i++) await tick();
-    assert.deepEqual(resumes, ["healthy", "cold"], "navigation must not force-resume the retained healthy peer");
+    assert.deepEqual(resumes, ["healthy", "cold"], "navigation must not force-read the retained healthy peer");
     assert.equal(watchRequests, 1, "navigation must not restore unrelated Host watches");
     assert.equal(healthy.getSnapshot().authoritative, true);
     completeCold!();
@@ -227,8 +255,8 @@ test("a channel stuck in history backoff cannot reconnect or delay a healthy cha
       if (request.method === "initialize") {
         counts[failed ? "failedInit" : "healthyInit"]++;
         send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "channel-isolation" });
-      } else if (request.method === "thread/read") send({ thread: thread("history") });
-      else if (request.method === "thread/resume") {
+      }
+      else if (request.method === "thread/read") {
         counts[failed ? "failed" : "healthy"]++;
         if (failed && failing) peer.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "unavailable" } }));
         else send({ thread: thread("history"), model: "test", modelProvider: "test", cwd: "/workspace",
@@ -260,4 +288,36 @@ test("a channel stuck in history backoff cannot reconnect or delay a healthy cha
     assert.equal(counts.failedInit, 1); assert.equal(counts.healthyInit, 1);
     failed.release(); healthy.release();
   } finally { await bad.dispose(); await good.dispose(); }
+});
+
+for (const readHistory of [false, true]) test(`message-window bootstrap preserves provider readiness (read history=${readHistory})`, async () => {
+  const requests: string[] = [];
+  const page = { data: [{ id: "window", itemsView: "full", status: "completed", items: [{ id: "answer", type: "agentMessage", text: "History remains visible" }] }], nextCursor: null };
+  const metadata = { ...thread("window-thread"), historyMode: "message-window" };
+  const transport = new MemoryTransport({ receive(raw, peer) {
+    const request = JSON.parse(raw); if (request.id === undefined) return;
+    requests.push(request.method);
+    let result: unknown = {};
+    if (request.method === "initialize") result = { capabilities: { extensions: {
+      "opencraft/message-window-history": { version: 1 },
+      "opencraft/resume-history": { version: 1, mode: "message-window" },
+      ...(readHistory ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
+    } } };
+    else if (request.method === "thread/read") result = { thread: metadata, ...(readHistory ? { initialTurnsPage: page } : {}) };
+    else if (request.method === "thread/resume") result = { thread: metadata, initialTurnsPage: page,
+      model: "fixture", modelProvider: "fixture", cwd: "/workspace", approvalPolicy: "on-request",
+      approvalsReviewer: null, sandbox: {}, runtimeWorkspaceRoots: ["/workspace"] };
+    else if (request.method.endsWith("/list")) result = { data: [], nextCursor: null };
+    peer.send(JSON.stringify({ id: request.id, result }));
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "window-provider", transport, autoReconnect: false });
+  try {
+    await runtime.connect(); const lease = await runtime.acquireThread("window-thread");
+    for (let n = 0; n < 100 && !lease.getSnapshot().authoritative; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(lease.getSnapshot().authoritative, true, lease.getSnapshot().error?.message);
+    assert.ok(JSON.stringify(lease.getSnapshot().timeline).includes("History remains visible"));
+    assert.equal(requests.filter(method => method === "thread/resume").length, readHistory ? 0 : 1);
+    assert.equal(requests.some(method => method === "turn/start"), false);
+    lease.release();
+  } finally { await runtime.dispose(); }
 });

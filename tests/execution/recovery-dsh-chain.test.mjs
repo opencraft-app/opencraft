@@ -28,7 +28,7 @@ const transport=new MemoryTransport({connected:value=>{peer=value;},receive:asyn
  const message=JSON.parse(frame);if(message.id===undefined)return;
  requests.push({method:message.method,params:message.params});
  try {
- const result=message.method==='initialize'?{codexHome:'/tmp',platformFamily:'unix',platformOs:'linux',userAgent:'dsh-fixture',capabilities:{extensions:{'opencraft/resume-history':{version:1,mode:'paginated',initialTurnsPage:true,boundedRecovery:true}}}}:await adapter.dispatch(message.method,message.params);
+ const result=message.method==='initialize'?{codexHome:'/tmp',platformFamily:'unix',platformOs:'linux',userAgent:'dsh-fixture',capabilities:{extensions:{'opencraft/read-history':{version:1,initialTurnsPage:true,boundedRecovery:true},'opencraft/resume-history':{version:1,mode:'paginated',initialTurnsPage:true,boundedRecovery:true}}}}:await adapter.dispatch(message.method,message.params);
  reply.send(JSON.stringify({id:message.id,result}));
  }catch(error){reply.send(JSON.stringify({id:message.id,error:{code:-32000,message:error.message}}));}
 }});
@@ -42,14 +42,14 @@ try{
  assert.equal(native.length,1,'unused navigation does not enumerate history');
  await lease.getNavigation().prepare();
  baseline={rpc:requests.slice(),nativeHistoryReads:native.length,nativeHistoryRequests:native.slice()};
- assert.equal(baseline.nativeHistoryReads,2); // one tail plus useful older-only navigation
+ assert.equal(baseline.nativeHistoryReads,1); // Stage 0 initially reads ten Turns, covering this entire fixture
  assert.equal(requests.filter(r=>r.method==='thread/items/list').length,0);
- assert.notEqual(requests.find(r=>r.method==='thread/turns/list').params.cursor,null);
+ assert.equal(requests.filter(r=>r.method==='thread/resume').length,0);
  const before=native.length, revalidation=lease.retryRestore();
  assert.equal(lease.getSnapshot().authoritative,false,'manual revalidation immediately revokes authority');
  await revalidation;
  assert.equal(native.length,before+(nativeHead?0:1),'unchanged native head eliminates history reads; legacy falls back');
- const position=requests.filter(r=>r.method==='thread/resume')[1].params.historyCheckpoint;
+ const position=requests.filter(r=>r.method==='thread/read')[1].params.historyCheckpoint;
  const resume=checkpoint=>adapter.dispatch('thread/resume',{threadId:'s',excludeTurns:true,historyCheckpoint:checkpoint,initialTurnsPage:{limit:5,itemsView:'full',sortDirection:'desc'}});
  const unchanged=await resume(position);
  assert.equal(unchanged.historyRecovery.mode,'unchanged');
@@ -61,7 +61,7 @@ try{
  const activeReads=native.length;
  await lease.retryRestore();
  assert.equal(native.length,activeReads+1,'an observed active Turn requires a fresh history read');
- assert.equal(requests.filter(r=>r.method==='thread/resume').at(-1).params.historyCheckpoint,undefined,'active Turn state cannot offer its older checkpoint');
+ assert.equal(requests.filter(r=>r.method==='thread/read').at(-1).params.historyCheckpoint,undefined,'active Turn state cannot offer its older checkpoint');
  for(let turn=10;turn<110;turn++) {
   push('turn/start',{turn}); push('user/message',{source:{kind:'user'},content:[{type:'text',text:`prompt-${turn}`}]});
   push('assistant/message',{turn,message:{content:[{type:'text',text:`answer-${turn}`}]}});
@@ -102,8 +102,8 @@ test('native-head Resume retains events arriving after its cut on a replacement 
  const transport=new MemoryTransport({connected:p=>{peer=p;client=`client-${++sequence}`;},disconnected:()=>lifecycle.disconnect(client),receive:async(frame,reply)=>{
   const request=JSON.parse(frame);if(request.id===undefined)return;
   try {
-   const result=request.method==='initialize'?{capabilities:{extensions:{'opencraft/resume-history':{version:1,mode:'paginated',initialTurnsPage:true,boundedRecovery:true}}}}
-    :request.method==='thread/resume'?await lifecycle.dispatch(request.method,request.params,client,(method,params)=>adapter.dispatch(method,params))
+   const result=request.method==='initialize'?{capabilities:{extensions:{'opencraft/read-history':{version:1,initialTurnsPage:true,boundedRecovery:true},'opencraft/resume-history':{version:1,mode:'paginated',initialTurnsPage:true,boundedRecovery:true}}}}
+    :request.method.startsWith('thread/')?await lifecycle.dispatch(request.method,request.params,client,(method,params)=>adapter.dispatch(method,params))
     :await adapter.dispatch(request.method,request.params);
    reply.send(JSON.stringify({id:request.id,result}));
   }catch(error){reply.send(JSON.stringify({id:request.id,error:{code:-32000,message:error.message}}));}
@@ -116,14 +116,34 @@ test('native-head Resume retains events arriving after its cut on a replacement 
   await runtime.connect();lease=await runtime.acquireThread('s');lease.setRecoveryVisibility(true);
   await until(()=>lease.getSnapshot().authoritative);await transport.close();
   let enter,release;const entered=new Promise(r=>{enter=r;}),held=new Promise(r=>{release=r;unblock=r;});
-  const model=adapter.describedModel.bind(adapter);
-  adapter.describedModel=async(...args)=>{enter();await held;return model(...args);};
+  const read=adapter.recoveryHistory.bind(adapter);
+  adapter.recoveryHistory=async(...args)=>{const result=await read(...args);enter();await held;return result;};
   const before=reads,pending=runtime.reconnect();await entered;
   assert.equal(lifecycle.attachments.has(client,'s'),false,'replacement client has no successful attachment yet');
   const from=events.length,beforeDelivery=delivered;turn(2,'late answer');
   for(const entry of events.slice(from))adapter.onMuxFrame({type:'session/event',sessionId:'s',event:entry.event});
   await until(()=>delivered>beforeDelivery);release();await pending;
   await until(()=>lease.getSnapshot().authoritative&&JSON.stringify(lease.getSnapshot().timeline).includes('late answer'));
-  assert.equal(reads,before+1,'replacement connection reloads one bounded tail and preserves concurrent observations');
+  assert.equal(reads,before+2,'replacement tail plus one quiet reread orders unsequenced lifecycle observations');
+  assert.equal(lease.getSnapshot().activeTurn,null,'the older buffered start cannot revive a completed Turn');
+  assert.equal(JSON.stringify(lease.getSnapshot().timeline).match(/late answer/g)?.length,1,'the canonical answer is retained once');
  }finally{unblock?.();lease?.release();await runtime.dispose();await lifecycle.close();adapter.close();}
+});
+
+test('DSH reads native history and older pages without resuming the engine', async t => {
+ const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const root=await mkdtemp(join(tmpdir(),'opencraft-dsh-read-cache-'));let reads=0,activations=0;
+ const events=[];const add=turn=>{for(const [type,data]of [['turn/start',{turn}],['user/message',{source:{kind:'user'},content:[{type:'text',text:`Question ${turn}`}]}],['assistant/message',{turn,message:{content:[{type:'text',text:`Answer ${turn}`}]}}],['turn/end',{turn,reason:{kind:'completed'}}]])events.push({event:{seq:events.length,time:1000,type,data}});};
+ for(let n=0;n<30;n++)add(n);
+ const adapter=new DshAppServerAdapter({call:async(method,params)=>{assert.equal(method,'session.history');reads++;const page=events.filter(e=>params.beforeSeq===undefined||e.event.seq<params.beforeSeq);return {events:page.slice(-50),hasMore:page.length>50};}});
+ t.after(async()=>{await adapter.close();await rm(root,{recursive:true,force:true});});
+ adapter.summaries.set('s',{sessionId:'s',running:false,blank:false,cwd:root,updatedAt:1});
+ adapter.setThreadEngine({describe:async()=>({historyHead:{nextSeq:events.length}}),resume:async()=>{activations++;throw Error('History must stay read-only');}});
+ const read=()=>adapter.dispatch('thread/read',{threadId:'s',watch:true,initialTurnsPage:{limit:10,itemsView:'full',sortDirection:'desc'}});
+ const cold=await read();assert.equal(cold.initialTurnsPage.data[0].id,'dsh-turn-s-29');
+ const before=reads;assert.deepEqual((await read()).initialTurnsPage,cold.initialTurnsPage);assert.ok(reads>before);
+ const older=await adapter.dispatch('thread/turns/list',{threadId:'s',cursor:cold.initialTurnsPage.nextCursor,limit:10});
+ assert.equal(older.data[0].id,'dsh-turn-s-19');
+ add(30);assert.equal((await read()).initialTurnsPage.data[0].id,'dsh-turn-s-30');
+ assert.equal(activations,0);
 });

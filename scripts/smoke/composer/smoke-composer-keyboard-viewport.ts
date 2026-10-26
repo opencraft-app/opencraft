@@ -201,8 +201,8 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
  assert.equal(await editor.innerText(),overlayDraft);assert(await overlayEditor!.evaluate(e=>e.isConnected));
  await page.evaluate(()=>{document.documentElement.dataset.windowDisplayMode='tab';document.documentElement.dataset.windowEdgeStrategy='system-color-extension'});
- await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
- evidence.push({theme,newera,overlay:{cssCanvasHeight:844,clientHeight:782,visibleHeight:844,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabUsesObservedCapacity:true}});
+ await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===782);
+ evidence.push({theme,newera,overlay:{cssCanvasHeight:844,clientHeight:782,visibleHeight:844,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabUsesExistingLayoutCapacity:782}});
  await context.close();
 
  }

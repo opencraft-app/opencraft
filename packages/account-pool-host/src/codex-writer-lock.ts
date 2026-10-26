@@ -19,7 +19,7 @@ export async function acquireCodexWriter(dataDirectory: string, owner: "combined
     // Old embedded versions and orphaned CLI children do not hold our new lock.
     // Linux server migration must also check their actual CODEX_HOME before opening stores.
     if (owner !== "accounts" && process.platform === "linux") {
-      const home = join(root, "runtime");
+      const home = await realpath(join(root, "runtime")).catch(() => join(root, "runtime"));
       for (const pid of await readdir("/proc")) {
         if (!/^\d+$/u.test(pid) || Number(pid) === process.pid) continue;
         let command: string;

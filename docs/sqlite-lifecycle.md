@@ -1,6 +1,6 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-16 已实现十五类自有 Node SQLite 物理库的独立迁移账本、升级前备份与旧库处置；配置目录的 Local Agent 六库在启动期打开，Codex/SSH 的功能私有 owner 按实际使用生命周期打开，摘要进入健康检查。保留 node:sqlite，不引入 ORM，不提供自动恢复备份。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)，验证边界见第 7 节。
+状态：2026-10-16 已实现十六类自有 Node SQLite 物理库的独立迁移账本、升级前备份与旧库处置；配置目录的 Local Agent 六库在启动期打开，Codex/SSH 的功能私有 owner 按实际使用生命周期打开，摘要进入健康检查。保留 node:sqlite，不引入 ORM，不提供自动恢复备份。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)，验证边界见第 7 节。
 
 ## 1. 设计结论
 
@@ -14,13 +14,14 @@
 
 ## 2. 现有存储清单
 
-以下十五类物理库均经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
+以下十六类物理库均经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
+| `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
 | `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
 | `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/workbench-electron/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
 | `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录 |
@@ -29,6 +30,7 @@
 | `opencraft-executions.sqlite` | daemon 内 Local Agent Host：[dsh-execution-authority](../apps/local-agent-host/src/dsh-execution-authority.ts) | Host `dataDirectory` | epoch、执行日志、输入及队列 |
 | `opencraft-host-documents.sqlite` | daemon 内 Local Agent Host：[document-storage/sqlite](../packages/document-storage/src/sqlite.ts) | Host `dataDirectory` | Host 通用文档；与 client-local 物理分离 |
 | `opencraft-managed-connectors.sqlite` | daemon 内 Local Agent Host：[connector-host/store](../packages/connector-host/src/store.ts) | Host `dataDirectory` | 实例、凭据与 OAuth 事务 |
+| `codex-generations.sqlite` | 可选独立 generation routing owner：[generation-registry](../apps/codex-core/src/generation-registry.ts) | 显式 registry directory | schema v1：默认代/接纳 epoch、Thread 归属、未知创建与退休回执；不持有账号/Host/native 数据 |
 | `account-pool.sqlite` | 独立 codex-core：[account-pool-host/store](../packages/account-pool-host/src/store.ts)、[account service](../packages/account-pool-host/src/codex-account-service.ts) | codex-core `dataDirectory` | 账户元数据、亲和性与配额；secret 文件由同一 owner 管理 |
 | `tasks.sqlite` | [TasksSqliteStore](../plugins/tasks/src/sqlite.ts)；Local Agent 启动 owner / Codex 功能私有 owner | 原 Host 目录；各实例各自独占，不跨目录合库 | Tasks、关联、revision/CAS；原 `tasks-rows` v1 SQL/hash 不变 |
 | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | [OpenCraftHostStateDatabase](../apps/opencraft-daemon/src/opencraft-host-state-database.ts)；CodexEngineAdapter | 原 Codex 目录；SSH 为原 `ssh-servers/<binding hash>` 目录 | durable queue、message_senders、企业身份 presence/state/completion 与远端会话目录/同步水位共用一个迁移/连接/事务 owner |
@@ -38,7 +40,7 @@
 
 Electron Main 三库仍按消费入口懒打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。
 
-Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-writer.sqlite` 只承担账号 writer lock，`.codex-runtime.sqlite` 保护 native runtime；兼容/内嵌模式获取两把，显式拆分的账号 Core 与 APP Server owner 分别持有，均排除于业务库清单。账号 Core 不打开 native 数据库；APP Server 不打开 account-pool。不同代次必须使用独立可写 CODEX_HOME，见 [三步平滑升级](codex-core.md#执行侧平滑升级三步方案)。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
+Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-routing-owner.sqlite` 只保护唯一 generation registry owner，`.codex-writer.sqlite` 只承担账号 writer lock，`.codex-runtime.sqlite` 保护 native runtime；兼容/内嵌模式获取两把，显式拆分的账号 Core 与 APP Server owner 分别持有，均排除于业务库清单。账号 Core 不打开 native 数据库；APP Server 不打开 account-pool。不同代次必须使用独立可写 CODEX_HOME，见 [三步平滑升级](codex-core.md#执行侧平滑升级三步方案)。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
 
 ### 两个 Host 自有文件的离线改名
 
@@ -502,14 +504,111 @@ It never deletes the former sources. After deployment verify sourceRevision,
 health, new source-archive progress, unchanged old token-source rows and query
 results. Authenticated employee dashboard validation is separate evidence.
 
-For rollback set `OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` in the existing managed
+For retained legacy projection rows, set `OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` in the existing managed
 Headless environment and restart through its normal installation transaction.
 This restores the former collector/query composition and its normal native
 replay, retaining participant facts written after cutover. Keep all three data
 files; never restore an old database over newer participation, and never delete
 the retained archive to roll back. Re-enabling derived mode can rebuild its
 projection from the retained events and existing receipts. No schema downgrade,
-forced Git update or change to account/queue ownership is required.
+forced Git update or change to account/queue ownership is required. Stopping
+legacy maintenance persistently marks its projection stale on the first affected
+turn. This applies even when no offline retirement has run. Ledger mode rebuilds
+all turns from retained source facts/current participants in bounded batches and
+clears that marker only on completion; queries remain unavailable while it does
+so. A stale `ready=1` cannot expose previous shares after participants change.
+
+### Durable metadata off the forwarding loop
+
+Packaged physical Hosts use the existing query-worker entry with an isolated
+metadata-writer role and a second connection to the same participation store.
+The physical Host remains its sole owner; the worker never accepts native input,
+Renderer identities or token counts. It receives only copied trusted identity,
+input/attempt IDs, dispatch mode, timestamps and native outcome/admission metadata.
+It uses the existing ledger transactions and SQLite durability, with a bounded
+10,000-job queue and asynchronous contention retry (a 1,500ms budget from ingress, including queue
+wait, so a stalled predecessor cannot multiply that delay for later requests).
+Attempts are acknowledged only after commit. Native forwarding awaits that
+acknowledgement, then rechecks authority, client/physical generation and cancellation.
+The asynchronous wait is included in forwarding latency, not hidden as synchronous
+CPU time. Statistics faults retain the existing partial-coverage behavior and
+never cancel or resend native input.
+
+Outcomes and confirmed admissions use the same ordered writer, avoiding competing
+source transactions from native acknowledgements. Only the physical owner recovers
+pending attempts at startup; opening/restarting its connection worker never marks
+live attempts unknown. Shutdown stops new attempts, drains acknowledgements and
+resulting outcomes, then closes the worker before the shared store. Embeddings
+without a packaged worker entry retain the direct ledger adapter. Neither path
+changes the confirmed-participation authority or `equal-turn-v1` allocation.
+
+### Retiring legacy token projections
+
+Derived mode stops maintaining the former source store's allocations, model
+buckets, daily/actor aggregates and per-turn contribution rows. Sources, turns,
+confirmed/pending participation, attempts, submissions, admissions, coverage,
+terminals and both replay cursors remain. Existing projection rows can be retired
+offline with `scripts/retire-token-usage-projections.ts`; source history is never
+pruned. This is an explicit maintenance operation, not an automatic archive policy.
+Stop **both** the Headless query owner and its physical Host using their normal
+managed lifecycle before running it. The CLI acquires the existing physical and
+overlay writer leases; do not run it alongside another query/retained owner.
+
+1. Run the CLI with `--data-dir DIR --server-id ID --native-home HOME` to prove
+   a fresh cache reconstructed from retained events and trusted receipts matches
+   every turn, input, allocation, model bucket, day and actor aggregate. It also
+   compares gap identities/reasons/open status. Query revisions, signed cursors
+   and wall-clock gap timestamps are generation metadata and are excluded.
+2. Repeat with `--apply --archive /retained-backups/projections.jsonl.gz`.
+   The operation repeats the proof, streams every scoped row of all seven legacy
+   projection tables to a typed lossless gzip JSONL file, fsyncs it, reads it back
+   and verifies table counts/hashes, then atomically installs the backup. It never
+   overwrites or prunes this archive. Only afterward does one transaction delete
+   those same verified projection rows and write a retirement receipt containing
+   the archive's SHA-256. Checkpoint/VACUUM releases their pages; no source table
+   or native rollout file is deleted or rewritten. A failure retains the archive.
+3. Recheck a fresh derived rebuild and checkpointed sizes of the source, cache and
+   retained databases, including indexes. The NF-07 1GiB limit applies to the fixed
+   100k-turn/1m-source corpus; native history and retained backups are excluded.
+   Report growth during the 60-minute append workload separately.
+
+To roll back a retired source projection, keep both owners stopped and use the
+**current compatible binary/tool** with `--data-dir DIR --server-id ID --restore
+--archive /retained-backups/projections.jsonl.gz`. The tool verifies the exact
+archive against its retirement receipt and schema, restores all projection rows,
+verifies all restored rows against the archive hashes, then recomputes every
+turn from the still-preserved source facts and current
+confirmed participation in bounded batches. Its marker remains until completion;
+interruption can safely restart restoration. Only after success select
+`OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` and restart the managed owners. Queries on
+a retired source fail unavailable until restoration instead of returning empty
+history. Never restore an entire old database over newer participants, drop the
+archive, rewind either replay cursor, or downgrade the source schema. Returning
+to derived mode retains the restored facts and archive and can rebuild its cache.
+
+### Query cost and worker initialization
+
+Personal coverage starts with the authenticated Actor's confirmed admissions,
+using the Actor covering index to materialize the matching threads for the date
+range. One grouped scan returns both the raw open-gap count and the distinct
+thread/reason incident count. Deployment isolation, global incidents, admitted
+Actor kinds and period-wide coverage retain their previous semantics, including
+when detail filters select no turns. Source recency uses a covering
+`(server_id, observed_ms)` index instead of scanning all known responses.
+
+The dedicated source appends migration v3 for recency. The derived cache freezes
+its installed migrations v1–v6 and appends its own v7 index migration; a new source
+migration never renumbers the independent cache history. These indexes preserve
+all counts, participation facts and already-ready projections.
+
+The Host holds at most sixteen distinct live read requests until the worker has
+opened its owner. Each request still expires after 1500ms, including startup
+time. Expiration while opening rejects that request and removes it from the
+bounded waiting set, letting a slow migration finish. Only live requests are sent
+after the worker is ready, with parameters captured at ingress. After opening,
+a scan timeout still terminates the worker and its queued work; closing still
+rejects outstanding requests. Ingress rechecks identity and authorization before
+returning a snapshot. No connection pool or second usage authority is introduced.
 
 ### Dedicated Token metering owner
 
@@ -655,3 +754,53 @@ retry, refusal by older readers, and both old and new checksum tampering.
 reopen/data preservation, refusal without writes when both stores exist or
 sidecars are orphaned, unchanged active legacy WAL during path selection, and
 metering import from both selected paths.
+
+## Transcript read cache
+
+`TranscriptReadCache` owns `<dataDirectory>/cache/transcript-index.sqlite`,
+`cache/transcripts/<threadId>.turns.jsonl`, and per-Thread `.blobs/` directories.
+The index opens through `openManagedDatabase` with its own migration chain;
+`projection_schema_version` is separate from that physical migration version.
+Native history and trusted sender/attachment records remain authoritative.
+Removing the entire cache, just its transcript directory, or a Thread projection
+reconstructs from native reads. A schema mismatch, replaced/truncated/rewritten
+source, malformed projection, checksum mismatch or absent blob invalidates only
+this derived data. Source stat and committed newline byte cursors reconcile
+append-only changes, including incomplete native tails.
+
+Token statistics and transcript reconciliation use `codex-rollout-reader.ts`.
+The Host resolves each Thread through the authenticated Core generation directory.
+A trusted source scope binds the registered HOME, routing owner and runtime
+incarnation; canonical paths remain inside that HOME even on cache hits. Read
+completion validates the scope before publishing a page or committing usage and
+its byte cursor. Derived usage discovery visits registered HOMEs separately; an
+unavailable directory or missing registered HOME is unavailable/partial coverage,
+never a complete empty result. Existing evidence and counting/allocation rules
+remain unchanged. Combined/single-APP mode retains its original HOME boundary.
+The native AppServer read-only paginator owns Turn projection semantics; the
+shared reader identifies the dirty suffix, so there is no second Codex message
+or tool parser. Warm reads use the native file stat and indexed positional reads.
+Output fields larger than 1 KiB live in SHA-256 blobs on disk and are restored
+for the requested full-items response. This keeps the existing clients lossless;
+introducing a separate preview/blob-fetch wire protocol is outside Stage 0.
+Blob references are Thread/Turn scoped. Overwrite removes unreferenced bodies;
+archive/delete clear the Thread files and index. Host directories are private
+`0700`, transcript/blob/index files `0600`. Reading can observe an existing live
+stream but never acquires interaction ownership or creates a native subscription.
+
+The Node cache owner lives in `packages/native-history-node`; Stage 0 connects
+Codex only. DSH and Pi keep their native read-only history paths; consuming this
+disk cache is deferred. Pi takes a read-only SQLite backup
+into a private, short-lived directory below the managed cache and lets native
+Storage materialize entries/documents. It uses the existing Pi projector without
+opening a Harness, writer lease, execution owner, or event watcher. The snapshot
+is removed after reading; the native ledger is never migrated by a history read.
+Corrupt disposable SQLite indexes rebuild, while busy, permission and migration
+failures retain their cause. Authoritative databases are never discarded.
+
+Invalidation advances a per-Thread revision synchronously before queued cleanup.
+An in-flight read with an older revision cannot publish its result. Successful
+archive/delete replies wait for cleanup; native archived/deleted notifications
+also invalidate the derived files, including changes made by another client.
+Native paginators that return `notLoaded` despite a full request are hydrated
+through read-only Item pages before any Turn enters this cache.

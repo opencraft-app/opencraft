@@ -145,7 +145,7 @@ body {
 // The installed overlay is a document-flow canvas. Fixed document roots can
 // clip native painting even when their reported border boxes are full-height.
 html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) {
-  &, body { position: static; inset: auto; height: var(--timeline-visible-viewport-height, 100%); }
+  &, body { position: static; inset: auto; height: 100vh; }
   body { position: relative; }
   .app-shell-root { position: relative; }
   .app-shell-floating-overlay-root { position: absolute; }
@@ -284,9 +284,14 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   top: var(--timeline-available-viewport-top, 0px);
   left: var(--timeline-available-viewport-left, 0px);
   width: var(--timeline-available-viewport-width, 100%);
-  // The same viewport owner measures the visible canvas at rest and during
-  // contraction. A status-bar overlay request does not establish its extent.
-  height: var(--timeline-visible-viewport-height, var(--timeline-available-viewport-height, 100%));
+  height: var(--timeline-available-viewport-height, 100%);
+}
+
+// At rest an installed overlay keeps its full CSS canvas. Native layout/visual
+// metrics can exclude the status strip without describing a keyboard. Actual
+// contraction still uses the existing viewport owner, including after blur.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  height: 100vh;
 }
 
 .app-shell-row {
@@ -4655,7 +4660,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
 
     button {
-      opacity: 1;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 100ms ease;
       display: inline-flex;
       width: 24px;
       height: 24px;
@@ -4684,6 +4691,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
         box-shadow: 0 0 0 2px var(--color-ring, var(--focus-ring));
       }
       &:disabled {
+        opacity: 1;
         cursor: default;
       }
     }
@@ -4691,10 +4699,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   &:focus-within &__actions button {
     opacity: 1;
+    pointer-events: auto;
   }
   @include controls.hover-capable {
-    &:hover &__actions {
-      opacity: 1;
+    &:hover {
+      .thread-user-message__actions button {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
   }
 
@@ -9046,13 +9058,24 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     content: "";
     position: absolute;
     inset: 0;
-    z-index: -1;
+    z-index: 0;
     pointer-events: none;
     border-radius: inherit;
     background: var(--composer-surface-background);
     -webkit-backdrop-filter: var(--composer-surface-filter);
     backdrop-filter: var(--composer-surface-filter);
   }
+}
+
+// Give editable content and commands an explicit foreground above the material.
+// The compact footer uses display:contents, so its generated grid items need
+// the same ordering even though the footer itself has no box. Zero specificity
+// leaves positioned suggestions, dictation and recovery decorations in charge
+// of their own geometry and stacking. No transform/filter encloses native input.
+:where(.opencraft-composer-shell) > *,
+:where(.opencraft-composer-footer) > * {
+  position: relative;
+  z-index: 1;
 }
 
 // Shared material rules keep routine loading quieter than reconnect/failure.
@@ -12083,12 +12106,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-@media (hover: none) {
-  .thread-user-message__actions button {
-    opacity: 1;
-  }
-}
-
 // iPhone in-app browsers zoom focused editable content below 16px. Keep the
 // desktop control scale, but give phone input targets a readable minimum.
 @media (max-width: 767px) and (any-pointer: coarse) {
@@ -12260,11 +12277,22 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 // Browser mobile drawer: safe areas belong to Shell, not individual destinations.
 :root {
-  --shell-mobile-safe-top: var(--safe-layout-inset-top, env(safe-area-inset-top, 0px));
+  --shell-pwa-top-clearance: 0px;
+  --shell-mobile-safe-top: calc(var(--safe-layout-inset-top, env(safe-area-inset-top, 0px)) + var(--shell-pwa-top-clearance));
   --shell-mobile-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
   --shell-mobile-safe-left: var(--safe-layout-inset-left, env(safe-area-inset-left, 0px));
   --shell-mobile-safe-right: var(--safe-layout-inset-right, env(safe-area-inset-right, 0px));
   --shell-content-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+// The platform and engine capabilities bound this workaround without reading
+// the frozen iOS version in userAgent. This is a Safari 27-era capability proxy,
+// not an exact OS version. Keep the full-bleed canvas and allocate content only.
+@supports (-webkit-touch-callout: none) and selector(:heading) {
+  @media (orientation: portrait) {
+    html[data-window-host="browser"][data-window-display-mode="standalone"] {
+      --shell-pwa-top-clearance: 24px;
+    }
+  }
 }
 html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
   --shell-content-safe-bottom: 0px;
@@ -12272,6 +12300,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
 .app-shell-root.has-browser-safe-layout > .app-shell-row {
   // SafeLayout allocates the device inset once inside the measured canvas.
   // Sidebar action surfaces are outside this row and retain their own edge.
+  --safe-layout-inset-top: var(--shell-mobile-safe-top);
   --safe-layout-inset-bottom: var(--shell-content-safe-bottom);
 }
 html[data-window-host="browser"],
@@ -12351,7 +12380,10 @@ html[data-window-host="browser"] body {
   @media (prefers-reduced-motion: no-preference) {
     // This owner exists only for floating presence. Keep its changing scale on
     // a composited layer rather than re-rasterizing it at every scale value.
-    .app-shell-floating-left-panel { will-change: transform, opacity; }
+    // A persistent opacity hint creates a backdrop root even at opacity:1.
+    // Promoted list rows then escape the glass filter's backdrop capture.
+    // Retain scale/translation promotion without isolating the settled backdrop.
+    .app-shell-floating-left-panel { will-change: transform; }
   }
   .app-shell-mobile-sidebar-wash {
     position: absolute;
@@ -12373,6 +12405,7 @@ html[data-window-host="browser"] body {
   }
   .app-shell-floating-sidebar-dismiss { background: var(--color-dialog-scrim); }
   .app-shell-floating-left-panel__surface {
+    --safe-layout-inset-top: var(--shell-mobile-safe-top);
     border-radius: 0;
     box-shadow: none;
     // Only content participates in depth; a second scaled material would leave
@@ -12777,25 +12810,31 @@ html[data-window-host="browser"] body {
     .new-thread-draft-layout {
       --draft-block-start: calc(var(--spacing) * 6 + var(--shell-conversation-top-bleed));
     }
+
+    // Reading continues behind the floating Composer through the bottom edge.
+    // Preserve the body's protected rectangle: it is the single overlay anchor,
+    // including browser portals. Only the reading viewport stretches beyond it.
+    &:has(.thread-scroll[data-thread-find-target="conversation"]) {
+      --shell-conversation-bottom-bleed: var(--shell-content-safe-bottom);
+      margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
+      .main-content-body {
+        margin-block-end: var(--shell-conversation-bottom-bleed);
+        overflow: visible;
+      }
+      .main-content-viewport {
+        margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
+      }
+      .thread-scroll-footer {
+        padding-block-end: calc(16px + var(--shell-conversation-bottom-bleed));
+      }
+    }
   }
 
-  // Reuse Shell's existing non-interactive fade, including in browser windows.
-  // Content and its scroll owner remain mounted beneath the floating controls.
+  // Keep the reading plane clear between the floating controls. Device status
+  // effects and each control's own material are independent of this overlay.
   .main-content-surface:has(.app-shell-header[data-app-shell-conversation-header="true"])
     .main-content-top-fade {
-    display: block;
-    height: calc(var(--shell-conversation-top-bleed, 0px) + var(--height-toolbar) + var(--spacing) * 4);
-    opacity: 1;
-    background-image: linear-gradient(to bottom, color-mix(in srgb, var(--color-surface) 65%, transparent), transparent);
-    backdrop-filter: blur(var(--material-liquid-blur));
-    -webkit-backdrop-filter: blur(var(--material-liquid-blur));
-    mask-image: linear-gradient(to bottom, black, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
-    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      background-image: linear-gradient(to bottom, var(--color-surface), transparent);
-    }
+    display: none;
   }
 }
 
@@ -13049,7 +13088,6 @@ html[data-window-host="browser"] body {
 }
 
 @include controls.touch-input {
-  .thread-user-message__actions button,
   .thread-generated-image-edit,
   .thread-shell-output__copy,
   .thread-tool-details__raw { opacity: 1; }
@@ -13057,7 +13095,7 @@ html[data-window-host="browser"] body {
 
 // Shell actions share one material across pointer, touch, Web and Electron.
 // Existing owners retain dimensions, placement, focus and interaction behavior.
-$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes, .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button)';
+$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes)';
 :root[data-ui-density] #{$shell-liquid-actions} {
   @include material.liquid;
   color: var(--color-text);

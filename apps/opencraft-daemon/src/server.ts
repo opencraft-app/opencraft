@@ -1,5 +1,6 @@
 import { chmod, unlink } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
+import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 
 import {
   type AppHostServer,
@@ -21,6 +22,7 @@ export interface OpenCraftDaemonServerOptions {
   readonly authToken: string;
   readonly appHost: AppHostServer;
   readonly onShutdownRequested: () => void;
+  readonly authenticateHumanSession?: (proof: string) => TransportSubmissionContext | null;
 }
 
 function isNamedPipe(endpoint: string): boolean {
@@ -75,6 +77,13 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
     let role: "app-host" | "control" | null = null;
     let appHostConnection: AppHostServerConnection | null = null;
     let appHostPort: SocketAppHostPort | null = null;
+    let humanContext: TransportSubmissionContext | null = null;
+    let humanTimer: ReturnType<typeof setInterval> | null = null;
+    const humanCurrent = () => {
+      if (!humanContext) return true;
+      try { if ((humanContext.validUntil ?? 0) <= Date.now()) return false; humanContext.resourceOwner?.assertCurrent(); return true; }
+      catch { return false; }
+    };
     const handshakeTimeout = setTimeout(() => {
       if (!authenticated) channel.destroy();
     }, 5_000);
@@ -91,8 +100,17 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
         role = value.role;
         clearTimeout(handshakeTimeout);
         if (role === "app-host") {
+          if (options.authenticateHumanSession || value.humanSession !== undefined) {
+            try { humanContext = typeof value.humanSession === 'string' ? options.authenticateHumanSession?.(value.humanSession) ?? null : null; }
+            catch { humanContext = null; }
+            if (typeof value.humanSession !== 'string' || value.humanSession.length > 128
+              || !humanContext || !humanCurrent()) {
+              channel.send({ type: 'daemon/fatal', code: 'UNAUTHORIZED', message: 'Invalid Human session' }); channel.close(); return;
+            }
+            humanTimer = setInterval(() => { if (!humanCurrent()) channel.close(); }, 500); humanTimer.unref();
+          }
           appHostPort = new SocketAppHostPort(channel);
-          appHostConnection = options.appHost.accept(appHostPort, value.connectionId);
+          appHostConnection = options.appHost.accept(appHostPort, value.connectionId, humanContext ?? undefined);
           connections.add(appHostConnection);
         }
         channel.send({
@@ -110,6 +128,7 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
       }
       const message = value as DaemonClientMessage;
       if (role === "app-host" && message.type === "app-host/message") {
+        if (!humanCurrent()) { channel.close(); return; }
         appHostPort?.receive(message.payload);
         return;
       }
@@ -122,6 +141,7 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
     });
     channel.subscribeClose(() => {
       clearTimeout(handshakeTimeout);
+      if (humanTimer) clearInterval(humanTimer);
       unsubscribeMessage();
       if (appHostConnection !== null) {
         connections.delete(appHostConnection);

@@ -33,9 +33,13 @@ export class LocalAccountServerPlugin implements LocalAccountProvider {
     this.#verified.set(proof, version); return proof;
   }
   async create(username: string, displayName: string, password: string): Promise<Principal> {
+    return this.createWithId(randomUUID(), username, displayName, password);
+  }
+  async createWithId(id: string, username: string, displayName: string, password: string): Promise<Principal> {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(id)) throw new Error('Invalid reserved local account');
     this.#assertOpen(); username = localUsername(username); validNewPassword(password);
     if (typeof displayName !== 'string' || !displayName.trim() || displayName.length > 256 || /[\x00-\x1f]/u.test(displayName)) throw new Error('Invalid display name');
-    const id = randomUUID(), salt = randomBytes(32).toString('hex'), digest = await passwordHash(password, salt);
+    const salt = randomBytes(32).toString('hex'), digest = await passwordHash(password, salt);
     this.#assertOpen();
     this.repository.insert({ id, username, displayName, salt, passwordDigest: digest.toString('hex'), enabled: true, version: 1 });
     return this.#proof(id, displayName, 1);
@@ -53,12 +57,13 @@ export class LocalAccountServerPlugin implements LocalAccountProvider {
     if (!current?.enabled || current.version !== account.version) return null;
     return this.#proof(account.id, account.displayName, account.version);
   }
-  async resetPassword(username: string, password: string): Promise<void> {
+  async resetPassword(username: string, password: string, assertCurrent?: () => void): Promise<void> {
     this.#assertOpen(); validNewPassword(password);
     const account = this.repository.byUsername(localUsername(username));
     if (!account) throw new Error('Unknown local account');
     const salt = randomBytes(32).toString('hex'), digest = await passwordHash(password, salt);
     this.#assertOpen();
+    assertCurrent?.();
     if (!this.repository.updatePassword(account.id, salt, digest.toString('hex'))) throw new Error('Unknown local account');
   }
   setEnabled(username: string, enabled: boolean) {

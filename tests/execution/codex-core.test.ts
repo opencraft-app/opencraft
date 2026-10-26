@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createTcpServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import WebSocket from "ws";
 import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src/main.js";
@@ -14,6 +15,48 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 
 const token = "synthetic-core-token-".repeat(3);
+
+for (const overlays of [false, true]) test(`admission rejection diagnostics survive Host restart without recording input (overlays=${overlays})`, async () => {
+  const f = await fixture(), audit = join(f.root, "admission-audit.jsonl"), client = "audit-client";
+  const a = await f.adapter(overlays, entry => {
+    if (entry.event === "codex-admission-rejected") appendFileSync(audit, JSON.stringify(entry) + "\n");
+  });
+  const flag = join(overlays ? f.options.dataDirectory : join(f.root, "forbidden"), "codex-admission.paused");
+  const threadId = "11111111-1111-7111-8111-111111111111", content = "synthetic-private-content-must-not-be-logged";
+  try {
+    await a.rpc(client, "initialize");
+    await mkdir(join(flag, ".."), { recursive: true }); await writeFile(flag, "maintenance\n");
+    for (const [method, params] of [
+      ["turn/start", { threadId, input: [{ type: "text", text: content }] }],
+      ["thread/goal/set", { threadId, objective: content }],
+      ["thread/start", { input: [{ type: "text", text: content }] }],
+      ["turn/start", { threadId: content, input: [] }],
+    ] as const) await assert.rejects(a.rpc(client, method, params), /temporarily unavailable/);
+    assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).rejectedAdmissions, 4);
+    const rows = readFileSync(audit, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(rows.map(row => row.rejectedAdmissions), [1, 2, 3, 4]);
+    assert.deepEqual(rows.map(row => row.threadId), [threadId, threadId, null, null]);
+    assert.ok(rows.every(row => row.clientId === client && row.reason === "maintenance" && Number.isFinite(Date.parse(row.at))));
+    assert.equal(readFileSync(audit, "utf8").includes(content), false);
+    await a.engine.close();
+    const b = await f.adapter(overlays); await b.rpc(client, "initialize");
+    assert.equal((await b.rpc(client, "opencraft/codex/maintenance/read")).rejectedAdmissions, 0);
+    assert.equal(readFileSync(audit, "utf8").trim().split("\n").length, 4);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
+
+test("a diagnostic sink failure does not admit work or suppress the maintenance error", async () => {
+  const f = await fixture(), a = await f.adapter(true, entry => {
+    if (entry.event === "codex-admission-rejected") throw new Error("synthetic unavailable sink");
+  });
+  const flag = join(f.options.dataDirectory, "codex-admission.paused");
+  try {
+    await a.rpc("audit", "initialize"); await writeFile(flag, "maintenance\n");
+    await assert.rejects(a.rpc("audit", "thread/start"), /temporarily unavailable/);
+    assert.equal((await a.rpc("audit", "thread/list")).data.length, 0);
+    assert.equal((await a.rpc("audit", "opencraft/codex/maintenance/read")).rejectedAdmissions, 1);
+  } finally { await rm(flag, { force: true }); await f.close(); }
+});
 
 for (const overlays of [false, true]) test(`maintenance rejects new Codex inputs while existing work and reads continue (overlays=${overlays})`, async () => {
   const f = await fixture();
@@ -192,6 +235,50 @@ test("split account Core restarts with stable launch credentials while the indep
   } finally { await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("two generation runtimes have independent HOME writers and share one account Core", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-core-generations-"));
+  const reservation = createTcpServer();
+  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  const port = (reservation.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "g0/control.sock"),
+    authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "accounts-data"),
+    nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
+  let core = await startCodexCore(options);
+  const runtimes: Awaited<ReturnType<typeof startCodexAppServer>>[] = [];
+  const launch = new CodexCoreControlClient(options.endpoint, token);
+  const create = (id: string, runtimeDataDirectory = join(root, id, "data")) => startCodexAppServer({ ...options,
+    endpoint: join(root, id, "control.sock"), coreEndpoint: options.endpoint, runtimeDataDirectory,
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
+  try {
+    runtimes.push(await create("g0"), await create("g1"));
+    const readers = ["g0", "g1"].map(id => new CodexCoreControlClient(join(root, id, "control.sock"), token));
+    const before = await Promise.all(readers.map(client => client.appServerHealth()));
+    assert.notEqual(before[0]!.codexPid, before[1]!.codexPid);
+    assert.notEqual(before[0]!.codexHome, before[1]!.codexHome);
+    for (const h of before) {
+      assert.equal(h.dataDirectory, options.dataDirectory);
+      assert.equal(h.proxyBaseUrl, `http://127.0.0.1:${port}`);
+      await assert.rejects(acquireCodexWriter(h.runtimeDataDirectory!, "runtime"), /already owned/);
+      assert.ok((await stat(h.nativeSocket)).isSocket(), "public endpoint is a real socket across mount namespaces");
+      const connection = new WebSocket(`ws+unix://${h.nativeSocket}:/`);
+      await new Promise<void>((resolve, reject) => { connection.once("open", resolve); connection.once("error", reject); });
+      const initialized = new Promise<any>(resolve => connection.once("message", raw => resolve(JSON.parse(String(raw)))));
+      connection.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "relay-test", version: "1" } } }));
+      assert.ok((await initialized).result); connection.terminate();
+    }
+    await assert.rejects(create("duplicate", before[0]!.runtimeDataDirectory), /already owned/);
+    const initialLaunch = await launch.appServerLaunch();
+    await core.close();
+    assert.deepEqual(await Promise.all(readers.map(client => client.appServerHealth())), before);
+    core = await startCodexCore(options);
+    assert.deepEqual(await launch.appServerLaunch(), initialLaunch);
+    assert.deepEqual(await launch.accountRequest("opencraft/codex/accounts/list", {}), { accounts: [] });
+  } finally { for (const runtime of runtimes.reverse()) await runtime.close(); await core.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("proxy drain continues serving other Turns until its long response reaches an idle point", async () => {
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   let baseUrl = "", hostToken = "", modelRequests = 0;
@@ -266,11 +353,11 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
   const core = await startCodexCore(options);
   const control = new CodexCoreControlClient(core.endpoint, token);
   const adapters: CodexEngineAdapter[] = [];
-  async function adapter(overlays = false) {
+  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined) {
     const engine = new CodexEngineAdapter({ ...options, coreEndpoint: core.endpoint, coreAuthToken: token,
       // Remote mode must not touch any local account store or spawn a child.
       dataDirectory: overlays ? options.dataDirectory : join(root, "forbidden"),
-      coreHostOverlays: overlays, logDiagnostic: () => undefined,
+      coreHostOverlays: overlays, logDiagnostic,
       spawnAppServer: () => { throw new Error("Remote mode spawned a writer"); } });
     adapters.push(engine);
     const frames: any[] = [];
@@ -299,6 +386,7 @@ test("core owns accounts and PID across independent daemon clients and zero conn
   const f = await fixture();
   try {
     const before = await f.control.health();
+    assert.equal(await f.control.generationDirectory("legacy-thread"), null, "combined Core needs no new endpoint for legacy compatibility");
     assert.equal((await stat(f.core.endpoint)).mode & 0o777, 0o600);
     assert.equal((await stat(before.nativeSocket)).mode & 0o777, 0o600);
     await assert.rejects(new CodexCoreControlClient(f.core.endpoint, "wrong").health(), /authentication failed/);
@@ -624,4 +712,25 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     const history = await inspector.rpc('inspect', 'thread/read', { threadId: thread.id, includeTurns: true });
     assert.equal(history.thread.turns.length, 2); assert.equal(history.thread.turns[1].items[0].clientId, 'actor-input:' + sent.requestId);
   } finally { await headless?.close(); await f.close(); }
+});
+
+for (const overlays of [false, true]) test(`Read-only Core observers receive live events without owning native execution (overlays=${overlays})`, async () => {
+  const f = await fixture();
+  const a = await f.adapter(overlays);
+  try {
+    await a.rpc("writer", "initialize");
+    const initialized = await a.rpc("reader", "initialize");
+    assert.equal(initialized.capabilities.extensions["opencraft/read-history"].version, 1);
+    const { thread } = await a.rpc("writer", "thread/start");
+    await a.rpc("reader", "thread/read", { threadId: thread.id, watch: true, includeTurns: false });
+    await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "observed" });
+    await delay(30);
+    assert.ok(a.frames.some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"));
+    await a.rpc("reader", "thread/unsubscribe", { threadId: thread.id });
+    const start = a.frames.length;
+    await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "writer only" });
+    await delay(30);
+    assert.equal(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"), false);
+    assert.ok(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
+  } finally { await f.close(); }
 });

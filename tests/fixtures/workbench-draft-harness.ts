@@ -33,6 +33,9 @@ export interface DraftHarness {
   readonly transport: MemoryTransport;
   releaseTurn(): void;
   releaseResume(): void;
+  holdExecutionResume(): void;
+  holdThreadReads(): void;
+  releaseThreadReads(): void;
   releaseCapabilityRegistration(): void;
   failCapabilityRegistration(): void;
   releaseUnsubscribe(): void;
@@ -75,6 +78,8 @@ export function createHarness(
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
   let releaseResume = () => undefined;
+  let executionResumeHeld = false, threadReadsHeld = false;
+  const heldThreadReads: (() => void)[] = [];
   let releaseCapabilityRegistration = () => undefined;
   let failCapabilityRegistration = () => undefined;
   let releaseUnsubscribe = () => undefined;
@@ -85,7 +90,8 @@ export function createHarness(
   let releaseInterrupt = () => undefined;
   let forkPublished = false;
   let activePeer: InMemoryAppServerPeer | null = null;
-  const fixtureThread = (id: string) => ({ ...protocolThread(id), historyMode: declareResumeHistory === "message-window" ? "message-window" : "paginated" });
+  const fixtureThread = (id: string) => ({ ...protocolThread(id), model: "fixture-model", modelProvider: "openai",
+    historyMode: declareResumeHistory === "message-window" ? "message-window" : "paginated" });
   const server: InMemoryAppServer = {
     connected(peer) {
       activePeer = peer;
@@ -139,9 +145,12 @@ export function createHarness(
         });
         if (holdFork) releaseFork = respond;
         else respond();
-      } else if (message.method === "thread/read" && (historyTurns.length > 0 || declareResumeHistory === "message-window")) {
+      } else if (message.method === "thread/read") {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
-        send({ thread: fixtureThread(threadId) });
+        const respond = () => send({ thread: fixtureThread(threadId) });
+        if (delayResume) releaseResume = () => { delayResume = false; respond(); };
+        else if (threadReadsHeld) heldThreadReads.push(respond);
+        else respond();
       } else if (message.method === "thread/start") {
         send({ thread: fixtureThread("thread-created") });
       } else if (message.method === "turn/start") {
@@ -169,7 +178,7 @@ export function createHarness(
           itemsBackwardsCursor: null,
           initialTurnsPage: { data: [], nextCursor: null },
         });
-        if (delayResume) releaseResume = respond;
+        if (delayResume || executionResumeHeld) releaseResume = () => { executionResumeHeld = false; respond(); };
         else respond();
       } else if (message.method === "runtime/capabilities/register") {
         const respond = () => send({ registered: 1 });
@@ -284,6 +293,9 @@ export function createHarness(
     transport: new MemoryTransport(server),
     releaseTurn: () => releaseTurn(),
     releaseResume: () => releaseResume(),
+    holdExecutionResume: () => { executionResumeHeld = true; },
+    holdThreadReads: () => { threadReadsHeld = true; },
+    releaseThreadReads: () => { threadReadsHeld = false; for (const respond of heldThreadReads.splice(0)) respond(); },
     releaseCapabilityRegistration: () => releaseCapabilityRegistration(),
     failCapabilityRegistration: () => failCapabilityRegistration(),
     releaseUnsubscribe: () => releaseUnsubscribe(),

@@ -99,7 +99,7 @@ export function ToolbarDock({ scope, dockId, actions, label, defaultActions = []
         </SortableContext>
       </div>
     </DndContext>
-    <DropdownMenu.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenu.Trigger asChild><button ref={overflow} type="button" className="chrome-button" aria-label={label} title={label}><MoreIcon size={16} aria-hidden="true" /></button></DropdownMenu.Trigger>
       <DropdownMenu.Portal container={portal}><DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4}
         onCloseAutoFocus={event => { if (handoff.current) { event.preventDefault(); handoff.current = false; } }}>

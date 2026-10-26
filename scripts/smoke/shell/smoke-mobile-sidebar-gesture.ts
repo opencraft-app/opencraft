@@ -137,6 +137,7 @@ try {
         evidence.push({theme,reducedMotion,width,geometry});
       }
       await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-top','0px'));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingTop==='0px');
       assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingTop),'0px');
       assert.equal(await input.evaluate(e=>e===(window as any).safeDraft),true);
       assert.equal(await input.inputValue(),'Safe layout independent of sidebar');
@@ -851,7 +852,9 @@ try {
         assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
         const before=await button.boundingBox();assert.ok(before);
         const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
-        assert.ok(initialViewport.y+initialViewport.height<=before.y,'initial list cannot paint behind the creation pill');
+        const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
+        assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
+          'initial native list reaches the drawer bottom behind floating actions');
         await expandScrollFixture();
         assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
         const scroll=panel.locator('.shell-sidebar__scroll');
@@ -871,14 +874,19 @@ try {
         const settings=panel.getByRole('button',{name:'Settings',exact:true});
         assert.equal(await settings.count(),1,'one accessible settings action');
         const gear=await settings.boundingBox();assert.ok(gear);
-        // Translucent actions cannot hide text: the scrolling viewport itself
-        // must stop above them, including before the list reaches its end.
-        assert.ok(viewport.y+viewport.height<=Math.min(before.y,gear.y),
-          'native list viewport stays above floating glass: '+JSON.stringify({viewport,before,gear}));
+        // Floating controls keep their own safe inset; the list continues behind
+        // them, while end padding brings the final row fully above them.
+        assert.ok(Math.abs(viewport.y+viewport.height-column.y-column.height)<1,
+          'native list reaches the bottom edge: '+JSON.stringify({viewport,column}));
+        assert.ok(viewport.y+viewport.height>Math.max(after.y+after.height,gear.y+gear.height),
+          'list continues below both floating actions');
+        assert.equal(await scroll.evaluate(e=>getComputedStyle(e).marginBottom),'0px');
         assert.ok(gear.width>=48&&gear.height>=48,'settings retains a comfortable touch target');
         assert.ok(gear.x>=after.x+after.width+8,'settings floats to the right without overlapping creation');
         assert.ok(Math.abs(gear.y-after.y)<1,'floating actions share a baseline');
         assert.equal(await panel.locator('[data-surface="account"],.sidebar-account__avatar').count(),0,'no mobile avatar or hidden account entrance');
+        const creationPlate=await panel.locator('.shell-sidebar__floating-action').evaluate(e=>getComputedStyle(e).backgroundColor);
+        assert.equal(creationPlate,'rgba(0, 0, 0, 0)','creation host remains transparent');
         const plate=await panel.locator('.shell-sidebar__rail-footer').evaluate(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderTopWidth}));
         assert.deepEqual(plate,{background:'rgba(0, 0, 0, 0)',border:'0px'},'no bottom plate or divider');
         assert.ok(gear.y+gear.height<=844-34,'settings respects the simulated bottom safe area');

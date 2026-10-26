@@ -18,17 +18,18 @@ function collectFiles(directory) {
 
 const violations = [];
 
-// Web menu consumers share direct-touch activation rather than reopening the
-// same accidental-scroll bug at each feature trigger. Radix lives at the adapter.
-for (const directory of ["apps/workbench-web/src", "packages/composer-editor/src", "plugins/tasks/src", "plugins/builtin-agents/src"]) {
-  checkFiles("shared dropdown activation", directory, [{
-    pattern: /["']@radix-ui\/react-dropdown-menu["']/m,
-    message: "must consume design-system-web/dropdown-menu so direct touch completes before opening",
-  }]);
+// Menu input is a shared contract. Focus policy must never opt out of outside
+// isolation; business code cannot import Radix menus behind the adapter.
+for (const directory of ["apps/workbench-web/src", "packages", "plugins"]) {
+  for (const path of collectFiles(resolve(repositoryRoot, directory))) {
+    const location = relative(repositoryRoot, path);
+    if (location.startsWith("packages/design-system-web/")) continue;
+    const source = readFileSync(path, "utf8");
+    if (/["']@radix-ui\/react-(?:dropdown-menu|context-menu)["']/.test(source)) {
+      violations.push(`${location}: command menus must consume design-system-web dropdown-menu/context-menu`);
+    }
+  }
 }
-
-
-
 
 // Shared workbench code consumes SpeechServicePort/AudioCapturePort. Product
 // bridge globals, authenticated routes and fixed product model policy belong

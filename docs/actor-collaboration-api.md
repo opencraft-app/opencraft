@@ -87,3 +87,69 @@ Session bearer 仍被旧共享 HTTP / WebSocket 入口拒绝。自然人原有�
 
 
 会话资源使用同一核心服务，新增版本2迁移保留旧消息与回执。原Actor HTTP路由仍为渠道适配；初始化Host的`opencraft/collaboration`命令及服务端工具共用会话资源授权、幂等与交接。稳定引用、读取边界和实际能力见[会话互通](architecture/conversation-interoperability.md)。
+
+## Thread orchestration control ledger
+
+The collaboration owner appends schema v3 to `actor-collaboration.sqlite`. Its
+`ThreadOrchestrationLedger` stores immutable parent/lifecycle/owner relationships,
+root-Turn runtime projection, tool intent and result receipts, wait subscriptions
+and parent notification batches. Existing v1/v2 migrations and communication data
+are preserved. This ledger does not create a second native input queue or own an
+engine connection.
+
+Tool intents bind a stable tool call key, delegation, source, arguments fingerprint
+and optional source-scoped idempotency key before execution. A committed result is
+immutable; a pending intent alone does not prove whether a native mutation was
+accepted. The Broker must reconcile that case with the execution owner. Wait
+subscriptions outlive the short polling call and retain their original expiration.
+Notifications retain per-root outcome deduplication after delivery; pending batches
+coalesce for two seconds with a five-second maximum deadline and preserve direct
+user intervention. A gateway restart reloads remaining deadlines from the ledger.
+
+The Codex Stage 1 Broker now exposes `thread_spawn`, `thread_tell`,
+`thread_inspect` and `thread_wait` only when the independent APP Host advertises
+callback protocol v1. Older Hosts retain the existing conversation tools.
+Schema v4 adds immutable spawn settings, exact input provenance, continuation
+bindings and a shared root delegation budget; published v1–v3 SQL is unchanged.
+
+Each admitted tool callback carries its original bounded human delegation. A
+later human steer can replace the authority for new callbacks without changing
+an already admitted operation. Spawned children receive their own bounded binding
+with the same expiry and shared eight-write root budget. Tell does not transfer
+the sender's authority to the receiver. An owned orchestration conversation
+requires its owner or explicit resource/action grants for cross-user sends and
+execution. Historical conversations retain the existing shared-instance policy.
+
+The APP Host retains the actual Native socket during a gateway disconnect and
+replays unresolved owned tools for at most 15 seconds. The tool key binds the Host
+incarnation, Thread, Turn and original Native call id; replies echo both the key
+and incarnation. Only explicit orchestration create/title operations may replay
+a cached Native receipt, and the Broker acknowledges it after the SQLite result
+commits. ACK intent is durable and retried after gateway restart, including confirmed Native rejection receipts. Ordinary Native mutations are never retried. Delegated child creation follows its canonical source generation, like a fork; ordinary root creation follows the default. Generation creation claims
+retain their original generation and incarnation across default promotion; a
+single APP also fences prepared creation against Host replacement. Pending
+callbacks and unacknowledged receipts prevent retirement.
+
+Recovery snapshots expose the stable root lifecycle directly from
+`@opencraft/host-recovery`. Interrupted/preparing/dispatching states produce no
+parent terminal notification. Completion, exhausted, unconfirmed and explicit
+Native-confirmed user stop have durable per-root outcome deduplication. Stop intent alone cancels automatic retry but cannot publish a terminal outcome. Notice queue admission and
+marking its batches delivered share the collaboration transaction. Human input
+is retained in the notification so user instructions take precedence.
+
+Agent messages, parent notices and automatic continuations have durable exact
+`(threadId, clientMessageId)` provenance. Trusted usage submission uses that fact
+to report `sourceKind: system`, including a human delegator context; it never
+infers the source from body text. Read tools return only bounded user/assistant
+text from the read-only transcript cache. Wait polling lasts at most five seconds
+while its durable subscription survives timeout or a gateway restart. A non-child wait retains its caller delegation for the eventual notice; both polling returns and delayed notices recheck target read permission. Known Agent queue entries wait behind automatic recovery without cancelling its root.
+
+The Native 0.162 protocol accepts `dynamicTools` only when creating a Thread.
+The four tools are therefore installed on new Threads; existing Threads retain
+their original tool set. A mixed generation router filters these definitions for
+older APP payloads that do not support callback replay.
+
+The opt-in `scripts/smoke/execution/smoke-thread-orchestration.ts` exercises a real
+fixed Native CLI with synthetic identities, isolated processes and a local model.
+The target contract and later UI/driver stages remain in
+[the orchestration specification](../design/thread-orchestration-spec.md).

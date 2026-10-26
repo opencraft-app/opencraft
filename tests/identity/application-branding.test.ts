@@ -89,8 +89,15 @@ test("generic plugin assets and initial metadata follow their declared owner", a
   assert.equal((neutral.transformIndexHtml as Function)(html), html);
   const result = (selected.transformIndexHtml as Function)(html);
   assert.match(result.html, /<title>Example server<\/title>/);
-  assert.ok(result.tags.some((tag: any) => tag.attrs.rel === "icon" && tag.attrs.href === "/plugin-assets/example/mark.svg"));
+  const icon = result.tags.find((tag: any) => tag.attrs.rel === "icon").attrs.href;
+  assert.match(icon, /^\/assets\/brand-[a-f0-9]{20}\.svg$/);
   const files: any[] = [];
   (selected.generateBundle as Function).call({ emitFile: (file: unknown) => files.push(file) });
-  assert.deepEqual(files.map(({ fileName, source }) => [fileName, source.toString()]), [["plugin-assets/example/mark.svg", svg]]);
+  assert.deepEqual(files.map(({ fileName, source }) => [fileName, source.toString()]), [["plugin-assets/example/mark.svg", svg], [icon.slice(1), svg]]);
+  // Same bytes keep the alias across rebuilds; changing bytes changes the URL.
+  const again = (pluginBranding(root, ["example.brand"]).transformIndexHtml as Function)(html);
+  assert.equal(again.tags.find((tag: any) => tag.attrs.rel === "icon").attrs.href, icon);
+  await writeFile(path.join(plugin, "public/mark.svg"), svg.replace('r="8"', 'r="7"'));
+  const changed = (pluginBranding(root, ["example.brand"]).transformIndexHtml as Function)(html);
+  assert.notEqual(changed.tags.find((tag: any) => tag.attrs.rel === "icon").attrs.href, icon);
 });

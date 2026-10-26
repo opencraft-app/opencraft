@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { createServer } from 'vite';
+import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createServer, build, preview } from 'vite';
 import WebSocket, { WebSocketServer } from 'ws';
 const { chromium } = await import('playwright');
 const endpoint = process.env.OPENCRAFT_BENCHMARK_HOST_DESCRIPTOR ? JSON.parse(await readFile(process.env.OPENCRAFT_BENCHMARK_HOST_DESCRIPTOR, 'utf8')).websocketUrl : process.env.OPENCRAFT_BENCHMARK_NATIVE_URL, thread = process.env.OPENCRAFT_BENCHMARK_THREAD_ID;
@@ -11,14 +13,22 @@ const out = process.env.OPENCRAFT_BENCHMARK_OUTPUT!;
 if (!out)
     throw Error('Explicit output directory required');
 await mkdir(out, { recursive: true });
-const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', resolve: { dedupe: ['react', 'react-dom'] }, cacheDir: 'node_modules/.vite-session-loading-benchmark', optimizeDeps: { entries: ['tests/fixtures/session-loading-browser.tsx'] }, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'loading-benchmark', configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url?.split('?')[0] !== '/')
+const production = process.env.OPENCRAFT_BENCHMARK_PRODUCTION === '1';
+let bundleDirectory: string | null = null;
+const vite = production ? await (async () => {
+    bundleDirectory = await mkdtemp(join(tmpdir(), 'opencraft-loading-browser-'));
+    await writeFile(join(bundleDirectory, 'index.html'), `<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="${join(process.cwd(), 'tests/fixtures/session-loading-browser.tsx')}"></script>`);
+    const config = { configFile: false as const, root: bundleDirectory, logLevel: 'error' as const, resolve: { dedupe: ['react', 'react-dom'] }, build: { outDir: join(bundleDirectory, 'dist'), target: 'esnext', minify: 'esbuild' as const }, preview: { host: '127.0.0.1', port: 0 } };
+    await build(config);
+    return preview(config);
+})() : await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', resolve: { dedupe: ['react', 'react-dom'] }, cacheDir: 'node_modules/.vite-session-loading-benchmark', optimizeDeps: { entries: ['tests/fixtures/session-loading-browser.tsx'] }, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'loading-benchmark', configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url?.split('?')[0] !== '/')
                 return next(); res.setHeader('content-type', 'text/html'); res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/session-loading-browser.tsx"></script>'); }); } }] });
 const wss = new WebSocketServer({ noServer: true });
 let browser: any;
 const trace: any[] = [];
 const allowed = new Set(['initialize', 'initialized', 'thread/read', 'thread/resume', 'thread/turns/list', 'thread/items/list', 'thread/loaded/list', 'thread/goal/get', 'thread/queue/list', 'runtime/machine/read', 'skills/list', 'model/list']);
 try {
-    await vite.listen();
+    if ('listen' in vite) await vite.listen();
     vite.httpServer!.on('upgrade', (req, socket, head) => { if (req.url === '/benchmark-rpc')
         wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req)); });
     // Credentials stay in this Node bridge; the browser sees only its local URL.
@@ -27,7 +37,7 @@ try {
         const queue: string[] = [];
         down.on('message', raw => {
             const frame = String(raw), request = JSON.parse(frame);
-            trace.push({ direction: 'request', method: request.method, id: request.id });
+            trace.push({ direction: 'request', method: request.method, id: request.id, at: performance.now() });
             if (request.method && !allowed.has(request.method)) {
                 if (request.id !== undefined) down.send(JSON.stringify({
                     id: request.id, error: { code: -32601, message: 'Read benchmark method unavailable' },
@@ -43,7 +53,7 @@ try {
         });
         upstream.on('message', raw => {
             const response = JSON.parse(String(raw));
-            trace.push({ direction: 'response', id: response.id, code: response.error?.code });
+            trace.push({ direction: 'response', id: response.id, code: response.error?.code, at: performance.now(), bytes: raw.length });
             setTimeout(() => {
                 if (down.readyState === WebSocket.OPEN) down.send(String(raw));
             }, latency);
@@ -51,17 +61,21 @@ try {
         upstream.on('error', () => down.close());
         down.on('close', () => upstream.close());
     });
-    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE || undefined, headless: true, args: ['--no-sandbox'] });
     const rows = [];
     // Exclude module/renderer warm-up; each measured page starts with a fresh Runtime.
     for (let i = 0; i < Number(process.env.OPENCRAFT_BENCHMARK_SAMPLES ?? 5) + 1; i++) {
         const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
         const errors: string[] = [];
         page.on('console', msg => { if (msg.type() === 'error')
-            console.error('BROWSER_ERROR', msg.text().slice(0, 400)); });
+            console.error('BROWSER_ERROR', msg.text().slice(0, 400));
+            if (process.env.OPENCRAFT_BENCHMARK_DIAGNOSTICS === '1' && msg.text().startsWith('[appserver-recovery]'))
+                console.log(msg.text()); });
         page.on('pageerror', (e: Error) => { errors.push(e.message); console.error('PAGE_ERROR', e.message, e.stack); });
         await page.addInitScript('window.__name=value=>value');
         await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?thread=${encodeURIComponent(thread)}`);
+        const profiler = process.env.OPENCRAFT_BENCHMARK_PROFILE === '1' ? await page.context().newCDPSession(page) : null;
+        if (profiler) { await profiler.send('Profiler.enable'); await profiler.send('Profiler.start'); }
         await page.getByRole('button', { name: 'Open conversation' }).click();
         try {
             await page.waitForFunction(() => (window as any).loadingBenchmark?.metrics.paintedMs != null && (window as any).loadingBenchmark?.metrics.readyMs != null, {}, { timeout: 60000 });
@@ -71,6 +85,7 @@ try {
             throw error;
         }
         const value = await page.evaluate(() => (window as any).loadingBenchmark.metrics);
+        if (profiler) { const result = await profiler.send('Profiler.stop'); await writeFile(out + `/profile-${i}.json`, JSON.stringify(result.profile)); await profiler.detach(); }
         assert.deepEqual(errors, []);
         if (i > 0)
             rows.push(value);
@@ -87,5 +102,7 @@ finally {
     for (const ws of wss.clients)
         ws.terminate();
     wss.close();
-    await vite.close();
+    if ('close' in vite) await vite.close();
+    else await new Promise<void>(resolve => vite.httpServer.close(() => resolve()));
+    if (bundleDirectory) await rm(bundleDirectory, { recursive: true, force: true });
 }

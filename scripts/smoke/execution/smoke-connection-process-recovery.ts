@@ -23,7 +23,7 @@ try {
  const page=await browser.newPage({viewport:{width:1280,height:900}});const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{(window as any).__name=(v:any)=>v;localStorage.setItem('opencraft.appearance-theme','light')});
  await page.goto(`http://127.0.0.1:${address.port}`);
- const target=()=>page.locator('.sidebar-activity-row').filter({has:page.getByRole('button',{name:'Lifecycle recovery fixture',exact:true})});
+ const target=()=>page.locator('.sidebar-activity-row').filter({has:page.getByRole('button',{name:/^Lifecycle recovery fixture(?:\s|$)/})});
  await target().waitFor({timeout:30000});
  const editor=page.locator('[contenteditable=true]').first();await editor.fill('retained lifecycle draft');
  const cdp=await page.context().newCDPSession(page);await cdp.send('Page.enable');

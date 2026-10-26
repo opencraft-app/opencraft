@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { openManagedDatabase, createSchemaValidator, SqliteLifecycleError } from "@opencraft/sqlite-node";
-import { TOKEN_USAGE_STATE_MIGRATIONS } from "./token-usage-state-database.js";
+import { TOKEN_USAGE_STATE_MIGRATIONS, TOKEN_USAGE_RECENCY_INDEX } from "./token-usage-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageCounts } from "./token-usage-ledger.js";
 import { tokenModelKey } from "./token-usage-allocation.js";
 import { emptyUsageParserState, parseUsageEvent, readUsageIncrement, type RetainedUsageEvent, type UsageParserState } from "./token-usage-derived-source.js";
+import type { NativeRolloutSource } from "@opencraft/native-history-node/codex-rollout-reader";
 
 // Retained source evidence has its own immutable migration history. Only the
 // derived file may be discarded; neither receipts nor retained events are caches.
@@ -27,10 +28,12 @@ INSERT INTO usage_position VALUES(1,0);
 CREATE TABLE usage_reproject(thread_id TEXT PRIMARY KEY,after_turn TEXT NOT NULL) STRICT;
 `;
 export const DERIVED_CACHE_VERSION = "rollout-counts-4/equal-turn-v1";
-const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS,
-  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+1, name: "rollout-derived-cache-v1", sql: CACHE_SQL },
-  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+2, name: "rollout-derived-gap-index", sql: "CREATE INDEX derived_usage_gaps_thread ON token_usage_gaps(server_id,thread_id,ends_ms);" },
-  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+3, name: "rollout-retained-gap-incidents", sql: `
+// The cache owns a separate, immutable history. Later source-store migrations
+// must not replace or renumber the cache migrations already installed.
+const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS.filter(migration=>migration.version<=2),
+  { version: 3, name: "rollout-derived-cache-v1", sql: CACHE_SQL },
+  { version: 4, name: "rollout-derived-gap-index", sql: "CREATE INDEX derived_usage_gaps_thread ON token_usage_gaps(server_id,thread_id,ends_ms);" },
+  { version: 5, name: "rollout-retained-gap-incidents", sql: `
 INSERT INTO token_usage_gaps(server_id,gap_key,thread_id,turn_id,reason,starts_ms,ends_ms)
 SELECT server_id,'retained:'||thread_id,thread_id,NULL,'unreplayable',min(starts_ms),
   CASE WHEN count(*) FILTER(WHERE ends_ms IS NULL)>0 THEN NULL ELSE max(ends_ms) END
@@ -39,7 +42,8 @@ ON CONFLICT(server_id,gap_key) DO UPDATE SET starts_ms=min(starts_ms,excluded.st
 DELETE FROM token_usage_gaps WHERE gap_key LIKE 'retained:%' AND gap_key!='retained:'||thread_id;
 UPDATE token_usage_scopes SET revision=revision+1;
 ` },
-  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+4, name: "rollout-retained-settlement-evidence", sql: "UPDATE usage_cache_version SET version='rollout-counts-4/equal-turn-v1';" },
+  { version: 6, name: "rollout-retained-settlement-evidence", sql: "UPDATE usage_cache_version SET version='rollout-counts-4/equal-turn-v1';" },
+  { version: 7, name: "rollout-source-recency-index", sql: TOKEN_USAGE_RECENCY_INDEX },
 ];
 type Row = Record<string, any>;
 type LegacyTurn = { tokens: string | null; complete?:boolean; buckets: { provider: string | null; model: string | null; tokens: string }[] };
@@ -91,7 +95,9 @@ export class RolloutDerivedTokenUsage {
     const stmt = db.prepare(sql); if (this.statements.size >= 128) this.statements.delete(this.statements.keys().next().value!);
     this.statements.set(key, stmt); return stmt;
   }
-  constructor(readonly options: { databasePath: string; nativeHome: string; serverId: string; directory?: string }) {
+  constructor(readonly options: { databasePath: string; nativeHome: string; serverId: string; directory?: string;
+    nativeHomes?: () => Promise<readonly NativeRolloutSource[]>;
+    resolveSource?: (threadId: string, path: string) => Promise<NativeRolloutSource> }) {
     const directory = options.directory ?? dirname(options.databasePath);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.source = new DatabaseSync(options.databasePath, { readOnly: true });
@@ -150,7 +156,11 @@ export class RolloutDerivedTokenUsage {
       }
       await new Promise<void>(resolve => setImmediate(resolve));
     };
-    for (const folder of ["sessions", "archived_sessions"]) await visit(join(this.options.nativeHome, folder), 3);
+    const sources = this.options.nativeHomes ? await this.options.nativeHomes() : null;
+    for (const home of sources ?? [{ nativeHome: this.options.nativeHome }]) {
+      for (const folder of ["sessions", "archived_sessions"]) await visit(join(home.nativeHome, folder), 3);
+    }
+    for (const source of sources ?? []) await source.validate();
   }
   private gap(id: string, thread: string | null, reason: string) {
     this.ledger.commitReplayBatch(()=>{
@@ -307,7 +317,8 @@ export class RolloutDerivedTokenUsage {
       if (!file) { this.fileAfter = "";const more=this.roundProgress||this.dirty.size>0||!!this.statement(this.database,"SELECT 1 FROM usage_reproject LIMIT 1").get();this.roundProgress=false;if(!more){this.clearGap("building");this.clearGap("refresh-failed");}return more; }
       const thread = String(file.thread_id); this.fileAfter = thread;
       try {
-        const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
+        const source = await this.options.resolveSource?.(thread, String(file.path));
+        const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, source, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
         if (this.closed) return false;
         if(result.events.some(row=>row.event.kind==="session"&&row.event.data[0]!==thread))throw new Error("Usage session identity mismatch");
         const recoveredAvailability=file.error==="source-replaced"&&!result.more&&!result.missing;

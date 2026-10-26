@@ -536,19 +536,24 @@ and curved highlights. Icons, focus rings and portalled menus are unfiltered.
 ### Shared shell action material
 
 Phone, tablet, wide Web and Electron Shell actions share `LiquidGlassBackdrop`,
-`material.liquid` and the same `material-liquid-*` tokens. Sidebar top/compact rail
-icons, New chat, footer Settings/account/update entrances and navigation controls
-use one backdrop per independent action. The header trailing group keeps one
+`material.liquid` and the same `material-liquid-*` tokens. Sidebar toggle and top
+actions, New chat, footer Settings/account/update entrances and header controls
+use one backdrop per independent action. Application navigation rows, including
+the compact icon rail, retain the flat `application-navigation-control` style:
+no per-row glass backdrop or pill material; only neutral hover, press and current
+state fills. A navigation destination is distinct from an independent Shell action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
-The mobile drawer reserves the floating action band's existing height outside its
-native scrollport. A bottom content padding alone cannot keep intermediate rows
-from painting through translucent actions. The scrollport ends above the action
-band, including a stacked update entrance; final rows and pagination can scroll
-fully into view. Docked tablet/desktop lists retain their existing geometry.
+The mobile drawer's native scrollport extends to the physical bottom edge,
+behind the floating New chat and Settings actions. Their hosts remain transparent
+and allocate the controls' bottom safe inset. End content padding, including a
+stacked update entrance, lets final rows and pagination scroll fully above the
+actions without shortening the scrollport. Do not reserve an external bottom
+margin or paint a full-width action plate. Docked tablet/desktop lists retain
+their existing geometry.
 
 
 Material does not branch by platform or density. Existing owners keep position,
@@ -565,6 +570,10 @@ All paths retain the same readable frost beneath the optical enhancement: the
 theme's floating veil and shared liquid blur also apply after a supported SVG
 lens. The SVG graph consumes the same CSS scattering length after refraction and contrast tint, with a
 three-sigma sampling outset; appending a CSS blur function after a URL filter is not its authority.
+The mobile drawer retains transform promotion for presence, but must not keep
+`will-change: opacity` after settling: that creates a backdrop root which can
+exclude composited list rows from the floating controls' blur. Verify actual row
+paint beneath the controls, alongside any independent contrast probe.
 A lens must not replace scattering with a nearly clear transmission. Mobile
 footer styles own geometry only; label truncation must exclude the backdrop span.
 

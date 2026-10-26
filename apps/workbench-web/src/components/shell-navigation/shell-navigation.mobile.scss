@@ -82,18 +82,20 @@
   .sidebar-activity-list { flex: 0 0 auto; overflow: visible; }
 }
 
-// Keep the native scrollport above floating glass actions at every scroll offset.
-// Padding only clears the final row at the end; it still lets text scroll behind
-// translucent actions. Keep the latest SafeLayout action inset in that reserve.
+// The list scrolls behind the floating actions to the bottom edge. End padding
+// lets its final row and pagination scroll clear of the controls and safe area;
+// it must not shorten the scrollport or create an opaque action band.
 .shell-sidebar__column[data-navigation-layout="mobile"] {
   .shell-sidebar__scroll {
-    margin-block-end: calc(88px + var(--shell-mobile-safe-bottom));
+    padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
   }
   &:has(.shell-navigation__footer--unified [data-surface="updates"]) .shell-sidebar__scroll {
     // The update entrance stacks a second 48px button above the first one (8px
     // gap) while a notice is visible; reserve both so the last row and its
     // actions scroll clear of the two floating actions.
-    margin-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+    padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
   }
   .shell-sidebar__floating-action {
     grid-column: 1; grid-row: 1;

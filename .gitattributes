@@ -1,1 +1,4 @@
 tests/fixtures/structured/*.csv whitespace=cr-at-eol
+
+vendor/electron/** -text
+vendor/electron/patches/** whitespace=-blank-at-eol,-blank-at-eof

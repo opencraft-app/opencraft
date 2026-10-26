@@ -733,3 +733,11 @@ build/release runtimes and actual copied delivery-asset verification.
 ### Linux remote-browser payload
 
 Both `package-headless-linux.mjs` and managed headless `package-web-server.mjs` ship `runtime/browser` using `package-browser-runtime.mjs`, including Electron licenses. Build on native Linux using the workspace-pinned Electron distribution. The independent browser worker does not start the desktop application. See [managed headless](managed-headless.md#内置远程网页渲染) for sandbox, dependencies and profile ownership. `npm run smoke:remote-browser` exercises the real typed Dynamic Tool Host, Page/Presentation and H.264 Canvas on Linux; it uses a synthetic website and does not prove macOS behavior or physical-device input.
+
+
+Optional Session history refresh, older-page projection and tail-drain handling
+are demand-loaded from `packages/appserver-session/src/derived-history.ts`.
+The startup-resource policy rejects this module in the required bootstrap graph;
+initial Thread baseline and cancellation admission remain in the Session core.
+Both ordinary hidden-map builds and release builds retain their existing asset
+naming, minification, startup byte limits and separate browser compatibility checks.

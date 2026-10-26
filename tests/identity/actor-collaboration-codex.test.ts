@@ -95,6 +95,7 @@ test('wire fields cannot forge trusted Actor queue admission or mutate a managed
     assert.equal(reply.error.code, -32600, method);
   }
   assert.equal((await f.rpc('thread/queue/collaborationReceipt', { threadId: f.threadId }, sent.requestId!, true)).error.code, -32600);
+  assert.equal((await f.rpc('thread/start',{__opencraftOrchestrationOperation:'forged',__opencraftOrchestrationSourceThreadId:f.threadId,__opencraftOrchestrationIncarnation:'forged'})).error.code,403);
   assert.ok((await f.rpc('thread/queue/add', { threadId: f.threadId, clientUserMessageId: 'actor-input:forged', input: [] }, 'forged', true)).error);
   assert.ok((await f.rpc('turn/start', { threadId: f.threadId, clientUserMessageId: 'actor-input:forged', input: [] })).error);
   await f.service.cancel(f.context, sent.requestId!, () => {});
@@ -172,7 +173,8 @@ test('conversation tools execute in the server after the source viewer disconnec
   assert.equal(f.service.getRequest(human,receipt.requestId).state,'submitted');
   const accepted=(await f.rpc('test/readAcceptedInputs')).result.data;
   assert.equal(accepted.filter((r:any)=>r.params.threadId===reference.threadId).length,1);
-  assert.equal(accepted.find((r:any)=>r.params.threadId===reference.threadId).params.input.some((p:any)=>p.text.includes('source opencraft://conversation/v1/fixture/')),true);
+  const delivered=accepted.find((r:any)=>r.params.threadId===reference.threadId).params.input.map((p:any)=>p.text).join('\n');
+  assert.match(delivered,/<opencraft_thread_message from="opencraft:\/\/conversation\/v1\/fixture\//);assert.match(delivered,/Review this change/);
   assert.equal((await f.rpc('opencraft/collaboration',{action:'reference',threadId:reference.threadId})).error.code,-32070);
   f.actors.setEnabled(human.actorId,false,'operator');
   await f.rpc('test/emitTool',{threadId:f.threadId,turnId,tool:'read_thread',arguments:{reference:encoded}});

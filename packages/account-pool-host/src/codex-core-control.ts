@@ -10,6 +10,15 @@ export interface CodexCoreHealth {
   readonly nativeSocket: string;
   /** Present only when a separate runtime owner is configured. */
   readonly appServerPid?: number;
+  readonly routingPid?: number;
+  readonly routingEpoch?: string;
+  readonly generationId?: string;
+  readonly admissionEpoch?: number;
+  readonly callbackProtocolVersion?: 1;
+  readonly orchestrationRoutingVersion?: 1;
+  readonly callbackIncarnation?: string;
+  readonly pendingCallbacks?: number;
+  readonly pendingOrchestrationMutations?: number;
 }
 
 export interface CodexAppServerLaunch {
@@ -20,6 +29,36 @@ export interface CodexAppServerLaunch {
 export interface CodexAppServerHealth extends CodexCoreHealth {
   readonly dataDirectory: string;
   readonly proxyBaseUrl: string;
+  readonly runtimeDataDirectory?: string;
+  readonly codexHome?: string;
+}
+
+export interface CodexGenerationHostUsage {
+  readonly routingEpoch: string;
+  readonly lease: string;
+  readonly sequence: number;
+  readonly blockedThreadIds: readonly string[];
+  readonly unscopedBusy: boolean;
+  readonly discoveryComplete: boolean;
+  readonly acknowledgedFenceEpoch: number;
+}
+
+export interface CodexGenerationFenceState {
+  readonly routingEpoch: string;
+  readonly fenceEpoch: number;
+  readonly fencedGenerationIds: readonly string[];
+  readonly legacyGenerationId: string | null;
+  readonly defaultGenerationId: string | null;
+  readonly routes?: readonly { threadId: string; generationId: string }[];
+}
+
+/** Trusted native-storage locations, owned by the routing registry, without file contents. */
+export interface CodexGenerationDirectory {
+  readonly protocolVersion: typeof CODEX_CORE_PROTOCOL_VERSION;
+  readonly routingEpoch: string;
+  readonly admissionEpoch: number;
+  readonly homes: readonly { generationId: string; codexHome: string; incarnation: number }[];
+  readonly route: { threadId: string; generationId: string } | null;
 }
 
 /** Temporary control-plane outage; callers may wait before starting execution. */
@@ -37,6 +76,10 @@ export class CodexCoreControlClient {
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
+      || value.orchestrationRoutingVersion !== undefined && value.orchestrationRoutingVersion !== 1
+      || value.callbackIncarnation !== undefined && (typeof value.callbackIncarnation !== "string" || !value.callbackIncarnation)
+      || value.callbackProtocolVersion !== undefined && (value.callbackProtocolVersion !== 1 || !Number.isSafeInteger(value.pendingCallbacks) || value.pendingCallbacks! < 0
+        || !Number.isSafeInteger(value.pendingOrchestrationMutations) || value.pendingOrchestrationMutations! < 0)
       || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket)) {
       throw new Error("Codex core returned an incompatible health response");
     }
@@ -62,6 +105,33 @@ export class CodexCoreControlClient {
     const value = await this.health() as CodexAppServerHealth;
     if (!isAbsolute(value.dataDirectory ?? "") || typeof value.proxyBaseUrl !== "string") {
       throw new Error("Incompatible Codex AppServer owner");
+    }
+    return value;
+  }
+
+  async claimGenerationHost(instanceId: string, routingEpoch: string, signal?: AbortSignal): Promise<{ lease: string; routingEpoch: string }> {
+    const value = await this.request("POST", "/generation-host", { operation: "claim", params: { instanceId, routingEpoch } }, signal) as { lease: string; routingEpoch: string };
+    if (!value || typeof value.lease !== "string" || value.routingEpoch !== routingEpoch) throw new Error("Invalid generation Host lease");
+    return value;
+  }
+  publishGenerationHost(value: CodexGenerationHostUsage, signal?: AbortSignal): Promise<CodexGenerationFenceState> {
+    return this.request("POST", "/generation-host", { operation: "state", params: value }, signal) as Promise<CodexGenerationFenceState>;
+  }
+
+  /** A read never claims the Host lease or starts a retired native HOME. Legacy owners return null. */
+  async generationDirectory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
+    const health = await this.health(signal);
+    if (!health.routingEpoch) return null;
+    const path = "/generation-directory" + (threadId === undefined ? "" : `?threadId=${encodeURIComponent(threadId)}`);
+    const value = await this.request("GET", path, undefined, signal) as CodexGenerationDirectory | null;
+    if (value?.routingEpoch !== health.routingEpoch) throw new CodexCoreUnavailableError("Codex routing owner changed during directory read");
+    if (value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION || !Number.isSafeInteger(value.admissionEpoch) || value.admissionEpoch < 1
+      || !Array.isArray(value.homes) || !value.homes.every(home => home && typeof home.generationId === "string"
+        && typeof home.codexHome === "string" && isAbsolute(home.codexHome) && Number.isSafeInteger(home.incarnation) && home.incarnation >= 0)
+      || new Set(value.homes.map(home => home.generationId)).size !== value.homes.length
+      || new Set(value.homes.map(home => home.codexHome)).size !== value.homes.length
+      || (value.route !== null && (!value.route || value.route.threadId !== threadId || !value.homes.some(home => home.generationId === value.route!.generationId)))) {
+      throw new Error("Incompatible Codex generation directory");
     }
     return value;
   }

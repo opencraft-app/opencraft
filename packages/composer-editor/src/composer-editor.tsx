@@ -2412,7 +2412,7 @@ export const OpenCraftComposer = forwardRef<
                 <Plus size={20} />
               </button>
             ) : (
-              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={changeAddMenu}>
+              <DropdownMenu.Root open={addMenuOpen} onOpenChange={changeAddMenu}>
                 <DropdownMenu.Trigger asChild>
                   <button
                     {...addFocus.triggerProps}
@@ -2573,7 +2573,7 @@ export const OpenCraftComposer = forwardRef<
               </ComposerModelPicker> : null}
 
               {showPermissionPicker ? <DropdownMenu.Root
-                modal={false}
+
                 open={openPicker === "permissions"}
                 onOpenChange={changePicker("permissions")}
               >

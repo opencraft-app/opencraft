@@ -43,6 +43,18 @@ test("an incomplete count line does not advance the cursor or guess zero; comple
   await appendFile(options.path,line.slice(half));
   assert.equal((await replayRolloutUsage({...options,cursor:before.cursor})).changed,1);
 }));
+
+test("generation source chooses its own HOME and validates before committing counts or cursor",()=>fixture(async options=>{
+  const home=join(options.root,"new-home");await mkdir(home);
+  const path=join(home,"rollout.jsonl");await writeFile(path,record("new",123));
+  const source={nativeHome:home,key:"new:1",validate:async()=>{throw new Error("owner changed");}};
+  let committed=false;
+  await assert.rejects(replayRolloutUsage({...options,path,source,onCommitCursor:()=>{committed=true;}}),/owner changed/);
+  assert.equal(committed,false);assert.equal(options.ledger.readTurn(key)?.observedTokens,null);
+  const accepted=await replayRolloutUsage({...options,path,source:{...source,validate:async()=>{}}});
+  assert.equal(accepted.changed,1);assert.equal(options.ledger.readTurn(key)?.observedTokens,"123");
+  assert.equal((await replayRolloutUsage({...options,path,source:{...source,validate:async()=>{}}})).changed,0);
+}));
 test("native storage boundary rejects escapes and truncated cursors, and oversized lines stay bounded",()=>fixture(async options=>{
   const outside=join(options.root,"outside");await writeFile(outside,record("one",100));
   await symlink(outside,options.path);

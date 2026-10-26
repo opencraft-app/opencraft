@@ -1,4 +1,5 @@
 import { bindTouchInteractionMode } from "./pointer-modality";
+import { bindHttpResourcePrefetch } from "./http-resource-prefetch";
 import { bindPwaEdgeNavigation } from "./pwa-edge-navigation";
 import { ApplePwaPushDevice, type PushDevicePort } from "./push-device";
 import { serverUrl } from "./server-context";
@@ -37,7 +38,10 @@ export class WebRuntime implements ClientRuntime {
     return this.document.defaultView ? readWindowPresentation(this.document.defaultView) : resolveWindowPresentation({});
   }
   protected own(dispose: (() => void) | undefined): void { if (dispose) this.cleanups.push(dispose); }
-  protected onStart(): void { this.own(bindTouchInteractionMode(this.document)); }
+  protected onStart(): void {
+    this.own(bindTouchInteractionMode(this.document));
+    if (this.kind !== "electron") this.own(bindHttpResourcePrefetch(this.document));
+  }
   start(): void {
     if (this.disposed) throw new Error("Cannot start a retired ClientRuntime");
     if (this.started) return;

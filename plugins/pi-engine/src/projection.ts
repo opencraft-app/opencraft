@@ -33,24 +33,38 @@ function assistantItems(base: string, message: Value): Value[] {
 /** The same native projection serves stream delivery, read, Resume and process recovery. */
 export function projectPiSnapshot(session: { id: string; cwd: string; tools: Value[] }, snapshot: PiSnapshot): PiTurn[] {
   const submissions = new Map(snapshot.submissions.filter(s => s.type === "input" && s.entry !== undefined).map(s => [s.entry, s]));
+  const steerMetadata = new Map(snapshot.entries.filter(entry => entry.kind === "opencraft.steerAdmission")
+    .map(entry => [(entry.data as Value).turnId, entry.data as Value]));
   const tasks = snapshot.tasks;
   const turns: PiTurn[] = [];
   const taskGroups = new Map<Value, Set<number>>();
+  const grouped = new Map<string, PiTurn>();
+  const states = new Map<PiTurn, Value[]>();
   const counts = new Map<number | string, number>();
   const callItems = new Map<string, Value>();
   let turn: Value | undefined;
   const makeTurn = (submission: Value | undefined, entryId: number | string, message: Value, metadata: Value = {}) => {
-    const id = submission?.requestId ?? metadata.turnId ?? `${session.id}:input:${entryId}`;
+    const id = metadata.steerTurnId ?? submission?.requestId ?? metadata.turnId ?? `${session.id}:input:${entryId}`;
     const state = submission?.status;
     const status = state === "queued" || state === "placed" ? "inProgress" : state === "unanswered"
       ? submission?.reason === "aborted" ? "interrupted" : "failed" : "completed";
     const createdAt = metadata.createdAtMs ?? message.timestamp;
     const result: PiTurn = { id, items: [{ type: "userMessage", id: `${id}:user`,
       clientId: metadata.clientId ?? (id.startsWith(`${session.id}:turn:client:`) ? id.slice(`${session.id}:turn:client:`.length) : null),
+      ...(metadata.steerTurnId ? { __opencraftMessageKind: "steering", __opencraftSteeringStatus: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
       content: metadata.input ?? [{ type: "text", text: textOf(message.content), text_elements: [] }] }],
       itemsView: "complete", status, error: status === "failed" ? errorOf(String(submission?.detail ?? submission?.reason ?? "Pi input failed")) : null,
       startedAt: typeof createdAt === "number" ? Math.floor(createdAt / 1000) : null, completedAt: null, durationMs: null };
-    turns.push(result); taskGroups.set(result, new Set()); return result;
+    const existing = grouped.get(id);
+    if (existing) {
+      const item = result.items[0];
+      item.id = `${submission?.requestId ?? metadata.turnId ?? entryId}:user`;
+      existing.items.push(item);
+      if (submission) states.get(existing)!.push(submission);
+      return existing;
+    }
+    turns.push(result); grouped.set(id, result); states.set(result, submission ? [submission] : []);
+    taskGroups.set(result, new Set()); return result;
   };
   for (const entry of snapshot.entries) {
     // Compaction contributes a user-role summary to MODEL context, not a new
@@ -88,7 +102,21 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
   for (const submission of snapshot.submissions) {
     if (submission.type !== "input" || submission.entry !== undefined) continue;
     const queued = snapshot.inbox.find(item => item.id === submission.id);
-    makeTurn(submission, submission.id, { content: queued?.content }, queued?.entry?.data);
+    const metadata = queued?.entry?.data ?? steerMetadata.get(submission.requestId);
+    if (!metadata?.steerTurnId) continue;
+    makeTurn(submission, submission.id, { content: queued?.content }, metadata);
+  }
+  for (const candidate of turns) {
+    const records = states.get(candidate)!;
+    if (records.some(record => record.status === "queued" || record.status === "placed")) {
+      candidate.status = "inProgress"; candidate.error = null;
+    } else {
+      const failed = records.find(record => record.status === "unanswered" && (record.requestId === candidate.id || record.entry !== undefined));
+      if (failed) {
+        candidate.status = failed.reason === "aborted" ? "interrupted" : "failed";
+        candidate.error = candidate.status === "failed" ? errorOf(String(failed.detail ?? failed.reason ?? "Pi input failed")) : null;
+      }
+    }
   }
   const active = [...turns].reverse().find(candidate => candidate.status === "inProgress");
   const live = snapshot.live;

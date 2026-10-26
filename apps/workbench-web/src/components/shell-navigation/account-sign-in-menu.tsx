@@ -19,7 +19,7 @@ export function AccountSignInMenu({ account, signIn, id, visible, container, onO
   useEffect(() => { if (!visible) setOpen(false); }, [visible]);
   const intl = useIntl();
   const label = shellAccountEntranceLabel(account, intl)!;
-  return <DropdownMenu.Root modal={false} open={visible && open} onOpenChange={setOpen}>
+  return <DropdownMenu.Root open={visible && open} onOpenChange={setOpen}>
     <DropdownMenu.Trigger asChild>
       <button id={id} type="button" data-liquid-action="" className="shell-navigation__entrance" data-surface="account"
         aria-label={label} title={label}>

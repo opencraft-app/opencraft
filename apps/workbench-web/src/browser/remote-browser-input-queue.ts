@@ -1,10 +1,13 @@
+import { mergeTouchMoves } from '@opencraft/remote-interaction/touch';
+
 // Bound work before it enters WebSocket/native queues. Only unsent adjacent
 // samples merge; edges, modifiers, contact sets and wheel reversals are barriers.
 const signature = (input: any) => JSON.stringify([input.type, input.pointerType, input.document,
   input.button, input.modifiers, input.touchPoints?.map((p: any) => p.id).sort((a: number, b: number) => a - b)]);
 export function mergeRemoteInput(previous: any, next: any): any | null {
   if (signature(previous) !== signature(next)) return null;
-  if (['mouseMove', 'touchMove'].includes(next.type)) return next;
+  if (next.type === 'touchMove') return mergeTouchMoves(previous, next);
+  if (next.type === 'mouseMove') return next;
   if (next.type !== 'mouseWheel' || previous.x !== next.x || previous.y !== next.y) return null;
   const merged = { ...next };
   for (const axis of ['deltaX', 'deltaY']) {

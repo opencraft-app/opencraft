@@ -1019,5 +1019,18 @@
   "mobile.connection.failed": "连接未能保存，请检查地址后重试。",
   "page.shareLink": "分享链接",
   "page.linkCopied": "链接已复制",
-  "page.shareFailed": "无法分享链接，请重试。"
+  "page.shareFailed": "无法分享链接，请重试。",
+  "chat.steer.sending": "正在发送…",
+  "chat.steer.waiting": "等待当前步骤结束",
+  "chat.steer.accepted": "已追加到当前回复",
+  "chat.steer.cancelled": "已取消",
+  "chat.steer.declined": "未追加",
+  "chat.queue.pausedAfterStop": "已停止，排队消息已保留，可随时继续。",
+  "chat.queue.pausedAfterFailure": "消息未发送，点击继续可重试。",
+  "localAccount.title": "账号与成员",
+  "localAccount.description": "登录此服务器并管理实例成员。",
+  "localAccount.identity": "Human 身份",
+  "localAccount.identity.description": "经验证的登录方式关联同一 Human，访问由服务器成员资格控制。",
+  "localAccount.manage": "管理账号",
+  "localAccount.unavailable": "此服务器尚未启用本地账号插件。"
 }

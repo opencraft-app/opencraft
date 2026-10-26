@@ -1,5 +1,5 @@
 import { Root as DropdownMenuRoot } from "@opencraft/design-system-web/dropdown-menu";
-import { Root as ContextMenuRoot } from "@radix-ui/react-context-menu";
+import { Root as ContextMenuRoot } from "@opencraft/design-system-web/context-menu";
 import { useCallback, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import type { ThreadBadgeContribution, ThreadBadgeProps } from "@opencraft/extension-react";
 import { ThreadRowMenu } from "./thread-management";

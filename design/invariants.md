@@ -257,6 +257,10 @@ a retained Chat or write another route/history state.
 
 ### Shared shell action material
 
+Application navigation rows and compact rail destinations remain flat navigation
+controls, without a per-item glass backdrop. Shared Shell button material must
+not replace their quiet resting, hover and current-state treatment.
+
 Shell buttons on Web/Electron and phone/tablet share the same liquid glass owner.
 The optical enhancement retains the shared readable frost; mobile sidebar scroll
 paint reaches the bottom while floating action hosts own its safe inset.

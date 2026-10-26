@@ -51,7 +51,7 @@ type JsonRecord = Readonly<Record<string, ReplicaJsonValue>>;
 export interface ReplicaConversationRuntimeConfig {
   readonly key: ConversationKey;
   readonly outbox?: ConversationOutboxStorage;
-  readonly canDispatchOutbox?: () => boolean;
+  readonly canDispatchOutbox?: (intent?: SubmitIntent) => boolean;
   /** Compatibility retry while a connected Codex Host does not own capacity continuation. */
   readonly canAutoContinueCapacity?: () => boolean;
   readonly replica: ConversationReplicaReader;
@@ -940,7 +940,7 @@ function steeringAcknowledgementIndex(
   state: OptimisticSubmissionState,
 ): number {
   return turn.items.findIndex((candidate, index) => {
-    if (candidate.type !== "userMessage" || !isRecord(candidate.payload as ReplicaJsonValue)) return false;
+    if ((candidate.type !== "userMessage" && candidate.type !== "steeringUserMessage") || !isRecord(candidate.payload as ReplicaJsonValue)) return false;
     const payload = candidate.payload as JsonRecord;
     const clientId = string(payload.clientId) ?? string(payload.clientUserMessageId);
     if (clientId !== null) return clientId === state.clientMessageId;
@@ -1024,6 +1024,13 @@ function mergeOptimisticSubmissions(
       const target = writable(String(state.targetTurnId));
       if (target !== undefined) {
         const acknowledgementIndex = steeringAcknowledgementIndex(target, state);
+        // A durable native steering item owns pending/accepted/cancelled truth.
+        // A transport receipt cannot overwrite it with optimistic "accepted".
+        if (acknowledgementIndex >= 0) {
+          const native = target.items[acknowledgementIndex]!;
+          if (native.type === "steeringUserMessage" || isRecord(native.payload) && native.payload.__opencraftMessageKind === "steering"
+            && ["pending", "accepted", "cancelled", "declined"].includes(String(native.payload.__opencraftSteeringStatus))) continue;
+        }
         const nextItems = [...target.items];
         if (acknowledgementIndex < 0) nextItems.push(item);
         else nextItems.splice(acknowledgementIndex, 0, item);
@@ -1738,7 +1745,8 @@ export function createReplicaConversationRuntime(
     async submit(intent) {
       assertIntentTarget(config.key, intent);
       resetCapacityRetry();
-      if (outbox && (outbox.hasPending() || !snapshot.authoritative || config.canDispatchOutbox?.() === false))
+      if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
+        || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
         return outbox.admit(intent);
       return submitOnline(intent);
     },

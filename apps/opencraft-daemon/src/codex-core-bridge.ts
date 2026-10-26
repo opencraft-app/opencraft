@@ -32,13 +32,15 @@ export class CodexCoreBridge implements DuplexTransport {
   private readonly initialized = new Set<string>();
   private readonly disconnected = new Set<string>();
   private readonly threads = new Map<string, Set<string>>();
+  private readonly readers = new Map<string, Set<string>>();
   private readonly revisions = new Map<string, number>();
   private readonly serverRequests = new Map<string, string>();
   private sequence = 0;
   private initializeResult: unknown | null = null;
   private initializing = false;
 
-  constructor(endpoint: string, token: string, private readonly maintenance?: () => import("./codex-maintenance.js").CodexMaintenanceSnapshot) {
+  constructor(endpoint: string, token: string, private readonly maintenance?: () => import("./codex-maintenance.js").CodexMaintenanceSnapshot,
+    private readonly rejectedAdmission?: (method: string, params: unknown, clientId: string) => void) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.connection = new CodexCoreSocket({
       health: signal => this.control.health(signal), message: frame => this.receive(frame),
@@ -72,6 +74,7 @@ export class CodexCoreBridge implements DuplexTransport {
       this.emit({ id, result: this.maintenance?.() ?? null }, clientId); return;
     }
     if (isCodexAdmission(message.method, message.params) && this.maintenance?.().paused) {
+      this.rejectedAdmission?.(String(message.method), message.params, clientId);
       if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
       return;
     }
@@ -99,7 +102,13 @@ export class CodexCoreBridge implements DuplexTransport {
       const params = record(message.params), threadId = string(params.threadId);
       const wasSubscribed = this.threads.get(threadId)?.has(clientId) ?? false;
       let subscriptionRevision: number | undefined;
+      if (message.method === "thread/read" && params.watch === true && this.initialized.has(clientId)) {
+        let readers = this.readers.get(threadId);
+        if (!readers) { readers = new Set(); this.readers.set(threadId, readers); }
+        readers.add(clientId);
+      }
       if (message.method === "thread/unsubscribe") {
+        this.removeReader(threadId, clientId);
         this.remove(threadId, clientId);
         if (!wasSubscribed || this.threads.has(threadId)) {
           this.emit({ id, result: { status: wasSubscribed ? "unsubscribed" : "notSubscribed" } }, clientId); return;
@@ -118,6 +127,15 @@ export class CodexCoreBridge implements DuplexTransport {
   private receive(line: string): void {
     let message: RpcRecord;
     try { message = record(JSON.parse(line)); } catch { return; }
+    delete message.__opencraftGeneration;
+    if (message.method === "opencraft/codex/generation/lost") {
+      const params = record(message.params), ids = Array.isArray(params.threadIds) ? params.threadIds : [];
+      for (const clientId of this.initialized) {
+        const threadIds = ids.filter(id => typeof id === "string" && this.threads.get(id)?.has(clientId));
+        if (threadIds.length) this.emit({ ...message, params: { ...params, threadIds } }, clientId);
+      }
+      return;
+    }
     const id = idOf(message.id);
     if (id !== null) {
       const pending = this.pending.get(String(id));
@@ -129,7 +147,7 @@ export class CodexCoreBridge implements DuplexTransport {
           if ("result" in message) {
             const result = record(message.result), capabilities = record(result.capabilities);
             this.initializeResult = { ...result, capabilities: { ...capabilities, extensions: {
-              ...record(capabilities.extensions), [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+              ...record(capabilities.extensions), "opencraft/read-history": { version: 1, initialTurnsPage: false }, [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
               ...(this.maintenance ? { [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY } : {}),
             } } };
             message = { ...message, result: this.initializeResult };
@@ -156,13 +174,13 @@ export class CodexCoreBridge implements DuplexTransport {
       }
       if (typeof message.method === "string") {
         const threadId = string(record(message.params).threadId);
-        const owner = this.targets(threadId)[0] ?? this.initialized.values().next().value;
+        const owner = threadId ? this.targets(threadId)[0] : this.initialized.values().next().value;
         if (owner) { this.serverRequests.set(JSON.stringify(id), owner); this.emit(message, owner); }
       }
       return;
     }
     const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
-    const targets = threadId ? this.targets(threadId) : [...this.initialized];
+    const targets = threadId ? [...new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])] : [...this.initialized];
     for (const target of targets) this.emit(message, target);
   }
   private targets(threadId: string): string[] { return [...(this.threads.get(threadId) ?? [])]; }
@@ -178,8 +196,13 @@ export class CodexCoreBridge implements DuplexTransport {
     const clients = this.threads.get(threadId); clients?.delete(clientId);
     if (clients?.size === 0) this.threads.delete(threadId);
   }
+  private removeReader(threadId: string, clientId: string): void {
+    const readers = this.readers.get(threadId); readers?.delete(clientId);
+    if (readers?.size === 0) this.readers.delete(threadId);
+  }
   private disconnect(clientId: string): void {
     this.disconnected.add(clientId); this.initialized.delete(clientId);
+    for (const threadId of this.readers.keys()) this.removeReader(threadId, clientId);
     for (const [threadId, clients] of this.threads) {
       if (!clients.has(clientId)) continue;
       this.remove(threadId, clientId);
@@ -197,6 +220,6 @@ export class CodexCoreBridge implements DuplexTransport {
     if (this.connection.status.state === "closed") return;
     this.connection.close();
     this.pending.clear(); this.waiters.length = 0; this.initialized.clear(); this.disconnected.clear();
-    this.threads.clear(); this.revisions.clear(); this.serverRequests.clear();
+    this.threads.clear(); this.readers.clear(); this.revisions.clear(); this.serverRequests.clear();
   }
 }

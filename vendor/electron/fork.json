@@ -70,6 +70,18 @@
     {
       "path": "patches/electron/0016-native-focused-widget-keyboard-routing.patch",
       "sha256": "c193d22a47d92802e2127523b9c35ed945ad66efaf83e5d1f9a6909e03fc5dc5"
+    },
+    {
+      "path": "patches/electron/0017-native-text-input-notifications.patch",
+      "sha256": "6ad07bb0cbece2127faaa4ea1f9cf1ad0546db2cb14558a751afd79dfed7f2c2"
+    },
+    {
+      "path": "patches/electron/0018-native-input-causality.patch",
+      "sha256": "04421d1df1c24216e54556320ebc7e9313d9d762041cf6c271b1087b6765919e"
+    },
+    {
+      "path": "patches/electron/0019-native-ime-focus-identity.patch",
+      "sha256": "f148d1ef473a2eee32d4ff572ff6bc11bc6ea208347bfeb6bb859c5400a9120f"
     }
   ]
 }

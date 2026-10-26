@@ -18,7 +18,7 @@ const vite = await createServer({
       server.middlewares.use((request, response, next) => {
         if (request.url?.split("?")[0] !== "/") return next();
         response.setHeader("content-type", "text/html");
-        response.end('<!doctype html><html><body><div id="root"></div><script type="module" src="/tests/fixtures/user-message-semantics.tsx"></script></body></html>');
+        response.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/user-message-semantics.tsx"></script></body></html>');
       });
     },
   }],
@@ -46,9 +46,35 @@ try {
     assert.doesNotMatch(await example("goal").innerText(), /private context|My request/);
     assert.equal(await example("goal").locator(".thread-user-message__sender").innerText(), "reviewer");
     const copy = example("goal").getByRole("button", { name: "Copy message", exact: true });
-    assert.equal(await copy.evaluate(element => getComputedStyle(element).opacity), "1", "copy is visible before hover or focus");
-    if (width === 390) await copy.tap();
-    else { await copy.focus(); await page.keyboard.press("Enter"); }
+    const opacity = () => copy.evaluate(element => getComputedStyle(element).opacity);
+    const timestamp = example("goal").locator("time");
+    assert.equal(await opacity(), "0", "copy is hidden before hover or focus");
+    const before = await example("goal").boundingBox();
+    if (width === 390) {
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1", "touch timestamps retain their policy");
+      await example("goal").locator("[data-user-message-bubble]").tap();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
+      assert.equal(await opacity(), "1", "touch tap reveals copy");
+      await example("empty").locator(".thread-user-message__no-content").tap();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "0", await copy.elementHandle());
+      assert.equal(await opacity(), "0", "outside tap dismisses copy");
+      await example("goal").locator("[data-user-message-bubble]").tap();
+      await copy.tap();
+    } else {
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "0");
+      await example("goal").locator("[data-user-message-bubble]").hover();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
+      assert.equal(await opacity(), "1", "hover reveals copy");
+      assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1");
+      await example("empty").hover();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "0", await copy.elementHandle());
+      assert.equal(await opacity(), "0", "leaving hides copy");
+      await copy.focus();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
+      assert.equal(await opacity(), "1", "keyboard focus reveals copy");
+      await page.keyboard.press("Enter");
+    }
+    assert.deepEqual(await example("goal").boundingBox(), before, "disclosure preserves footer geometry");
     await page.waitForFunction(() => document.documentElement.dataset.copied === "Ship the release");
     await example("goal").getByRole("button", { name: "Copied", exact: true }).waitFor();
     assert.equal(await example("empty").locator(".thread-user-message__no-content").innerText(), "(No content)");
@@ -63,6 +89,16 @@ try {
     await page.waitForFunction(() => document.documentElement.dataset.opened === "file:///skills/review/SKILL.md");
     assert.equal(await example("failed").locator("[data-status-kind=failed]").count(), 1);
     assert.equal(await example("sending").locator("[data-status-kind]").count(), 0);
+    assert.match(await example("steer-pending").innerText(), /Waiting for the current step to finish/);
+    assert.match(await example("steer-accepted").innerText(), /Added to the current response/);
+    assert.match(await example("steer-cancelled").innerText(), /Cancelled/);
+    for (const state of ["pending", "accepted", "cancelled"]) {
+      const row = example(`steer-${state}`).locator(`[data-status-kind="steer-${state}"]`);
+      assert.equal(await row.count(), 1);
+      assert.ok(await row.isVisible());
+      const rect=await row.boundingBox(); await page.screenshot({path:`/tmp/opencraft-user-message-steer-${width}-${theme}.png`,fullPage:true});
+      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= width, JSON.stringify({width,theme,state,rect}));
+    }
     assert.match(await example("comment").innerText(), /1 comment/);
     assert.equal(await example("audio").locator("audio").count(), 1);
     await example("image").locator("[data-user-message-image-row] button").click();
