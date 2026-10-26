@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {applyThreadOrchestrationView,createConversationKey,createDefaultTimelineProjectorRegistry,projectTimeline,deriveSubagentActivityGroupPresentation,subagentHeaderCall} from '@opencraft/chat-core';
+import {applyThreadOrchestrationView,createConversationKey,createDefaultTimelineProjectorRegistry,projectTimeline,deriveSubagentActivityGroupPresentation,deriveSubagentActivityPresentation,subagentHeaderCall} from '@opencraft/chat-core';
 import {parseThreadOrchestrationView,type ThreadOrchestrationView} from '@opencraft/appserver-protocol/collaboration';
 import {projectThreadTopologyResult} from '../../apps/opencraft-daemon/src/thread-orchestration-projection';
 
@@ -63,4 +63,42 @@ test('a childless failure stays in the collapsed group summary after successful 
  assert.equal(group.actionLabel,'Failed to create');
  assert.equal(group.groupStatusLabel,'started working');
  assert.equal(group.agents[0]!.status,'working');
+});
+
+
+test('one summary distinguishes work, completion, failure, attention and unknown from authority axes',()=>{
+ const block=nativeTimeline().frames.flatMap(frame=>frame.blocks).filter(block=>block.type==='subagent')[1]!;
+ const summary=(state:string, delivery:typeof block.deliveryStatus=null, tool:typeof block.toolCallStatus='complete') =>
+   deriveSubagentActivityPresentation({...block,toolCallStatus:tool,deliveryStatus:delivery,
+     childRuntimeStatus:{child:state} as typeof block.childRuntimeStatus}).summaryStatus;
+ assert.equal(summary('active'),'working','completed timeout call is still working');
+ assert.equal(summary('recovering'),'working');
+ assert.equal(summary('starting'),'working');
+ assert.equal(summary('idle'),'done');
+ assert.equal(summary('completed'),'done');
+ assert.equal(summary('unknown'),'unknown');
+ assert.equal(summary('awaiting_interaction'),'attention');
+ assert.equal(summary('unconfirmed'),'attention');
+ assert.equal(summary('failed'),'failed');
+ assert.equal(summary('idle','rejected'),'failed');
+ assert.equal(summary('unknown',null,'failed'),'failed');
+ assert.equal(summary('interrupted_by_user'),'interrupted');
+ assert.equal(summary('idle','cancelled'),'interrupted');
+ assert.equal(summary('idle','queued'),'working');
+ assert.equal(summary('idle','transferring'),'working');
+ assert.equal(summary('idle','accepted'),'working');
+ assert.equal(summary('idle','unknown'),'unknown');
+ assert.equal(summary('idle',null,'running'),'working');
+});
+
+test('merged summary keeps childless failures and never completes a mixed unknown group',()=>{
+ const blocks=nativeTimeline().frames.flatMap(frame=>frame.blocks).filter(block=>block.type==='subagent');
+ const failed={...blocks[0]!,agentId:null,receiverThreadIds:[],agentStates:{},childRuntimeStatus:null,toolCallStatus:'failed' as const};
+ assert.equal(deriveSubagentActivityGroupPresentation([failed,...blocks]).summaryStatus,'failed');
+ const done={...blocks[0]!,childRuntimeStatus:{child:'completed' as const}};
+ const unknown={...blocks[1]!,agentId:'other',receiverThreadIds:['other'],agentStates:{},childRuntimeStatus:{other:'unknown' as const}};
+ assert.equal(deriveSubagentActivityGroupPresentation([done,unknown]).summaryStatus,'unknown');
+ assert.equal(deriveSubagentActivityGroupPresentation([unknown,done]).summaryStatus,'unknown');
+ assert.equal(deriveSubagentActivityGroupPresentation([{...done,childRuntimeStatus:{child:'unknown'}},done]).summaryStatus,'done','latest authority wins per child');
+ assert.equal(deriveSubagentActivityGroupPresentation([]).summaryStatus,'unknown');
 });

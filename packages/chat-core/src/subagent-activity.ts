@@ -3,6 +3,8 @@ import type { SubagentTimelineBlock, TimelineExecutionStatus } from "./timeline"
 export type SubagentTaskStatus = "waiting" | "working" | "done" | "failed" | "unknown";
 export type SubagentDisplayStatus = "active" | "updated" | "interrupted" | "done" | "unknown";
 
+export type SubagentSummaryStatus = "working" | "done" | "failed" | "attention" | "interrupted" | "unknown";
+
 export interface SubagentActivityAgent {
   readonly threadId: string;
   readonly displayName: string;
@@ -19,6 +21,7 @@ export interface SubagentActivityPresentation {
   readonly actionLabel: string;
   readonly groupStatusLabel: "started working" | "updated" | "interrupted" | "finished" | "failed" | "unknown";
   readonly expandable: boolean;
+  readonly summaryStatus: SubagentSummaryStatus;
 }
 
 export interface SubagentActivityGroupPresentation extends SubagentActivityPresentation {
@@ -100,6 +103,23 @@ function displayStatusFor(block: SubagentTimelineBlock, status: SubagentTaskStat
   return status === "unknown" ? "unknown" : status === "waiting" || status === "working" ? "active" : "done";
 }
 
+/** One user-facing status; the independent authority axes remain available for detail. */
+function summaryStatusFor(
+  blocks: readonly SubagentTimelineBlock[], agents: readonly SubagentActivityAgent[],
+): SubagentSummaryStatus {
+  if (blocks.some(block => block.toolCallStatus === "failed" || block.deliveryStatus === "rejected")
+    || agents.some(agent => agent.status === "failed")) return "failed";
+  if (blocks.some(block => block.deliveryStatus === "cancelled")
+    || agents.some(agent => agent.displayStatus === "interrupted")) return "interrupted";
+  if (agents.some(agent => agent.statusLabel === "awaiting attention")) return "attention";
+  if (blocks.some(block => block.toolCallStatus === "pending" || block.toolCallStatus === "running"
+    || ["accepted", "transferring", "queued"].includes(block.deliveryStatus ?? ""))
+    || agents.some(agent => agent.status === "working" || agent.status === "waiting")) return "working";
+  if (agents.length === 0 || agents.some(agent => agent.status === "unknown")
+    || blocks.some(block => block.deliveryStatus === "unknown")) return "unknown";
+  return agents.every(agent => agent.status === "done") ? "done" : "unknown";
+}
+
 /** Renderer-neutral projection of collaboration calls and task states. */
 export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock): SubagentActivityPresentation {
   const states = record(block.agentStates) ?? {};
@@ -131,6 +151,7 @@ export function deriveSubagentActivityPresentation(block: SubagentTimelineBlock)
     agents,
     actionLabel: actionLabel(block.tool, block.toolCallStatus),
     groupStatusLabel,
+    summaryStatus: summaryStatusFor([block], agents),
     expandable: Boolean(block.controlCall || block.deliveryStatus || block.prompt || block.action || block.model || block.reasoningEffort || block.agentPath || agents.some((agent) => agent.statusMessage)),
   };
 }
@@ -178,7 +199,7 @@ export function deriveSubagentActivityGroupPresentation(
     : taskStatuses.some((status) => status === "failed") ? "failed"
     : taskStatuses.length > 0 && taskStatuses.every((status) => status === "done") ? "finished"
     : taskStatuses.some(status => status === "working" || status === "waiting") ? "started working" : "unknown";
-  return { blocks, agents, actionLabel: action, groupStatusLabel, expandable };
+  return { blocks, agents, actionLabel: action, groupStatusLabel, expandable, summaryStatus: summaryStatusFor(blocks, agents) };
 }
 
 export function subagentInlineStatusLabel(agent: SubagentActivityAgent): string {

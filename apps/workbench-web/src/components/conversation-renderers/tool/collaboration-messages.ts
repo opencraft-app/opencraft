@@ -38,7 +38,7 @@ export function collaborationStateMessage(state:string) {
   if (state === "recovering") return collaborationMessages.recovering;
   if (["complete","completed","idle","shutdown","finished","done"].includes(state)) return collaborationMessages.done;
   if (["failed","errored","not found","error","exhausted"].includes(state)) return collaborationMessages.failed;
-  if (["awaiting attention","awaiting_interaction","unconfirmed"].includes(state)) return collaborationMessages.attention;
+  if (["attention","awaiting attention","awaiting_interaction","unconfirmed"].includes(state)) return collaborationMessages.attention;
   if (state === "interrupted") return collaborationMessages.interrupted;
   if (state === "updated") return collaborationMessages.updated;
   return collaborationMessages.unknown;

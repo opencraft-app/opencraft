@@ -164,3 +164,12 @@ on async handlers, void expressions, disabled controls or awaited refreshes.
 ## Persistent activity content and response feedback
 
 - Activity disclosure has one keyed content list for persistent surfaces: a transcript or MCP App appears once, keeps its chronological expanded position, and a visible App retains the same iframe and input across detail toggles. A realtime handoff starts a fresh response feedback scope, so earlier running work cannot suppress its Thinking placeholder.
+
+
+## Collaboration status summaries
+
+Collaboration headers and dispatch rows show a single status derived by chat-core
+from the authoritative tool, delivery and child projections. Raw axes remain in
+the dispatch tooltip. Unknown stays unconfirmed; completed tools and timed-out
+waits do not prove child completion. New child conversations default to hidden
+subagents and remain reachable through the parent's authorized navigation.

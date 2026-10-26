@@ -93,7 +93,7 @@ export class ThreadOrchestrationBroker {
       const childId=text(created.threadId),parent=ledger.relation(threadId);
       ledger.transaction(()=>{
         ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:created.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
-          lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='hidden'?'hidden':'visible',engineHostGeneration:created.generationId??null,nativeSessionId:childId,
+          lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='visible'?'visible':'hidden',engineHostGeneration:created.generationId??null,nativeSessionId:childId,
           runtimeStatus:'starting',rootTurnId:null,turnId:null,delegationRevision:delegation.context.generation,autoExchangeDepth:(parent?.autoExchangeDepth??0)+1,hasDirectUserInput:false,userInputExcerpt:null});
         if(!this.valid(delegation,turnId)){
           ledger.runtime(childId,{runtimeStatus:'error',rootTurnId:null,turnId:null});

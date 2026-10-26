@@ -143,11 +143,14 @@ async function treeSnapshot(page: Page) {
 }
 async function assertWorking(page: Page) {
   await page.getByText("等待调用已经返回；子任务仍在独立执行。", { exact: true }).waitFor({ timeout: 30_000 });
-  const history = page.locator('.thread-agent-activity__turn-toggle > button[aria-expanded="false"]').first();
-  if (await history.count()) await history.click();
+  const history = page.locator('.thread-agent-activity__turn-toggle > button').first();
+  await history.waitFor();
+  if (await history.getAttribute('aria-expanded') === 'false') await history.click();
   await page.locator('.thread-subagent-activity[data-status="failed"]').waitFor({ timeout: 30_000 });
-  await page.getByRole("button",{name:"创建会话 · 失败",exact:true}).waitFor();
+  await page.getByRole("button",{name:"创建会话",exact:true}).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.thread-subagent-chip[data-status="working"]').length === 2);
+  assert.equal(await page.locator('.thread-subagent-activity__status').innerText(), '失败');
+  assert.equal(await page.locator('.thread-subagent-activity__toggle').innerText(), '创建会话');
   assert.equal(await page.locator('.thread-subagent-chip[data-status="done"]').count(), 0);
 }
 try {
@@ -182,6 +185,13 @@ try {
         const details = document.querySelector<HTMLElement>(".thread-subagent-details");
         return details && details.clientHeight >= (details.firstElementChild?.scrollHeight ?? Infinity);
       });
+      const dispatches = page.locator('.thread-subagent-details__meta[data-tool-call-status]');
+      assert.equal(await dispatches.count(), 4);
+      for (const dispatch of await dispatches.all()) {
+        assert.doesNotMatch(await dispatch.innerText(), /调用：|投递：|子任务：/);
+        assert.match(await dispatch.getAttribute('title') ?? '', /调用：.*投递：.*子任务：/);
+      }
+      assert.match(await dispatches.last().innerText(), /运行中/,'timed-out wait has one working status');
       await page.screenshot({ path: join(output, `${viewport.name}-working.png`) });
       await sidebar(page, true);
       await page.screenshot({ path: join(output, `${viewport.name}-tree.png`) });
@@ -199,9 +209,9 @@ try {
       assert.ok(reads.includes(hiddenId));
       const hiddenHistory = page.locator('.thread-agent-activity__turn-toggle > button[aria-expanded="false"]').first();
       if (await hiddenHistory.count()) await hiddenHistory.click();
-      await page.getByRole("button",{name:"创建会话 · 失败",exact:true}).waitFor();
+      await page.getByRole("button",{name:"创建会话",exact:true}).waitFor();
       assert.equal(await page.locator(".thread-subagent-chip").count(),0,"failed creation must not invent a child link");
-      const failureToggle = page.getByRole("button",{name:"创建会话 · 失败",exact:true});
+      const failureToggle = page.getByRole("button",{name:"创建会话",exact:true});
       if (await failureToggle.getAttribute("aria-expanded") === "false") await failureToggle.click();
       await page.locator('[data-tool-call-status="failed"]').waitFor();
       await page.screenshot({ path: join(output, `${viewport.name}-hidden-open.png`) });

@@ -182,4 +182,10 @@ cache retains topology and rejects pre-topology cache records.
 
 A collaboration group's collapsed headline retains its most recent failed tool
 call even when later calls succeed and the failed creation has no child ID.
-Child runtime remains an independent summary; a failed call cannot finish a child.
+The UI shows one derived status in the collapsed headline and each dispatch;
+the three authority axes remain in dispatch tooltips. Failures, interruption and
+required attention precede active work; missing evidence stays unconfirmed.
+Tool completion and wait timeout cannot finish a child. New `thread_spawn` calls
+default to hidden subagents, reachable from their parent. Use explicit `visible`
+only for a user-requested independent, long-lived conversation; existing rows
+keep their stored visibility.
