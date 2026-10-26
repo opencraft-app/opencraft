@@ -478,3 +478,30 @@ model later resource reincarnations, all demand interleavings or a TS refinement
 The projection chaos oracle also counts effective native-restoration Reads and
 duplicate availability events; explicit requested reads and actual wire Read
 requests are reported separately.
+## Notification fanout audit
+
+`NotificationFanout.tla` models one native notification with two consumers,
+two registration incarnations per consumer, a transport-wide deferred gate,
+one physical loss and optional reinitialization. Admission is a fixed finite
+cut. Same-function replacement cannot inherit an old input, and old unsubscribe
+tokens cannot remove a successor. Physical loss revokes immediately rather than
+waiting for initialization generation to change. Seven safety controls and one
+no-fairness control must fail their exact named property with a saved trace.
+
+The positive graph has 2024 distinct states. Completion assumes finite callback
+work and eventual invocation of continuations. This is separate from the
+Session projection model and does not cover arbitrary callback programs,
+preprocessing reentry, multiple simultaneous wire inputs, every observer bus,
+or TypeScript refinement. Actual raw/Cordis tests and the real Client `fanout`
+chaos suite exercise registration churn, global/scoped deferral, subscriber
+failures and loss before the next initialization.
+
+```
+npm run test:recovery-chaos -- --suite fanout --seed 0 --cases 1000 --steps 120 --output /tmp/recovery-fanout
+```
+
+Native input count and consumer delivery count are reported separately. The
+three test-only adapter mutations corrupt admission, unsubscribe targeting and
+the guarded lost-connection continuation. They do not send fake extra native
+inputs or run a substitute Client implementation. Each failure is reduced using
+the same oracle and can be replayed without the mutation through the CLI.
