@@ -10,6 +10,15 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('RecordingLifetime', None),
+    ('RecordingLifetime-Cleanup', 'SuccessorTap'),
+    ('RecordingLifetime-Terminal', 'TerminalConserved'),
+    ('RecordingLifetime-Sample', 'NoFakePublication'),
+    ('RecordingLifetime-Sink', 'temporal:FrameProgress'),
+    ('RecordingLifetime-Observer', 'temporal:FrameProgress'),
+    ('RecordingLifetime-Frame', 'NoStaleFrame'),
+    ('RecordingLifetime-FailedClose', 'CleanupOwned'),
+    ('RecordingLifetime-NoFairness', 'temporal:SuccessorProgress'),
     ('ClientRetirement', None),
     ('ClientRetirement-Repeat', 'temporal:FutureOutcome'),
     ('ClientRetirement-FirstCleanup', 'OldRequestsRetired'),

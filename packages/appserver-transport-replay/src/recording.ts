@@ -2,6 +2,7 @@ import type {
   DuplexTransport,
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
+import { ClientObserverList } from "@opencraft/appserver-client/transport";
 
 export type RecordedFrameDirection = "client-to-server" | "server-to-client";
 
@@ -30,10 +31,8 @@ export class RecordingTransport implements DuplexTransport {
   private readonly clock: RecordingClock;
   private readonly sink?: (frame: RecordedFrame) => void;
   private readonly frames: RecordedFrame[] = [];
-  private readonly messageListeners = new Set<(frame: string) => void>();
-  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
-  private removeMessageListener: (() => void) | null = null;
-  private removeStatusListener: (() => void) | null = null;
+  private readonly messageListeners = new ClientObserverList<string>();
+  private attachment: { remove: (() => void) | null } | null = null;
   private sequence = 0;
 
   constructor(options: RecordingTransportOptions) {
@@ -61,33 +60,40 @@ export class RecordingTransport implements DuplexTransport {
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
-    this.messageListeners.add(listener);
-    return () => this.messageListeners.delete(listener);
+    return this.messageListeners.subscribe(listener);
   }
 
   subscribeStatus(listener: (status: TransportStatus) => void): () => void {
-    this.statusListeners.add(listener);
-    listener(this.transport.status);
-    return () => this.statusListeners.delete(listener);
+    // Preserve the native registration and its own initial sample. Reattaching
+    // a recording tap is not another physical status publication.
+    return this.transport.subscribeStatus(listener);
   }
 
   async close(): Promise<void> {
-    await this.transport.close();
-    this.removeMessageListener?.();
-    this.removeStatusListener?.();
-    this.removeMessageListener = null;
-    this.removeStatusListener = null;
+    const attachment = this.attachment;
+    // Reentrant connect must acquire its own tap before old close awaits ACK.
+    this.attachment = null;
+    try { await this.transport.close(); }
+    finally { if (attachment) this.release(attachment); }
   }
 
   private attach(): void {
-    if (this.removeMessageListener !== null) return;
-    this.removeMessageListener = this.transport.subscribeMessage((frame) => {
+    if (this.attachment !== null) return;
+    const attachment = { remove: null as (() => void) | null };
+    this.attachment = attachment;
+    attachment.remove = this.transport.subscribeMessage((frame) => {
+      if (this.attachment !== attachment) return;
       this.record("server-to-client", frame);
-      for (const listener of this.messageListeners) listener(frame);
+      this.messageListeners.emit(frame, () => this.attachment === attachment);
     });
-    this.removeStatusListener = this.transport.subscribeStatus((status) => {
-      for (const listener of this.statusListeners) listener(status);
-    });
+    // A provider may synchronously deliver while registering the tap.
+    if (this.attachment !== attachment) this.release(attachment);
+  }
+
+  private release(attachment: { remove: (() => void) | null }): void {
+    const remove = attachment.remove;
+    attachment.remove = null;
+    remove?.();
   }
 
   private record(direction: RecordedFrameDirection, payload: string): void {
@@ -98,6 +104,8 @@ export class RecordingTransport implements DuplexTransport {
       payload,
     };
     this.frames.push(frame);
-    this.sink?.(frame);
+    const sink = this.sink;
+    try { sink?.(frame); }
+    catch { /* Recording observations cannot interrupt native protocol progress. */ }
   }
 }

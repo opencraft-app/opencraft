@@ -831,3 +831,58 @@ Four adapter corruptions test old-loss re-arming, dropped current loss, orphaned
 result observation and extra request submission. They must fail exact rules,
 shrink under the same rule and replay normally. These controls are distinct from
 running the unchanged old Client through the same oracle.
+
+
+### Recording observation and message tap ownership
+
+RecordingTransport delegates status subscription to the wrapped transport's own
+registry. Each subscriber receives that provider's initial sample and subsequent
+publications under the provider's normal contract. Connecting a recording tap
+does not broadcast an internal raw subscription sample to existing subscribers.
+Closing a tap does not unsubscribe Client status observers or erase a queued
+terminal notification. Native status ordering, generation fencing and synchronous
+observer isolation remain provider responsibilities.
+
+Only the message recording tap has an attachment lifetime. Close retires its
+captured attachment before invoking the underlying close, so reentrant connect
+acquires another tap. The old close retains its own native ACK/error outcome;
+its finally block releases only its own registration, including after failure.
+It cannot detach its successor. Registration publishes attachment identity before
+calling the provider, and late return of a synchronously revoked registration is
+released once. Message fanout uses the shared observer registration cut, instance
+tokens and per-listener attachment guard. Retirement during an earlier callback
+prevents delivery of that old frame to later listeners.
+
+A recorded frame is appended before its optional sink is called. The sink is a
+bare synchronous observation; a synchronous sink failure cannot block delivery,
+prevent an outgoing native send or mask its actual error. An outgoing record still
+describes an attempted send, as before, rather than certifying successful remote
+submission. Clock input and arbitrary external callback side effects remain
+trusted boundaries. The existing recording DTO/API is not made immutable by this
+change. No failed RPC is replayed.
+
+RecordingLifetime independently bounds an old and a successor tap, a queued
+terminal notification, an already captured old frame, close success/failure,
+native samples and sink/observer continuation. The positive model has 92 distinct
+states. Eight controls remove cleanup ownership, terminal subscription,
+sample provenance, sink/observer continuation, frame retirement, failed-close
+cleanup or local fairness. Old close ACKs need not be fair for a successor to
+work. New connect and finite callback continuation require cooperative local work.
+This is not TypeScript refinement, arbitrary native timing, registration-cut
+proof or Replay cursor verification; concrete tests and the existing shared
+observer model cover additional boundaries.
+
+The recording chaos suite composes actual RecordingTransport, Client and
+MemoryTransport. Its independent server/intent oracle compares native status
+publications with subscriber observations, verifies frame conservation, one
+native RPC submission, current initialization identity and request settlement.
+Inputs include status/message/sink exceptions, stale unsubscribe handles,
+status/message reentry, held replies and old peer callbacks. Explicit heal both
+initializes and completes an echo RPC. No hidden cleanup probe creates a new
+connection. Trace metrics separate native admissions, tap deliveries/releases,
+recorded frames and connect/RPC intents. Final teardown releases existing Client
+work and harness-owned adapter registrations, including deliberate corruptions.
+Three adapter controls duplicate a status observation, retarget a cleanup token or
+orphan the observation of an RPC result. They must fail exact rules, shrink under
+the same rule and replay normally; they are distinct from unchanged old-class
+comparisons. Bounded microtask drains assume cooperative controlled callbacks.

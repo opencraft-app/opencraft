@@ -1,5 +1,6 @@
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import { ClientObserverList } from "./observer-list";
+export { ClientObserverList };
 
 /** Trusted in-process context. Never decoded from a Renderer frame. */
 export interface TransportSubmissionContext {
