@@ -633,6 +633,10 @@ export class WebConversationViewportOwner {
         "--thread-scroll-padding-bottom",
         `${footerScrollPaddingPx(heightPx)}px`,
       );
+      // The first height establishes padding, not a resize compensation.
+      // Short-circuit before evaluating geometry arguments after the CSS write.
+      if (previousHeightPx === null || this.footerResizeViewportPreserveDisabled
+        || this.scrollController.getState().isScrollAnimationActive) return;
       const compensatedDistance = footerResizeCompensation({
         currentDistanceFromBottomPx: normalizeInvertedWebViewportMetrics({
           contentHeightPx: scrollElement.scrollHeight,
@@ -640,7 +644,7 @@ export class WebConversationViewportOwner {
           scrollTopPx: scrollElement.scrollTop,
         }).distanceFromBottomPx,
         footerResizeViewportPreserveDisabled: this.footerResizeViewportPreserveDisabled,
-        isScrollAnimationActive: this.scrollController.getSnapshot().isScrollAnimationActive,
+        isScrollAnimationActive: this.scrollController.getState().isScrollAnimationActive,
         nextFooterHeightPx: heightPx,
         previousFooterHeightPx: previousHeightPx,
       });
