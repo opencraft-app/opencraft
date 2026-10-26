@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
@@ -51,14 +51,17 @@ export class EmployeeGitVaultStore {
   readonly outcome: DatabaseOutcome;
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const dir = openSync(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // Managed deployments may retain a data-directory alias after migration.
+    // Pin its canonical directory once; key/database files still use NOFOLLOW.
+    const physicalDirectory = realpathSync(directory);
+    const dir = openSync(physicalDirectory, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const st = fstatSync(dir);
       if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new GitVaultError('unavailable', 503);
     } finally { closeSync(dir); }
-    const path = join(directory, 'employee-git-vault.sqlite');
+    const path = join(physicalDirectory, 'employee-git-vault.sqlite');
     const { fresh } = privateFile(path, true);
-    const keyPath = join(directory, 'employee-git-vault.key');
+    const keyPath = join(physicalDirectory, 'employee-git-vault.key');
     // A nonempty database without its original key is a recovery error.
     if (fresh) {
       const candidate = randomBytes(32);
