@@ -176,7 +176,11 @@ export class PiDurableSession {
       doc.paused = false;
     }, context);
     if (typeof args.sessionId === "string") {
-      const record = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === args.sessionId), context);
+      const record = await this.root.commit(async tx => {
+        const found = (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === args.sessionId);
+        // Document proxies are valid only inside their native transaction.
+        return found ? JSON.parse(JSON.stringify(found)) as typeof found : undefined;
+      }, context);
       if (!record) return { output: [{ type: "text" as const, text: "Shell session does not belong to this conversation" }], isError: true };
       if (record.generation !== this.shell.generation || record.state !== "running")
         return { output: [{ type: "text" as const, text: `Session ${record.id}: ${record.state}\n${record.output}` }], isError: record.state === "interrupted" || record.isError };
@@ -189,6 +193,17 @@ export class PiDurableSession {
     };
     const result = await this.shell.call(params, ctx.abortSignal);
     const id = result.details?.sessionId;
+    if (!isLaunch && args.kill === true && typeof args.sessionId === "string" && !result.isError && result.details?.status === "killed") {
+      // The extension suppresses completion delivery for an agent-handled kill.
+      // Its successful control receipt must retire native custody directly.
+      await this.root.commit(async tx => {
+        const record = (await tx.doc(PiShellDoc, this.root.id)).records.find(record => record.id === args.sessionId);
+        if (record?.state !== "running") return;
+        record.state = "interrupted"; record.notified = true;
+        record.output = shellText(result).slice(-16384);
+      }, context);
+      this.shellWaiters.get(args.sessionId)?.();
+    }
     if (isLaunch && !result.isError && typeof id === "string") {
       await this.root.commit(async tx => {
         const doc = await tx.doc(PiShellDoc, this.root.id);

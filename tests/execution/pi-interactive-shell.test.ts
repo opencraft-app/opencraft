@@ -164,3 +164,17 @@ test("Pi Host WebSocket exposes the installed shell and accepts steer while its 
   const history=await call('thread/read',{threadId:thread.id,includeTurns:true});
   assert.equal(history.thread.turns.flatMap((t:any)=>t.items).filter((i:any)=>i.type==='userMessage').length,2);
 });
+
+test("killing one shell marks its durable handle interrupted without waking a completion turn", async t => {
+  let checked=false, result:any;
+  const f=await fixture(t,[
+    fauxAssistantMessage(fauxToolCall('interactive_shell',{command:'sleep 20',name:'kill-state',mode:'dispatch'}),{stopReason:'toolUse'}),
+    fauxAssistantMessage(fauxToolCall('interactive_shell',{sessionId:'kill-state',kill:true}),{stopReason:'toolUse'}),
+    fauxAssistantMessage(fauxToolCall('interactive_shell',{sessionId:'kill-state'}),{stopReason:'toolUse'}),
+    (ctx:any)=>{result=ctx.messages.filter((m:any)=>m.role==='toolResult').at(-1);checked=true;return fauxAssistantMessage('cancelled')},
+  ]);
+  await f.native.submit('run',inputData,'original');
+  await eventually(async()=>checked&&!(await f.native.snapshot()).live.run);
+  assert.equal(result.isError,true,JSON.stringify(result));assert.match(JSON.stringify(result.content),/interrupted/);
+  assert.equal((await f.native.snapshot()).submissions.length,1);
+});
