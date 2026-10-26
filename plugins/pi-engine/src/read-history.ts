@@ -6,6 +6,39 @@ import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, ROOT_CONVERSATION_ID, type Cursor, type Page } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { PiSnapshot } from "./session.js";
+import { TranscriptReadCache, observeNativeTranscriptFiles } from "@opencraft/native-history-node";
+import type { AppServerThread, AppServerTurn } from "@opencraft/appserver-protocol";
+
+/** The Host supplies metadata and the canonical read-only projection. The
+ * shared cache owns offsets/blobs; the Pi native database remains authority. */
+export function createPiTranscriptCache(options: {
+  dataDirectory: string;
+  directory: string;
+  readThread(threadId: string): Promise<AppServerThread>;
+  readTurns(threadId: string): Promise<AppServerTurn[]>;
+}): TranscriptReadCache {
+  const snapshots = new Map<string, Promise<AppServerTurn[]>>();
+  return new TranscriptReadCache(options.dataDirectory, {
+    readThread: options.readThread,
+    async observeSnapshotSource(threadId) {
+      snapshots.delete(threadId);
+      const file = join(options.directory, `${threadId}.sqlite`);
+      return observeNativeTranscriptFiles(options.directory, [file, `${file}-wal`], JSON.stringify(["pi", options.directory, threadId]));
+    },
+    async listTurns(threadId, cursor, limit) {
+      let snapshot = snapshots.get(threadId);
+      if (!snapshot) { snapshot = options.readTurns(threadId); snapshots.set(threadId, snapshot); }
+      try {
+        const turns = (await snapshot).slice().reverse();
+        const offset = cursor === null ? 0 : Number(cursor);
+        if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid Pi native transcript cursor");
+        const nextCursor = offset + limit < turns.length ? String(offset + limit) : null;
+        if (nextCursor === null) snapshots.delete(threadId);
+        return { data: turns.slice(offset, offset + limit), nextCursor };
+      } catch (error) { snapshots.delete(threadId); throw error; }
+    },
+  });
+}
 
 /** No Harness, writer lock, watcher, configuration or execution owner is opened.
  * A consistent disposable SQLite snapshot lets the native Storage reader own

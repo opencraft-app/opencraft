@@ -8,6 +8,7 @@ export * from "./transport";
 export type { ThreadMetadataContext, ThreadMetadataExtension } from "./thread-metadata";
 
 export type { ExecutionEngineClient, ExecutionEngineProvider } from "./execution-engine";
+export type { AgentDriverKind, AgentDriverContract, AgentDriverCreation, AgentOrchestrationPort } from "./agent-driver";
 export { executionEngineExtension } from "./execution-engine";
 
 export * from "./projected-history";

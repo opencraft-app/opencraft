@@ -51,6 +51,7 @@ export class DshCapabilityLink {
     this.calls.clear();
     if (!this.task) this.task = this.poll();
   }
+  get sourceGeneration(): number { return this.generation; }
   private async request(path: string, body?: unknown, endpoint = this.endpoint) {
     if (!endpoint) throw new Error("DSH capability plugin is not ready");
     const generation = this.generation;
@@ -104,7 +105,7 @@ export class DshCapabilityLink {
   async validate(capabilities: readonly DshHostCapability[]) {
     await this.request("/validate-capabilities", { capabilities });
   }
-  async thread(operation: "create" | "describe" | "resume" | "fork" | "inject" | "release" | "goal", params: Record<string, unknown>): Promise<any> {
+  async thread(operation: "create" | "describe" | "historySource" | "resume" | "fork" | "inject" | "release" | "goal", params: Record<string, unknown>): Promise<any> {
     return this.request("/thread/" + operation, params);
   }
   async backgroundProof(threadId: string, messageId: string): Promise<{ originRpcId: string } | null> {

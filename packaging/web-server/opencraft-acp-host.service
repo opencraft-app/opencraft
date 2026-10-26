@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCraft independent ACP execution Host
+After=network.target
+
+[Service]
+Type=simple
+User=opencraft
+WorkingDirectory=/srv/opencraft
+RuntimeDirectory=opencraft-acp-host
+RuntimeDirectoryMode=0700
+# Each ACP/Claude/DSH ACP owner gets a separate installed payload and config.
+EnvironmentFile=/etc/opencraft-acp-host/environment
+ExecStart=/usr/bin/node /opt/opencraft-acp-host/execution/acp-host.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

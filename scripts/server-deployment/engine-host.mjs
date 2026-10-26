@@ -5,10 +5,13 @@ import { dirname, isAbsolute, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
+import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-engine-provider.ts';
+import { attachEngineHost } from './engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
 import { PiEngine } from '../../plugins/pi-engine/src/index.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
+import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/src/collaboration.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 
@@ -24,7 +27,7 @@ export async function startIndependentEngineHost(options) {
     defaultEngine = options.defaultEngine ?? engines[0];
   if (
     !engines.includes('pi') ||
-    engines.some((engine) => !['dsh', 'pi'].includes(engine)) ||
+    engines.some((engine) => !['dsh', 'pi', 'dsh-acp', 'acp', 'claude-code'].includes(engine)) ||
     new Set(engines).size !== engines.length ||
     !engines.includes(defaultEngine)
   )
@@ -48,8 +51,27 @@ export async function startIndependentEngineHost(options) {
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
     });
+    pi.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS,
+      call: (threadId, turnId, callId, name, args, signal, inputId) => capabilities.orchestration(threadId, {
+        turnId, callId, name, arguments: args, incarnation: pi.orchestrationIncarnation, ...(inputId ? { inputId } : {}),
+      }, signal),
+    });
+    const remoteInputs = new Map();
+    const remotes = [];
+    for (const id of engines.filter(id => !['pi', 'dsh'].includes(id))) {
+      const remote = options.remoteEngines?.find(remote => remote.id === id);
+      if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
+      const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
+      const prefix = id === 'dsh-acp' ? 'dsh_acp_' : id === 'claude-code' ? 'claude_' : 'acp_';
+      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs);
+    }
+    const inputOwner = threadId => threadId.startsWith('pi_') ? pi.inputs : remoteInputs.get(threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : 'acp');
+    const inputs = {
+      receipt: (threadId, inputId) => { const owner = inputOwner(threadId); if (!owner) throw new Error('Input engine unavailable'); return owner.receipt(threadId, inputId); },
+      submit: (threadId, inputId, text, admit) => { const owner = inputOwner(threadId); if (!owner) throw new Error('Input engine unavailable'); return owner.submit(threadId, inputId, text, admit); },
+    };
     host = await startEngineHost({
-      providers: [pi],
+      providers: [pi, ...remotes],
       defaultEngine,
       machine,
       resources: {
@@ -70,8 +92,8 @@ export async function startIndependentEngineHost(options) {
     server = createServer((request, response) => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       if (url.pathname === '/host-inputs') {
-        void handleHostInput(request, response, token, pi.inputs, (threadId, inputId) =>
-          capabilities.authorizeInput(threadId, inputId),
+        void handleHostInput(request, response, token, inputs, (threadId, inputId) =>
+          new RemoteSessionCapabilities(dataDirectory, `server:${machine.machineId}:${threadId.startsWith('pi_') ? 'pi' : threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : 'acp'}`).authorizeInput(threadId, inputId),
         );
         return;
       }

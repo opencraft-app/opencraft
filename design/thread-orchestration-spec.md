@@ -1,6 +1,6 @@
 # OpenCraft 跨会话编排、3+1 驱动与可重建读取缓存实施规范 (Spec)
 
-> 状态：Stage 0 与 Codex Stage 1 已实现；Stage 2–3 为后续设计。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
+> 状态：Stage 0、Codex Stage 1 与 Stage 3 独立宿主驱动已接入；Stage 2 UI 单独推进。实际可用性仍由独立宿主的能力握手与部署验收决定。已实现接口以[协作契约](../docs/actor-collaboration-api.md#thread-orchestration-control-ledger)和[Core 契约](../docs/codex-core.md)为准（对应架构文档：[thread-orchestration-architecture.md](thread-orchestration-architecture.md)）
 > 目标：在遵循“执行侧平滑升级（引擎进程由长驻宿主持有）”、“原生日志为唯一正文真源”、“多人 `identity-core` 有界委托与 Token Spec 系统来源归属”的前提下，提供可直接编码与验收的接口契约、SQLite 表结构、缓存重建规则及分阶段实施计划。
 
 ---
@@ -77,7 +77,7 @@ export interface ThreadRelationships {
 `AgentDriverContract` 在网关侧是统一的 TypeScript 调用接口，底层通过 Unix Domain Socket / Loopback RPC 连接到**独立长驻的 Engine Host 进程**（绝不在网关进程内 `spawn` 引擎）：
 
 ```typescript
-export type AgentDriverKind = "codex" | "claude-code" | "pi-rpc" | "acp";
+export type AgentDriverKind = "codex" | "claude-code" | "pi" | "dsh" | "acp";
 
 export interface NativeWatermark {
   /** 如 Codex rollout 的 inode:byteOffset 或 DSH/Pi 的 lastEventSeq */
@@ -121,6 +121,24 @@ export interface ServerToolInvocationEnvelope {
   readonly arguments: Record<string, unknown>;
 }
 ```
+
+实际 `AgentDriverContract` 与 `AgentOrchestrationPort` 由
+`packages/appserver-client/src/agent-driver.ts` 持有，Broker 的
+`OrchestrationExecutionPort` 为同一类型。Pi 使用独立 Host 中的 durable SDK；
+不把该实现称为 stdio RPC。DSH 的新 ACP 代使用独立 Host 内的
+`--profile acp` 进程，旧原生 Web Host 与会话继续由原 owner 持有。
+Claude 通过独立 ACP Host 连接显式配置的 Claude SDK/ACP 桥接命令。
+
+非 Codex 宿主的内置编排工具不属于浏览器工具 lease。Host 用受管私有
+descriptor 与签名会话身份访问 Gateway 的 `/orchestration`，在最多 15 秒
+内重新发现端点并重放相同调用。幂等键包含 server scope、Host incarnation、
+Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host 不能用
+回调正文伪造自然人。Renderer 不能直接调用宿主控制方法。
+
+跨引擎 spawn 先验证 source 的工作区/权限边界，再冻结 destination 的
+模型、参数与宿主代次。Pi/ACP 无法保持受限 source 权限时在创建前拒绝；
+不把源引擎模型名带入另一引擎。`driver: "dsh"` 选择新 `dsh-acp` Host，
+原生代次注册表继续拥有会话路由，升级只改变新建默认代，旧会话排空后才退休。
 
 ### 2.3 模型上下文中的 `MessageOrigin` 格式化规则
 当 `origin.kind !== "user"` 时，Driver 在送入底层模型前将其包装为结构化上下文头（而保存在控制账本与缓存中的 UI 数据保持纯正文本 + 结构化 `origin` 字段）：
@@ -240,7 +258,7 @@ CREATE TABLE IF NOT EXISTS opencraft_wait_tickets (
 
 ### 4.2 可重建读取缓存（`<dataDirectory>/cache/transcript-index.sqlite` + `.turns.jsonl` + `.blobs/`）
 
-当前 Stage 0 的缓存实现位于 `packages/native-history-node/`，本批只接入 Codex，复用 Token 统计的 rollout 字节增量读取器，并交给原生只读分页器投影 Turn。DSH/Pi 维持只读打开兼容路径，共享磁盘缓存消费留待后续；Pi 只读 SQLite 快照使用原生 Storage，不创建执行 Harness。完整 Item 响应沿用当前 wire contract，磁盘 Blob 在请求该页时还原；单独的预览与 Blob 拉取协议留待后续阶段。
+当前缓存实现位于 `packages/native-history-node/`。Codex 复用 Token 统计的 rollout 字节增量读取器，交给原生只读分页器投影 Turn；Pi 只读 SQLite/WAL 快照，DSH 通过原生 persistence 的 list/locate 定位全部会话代日志，再以规范只读投影对共享缓存做稳定前缀差分。缓存命中只核原生水位，不创建 Pi Harness 或 DSH 执行 owner。追加与未完成尾轮更新保持分页 epoch；来源替换、历史前缀改写或投影版本变化重建。完整 Item 响应沿用当前 wire contract，磁盘 Blob 在请求该页时还原；单独的预览与 Blob 拉取协议留待后续阶段。
 
 按照 `docs/sqlite-lifecycle.md` 第 1 节“可重建的副本/索引”管理，独立于权威控制库，随时可整库/整目录删除重建：
 
@@ -308,7 +326,7 @@ CREATE TABLE IF NOT EXISTS opencraft_cache_blobs (
 | **Stage 0（可先行落地）：打开会话只读解耦与可重建缓存** | **不依赖平滑升级改造**；与Token 统计共用同一个 Codex rollout 增量读取器 | 1. 拆开客户端点击会话的 `Read`（只读历史）与发消息时的 `Resume`（唤醒引擎）<br/>2. 在受管 `<dataDirectory>/cache/transcripts/` 实现 `.turns.jsonl` + `opencraft_turn_offset_index` + 水位追平与版本重建<br/>3. 实现单会话 `.blobs/` 冷热分离与删除联动 | • 服务端缓存命中读取耗时 P95 < 5ms；不唤醒引擎、不触发模型目录 RPC<br/>• **用户端体感指标**：点击 500+ 轮旧会话到首屏 10 轮 DOM 渲染完成 P95 < 150ms<br/>• 删缓存目录、改 `projection_schema_version`、模拟崩溃水位落后三场景均能从原生日志无损自动重建 |
 | **Stage 1（Codex 已实现）：常驻宿主编排、自动续跑协同与多人权限** | 排在**执行连续性改造（拆 AppServer 常驻 + 自动续跑）**与**Token 统计（Token 改造）**之后 | 1. 扩展 `actor-collaboration.sqlite` 支持父子拓扑、持久 `waitTickets`、`parent_notification_batches` 与 `toolCallKey` 幂等回执<br/>2. 实现 Engine Host 侧工具调用断线重连重放（网关重启不中断工具）<br/>3. 对接 `@opencraft/host-recovery` 抑制续跑期假中断通知；对接有界用户委托校验跨会话权限，Agent 触发轮次记入 `sourceKind: "system"` | • 执行网关在子会话调用 `thread_tell / spawn` 期间重启，原 Turn 与工具调用一次完成、不报错、不重复创建<br/>• 子会话被杀触发自动续跑期间，父会话不收到假中断通知；续跑完成或 `exhausted` 后才收到唯一通知<br/>• 跨用户未授权 `tell` 返回 403；子会话自动轮次在 Token 看板归入“系统已知量” |
 | **Stage 2（远景）：UI 协作卡片三态分离与父子会话树** | 依赖 Stage 1 | 1. 改造 `@opencraft/chat-core` 的 `SubagentTimelineBlock`（分离 `toolCallStatus`、`deliveryStatus`、`childRuntimeStatus`）<br/>2. 侧边栏支持 `parentThreadId` 树状缩进与 `hidden` 会话过滤 | • `thread_wait` 超时返回 `settled: false` 时，UI 卡片保持 `working` 而非误标 `done`<br/>• 页面刷新后从控制账本与缓存精确恢复卡片状态 |
-| **Stage 3（远景）：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp`，保留多代排空升级）、Claude/ACP Host 接入统一 `AgentDriverContract`<br/>2. 验证跨异构引擎父子派发与双向通信 | • Codex、DSH(ACP)、Pi 跨引擎互发 `spawn / tell` 全链路通过，且日常重启网关不中断任一引擎正在运行的任务 |
+| **Stage 3：3+1 独立宿主驱动统一接入（Pi / DSH-ACP / Claude）** | 依赖 Stage 1 及独立 Pi/DSH Host；源码已接入，各部署独立验收 | 1. 在独立 Pi Host、独立 DSH Host（`--profile acp`，保留多代排空升级）、Claude/ACP Host 接入统一 `AgentDriverContract`<br/>2. 验证跨异构引擎父子派发与双向通信 | • Codex、DSH(ACP)、Pi 跨引擎互发 `spawn / tell` 全链路通过，且日常重启网关不中断任一引擎正在运行的任务 |
 
 
 ### Stage 1 已实现边界
@@ -321,4 +339,4 @@ Codex 的独立 APP Host 持有真实 Native 连接，Gateway 通过稳定 callb
 
 Native 0.162 只在创建 Thread 时接收动态工具，因此四个编排工具注册到新 Thread；
 既有 Thread 保留原工具集。旧 APP 继续按实际能力工作，不能仅凭 Gateway 已升级
-宣称支持 callback 重放。UI 三态投影和 Pi/DSH/ACP/Claude 统一驱动仍属于 Stage 2–3。
+宣称支持 callback 重放。UI 三态投影属于 Stage 2；Stage 3 通过统一契约接入独立 Pi/DSH-ACP/Claude Host，各宿主需单独验收。

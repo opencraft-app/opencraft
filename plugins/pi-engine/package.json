@@ -16,7 +16,8 @@
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/host-schedules": "0.1.0",
-    "@opencraft/host-recovery": "0.1.0"
+    "@opencraft/host-recovery": "0.1.0",
+    "@opencraft/native-history-node": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
