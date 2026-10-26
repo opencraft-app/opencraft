@@ -98,9 +98,13 @@ class Fork:
                                '--', 'patches/chromium', env=env).splitlines()
             for path in changed:
                 if path.endswith('.patch'):
-                    payload = self.git('show', f'{tree}:{path}', env=env)
+                    # Patch blobs must cross the pipe byte-for-byte. Python's
+                    # text stdin expands LF to CRLF on Windows and corrupts
+                    # nested Chromium patch hunks despite a correct Git tree.
+                    payload = subprocess.check_output(
+                        ['git', '-C', str(self.source), 'show', f'{tree}:{path}'], env=env)
                     subprocess.run(['git', 'apply', '--numstat'], input=payload,
-                                   text=True, stdout=subprocess.DEVNULL, check=True)
+                                   stdout=subprocess.DEVNULL, check=True)
             return tree
 
     def verify(self):
