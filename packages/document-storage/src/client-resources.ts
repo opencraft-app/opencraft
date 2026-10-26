@@ -43,6 +43,15 @@ export interface ClientResourceSnapshot<T> {
   readonly loading: boolean;
   readonly error: unknown;
 }
+export interface ClientResourceFence {
+  readonly isCurrent: () => boolean;
+}
+export class ClientResourceScopeChangedError extends Error {
+  constructor() { super("Client resource operation scope changed"); this.name = "ClientResourceScopeChangedError"; }
+}
+function assertFence(fence: ClientResourceFence): void {
+  if (!fence.isCurrent()) throw new ClientResourceScopeChangedError();
+}
 export interface ClientResourceDefinition<T extends DocumentValue> {
   readonly name: string;
   readonly authority: ResourceAuthority;
@@ -58,11 +67,11 @@ export interface ReadableClientResource<T> {
 }
 export interface RemoteClientResource<T extends DocumentValue> extends ReadableClientResource<T> {
   /** Called only with a successful authoritative observation, never with a request error. */
-  observe(value: T): Promise<void>;
+  observe(value: T, fence: ClientResourceFence): Promise<void>;
 }
 export interface LocalClientResource<T extends DocumentValue> extends ReadableClientResource<T> {
-  /** Caller retains its input until durable success. A conflict requires an explicit re-read/merge. */
-  commit(value: T, expectedRevision: number): Promise<void>;
+  /** Caller retains its input until the selected adapter accepts the commit. A conflict requires an explicit re-read/merge. */
+  commit(value: T, expectedRevision: number, fence: ClientResourceFence): Promise<void>;
 }
 
 class Resource<T extends DocumentValue> implements RemoteClientResource<T>, LocalClientResource<T> {
@@ -95,45 +104,57 @@ class Resource<T extends DocumentValue> implements RemoteClientResource<T>, Loca
     }
   }
   reload(): Promise<void> { this.assertCurrent(); ++this.generation; return this.restore(); }
-  async observe(value: T): Promise<void> {
+  async observe(value: T, fence: ClientResourceFence): Promise<void> {
     this.assertCurrent();
-    if (this.key.authority !== "remote") throw new Error("Local originals require a durable commit");
+    assertFence(fence);
+    if (this.key.authority !== "remote") throw new Error("Local originals require an accepted adapter commit");
     const parsed = this.definition.parse(value);
     // Validate before changing memory; every adapter enforces the same byte budget.
     const record = { version: this.definition.version, savedAt: Date.now(), value: parsed };
     validateResourceRecord(record, 0);
-    ++this.generation;
+    const operation = ++this.generation;
+    assertFence(fence);
     this.publish({ ...this.snapshot, value: parsed, savedAt: record.savedAt, loading: false, error: null });
     try {
+      if (operation !== this.generation) return;
       await this.owner.run(async storage => {
         this.assertCurrent();
+        assertFence(fence);
+        if (operation !== this.generation) return;
         const current = await storage.read(this.key);
         this.assertCurrent();
+        assertFence(fence);
+        if (operation !== this.generation) return;
         if (current && current.version > record.version) throw new Error("Client resource format downgrade rejected");
         if (current && current.savedAt > record.savedAt) return;
         if (!await storage.compareAndSet(this.key, current?.revision ?? 0, record)) throw new Error("Client resource conflict");
-        if (!this.revoked && this.snapshot.value === parsed) this.publish({ ...this.snapshot, revision: (current?.revision ?? 0) + 1 });
+        assertFence(fence);
+        if (!this.revoked && operation === this.generation && this.snapshot.value === parsed) this.publish({ ...this.snapshot, revision: (current?.revision ?? 0) + 1 });
       });
     } catch (error) {
-      if (!this.revoked && this.snapshot.value === parsed) this.publish({ ...this.snapshot, error });
+      if (!(error instanceof ClientResourceScopeChangedError) && !this.revoked && operation === this.generation && this.snapshot.value === parsed) this.publish({ ...this.snapshot, error });
       // A disposable cache failure must not turn a successful network read into an error.
     }
   }
-  async commit(value: T, expectedRevision: number): Promise<void> {
+  async commit(value: T, expectedRevision: number, fence: ClientResourceFence): Promise<void> {
     this.assertCurrent();
+    assertFence(fence);
     if (this.key.authority !== "local") throw new Error("Remote copies require an authoritative observation");
     await this.ready;
     this.assertCurrent();
+    assertFence(fence);
     const record = { version: this.definition.version, savedAt: Date.now(), value: this.definition.parse(value) };
     validateResourceRecord(record, expectedRevision);
     try {
       await this.owner.run(async storage => {
         this.assertCurrent();
+        assertFence(fence);
         if (!await storage.compareAndSet(this.key, expectedRevision, record)) throw new Error("Client resource conflict; reload before merging");
+        assertFence(fence);
         if (!this.revoked) this.publish({ value: record.value, revision: expectedRevision + 1, savedAt: record.savedAt, loading: false, error: null });
       });
     } catch (error) {
-      if (!this.revoked) this.publish({ ...this.snapshot, error });
+      if (!(error instanceof ClientResourceScopeChangedError) && !this.revoked) this.publish({ ...this.snapshot, error });
       throw error;
     }
   }

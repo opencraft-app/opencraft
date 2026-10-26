@@ -28,6 +28,7 @@ import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
 import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
 import { SqliteClientResources } from "@opencraft/document-storage/client-resources-sqlite";
+import { createDesktopClientResourcePort } from "./client-resource-port.js";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
@@ -258,17 +259,18 @@ ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
 function clientResources() {
   return clientResourceStore ??= new SqliteClientResources(join(desktopPaths.userDataDirectory, "opencraft-client-resources.sqlite"));
 }
+const clientResourcePort = createDesktopClientResourcePort(clientResources);
 ipcMain.handle("opencraft:client-resource-read", (event, key) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().read(key);
+  return clientResourcePort.read(key);
 });
 ipcMain.handle("opencraft:client-resource-commit", (event, key, revision, record) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().compareAndSet(key, revision, record);
+  return clientResourcePort.compareAndSet(key, revision, record);
 });
 ipcMain.handle("opencraft:client-resource-clear-remote", (event, namespace) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted client resource caller");
-  return clientResources().clearRemoteNamespace(namespace);
+  return clientResourcePort.clearRemoteNamespace(namespace);
 });
 ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");

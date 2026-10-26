@@ -734,10 +734,27 @@ export function useMultiHostThreadCatalog(): {
       const resource = catalogResources[index]!;
       if (persistedCatalogObservations.current.get(resource) === query.data) return;
       persistedCatalogObservations.current.set(resource, query.data);
+      const host = hosts[index]!;
+      const profile = application.profiles.find(value => value.hostId === host.hostId)!;
+      const runtime = application.registry.peekRuntime(host.hostId);
+      const connectionGeneration = runtime?.getSnapshot().connectionGeneration;
+      const authorizationEpoch = host.kind === "remote-ssh"
+        ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null;
+      const fence = { isCurrent: () => {
+        const current = application.hostProfiles.getSnapshot().profiles.find(value => value.hostId === host.hostId);
+        const currentRuntime = application.registry.peekRuntime(host.hostId);
+        return application.clientResources.getSnapshot() === resourceScope
+          && current?.revision === profile.revision
+          && currentRuntime === runtime
+          && currentRuntime?.getSnapshot().connectionGeneration === connectionGeneration
+          && (host.kind !== "remote-ssh" || application.managedHostCatalog?.getAuthorizationEpoch() === authorizationEpoch)
+          && canReadHostThreadCatalog(current, currentRuntime?.getSnapshot().phase,
+            application.managedHostCatalog?.getSnapshot() ?? null);
+      } };
       // A first successful page is useful immediately, but is not a complete directory.
       void catalogResources[index]!.observe(cacheThreadCatalog(mergeCachedCatalogRows(
         query.data.data.map(thread => projectAppServerThread(thread)),
-        catalogResources[index]!.getSnapshot().value, !query.hasNextPage), !query.hasNextPage)).catch(() => undefined);
+        catalogResources[index]!.getSnapshot().value, !query.hasNextPage), !query.hasNextPage), fence).catch(() => undefined);
     });
   }, [catalogResources, querySignature]);
   const goalSources = useMemo(() => hosts.flatMap((host, index): SidebarGoalSource[] => {

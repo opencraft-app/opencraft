@@ -49,5 +49,10 @@ export class SqliteClientResources implements ClientResourcePersistence {
     if (typeof namespace !== "string") throw new TypeError("Invalid client resource namespace");
     this.database.prepare("DELETE FROM client_resources WHERE namespace=? AND authority='remote'").run(namespace);
   }
+  /** A platform port may revoke only the remote domain it exposes. */
+  async clearRemoteResource(namespace: string, name: string) {
+    resourceKey({ namespace, name, id: "namespace", authority: "remote" });
+    this.database.prepare("DELETE FROM client_resources WHERE namespace=? AND authority='remote' AND json_extract(identity,'$[1]')=?").run(namespace, name);
+  }
   close() { this.database.close(); }
 }

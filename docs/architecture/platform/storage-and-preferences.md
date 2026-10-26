@@ -2,6 +2,8 @@
 
 [Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
 
+Shared resource authority, runtime fences and platform adapter boundaries follow the [client resource contract](./client-resource-contract.md).
+
 ### Project selection and persistence
 
 OpenCraft owns the local Project catalog and stable IDs. The local Host serves
@@ -301,7 +303,7 @@ Context with AppServer Host runtimes.
 Web/PWA and Electron. A resource has a product/deployment/account namespace, a
 domain name, a stable resource ID, a schema version and an explicit authority.
 A remote resource accepts successful observations; it is a disposable display
-copy. A local resource requires revision-based durable commit before the caller
+copy. A local resource requires revision-based adapter-accepted commit before the caller
 may discard its input. Conflicts, format downgrade and quota failures remain
 visible. Local originals are excluded from remote capacity eviction and namespace
 cache cleanup; their owning domain decides explicit removal/export.
@@ -311,7 +313,7 @@ SQLite file for Electron, behind trusted-main-frame Preload IPC. React component
 do not choose storage engines. Opening is asynchronous and does not gate Shell or
 Host recovery. The shared owner serializes operations, revokes old scope handles
 synchronously and orders remote namespace cleanup after in-flight writes. No
-credentials are stored in resource values. Browser storage remains evictable.
+credentials are stored in resource values. Browser storage remains evictable; an IndexedDB transaction is an accepted local write, not a backup or permanent retention guarantee.
 
 The first consumer is the sidebar thread catalog: at most 300 display rows per
 Host recipe revision and at most 64 remote resource documents per client store
