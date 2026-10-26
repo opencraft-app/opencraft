@@ -188,17 +188,25 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
       try { const value = new URL(url); return value.protocol !== 'https:' || !!value.username || !!value.password; } catch { return true; }
     })) throw new Error('Personal Git credentials require a matching HTTPS remote without embedded credentials');
     if (conflicts(prefix) || cloneConflict) throw new Error('Git identity: conflicting command authentication configuration');
+    if (network.has(command)) {
+      for (const url of urls) for (const key of ['http.sslCert', 'http.sslKey']) {
+        if (await queryGit('config', '--get-urlmatch', key, url).catch(() => undefined) !== undefined)
+          throw new Error('Git identity: conflicting client-certificate authentication');
+      }
+      if (process.env.GIT_SSL_CERT || process.env.GIT_SSL_KEY) throw new Error('Git identity: conflicting client-certificate authentication');
+    }
     const env: NodeJS.ProcessEnv = { ...withoutTrace(process.env), OPENCRAFT_GIT_COMMAND_SESSION: reply.sessionId,
       GIT_COMMITTER_NAME: reply.identity.name, GIT_COMMITTER_EMAIL: reply.identity.email, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false' };
     env.GIT_TRACE_REDACT = '1';
     releaseHome = await privateGitHome(env);
     env.GIT_SSH_COMMAND = '/bin/false'; env.GIT_SSH = '/bin/false';
+    delete env.GIT_SSL_CERT; delete env.GIT_SSL_KEY; delete env.GIT_SSL_CERT_PASSWORD_PROTECTED;
     if (writes.has(command) || command === 'pull') {
       if (!preserveAuthor(command, tail) && !pullRebase) { env.GIT_AUTHOR_NAME = reply.identity.name; env.GIT_AUTHOR_EMAIL = reply.identity.email; }
     }
-    const parameters: Array<[string, string]> = [['credential.helper', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']];
+    const parameters: Array<[string, string]> = [['credential.helper', ''], ['credential.username', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']];
     // URL-specific headers/cookies can override the global reset; clear every inherited scope.
-    for (const key of (await queryGit('config', '--name-only', '--get-regexp', '^http\\..*\\.(extraheader|cookiefile|sslcert|sslkey|emptyauth)$').catch(() => '')).split('\n').filter(Boolean)) parameters.push([key, '']);
+    for (const key of (await queryGit('config', '--name-only', '--get-regexp', '^(http\\..*\\.(extraheader|cookiefile|emptyauth)|credential\\..*\\.username)$').catch(() => '')).split('\n').filter(Boolean)) parameters.push([key, '']);
     const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
     parameters.push(['credential.helper', `!${shellQuote(process.execPath)} ${shellQuote(resolve(process.argv[1]!))} --opencraft-credential-helper`]);
     if (reply.signing) {

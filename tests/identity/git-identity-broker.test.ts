@@ -206,10 +206,22 @@ test('configured HTTPS cannot authenticate from server netrc before the broker',
   await f.managed('ls-remote', 'origin');
   assert.equal(received.some(auth => auth === `Basic ${Buffer.from('synthetic-server:synthetic-server-only').toString('base64')}`), true, 'unconfigured mode retains existing netrc behavior');
   received.length = 0; f.bind();
-  await f.managed('ls-remote', 'origin');
+  const authenticated = await f.managed('ls-remote', 'origin');
   assert.equal(received.some(auth => auth === `Basic ${Buffer.from('synthetic-server:synthetic-server-only').toString('base64')}`), false);
-  assert.equal(received.some(auth => auth === `Basic ${Buffer.from('synthetic:synthetic-only').toString('base64')}`), true);
+  assert.equal(received.some(auth => auth === `Basic ${Buffer.from('synthetic:synthetic-only').toString('base64')}`), true, authenticated.err);
   assert.equal(f.credentials() > 0, true);
+  for (const key of ['credential.username', 'credential.https://github.com.username']) {
+    await f.native('config', key, 'synthetic-server'); received.length = 0;
+    await f.managed('ls-remote', 'origin');
+    assert.equal(received.some(auth => auth === `Basic ${Buffer.from('synthetic:synthetic-only').toString('base64')}`), true, 'inherited username must not replace the employee identity');
+  }
+  const missingCertificate = join(f.root, 'synthetic-missing-client-certificate');
+  for (const key of ['http.sslCert', 'http.sslKey', 'http.https://github.com.sslCert', 'http.https://github.com.sslKey']) await f.native('config', key, missingCertificate);
+  f.managedEnv.GIT_SSL_CERT = missingCertificate; f.managedEnv.GIT_SSL_KEY = missingCertificate; received.length = 0;
+  const certificateConflict = await f.managed('ls-remote', 'origin');
+  assert.equal(certificateConflict.code, 128);
+  assert.match(certificateConflict.err, /conflicting client-certificate authentication/u);
+  assert.equal(received.length, 0, 'inherited client certificate authentication must not take over');
 });
 test('command-private HOME retains read-only global Git policy and is removed after completion', async t => {
   const f = await managedRepository(t); f.bind();

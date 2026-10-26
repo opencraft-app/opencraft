@@ -36,7 +36,10 @@ active row after Gateway loss is insufficient. Command expiry uses monotonic tim
 Each configured command receives an expiring capability bound to its process
 tree and account generation. Its credential helper resets inherited helpers,
 headers and cookies for that command and returns a PAT only for the exact HTTPS
-host. A command-private empty HOME prevents libcurl from authenticating with the
+host. Inherited global and URL-scoped usernames are replaced by the employee
+identity. Client-certificate authentication conflicts are reported before network
+execution, because an empty certificate setting does not disable it in Git.
+A command-private empty HOME prevents libcurl from authenticating with the
 server's netrc before Git calls its helper; global Git policy is included by
 read-only path references. No original global file is changed. Hooks share that
 command-private HOME. The directory contains no token or private signing key.
