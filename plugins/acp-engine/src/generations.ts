@@ -163,6 +163,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     return this.owner(threadId).request(method, params, client);
   }
   incarnation(threadId: string): string { return this.owner(threadId).incarnation; }
+  executionObservation(threadId: string) { return this.owner(threadId).executionObservation(threadId); }
   snapshot(): Value { return { current: this.registry.current, generations: this.registry.generations.map(record => ({ ...record, configPath: undefined, pid: this.providers.get(record.id)?.processId ?? null, occupancy: this.providers.get(record.id)?.occupancy ?? null })) }; }
   /** Private local control; suspension preserves bindings and native provenance. */
   manage(action: "add" | "activate" | "suspend" | "retire", input: { id: string; configPath?: string; expectedCurrent?: string }): Promise<Value> {

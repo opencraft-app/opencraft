@@ -28,6 +28,7 @@ export class AgentDriverTransport implements DuplexTransport {
       message.params = { ...params, clientUserMessageId: inputId };
     }
     // The remote Host receives data, while authority remains in the gateway.
-    await this.inner.send(JSON.stringify(message), signal);
+    if (this.inner.sendWithContext) await this.inner.sendWithContext(JSON.stringify(message), context, signal);
+    else await this.inner.send(JSON.stringify(message), signal);
   }
 }

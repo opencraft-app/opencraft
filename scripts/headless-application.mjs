@@ -27,6 +27,11 @@ import { TokenUsageQuerySession, TokenUsageQueryTransport } from "../apps/opencr
 import { TokenUsageQueryService } from "../apps/opencraft-daemon/src/token-usage-query-service.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { MachineIdentityTransport } from "../apps/opencraft-daemon/src/machine-transport.ts";
+import { ExecutionOwnershipTransport } from "../apps/opencraft-daemon/src/execution-ownership-transport.ts";
+import { ExecutionLeaseStore } from "../apps/opencraft-daemon/src/execution-lease-store.ts";
+import { ThreadIdentityDatabase } from "../apps/opencraft-daemon/src/thread-identity-database.ts";
+import { observeNativeExecutionProcess } from "../apps/opencraft-daemon/src/native-execution-origin.ts";
+import { createWebSocketExecutionTurnInspector } from "../apps/opencraft-daemon/src/native-execution-inspector.ts";
 import { AgentDriverTransport } from "../apps/opencraft-daemon/src/agent-driver-transport.ts";
 import { WebSocketTransport } from "../packages/appserver-transport-websocket/src/index.ts";
 import { WebSocket } from 'ws';
@@ -251,6 +256,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let desktop;
   let identity;
   let agentIdentity;
+  let executionDatabase, executionStore, executionRecovery;
+  let resolveExecutionNative = async () => null;
   let mcpApps;
   let ingress;
   let instanceAccess;
@@ -302,7 +309,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       if (releasePiOwner) results.push(...await Promise.allSettled([releasePiOwner()]));
       results.push(...await Promise.allSettled([(await dshAgent?.catch(() => undefined))?.close()]));
       results.push(...await Promise.allSettled([capabilityMcp?.close()]));
+      executionRecovery?.close();
       results.push(...await Promise.allSettled([agentIdentity?.close()]));
+      executionDatabase?.close();
       // Settle every provider/store before releasing the directory lock, even
       // when one disposer throws synchronously or returns a rejected promise.
       for (const dispose of [() => mcpApps?.close(), () => sshManagement?.close(), () => identity?.close?.(),
@@ -393,7 +402,25 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     let piEngine;
     let independentEngine;
     const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,
-      getInputs:async engine => engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs});
+      getInputs:async engine => {
+        const inputs = engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs;
+        if (!inputs) return undefined;
+        return {receipt: (...args) => inputs.receipt(...args), submit: async (threadId,inputId,text,canAdmit) => {
+          if (!executionStore) throw new Error('Execution ownership unavailable');
+          const native = await resolveExecutionNative(threadId);
+          return inputs.submit(threadId,inputId,text,async () => {
+            if (!await canAdmit()) return false;
+            // This explicit Host input is an agent, schedule or goal, not the
+            // person currently viewing the Thread.
+            executionStore.capture(threadId,inputId,{principal:null,ownership:'unowned'},'accepted','system');
+            executionStore.begin(threadId,inputId,native?.incarnation);
+            return true;
+          }).then(receipt => {
+            if (receipt?.state === 'delivered' && receipt.turnId) executionStore.started(threadId,receipt.turnId,inputId,native?.incarnation);
+            return receipt;
+          });
+        }};
+      }});
     actorCollaboration = new Collaboration(join(dataDirectory, 'actor-collaboration.sqlite'), actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
@@ -489,7 +516,42 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       directory: join(dataDirectory, "thread-identities", "opencraft-server"),
       resolveTarget: async () => agent.resolveWebsocketUrl ? await agent.resolveWebsocketUrl() : agent.websocketUrl,
       createMetadata: createThreadMetadata,
+      resolveExecutionNative: threadId => resolveExecutionNative(threadId),
     });
+    if (agentIdentity) executionStore = agentIdentity.executions;
+    else {
+      executionDatabase = new ThreadIdentityDatabase(join(dataDirectory,'thread-identities','opencraft-server'));
+      executionStore = new ExecutionLeaseStore(executionDatabase.database);
+    }
+    executionStore.suspend();
+    resolveExecutionNative = async threadId => {
+      try {
+        let pid;
+        if (agent.getExecutionIdentity) pid = (await agent.getExecutionIdentity(threadId)).pid;
+        else if (threadId.startsWith('pi_') && piEngine) pid = process.pid;
+        else {
+          const dsh = await startDsh();
+          pid = dsh.getIdentity ? (await dsh.getIdentity()).enginePid : dsh.engineProcessId;
+        }
+        return pid ? await observeNativeExecutionProcess(pid) : null;
+      } catch { return null; }
+    };
+    executionRecovery = await createWebSocketExecutionTurnInspector(async () => agent.resolveWebsocketUrl ? agent.resolveWebsocketUrl() : agent.websocketUrl);
+    // A finite read-only reconciliation restores the original pre-send lease,
+    // including tools born before Gateway loss; failure stays unknown.
+    for (const threadId of executionStore.unsettledThreads().slice(0,256)) {
+      try {
+        const native = await resolveExecutionNative(threadId);
+        const observation = agent.getExecutionIdentity ? await agent.getExecutionIdentity(threadId) : null;
+        if (native && observation?.turn && observation.pid === native.pid) {
+          const turn = observation.turn;
+          executionStore.reconcile(threadId,[{id:turn.id,status:turn.status,items:turn.inputId ? [{type:'userMessage',clientId:turn.inputId}] : []}],native.incarnation);
+        } else {
+          const result = await executionRecovery.readThread(threadId);
+          if (native && Array.isArray(result?.thread?.turns)) executionStore.reconcile(threadId,result.thread.turns,native.incarnation);
+        }
+      } catch { /* Authority cannot be inferred from a failed recovery read. */ }
+    }
     mcpApps = new McpAppsService(join(dataDirectory, "mcp-apps.sqlite"));
     // Reuse the deployment's existing Codex ledger without starting a Codex
     // transport or opening/migrating its writer from the DSH/Pi entry.
@@ -508,7 +570,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       createTransport(hostId) {
         const transport = (() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
-          new AgentDriverTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), actorCollaboration,
+          new AgentDriverTransport(new ExecutionOwnershipTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId))), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
         if (remote) return new MachineIdentityTransport(null, "Codex", () => createSshCodexEngineAdapter(remote, dataDirectory, createThreadMetadata, storageOpened(hostId)));

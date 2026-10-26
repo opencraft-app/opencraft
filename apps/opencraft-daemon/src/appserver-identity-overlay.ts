@@ -1,3 +1,4 @@
+import type { NativeExecutionProcess } from "./native-execution-origin.js";
 import { ExecutionLeaseStore } from "./execution-lease-store.js";
 import { ExecutionLeaseTracker } from "./execution-ownership-transport.js";
 import WebSocket from "ws";
@@ -25,7 +26,7 @@ export class AppServerIdentityOverlay {
   private readerTarget: string | null = null;
   private reading: Promise<AppServerClient> | null = null;
   private closed = false;
-  constructor(readonly options: { directory: string; resolveTarget(): Promise<string>; createMetadata: ThreadMetadataFactory }) {
+  constructor(readonly options: { directory: string; resolveTarget(): Promise<string>; createMetadata: ThreadMetadataFactory; resolveExecutionNative?(threadId:string):Promise<NativeExecutionProcess|null> }) {
     this.store = new ThreadIdentityDatabase(options.directory);
     this.executions = new ExecutionLeaseStore(this.store.database);
     this.executionTracker = new ExecutionLeaseTracker(this.executions);
@@ -65,7 +66,7 @@ export class AppServerIdentityOverlay {
   }
   open(emit: (frame: string) => void): IdentitySocketSession {
     if (this.closed) throw new Error("Thread identity overlay closed");
-    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session), this.executionTracker);
+    const session = new IdentitySocketSession(this.identity, emit, () => this.sessions.delete(session), this.executionTracker, this.options.resolveExecutionNative);
     this.sessions.add(session); return session;
   }
   async close(): Promise<void> {
@@ -89,11 +90,23 @@ class IdentitySocketSession {
   private sequence = 0;
   private readonly initialized = new Set<string>();
   private closed = false;
-  constructor(readonly identity: ThreadIdentity, readonly emit: (frame: string) => void, readonly dispose: () => void, readonly executions?: ExecutionLeaseTracker) {}
+  constructor(readonly identity: ThreadIdentity, readonly emit: (frame: string) => void, readonly dispose: () => void, readonly executions?: ExecutionLeaseTracker,
+    readonly native?: (threadId:string)=>Promise<NativeExecutionProcess|null>) {}
+  async prepareNative(frame:string, context:TransportSubmissionContext):Promise<string|null> {
+    const message=record(JSON.parse(frame));
+    const native=this.native && ["turn/start","turn/steer","thread/queue/add","thread/queue/start"].includes(String(message.method))
+      ? await this.native(String(record(message.params).threadId ?? "")) : null;
+    return this.toNative(frame,context,native);
+  }
+  async observeNative(frame:string):Promise<string|null> {
+    const message=record(JSON.parse(frame));
+    const native=this.native && message.method === "turn/started" ? await this.native(String(record(message.params).threadId ?? "")) : null;
+    return this.fromNative(frame,native);
+  }
   private reply(message: IdentityRecord, packet: IdentityRecord): void {
     if (!this.closed) this.emit(JSON.stringify({ ...packet, ...(clientId(message) ? { [LOGICAL_CLIENT_FIELD]: clientId(message) } : {}) }));
   }
-  toNative(frame: string, context: TransportSubmissionContext): string | null {
+  toNative(frame: string, context: TransportSubmissionContext, native?: NativeExecutionProcess | null): string | null {
     if (this.closed) return null;
     let message: IdentityRecord;
     try { message = record(JSON.parse(frame)); } catch { return frame; }
@@ -128,7 +141,7 @@ class IdentitySocketSession {
       if (this.originals.has(key) || this.pending.size >= 256) return error("Too many pending or duplicate AppServer requests");
       const id = this.prefix + ++this.sequence;
       if (submissions.has(method)) this.identity.recordSubmission(params, context);
-      params = record(this.executions?.prepare({ ...message, id, params }, context).params ?? params);
+      params = record(this.executions?.prepare({ ...message, id, params }, context, native).params ?? params);
       this.pending.set(id, { method, params, sender: context.sender, created: Date.now(), original: message,
         key, client: clientId(message), epoch: this.epochs.get(clientId(message)) ?? 0 });
       this.originals.set(key, id);
@@ -139,11 +152,11 @@ class IdentitySocketSession {
       return JSON.stringify({ ...message, id, params });
     } catch (failure) { return error(failure instanceof Error ? failure.message : "Invalid submission identity"); }
   }
-  fromNative(frame: string): string | null {
+  fromNative(frame: string, native?: NativeExecutionProcess | null): string | null {
     if (this.closed) return null;
     let message: IdentityRecord;
     try { message = record(JSON.parse(frame)); } catch { return frame; }
-    this.executions?.observe(message);
+    this.executions?.observe(message,native);
     if (typeof message.method === "string") {
       this.identity.observeNotification(message);
       return JSON.stringify(this.identity.projectNotification(message));

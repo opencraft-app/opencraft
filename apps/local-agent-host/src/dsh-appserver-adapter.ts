@@ -1681,7 +1681,8 @@ export class DshAppServerAdapter {
           pending.cancel();
           throw error;
         }
-        return { queuedSubmission: await pending.promise };
+        return { queuedSubmission: { ...await pending.promise, ...(typeof value.__opencraftExecutionAdmission === "string" && value.__opencraftExecutionAdmission.length <= 128
+          ? {__opencraftExecutionAdmission:value.__opencraftExecutionAdmission} : {}) } };
       }
       case "thread/queue/update": {
         const sessionId = string(value.threadId);

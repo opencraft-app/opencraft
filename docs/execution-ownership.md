@@ -670,3 +670,76 @@ rechecks the original execution after the asynchronous read. Missed completion
 returns expired; read failures return unknown. The native probes use only a
 latest-Turn history read, never resume or subscribe, and ignore unsolicited native
 interaction requests without responding to them.
+
+
+### Independent Host execution observations
+
+Authenticated ingress forwards its frozen submission context through
+`AgentDriverTransport` only after execution authorization. The inner
+`ExecutionOwnershipTransport` records the same input identity before native
+admission. A queue start consumes its original persisted submitter; a steer
+records an author and never acquires the running execution.
+
+The gateway uses its existing thread-identity SQLite owner for independent
+engines. On restart, unresolved leases become unknown until bounded read-only
+reconciliation proves the exact original input and Turn. Inspection does not
+Resume, attach callbacks, subscribe to tools or answer unsolicited interactions.
+An explicit internal Host input records unowned execution; the viewer and the
+last human sender are never credential fallbacks.
+
+Independent Host descriptors expose authenticated, origin-free
+`GET /execution-origin?threadId=...`. The engine owner resolves the physical
+native generation and returns its PID. ACP also returns the admitted public
+Turn ID, status and original input ID from its live runtime; its native history
+Turn numbering is a different identity and cannot validate a public lease.
+`readEngineExecutionIdentity` revalidates the descriptor and live Host before
+reading this port. `observeNativeExecutionProcess` adds the process start ticks
+and boot fence. The broker must verify peer ancestry and birth time against the
+same native root and immutable lease, including after asynchronous inspection.
+An unavailable observer is unknown, never unowned.
+
+`createHostExecutionTurnInspector` uses the ACP owner observation, and falls
+back to the bounded raw WebSocket Turn reader only for providers without an
+owner Turn observation. It never follows a successor Turn or accepts a changed
+original input.
+
+### Thread identity in native shells
+
+Pi supplies the explicit public session ID to each session's native execution
+environment. Environments may be reused for the same session and working
+directory because they contain only this diagnostic Thread ID; employee
+credentials are resolved for each actual tool process through the broker.
+
+DSH shell and terminal boundaries consume one read-only native-to-public
+resolver. Legacy DSH uses its existing generation/checkpoint owner. DSH ACP
+reads the existing atomic routing records in one fixed generation directory;
+it does not construct a public ID from a native ID or create another writable
+mapping. Packaging patches the pinned `dsh-bash-local` and `dsh-terminal-bash`
+process environment boundaries, verifies both before writing, and rejects
+upstream drift. A new ACP generation must explicitly mount the packaged
+`dsh-acp-execution-environment.mjs` plugin with its `routesDirectory`; existing
+pinned generations are not silently changed.
+
+`OPENCRAFT_THREAD_ID` is diagnostic, like native Codex's `CODEX_THREAD_ID`.
+Neither is credential authority. A persistent shell or background child keeps
+its original process birth; after that Turn ends it cannot acquire a later
+employee's lease. A fresh shell process in a later Turn is a separate origin.
+
+
+### Boot clock and queue admission fences
+
+Linux job origin queries include `bootId` and `startedAtBootMs` from the attested
+process start ticks. Readers advertise `originClock: "boot-monotonic-v1"` so a
+broker can refuse an older reader that would silently ignore these fields.
+Host migration v16 and thread-identity migration v3 append boot-relative lease
+boundaries without rewriting v15/v2. The complete uncertainty interval, including
+`/proc/uptime` quantization, must fit one interval in the same boot and native
+incarnation. Old rows without boot evidence remain unknown. Realtime clock jumps
+cannot move an old background job to the next employee.
+
+Queue receipts use an immutable admission nonce, not creation time, to confirm
+that this principal's input was accepted. The gateway persists and overwrites
+the wire nonce before native admission. Pi stores the first nonce in its native
+queue; edits and duplicates preserve it. DSH echoes it only after the new native
+queue admission path. Older Hosts or historical receipts without matching
+admission evidence stay unknown until proven, and never inherit the current user.

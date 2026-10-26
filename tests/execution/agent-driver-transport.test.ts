@@ -33,3 +33,18 @@ test("verified human Pi input receives its own scoped delegation before remote n
     { sender: null, actorContext: actor });
   assert.equal(f.grants[1][2], "human-explicit");
 });
+
+
+test("execution context crosses the authorized port once and rejected admission cannot capture it", async () => {
+  const forwarded: any[] = [];
+  const inner: DuplexTransport = { status: {state:"open"}, async connect(){}, async close(){}, async send(){throw new Error("context lost");},
+    async sendWithContext(frame,context){forwarded.push([JSON.parse(frame),context]);},subscribeMessage:()=>()=>{},subscribeStatus:()=>()=>{} };
+  const context={sender:null,executionPrincipal:{provider:"employee",subject:"A"},validUntil:Date.now()+10000,
+    actorContext:{actorId:"human:A",generation:1,credentialId:null,expiresAt:Date.now()+10000}};
+  const transport=new AgentDriverTransport(inner,{authorizeExecution(){throw new Error("denied");}} as any,()=>"server");
+  await assert.rejects(transport.sendWithContext(JSON.stringify({id:1,method:"turn/start",params:{threadId:"pi_x",input:[]}}),context),/denied/);
+  assert.equal(forwarded.length,0);
+  await new AgentDriverTransport(inner,{authorizeExecution(){}} as any,()=>"server").sendWithContext(JSON.stringify({id:2,method:"turn/start",params:{threadId:"pi_x",input:[]}}),context);
+  assert.equal(forwarded[0][1],context); assert.ok(forwarded[0][0].params.clientUserMessageId);
+  assert.equal(JSON.stringify(forwarded[0][0]).includes('"subject"'),false);
+});

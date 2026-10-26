@@ -152,6 +152,12 @@ export class AcpEngine implements ExecutionEngineProvider {
   async ownsOperation(operationId: string): Promise<boolean> { await this.load(); return this.preparations.has(operationId) || this.creations.has(operationId); }
   async catalogThreadIds(): Promise<readonly string[]> { await this.load(); return [...this.sessions.keys()]; }
   get processId(): number | null { return this.transport.pid; }
+  /** Private owner observation. Does not attach a client, resume or wake native. */
+  executionObservation(threadId: string) {
+    this.session(threadId);
+    const active = this.state(threadId).active;
+    return {pid:this.processId, turn:active ? {id:active.id,status:active.status,inputId:active.inputId ?? null} : null};
+  }
   ownsThread(id: string): boolean { return id.startsWith(this.threadPrefix); }
   ownsModel(id: string): boolean { return id.startsWith(this.modelPrefix); }
   subscribe(listener: (method: string, params: Value) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }

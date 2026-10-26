@@ -5,6 +5,7 @@ type Value = Record<string, any>;
 export type PiQueuedInput = {
   id: string;
   clientId: string;
+  executionAdmission?: string;
   input: Value[];
   content: Value[];
   additionalContext: Value | null;
@@ -19,4 +20,5 @@ export const PiQueueDoc = defineDoc<PiQueueState>({
 export const queueProjection = (item: PiQueuedInput, paused = false, reason = "user-stopped") => ({
   id: item.id, input: item.input, clientUserMessageId: item.clientId, createdAt: item.createdAtMs,
   pausedReason: paused ? reason : null,
+  ...(item.executionAdmission ? {__opencraftExecutionAdmission:item.executionAdmission} : {}),
 });

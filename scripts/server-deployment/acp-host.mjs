@@ -53,7 +53,17 @@ export async function startIndependentAcpHost(options) {
         void handleHostInput(request, response, token, provider.inputs, (threadId, inputId) => capabilities.authorizeInput(threadId, inputId)); return;
       }
       if (request.headers.origin !== undefined || request.headers.authorization !== `Bearer ${token}`) { response.writeHead(403); response.end(); return; }
-      if (url.pathname === '/health' && request.method === 'GET') {
+      if (url.pathname === '/execution-origin' && request.method === 'GET') {
+        try {
+          const threadId = url.searchParams.get('threadId');
+          if (!threadId || threadId.length > 512) throw new Error('Invalid Thread');
+          const observation = provider.executionObservation(threadId);
+          response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});
+          response.end(JSON.stringify({threadId,...observation}));
+        } catch { response.writeHead(404); response.end('{}'); }
+        return;
+      }
+      if (url.pathname === '/health'  && request.method === 'GET') {
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify({ ok: true, protocolVersion: 1, pid: process.pid, machineId: machine.machineId,
           engines: [id], defaultEngine: id, storage: host.storageOutcomes, ...provider.snapshot() })); return;

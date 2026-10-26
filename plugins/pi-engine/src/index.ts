@@ -235,7 +235,7 @@ export class PiEngine {
     if (session.native) return session.native;
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
-      const native = await PiDurableSession.open({ cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
+      const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
         ephemeral: session.ephemeral, inherited: session.inherited,
         agentDirectory: this.options.modelDirectory ?? this.options.directory, models: await this.modelsRuntime, tools: [...session.tools, ...this.hostTools(session)],
         onSnapshot: snapshot => this.accept(session, snapshot),
@@ -373,7 +373,8 @@ export class PiEngine {
       // admission state; only a committed native snapshot announces the Turn.
       session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
       await native.submit(item.content, { turnId: item.id, clientId: item.clientId, input: item.input,
-        additionalContext: item.additionalContext, createdAtMs: item.createdAtMs }, item.id);
+        additionalContext: item.additionalContext, createdAtMs: item.createdAtMs,
+        ...(item.executionAdmission ? {executionAdmission:item.executionAdmission} : {}) }, item.id);
       await native.settleQueue(item.id);
       this.queueOwners.delete(item.id);
       await this.refresh(session);
@@ -845,7 +846,8 @@ export class PiEngine {
         if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
         const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
       const content = await this.compileInput(params.input, additionalContext, session.cwd, model);
-        const item: PiQueuedInput = { id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
+        const executionAdmission = queued ? queued.executionAdmission : (typeof params.__opencraftExecutionAdmission === "string" && params.__opencraftExecutionAdmission.length <= 128 ? params.__opencraftExecutionAdmission : undefined);
+        const item: PiQueuedInput = { ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
           input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
         session.pendingRecovery = true; await this.save(session);
         const result = method === "thread/queue/add" ? await native.enqueue(item) : await native.changeQueue("update", item.id, item);

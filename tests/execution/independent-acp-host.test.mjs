@@ -32,6 +32,10 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   const started = await gateway.request('turn/start', { threadId: created.thread.id, input: [{ type: 'text', text: 'wait' }] });
   const before = host.provider.snapshot().generations[0];
   assert.equal(before.occupancy.activeTurns, 1);
+  const observed=await attachment.getExecutionIdentity(created.thread.id);
+  assert.equal(observed.pid,before.pid);assert.equal(observed.turn.id,started.turn.id);assert.equal(observed.turn.status,"inProgress");
+  assert.notEqual(before.pid,process.pid);
+  await assert.rejects(attachment.getExecutionIdentity("claude_unknown"));
   gateway.socket.close(); await attachment.close();
   const deadline = Date.now() + 3000;
   while (host.provider.snapshot().generations[0].occupancy.activeTurns && Date.now() < deadline) await delay(20);
@@ -45,6 +49,12 @@ test('independent Claude ACP Host retains native PID and turn when a gateway att
   assert.equal(snapshot.turnId, started.turn.id); assert.equal(snapshot.state, 'completed');
   const unauthorized = await fetch(new URL('/generations', descriptor.controlUrl), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'activate', id: 'bad' }) });
   assert.equal(unauthorized.status, 403);
+  await host.provider.manage('add',{id:'two',configPath});
+  await host.provider.manage('activate',{id:'two',expectedCurrent:'one'});
+  const second=await successor.request('thread/start',{});
+  assert.equal((await attachment.getExecutionIdentity(created.thread.id)).pid,before.pid,'existing Thread retains the original native generation');
+  assert.notEqual((await attachment.getExecutionIdentity(second.thread.id)).pid,before.pid,'new Thread uses the new native root');
+
 });
 
 test('DSH ACP native tool results retain the 0.2 message body through the shared history projection', async () => {
@@ -110,6 +120,7 @@ test('production multi-engine entry aggregates Pi and two independently rooted A
     assert.equal(receipt.state, 'delivered'); owner.turnId = receipt.turnId; owner.nativePid = owner.host.provider.snapshot().generations[0].pid;
     assert.deepEqual(await attachment.inputs.receipt(created.thread.id, inputId), receipt);
     assert.equal(owner.host.provider.snapshot().generations[0].occupancy.activeTurns, 1);
+    assert.equal((await attachment.getExecutionIdentity(owner.threadId)).pid,owner.nativePid);
   }
   assert.equal(new Set(owners.map(owner => owner.nativePid)).size, 2);
   await aggregate.close();

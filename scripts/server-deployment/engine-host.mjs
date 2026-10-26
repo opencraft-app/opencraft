@@ -56,14 +56,14 @@ export async function startIndependentEngineHost(options) {
         turnId, callId, name, arguments: args, incarnation: pi.orchestrationIncarnation, ...(inputId ? { inputId } : {}),
       }, signal),
     });
-    const remoteInputs = new Map();
+    const remoteInputs = new Map(), remoteOrigins = new Map();
     const remotes = [];
     for (const id of engines.filter(id => !['pi', 'dsh'].includes(id))) {
       const remote = options.remoteEngines?.find(remote => remote.id === id);
       if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
       const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
       const prefix = id === 'dsh-acp' ? 'dsh_acp_' : id === 'claude-code' ? 'claude_' : 'acp_';
-      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs);
+      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs); remoteOrigins.set(id, attachment.getExecutionIdentity);
     }
     const inputOwner = threadId => threadId.startsWith('pi_') ? pi.inputs : remoteInputs.get(threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : 'acp');
     const inputs = {
@@ -95,6 +95,26 @@ export async function startIndependentEngineHost(options) {
         void handleHostInput(request, response, token, inputs, (threadId, inputId) =>
           new RemoteSessionCapabilities(dataDirectory, `server:${machine.machineId}:${threadId.startsWith('pi_') ? 'pi' : threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : 'acp'}`).authorizeInput(threadId, inputId),
         );
+        return;
+      }
+      if (url.pathname === '/execution-origin' && request.method === 'GET'
+        && request.headers.origin === undefined && request.headers.authorization === `Bearer ${token}`) {
+        void (async () => {
+          const threadId = url.searchParams.get('threadId');
+          if (!threadId || threadId.length > 512) throw new Error('Invalid Thread');
+          let pid, turn;
+          if (pi.ownsThread(threadId)) pid = process.pid;
+          else {
+            const id = threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
+            if (id === 'dsh' && engines.includes(id)) pid = (await (await attachDshHost(dshDescriptorPath, join(dataDirectory,'agent'), machine.machineId)).getIdentity()).enginePid;
+            else {
+              const origin = remoteOrigins.get(id); if (!origin) throw new Error('Origin unavailable');
+              const observation = await origin(threadId); pid = observation.pid; turn = observation.turn;
+            }
+          }
+          response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});
+          response.end(JSON.stringify({threadId,pid,...(turn === undefined ? {} : {turn})}));
+        })().catch(() => { response.writeHead(404); response.end('{}'); });
         return;
       }
       if (
