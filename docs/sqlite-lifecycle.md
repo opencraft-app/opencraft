@@ -36,6 +36,7 @@
 | `opencraft-host-state.sqlite`（旧目录沿用 `codex-host-queue.sqlite`） | [OpenCraftHostStateDatabase](../apps/opencraft-daemon/src/opencraft-host-state-database.ts)；CodexEngineAdapter | 原 Codex 目录；SSH 为原 `ssh-servers/<binding hash>` 目录 | durable queue、message_senders、企业身份 presence/state/completion 与远端会话目录/同步水位共用一个迁移/连接/事务 owner |
 | `opencraft-message-attachments.sqlite`（旧目录沿用 `codex-message-attachments.sqlite`） | [OpenCraftMessageAttachments](../apps/opencraft-daemon/src/opencraft-message-attachments.ts)；CodexEngineAdapter | 同上 | 已发送文件的 display metadata，不改变原生 mention 输入 |
 | `connections.sqlite` | [SshConnectionStore](../apps/opencraft-daemon/src/ssh-connection-store.ts)；可选 SSH management owner | 原 `ssh` 私有目录 | 连接/CAS、host key 与加密 credential；原 `ssh-connections` v1 SQL/hash 不变，v2 保留旧 reader 的 `user_version=1` |
+| `employee-git-vault.sqlite` | [EmployeeGitVaultStore](../scripts/employee-git-vault-store.ts)；optional product credential runtime | Installation data directory | Encrypted account/host documents and CAS tombstones; schema v1, separate owner-only 32-byte key; missing key refuses recovery; see [managed Git identity](git-identity.md) |
 
 
 Electron Main 三库仍按消费入口懒打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。

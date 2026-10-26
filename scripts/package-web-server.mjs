@@ -15,8 +15,9 @@ import semver from 'semver';
 import { assertHeadlessWebRelease } from './headless-web-release.mjs';
 import { parseNpmPackResult } from './web-deployment/npm-pack-result.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, assertPackageName } from './web-deployment/package-identity.mjs';
+import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs') }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [] }) {
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
   if (!['daemon', 'headless'].includes(executionProfile) || (!execution && executionProfile !== 'daemon')) throw new Error('Invalid execution profile');
@@ -79,6 +80,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await chmod(join(packageRoot,'runtime/observe-cli.mjs'),0o755);
   await writeFile(join(packageRoot,'package.json'),JSON.stringify(manifest,null,2));
   if (execution) {
+    await buildGitIdentityRuntime(join(packageRoot, 'runtime'), additionalGitRuntimeEntries);
     await mkdir(join(packageRoot, 'execution'));
     for (const [entry, target, format] of [
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
