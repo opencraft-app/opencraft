@@ -62,6 +62,14 @@
     {
       "path": "patches/electron/0014-offscreen-oopif-input-transforms.patch",
       "sha256": "be85483d5cdc41a9f4267f1002ddc96cd377ce65ce8a170c993d973346f674d9"
+    },
+    {
+      "path": "patches/electron/0015-offscreen-native-mouse-routing.patch",
+      "sha256": "999ffae38ace2852f0ddfd1b7594b376b751c735ff2c6a219c70fdd6df6a46fd"
+    },
+    {
+      "path": "patches/electron/0016-native-focused-widget-keyboard-routing.patch",
+      "sha256": "c193d22a47d92802e2127523b9c35ed945ad66efaf83e5d1f9a6909e03fc5dc5"
     }
   ]
 }

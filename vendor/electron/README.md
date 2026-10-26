@@ -278,3 +278,23 @@ Source replay, an isolated experimental object/link, a complete native build,
 a packaged artifact and actual deployment are separate evidence. Never label an
 experimental executable as a verified shipping artifact or replace retained
 native owners to activate this patch.
+
+
+## Native mouse and focused keyboard routing
+
+`0015-offscreen-native-mouse-routing.patch` routes `webContents.sendInputEvent`
+mouse events through Chromium's native input router after preserving OSR proxy
+and popup handling. Forwarding directly to the root widget bypasses cross-site
+hit testing even when CDP mouse and touch routing work. No extra JavaScript
+round trip or page-DOM coordinate lookup is introduced.
+
+`0016-native-focused-widget-keyboard-routing.patch` resolves keyboard input via
+Chromium's focused-widget delegate before forwarding. A crashed or external
+focused widget drops input instead of falling back to a different editor.
+Native IME target authorization and client input leases remain independent.
+
+The cross-site native probe now covers both CDP and Electron mouse paths,
+trusted focused keyboard events, caret movement, Ctrl+A and Backspace. Each path
+also checks native Chinese commit and an unchanged main-frame editor, through
+ordinary and transformed iframe surfaces. It does not simulate a physical
+Bluetooth keyboard or prove local OS candidate-window behavior.

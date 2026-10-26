@@ -23,11 +23,13 @@ function fixture(child, port) {
   body{margin:0;${child ? 'min-height:2400px;background:rgb(214,255,224);' : ''}}
   input{position:absolute;left:20px;top:20px;width:300px;height:40px;font-size:20px}
   iframe{position:absolute;left:20px;top:240px;width:600px;height:210px;border:0}
-  </style><input id="field">${child ? '' : `<iframe src="http://localhost:${port}/child"></iframe>`}
+  #drag{position:absolute;left:360px;top:20px;width:180px;height:80px;touch-action:none}
+  </style><input id="field">${child ? '<div id="drag">Capture target</div>' : ''}${child ? '' : `<iframe src="http://localhost:${port}/child"></iframe>`}
   <script>window.events=[];
-  for(const type of ['touchstart','mousedown','input'])addEventListener(type,e=>events.push({
-    type,target:e.target.id,trusted:e.isTrusted,
-    x:e.touches?.[0]?.clientX??e.clientX,y:e.touches?.[0]?.clientY??e.clientY}));</script>`;
+  for(const type of ['touchstart','mousedown','keydown','keyup','pointerdown','pointermove','pointerup','input'])addEventListener(type,e=>events.push({
+    type,target:e.target.id,trusted:e.isTrusted,key:e.key,pointerId:e.pointerId,
+    x:e.touches?.[0]?.clientX??e.clientX,y:e.touches?.[0]?.clientY??e.clientY}));
+  if(document.getElementById('drag'))drag.addEventListener('pointerdown',e=>drag.setPointerCapture(e.pointerId));</script>`;
 }
 
 async function until(read, accept, label) {
@@ -76,12 +78,15 @@ app.whenReady().then(async () => {
       } catch { return null; }
     }, result => result && result.size.width === 720 && result.size.height === 540
       && result.green === !transformed, 'Native compositor must display the fixture transform');
-    for (const type of ['touch', 'mouse']) {
+    for (const type of ['touch', 'mouse', 'electron-mouse']) {
       await read("field.value='';events=[];document.activeElement.blur();scrollTo(0,0)");
       const point = transformed ? { x: 110, y: 285 } : { x: 100, y: 280 };
       if (type === 'touch') {
         await wc.debugger.sendCommand('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 0, ...point }] });
         await wc.debugger.sendCommand('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else if (type === 'electron-mouse') {
+        wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, modifiers: ['leftButtonDown'], ...point });
+        wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point });
       } else {
         await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
         await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
@@ -98,16 +103,43 @@ app.whenReady().then(async () => {
       assert.equal(result.status, 'processed');
       assert.equal(await read('field.value'), '原生输入');
       assert.equal(await wc.executeJavaScript('field.value'), '');
-      cases.push({ type, transformed, event, nativeIme: true });
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'Left' });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: 'Left' });
+      const key = await until(() => read("events.find(event=>event.type==='keydown'&&event.key==='ArrowLeft')"),
+        Boolean, 'Electron keyboard input must reach the focused cross-site frame');
+      assert.equal(key.target, 'field');
+      assert.equal(key.trusted, true);
+      assert.deepEqual(await read('({start:field.selectionStart,end:field.selectionEnd})'),
+        { start: 3, end: 3 });
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control'] });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control'] });
+      await until(() => read('({start:field.selectionStart,end:field.selectionEnd})'),
+        range => range.start === 0 && range.end === 4, 'Native Ctrl+A must select child text');
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      await until(() => read('field.value'), value => value === '', 'Native Backspace must edit child text');
+      assert.equal(await wc.executeJavaScript('field.value'), '');
+      cases.push({ type, transformed, event, nativeIme: true, keyboard: key, nativeSelectDelete: true });
     }
   }
-  await wc.executeJavaScript("document.querySelector('iframe').style.transform=''");
+  // Keep the displayed transform from the final case: child (380,60) maps
+  // to root (335,300). Capture must retain this child after leaving its surface.
+  await read('events=[]');
+  wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, modifiers: ['leftButtonDown'], x: 335, y: 300 });
+  await until(() => read("events.some(event=>event.type==='pointerdown'&&event.target==='drag'&&drag.hasPointerCapture(event.pointerId))"),
+    Boolean, 'Native child pointer capture was not established');
+  wc.sendInputEvent({ type: 'mouseMove', button: 'left', modifiers: ['leftButtonDown'], x: 680, y: 480 });
+  wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: 680, y: 480 });
+  const captured = await until(() => read("events.find(event=>event.type==='pointerup'&&event.target==='drag')"),
+    Boolean, 'Mouse release outside iframe must reach the captured child');
+  assert.equal(captured.trusted, true);
+  cases.push({ type: 'electron-mouse-capture', event: captured });
   await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 450, y: 340, deltaX: 0, deltaY: 180 });
   const scrollY = await until(() => read('scrollY'), value => value > 0, 'Wheel must scroll the cross-site child');
   cases.push({ type: 'wheel', childScrollY: scrollY });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, cases, errors, physicalOsIme: false }));
-}).catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+}).catch(error => { console.error(JSON.stringify({ completedCases: cases, errors })); console.error(error); process.exitCode = 1; }).finally(async () => {
   clearTimeout(deadline);
   disposeFocus?.();
   window?.destroy();
