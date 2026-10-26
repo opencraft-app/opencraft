@@ -70,7 +70,7 @@ test("persisted backend topology survives refresh including hidden navigation ta
   assert.throws(() => threadCatalogResource.parse({ rows: [{ ...cached.rows[0]!, visibility: "invalid" }], complete: true }), /identity/);
 });
 
-test("a pre-topology cache cannot paint unknown hidden rows and a successful read replaces it", async () => {
+test("a pre-topology cache cannot paint unknown hidden rows and a fresh schema reload replaces it", async () => {
   let stored: ClientResourceRecord | null = { revision: 1, version: 1, savedAt: 1, value: {
     complete: true, rows: [{ id: "old-hidden-target", title: "Old", project: "project", lineage: "subagent", updatedAt: 1, createdAt: 1, pinned: false }],
   } };
@@ -87,7 +87,8 @@ test("a pre-topology cache cannot paint unknown hidden rows and a successful rea
     const catalog = resources.remote(threadCatalogResource, "host-a");
     await catalog.ready;
     assert.equal(catalog.getSnapshot().value, null);
-    await catalog.observe(cacheThreadCatalog([], true));
+    stored = { revision: 2, version: threadCatalogResource.version, savedAt: 2, value: cacheThreadCatalog([], true) };
+    await catalog.reload();
     assert.deepEqual(catalog.getSnapshot().value?.rows, []);
     assert.equal(catalog.getSnapshot().error, null);
   } finally { await resources.close(); }
