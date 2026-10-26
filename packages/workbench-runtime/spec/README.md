@@ -780,3 +780,35 @@ shrink under the same rule and replay normally. Actual unchanged old-source runs
 are separate evidence. The random suite does not cover arbitrary providers,
 parent-terminal failure or queued status ABA by itself; deterministic actual
 composition regressions remain required for those boundaries.
+
+## Host native delivery lifetime
+
+HostDeliveryLifetime separates a native per-claim grant from its observed open
+label. Its 209 positive states cover own ACK, matching versus unrelated pre-ACK
+terminal generations, local versus native retirement, old forwarding waits,
+same-Host peer isolation and successor cleanup. Ten controls use observed
+readiness, allow retired sends, wait for an old ACK, revoke a peer, retarget old
+cleanup, retain a retired forwarding budget, grant on a shared open, revive a retired claim, or remove local/current
+ACK fairness separately. Each must hit its named invariant or temporal property.
+An old forwarding ACK is deliberately not fair; its cooperation is unnecessary
+for retired local wait progress. Current own ACK and local Promise settlement
+remain cooperative assumptions. One occupied forwarding control slot is explicitly freed on retirement before
+successor admission. The model does not cover the complete multiplexed control
+budget product, nested FIFO, arbitrary Port behavior or TypeScript refinement.
+
+The sixteenth suite, host-delivery, runs actual MessagePortAppHostClient/channel
+instances with a declared Port fixture. Saved events explicitly open, send,
+withhold or acknowledge forwarding, lose or close a lease, admit a peer, reenter
+from an early Host status callback, race a frame with native loss, retire the
+bridge and freshly heal. An independent input ledger predicts each local wait,
+send crossing and own-ACK settlement. Empty input performs no native work.
+Fresh heal proves a new native claim and local forwarding completion, not remote
+execution or RPC initialization. Three observation controls test exact-rule
+detection and shrinking; they do not mutate production. Separate old-class runs
+use this same oracle with the unchanged real class at fixture construction.
+
+```
+npm run test:recovery-chaos -- --suite host-delivery --seed 0 --cases 1000 --steps 120 --output /tmp/host-delivery-chaos
+npm run test:recovery-chaos -- --suite host-delivery --mutant retained-wait --seed 0 --output /tmp/host-delivery-control
+npm run test:recovery-chaos -- --replay /tmp/host-delivery-control/failure-minimal.json --output /tmp/host-delivery-replay
+```

@@ -98,10 +98,57 @@ function abortError(message: string): Error {
   return error;
 }
 
+/** A native, per-claim lifetime; observed status publications never grant it.
+ * Pending generations are matched at receipt of this claim's own response. */
+class HostDeliveryLifetime {
+  generation = 0;
+  retirement: TransportStatus | undefined;
+  private readonly terminal = new Map<number, TransportStatus>();
+  private readonly abort = new AbortController();
+  private disposed = false;
+
+  constructor(
+    private readonly open: (owner: HostDeliveryLifetime, signal: AbortSignal) => Promise<AppHostConnectResult>,
+    private readonly remove: () => void,
+  ) {}
+
+  get active(): boolean { return !this.disposed && this.generation > 0 && this.retirement === undefined; }
+  get signal(): AbortSignal { return this.abort.signal; }
+  connect(signal: AbortSignal): Promise<AppHostConnectResult> { return this.open(this, signal); }
+
+  acknowledge(generation: number): void {
+    this.generation = generation;
+    const terminal = this.terminal.get(generation);
+    this.terminal.clear();
+    if (terminal !== undefined && this.retirement === undefined) this.retire(terminal);
+  }
+
+  observe(generation: number, status: TransportStatus): void {
+    if (this.disposed) return;
+    if (this.generation === 0) {
+      if (["closing", "closed", "failed"].includes(status.state)) this.terminal.set(generation, status);
+    } else if (this.generation === generation && status.state !== "open") this.retire(status);
+  }
+
+  retire(status: TransportStatus): void {
+    this.retirement = status;
+    this.abort.abort(); // Deletes admitted local send waits before any external observer.
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.retirement === undefined) this.retire({ state: "closed" });
+    this.terminal.clear();
+    this.remove();
+  }
+}
+
 export class MessagePortAppHostClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly lateResults = new Map<string, (value: unknown) => void>();
   private readonly hostListeners = new Map<string, ClientObserverList<HostEvent>>();
+  private readonly hostLifetimes = new Map<string, Set<HostDeliveryLifetime>>();
   private readonly publications: (() => void)[] = [];
   private publishing = false;
   private readonly framePublications = new Set<HostFramePublication>();
@@ -146,15 +193,37 @@ export class MessagePortAppHostClient {
     return new AppHostChannelTransport(
       this,
       hostId,
+      (leaseId) => this.createLifetime(hostId, leaseId),
     );
+  }
+
+  private createLifetime(hostId: string, leaseId: string): HostDeliveryLifetime {
+    let owners = this.hostLifetimes.get(hostId);
+    if (owners === undefined) { owners = new Set(); this.hostLifetimes.set(hostId, owners); }
+    const registry = owners;
+    const lifetime = new HostDeliveryLifetime(
+      (owner, signal) => this.connectHostAttempt(hostId, leaseId, signal, owner),
+      () => {
+        registry.delete(lifetime);
+        if (registry.size === 0 && this.hostLifetimes.get(hostId) === registry) this.hostLifetimes.delete(hostId);
+      },
+    );
+    registry.add(lifetime);
+    return lifetime;
   }
 
   createLeaseId(): string { return `${this.rendererId}:lease:${++this.leaseSequence}`; }
 
-  async connectHost(
+  connectHost(
     hostId: string,
     leaseId: string,
     signal?: AbortSignal,
+  ): Promise<AppHostConnectResult> {
+    return this.connectHostAttempt(hostId, leaseId, signal);
+  }
+
+  private async connectHostAttempt(
+    hostId: string, leaseId: string, signal?: AbortSignal, owner?: HostDeliveryLifetime,
   ): Promise<AppHostConnectResult> {
     if (signal?.aborted) throw abortError("App Host connection was aborted");
     await waitForControl(this.waitUntilReady(), this.options.controlTimeoutMs ?? 30_000, signal);
@@ -164,7 +233,7 @@ export class MessagePortAppHostClient {
       // Timeout ends the local wait, not process-scoped activation. A late
       // grant belongs only to the expired lease and must be released.
       void this.disconnectHost(hostId, leaseId, result.generation).catch(() => undefined);
-    });
+    }, undefined, (value) => owner?.acknowledge((value as AppHostConnectResult).generation));
     if (signal === undefined) return operation;
     return new Promise<AppHostConnectResult>((resolve, reject) => {
       let settled = false;
@@ -242,7 +311,8 @@ export class MessagePortAppHostClient {
     this.terminate(new Error("App Host connection closed"));
   }
 
-  private request<TResult>(input: AppHostRequestInput, onLateResult?: (value: unknown) => void, signal?: AbortSignal): Promise<TResult> {
+  private request<TResult>(input: AppHostRequestInput, onLateResult?: (value: unknown) => void, signal?: AbortSignal,
+    onResponse?: (value: unknown) => void): Promise<TResult> {
     if (signal?.aborted) return Promise.reject(abortError("App Host request was aborted"));
     if (this.closed) {
       return Promise.reject(this.terminalError ?? new Error("App Host connection is closed"));
@@ -281,7 +351,7 @@ export class MessagePortAppHostClient {
         signal?.removeEventListener("abort", abort);
       };
       this.pending.set(requestId, {
-        resolve: (value) => resolve(value as TResult),
+        resolve: (value) => { onResponse?.(value); resolve(value as TResult); },
         reject,
         clearTimer,
       });
@@ -301,6 +371,10 @@ export class MessagePortAppHostClient {
     this.closed = true;
     for (const frame of this.framePublications) frame.active = false;
     this.terminalError = error;
+    const status: TransportStatus = { state: "failed", reason: error.message,
+      ...(appHostFailure(error) ? { failure: appHostFailure(error) } : {}) };
+    for (const owners of this.hostLifetimes.values()) for (const owner of owners) owner.retire(status);
+    this.hostLifetimes.clear();
     this.port.removeEventListener("message", this.receive);
     this.port.close();
     this.rejectReady(error);
@@ -354,6 +428,9 @@ export class MessagePortAppHostClient {
     const terminal = message.type === "host/status"
       && ["closing", "closed", "failed"].includes(message.status.state);
     const retiresData = message.type === "host/status" && message.status.state !== "open";
+    if (message.type === "host/status") {
+      for (const owner of this.hostLifetimes.get(message.hostId) ?? []) owner.observe(message.generation, message.status);
+    }
     if (retiresData) for (const frame of this.framePublications) {
       if (frame.hostId === message.hostId && frame.generation === message.generation) {
         frame.active = false;
@@ -390,12 +467,8 @@ class AppHostChannelTransport implements DuplexTransport {
   private readonly unsubscribe: () => void;
   private currentStatus: TransportStatus = { state: "idle" };
   private generation = 0;
-  private messageOwner: object | null = null;
+  private lifetime: HostDeliveryLifetime | null = null;
   private connectOperation: Promise<void> | null = null;
-  private connectingAttempt: {
-    readonly terminal: Map<number, TransportStatus>;
-    revoked?: TransportStatus;
-  } | null = null;
   private closed = false;
   private leaseId = "";
   private readonly closeAbort = new AbortController();
@@ -403,21 +476,19 @@ class AppHostChannelTransport implements DuplexTransport {
   constructor(
     private readonly client: MessagePortAppHostClient,
     private readonly hostId: string,
+    private readonly createLifetime: (leaseId: string) => HostDeliveryLifetime,
   ) {
     this.unsubscribe = client.subscribeHost(hostId, (event) => this.receive(event));
   }
 
   get status(): TransportStatus {
-    return !this.closed ? this.client.hostMessageRetirement(this.hostId, this.generation) ?? this.currentStatus : this.currentStatus;
+    return !this.closed ? this.lifetime?.retirement ?? this.currentStatus : this.currentStatus;
   }
 
   connect(signal?: AbortSignal): Promise<void> {
     if (this.closed) return Promise.reject(new Error(`App Host channel ${this.hostId} is closed`));
-    if (this.currentStatus.state === "open" && !this.captureMessageScope()()) {
+    if (this.currentStatus.state === "open" && !this.lifetime?.active) {
       const terminal = this.status;
-      this.messageOwner = null;
-      if (this.connectingAttempt) this.connectingAttempt.revoked = terminal;
-      this.connectingAttempt = null;
       this.connectOperation = null;
       this.setStatus(terminal);
     }
@@ -427,20 +498,18 @@ class AppHostChannelTransport implements DuplexTransport {
     const leaseId = this.client.createLeaseId();
     this.leaseId = leaseId;
     this.generation = 0;
-    this.messageOwner = null;
-    const attempt: NonNullable<AppHostChannelTransport["connectingAttempt"]> = { terminal: new Map() };
-    this.connectingAttempt = attempt;
+    this.lifetime?.dispose();
+    const owner = this.createLifetime(leaseId);
+    this.lifetime = owner;
     const connectionSignals = combineAbortSignals([...(signal ? [signal] : []), this.closeAbort.signal]);
-    const operation = Promise.resolve().then(() => this.client.connectHost(this.hostId, leaseId,
-      connectionSignals.signal))
+    const operation = Promise.resolve().then(() => owner.connect(connectionSignals.signal))
       .then((result) => {
-        const revoked = attempt.revoked ?? attempt.terminal.get(result.generation);
-        if (this.closed || this.connectingAttempt !== attempt || revoked !== undefined) {
+        const revoked = owner.retirement;
+        if (this.closed || this.lifetime !== owner || !owner.active) {
           // Channel disposal does not close the shared client. A grant that
           // arrives afterwards still belongs to this retired lease only.
           void this.client.disconnectHost(this.hostId, leaseId, result.generation).catch(() => undefined);
           if (revoked !== undefined) {
-            attempt.revoked = revoked;
             throw appHostError({ code: revoked.failure?.code ?? "APP_HOST_DISCONNECTED",
               message: revoked.reason ?? "Host disconnected before its connection acknowledgement",
               retryable: revoked.failure?.recovery !== "manual" });
@@ -448,11 +517,9 @@ class AppHostChannelTransport implements DuplexTransport {
           throw new Error(`App Host channel ${this.hostId} closed during connection`);
         }
         this.generation = result.generation;
-        const owner = {};
-        this.messageOwner = owner;
         this.setStatus({ state: "open" });
-        if (this.closed || this.messageOwner !== owner) {
-          const retirement = attempt.revoked;
+        if (this.closed || this.lifetime !== owner || !owner.active) {
+          const retirement = owner.retirement;
           if (retirement) throw appHostError({ code: retirement.failure?.code ?? "APP_HOST_DISCONNECTED",
             message: retirement.reason ?? "Host disconnected during its open publication",
             retryable: retirement.failure?.recovery !== "manual" });
@@ -461,14 +528,18 @@ class AppHostChannelTransport implements DuplexTransport {
       })
       .catch((cause) => {
         const reason = cause instanceof Error ? cause.message : String(cause);
-        const failure = attempt.revoked?.failure ?? (cause instanceof Error ? appHostFailure(cause) : undefined);
-        if (!this.closed && this.connectingAttempt === attempt) if (!this.closed) this.setStatus({ state: "failed", reason, ...(failure ? { failure } : {}) });
+        const failure = owner.retirement?.failure ?? (cause instanceof Error ? appHostFailure(cause) : undefined);
+        if (!this.closed && this.lifetime === owner) {
+          const failed: TransportStatus = { state: "failed", reason, ...(failure ? { failure } : {}) };
+          owner.retire(failed);
+          this.setStatus(failed);
+        }
+        owner.dispose();
         throw cause;
       })
       .finally(() => {
         connectionSignals.dispose();
         if (this.connectOperation === operation) this.connectOperation = null;
-        if (this.connectingAttempt === attempt) this.connectingAttempt = null;
       });
     this.connectOperation = operation;
     this.setStatus({ state: "connecting" });
@@ -476,16 +547,19 @@ class AppHostChannelTransport implements DuplexTransport {
   }
 
   send(frame: string, signal?: AbortSignal): Promise<void> {
-    if (this.closed || this.messageOwner === null || this.currentStatus.state !== "open") {
+    const owner = this.lifetime;
+    if (this.closed || !owner?.active || this.currentStatus.state !== "open") {
       return Promise.reject(new Error(`App Host channel ${this.hostId} is not open`));
     }
-    return this.client.sendHostFrame(this.hostId, this.leaseId, this.generation, frame, signal);
+    const signals = combineAbortSignals([owner.signal, ...(signal ? [signal] : [])]);
+    return this.client.sendHostFrame(this.hostId, this.leaseId, owner.generation, frame, signals.signal)
+      .finally(() => signals.dispose());
   }
 
   captureMessageScope(): () => boolean {
-    const owner = this.messageOwner;
+    const owner = this.lifetime;
     const native = this.client.captureHostMessageScope(this.hostId, this.generation);
-    return () => !this.closed && owner !== null && this.messageOwner === owner && native();
+    return () => !this.closed && owner !== null && this.lifetime === owner && owner.active && native();
   }
   subscribeMessage(listener: (frame: string) => void): () => void {
     return this.messageListeners.subscribe(listener);
@@ -498,7 +572,7 @@ class AppHostChannelTransport implements DuplexTransport {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    this.messageOwner = null;
+    this.lifetime?.dispose();
     this.closeAbort.abort();
     this.setStatus({ state: "closing" });
     try {
@@ -517,32 +591,20 @@ class AppHostChannelTransport implements DuplexTransport {
     if (this.closed) return;
     if (event.leaseId !== undefined && event.leaseId !== this.leaseId) return;
     if (event.terminalReason !== undefined) {
-      this.messageOwner = null;
       this.generation = 0;
       const status: TransportStatus = { state: "failed", reason: event.terminalReason,
         ...(event.terminalFailure ? { failure: event.terminalFailure } : {}) };
-      if (this.connectingAttempt) this.connectingAttempt.revoked = status;
       this.setStatus(status);
       return;
     }
     // Only this lease's connect acknowledgement grants a generation. Shared
     // Host events cannot adopt a peer's grant or revive a retired channel.
-    if (this.generation === 0) {
-      // A shared status grants no authority. Remember only revocation, and
-      // apply it later only if this attempt is granted that exact generation.
-      if (event.status && ["closing", "closed", "failed"].includes(event.status.state)) {
-        this.connectingAttempt?.terminal.set(event.generation, event.status);
-      }
-      return;
-    }
+    if (this.generation === 0) return;
     if (event.generation !== this.generation) return;
     if (event.status !== undefined) {
-      if (event.status.state !== "open") {
-        this.messageOwner = null;
-        if (this.connectingAttempt) this.connectingAttempt.revoked = event.status;
-      }
       // A shared open publication cannot grant a retired lease again.
-      if (event.status.state !== "open" || this.messageOwner !== null) this.setStatus(event.status);
+      // Conversely a terminal queued before a new own ACK cannot retire it.
+      if (event.status.state === "open" ? this.lifetime?.active : this.lifetime?.retirement) this.setStatus(event.status);
     }
     if (event.frame !== undefined && event.generation === this.generation) {
       this.messageListeners.emit(event.frame, this.captureMessageScope());
