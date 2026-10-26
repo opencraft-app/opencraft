@@ -104,6 +104,15 @@ CASES = [
     ('ResourceAvailability-Duplicate', 'IdempotentAvailability'),
     ('ResourceAvailability-Demand', 'ReadNeedsDemand'),
     ('ResourceAvailability-NoFairness', 'temporal:RestorationProgress'),
+    ('NotificationFanout', None),
+    ('NotificationFanout-Live', 'AdmittedOnly'),
+    ('NotificationFanout-Late', 'AdmittedOnly'),
+    ('NotificationFanout-Incarnation', 'RetirementOwnership'),
+    ('NotificationFanout-Physical', 'PhysicalOwnership'),
+    ('NotificationFanout-Token', 'TokenOwnership'),
+    ('NotificationFanout-Repeat', 'AtMostOnce'),
+    ('NotificationFanout-Drop', 'Conservation'),
+    ('NotificationFanout-NoFairness', 'temporal:FanoutTermination'),
 
 ]
 
