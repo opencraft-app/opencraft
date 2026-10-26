@@ -17,8 +17,8 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       reset();
       touch.current = (event.pointerType === "touch" || event.pointerType === "pen");
       if (!touch.current || !enabled) return;
-      // Stop only Radix's eager open, not the browser's native pan gesture.
-      event.preventDefault();
+      // The shared trigger withholds Radix's eager open without cancelling
+      // the native pointerdown, so touch scrolling and native clicks survive.
       if (!event.isPrimary || event.button !== 0) return;
       const button = event.currentTarget;
       const document = button.ownerDocument;
