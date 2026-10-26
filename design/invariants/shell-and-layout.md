@@ -325,14 +325,16 @@ Customization drag keeps the source slot in layout and paints a noninteractive, 
 - Sidebar More menus open on a completed touch tap, after the browser has retained
   the gesture as a click. Touch down alone never opens them; movement beyond
   10 CSS pixels, ancestor scrolling, cancellation, another pointer, release
-  outside the hit area or a hold beyond 500ms invalidates that tap. These guards
+  outside the hit area or a native context-menu gesture invalidates that tap. These guards
   never prevent native scrolling. Row long-press/right-click and Radix keyboard,
   focus, dismissal and the single Sidebar menu owner remain unchanged.
 
 
 Web dropdown consumers use design-system-web/dropdown-menu. Direct touch/pen
 opens only after a valid completed tap; movement, ancestor scrolling, cancel,
-multiple pointers, release outside or holding invalidates it. Native pan remains
+multiple pointers, release outside or a native context-menu gesture invalidates it.
+A stationary press that the browser completes as a click remains usable regardless
+of its duration; a fixed elapsed-time cutoff must not silently discard that click. Native pan remains
 available. Radix owns mouse, keyboard, nested menus, focus and dismissal. Composer
 model, permission and Add controls preserve the editor focus and selection on
 touch; opening one retires the other picker without a delayed activation.

@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createServer } from "vite";
 const engines = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const before=process.argv.includes("--record-before"), output=process.env.OPENCRAFT_SMOKE_OUTPUT??".local/home-composer-focus";
+const durationOnly=process.argv.includes("--touch-duration-only");
 await mkdir(output,{recursive:true});
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:"error",esbuild:{jsx:"automatic"},resolve:{dedupe:["react","react-dom"]},server:{host:"127.0.0.1",port:0},plugins:[{name:"home-focus",configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url?.startsWith("/?"))return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/home-composer-focus.tsx"></script>');});}}]});
 await vite.listen();
@@ -10,7 +11,7 @@ const browser=await (process.env.OPENCRAFT_SMOKE_ENGINE === "webkit" ? engines.w
 const evidence:unknown[]=[];
 try {
  if(!before)assert.match(await readFile("apps/workbench-web/src/app.tsx","utf8"),/conversationHeader=\{conversationSurfaceVisible\}/,"production Home uses shared chrome");
- const cases=before?[{width:390,theme:"light",ordinary:false,reduce:false}]:[
+ const cases=durationOnly?["light","dark"].map(theme=>({width:390,theme,ordinary:true,reduce:false})):before?[{width:390,theme:"light",ordinary:false,reduce:false}]:[
  ...[320,390,430].flatMap(width=>["light","dark"].map(theme=>({width,theme,ordinary:false,reduce:false}))),
  ...["light","dark"].flatMap(theme=>[{width:390,theme,ordinary:false,reduce:true},{width:390,theme,ordinary:true,reduce:false},{width:1280,theme,ordinary:false,reduce:false}])];
  for(const test of cases){
@@ -26,6 +27,25 @@ try {
   await editor.evaluate(el=>{(window as any).keptEditor=el;(el as HTMLElement).blur();});
   await page.waitForTimeout(100);
   const initial=(await shell.boundingBox())!;
+  if (!before && test.width === 390 && test.ordinary) {
+    const folder = page.getByRole("button", { name: "选择项目文件夹", exact: true });
+    const cdp = await context.newCDPSession(page);
+    const box = (await folder.boundingBox())!;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+    await page.waitForTimeout(650);
+    assert.equal(await page.locator('[role="menu"]').count(), 0, "held contact alone cannot open folders");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const menu = page.locator('[role="menu"]'); await menu.waitFor();
+    assert.equal(await menu.count(), 1, "a completed native click opens folders once regardless of duration");
+    if (durationOnly) await page.screenshot({path:`${output}/${label}-duration-open.png`});
+    await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+    await cdp.detach();
+  }
+  if (durationOnly) {
+    await page.screenshot({path:`${output}/${label}-duration.png`});
+    assert.deepEqual(errors,[]); evidence.push({test,durationTouchPassed:true});
+    console.log("PASS completed native folder press",label); await context.close(); continue;
+  }
   const welcomeInset=await page.locator('#new-thread-heading').evaluate(el=>el.getBoundingClientRect().top-el.closest('.new-thread-draft-main')!.getBoundingClientRect().top);
   const assertWelcomeAnchor=async()=>{
     if(desktop)return;

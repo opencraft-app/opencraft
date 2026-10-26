@@ -22,7 +22,7 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       if (!event.isPrimary || event.button !== 0) return;
       const button = event.currentTarget;
       const document = button.ownerDocument;
-      const { pointerId, clientX, clientY, timeStamp } = event;
+      const { pointerId, clientX, clientY } = event;
       let moved = false;
       const update = (next: PointerEvent) => {
         if (next.pointerId === pointerId && Math.hypot(next.clientX - clientX, next.clientY - clientY) > 10) moved = true;
@@ -36,7 +36,9 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
         if (next.pointerId !== pointerId) return;
         update(next);
         const bounds = button.getBoundingClientRect();
-        tap.current = !moved && next.timeStamp - timeStamp <= 500
+        // A completed native click remains an activation even when a deliberate
+        // press took longer. Elapsed time alone is not a cancelled gesture.
+        tap.current = !moved && button.isConnected && !button.disabled
           && next.clientX >= bounds.left && next.clientX <= bounds.right
           && next.clientY >= bounds.top && next.clientY <= bounds.bottom;
         cleanup.current?.();
@@ -66,6 +68,12 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       if (activate) onTap();
     },
     onKeyDown() { touch.current = false; reset(); },
-    onContextMenu(event) { if (touch.current) event.preventDefault(); },
+    onContextMenu(event) {
+      if (!touch.current) return;
+      event.preventDefault();
+      // A browser-recognized long press owns this contact. Its release must
+      // not open the dropdown, including a later compatibility click.
+      reset();
+    },
   };
 }

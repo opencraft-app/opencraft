@@ -60,7 +60,14 @@ try {
     await page.evaluate(() => (window as any).scrollport.scrollTop = 0); await page.waitForTimeout(350);
     p = await point(); await send("touchStart", [p]); await send("touchMove", [{ ...p, x: p.x - 16 }]); await send("touchMove", [p]); await send("touchEnd", []); await closed();
     p = await point(); await send("touchStart", [p]); await send("touchCancel", []); await closed();
-    p = await point(); await send("touchStart", [p]); await page.waitForTimeout(650); await send("touchEnd", []); await closed();
+    p = await point(); await send("touchStart", [p]); await page.waitForTimeout(650); await closed();
+    await send("touchEnd", []); await page.getByRole("menu").waitFor();
+    assert.equal(await page.getByRole("menu").count(), 1, "native click after a deliberate press opens once");
+    await page.keyboard.press("Escape"); await closed();
+    // Synthetic context-menu delivery isolates browser-recognized hold cancellation.
+    p = await point(); await send("touchStart", [p]);
+    await trigger.dispatchEvent("contextmenu", { bubbles: true, cancelable: true });
+    await send("touchEnd", []); await closed();
     p = await point(); await send("touchStart", [p]); await send("touchStart", [p, { ...p, x: 100, id: 2 }]); await send("touchEnd", []); await closed();
     // The toolbar filter is the same direct-touch rule, with uncontrolled Radix state.
     const filter = page.locator('.sidebar-list-mode-trigger');
