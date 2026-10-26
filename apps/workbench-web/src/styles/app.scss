@@ -12276,11 +12276,22 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 // Browser mobile drawer: safe areas belong to Shell, not individual destinations.
 :root {
-  --shell-mobile-safe-top: var(--safe-layout-inset-top, env(safe-area-inset-top, 0px));
+  --shell-pwa-top-clearance: 0px;
+  --shell-mobile-safe-top: calc(var(--safe-layout-inset-top, env(safe-area-inset-top, 0px)) + var(--shell-pwa-top-clearance));
   --shell-mobile-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
   --shell-mobile-safe-left: var(--safe-layout-inset-left, env(safe-area-inset-left, 0px));
   --shell-mobile-safe-right: var(--safe-layout-inset-right, env(safe-area-inset-right, 0px));
   --shell-content-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+// The platform and engine capabilities bound this workaround without reading
+// the frozen iOS version in userAgent. This is a Safari 27-era capability proxy,
+// not an exact OS version. Keep the full-bleed canvas and allocate content only.
+@supports (-webkit-touch-callout: none) and selector(:heading) {
+  @media (orientation: portrait) {
+    html[data-window-host="browser"][data-window-display-mode="standalone"] {
+      --shell-pwa-top-clearance: 24px;
+    }
+  }
 }
 html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
   --shell-content-safe-bottom: 0px;
@@ -12288,6 +12299,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
 .app-shell-root.has-browser-safe-layout > .app-shell-row {
   // SafeLayout allocates the device inset once inside the measured canvas.
   // Sidebar action surfaces are outside this row and retain their own edge.
+  --safe-layout-inset-top: var(--shell-mobile-safe-top);
   --safe-layout-inset-bottom: var(--shell-content-safe-bottom);
 }
 html[data-window-host="browser"],
@@ -12392,6 +12404,7 @@ html[data-window-host="browser"] body {
   }
   .app-shell-floating-sidebar-dismiss { background: var(--color-dialog-scrim); }
   .app-shell-floating-left-panel__surface {
+    --safe-layout-inset-top: var(--shell-mobile-safe-top);
     border-radius: 0;
     box-shadow: none;
     // Only content participates in depth; a second scaled material would leave
