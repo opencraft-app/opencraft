@@ -6,7 +6,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { readGitProcess, type GitExecutionIdentity, type GitPeer } from './git-identity-broker.js';
 
-export interface NativeGitProcess { pid: number; startTicks: string; incarnation: string }
+export interface NativeGitProcess {
+  pid: number; startTicks: string; incarnation: string;
+  threadEnvironment: 'CODEX_THREAD_ID' | 'OPENCRAFT_THREAD_ID';
+}
 export interface GitOriginLeaseReader {
   readonly originClock?: 'boot-monotonic-v1';
   resolveJobOrigin(input: { threadId: string; engineIncarnation: string; startedAtMs: number; uncertaintyMs: number; bootId?: string; startedAtBootMs?: number }):
@@ -44,7 +47,7 @@ export async function readCodexGitNatives(registry: DatabaseSync): Promise<Nativ
         if (!valid) continue;
         cache.set(String(row.id), stamp);
       }
-      natives.push({ pid: native.pid, startTicks: native.startTicks, incarnation: JSON.stringify([row.id, row.incarnation]) });
+      natives.push({ pid: native.pid, startTicks: native.startTicks, incarnation: JSON.stringify([row.id, row.incarnation]), threadEnvironment: 'CODEX_THREAD_ID' });
     } catch { /* A retired/restarted process cannot authorize a new job. */ }
   }
   return natives;
@@ -77,6 +80,12 @@ export function createGitOriginResolver(options: {
         if (!bridge) { job = process; break; }
         job = chain[i + 1]!;
       }
+      // The locator must match metadata injected into the real native tool root,
+      // not the wrapper's mutable environment. One native can host concurrent
+      // Threads whose otherwise valid birth intervals overlap.
+      const environment = (await readFile(`/proc/${job.pid}/environ`, 'utf8')).split('\0');
+      const bindings = environment.filter(item => item.startsWith(`${found.threadEnvironment}=`));
+      if (bindings.length !== 1 || bindings[0]!.slice(found.threadEnvironment.length + 1) !== threadId) return { status: 'unknown' };
       clockTicks ??= promisify(execFile)('getconf', ['CLK_TCK']).then(result => {
         const value = Number(result.stdout.trim()); if (!Number.isFinite(value) || value < 1) throw new Error(); return value;
       });
@@ -87,8 +96,10 @@ export function createGitOriginResolver(options: {
       const uncertaintyMs = 10 + 1000 / hz + (after - before) / 2;
       const result = await options.reader.resolveJobOrigin({ threadId, engineIncarnation: found.incarnation, startedAtMs, uncertaintyMs, bootId, startedAtBootMs });
       const afterNatives = await options.natives(threadId);
-      if (!afterNatives.some(native => native.pid === found!.pid && native.startTicks === found!.startTicks && native.incarnation === found!.incarnation)
-        || (await readGitProcess(peer.pid)).startTicks !== chain.at(-1)!.startTicks) return { status: 'unknown' };
+      if (!afterNatives.some(native => native.pid === found!.pid && native.startTicks === found!.startTicks && native.incarnation === found!.incarnation && native.threadEnvironment === found!.threadEnvironment)
+        || (await readGitProcess(peer.pid)).startTicks !== chain.at(-1)!.startTicks
+        || (await readGitProcess(job.pid)).startTicks !== job.startTicks
+        || (await readFile(`/proc/${job.pid}/environ`, 'utf8')).split('\0').filter(item => item.startsWith(`${found.threadEnvironment}=`)).join('\0') !== bindings[0]) return { status: 'unknown' };
       if (result.status === 'unknown' || result.status === 'expired' || result.status === 'unowned') return { status: result.status };
       const account = result.lease.principal && options.account(result.lease.principal);
       return account ? { status: 'active', account, executionId: result.lease.executionId } : { status: 'unknown' };

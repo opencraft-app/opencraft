@@ -18,7 +18,7 @@ test('native origin is attested against registry PID, start, executable and hash
   const identity = { nativePid: process.pid, nativeStart: processInfo.startTicks, ownerPid: owner.pid, ownerStart: owner.startTicks, cliSha256 };
   const write = (value: unknown) => db.prepare('INSERT OR REPLACE INTO routing_metadata(rowid,key,value) VALUES(1,?,?)').run('runtime:synthetic-generation', JSON.stringify(value));
   write(identity);
-  assert.deepEqual(await readCodexGitNatives(db), [{ pid: process.pid, startTicks: processInfo.startTicks, incarnation: '["synthetic-generation",3]' }]);
+  assert.deepEqual(await readCodexGitNatives(db), [{ pid: process.pid, startTicks: processInfo.startTicks, incarnation: '["synthetic-generation",3]', threadEnvironment: 'CODEX_THREAD_ID' }]);
   write({ ...identity, nativeStart: 'wrong' }); assert.deepEqual(await readCodexGitNatives(db), []);
   write({ ...identity, cliSha256: 'wrong' }); assert.deepEqual(await readCodexGitNatives(db), []);
 });
@@ -30,11 +30,11 @@ test('claimed thread/incarnation alone cannot authorize a job', async () => {
 });
 
 test('a real peer uses boot time across wall-clock jumps and rejects epoch-only readers', async t => {
-  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env: { ...process.env, OPENCRAFT_THREAD_ID: 'synthetic-thread' }, stdio: 'ignore' });
   await once(child, 'spawn');
   t.after(async () => { const closed = once(child, 'close'); child.kill(); await closed; });
   const native = await readGitProcess(process.pid), inputs: Array<{ bootId?: string; startedAtBootMs?: number; startedAtMs: number }> = [];
-  const natives = async () => [{ pid: native.pid, startTicks: native.startTicks, incarnation: 'synthetic-native' }];
+  const natives = async () => [{ pid: native.pid, startTicks: native.startTicks, incarnation: 'synthetic-native', threadEnvironment: 'OPENCRAFT_THREAD_ID' as const }];
   const resolve = createGitOriginResolver({ natives, reader: { originClock: 'boot-monotonic-v1', resolveJobOrigin(input) {
     inputs.push(input);
     return { status: 'active', lease: { executionId: 'synthetic-original-turn', principal: { provider: 'synthetic', subject: '1' } } };
@@ -56,4 +56,28 @@ test('a real peer uses boot time across wall-clock jumps and rejects epoch-only 
   const old = createGitOriginResolver({ natives, reader: { resolveJobOrigin() { called = true; return { status: 'unowned' }; } }, account: () => null });
   assert.deepEqual(await old(peer, 'synthetic-thread'), { status: 'unknown' });
   assert.equal(called, false, 'an epoch-only reader cannot grant personal or server fallback authority');
+});
+
+test('parallel Threads in one native cannot claim each other through a wrapper locator', async t => {
+  const children = ['thread-A', 'thread-B', undefined].map(threadId => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    env: { ...process.env, OPENCRAFT_THREAD_ID: threadId }, stdio: 'ignore',
+  }));
+  await Promise.all(children.map(child => once(child, 'spawn')));
+  t.after(async () => { await Promise.all(children.map(async child => { const closed = once(child, 'close'); child.kill(); await closed; })); });
+  const native = await readGitProcess(process.pid), queried: string[] = [];
+  const resolve = createGitOriginResolver({ natives: async () => [{ pid: native.pid, startTicks: native.startTicks, incarnation: 'shared-native', threadEnvironment: 'OPENCRAFT_THREAD_ID' as const }],
+    reader: { originClock: 'boot-monotonic-v1', resolveJobOrigin(input) {
+      queried.push(input.threadId);
+      if (input.threadId === 'unowned-thread') return { status: 'unowned', lease: { executionId: 'system', principal: null } };
+      return { status: 'active', lease: { executionId: input.threadId, principal: { provider: 'synthetic', subject: input.threadId } } };
+    } }, account: p => p.subject });
+  const peer = (i: number) => ({ pid: children[i]!.pid!, uid: process.getuid!() });
+  assert.deepEqual(await resolve(peer(0), 'thread-B'), { status: 'unknown' });
+  assert.deepEqual(await resolve(peer(1), 'thread-A'), { status: 'unknown' });
+  assert.deepEqual(await resolve(peer(0), 'unowned-thread'), { status: 'unknown' });
+  assert.deepEqual(await resolve(peer(2), 'thread-A'), { status: 'unknown' });
+  assert.deepEqual(queried, [], 'a caller locator or missing native metadata cannot select an employee lease');
+  assert.equal((await resolve(peer(0), 'thread-A')).status, 'active');
+  assert.equal((await resolve(peer(1), 'thread-B')).status, 'active');
+  assert.deepEqual(queried, ['thread-A', 'thread-B']);
 });

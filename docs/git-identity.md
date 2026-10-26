@@ -26,6 +26,14 @@ execution intervals. A Thread ID is a locator, not authority. Long-lived tool
 bridges do not supply the birth time of a later command. Boundary ambiguity or
 an unrecognized engine fails closed.
 
+The native adapter fixes the tool-root Thread field (`CODEX_THREAD_ID` for
+Codex, `OPENCRAFT_THREAD_ID` for local engines). The resolver reads it from the
+attested tool root's kernel environment and checks it against the locator before
+querying a lease. Missing, duplicated or mismatched metadata stays unknown, so
+concurrent Threads in one native cannot select each other's overlapping interval.
+This check assumes the stated trusted-maintainer boundary; it is not protection
+against a same-UID adversary deliberately replacing the root environment.
+
 Origin readers advertise `originClock: 'boot-monotonic-v1'` and match the
 attested boot ID and process birth ticks against intervals from that same boot.
 Legacy wall-clock records cannot authorize personal credentials: clock changes
