@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-/** A trusted action owns voice; its local Composer surface owns touch intent. */
+/** A trusted action owns voice; the editor's native contact owns its hold. */
 export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | null>, callbacks: {
   enabled: boolean; start(): void; finish(): void; cancel(): void;
 }) {
@@ -16,16 +16,17 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
       clear(); const previous = held; held = null;
       if (previous?.active) { suppressUntil = performance.now() + 500; latest.current.cancel(); }
     };
-    const down = (event: PointerEvent) => {
+    const down = (event: TouchEvent) => {
       if (held) { cancel(); return; }
       suppressUntil = 0;
-      if (event.pointerType !== "touch" || !event.isPrimary || !latest.current.enabled
+      if (event.touches.length !== 1 || !latest.current.enabled
         || (document.documentElement.dataset.uiDensity === "compact"
           || (document.documentElement.dataset.uiDensity !== "touch" && !matchMedia("(any-pointer: coarse)").matches))
         || window.getSelection()?.toString()) return;
       const editor = event.target instanceof Element ? event.target.closest<HTMLElement>(".opencraft-composer-editor") : null;
       if (!editor || !surface.contains(editor)) return;
-      held = { id: event.pointerId, x: event.clientX, y: event.clientY, active: false, editor };
+      const touch = event.touches[0]!;
+      held = { id: touch.identifier, x: touch.clientX, y: touch.clientY, active: false, editor };
       timer = setTimeout(() => {
         timer = null;
         if (!held || !latest.current.enabled || window.getSelection()?.toString()) { cancel(); return; }
@@ -34,15 +35,17 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
         latest.current.start();
       }, 450);
     };
-    const move = (event: PointerEvent) => {
-      if (!held || held.id !== event.pointerId) return;
+    const move = (event: TouchEvent) => {
+      if (!held) return;
+      const touch = Array.from(event.touches).find(touch => touch.identifier === held!.id);
+      if (!touch || event.touches.length !== 1) { cancel(); return; }
       if (held.active) {
-        if (event.clientY < held.y - 64) cancel();
+        if (touch.clientY < held.y - 64) cancel();
         if (event.cancelable) event.preventDefault();
-      } else if (Math.hypot(event.clientX - held.x, event.clientY - held.y) > 12) cancel();
+      } else if (Math.hypot(touch.clientX - held.x, touch.clientY - held.y) > 12) cancel();
     };
-    const up = (event: PointerEvent) => {
-      if (!held || held.id !== event.pointerId) return;
+    const up = (event: TouchEvent) => {
+      if (!held || !Array.from(event.changedTouches).some(touch => touch.identifier === held!.id)) return;
       clear(); const previous = held; held = null;
       if (previous.active) {
         suppressUntil = performance.now() + 500;
@@ -52,20 +55,25 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     };
     const context = (event: Event) => { if (held?.active || performance.now() < suppressUntil) event.preventDefault(); };
     const click = (event: Event) => { if (performance.now() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); } };
+    const anotherContact = (event: TouchEvent) => { if (held && event.touches.length !== 1) cancel(); };
     const visibility = () => { if (document.visibilityState === "hidden") cancel(); };
-    surface.addEventListener("pointerdown", down, true);
+    surface.addEventListener("touchstart", down, { capture: true, passive: true });
     surface.addEventListener("contextmenu", context, true);
     surface.addEventListener("click", click, true);
-    window.addEventListener("pointermove", move, { capture: true, passive: false });
-    window.addEventListener("pointerup", up, true);
-    window.addEventListener("pointercancel", cancel, true);
+    // Native touchend/cancel retires the contact independently of the derived
+    // pointer release, including across focus and presentation changes.
+    window.addEventListener("touchstart", anotherContact, { capture: true, passive: true });
+    window.addEventListener("touchmove", move, { capture: true, passive: false });
+    window.addEventListener("touchend", up, { capture: true, passive: false });
+    window.addEventListener("touchcancel", cancel, true);
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      cancel(); surface.removeEventListener("pointerdown", down, true);
+      cancel(); surface.removeEventListener("touchstart", down, true);
       surface.removeEventListener("contextmenu", context, true); surface.removeEventListener("click", click, true);
-      window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
-      window.removeEventListener("pointercancel", cancel, true); window.removeEventListener("blur", cancel);
+      window.removeEventListener("touchstart", anotherContact, true);
+      window.removeEventListener("touchmove", move, true); window.removeEventListener("touchend", up, true);
+      window.removeEventListener("touchcancel", cancel, true); window.removeEventListener("blur", cancel);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [action]);
