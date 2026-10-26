@@ -486,6 +486,10 @@ export async function createWebWorkbenchApplicationSupervisor(
         });
       });
     }
+    if (platform === 'electron') {
+      await extensions.loadOptional('opencraft.account', async () =>
+        (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
+    }
     if (headlessAppHost !== null) {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");

@@ -92,3 +92,34 @@ test('old fixed launcher fallback reaches packaged login worker, forwards cookie
   await browser.call('/__opencraft_auth/logout', {});
   assert.equal((await browser.call('/__opencraft_actors/me')).status, 401);
 });
+
+test('packaged /setup enables membership, claims one administrator and preserves completed state after restart', async t => {
+  const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url)); await mkdir(runtime, { recursive: true });
+  const dir = await mkdtemp(join(runtime, 'account-setup-artifact-')), webRoot = join(dir, 'web'); await mkdir(webRoot);
+  await writeFile(join(webRoot, 'index.html'), '<!doctype html><title>Setup fixture</title>');
+  await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'setup-test', headlessServer: true, headlessHostId: 'opencraft-server' }));
+  const bundle = join(dir, 'server.mjs'); await buildHeadlessBundle(bundle);
+  const { startHeadlessServer } = await import(pathToFileURL(bundle).href);
+  const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
+  const port = (reserve.address() as any).port; await new Promise<void>(resolve => reserve.close(() => resolve()));
+  const origin = `http://127.0.0.1:${port}`, config = join(dir, 'auth.json'), proofFile = join(dir, 'setup.json');
+  const proof = 'A'.repeat(43), password = 'synthetic-setup-password-42';
+  await writeFile(proofFile, JSON.stringify({ token: proof }), { mode: 0o600 });
+  await writeFile(config, JSON.stringify({ origin, local: true, oidc: [], setupTokenFile: proofFile }), { mode: 0o600 });
+  const options = { root: dir, webRoot, dataDirectory: join(dir, 'data'), port, humanAuthConfig: config,
+    startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:9/rpc', async close() {} }) };
+  let app: any;
+  t.after(async () => { await app?.close(); await rm(dir, { recursive: true, force: true }); });
+  app = await startHeadlessServer(options);
+  const browser = new AuthBrowser(origin);
+  assert.equal((await browser.call('/')).status, 401, 'setup configuration alone enables member admission');
+  assert.equal((await browser.call('/setup')).status, 200);
+  assert.equal((await browser.call('/__opencraft_account/setup', { proof, mode: 'web', username: 'owner', password })).status, 200);
+  const first = await (await browser.call('/__opencraft_account/status')).json() as any;
+  assert.equal(first.administrator, true); assert.ok(first.actor.id);
+  await app.close(); app = await startHeadlessServer(options);
+  const restored = await (await browser.call('/__opencraft_account/status')).json() as any;
+  assert.equal(restored.actor.id, first.actor.id); assert.equal(restored.setup.state, 'complete');
+  assert.equal((await browser.call('/setup')).status, 303);
+  assert.equal((await browser.call('/__opencraft_account/setup', { proof, mode: 'web', username: 'other', password })).status, 409);
+});

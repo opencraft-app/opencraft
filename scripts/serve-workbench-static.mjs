@@ -80,12 +80,16 @@ async function serveFile(request, response, path, pathname) {
 }
 
 /** Electron-only static origin. This module intentionally has no proxy API. */
-export async function createWorkbenchStaticServer({ root }) {
+export async function createWorkbenchStaticServer({ root, accountService = null }) {
   const staticRoot = await realpath(resolve(root));
   const runtimeReports = [];
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", "http://opencraft.invalid");
+      if (url.pathname === '/setup' || url.pathname.startsWith('/__opencraft_account') || url.pathname.startsWith('/__opencraft_auth')) {
+        if (accountService && await accountService.handle(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
+      }
       if (url.pathname === "/__opencraft_health") {
         sendJson(response, 200, { ok: true, staticRoot });
         return;

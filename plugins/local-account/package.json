@@ -3,7 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { "./server": "./src/server.ts" },
-  "dependencies": { "@opencraft/identity-core": "*" },
-  "scripts": { "typecheck": "tsc --noEmit" }
+  "exports": {
+    "./server": "./src/server.ts",
+    "./application": "./src/application.ts",
+    "./desktop": "./src/desktop.ts",
+    "./client": "./src/client.tsx",
+    "./client-scope": "./src/client-scope.ts",
+    "./connections": "./src/connections.ts"
+  },
+  "dependencies": {
+    "@opencraft/identity-core": "*",
+    "@opencraft/access-control": "*",
+    "@opencraft/extension-runtime": "*",
+    "@opencraft/extension-react": "*",
+    "@opencraft/i18n": "*",
+    "@opencraft/client-product": "*",
+    "@opencraft/workbench-runtime": "*",
+    "react": "19.3.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
 }

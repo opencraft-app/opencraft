@@ -25,6 +25,7 @@ void startOpenCraftDaemon({
   dshExecutable: requiredArgument("--dsh-executable"),
   dshCapabilityPlugin: argument("--dsh-capability-plugin"),
   dataDirectory: requiredArgument("--data-directory"),
+  humanAccountDirectory: argument('--human-account-directory'),
   modelStorageDirectory: argument("--model-storage-directory"),
   skillsDirectory: argument("--skills-directory"),
   codexExecutable: requiredArgument("--codex-executable"),

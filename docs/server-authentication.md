@@ -31,7 +31,31 @@ does not imply that private plugin directories or all client dependencies moved.
 
 配置 `local: true` 由服务器启用随包插件；`false` 禁用本地登录并撤销原本地浏览器登录态，OIDC 登录与 Actor 权限独立。普通服务重启保留有效登录态。插件缺失或停用不能关闭成员准入，未完成的密码验证/创建在插件释放后不会写入或签发登录态。服务端激活的 disposer 只退休自身代次并撤销本地登录，不改变其他身份或权限。
 
-本插件属于受信服务端能力，不通过浏览器扩展安装器下载执行。服务器、受管 Web/Linux 包与现有 `human-account` 操作人命令均使用同一插件；界面入口继续为 `/__opencraft_auth/`。本期使用操作人初始化/恢复账号和已登录用户显式绑定，不开放匿名注册、首访者管理员或邮件找回。
+本插件包含受信 Server 入口和客户端 Settings 入口（`Accounts and members`），不通过浏览器扩展安装器下载执行。服务器、桌面 Main/Daemon、受管 Web/Linux 包与 `human-account` 恢复命令使用同一套核心 Human、登录和成员权限。凭据插件不能自行授予实例权限；核心的账号管理器编排初始化和邀请。IOA 等企业身份提供方仍可独立装配。
+
+### 新实例的 /setup
+
+新实例可在上述认证 JSON 中加入 `"setupTokenFile": "/absolute/private-setup.json"`。这个文件由安装者创建，拥有者为服务运行用户、权限 `0600`、不可为符号链接，内容为 `{"token":"<32 random bytes encoded as base64url>"}`（43个字符）。例如在私有目录中执行以下命令，只写文件，不向日志输出凭证：
+
+```sh
+node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {randomBytes} from "node:crypto"; writeFileSync("/srv/opencraft-private/setup.json",JSON.stringify({token:randomBytes(32).toString("base64url")}),{mode:0o600,flag:"wx"})'
+```
+
+配置 `setupTokenFile` 会同时启用实例成员准入。安装者打开 `/setup`，输入私有文件中的初始化凭证、用户名与密码，创建首个 Human 管理员。首个匿名访问者不能抢占管理员。完成后 `/setup` 跳转账号管理；删除初始化凭证配置或停用所有账号均不重新开放初始化。已有 Human、凭据或成员的部署保持关闭，不抢占既有安装。
+
+初始化先持久化模式、用户名和固定凭据 subject，再创建凭据、Human 和成员授权；中断后以原用户名和密码继续，不创建第二个管理员，也不会领用碰巧同名的其他账号。相关记录在数据目录的 `account-onboarding.sqlite`，沿用受管 SQLite 迁移及备份契约，不改既有账号表。恢复使用下文操作人命令。
+
+### 邀请和成员管理
+
+`/__opencraft_account/` 提供当前身份、登录绑定入口、邀请接受及管理员成员管理。管理员近期登录后生成24小时内有效的一次性邀请；受邀者凭邀请创建本地账号，成为普通成员。数据库只保存邀请摘要。管理员可撤销/恢复成员访问、重置本地密码，不能撤销自己当前的管理员角色。成员管理不会自动授予其他 Human 的私有资源访问权；资源授权仍由既有核心执行。不实现公开注册或邮件找回。
+
+### 桌面与远端连接
+
+标准桌面首次运行由可信 Main 自动建立本机 Human，不要求注册密码。Main 在私有 loopback 会话中设置 HttpOnly 本机证明和核心登录 cookie；Daemon 校验 Main 传入的核心会话，拒绝 renderer 自报 Human ID。账号管理仍由插件提供；绑定本地密码后，该登录方式属于同一 Human。原始桌面 owner 保留既有客户端草稿命名空间；其他账号的缓存使用 authority + Human 分区。撤权或会话失效会退休原连接。
+
+桌面账号页的“连接其他服务器”打开独立会话窗口；启动参数 `--server-url=https://workbench.example.com` 则直接进入远端薄客户端，不启动本机 Daemon。每个 Server origin 使用独立浏览器 partition，远端页面没有本机 preload/IPC 权限。目标服务器验证自己的 Human 和成员；不会按名字自动合并本机与远端身份。地址须为 HTTPS origin，回环调试可用 HTTP。
+
+远程多人 WebUI 使用标准 Headless 启动入口和上述 `/setup`，与桌面入口共用插件和核心契约。本次不增加桌面里启停公网 WebUI 的按钮；也不启动另一份进程冒充同一个执行 Host。执行进程、系统用户与容器隔离暂不实施。
 
 ## 本地账号初始化
 
@@ -82,7 +106,7 @@ node runtime/human-account.mjs /srv/opencraft-data create admin /srv/opencraft-p
 node runtime/human-account.mjs /srv/opencraft-data grant admin admin
 ```
 
-`create` 只创建本地凭据，不授予实例权限。`grant USER admin|member` 显式将权限授予该账号对应的 Actor；首个访客没有初始化管理员的能力。初始化完成后移除临时密码文件。已有自然人希望添加本地登录时，应在登录页选择“设置新的本地账号”，以保留原 Actor；不要另建账号并先独立登录。
+`create` 只创建本地凭据，不授予实例权限。`grant USER admin|member` 显式将权限授予该账号对应的 Actor；这也是已初始化实例的本机恢复入口。没有安装者证明的访客不能初始化管理员。初始化完成后移除临时密码文件。已有自然人希望添加本地登录时，应在登录页选择“设置新的本地账号”，以保留原 Actor；不要另建账号并先独立登录。
 
 启动 Headless：
 

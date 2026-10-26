@@ -1004,5 +1004,11 @@
   "chat.steer.cancelled": "Dibatalkan",
   "chat.steer.declined": "Tidak ditambahkan",
   "chat.queue.pausedAfterStop": "Dijeda selepas dihentikan. Sambung apabila sedia.",
-  "chat.queue.pausedAfterFailure": "Mesej tidak dihantar. Sambung untuk mencuba lagi."
+  "chat.queue.pausedAfterFailure": "Mesej tidak dihantar. Sambung untuk mencuba lagi.",
+  "localAccount.title": "Akaun dan ahli",
+  "localAccount.description": "Log masuk ke pelayan ini dan urus ahlinya.",
+  "localAccount.identity": "Identiti Human",
+  "localAccount.identity.description": "Kaedah log masuk yang disahkan berkongsi Human yang sama. Keahlian pelayan mengawal akses.",
+  "localAccount.manage": "Urus akaun",
+  "localAccount.unavailable": "Pelayan ini belum mendayakan pemalam akaun tempatan."
 }

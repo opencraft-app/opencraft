@@ -1004,5 +1004,11 @@
   "chat.steer.cancelled": "ยกเลิกแล้ว",
   "chat.steer.declined": "ไม่ได้เพิ่ม",
   "chat.queue.pausedAfterStop": "หยุดชั่วคราวหลังจากหยุดงาน กดดำเนินการต่อเมื่อพร้อม",
-  "chat.queue.pausedAfterFailure": "ยังไม่ได้ส่งข้อความ กดดำเนินการต่อเพื่อลองอีกครั้ง"
+  "chat.queue.pausedAfterFailure": "ยังไม่ได้ส่งข้อความ กดดำเนินการต่อเพื่อลองอีกครั้ง",
+  "localAccount.title": "บัญชีและสมาชิก",
+  "localAccount.description": "ลงชื่อเข้าใช้เซิร์ฟเวอร์นี้และจัดการสมาชิก",
+  "localAccount.identity": "ตัวตน Human",
+  "localAccount.identity.description": "วิธีลงชื่อเข้าใช้ที่ยืนยันแล้วเชื่อมกับ Human เดียวกัน สิทธิ์เข้าถึงขึ้นอยู่กับสมาชิกเซิร์ฟเวอร์",
+  "localAccount.manage": "จัดการบัญชี",
+  "localAccount.unavailable": "เซิร์ฟเวอร์นี้ยังไม่ได้เปิดใช้ปลั๊กอินบัญชีภายในเครื่อง"
 }

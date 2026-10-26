@@ -51,6 +51,11 @@ export class HumanAccounts {
   get localAccounts(): LocalAccountProvider | null {
     return this.#local?.provider.available ? this.#local.provider : null;
   }
+  /** Management projection only; salt and password digests remain in their storage port. */
+  listLocalAccounts(): { id: string; username: string; displayName: string; enabled: boolean }[] {
+    return this.#db.prepare('SELECT id,username,display_name,enabled FROM local_accounts ORDER BY username').all()
+      .map(row => ({ id: row.id as string, username: row.username as string, displayName: row.display_name as string, enabled: row.enabled === 1 }));
+  }
   /** Trusted server activation. Its disposer revokes local logins, never instance admission. */
   registerLocalAccounts(provider: LocalAccountProvider): () => void {
     if (this.#local || !provider.available) throw new Error('Local account provider unavailable or already registered');

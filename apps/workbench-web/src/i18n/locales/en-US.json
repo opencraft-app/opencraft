@@ -1002,5 +1002,11 @@
   "chat.steer.cancelled": "Cancelled",
   "chat.steer.declined": "Not added",
   "chat.queue.pausedAfterStop": "Paused after stopping. Resume when ready.",
-  "chat.queue.pausedAfterFailure": "Message not sent. Resume to try again."
+  "chat.queue.pausedAfterFailure": "Message not sent. Resume to try again.",
+  "localAccount.title": "Accounts and members",
+  "localAccount.description": "Sign in to this server and manage its members.",
+  "localAccount.identity": "Human identity",
+  "localAccount.identity.description": "Verified sign-in methods share a stable Human. Server membership controls access.",
+  "localAccount.manage": "Manage accounts",
+  "localAccount.unavailable": "This server has not enabled the local account plugin."
 }
