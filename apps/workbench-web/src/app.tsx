@@ -475,6 +475,13 @@ export function App({
     return placement;
   }, []);
   const activeThreadId = snapshot.activeThreadId;
+  const displayKey = useConversationViewDisplayKey();
+  const localThreadId = activeThreadId ?? (displayKey?.hostId === snapshot.hostId ? displayKey.threadId : null);
+  const localOutbox = useMemo(() => localThreadId === null ? null : runtime.localOutbox?.(localThreadId) ?? null,
+    [runtime, localThreadId]);
+  const subscribeLocalOutbox = useCallback((listener: () => void) => localOutbox?.subscribe(listener) ?? (() => {}), [localOutbox]);
+  const localOutboxRevision = useSyncExternalStore(subscribeLocalOutbox, localOutbox?.getRevision ?? (() => 0));
+  const localQueuedSubmissions = useMemo(() => localOutbox?.project() ?? [], [localOutbox, localOutboxRevision]);
   const workbenchNavigation = hostCatalog.navigation;
   const workbenchNavigationSnapshot = useSyncExternalStore(
     workbenchNavigation.subscribe,
@@ -729,7 +736,6 @@ export function App({
   const timeline = snapshot.conversation?.timeline ?? null;
   // The committed View has a display identity before network lease acquisition.
   // This local binding never grants execution or authoritative history access.
-  const displayKey = useConversationViewDisplayKey();
   const { selection: display, scope: displayScope, hasSubmission } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline);
   const displayHostId = displayKey?.hostId ?? null;
   const displayThreadId = displayKey?.threadId ?? null;
@@ -848,11 +854,13 @@ export function App({
   );
   const deleteQueuedSubmission = useCallback(
     async (id: string) => {
-      if (activeThreadLease === null)
+      if (activeThreadLease === null) {
+        if (localOutbox && await localOutbox.remove(id)) return;
         throw new Error("No active Thread owns this queue");
+      }
       await activeThreadLease.deleteQueuedSubmission(id);
     },
-    [activeThreadLease],
+    [activeThreadLease, localOutbox],
   );
   const discardUnconfirmedSteer = useCallback(
     async (id: string, expectedTurnId: string) => {
@@ -896,6 +904,10 @@ export function App({
         action: sideChatAction, context: panelToolbarContext,
       });
       if (sideChatCommand !== null) return sideChatCommand;
+      if (activeThreadLease === null && localOutbox && intent.target.type !== "new-thread"
+        && intent.target.key.hostId === snapshot.hostId && intent.target.key.threadId === localThreadId) {
+        return localOutbox.admit(intent).then(() => true);
+      }
       // Host connectivity gates command admission, never Draft editability.
       // Re-check at the semantic boundary as the status can change between a
       // rendered enabled button and its click handler.
@@ -1006,6 +1018,8 @@ export function App({
       hostCatalog,
       queryClient,
       activeThreadLease,
+      localThreadId,
+      localOutbox,
       composerController,
       captureLatestTurnPlacement,
       clearLatestTurnPlacement,
@@ -2213,9 +2227,9 @@ export function App({
                         isStreaming={draft === null && isStreaming}
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission
-                        submissionDisabled={draft !== null || activeThreadLease === null}
+                        submissionDisabled={draft !== null || (activeThreadLease === null && localOutbox === null)}
                         queuedSubmissions={[
-                          ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? [],
+                          ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
                             visibleTimeline).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
                           ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({

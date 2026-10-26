@@ -19,7 +19,8 @@ export interface RuntimeErrorReport {
     | "host-profile-storage-recovery"
     | "application-disposal"
     | "sidebar-layout-persist"
-    | "thread-catalog-load";
+    | "thread-catalog-load"
+    | "offline-shell";
   url: string;
   userAgent?: string;
   viewport?: { readonly width: number; readonly height: number };

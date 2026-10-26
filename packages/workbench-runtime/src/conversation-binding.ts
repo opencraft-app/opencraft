@@ -40,6 +40,7 @@ export interface ConversationBindingPersistence {
 }
 
 export interface ConversationBindingStore {
+  restore(): void;
   getSnapshot(): ConversationBindingSnapshot;
   subscribe(listener: () => void): () => void;
   register(
@@ -107,6 +108,8 @@ export function createConversationBindingStore(
     if (encoded !== null) byConversation.set(encoded, binding.scopeId);
   };
 
+  const restore = () => {
+    ensureOpen();
   for (const persisted of config.persistence?.load() ?? []) {
     try {
       const scopeId = asConversationScopeId(persisted.scopeId);
@@ -119,6 +122,8 @@ export function createConversationBindingStore(
       // Ignore corrupt client aliases. They are never authoritative history.
     }
   }
+  };
+  restore();
   snapshot = { revision, bindings: [...byScope.values()] };
 
   const register = (
@@ -142,6 +147,7 @@ export function createConversationBindingStore(
   };
 
   return {
+    restore() { restore(); publish(false); },
     getSnapshot: () => snapshot,
     subscribe(listener) {
       ensureOpen();

@@ -18,6 +18,10 @@ export interface ClientResourcePersistence {
   compareAndSet(key: ClientResourceKey, revision: number, record: Omit<ClientResourceRecord, "revision">): Promise<boolean>;
   /** Only disposable remote copies may be removed by capacity policy. */
   clearRemoteNamespace(namespace: string): Promise<void>;
+  /** Most recently accepted first; deterministic identity order breaks ties. */
+  listLocalKeys(namespace: string, name: string): Promise<readonly ClientResourceKey[]>;
+  /** Explicit local owner cleanup, never a cache/capacity operation. */
+  clearLocalResource(namespace: string, name: string): Promise<void>;
   close(): void | Promise<void>;
 }
 
@@ -29,11 +33,12 @@ export function resourceKey(key: ClientResourceKey): string {
     || !["local", "remote"].includes(key.authority)) throw new TypeError("Invalid client resource identity");
   return JSON.stringify([key.namespace, key.name, key.id, key.authority]);
 }
-export function validateResourceRecord(record: Omit<ClientResourceRecord, "revision">, revision: number): void {
+export function validateResourceRecord(record: Omit<ClientResourceRecord, "revision">, revision: number, authority: ResourceAuthority = "remote"): void {
   if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER
     || !Number.isSafeInteger(record.version) || record.version < 1
     || !Number.isFinite(record.savedAt) || record.savedAt < 0) throw new TypeError("Invalid client resource record");
-  serializeDocumentValue(record.value);
+  // Existing rich drafts allow 4M characters; preserve that domain budget after JSON/UTF-8 encoding.
+  serializeDocumentValue(record.value, authority === "local" ? 16 * 1024 * 1024 : 1024 * 1024);
 }
 
 export interface ClientResourceSnapshot<T> {
@@ -144,7 +149,7 @@ class Resource<T extends DocumentValue> implements RemoteClientResource<T>, Loca
     this.assertCurrent();
     assertFence(fence);
     const record = { version: this.definition.version, savedAt: Date.now(), value: this.definition.parse(value) };
-    validateResourceRecord(record, expectedRevision);
+    validateResourceRecord(record, expectedRevision, "local");
     try {
       await this.owner.run(async storage => {
         this.assertCurrent();

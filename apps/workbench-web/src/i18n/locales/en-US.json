@@ -617,7 +617,7 @@
   "office.failed": "This document could not be displayed. You can download the original file.",
   "navigation.switchServer": "Switch server",
   "webUpdates.directManagement": "Manage software updates through this server’s deployment entry.",
-  "chat.outbox.waiting": "Saved in this browser tab · sends automatically after reconnect",
+  "chat.outbox.waiting": "Saved locally · sends automatically after reconnect",
   "chat.outbox.unconfirmed": "Delivery unconfirmed · check the conversation before sending again",
   "chat.outbox.failed": "Message not sent · remove it and retry after reconnect",
   "mcpApp.failed": "App unavailable",

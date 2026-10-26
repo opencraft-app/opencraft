@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
       record: Omit<import("@opencraft/document-storage/client-resources").ClientResourceRecord, "revision">) =>
       ipcRenderer.invoke("opencraft:client-resource-commit", key, revision, record),
     clearRemoteNamespace: (namespace: string) => ipcRenderer.invoke("opencraft:client-resource-clear-remote", namespace),
+    listLocalKeys: (namespace: string, name: string) => ipcRenderer.invoke("opencraft:client-resource-list-local", namespace, name),
+    clearLocalResource: (namespace: string, name: string) => ipcRenderer.invoke("opencraft:client-resource-clear-local", namespace, name),
   }),
   skillHub: Object.freeze({
     get: (path: string) => ipcRenderer.invoke("opencraft:skillhub-get", path),

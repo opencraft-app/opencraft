@@ -50,3 +50,28 @@ test("account changes synchronously fence a local cache; profile refresh does no
   release();
   assert.equal(observations.length, count, "disposed owner receives no registry or account changes");
 });
+
+test("offline discovery restores only a remembered local partition; explicit logout clears it", async () => {
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+  const accounts = new PlatformAccountContributionRegistry();
+  const listeners = new Set<() => void>();
+  let snapshot: PlatformAccountSnapshot = { ...anonymous, phase: "authenticated", readStateScope: "account-a", identity: { id: "a", handle: "a" } };
+  const contribution = { id: "fixture.account", viewId: "fixture.view", getSnapshot: () => snapshot,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }, async refresh() {} };
+  const prepared = await accounts.createAdapter().prepare(owner, contribution); const release = await prepared.commit();
+  const first = new LocalClientPersistenceScope(accounts, "server:a", storage);
+  const namespace = first.getSnapshot().namespace; assert.equal(first.isVerified(), true); first.dispose();
+  release();
+  const reopened = new LocalClientPersistenceScope(accounts, "server:a", storage);
+  assert.equal(reopened.getSnapshot().namespace, namespace); assert.equal(reopened.isVerified(), false);
+  snapshot = { ...anonymous, phase: "error" };
+  const rebound = await accounts.createAdapter().prepare(owner, contribution); const stop = await rebound.commit();
+  assert.equal(reopened.getSnapshot().namespace, namespace); assert.equal(reopened.isVerified(), false);
+  snapshot = { ...anonymous, phase: "authenticated", readStateScope: "account-a", identity: { id: "a", handle: "a" } };
+  for (const listener of listeners) listener();
+  assert.equal(reopened.getSnapshot().namespace, namespace); assert.equal(reopened.isVerified(), true);
+  snapshot = { ...anonymous, readStateScope: null }; for (const listener of listeners) listener();
+  assert.notEqual(reopened.getSnapshot().namespace, namespace); assert.equal(reopened.isVerified(), false);
+  assert.equal(values.size, 0); reopened.dispose(); stop();
+});

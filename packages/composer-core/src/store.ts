@@ -60,8 +60,8 @@ export interface ComposerStoreServices {
 export type ComposerSavedContent = Pick<ComposerDraft, "document" | "attachments" | "context">;
 
 export interface ComposerDraftStorage {
-  read(target: ComposerTarget): ComposerSavedContent | null;
-  write(target: ComposerTarget, content: ComposerSavedContent): void;
+  read(target: ComposerTarget): ComposerSavedContent | null | Promise<ComposerSavedContent | null>;
+  write(target: ComposerTarget, content: ComposerSavedContent): void | Promise<void>;
 }
 
 export interface ComposerStoreSnapshot {
@@ -311,11 +311,27 @@ export function createComposerController(
     const fresh = createDraft(nextTarget, services);
     try {
       const saved = services.drafts?.read(nextTarget);
+      if (saved instanceof Promise) {
+        void saved.then(value => {
+          if (disposed || !value) return;
+          const key = encodeComposerTarget(nextTarget);
+          const current = draft.id === fresh.id ? draft : draftCache.get(key);
+          if (!current || current.id !== fresh.id || current.document !== fresh.document
+            || current.attachments !== fresh.attachments || current.context !== fresh.context) return;
+          const restored = { ...current, ...value };
+          if (draft.id === current.id) publish(restored);
+          else draftCache.set(key, restored);
+        }).catch(error => services.onDraftStorageError?.(error));
+        return fresh;
+      }
       return saved ? { ...fresh, ...saved } : fresh;
     } catch (error) { services.onDraftStorageError?.(error); return fresh; }
   };
   const persist = (value: ComposerDraft) => {
-    try { services.drafts?.write(value.target, { document: value.document, attachments: value.attachments, context: value.context }); }
+    try {
+      const pending = services.drafts?.write(value.target, { document: value.document, attachments: value.attachments, context: value.context });
+      if (pending instanceof Promise) void pending.catch(error => services.onDraftStorageError?.(error));
+    }
     catch (error) { services.onDraftStorageError?.(error); }
   };
   let revision = 0;

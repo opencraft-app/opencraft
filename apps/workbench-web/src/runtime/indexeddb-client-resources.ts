@@ -43,7 +43,7 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
           try {
             const row = request.result as Stored | undefined;
             if (!row) { result(null); return; }
-            validateResourceRecord(row, row.revision);
+            validateResourceRecord(row, row.revision, key.authority);
             result({ revision: row.revision, version: row.version, savedAt: row.savedAt, value: row.value });
           } catch { store.transaction.abort(); }
         };
@@ -51,7 +51,7 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
     },
     async compareAndSet(key: ClientResourceKey, revision: number, record: Omit<ClientResourceRecord, "revision">) {
       const identity = resourceKey(key);
-      validateResourceRecord(record, revision);
+      validateResourceRecord(record, revision, key.authority);
       return transaction<boolean>("readwrite", (store, result) => {
         const request = store.get(identity);
         request.onsuccess = () => {
@@ -75,6 +75,33 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
           const row = cursor.result;
           if (!row) { result(); return; }
           if ((row.value as Stored).authority === "remote") row.delete();
+          row.continue();
+        };
+      });
+    },
+    async listLocalKeys(namespace, name) {
+      resourceKey({ namespace, name, id: "namespace", authority: "local" });
+      return transaction<readonly ClientResourceKey[]>("readonly", (store, result) => {
+        const keys: { key: ClientResourceKey; savedAt: number; identity: string }[] = [];
+        const cursor = store.index("namespace").openCursor(namespace);
+        cursor.onsuccess = () => {
+          const row = cursor.result;
+          if (!row) { result(keys.sort((a, b) => b.savedAt - a.savedAt || a.identity.localeCompare(b.identity)).map(row => row.key)); return; }
+          const [scope, domain, id, authority] = JSON.parse(String(row.primaryKey));
+          if (domain === name && authority === "local") keys.push({ key: { namespace: scope, name: domain, id, authority }, savedAt: (row.value as Stored).savedAt, identity: String(row.primaryKey) });
+          row.continue();
+        };
+      });
+    },
+    async clearLocalResource(namespace, name) {
+      resourceKey({ namespace, name, id: "namespace", authority: "local" });
+      return transaction<void>("readwrite", (store, result) => {
+        const cursor = store.index("namespace").openCursor(namespace);
+        cursor.onsuccess = () => {
+          const row = cursor.result;
+          if (!row) { result(); return; }
+          const [, domain, , authority] = JSON.parse(String(row.primaryKey));
+          if (domain === name && authority === "local") row.delete();
           row.continue();
         };
       });

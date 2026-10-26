@@ -51,3 +51,24 @@ test("desktop catalog port retains CAS and restart recovery; cleanup cannot dele
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("desktop local ports admit only implemented original domains and explicit domain cleanup", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-desktop-local-port-"));
+  const store = new SqliteClientResources(join(root, "resources.sqlite"));
+  const port = createDesktopClientResourcePort(() => store);
+  try {
+    for (const name of ["conversation-draft", "composer-draft", "conversation-outbox"]) {
+      const identity = { ...key, name, authority: "local" };
+      assert.equal(await port.compareAndSet(identity, 0, { version: 1, savedAt: 1, value: "original" }), true);
+      assert.equal((await port.read(identity))?.value, "original");
+      assert.throws(() => port.compareAndSet(identity, 1, { version: 1, savedAt: 1, value: { token: "not a local document" } }), TypeError);
+    }
+    await port.clearRemoteNamespace(key.namespace);
+    assert.equal((await port.listLocalKeys(key.namespace, "conversation-draft")).length, 1);
+    await port.clearLocalResource(key.namespace, "conversation-draft");
+    assert.equal((await port.listLocalKeys(key.namespace, "conversation-draft")).length, 0);
+    assert.equal((await port.listLocalKeys(key.namespace, "composer-draft")).length, 1);
+    assert.throws(() => port.clearLocalResource(key.namespace, "thread-catalog"), TypeError);
+    assert.throws(() => port.listLocalKeys(key.namespace, "arbitrary"), TypeError);
+  } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+});

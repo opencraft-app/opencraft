@@ -619,7 +619,7 @@
   "office.failed": "Dokumen ini tidak dapat dipaparkan. Anda boleh memuat turun fail asal.",
   "navigation.switchServer": "Tukar pelayan",
   "webUpdates.directManagement": "Urus kemas kini perisian melalui halaman pengurusan pelayan ini.",
-  "chat.outbox.waiting": "Disimpan dalam tab ini · dihantar secara automatik selepas disambung semula",
+  "chat.outbox.waiting": "Disimpan secara setempat · dihantar secara automatik selepas disambung semula",
   "chat.outbox.unconfirmed": "Penghantaran belum disahkan · semak perbualan sebelum menghantar semula",
   "chat.outbox.failed": "Mesej tidak dihantar · padam dan cuba semula selepas disambung semula",
   "mcpApp.failed": "App unavailable",

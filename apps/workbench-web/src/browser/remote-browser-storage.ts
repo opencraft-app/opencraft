@@ -28,11 +28,26 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
   private closed = false;
   private failure: Error | null = null;
   private listeners = new Set<(error: Error) => void>();
-  static async create() {
+  private initialized = false;
+  private initialization: Promise<void> = Promise.resolve();
+  get isReady() { return this.initialized && !this.closed && !this.failure; }
+  whenReady() { return this.initialization; }
+  static async create(signal?: AbortSignal, deferredAdmission?: () => Promise<void>) {
+    signal?.throwIfAborted();
     const storage = new RemoteBrowserStorage();
+    storage.initialization = storage.initialize(signal, deferredAdmission);
+    if (!deferredAdmission) await storage.initialization;
+    else void storage.initialization.catch(() => undefined);
+    return storage;
+  }
+  private async initialize(signal?: AbortSignal, admission?: () => Promise<void>) {
+    const abort = () => this.dispose();
+    signal?.addEventListener('abort', abort, { once: true });
     try {
-      await storage.connect();
-      const state = await storage.call(); storage.values = state.values; storage.revision = state.revision; storage.scope = state.scope; storage.keyRevisions = state.keyRevisions ?? {};
+      await admission?.(); signal?.throwIfAborted();
+      if (this.closed) throw new Error('Browser storage closed');
+      await this.connect();
+      const state = await this.call(); this.values = state.values; this.revision = state.revision; this.scope = state.scope; this.keyRevisions = state.keyRevisions ?? {};
       // One-time promotion preserves existing tabs on upgraded installations.
       // These records carry no authority; the Server still scopes every tab
       // partition/command to the authenticated owner.
@@ -40,15 +55,20 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
         for (const [key, , scope] of entries) {
           let legacy: string | null = null;
           try { legacy = readBrowserMetadataValue(localStorage, key, scope); } catch {}
-          if (legacy !== null) storage.setItem(apiKey(key, scope), legacy);
+          if (legacy !== null) this.writeItem(apiKey(key, scope), legacy);
         }
-        await storage.flush();
+        await this.flush();
       }
-      return storage;
-    } catch (error) { storage.dispose(); throw error; }
+      signal?.throwIfAborted(); this.initialized = true;
+    } catch (error) { this.dispose(); signal?.throwIfAborted(); throw error; }
+    finally { signal?.removeEventListener('abort', abort); }
   }
   getItem(key: string) { return this.values[keys[key]] ?? null; }
   setItem(key: string, value: string) {
+    if (!this.isReady) throw this.failure ?? Object.assign(new Error('Browser metadata awaits authenticated initialization'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
+    this.writeItem(key, value);
+  }
+  private writeItem(key: string, value: string) {
     if (!keys[key]) throw new Error('Unknown remote browser storage key');
     if (this.failure) throw this.failure;
     if (this.closed) throw new Error('Browser storage closed');
@@ -73,8 +93,8 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
   }
   onError(listener: (error: Error) => void) { this.listeners.add(listener); if (this.failure) listener(this.failure); return () => { this.listeners.delete(listener); }; }
   flush() { return this.writes; }
-  async listResources(): Promise<RemoteBrowserCatalog> { await this.connect(); return this.call(undefined, 'catalog'); }
-  async closeResource(lease: string): Promise<void> { await this.connect(); await this.call({ lease }, 'discard'); }
+  async listResources(): Promise<RemoteBrowserCatalog> { await this.whenReady(); await this.connect(); return this.call(undefined, 'catalog'); }
+  async closeResource(lease: string): Promise<void> { await this.whenReady(); await this.connect(); await this.call({ lease }, 'discard'); }
   dispose() { if (this.closed) return; this.closed = true; this.socket?.close(); this.rejectPending(); this.listeners.clear(); }
   private rejectPending() {
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(Object.assign(new Error('Browser state disconnected'), { code: 'DISCONNECTED' })); }

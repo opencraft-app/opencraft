@@ -23,12 +23,12 @@ export class SqliteClientResources implements ClientResourcePersistence {
     const row = this.database.prepare("SELECT revision, version, saved_at, value_json FROM client_resources WHERE identity=?").get(resourceKey(key));
     if (!row) return null;
     const record = { revision: Number(row.revision), version: Number(row.version), savedAt: Number(row.saved_at), value: JSON.parse(String(row.value_json)) };
-    validateResourceRecord(record, record.revision);
+    validateResourceRecord(record, record.revision, key.authority);
     return record;
   }
   async compareAndSet(key: ClientResourceKey, revision: number, record: Omit<ClientResourceRecord, "revision">): Promise<boolean> {
     const identity = resourceKey(key);
-    validateResourceRecord(record, revision);
+    validateResourceRecord(record, revision, key.authority);
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const current = this.database.prepare("SELECT revision, version FROM client_resources WHERE identity=?").get(identity);
@@ -53,6 +53,15 @@ export class SqliteClientResources implements ClientResourcePersistence {
   async clearRemoteResource(namespace: string, name: string) {
     resourceKey({ namespace, name, id: "namespace", authority: "remote" });
     this.database.prepare("DELETE FROM client_resources WHERE namespace=? AND authority='remote' AND json_extract(identity,'$[1]')=?").run(namespace, name);
+  }
+  async listLocalKeys(namespace: string, name: string): Promise<readonly ClientResourceKey[]> {
+    resourceKey({ namespace, name, id: "namespace", authority: "local" });
+    return this.database.prepare("SELECT identity FROM client_resources WHERE namespace=? AND authority='local' AND json_extract(identity,'$[1]')=? ORDER BY saved_at DESC, identity").all(namespace, name)
+      .map(row => { const [namespace, name, id, authority] = JSON.parse(String(row.identity)); return { namespace, name, id, authority }; });
+  }
+  async clearLocalResource(namespace: string, name: string): Promise<void> {
+    resourceKey({ namespace, name, id: "namespace", authority: "local" });
+    this.database.prepare("DELETE FROM client_resources WHERE namespace=? AND authority='local' AND json_extract(identity,'$[1]')=?").run(namespace, name);
   }
   close() { this.database.close(); }
 }

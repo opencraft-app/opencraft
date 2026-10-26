@@ -385,7 +385,7 @@ export class BrowserWorkbenchCoordinator {
     }
   }
 
-  private restoreTabs(): void {
+  restoreTabs(): void {
     let parsed: unknown;
     try {
       parsed = JSON.parse(readBrowserMetadataValue(this.storage ?? window.localStorage, STORAGE_KEY) ?? "[]");
@@ -405,7 +405,7 @@ export class BrowserWorkbenchCoordinator {
         createdAt: row.createdAt,
         viewportMode: normalizeBrowserViewportMode(row.viewportMode),
       };
-      this.tabs.set(tab.id, tab);
+      if (!this.tabs.has(tab.id)) this.tabs.set(tab.id, tab);
     }
   }
 }

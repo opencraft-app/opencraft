@@ -55,7 +55,7 @@ for (const kind of ["sqlite", "indexeddb"] as const) {
       : await openIndexedDbClientResources("owners", new IDBFactory());
     const one = new ClientResources(Promise.resolve(storage), "account-a");
     const two = new ClientResources(Promise.resolve({ ...storage, read: storage.read.bind(storage),
-      compareAndSet: storage.compareAndSet.bind(storage), clearRemoteNamespace: storage.clearRemoteNamespace.bind(storage), close() {} }), "account-a");
+      compareAndSet: storage.compareAndSet.bind(storage), clearRemoteNamespace: storage.clearRemoteNamespace.bind(storage), listLocalKeys: storage.listLocalKeys.bind(storage), clearLocalResource: storage.clearLocalResource.bind(storage), close() {} }), "account-a");
     try {
       const first = one.local(draft, "draft-1"), stale = two.local(draft, "draft-1");
       await Promise.all([first.ready, stale.ready]);
@@ -101,7 +101,7 @@ test("remote projection survives a new offline application and a failed refresh;
 
 test("quota failure rejects local commit, but a remote observation remains usable with a visible persistence error", async () => {
   const quota = new Error("QuotaExceededError");
-  const storage: ClientResourcePersistence = { read: async () => null, compareAndSet: async () => { throw quota; }, clearRemoteNamespace: async () => {}, close() {} };
+  const storage: ClientResourcePersistence = { read: async () => null, compareAndSet: async () => { throw quota; }, clearRemoteNamespace: async () => {}, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {} };
   const resources = new ClientResources(Promise.resolve(storage), "account");
   const local = resources.local(draft, "draft"), copy = resources.remote(remote, "list");
   await Promise.all([local.ready, copy.ready]);
@@ -122,7 +122,7 @@ test("scope revocation clears memory immediately and orders cleanup after an in-
   const storage: ClientResourcePersistence = {
     read: async () => null,
     compareAndSet: async key => { events.push(`write:${key.namespace}`); entered(); await gate; events.push("committed"); return true; },
-    clearRemoteNamespace: async namespace => { events.push(`clear:${namespace}`); }, close() {},
+    clearRemoteNamespace: async namespace => { events.push(`clear:${namespace}`); }, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {},
   };
   const resources = new ClientResources(Promise.resolve(storage), "a");
   const old = resources.remote(remote, "catalog"); await old.ready;
@@ -142,7 +142,7 @@ test("scope revocation clears memory immediately and orders cleanup after an in-
 test("fence rejection happens before a remote projection is published or a local write is accepted", async () => {
   const storage: ClientResourcePersistence = {
     read: async () => null, compareAndSet: async () => true,
-    clearRemoteNamespace: async () => {}, close() {},
+    clearRemoteNamespace: async () => {}, listLocalKeys: async () => [], clearLocalResource: async () => {}, close() {},
   };
   const resources = new ClientResources(Promise.resolve(storage), "account");
   const remoteResource = resources.remote(remote, "catalog");

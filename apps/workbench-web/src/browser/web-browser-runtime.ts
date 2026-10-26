@@ -550,7 +550,7 @@ export class WebBrowserPageRuntime {
     }
   }
 
-  private restore(): void {
+  restore(): void {
     let parsed: unknown;
     try {
       parsed = JSON.parse(readBrowserMetadataValue(this.storage ?? window.localStorage, STORAGE_KEY) ?? "[]");
@@ -576,6 +576,7 @@ export class WebBrowserPageRuntime {
       });
       const index = entries.length === 0 ? -1 : Math.max(0, Math.min(Number(row.index) || 0, entries.length - 1));
       const id = row.id as BrowserPageId;
+      if (this.pages.has(id)) continue;
       const history = { entries, index } satisfies BrowserHistoryState;
       this.pages.set(id, {
         id,
