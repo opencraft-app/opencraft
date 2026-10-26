@@ -10,6 +10,11 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ("HandlerRegistration", None),
+    ("HandlerRegistration-Token", "TokenOwnership"),
+    ("HandlerRegistration-Cancel", "RegistrationDoesNotRevoke"),
+    ("HandlerRegistration-Retarget", "ReplyOwner"),
+    ("HandlerRegistration-NoFairness", "temporal:RequestCompletion"),
     ("Recovery", None),
     ("Recovery-Safety", None),
     ("Recovery-DropHint", "WakeConserved"),

@@ -251,7 +251,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly notificationInterceptors = new Set<AppServerNotificationInterceptor>();
   private readonly protocolErrorListeners = new ClientObserverList<Error>();
   private readonly requestLifecycleListeners = new ClientObserverList<AppServerRequestLifecycleEvent>();
-  private readonly serverRequestHandlers = new Map<string, ServerRequestHandler>();
+  private readonly serverRequestHandlers = new Map<string, { readonly handler: ServerRequestHandler }>();
   private readonly serverRequestInterceptors = new Set<AppServerServerRequestInterceptor>();
   private readonly activeServerRequests = new Set<ActiveServerRequest>();
   private readonly removeMessageListener: () => void;
@@ -508,9 +508,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
   ): () => void;
   handleServerRequest(method: string, handler: ServerRequestHandler): () => void;
   handleServerRequest(method: string, handler: ServerRequestHandler): () => void {
-    this.serverRequestHandlers.set(method, handler);
+    const registration = { handler };
+    this.serverRequestHandlers.set(method, registration);
     return () => {
-      if (this.serverRequestHandlers.get(method) === handler) this.serverRequestHandlers.delete(method);
+      if (this.serverRequestHandlers.get(method) === registration) this.serverRequestHandlers.delete(method);
     };
   }
 
@@ -744,10 +745,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const dispatch = async (index: number): Promise<unknown> => {
       if (context.signal.aborted) throw new AppServerClientError("ABORTED", "AppServer request was retired before handler admission");
       if (index >= interceptors.length) {
-        const handler = this.serverRequestHandlers.get(request.method);
-        if (handler === undefined) {
+        const registration = this.serverRequestHandlers.get(request.method);
+        if (registration === undefined) {
           throw new AppServerRpcError({ code: -32601, message: `No client handler for ${request.method}` });
         }
+        const handler = registration.handler;
         return handler(request.params, request, context);
       }
       let called = false;

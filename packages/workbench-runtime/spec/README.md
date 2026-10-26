@@ -530,3 +530,35 @@ dropping terminal observations. Ordinary replay removes these corruptions.
 ```
 npm run test:recovery-chaos -- --suite observers --seed 0 --cases 1000 --steps 120 --output /tmp/recovery-observers
 ```
+
+
+`HandlerRegistration.tla` distinguishes method-registration ownership from an
+already-admitted response context. The positive model has 24 distinct states,
+with one method, two registrations and one request; four exact controls reject
+stale cleanup, registration-owned cancellation, retargeted completion and absent
+handler fairness. Unlike observer deduplication, each handler registration call is
+a replacement even for the same function. This model does not prove TypeScript,
+interceptor scheduling or transport behavior.
+
+The ninth CLI suite uses actual Client/MemoryTransport callbacks, native lifetime
+signals and wire replies. Two stable callback functions, registration tokens,
+held handler results, synchronous registration reentry, exceptions, withdrawal
+and physical close are exercised against external admission/response owners.
+No private handler registry is inspected. Three test-only adapter corruptions
+cover stale cleanup, result retargeting and cancellation owned by registration.
+A quiescent suffix probes the existing registration before installing a fresh one,
+then resolves held results before the fresh-owner probe; the suffix does not
+manufacture pending results crossing a registration change. Closed traces issue no
+healthy native suffix.
+
+```
+npm run test:recovery-chaos -- --suite handlers --seed 0 --cases 1000 --steps 120 --output /tmp/recovery-handlers
+npm run test:recovery-chaos -- --suite handlers --mutant stale-token --seed 0 --output /tmp/handler-control
+npm run test:recovery-chaos -- --replay /tmp/handler-control/failure-minimal.json --output /tmp/handler-replay
+```
+
+Input events, callback entries, handler completions and native response frames are
+separate counts. A completed handler for a withdrawn request is not a wire reply.
+Seeds and selected source hashes identify the actual run; shrinking preserves the
+exact rule and normal replay removes the test corruption. Existing execution and
+fanout suites retain their separate history/connection/consumer scopes.
