@@ -44,6 +44,7 @@ export async function startIndependentEngineHost(options) {
     pi = new PiEngine({
       ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
       dataDirectory, directory: join(dataDirectory, 'pi'),
+      attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
     });

@@ -92,10 +92,13 @@ export class PiEngine {
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
-  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort }) {
+  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
+  }
+  private compileInput(input: Value[], additionalContext: Value | null | undefined, cwd: string, model: Value) {
+    return compilePiInput(input, additionalContext, cwd, model, { attachmentDirectory: this.options.attachmentDirectory });
   }
   ownsThread(id: string) { return id.startsWith("pi_"); }
   ownsModel(id: string) { return id.startsWith("pi:"); }
@@ -696,7 +699,7 @@ export class PiEngine {
         if (!model) throw new Error("Pi model is unavailable");
         if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
         const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
-        const content = await compilePiInput(params.input, additionalContext, session.cwd, model);
+      const content = await this.compileInput(params.input, additionalContext, session.cwd, model);
         const item: PiQueuedInput = { id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
           input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
         session.pendingRecovery = true; await this.save(session);
@@ -751,7 +754,7 @@ export class PiEngine {
       if (!model) throw new Error("Pi model is unavailable");
       const cwd = await workspace(params, session.cwd);
       if (Array.isArray(params.input)) validatePiSkillInput(params.input, cwd, this.options.modelDirectory ?? this.options.directory);
-      const content = await compilePiInput(params.input, params.additionalContext, cwd, model);
+      const content = await this.compileInput(params.input, params.additionalContext, cwd, model);
       const { native } = await this.configure(session, params);
       const createdAtMs = Date.now();
       const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "complete", status: "inProgress", error: null,
@@ -787,7 +790,7 @@ export class PiEngine {
       const ref = selection(session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
       if (!model) throw new Error("Pi model is unavailable");
       if (Array.isArray(params.input)) validatePiSkillInput(params.input, session.cwd, this.options.modelDirectory ?? this.options.directory);
-      const content = await compilePiInput(params.input, params.additionalContext, session.cwd, model);
+      const content = await this.compileInput(params.input, params.additionalContext, session.cwd, model);
       const requestId = clientId ? `${params.expectedTurnId}:steer:client:${clientId}` : `${params.expectedTurnId}:steer:${randomUUID()}`;
       await native.steer(content, { turnId: requestId, steerTurnId: params.expectedTurnId, clientId, input: params.input,
         additionalContext: params.additionalContext ?? null, createdAtMs: Date.now() }, requestId, params.expectedTurnId);
