@@ -2,8 +2,12 @@ import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version"
 // OpenCraft native gateway; Host remains the logical routing owner.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { createConnection } from 'node:net';
 import { WebSocket, WebSocketServer } from "ws";
-async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4 } = {}) {
+async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4, submissionContext = { sender: null }, isCurrent = () => true } = {}) {
+  const current = () => { try { return isCurrent() === true; } catch { return false; } };
+  const scoped = submissionContext.sender !== null || Object.keys(submissionContext).length > 1;
+  const trustedPeers = new Map();
   const http = createServer((_request, response) => {
     response.writeHead(404);
     response.end();
@@ -15,7 +19,9 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
     socket.once("close", () => sockets.delete(socket));
   });
   http.on("upgrade", (request, socket, head) => {
-    if (request.url !== "/rpc") {
+    const peer = trustedPeers.get(request.socket.remotePort);
+    if (request.url !== "/rpc" || !current() || (scoped &&
+      (request.socket.remoteAddress !== '127.0.0.1' || !peer || peer.destroyed))) {
       socket.destroy();
       return;
     }
@@ -53,6 +59,7 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
       });
     };
     const send = (frame) => {
+      if (!current()) { close(); return; }
       const requestId = `send:${++sequence}`;
       if (sends.size >= 256) {
         close();
@@ -126,7 +133,7 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
             if (message.hostId === "local-codex" && message.generation === generation) write(message.frame);
           } else if (message.type === "fatal" || message.type === "host/status" && ["failed", "closed"].includes(message.status.state)) close();
         }
-      }, id);
+      }, id, submissionContext);
       receive?.({ type: "hello", protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: id });
     } catch {
       close();
@@ -146,7 +153,17 @@ async function createSshNativeRpcGateway(appHostServer, { connectTimeoutMs = 3e4
   }
   return {
     port: http.address().port,
+    // The in-process SSH owner alone can create a peer carrying this context.
+    // A guessed loopback listener port does not confer the authenticated identity.
+    connect() {
+      const peer = createConnection({ host: '127.0.0.1', port: http.address().port });
+      let localPort;
+      peer.once('connect', () => { localPort = peer.localPort; trustedPeers.set(localPort, peer); });
+      peer.once('close', () => { if (trustedPeers.get(localPort) === peer) trustedPeers.delete(localPort); });
+      return peer;
+    },
     async close() {
+      for (const peer of trustedPeers.values()) peer.destroy();
       for (const client of ws.clients) client.terminate();
       for (const socket of sockets) socket.destroy();
       await Promise.all([new Promise((resolve) => ws.close(resolve)), new Promise((resolve) => http.close(resolve))]);

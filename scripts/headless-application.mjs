@@ -334,18 +334,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
       membership = new MembershipStore(join(dataDirectory, 'memberships.sqlite'));
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
+    // Identity adapters can bind their own credentials to this stable Human authority.
+    actorStore = new ActorStore(join(dataDirectory, 'actors.sqlite'));
     if (composition.createIdentity) {
       identity = await composition.createIdentity({ dataDirectory, membership, relayConfiguration,
         hubAuthority: hubController.node?.store.state.authority ?? null,
         resolveIdentity: request => instanceAccess?.authenticate(request) ?? null,
-        getInstanceAccess: () => instanceAccess, machineIdentity });
+        getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration });
       validateHeadlessIdentity(identity);
     }
     if (options.accessMemberProviders?.length && !identity?.providers.length && !relayConfiguration && !humanConfiguration && !hubController.node?.store.state.authority)
       throw new Error('Authenticated membership requires an identity provider');
     // This identity authority is persistent even without an external human identity provider.
     // Creating it does not enable instance admission or change legacy resource ownership.
-    actorStore = new ActorStore(join(dataDirectory, 'actors.sqlite'));
     const externalProviders = [
       ...(identity?.providers ?? []), ...(relayConfiguration ? [relayConfiguration.provider] : []),
       ...(hubController.node ? [hubController.node] : []),
@@ -721,6 +722,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       const privateAddress = await web.listen({ host: "127.0.0.1", port: 0 });
       sshNativeRpc = await createSshNativeRpcGateway(appHostServer);
       ingress = createSshHttpIngress({ ...ingressConfiguration, httpPort: privateAddress.port,
+        ...(identity?.sshAccess ? {
+          resolveAuthorizedKeys: username => identity.sshAccess.publicKeys(username),
+          authorizeSession: (username, key) => identity.sshAccess.authorize(username, key),
+          createNativeSession: authorization => createSshNativeRpcGateway(appHostServer, authorization),
+        } : {}),
         codexPort: sshNativeRpc.port, codexControl: createSshCodexControl(appHostServer,
           options.codexExecutable ?? join(root, "runtime/codex/bin/codex")) });
       address = await ingress.listen({ host: listenHost, port });

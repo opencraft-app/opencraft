@@ -4,6 +4,28 @@
 
 入口为 `/__opencraft_auth/`，提供登录、退出、绑定本地账号或 OIDC、解绑。已有身份必须从当前账号中主动绑定；如果目标身份已经属于另一 Actor，会拒绝操作，不能借绑定迁移资源。增加绑定和解绑要求最近十分钟内的登录证明；OIDC 绑定同时要求身份平台重新认证。解绑使该 Actor 的旧登录上下文失效，需要用保留的方式重新登录。最后一种登录身份不能解绑。
 
+## Trusted registration and SSH credential adapters
+
+Compiled identity adapters may subscribe to `ActorStore.onHumanRegistered`.
+This is a synchronous post-commit notification for a newly created, verified
+Human only; later authentication, display-name changes and additional identity
+bindings do not emit another registration. Adapters own any credential storage
+and provisioning policy. Core does not scan or backfill historical identities.
+Adapter failures have sanitized diagnostics and do not undo the independently
+committed Human registration.
+
+An optional Headless identity adapter's `sshAccess.publicKeys/authorize` port
+resolves current public keys and trusted per-connection authority. The SSH
+ingress still verifies the signature, rechecks authority and closes revoked
+connections. Its native gateway passes the server-owned submission/Actor context
+to AppHost rather than accepting identity fields from client frames. Scoped keys
+use an in-process peer factory: only TCP peers opened by that SSH owner can
+upgrade the scoped native gateway. An unrelated loopback connection cannot gain
+the context by discovering its listener port. Scoped keys
+cannot enter the legacy unscoped HTTP bridge. Static SSH configuration remains
+available independently; no provider-specific credential policy is built into
+core.
+
 ## 自部署账号插件
 
 ### Headless composition contract

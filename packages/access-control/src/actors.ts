@@ -37,6 +37,12 @@ function actor(row: Record<string, unknown>): Actor {
 /** Server-owned identity authority. Mutation methods are trusted local operations;
  * network callers must go through ActorAccess, not call these using body-supplied identities. */
 export class ActorStore {
+  readonly #humanRegistrationListeners = new Set<(principal: Principal, context: ActorContext) => void>();
+  /** Trusted local credential adapters; only newly registered humans emit this post-commit event. */
+  onHumanRegistered(listener: (principal: Principal, context: ActorContext) => void): () => void {
+    this.#humanRegistrationListeners.add(listener);
+    return () => { this.#humanRegistrationListeners.delete(listener); };
+  }
   readonly #resourceAuthorities = new Set<(resource: string) => boolean>();
   /** Trusted local resource adapters only; registration confers no grants. */
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
@@ -111,16 +117,25 @@ export class ActorStore {
   resolveHuman(verified: Principal): ActorContext | null {
     const p = parsePrincipal(verified);
     if (p.expiresAt <= this.now()) return null;
-    return this.#transaction(() => {
+    let registered = false;
+    const context = this.#transaction(() => {
       const key = principalKey(p);
       const binding = this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(key);
       const existing = binding ? this.get(binding.actor_id as string)! : null;
       if (existing && (!existing.enabled || existing.kind !== 'human')) return null;
       const identity = existing ?? this.#create('human', p.displayName, null);
-      if (!existing) this.#db.prepare('INSERT INTO actor_bindings VALUES(?,?)').run(key, identity.id);
+      if (!existing) {
+        this.#db.prepare('INSERT INTO actor_bindings VALUES(?,?)').run(key, identity.id);
+        registered = true;
+      }
       else if (existing.displayName !== p.displayName) this.#db.prepare('UPDATE actors SET display_name=? WHERE id=?').run(name(p.displayName), identity.id);
       return Object.freeze({ actorId: identity.id, generation: identity.generation, credentialId: null, expiresAt: p.expiresAt });
     });
+    if (registered && context) for (const listener of this.#humanRegistrationListeners) {
+      try { listener(p, context); }
+      catch { console.warn('Human registration credential adapter failed'); }
+    }
+    return context;
   }
   createSession(displayName: string, operator: string): Actor {
     return this.#transaction(() => this.#create('session', displayName, operator));
@@ -199,7 +214,7 @@ export class ActorStore {
         .get(actorId, resource, action);
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#db.close(); }
+  close() { this.#humanRegistrationListeners.clear(); this.#db.close(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {
