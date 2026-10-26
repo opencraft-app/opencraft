@@ -854,3 +854,44 @@ npm run test:recovery-chaos -- --suite forwarding --seed 0 --cases 1000 --steps 
 npm run test:recovery-chaos -- --suite forwarding --mutant queued-replay --seed 0 --output /tmp/forwarding-control
 npm run test:recovery-chaos -- --replay /tmp/forwarding-control/failure-minimal.json --output /tmp/forwarding-replay
 ```
+
+## Remote Host claim handoff and unknown grants
+
+HostClaimHandoff has 22 positive states without a peer and 18 with a peer. Its
+known reservation survives local delivery retirement until a fresh reservation
+protects replacement. Ten negative controls isolate forgetting the old claim,
+release before reservation, unordered control delivery, waiting for an obsolete
+release ACK, lease ID reuse, retargeted old cleanup, peer deletion, release behind
+writable FIFO, and missing local or Server fairness.
+
+HostClaimGrant has 36 positive states. Eleven negative controls cover forgotten
+unknown reservations, disposal before an own grant, dependence on a stale Promise
+continuation, duplicate/reentrant release, generation-only cleanup, premature
+release, granting from shared open, and missing grant/local/Server cooperation.
+The missing-grant case deliberately refutes unconditional reclamation: with the
+existing protocol, local cancellation does not reveal an unknown generation.
+The positive guarantee is reclamation after the own grant arrives. Existing
+bounded late-grant policy remains a separate implementation obligation.
+
+Together these add 24 configurations. They describe finite protocol obligations,
+not TypeScript refinement or failed physical close recovery. The eighteenth
+suite, `claims`, runs the actual Server, bridge, channels and RPC Clients and
+checks an input-owned reservation/FIFO/physical-lifetime ledger. It includes
+same-record renewal, unique old releases, current cleanup outside ordinary
+backpressure, same-page peers, other pages, native cycles, late forwarding
+results and withheld release responses. Unknown startup grants are additionally
+covered by actual component tests and HostClaimGrant; this suite does not claim
+that entire combined state space.
+
+```sh
+npm run test:recovery-chaos -- --suite claims --seed 0 --cases 1000 --steps 120 --output /tmp/claim-chaos
+npm run test:recovery-chaos -- --suite claims --mutant leak-old --seed 0 --output /tmp/claim-control
+npm run test:recovery-chaos -- --replay /tmp/claim-control/failure-minimal.json --output /tmp/claim-replay
+```
+
+The three tool controls are `leak-old`, `retarget-peer`, and `wait-cleanup-ack`.
+They corrupt observations solely to exercise detection and same-rule shrinking.
+Separate tests inject unchanged old Server and Client constructors at the declared
+fixture dependency and replay the minimized failures normally on the repaired
+implementation; they do not mutate prototypes, private ledgers, or production
+source. A successful local release is not a claim about remote Turn completion.

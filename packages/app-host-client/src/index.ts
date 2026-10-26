@@ -98,6 +98,39 @@ function abortError(message: string): Error {
   return error;
 }
 
+/** A remote reservation outlives the local delivery lifetime and owns exactly
+ * one release. Its own grant may arrive after local cancellation or timeout. */
+class HostRemoteClaim {
+  private generation = 0;
+  private retired = false;
+  private background = true;
+  private releaseOperation: Promise<void> | null = null;
+  constructor(private readonly release: (generation: number, background: boolean) => Promise<void>) {}
+
+  acknowledge(generation: number): void {
+    this.generation = generation;
+    if (this.retired) void this.releaseOnce().catch(() => undefined);
+  }
+
+  retire(background = true): Promise<void> {
+    if (!this.retired) this.background = background;
+    this.retired = true;
+    return this.releaseOnce();
+  }
+
+  private releaseOnce(): Promise<void> {
+    if (this.generation === 0) return Promise.resolve();
+    if (this.releaseOperation !== null) return this.releaseOperation;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const operation = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    // Install ownership before the Port callback can synchronously reenter.
+    this.releaseOperation = operation;
+    try { void this.release(this.generation, this.background).then(resolve, reject); }
+    catch (error) { reject(error); }
+    return operation;
+  }
+}
+
 /** A native, per-claim lifetime; observed status publications never grant it.
  * Pending generations are matched at receipt of this claim's own response. */
 class HostDeliveryLifetime {
@@ -108,13 +141,14 @@ class HostDeliveryLifetime {
   private disposed = false;
 
   constructor(
-    private readonly open: (owner: HostDeliveryLifetime, signal: AbortSignal) => Promise<AppHostConnectResult>,
+    readonly claim: HostRemoteClaim,
+    private readonly open: (owner: HostDeliveryLifetime, signal: AbortSignal, posted?: () => void) => Promise<AppHostConnectResult>,
     private readonly remove: () => void,
   ) {}
 
   get active(): boolean { return !this.disposed && this.generation > 0 && this.retirement === undefined; }
   get signal(): AbortSignal { return this.abort.signal; }
-  connect(signal: AbortSignal): Promise<AppHostConnectResult> { return this.open(this, signal); }
+  connect(signal: AbortSignal, posted?: () => void): Promise<AppHostConnectResult> { return this.open(this, signal, posted); }
 
   acknowledge(generation: number): void {
     this.generation = generation;
@@ -146,6 +180,7 @@ class HostDeliveryLifetime {
 
 export class MessagePortAppHostClient {
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly releases = new Map<string, PendingRequest>();
   private readonly lateResults = new Map<string, (value: unknown) => void>();
   private readonly hostListeners = new Map<string, ClientObserverList<HostEvent>>();
   private readonly hostLifetimes = new Map<string, Set<HostDeliveryLifetime>>();
@@ -202,7 +237,8 @@ export class MessagePortAppHostClient {
     if (owners === undefined) { owners = new Set(); this.hostLifetimes.set(hostId, owners); }
     const registry = owners;
     const lifetime = new HostDeliveryLifetime(
-      (owner, signal) => this.connectHostAttempt(hostId, leaseId, signal, owner),
+      this.createClaim(hostId, leaseId),
+      (owner, signal, posted) => this.connectHostAttempt(hostId, leaseId, signal, owner, posted),
       () => {
         registry.delete(lifetime);
         if (registry.size === 0 && this.hostLifetimes.get(hostId) === registry) this.hostLifetimes.delete(hostId);
@@ -210,6 +246,29 @@ export class MessagePortAppHostClient {
     );
     registry.add(lifetime);
     return lifetime;
+  }
+
+  private createClaim(hostId: string, leaseId: string): HostRemoteClaim {
+    return new HostRemoteClaim((generation, background) => background
+      ? this.releaseObsoleteClaim(hostId, leaseId, generation)
+      : this.request<void>({ type: "host/disconnect", hostId, leaseId, generation }, undefined, undefined, undefined, undefined, true));
+  }
+
+  private releaseObsoleteClaim(hostId: string, leaseId: string, generation: number): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    // This is an already-known reservation, not an unknown startup grant.
+    // Its response need not be retained and cannot occupy current RPC budget.
+    try {
+      this.port.postMessage({ type: "host/disconnect", hostId, leaseId, generation,
+        requestId: `${this.rendererId}:${++this.requestSequence}` });
+      return Promise.resolve();
+    } catch (cause) {
+      // A failed Port write cannot silently orphan an owned remote claim.
+      // This is a real bridge failure, never the normal reclamation mechanism.
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      this.terminate(error);
+      return Promise.reject(error);
+    }
   }
 
   createLeaseId(): string { return `${this.rendererId}:lease:${++this.leaseSequence}`; }
@@ -223,17 +282,23 @@ export class MessagePortAppHostClient {
   }
 
   private async connectHostAttempt(
-    hostId: string, leaseId: string, signal?: AbortSignal, owner?: HostDeliveryLifetime,
+    hostId: string, leaseId: string, signal?: AbortSignal, owner?: HostDeliveryLifetime, posted?: () => void,
   ): Promise<AppHostConnectResult> {
     if (signal?.aborted) throw abortError("App Host connection was aborted");
     await waitForControl(this.waitUntilReady(), this.options.controlTimeoutMs ?? 30_000, signal);
     if (signal?.aborted) throw abortError("App Host connection was aborted");
+    const claim = owner?.claim ?? this.createClaim(hostId, leaseId);
     const operation = this.request<AppHostConnectResult>({ type: "host/connect", hostId, leaseId }, (value) => {
       const result = value as AppHostConnectResult;
       // Timeout ends the local wait, not process-scoped activation. A late
       // grant belongs only to the expired lease and must be released.
-      void this.disconnectHost(hostId, leaseId, result.generation).catch(() => undefined);
-    }, undefined, (value) => owner?.acknowledge((value as AppHostConnectResult).generation));
+      claim.acknowledge(result.generation);
+      void claim.retire().catch(() => undefined);
+    }, undefined, (value) => {
+      const generation = (value as AppHostConnectResult).generation;
+      claim.acknowledge(generation);
+      owner?.acknowledge(generation);
+    }, posted);
     if (signal === undefined) return operation;
     return new Promise<AppHostConnectResult>((resolve, reject) => {
       let settled = false;
@@ -243,9 +308,7 @@ export class MessagePortAppHostClient {
         reject(abortError("App Host connection was aborted"));
         // A Renderer abort never owns the process-scoped startup operation.
         // Once the Host acknowledges the reserved claim, release that claim.
-        void operation.then((result) =>
-          this.disconnectHost(hostId, leaseId, result.generation).catch(() => undefined)
-        ).catch(() => undefined);
+        void claim.retire().catch(() => undefined);
       };
       signal.addEventListener("abort", onAbort, { once: true });
       if (signal.aborted) onAbort();
@@ -312,12 +375,12 @@ export class MessagePortAppHostClient {
   }
 
   private request<TResult>(input: AppHostRequestInput, onLateResult?: (value: unknown) => void, signal?: AbortSignal,
-    onResponse?: (value: unknown) => void): Promise<TResult> {
+    onResponse?: (value: unknown) => void, posted?: () => void, cleanup = false): Promise<TResult> {
     if (signal?.aborted) return Promise.reject(abortError("App Host request was aborted"));
     if (this.closed) {
       return Promise.reject(this.terminalError ?? new Error("App Host connection is closed"));
     }
-    if (this.pending.size + this.lateResults.size >= (this.options.maxPendingRequests ?? 256)) {
+    if (!cleanup && this.pending.size + this.lateResults.size >= (this.options.maxPendingRequests ?? 256)) {
       if (this.lateResults.size > 0) {
         // Expired claims cannot be forgotten: their late grants still need an
         // owner. Retiring the bridge releases its attachments at the server
@@ -332,17 +395,20 @@ export class MessagePortAppHostClient {
       }
       return Promise.reject(new Error("App Host pending request limit reached"));
     }
+    // An already-owned claim has at most one release waiter. Reclamation can
+    // neither be denied by normal RPC backpressure nor occupy its request budget.
+    const requests = cleanup ? this.releases : this.pending;
     const requestId = `${this.rendererId}:${++this.requestSequence}`;
     return new Promise<TResult>((resolve, reject) => {
       // host/send acknowledges forwarding, not execution. Its AppServer RPC
       // retains its own deadline and reconciliation policy (e.g. native fork).
       const timer = input.type === "host/send" ? null : setTimeout(() => {
-        this.pending.delete(requestId);
+        requests.delete(requestId);
         if (onLateResult) this.lateResults.set(requestId, onLateResult);
         reject(new Error(`App Host ${input.type} timed out`));
       }, this.options.controlTimeoutMs ?? 30_000);
       const abort = () => {
-        this.pending.delete(requestId);
+        requests.delete(requestId);
         clearTimer();
         reject(abortError("App Host request was aborted"));
       };
@@ -350,7 +416,7 @@ export class MessagePortAppHostClient {
         if (timer !== null) clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
       };
-      this.pending.set(requestId, {
+      requests.set(requestId, {
         resolve: (value) => { onResponse?.(value); resolve(value as TResult); },
         reject,
         clearTimer,
@@ -358,10 +424,13 @@ export class MessagePortAppHostClient {
       signal?.addEventListener("abort", abort, { once: true });
       try {
         this.port.postMessage({ ...input, requestId } as RendererToAppHostMessage);
+        posted?.();
       } catch (cause) {
         clearTimer();
-        this.pending.delete(requestId);
-        reject(cause instanceof Error ? cause : new Error(String(cause)));
+        requests.delete(requestId);
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        reject(error);
+        if (cleanup) this.terminate(error);
       }
     });
   }
@@ -380,6 +449,8 @@ export class MessagePortAppHostClient {
     this.rejectReady(error);
     for (const request of this.pending.values()) { request.clearTimer(); request.reject(error); }
     this.pending.clear();
+    for (const request of this.releases.values()) { request.clearTimer(); request.reject(error); }
+    this.releases.clear();
     this.lateResults.clear();
     // Admit every Host cut before any observer can modify a later registry.
     const terminal: HostEvent = { generation: 0, terminalReason: error.message, terminalFailure: appHostFailure(error) };
@@ -410,7 +481,8 @@ export class MessagePortAppHostClient {
       return;
     }
     if (message?.type === "response") {
-      const pending = this.pending.get(message.requestId);
+      const requests = this.pending.has(message.requestId) ? this.pending : this.releases;
+      const pending = requests.get(message.requestId);
       if (pending === undefined) {
         const late = this.lateResults.get(message.requestId);
         this.lateResults.delete(message.requestId);
@@ -418,7 +490,7 @@ export class MessagePortAppHostClient {
         return;
       }
       pending.clearTimer();
-      this.pending.delete(message.requestId);
+      requests.delete(message.requestId);
       if (message.ok) pending.resolve(message.result);
       else pending.reject(appHostError(message.error));
       return;
@@ -496,19 +568,21 @@ class AppHostChannelTransport implements DuplexTransport {
     if (this.connectOperation !== null) return this.connectOperation;
     if (signal?.aborted) return Promise.reject(abortError("App Host connection was aborted"));
     const leaseId = this.client.createLeaseId();
+    const previous = this.lifetime;
     this.leaseId = leaseId;
     this.generation = 0;
     this.lifetime?.dispose();
     const owner = this.createLifetime(leaseId);
     this.lifetime = owner;
     const connectionSignals = combineAbortSignals([...(signal ? [signal] : []), this.closeAbort.signal]);
-    const operation = Promise.resolve().then(() => owner.connect(connectionSignals.signal))
+    const releasePrevious = () => { void previous?.claim.retire().catch(() => undefined); };
+    const operation = Promise.resolve().then(() => owner.connect(connectionSignals.signal, releasePrevious))
       .then((result) => {
         const revoked = owner.retirement;
         if (this.closed || this.lifetime !== owner || !owner.active) {
           // Channel disposal does not close the shared client. A grant that
           // arrives afterwards still belongs to this retired lease only.
-          void this.client.disconnectHost(this.hostId, leaseId, result.generation).catch(() => undefined);
+          void owner.claim.retire().catch(() => undefined);
           if (revoked !== undefined) {
             throw appHostError({ code: revoked.failure?.code ?? "APP_HOST_DISCONNECTED",
               message: revoked.reason ?? "Host disconnected before its connection acknowledgement",
@@ -527,6 +601,8 @@ class AppHostChannelTransport implements DuplexTransport {
         }
       })
       .catch((cause) => {
+        releasePrevious();
+        void owner.claim.retire().catch(() => undefined);
         const reason = cause instanceof Error ? cause.message : String(cause);
         const failure = owner.retirement?.failure ?? (cause instanceof Error ? appHostFailure(cause) : undefined);
         if (!this.closed && this.lifetime === owner) {
@@ -576,9 +652,7 @@ class AppHostChannelTransport implements DuplexTransport {
     this.closeAbort.abort();
     this.setStatus({ state: "closing" });
     try {
-      if (this.generation > 0) {
-        await this.client.disconnectHost(this.hostId, this.leaseId, this.generation).catch(() => undefined);
-      }
+      await this.lifetime?.claim.retire(false).catch(() => undefined);
     } finally {
       this.unsubscribe();
       this.setStatus({ state: "closed" });

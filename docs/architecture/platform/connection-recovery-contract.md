@@ -1108,3 +1108,60 @@ Client regressions and the forwarding chaos suite additionally exercise repeated
 loss, synchronous provider reentry, manual disposition, contextual sends, peer
 Hosts and explicit physical-close release. An opaque provider that never reports
 its native replacement remains outside this guarantee.
+
+## Remote claim reclamation and release control
+
+A local native delivery lifetime and a remote Host reservation have different
+owners. A unique lease ID remains the reservation identity even when the same
+Host record generation survives native close/open. Retiring delivery does not
+mean its remote claim has disappeared. A channel retains that claim until its
+own release is posted, including when its grant arrives after cancellation or
+local timeout. The shared Host open status never supplies a missing own grant.
+
+Renewal posts the fresh connect before releasing the obsolete known claim.
+With an ordered, reliable Port and the Server's reservation-before-startup
+admission, the fresh reservation protects the physical handoff. The Server's
+trusted reset remains a separate authority: this ordering is not a claim that
+all asynchronous reset waiters have already reserved. Each release captures its
+own lease and generation and installs its single local release owner before
+calling a potentially reentrant Port. Late grant handlers, cancellation, channel
+close, and old Promise continuations cannot release a successor or issue two
+releases for the same claim.
+
+An obsolete known claim sends the existing disconnect control without retaining
+its response in the current RPC budget. Closing the current known claim retains
+a release waiter in a separate cleanup ledger, preserving its physical close
+barrier without consuming or depending on the ordinary request quota. Unknown
+startup grants still require their own response and remain covered by the
+existing bounded pending/late-result policy; they cannot simply be forgotten to
+free capacity. A failed required Port write terminalizes that broken bridge;
+closing a healthy shared bridge is not the normal reclamation path.
+
+The Server receives claim disconnect controls independently of writable-frame
+FIFO. Removing a claim first retires only that claim's local forwarding waits.
+Queued frames still validate the captured record, native epoch, and claim object
+before admission. Other live claims keep their own waits and physical lifetime;
+valid writes retain FIFO. The provider receives a combined native/claim signal,
+but local settlement does not require an already-admitted provider operation to
+return. It does not establish remote execution cancellation or authorize replay.
+Logical disconnect notification and physical cleanup retain their existing
+outcome contracts; a rejected physical close is not evidence that its resource
+was released, and is a separate recovery obligation.
+
+HostClaimHandoff checks known-grant replacement, fresh reservations, peers,
+release ordering and progress without an old release ACK. HostClaimGrant checks
+unknown-grant retention, own-response authority, reentrant/late single-release
+ownership and conditional reclamation after a grant arrives. Both require local
+and Server fairness. The no-grant negative control explicitly refutes
+unconditional reclamation when the generation required by the existing protocol
+never arrives. These are finite protocol abstractions, not a TypeScript
+refinement proof or a proof of every physical provider outcome.
+
+The `claims` chaos suite runs actual AppHostServer, MessagePortAppHostClient,
+channels and initialized RPC Clients. Saved inputs predict remote release count,
+physical lifetime, FIFO admissions and local outcomes across native cycles,
+renewal, close, peers, held sends and withheld release responses. Healing is an
+explicit saved event that releases declared fixture dependencies and proves a
+fresh actual initialize/echo. Teardown closes callers before releasing fixture
+gates. Tool negative controls are synthetic observations; replay against the
+unchanged old Client/Server classes is a separate production counterexample.

@@ -7,7 +7,7 @@ import {
   type AppHostToRendererMessage,
   type RendererToAppHostMessage,
 } from "@opencraft/app-host-protocol";
-import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
+import { combineAbortSignals, type DuplexTransport, type TransportStatus, type TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** Trusted server composition port, not a renderer-supplied identity or public extension ABI. */
@@ -51,6 +51,7 @@ interface HostClaim {
   readonly connection: AppHostServerConnection;
   readonly leaseId: string;
   generation: number | null;
+  readonly forwarding: AbortController;
 }
 
 /** One lifecycle authority for one physical Host. Claims exist before startup. */
@@ -193,6 +194,7 @@ export class AppHostServer {
       for (const [key, claim] of slot.claims) {
         if (claim.connection !== connection) continue;
         slot.claims.delete(key);
+        claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim released" }));
         removed = true;
       }
       if (removed) released.add(slot);
@@ -229,7 +231,8 @@ export class AppHostServer {
       );
       const frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
-      await this.forward(record, frame, connection.submissionContext);
+      const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;
+      await this.forward(record, frame, connection.submissionContext, claim.forwarding.signal);
       return undefined;
     }
     if (message.type === "host/disconnect") {
@@ -267,14 +270,16 @@ export class AppHostServer {
   /** End the Server's local queue wait when its captured native epoch retires.
    * The provider operation may already be admitted and need never return. Its
    * late result belongs only to this waiter and cannot release a newer epoch. */
-  private forward(record: HostRecord, frame: string, context: TransportSubmissionContext): Promise<void> {
-    const signal = record.forwarding.signal;
+  private forward(record: HostRecord, frame: string, context: TransportSubmissionContext, claimSignal: AbortSignal): Promise<void> {
+    const signals = combineAbortSignals([record.forwarding.signal, claimSignal]);
+    const signal = signals.signal;
     return new Promise<void>((resolve, reject) => {
       let settled = false;
       const finish = (failed: boolean, error?: unknown) => {
         if (settled) return;
         settled = true;
         signal.removeEventListener("abort", abort);
+        signals.dispose();
         if (failed) reject(error); else resolve();
       };
       const abort = () => finish(true, signal.reason instanceof Error ? signal.reason
@@ -321,7 +326,7 @@ export class AppHostServer {
     const key = this.claimKey(connection, leaseId);
     let claim = slot.claims.get(key);
     if (claim === undefined) {
-      claim = { connection, leaseId, generation: null };
+      claim = { connection, leaseId, generation: null, forwarding: new AbortController() };
       slot.claims.set(key, claim);
     }
     try {
@@ -340,7 +345,10 @@ export class AppHostServer {
       connection.rememberLogicalClient(key, hostId);
       return record;
     } catch (cause) {
-      if (slot.claims.get(key) === claim) slot.claims.delete(key);
+      if (slot.claims.get(key) === claim) {
+        slot.claims.delete(key);
+        claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim activation failed" }));
+      }
       if (slot.claims.size === 0) void this.stopSlot(slot, false);
       throw cause;
     }
@@ -490,6 +498,7 @@ export class AppHostServer {
     }
     const record = slot.record;
     slot.claims.delete(key);
+    claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim released" }));
     connection.forgetLease(hostId, leaseId, generation);
     try {
       if (this.options.logicalClientRouting && record) {
@@ -587,11 +596,11 @@ export class AppHostServerConnection {
         this.post({ type: "response", requestId: message.requestId, ok: true, result: null });
         return;
       }
-      // Admission is owned by the slot, not by the previous RPC's I/O queue.
+      // Claim control is owned by the slot, not by the previous RPC's I/O queue.
       // Otherwise a hung close/send can prevent even the admission deadline
       // from starting. Writable frame ordering remains on the per-host queue.
       if (this.ready && !this.closed && typeof message === "object" && message !== null
-        && "type" in message && message.type === "host/connect") {
+        && "type" in message && (message.type === "host/connect" || message.type === "host/disconnect")) {
         void this.receive(message);
         return;
       }

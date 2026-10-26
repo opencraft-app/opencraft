@@ -160,15 +160,20 @@ test('raw control forwarding retains a native manual failure disposition', async
 });
 
 test('a trusted same-key claim replacement cannot authorize an earlier queued frame', async () => {
-  const f = hostForwardingFixture(), page = f.renderer(); let queuedOutcome = 'pending';
+  const f = hostForwardingFixture(), page = f.renderer(); let queuedOutcome = 'pending', oldOutcome = 'pending';
   try {
     const lease = page.bridge.createLeaseId(), grant = await page.bridge.connectHost('a', lease);
-    const old = page.bridge.sendHostFrame('a', lease, grant.generation, heldForwardingFrame('old')); await flushForwarding();
+    const old = page.bridge.sendHostFrame('a', lease, grant.generation, heldForwardingFrame('old'))
+      .then(() => { oldOutcome = 'resolved'; }, () => { oldOutcome = 'rejected'; }); await flushForwarding();
     const queued = page.bridge.sendHostFrame('a', lease, grant.generation, heldForwardingFrame('queued')).then(() => { queuedOutcome = 'resolved'; }, () => { queuedOutcome = 'rejected'; });
     await flushForwarding();
     // This is the actual Server's trusted public API; no private claim map is touched.
-    await f.server.handle(page.connection, { type: 'host/disconnect', hostId: 'a', leaseId: lease, generation: grant.generation, requestId: 'trusted-release' });
-    await page.bridge.connectHost('a', lease); f.physical.settle('old'); await old; await flushForwarding();
+    const releasing = f.server.handle(page.connection, { type: 'host/disconnect', hostId: 'a', leaseId: lease, generation: grant.generation, requestId: 'trusted-release' });
+    // Replace synchronously before the old queue resumes, preserving the ABA
+    // case even though releasing a claim now ends its old forwarding wait.
+    const replacing = f.server.handle(page.connection, { type: 'host/connect', hostId: 'a', leaseId: lease, requestId: 'trusted-replace' });
+    await releasing; await replacing; await old; await flushForwarding();
+    assert.equal(oldOutcome, 'rejected'); f.physical.settle('old');
     assert.equal(queuedOutcome, 'rejected'); assert.deepEqual(f.physical.held.map(e => e.tag), ['old']); await queued;
   } finally { await f.close(); }
 });
