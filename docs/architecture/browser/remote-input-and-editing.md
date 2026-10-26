@@ -6,8 +6,8 @@
 
 自有 Electron 源码定义与补丁由 [vendor/electron](../../../vendor/electron/README.md)
 持有。首个补丁恢复 OSR 的 Chromium 文本状态管线，并提供只读原生选区、组合范围和
-光标几何查询；它不是原子快照，不包含输入授权或跨文档唯一编辑身份，当前发行包
-尚未消费此 fork。缺失的几何保持不可用，不由 DOM 或控件边缘推测。
+光标几何查询；它不是原子快照，不包含输入授权或跨文档唯一编辑身份，源码探针与发行包消费
+分别核验，运行时只按实际原生能力宣告支持。缺失的几何保持不可用，不由 DOM 或控件边缘推测。
 
 第二个补丁是测试用途的原生目标绑定实验：通过每 frame 的 Mojo 通道取得单次
 context token，在 renderer 内校验文档、焦点代次、组合代次和原生编辑快照，再调用
@@ -187,6 +187,35 @@ terminal without replacing live tabs. Rejected private sockets drain their short
 status reply and then close, without retaining unread attachment data.
 
 
+### Native offscreen cross-site coordinate routing
+
+Cross-site iframe input remains on Chromium's native hit-test and compositor
+transform path. The Electron OSR root must identify its root compositor
+FrameSinkId and delegate conversion into another view to that destination's
+`TransformPointToLocalCoordSpace`; returning false for all other views drops
+input even when the child compositor visibly renders. DOM-based iframe offsets
+and site-specific event injection are not substitutes.
+
+The owned fork's native regression uses a genuinely separate renderer process,
+trusted root mouse/touch input, a transformed iframe and child wheel scroll.
+Fixture-only DOM assertions verify child coordinates and native target-bound
+Chinese input. This does not remove the unknown-first-focus protocol fence or
+prove a physical mobile keyboard. Retained native owners keep their immutable
+runtime until their logical pages are explicitly closed.
+
+
+### Electron mouse and keyboard injection routes
+
+Native compositor coordinate support alone does not route Electron's ordinary
+`sendInputEvent` mouse API: the OSR adapter must call the input router, preserving
+its proxy and popup branches. This lets Chromium own hit testing and capture
+without adding a per-move JavaScript/CDP round trip.
+
+Keyboard injection uses Chromium's focused-widget delegate, including its
+crashed/external-focus rejection. Sending all keys to the root widget loses
+OOPIF key listeners and native editing shortcuts. Target-bound IME tokens and
+remote control/document generations still authorize their own operations;
+keyboard routing does not grant a new lease or replay rejected input.
 ### Touch sample time and bounded velocity history
 
 Touch gesture recognition remains native Chromium-owned. The viewer carries each
