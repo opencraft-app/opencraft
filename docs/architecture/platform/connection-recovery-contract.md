@@ -51,6 +51,10 @@ and checks that each instance still owns its registration before invocation.
 Synchronous re-subscription starts with a later emission, including a nested
 emission, and a retired unsubscribe handle cannot remove a successor. Synchronous
 observer exceptions remain isolated from peers and RPC admission or settlement.
+Listener invocation retains the original bare-function calling convention;
+registration records must never become the listener's `this` receiver. Separate
+raw/Cordis tests cover that concrete JavaScript boundary, which is absent from
+the abstract admission model.
 
 These observers do not use the native notification connection fence. Transport
 loss must still publish a pending request's failure before a successor

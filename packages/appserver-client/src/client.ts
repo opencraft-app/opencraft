@@ -695,7 +695,8 @@ export class JsonRpcAppServerClient implements AppServerClient {
             try {
               if (delivered) throw new AppServerClientError("PROTOCOL_ERROR", `AppServer notification subscription called next twice for ${notification.method}`);
               delivered = true;
-              subscription.listener(notification);
+              const listener = subscription.listener;
+              listener(notification);
             } catch (error) {
               this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", `AppServer notification listener failed for ${notification.method}`, { cause: error }));
             }

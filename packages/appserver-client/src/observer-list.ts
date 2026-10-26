@@ -15,7 +15,8 @@ export class ClientObserverList<T> {
   emit(value: T): void {
     for (const registration of [...this.registrations.values()]) {
       if (this.registrations.get(registration.listener) !== registration) continue;
-      try { registration.listener(value); }
+      const listener = registration.listener;
+      try { listener(value); }
       catch {
         // Diagnostics and lifecycle observers must never interrupt a peer,
         // native request admission, cancellation or completion.
