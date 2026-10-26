@@ -342,9 +342,9 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
       <Avatar agent={agent} /><span>{intl.formatMessage(collaborationMessages.inline,{name:agent.displayName,status:stateName(agent.statusLabel)})}</span>
     </button>;
   }
-  return <section className="thread-subagent-activity" data-status={headerCall.toolCallStatus} data-open={open || undefined}>
+  return <section className="thread-subagent-activity" data-status={presentation.summaryStatus} data-open={open || undefined}>
     <div className="thread-subagent-activity__header">
-      {renderToggle({ label: toolName(headerCall.tool) + " · " + stateName(headerCall.toolCallStatus), open, disabled: !presentation.expandable, onClick: event => {
+      {renderToggle({ label: toolName(headerCall.tool), open, disabled: !presentation.expandable, onClick: event => {
           reflow.begin(event.currentTarget); setOpen(!open);
         } })}
       <div className="thread-subagent-chips">{visibleAgents.map(agent =>
@@ -356,7 +356,7 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
         {hiddenAgentCount > 0 ? <button type="button" className="thread-subagent-chips__more"
           onClick={() => setShowAllAgents(true)}>{intl.formatMessage(collaborationMessages.more,{count:hiddenAgentCount})}</button> : null}
       </div>
-      <span className="thread-subagent-activity__status" data-child-runtime-status={presentation.groupStatusLabel}>{stateName(presentation.groupStatusLabel)}</span>
+      <span className="thread-subagent-activity__status" data-child-runtime-status={presentation.groupStatusLabel} data-summary-status={presentation.summaryStatus}>{stateName(presentation.summaryStatus)}</span>
       {presentation.expandable ? <ChevronRight size={12} className="thread-subagent-activity__chevron" /> : null}
     </div>
     <AnimatePresence initial={false}>{open && presentation.expandable ? <motion.div className="thread-subagent-details"
@@ -364,11 +364,13 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
       style={{ height }} transition={{ duration: 0.3 }} onAnimationComplete={reflow.complete}>
       <div className="thread-subagent-details__inner">
       {blocks.map(block => {
-        const status = deriveSubagentActivityPresentation(block).groupStatusLabel;
+        const detail = deriveSubagentActivityPresentation(block);
+        const status = detail.groupStatusLabel;
         return <p key={block.id} className="thread-subagent-details__meta"
+          title={intl.formatMessage(collaborationMessages.axes,{tool:stateName(block.toolCallStatus),delivery:deliveryName(block.deliveryStatus),child:stateName(status)})}
           data-tool-call-status={block.toolCallStatus} data-delivery-status={block.deliveryStatus ?? "none"}
           data-child-runtime-status={status === "started working" ? "working" : status === "finished" ? "done" : status}>
-          {intl.formatMessage(collaborationMessages.axes,{tool:stateName(block.toolCallStatus),delivery:deliveryName(block.deliveryStatus),child:stateName(status)})}
+          {toolName(block.tool)} · {stateName(detail.summaryStatus)}
         </p>;
       })}
       {presentation.agents.map(agent => {
@@ -378,7 +380,7 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
             {block.prompt && block.tool === "spawnAgent" ? <>：<span>{block.prompt}</span></>
               : block.prompt && (block.tool === "sendInput" || block.tool === "resumeAgent") ? <>: <span>{block.prompt}</span></>
               : !block.prompt && block.action ? <> · {block.action}</> : null}
-            <small> · {stateName(agent.statusLabel)}</small></p>
+</p>
 
             {agent.statusMessage ? <p className="thread-subagent-details__message">{agent.statusMessage}</p> : null}
           </div></div>;

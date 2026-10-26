@@ -2256,6 +2256,7 @@ test("collaboration and clock tools retain native Codex semantics", () => {
     }],
     expandable: true,
     groupStatusLabel: "finished",
+    summaryStatus: "done",
   });
   assert.equal(sleep?.type, "tool-call");
   if (sleep?.type !== "tool-call") throw new Error("Expected clock tool");

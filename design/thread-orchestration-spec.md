@@ -168,6 +168,7 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 ### 3.1 四个内置工具契约
 1. **`thread_spawn`**：
    - 输入：`{ title?, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
+   - 默认 `visibility: "hidden"`，作为 subagent 仅从父对话进入；只有用户明确要求独立、长期会话才传 `visible`。已有关系不迁移，历史表默认值保留兼容，Broker 显式写入新默认。
    - 权限：新建子会话的 `ownerActorId` 继承 `delegation.issuerActorId`；消耗配额 1 次；首轮输入标记 `usageSourceKind: "system"`。
    - 返回：`{ operationId, threadId, status: "starting", durability: "immediate" | "pending_first_turn", delivery: "sent" }`。
 2. **`thread_tell`**：
@@ -340,3 +341,14 @@ Codex 的独立 APP Host 持有真实 Native 连接，Gateway 通过稳定 callb
 Native 0.162 只在创建 Thread 时接收动态工具，因此四个编排工具注册到新 Thread；
 既有 Thread 保留原工具集。旧 APP 继续按实际能力工作，不能仅凭 Gateway 已升级
 宣称支持 callback 重放。UI 三态投影与父子树已在 Stage 2 实现；Stage 3 通过统一契约接入独立 Pi/DSH-ACP/Claude Host，各宿主需单独验收。
+
+
+### Stage 2 presentation refinement
+
+The three authority axes stay separate in the ledger and timeline. Collapsed
+headlines and individual dispatches show one derived status; a dispatch tooltip
+retains tool, delivery and child details. Failures take precedence, followed by
+interruption, required attention, active work, unknown and confirmed completion.
+Pending delivery remains active. A completed call or a timed-out wait never
+proves child completion. Groups use the latest child projection and retain
+failed calls, including creations without a child ID.

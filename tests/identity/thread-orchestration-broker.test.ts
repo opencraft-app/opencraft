@@ -285,3 +285,17 @@ test('v4 to v5 display migration preserves receipts and rejects a changed v5 che
  reopen.exec("UPDATE schema_migrations SET checksum='changed' WHERE version=5");reopen.close();
  assert.throws(()=>openManagedDatabase({path,migrations:COLLABORATION_MIGRATIONS}));
 });
+
+
+test('spawn defaults to a hidden subagent and preserves explicit visible conversations across restart', async t => {
+ const f = await fixture(t);
+ const hidden = await f.invoke('default-hidden', 'thread_spawn', {prompt:'Review'});
+ assert.deepEqual(f.service.threadTopology(hidden.threadId), {parentThreadId:'parent',visibility:'hidden'});
+ await f.restart();
+ assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
+ const visible = await f.invoke('explicit-visible','thread_spawn',{prompt:'Independent long-lived work',visibility:'visible'});
+ assert.deepEqual(f.service.threadTopology(visible.threadId), {parentThreadId:'parent',visibility:'visible'});
+ await f.restart();
+ assert.equal(f.service.orchestration.relation(visible.threadId)?.visibility,'visible');
+ assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
+});
