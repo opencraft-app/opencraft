@@ -1925,18 +1925,21 @@ test("Read opens historical Turns and older pages without Resume; explicit conti
   } finally { await harness.close(); }
 });
 
-test("live completions arriving during a read baseline replay after that snapshot without Resume", async () => {
-  let release: (() => void) | undefined;
-  const h = await createHarness({ historyMode: "paginated", holdTurnsResponse: respond => { release = respond; },
-    turnsPages: { null: { data: [{ id: "live-read", status: "inProgress", items: [{ id: "answer", type: "agentMessage", text: "old" }] }], nextCursor: null } } });
+test("live completions arriving during a read baseline obtain a quiet canonical cut without Resume", async () => {
+  let release: (() => void) | undefined, pages = 0;
+  const turnsPages = { null: { data: [{ id: "live-read", status: "inProgress", items: [{ id: "answer", type: "agentMessage", text: "old" }] }], nextCursor: null } };
+  const h = await createHarness({ historyMode: "paginated", holdTurnsResponse: respond => { if (++pages === 1) release = respond; else respond(); }, turnsPages });
   try {
     const reading = h.runtime.resume.read("thread-one");
     for (let n = 0; n < 50 && !release; n++) await new Promise(resolve => setImmediate(resolve));
     assert.ok(release);
     await h.emit("item/completed", { threadId: "thread-one", turnId: "live-read", item: { id: "answer", type: "agentMessage", text: "new final" } });
     release();
+    turnsPages.null = { data: [{ id: "live-read", status: "completed", items: [{ id: "answer", type: "agentMessage", text: "new final" }] }], nextCursor: null };
     const view = await reading;
     assert.equal(view.turns[0]?.items?.[0]?.text, "new final");
+    assert.equal(view.turns[0]?.status, "completed");
+    assert.equal(pages, 2);
     assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
   } finally { await h.close(); }
 });
