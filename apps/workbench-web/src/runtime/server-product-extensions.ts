@@ -1,3 +1,4 @@
+import { serverUrl } from './server-context';
 import { createObservabilityExtension } from './observability';
 import type { AppServerClient } from "@opencraft/appserver-client";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
@@ -17,5 +18,6 @@ export interface ServerWorkbenchExtension {
 // A generic Headless connection does not imply any enterprise identity source.
 // The build owner can explicitly replace this entry with a product assembly.
 export const serverWorkbenchExtensions: readonly ServerWorkbenchExtension[] = [
+  {id:'opencraft.account',async load({fetcher}) { return (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(fetcher, serverUrl('/__opencraft_account/')); }},
   {id:'opencraft.observability',load:()=>createObservabilityExtension()},
 ];

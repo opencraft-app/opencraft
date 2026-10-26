@@ -19,7 +19,8 @@
     "@opencraft/daemon-ipc": "0.1.0",
     "@opencraft/ui-preferences": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
-    "@opencraft/sqlite-node": "0.1.0"
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/plugin-local-account": "0.1.0"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && node build-host.mjs",

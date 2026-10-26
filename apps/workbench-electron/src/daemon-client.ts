@@ -30,6 +30,8 @@ export interface OpenCraftDaemonClientOptions {
   readonly dshExecutable: string;
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
+  readonly humanAccountDirectory?: string;
+  readonly createHumanSession?: () => string | undefined | Promise<string | undefined>;
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
   readonly codexExecutable: string;
@@ -79,6 +81,7 @@ export function daemonLaunchSpec(
       "--dsh-executable", options.dshExecutable,
       ...(options.dshCapabilityPlugin ? ["--dsh-capability-plugin", options.dshCapabilityPlugin] : []),
       "--data-directory", options.dataDirectory,
+      ...(options.humanAccountDirectory ? ['--human-account-directory', options.humanAccountDirectory] : []),
       ...(options.modelStorageDirectory ? ["--model-storage-directory", options.modelStorageDirectory] : []),
       ...(options.skillsDirectory ? ["--skills-directory", options.skillsDirectory] : []),
       "--codex-executable", options.codexExecutable,
@@ -300,14 +303,21 @@ export class OpenCraftDaemonClientManager {
         fail(error ?? new Error("OpenCraft Daemon closed during handshake"));
       });
       socket.once("connect", () => {
-        channel.send({
-          type: "daemon/hello",
-          protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION,
-          buildId: OPENCRAFT_DAEMON_BUILD_ID,
-          authToken: this.authToken,
-          connectionId,
-          role,
-        });
+        void (async () => {
+          const humanSession = role === 'app-host' ? await this.options.createHumanSession?.() : undefined;
+          if (role === 'app-host' && this.options.createHumanSession && !humanSession) {
+            fail(new Error('Native Human identity is not ready')); return;
+          }
+          channel.send({
+            type: "daemon/hello",
+            protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION,
+            buildId: OPENCRAFT_DAEMON_BUILD_ID,
+            authToken: this.authToken,
+            connectionId,
+            role,
+            ...(humanSession ? { humanSession } : {}),
+          });
+        })().catch(error => fail(error instanceof Error ? error : new Error('Human session unavailable')));
       });
     });
   }

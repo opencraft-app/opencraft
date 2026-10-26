@@ -464,7 +464,7 @@ test('daemon gateway health tracks IPC lifetime, shares recovery and fences shut
           assert.equal(message.authToken, token); hellos++;
           const ready = () => {
             if (!socket.destroyed) socket.write(JSON.stringify({ type: 'daemon/ready', protocolVersion: 1,
-              buildId: 'opencraft-daemon-v2', pid: process.pid,
+              buildId: message.buildId, pid: process.pid,
               storage: [{ name: 'synthetic-owner', status: 'up-to-date', appliedVersion: generation, movedAside: false }] }) + '\n');
           };
           if (holdReady && message.role === 'app-host') heldReady.push(ready); else ready();

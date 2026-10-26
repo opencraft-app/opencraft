@@ -17,6 +17,8 @@ export interface OidcProviderConfiguration {
 }
 export interface HumanAuthConfiguration {
   readonly origin: string; readonly local: boolean; readonly oidc: readonly OidcProviderConfiguration[];
+  /** Optional operator-owned bootstrap proof; existing installations remain closed. */
+  readonly setupTokenFile?: string;
 }
 function secureUrl(value: unknown): URL {
   if (typeof value !== 'string') throw new Error('Authentication URL required');
@@ -28,7 +30,9 @@ function secureUrl(value: unknown): URL {
 export function parseHumanAuthConfiguration(input: unknown): HumanAuthConfiguration {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid human authentication configuration');
   const v = input as Record<string, unknown>;
-  if (Object.keys(v).some(key => !['origin', 'local', 'oidc'].includes(key))) throw new Error('Unknown authentication option');
+  if (Object.keys(v).some(key => !['origin', 'local', 'oidc', 'setupTokenFile'].includes(key))) throw new Error('Unknown authentication option');
+  if (v.setupTokenFile !== undefined && (v.local !== true || typeof v.setupTokenFile !== 'string'
+    || !v.setupTokenFile.startsWith('/') || v.setupTokenFile.includes('\0'))) throw new Error('Setup requires local accounts and an absolute private token file');
   const origin = secureUrl(v.origin);
   if (origin.origin !== v.origin || typeof v.local !== 'boolean' || !Array.isArray(v.oidc) || v.oidc.length > 16) throw new Error('Invalid authentication origin/providers');
   const ids = new Set<string>();
@@ -49,7 +53,8 @@ export function parseHumanAuthConfiguration(input: unknown): HumanAuthConfigurat
       ...(p.tokenEndpointAuthMethod ? { tokenEndpointAuthMethod: p.tokenEndpointAuthMethod as OidcProviderConfiguration['tokenEndpointAuthMethod'] } : {}) };
   });
   if (!v.local && !providers.length) throw new Error('At least one login method is required');
-  return { origin: origin.origin, local: v.local, oidc: providers };
+  return { origin: origin.origin, local: v.local, oidc: providers,
+    ...(typeof v.setupTokenFile === 'string' ? { setupTokenFile: v.setupTokenFile } : {}) };
 }
 export async function readHumanAuthConfiguration(path: string) { return parseHumanAuthConfiguration(await readPrivateJson(path)); }
 function cookie(request: IdentityRequest, name: string): string | null {
@@ -78,6 +83,13 @@ export class HumanAuth implements IdentityProvider {
     const token = cookie(request, SESSION), login = token ? this.accounts.authenticate(token) : null;
     if (!login) return null;
     this.#proofs.set(login.principal, login); return login.principal;
+  }
+  /** Trusted account application only; authentication proof stays server-owned. */
+  currentLogin(request: IdentityRequest): HumanLogin | null {
+    const value = cookie(request, SESSION); return value ? this.accounts.authenticate(value) : null;
+  }
+  issueSession(principal: Principal, request: IncomingMessage, response: ServerResponse): void {
+    this.#issue(principal, request, response);
   }
   hasSessionCookie(request: IdentityRequest): boolean {
     return typeof request.headers.cookie === 'string' && request.headers.cookie.split(';').some(part => part.trim().startsWith(SESSION + '='));

@@ -8,4 +8,5 @@ export interface WorkbenchStaticServer {
 
 export function createWorkbenchStaticServer(options: {
   root: string;
+  accountService?: { handle(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): Promise<boolean> };
 }): Promise<WorkbenchStaticServer>;
