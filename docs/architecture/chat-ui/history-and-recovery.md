@@ -459,7 +459,8 @@ outcome. Their projection code loads on demand after admission and checks owners
 again after module loading, so it is outside the mandatory startup graph.
 
 
-Canonical rereads after overlapping deltas have a local elapsed deadline from
+Canonical rereads after overlapping snapshot notifications (including non-delta
+item/turn lifecycle and Thread status) have a local elapsed deadline from
 the initial read start. Expiry settles the caller with a retryable TIMEOUT before
 any held old reply arrives, then revokes children and fences their late data.
 A new request checks expiry before joining, including before queued timer delivery;

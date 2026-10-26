@@ -16,7 +16,7 @@ function isHistoryDelta(method: string): boolean {
   return method.startsWith("item/") && /(?:\/delta|Delta)$/.test(method);
 }
 function isSnapshotHistoryNotification(method: string): boolean {
-  return isHistoryDelta(method) || ["item/started", "item/completed", "item/fileChange/patchUpdated",
+  return isHistoryDelta(method) || ["item/started", "item/completed", "item/updated", "item/fileChange/patchUpdated",
     "item/reasoning/summaryPartAdded", "turn/started", "turn/completed", "thread/status/changed", "thread/started"].includes(method);
 }
 
@@ -81,6 +81,12 @@ export class ResumeNotificationBufferService extends Service {
 
   hasDeltas(threadId: string): boolean {
     return this.buffers.get(threadId)?.some(action => action.type === "notification" && isHistoryDelta(action.method)) ?? false;
+  }
+
+  /** Snapshot lifecycle updates have no ordering token relative to a Read.
+   * Use the same set for invalidation and supersession, including non-deltas. */
+  hasSnapshotOverlap(threadId: string): boolean {
+    return this.buffers.get(threadId)?.some(action => action.type === "notification" && isSnapshotHistoryNotification(action.method)) ?? false;
   }
 
   /** A new canonical read supersedes earlier notifications, but never drops requests. */

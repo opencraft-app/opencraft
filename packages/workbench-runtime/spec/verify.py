@@ -70,6 +70,10 @@ CASES = [
     ('ActivationHistory-Replay', 'NoReplay'),
     ('ActivationHistory-Cancel', 'IntentPreserved'),
     ('ActivationHistory-NoFairness', 'temporal:ReadRecovery'),
+    ('SnapshotCut', None),
+    ('SnapshotCut-Lifecycle', 'CanonicalCut'),
+    ('SnapshotCut-Requests', 'RequestConserved'),
+    ('SnapshotCut-NoFairness', 'temporal:ReadProgress'),
 ]
 
 

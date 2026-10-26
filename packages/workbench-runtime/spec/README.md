@@ -280,7 +280,8 @@ cap (`RPC_DEADLINE_BOUND`), as well as the existing no-early-timeout rule. Effec
 forward/backward jumps with live RPCs are counted separately. Use
 `--mutant wall-clock-budget` as a negative control: it removes that separation and
 must fail at the exact timer-bound rule; replay the saved explicit events without
-the flag to verify the repair. History and hydration generators remain version 1.
+the flag to verify the repair. History generation remains version 1; hydration
+generator revisions are described below.
 Existing seed values alone do not preserve an earlier generator's distribution;
 the saved version, source hashes and explicit trace are the replay evidence.
 
@@ -339,3 +340,32 @@ still requires the current baseline after every preparation await. Legacy and
 explicit historical Resume retain their combined history contract. Real Session
 and Workbench held-ACK regressions and seeded composition must substantiate that
 mapping; the normative specification alone is not TypeScript refinement.
+
+
+## Snapshot history and buffered lifecycle
+
+`SnapshotCut.tla` separates canonical persistence, an unsequenced start/delta
+observation, read capture, reread and final release. Persistence may advance to
+completion before an older start observation is released. The committed view
+must not regress behind its captured snapshot. Snapshot notifications trigger
+another canonical cut; settings and non-snapshot events are not in that set.
+One admitted server request must survive supersession and be delivered once.
+Four configurations check normal fair progress, the exact `CanonicalCut`
+violation for delta-only invalidation, lost-request conservation, and progress
+without scheduling fairness. This independent finite contract does not assert
+notification completeness, stream sequence ordering or TypeScript refinement.
+
+Hydration chaos generator v3 adds explicit `snapshot-overlap` events for item
+start, turn start and Thread status on a current held Read. The real Workbench,
+Session, client and replica must preserve canonical text, terminal frame state
+and Thread status when authority is published. Coverage counts effective
+injections, rather than merely requested faults. `--mutant delta-only` restores
+the old invalidation boundary and must fail `SNAPSHOT_CUT`; the saved minimal
+trace must replay normally without that flag. Existing explicit v1/v2 traces
+remain accepted, while seed-only streams change with generator v3.
+
+The real Session regression also covers item updates, buffered server requests,
+settings and non-snapshot observations across rereads. Set
+`OPENCRAFT_HISTORY_SNAPSHOT_OVERLAP=1` for the installed full-Web derived-history
+smoke to inject the old empty start ahead of the complete answer. Its synthetic
+physical endpoint does not stand in for a paid model or physical phone.
