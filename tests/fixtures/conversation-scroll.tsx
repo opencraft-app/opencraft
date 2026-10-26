@@ -22,6 +22,7 @@ probe.placementReads = 0;
 probe.pendingPlacement = null;
 const submissionMode = new URLSearchParams(location.search).has("submissions");
 const historyMode = new URLSearchParams(location.search).has("history");
+const longHistoryMode = new URLSearchParams(location.search).has("longHistory");
 const naturalMode = new URLSearchParams(location.search).has("natural");
 const handoffMode = new URLSearchParams(location.search).has("handoff");
 probe.historyLoads = 0;
@@ -34,13 +35,26 @@ WebConversationViewportOwner.prototype.setLatestTurnMeasurementListener = functi
     listener(change);
   });
 };
+const measure = WebConversationViewportOwner.prototype.setMeasurementListener;
+WebConversationViewportOwner.prototype.setMeasurementListener = function (listener) {
+  return measure.call(this, listener === null ? null : (batch) => {
+    if (probe.delayTurnMeasurements) probe.delayedMeasurement = () => listener(batch);
+    else listener(batch);
+  });
+};
+probe.flushTurnMeasurements = () => {
+  probe.delayTurnMeasurements = false;
+  const publish = probe.delayedMeasurement;
+  probe.delayedMeasurement = null;
+  publish?.();
+};
 function Demo() {
   const [mounted, setMounted] = useState(true);
   const [hidden, setHidden] = useState(false);
   probe.setHidden = setHidden;
   const [loadingOlder, setLoadingOlder] = useState(false);
   probe.setHistoryLoading = setLoadingOlder;
-  const [state, setState] = useState({ revision: 0, heights: [600, 600, 600, 600, 600, 200], active: !submissionMode && !historyMode, phase: "final_answer", lifetime: 0 });
+  const [state, setState] = useState({ revision: 0, heights: longHistoryMode ? [...Array.from({ length: 29 }, () => 600), 200] : [600, 600, 600, 600, 600, 200], active: !submissionMode && !historyMode, phase: "final_answer", lifetime: 0 });
   const [authorityIndices, setAuthorityIndices] = useState<readonly number[]>([]);
   const turnId = (index: number) => authorityIndices.includes(index) ? `authority-${index}` : `turn-${index}`;
   probe.acknowledge = () => setAuthorityIndices((current) => [...current, state.heights.length - 1]);
