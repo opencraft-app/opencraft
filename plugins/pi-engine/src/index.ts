@@ -1,5 +1,5 @@
 import { queueProjection, type PiQueuedInput } from "./queue.js";
-import { readPiSnapshot } from "./read-history.js";
+import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -8,17 +8,17 @@ import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort } from "@opencraft/host-schedules";
 import { OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_PERMISSION_MODES_CAPABILITY, CONVERSATION_SCHEDULES_EXTENSION } from "@opencraft/appserver-protocol";
 import { AppServerRpcError, projectedTurnsPage, projectedItemsPage, projectedHistoryHeadCursors } from "@opencraft/appserver-client";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { PiDurableSession, createPiModels, type PiSnapshot, type PiForkContext } from "./session.js";
 import { assertPiFields, compareThreads, fullAccessProfile, piModel, selection, thinking, workspace } from "./contract.js";
 import { compilePiInput } from "./input.js";
 import { piSkillCatalog, validatePiSkillInput } from "./skills.js";
 import { projectPiSnapshot, tokenUsage, textOf, type PiTurn } from "./projection.js";
-import type { ExecutionEngineClient as EngineClient } from "@opencraft/appserver-client";
+import type { ExecutionEngineClient as EngineClient, AgentOrchestrationPort } from "@opencraft/appserver-client";
 export { piModel } from "./contract.js";
 
 type Value = Record<string, any>;
@@ -36,6 +36,7 @@ interface Session {
   native?: PiDurableSession; starting?: Promise<PiDurableSession>; owner?: EngineClient; lease?: AbortController;
   active?: PiTurn; turns?: PiTurn[]; snapshot?: PiSnapshot; effort?: string; failed?: boolean;
   needsResume?: boolean;
+  orchestrationOperation?: { id: string; fingerprint: string; state: "prepared" | "created" };
 }
 class ScheduleAdmissionDeferred extends Error {}
 const seconds = () => Math.floor(Date.now() / 1000);
@@ -62,7 +63,7 @@ export class PiEngine {
   readonly label = "Pi Coding Agent";
   readonly threadPrefix = "pi_";
   readonly modelPrefix = "pi:";
-  readonly extensions = Object.freeze({
+  private readonly capabilities = Object.freeze({
     "opencraft/read-history": { version: 1, initialTurnsPage: true },
     "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
@@ -74,6 +75,17 @@ export class PiEngine {
     "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: true, perItemPause: false },
     [TURN_RECOVERY_EXTENSION]: { version: 1 },
   });
+  get extensions() { return { ...this.capabilities, ...(this.orchestration ? {
+    "opencraft/thread-orchestration": { version: 1, driver: "pi", callbackReplay: true },
+  } : {}) }; }
+  private orchestration?: AgentOrchestrationPort;
+  readonly orchestrationIncarnation = randomUUID();
+  private readonly orchestrationCreates = new Map<string, { fingerprint: string; promise: Promise<unknown> }>();
+  setOrchestration(port: AgentOrchestrationPort): void {
+    if (this.orchestration || [...this.sessions.values()].some(session => session.native || session.starting))
+      throw new Error("Pi orchestration must be configured before native execution starts");
+    this.orchestration = port;
+  }
   private scheduleService?: ConversationSchedules;
   private recovery?: InterruptedTurnRecovery;
   get storageOutcomes(): readonly unknown[] { return [
@@ -92,10 +104,16 @@ export class PiEngine {
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
+  private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
   constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
+    this.transcriptCache = createPiTranscriptCache({
+      dataDirectory: options.dataDirectory ?? options.directory, directory: options.directory,
+      readThread: async id => this.thread(await this.session(id)) as any,
+      readTurns: async id => this.readHistory(await this.session(id)),
+    });
   }
   private compileInput(input: Value[], additionalContext: Value | null | undefined, cwd: string, model: Value) {
     return compilePiInput(input, additionalContext, cwd, model, { attachmentDirectory: this.options.attachmentDirectory });
@@ -191,7 +209,11 @@ export class PiEngine {
     session.lease?.abort(); session.owner = owner; session.lease = new AbortController();
   }
   private hostTools(session: Session): Value[] {
-    const tools = structuredClone(this.options.sessionCapabilities?.tools(session.id) ?? []).map(tool => ({ ...tool, namespace: null, piName: `opencraft_host_${tool.name}` }));
+    const tools = [
+      ...structuredClone(this.options.sessionCapabilities?.tools(session.id) ?? []).map(tool => ({ ...tool, namespace: null, piName: `opencraft_host_${tool.name}` })),
+      ...(this.orchestration?.tools ?? []).map(tool => ({ ...tool, namespace: null, piName: `opencraft_orchestration_${tool.name}`, orchestration: true })),
+    ];
+    if (new Set(tools.map(identity)).size !== tools.length) throw new Error("Duplicate Host tool capability");
     if (session.tools.some(tool => tools.some(host => identity(host) === identity(tool)))) throw new Error("Capability name reserved by Host");
     session.hostTools = tools;
     return tools;
@@ -221,6 +243,11 @@ export class PiEngine {
           const hostTool = session.hostTools?.find(tool => tool.piName === request.name);
           if (hostTool) {
             if (!session.active) throw new Error("No active Pi execution");
+            if (hostTool.orchestration === true) {
+              const inputId = session.active.items.find((item: Value) => item.type === "userMessage")?.clientId;
+              return this.orchestration!.call(session.id, session.active.id, String(request.id), hostTool.name,
+                request.arguments, signal, typeof inputId === "string" ? inputId : undefined);
+            }
             return this.options.sessionCapabilities!.call(session.id, hostTool.name, request.arguments, signal);
           }
           const tool = session.tools.find(tool => tool.piName === request.name), owner = session.owner, lease = session.lease;
@@ -518,8 +545,130 @@ export class PiEngine {
     }
     return this.scheduleService;
   }
+  private async startSession(params: Value, client: EngineClient, operation?: { id: string; fingerprint: string }) {
+    assertPiFields(params);
+    if (params.projectId != null && (typeof params.projectId !== "string" || !params.projectId.trim())) throw new Error("Invalid workspace project identity");
+    const saved = await this.defaults(), model = params.model ?? saved.model ?? (await this.models()).find(model => model.isDefault)?.model;
+    const ref = selection(model ?? "");
+    const selected = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+    if (!selected) throw new Error("Pi model is unavailable");
+    const explicit = params.effort ?? params.config?.model_reasoning_effort;
+    thinking(selected, explicit ?? saved.effort, explicit != null);
+    const session: Session = { format: "pi-durable-1", id: `pi_${randomUUID()}`, cwd: await workspace(params, this.options.cwd), model,
+      projectId: params.projectId ?? null, threadSource: params.threadSource ?? null, sessionStartSource: params.sessionStartSource ?? null,
+      ephemeral: params.ephemeral === true, name: null, preview: "", createdAt: seconds(), updatedAt: seconds(), archived: false,
+      effort: explicit ?? saved.effort, tools: flattenPiTools(params.dynamicTools ?? []),
+      ...(operation ? { orchestrationOperation: { ...operation, state: "prepared" as const } } : {}) };
+    this.attach(session, client); this.sessions.set(session.id, session);
+    try {
+      // Persist the allocated identity before opening native storage. A gateway
+      // reconnect, or a Host restart, can finish this same child allocation.
+      if (operation) await this.save(session);
+      await this.configure(session, params, true);
+      if (session.orchestrationOperation) session.orchestrationOperation.state = "created";
+      await this.save(session); return this.response(session);
+    } catch (error) {
+      if (!operation) { this.sessions.delete(session.id); await session.native?.close(); }
+      throw error;
+    }
+  }
+  private orchestrationError(code: number, message: string): never {
+    throw new AppServerRpcError({ code, message });
+  }
+  private async orchestrationRequest(method: string, params: Value, client: EngineClient): Promise<unknown> {
+    if (!this.orchestration) this.orchestrationError(503, "Pi orchestration is not connected");
+    const operationId = params.operationId;
+    if (typeof operationId !== "string" || !operationId || operationId.length > 256) this.orchestrationError(400, "Invalid orchestration operation identity");
+    if (method === "opencraft/orchestration/prepare") {
+      const args = params.arguments ?? {}, source = this.ownsThread(params.threadId ?? "") ? await this.session(params.threadId) : undefined;
+      const inherited = source ? this.response(source) : params.sourceSettings;
+      if (!inherited || typeof inherited.cwd !== "string" || !isAbsolute(inherited.cwd)) this.orchestrationError(503, "Source workspace is unavailable");
+      const base = resolve(inherited.cwd), cwd = args.cwd === undefined ? base : resolve(base, args.cwd);
+      if (cwd !== base && !cwd.startsWith(base.endsWith(sep) ? base : base + sep)) this.orchestrationError(403, "Child workspace exceeds the source delegation");
+      // Pi cannot preserve a restricted permission profile. Reject it before
+      // allocating a child rather than silently granting Full access.
+      const sandbox = typeof inherited.sandbox === "string" ? inherited.sandbox : inherited.sandbox?.type;
+      const permissions = inherited.permissions ?? inherited.activePermissionProfile?.id;
+      if (permissions != null && permissions !== fullAccessProfile || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
+        || inherited.approvalPolicy != null && inherited.approvalPolicy !== "never")
+        this.orchestrationError(403, "Pi cannot preserve the source permission profile");
+      const defaults = await this.defaults();
+      const model = args.model ?? source?.model ?? defaults.model ?? (await this.models()).find(model => model.isDefault)?.model;
+      const ref = selection(model ?? ""), selected = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);
+      if (!selected) this.orchestrationError(503, "Pi model is unavailable");
+      const requestedEffort = args.reasoningEffort ?? source?.effort ?? defaults.effort;
+      const level = thinking(selected, requestedEffort, args.reasoningEffort != null);
+      return { driver: "pi", cwd, model,
+        config: { model_reasoning_effort: level === "off" ? "none" : level },
+        permissions: fullAccessProfile, approvalPolicy: "never", sandbox: "danger-full-access",
+        orchestrationHostIncarnation: this.orchestrationIncarnation,
+        ...(args.title === undefined ? {} : { orchestrationTitle: args.title }) };
+    }
+    if (method === "opencraft/orchestration/ack") {
+      for (const session of this.sessions.values()) if (session.orchestrationOperation?.id === operationId) {
+        delete session.orchestrationOperation; await this.save(session);
+      }
+      this.orchestrationCreates.delete(operationId); return { acknowledged: true };
+    }
+    if (method === "opencraft/orchestration/create") {
+      const settings = params.settings ?? {};
+      if (settings.driver !== "pi") this.orchestrationError(400, "Orchestration settings belong to another driver");
+      const fingerprint = createHash("sha256").update(JSON.stringify(settings)).digest("hex"), prior = this.orchestrationCreates.get(operationId);
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) this.orchestrationError(409, "Orchestration operation reused with different settings");
+        return prior.promise;
+      }
+      const existing = [...this.sessions.values()].find(session => session.orchestrationOperation?.id === operationId);
+      if (existing && existing.orchestrationOperation!.fingerprint !== fingerprint) this.orchestrationError(409, "Orchestration operation reused with different settings");
+      if (!existing && settings.orchestrationHostIncarnation !== this.orchestrationIncarnation)
+        this.orchestrationError(409, "Pi Host changed; child creation requires reconciliation");
+      if (this.orchestrationCreates.size >= 1024) this.orchestrationError(503, "Unacknowledged orchestration receipt limit");
+      const promise = (async () => {
+        const { driver: _driver, orchestrationHostIncarnation: _incarnation, orchestrationTitle, ...start } = settings;
+        let session = existing;
+        if (!session) {
+          const result = await this.startSession(start, client, { id: operationId, fingerprint }); session = await this.session(result.thread.id);
+        } else if (session.orchestrationOperation?.state !== "created") {
+          await this.configure(session, start, true); session.orchestrationOperation!.state = "created"; await this.save(session);
+        }
+        if (orchestrationTitle !== undefined && session.name !== orchestrationTitle) { session.name = orchestrationTitle; await this.save(session); }
+        return { threadId: session.id, driverKind: "pi", generationId: this.orchestrationIncarnation, durability: "immediate" };
+      })().catch(error => { this.orchestrationCreates.delete(operationId); throw error; });
+      this.orchestrationCreates.set(operationId, { fingerprint, promise });
+      return promise;
+    }
+    const session = await this.session(params.threadId), turns = await this.readHistory(session);
+    if (method === "opencraft/orchestration/inspect") {
+      const limit = params.limit ?? 1;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5) this.orchestrationError(400, "Invalid recent Turn limit");
+      const entries: Array<{ turnId: string; role: string; text: string }> = []; let bytes = 0;
+      for (const turn of turns.slice(-limit).reverse()) for (const item of [...turn.items].reverse()) {
+        if (item.type !== "userMessage" && item.type !== "agentMessage") continue;
+        const body = item.type === "agentMessage" ? item.text : textOf(item.content);
+        if (!body) continue;
+        const text = Array.from(body).slice(-Math.max(0, Math.floor((23000 - bytes - 256) / 4))).join("");
+        if (!text) return { entries };
+        const entry = { turnId: turn.id, role: item.type === "userMessage" ? "user" : "assistant", text };
+        bytes += Buffer.byteLength(JSON.stringify(entry)); entries.unshift(entry);
+      }
+      return { entries };
+    }
+    if (method !== "opencraft/orchestration/status") this.orchestrationError(400, "Unknown orchestration operation");
+    const recovery = this.recovery?.snapshot(session.id), turn = turns.at(-1);
+    const current = { threadId: session.id, driverKind: "pi", turnId: turn?.id ?? recovery?.turnId ?? null,
+      rootTurnId: recovery?.rootTurnId ?? turn?.id ?? null };
+    if (recovery && ["interrupted", "preparing", "dispatching"].includes(recovery.state)) return { ...current, state: "recovering" };
+    if (recovery?.state === "exhausted" || recovery?.state === "unconfirmed") return { ...current, state: recovery.state };
+    if (session.failed) return { ...current, state: "unconfirmed" };
+    if (session.active || turn?.status === "inProgress") return { ...current, state: "active" };
+    if (!turn) return { ...current, state: "starting" };
+    return { ...current, state: turn.status === "failed" ? "failed" : turn.status === "interrupted"
+      ? recovery?.state === "handled" && recovery.handledReason === "user_stop" && recovery.turnId === turn.id ? "interrupted_by_user" : "unconfirmed" : "completed",
+      summary: String([...turn.items].reverse().find(item => item.type === "agentMessage")?.text ?? "").slice(-4096) };
+  }
   request(method: string, params: Value, client: EngineClient): Promise<any> {
-    if (["turn/start", "turn/interrupt", "thread/archive", "thread/delete"].includes(method) && typeof params.threadId === "string") this.recovery?.handled(params.threadId);
+    if (["turn/start", "turn/interrupt", "thread/archive", "thread/delete"].includes(method) && typeof params.threadId === "string")
+      this.recovery?.handled(params.threadId, method === "turn/interrupt" ? "user_stop" : "user_input");
     // Schedule mutations must not wait behind the admission they need to cancel.
     const key = method.startsWith("opencraft/schedules/") ? undefined
       : typeof params.threadId === "string" ? params.threadId : method.startsWith("config/") ? "config" : undefined;
@@ -527,6 +676,7 @@ export class PiEngine {
   }
   private async handle(method: string, params: Value, client: EngineClient, canAdmit?: () => boolean | Promise<boolean>): Promise<any> {
     await this.load(); if (this.closed) throw new Error("Pi engine is closed");
+    if (method.startsWith("opencraft/orchestration/")) return this.orchestrationRequest(method, params, client);
     if (method === "opencraft/turn-recovery/read") return { recovery: this.recovery?.notice(params.threadId) ?? null };
     if (method.startsWith("opencraft/schedules/")) {
       const schedules = this.schedules();
@@ -577,18 +727,7 @@ export class PiEngine {
       return { data, nextCursor: null };
     }
     if (method === "thread/start") {
-      assertPiFields(params);
-      if (params.projectId != null && (typeof params.projectId !== "string" || !params.projectId.trim())) throw new Error("Invalid workspace project identity");
-      const saved = await this.defaults(), model = params.model ?? saved.model ?? (await this.models()).find(model => model.isDefault)?.model;
-      selection(model ?? "");
-      const session: Session = { format: "pi-durable-1", id: `pi_${randomUUID()}`, cwd: await workspace(params, this.options.cwd), model,
-        projectId: params.projectId ?? null, threadSource: params.threadSource ?? null, sessionStartSource: params.sessionStartSource ?? null,
-        ephemeral: params.ephemeral === true, name: null, preview: "", createdAt: seconds(), updatedAt: seconds(), archived: false, effort: saved.effort, tools: flattenPiTools(params.dynamicTools ?? []) };
-      this.attach(session, client); this.sessions.set(session.id, session);
-      try {
-        await this.configure(session, params, true);
-        await this.save(session); return this.response(session);
-      } catch (error) { this.sessions.delete(session.id); await session.native?.close(); throw error; }
+      return this.startSession(params, client);
     }
     if (method === "thread/unsubscribe" && !this.sessions.has(params.threadId)) return { status: "notLoaded" };
     const session = await this.session(params.threadId);
@@ -611,6 +750,7 @@ export class PiEngine {
     if (params.model && !String(params.model).startsWith("pi:")) throw new Error("This thread belongs to Pi; create a new thread to change engines");
     if (method === "thread/read") {
       if (params.initialTurnsPage) {
+        if (!session.ephemeral) return this.transcriptCache.read(session.id, params.initialTurnsPage.limit ?? 10);
         const turns = await this.readHistory(session);
         return { thread: this.thread(session), initialTurnsPage: { ...projectedTurnsPage(this.thread(session, turns), {
           threadId: session.id, limit: params.initialTurnsPage.limit ?? 10, sortDirection: "desc", itemsView: "full",
@@ -619,6 +759,10 @@ export class PiEngine {
       return { thread: this.thread(session, params.includeTurns ? await this.readHistory(session) : []) };
     }
     if (method === "thread/turns/list" || method === "thread/items/list") {
+      if (method === "thread/turns/list" && !session.ephemeral && params.sortDirection !== "asc"
+        && (params.cursor == null || typeof params.cursor === "string" && params.cursor.startsWith("transcript:")))
+        return this.transcriptCache.page(session.id, params.cursor ?? null, params.limit ?? 10,
+          undefined, params.itemsView === "notLoaded" ? "notLoaded" : "full");
       const thread = this.thread(session, await this.readHistory(session));
       return method === "thread/turns/list" ? { ...projectedTurnsPage(thread, { ...params, threadId: session.id }), itemsPaginationByTurnId: {} }
         : projectedItemsPage(thread, { ...params, threadId: session.id });
@@ -651,6 +795,7 @@ export class PiEngine {
       if (session.ephemeral) throw new Error("Temporary Pi threads cannot be archived");
       if (session.active) throw new Error("Stop the Pi turn before archiving");
       session.archived = method === "thread/archive"; await this.save(session);
+      if (session.archived) await this.transcriptCache.invalidate(session.id);
       if (session.archived) this.scheduleService?.suspend(session.id); return method === "thread/unarchive" ? { thread: this.thread(session) } : {};
     }
     if (method === "thread/unsubscribe") {
@@ -817,5 +962,6 @@ export class PiEngine {
       this.detach(session); const native = session.native ?? await session.starting?.catch(() => undefined); await native?.close(); session.active = undefined;
     }));
     await Promise.allSettled(this.writes.values()); this.listeners.clear();
+    await this.transcriptCache.close();
   }
 }

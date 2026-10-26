@@ -27,6 +27,7 @@ import { TokenUsageQuerySession, TokenUsageQueryTransport } from "../apps/opencr
 import { TokenUsageQueryService } from "../apps/opencraft-daemon/src/token-usage-query-service.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { MachineIdentityTransport } from "../apps/opencraft-daemon/src/machine-transport.ts";
+import { AgentDriverTransport } from "../apps/opencraft-daemon/src/agent-driver-transport.ts";
 import { WebSocketTransport } from "../packages/appserver-transport-websocket/src/index.ts";
 import { WebSocket } from 'ws';
 import { readDaemonMachineIdentity } from "../apps/opencraft-daemon/src/machine-identity.ts";
@@ -51,9 +52,10 @@ import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 import { MembershipStore, InstanceAccess } from '../packages/access-control/src/index.ts';
 import { ActorStore } from '../packages/access-control/src/actors.ts';
 import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
-import { Collaboration, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
+import { Collaboration, CollaborationError, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
 import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
-import { createThreadOrchestrationExecution } from './thread-orchestration-execution.mjs';
+import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
+import { THREAD_ORCHESTRATION_TOOLS } from '../packages/appserver-protocol/src/collaboration.ts';
 import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
 import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
@@ -120,7 +122,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       desktopControl = true;
     } else if (argument === "--engines") {
       engines = (argv[++index] ?? "").split(",");
-      if (!engines.length || new Set(engines).size !== engines.length || engines.some(id => !["dsh", "pi"].includes(id))) throw new Error("--engines requires dsh, pi, or dsh,pi");
+      if (!engines.length || new Set(engines).size !== engines.length || engines.some(id => !["dsh", "pi", "dsh-acp", "acp", "claude-code"].includes(id))) throw new Error("Invalid execution engine selection");
     } else if (argument === "--default-engine") {
       defaultEngine = argv[++index];
     } else if (argument === "--machine-name") {
@@ -386,15 +388,19 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       trustedOrigin: request => instanceAccess?.trustedOrigin(request) ?? humanAuth?.trustedOrigin(request) ?? null,
     });
     const engines = options.engines ?? ["dsh"];
+    if (engines.some(engine => !['dsh','pi'].includes(engine)) && !options.engineHostDescriptor)
+      throw new Error('ACP and Claude execution require an independent Engine Host descriptor');
     let piEngine;
     let independentEngine;
     const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,
-      getInputs:async engine => engine === 'pi' ? (independentEngine?.inputs ?? piEngine?.inputs) : (await startDsh()).inputs});
+      getInputs:async engine => engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs});
     actorCollaboration = new Collaboration(join(dataDirectory, 'actor-collaboration.sqlite'), actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
     actorCollaboration.start();
-    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer));
+    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
+      enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
+    }));
     threadOrchestration.start();
     if (options.localDesktop === true) {
       const observer = createNativeObserver();
@@ -411,15 +417,24 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       { "local-codex": `server:${machineIdentity.machineId}:codex`, "opencraft-server": `server:${machineIdentity.machineId}:${options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi")}` },
       capabilities, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), undefined,
       (hostId, threadId) => {
-        if (hostId === "local-codex") return `server:${machineIdentity.machineId}:codex`;
-        const engine = threadId.startsWith("pi_") ? "pi" : "dsh";
-        if (!engines.includes(engine)) throw new Error("Execution engine is unavailable");
-        return `server:${machineIdentity.machineId}:${engine}`;
+        return conversationExecution.serverForHost(hostId, threadId);
       });
     capabilityBindings = new CapabilityBindings(join(dataDirectory, "session-capabilities.sqlite"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilitySigningKey(join(dataDirectory, "session-capabilities.key")), capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'),
       authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
+      orchestration: async (session, request) => {
+        const fields = ['turnId','callId','name','arguments','inputId','incarnation','toolCallKey'];
+        if (Object.keys(request).some(key => !fields.includes(key))
+          || !['turnId','callId','name','incarnation'].every(key => typeof request[key] === 'string' && request[key].length > 0 && request[key].length <= 512)
+          || !request.arguments || typeof request.arguments !== 'object' || Array.isArray(request.arguments)
+          || request.inputId !== undefined && (typeof request.inputId !== 'string' || request.inputId.length > 512)
+          || session.serverId !== conversationExecution.serverForThread(session.threadId)) throw new CollaborationError(400, 'invalid_orchestration_source');
+        if (request.inputId) actorCollaboration.executionStarted(session.threadId, request.inputId, request.turnId);
+        const key = JSON.stringify([session.serverId, request.incarnation, session.threadId, request.turnId, request.callId]);
+        const result = await threadOrchestration.invoke(session.threadId, request.turnId, key, request.name, request.arguments, undefined, request.incarnation);
+        return { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] };
+      },
     });
     await capabilityMcp.listen();
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
@@ -450,6 +465,13 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
       piEngine = new PiEngine({ ...piModels, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      // The in-process standalone mode has the same trusted port. Shared-server
+      // deployments attach the independent owner through its descriptor instead.
+      piEngine.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS, call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
+        if (inputId) actorCollaboration.executionStarted(threadId, inputId, turnId);
+        const result = await threadOrchestration.invoke(threadId, turnId, JSON.stringify(['pi', piEngine.orchestrationIncarnation, threadId, turnId, callId]), name, args, undefined, piEngine.orchestrationIncarnation);
+        return { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] };
+      } });
       agent = await startEngineHost({
         providers: [piEngine],
         defaultEngine: options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"), machine: machineIdentity,
@@ -486,7 +508,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       createTransport(hostId) {
         const transport = (() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
-          new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)})), usageQueries, actorId => actorStore.get(actorId));
+          new AgentDriverTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), actorCollaboration,
+            threadId => conversationExecution.serverForHost('opencraft-server', threadId))), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
         if (remote) return new MachineIdentityTransport(null, "Codex", () => createSshCodexEngineAdapter(remote, dataDirectory, createThreadMetadata, storageOpened(hostId)));
         if (hostId.startsWith("ssh:")) {

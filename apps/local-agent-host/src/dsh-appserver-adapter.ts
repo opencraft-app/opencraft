@@ -37,6 +37,7 @@ import {
   OPENCRAFT_THREAD_PINS_CAPABILITY,
 } from "@opencraft/appserver-protocol";
 import { ThreadPinStore } from "./thread-pin-store.js";
+import { TranscriptReadCache, type NativeTranscriptSnapshotSource } from "@opencraft/native-history-node";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
 type RecordValue = Record<string, unknown>;
@@ -232,6 +233,12 @@ function mapEvents(sessionId: string, entries: readonly DshHistoryEntry[], runni
   });
 }
 
+/** Shared native-history projection for independently hosted DSH transports.
+ * The composition root supplies the engine's validated, read-only events. */
+export function projectDshNativeEvents(sessionId: string, entries: readonly DshHistoryEntry[], options: { running?: boolean; cwd?: string } = {}): AppServerTurn[] {
+  return mapEvents(sessionId, entries, options.running ?? true, options.cwd) as unknown as AppServerTurn[];
+}
+
 function titleFor(summary: DshSessionSummary): string {
   const projected = summary.projections?.values.title;
   return typeof projected === "string" && projected.trim() !== "" ? projected.trim() : "New chat";
@@ -329,6 +336,21 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  private transcriptCache?: TranscriptReadCache;
+  /** Configured only by a trusted Host that can bind every native generation.
+   * Display reads never acquire execution ownership or activate an Agent. */
+  setTranscriptCache(dataDirectory: string, observeSource: (threadId: string) => Promise<NativeTranscriptSnapshotSource | null>): void {
+    if (this.transcriptCache) throw new Error("DSH transcript cache already configured");
+    this.transcriptCache = new TranscriptReadCache(dataDirectory, {
+      readThread: async id => makeThread(await this.summary(id)),
+      observeSnapshotSource: observeSource,
+      listTurns: async (id, cursor, limit) => {
+        const history = await this.history(id, cursor, limit, "desc", "full");
+        return { data: history.pageTurns as unknown as AppServerTurn[], nextCursor: history.nextCursor };
+      },
+    });
+  }
+  async invalidateTranscriptCache(threadId: string): Promise<void> { await this.transcriptCache?.invalidate(threadId); }
   recovery?: import("@opencraft/host-recovery").InterruptedTurnRecovery;
   recoveryOwner?: DshExecutionOwner;
   observeRecoveryExecution?: NotificationSink;
@@ -530,7 +552,7 @@ export class DshAppServerAdapter {
     }
   }
 
-  close(): void { this.admission?.failAll(new Error("Local host closed")); this.abort.abort(); this.presentation.close(); this.interactions.close(); this.liveTools.clear(); this.latestTurns.clear(); this.sinks.clear(); }
+  async close(): Promise<void> { this.admission?.failAll(new Error("Local host closed")); this.abort.abort(); this.presentation.close(); this.interactions.close(); this.liveTools.clear(); this.latestTurns.clear(); this.sinks.clear(); await this.transcriptCache?.close(); }
 
   engineUnavailable(error: Error): void {
     this.recovery?.lost();
@@ -1533,6 +1555,11 @@ export class DshAppServerAdapter {
         const summary = await this.summary(sessionId);
         if (value.initialTurnsPage != null) {
           const epoch = this.historyEpoch, request = object(value.initialTurnsPage);
+          if (this.transcriptCache && !summary.ephemeral && value.historyCheckpoint == null) {
+            const cached = await this.transcriptCache.read(sessionId, number(request.limit, 10));
+            if (epoch !== this.historyEpoch || !this.engineReady) throw new DshClientError("DSH_GENERATION_CHANGED", "DSH restarted during history read; retry required", true);
+            return cached;
+          }
           const description = await this.threadEngine?.describe?.({ sessionId });
           const history = await this.recoveryHistory(sessionId, value.historyCheckpoint, number(request.limit, 10), description?.historyHead);
           if (epoch !== this.historyEpoch || !this.engineReady) throw new DshClientError("DSH_GENERATION_CHANGED", "DSH restarted during history read; retry required", true);
@@ -1606,6 +1633,11 @@ export class DshAppServerAdapter {
       case "thread/turns/list":
       case "thread/items/list": {
         const threadId = string(value.threadId);
+        if (this.transcriptCache && method === "thread/turns/list" && value.sortDirection !== "asc"
+          && (value.cursor == null || String(value.cursor).startsWith("transcript:")) && !(await this.summary(threadId)).ephemeral) {
+          return this.transcriptCache.page(threadId, value.cursor as string | null ?? null, number(value.limit, 20), undefined,
+            value.itemsView === "notLoaded" ? "notLoaded" : "full");
+        }
         if (method === "thread/turns/list" && value.sortDirection !== "asc" && (value.cursor == null || String(value.cursor).includes("dsh-turns"))) {
           const result = await this.history(threadId, value.cursor, value.limit, "desc", value.itemsView as "full" | "notLoaded");
           return { data: result.pageTurns, nextCursor: result.nextCursor, backwardsCursor: null, itemsPaginationByTurnId: {} };
