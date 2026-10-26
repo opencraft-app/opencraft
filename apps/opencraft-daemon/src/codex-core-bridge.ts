@@ -39,7 +39,8 @@ export class CodexCoreBridge implements DuplexTransport {
   private initializeResult: unknown | null = null;
   private initializing = false;
 
-  constructor(endpoint: string, token: string, private readonly maintenance?: () => import("./codex-maintenance.js").CodexMaintenanceSnapshot) {
+  constructor(endpoint: string, token: string, private readonly maintenance?: () => import("./codex-maintenance.js").CodexMaintenanceSnapshot,
+    private readonly rejectedAdmission?: (method: string, params: unknown, clientId: string) => void) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.connection = new CodexCoreSocket({
       health: signal => this.control.health(signal), message: frame => this.receive(frame),
@@ -73,6 +74,7 @@ export class CodexCoreBridge implements DuplexTransport {
       this.emit({ id, result: this.maintenance?.() ?? null }, clientId); return;
     }
     if (isCodexAdmission(message.method, message.params) && this.maintenance?.().paused) {
+      this.rejectedAdmission?.(String(message.method), message.params, clientId);
       if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
       return;
     }

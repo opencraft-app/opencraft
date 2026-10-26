@@ -363,7 +363,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.nativeTransport = this.nativeCore
       ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore) : this.nativeCore : null;
     this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
-      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot()) : null;
+      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "", () => this.maintenanceSnapshot(),
+        (method, params, clientId) => this.admissionRejected(method, params, clientId, "maintenance")) : null;
     if (this.coreBridge) {
       // A core client must not create local stores or a second queue/account writer.
       this.tasks = null;
@@ -721,13 +722,23 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly generationAdmissionsInFlight = new Map<number, string>();
   private maintenanceSequence = 0;
   private admissionPaused(): boolean { return this.options.kind !== "remote" && codexAdmissionPaused(this.options.dataDirectory); }
+  private rejectedAdmissions = 0;
+  private admissionRejected(method: string, params: unknown, clientId: string, reason: "maintenance" | "generation-fence"): void {
+    const threadId = record(params).threadId;
+    const entry = { event: "codex-admission-rejected", reason, method, clientId, pid: process.pid,
+      threadId: typeof threadId === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(threadId) ? threadId : null,
+      rejectedAdmissions: ++this.rejectedAdmissions };
+    // Diagnostic sink failures must never change the admission decision or response.
+    try { this.diagnostic(entry); }
+    catch { console.warn("[codex-admission-audit] diagnostic sink unavailable"); }
+  }
   private maintenanceSnapshot(): CodexMaintenanceSnapshot {
     const queue = this.queue?.maintenanceCounts();
     const pending = [...this.pending.values()].filter(request => isCodexAdmission(request.method, request.params))
       .map(request => codexAdmissionKey(request.method, request.params, JSON.stringify([request.clientId, request.originalId])));
     const internal = [...this.internalRequests.entries()].filter(([, request]) => isCodexAdmission(request.method, request.params))
       .map(([id, request]) => codexAdmissionKey(request.method, request.params, id));
-    return { paused: this.admissionPaused(),
+    return { paused: this.admissionPaused(), rejectedAdmissions: this.rejectedAdmissions,
       pendingAdmissions: new Set([...this.admissionsInFlight.values(), ...(this.coreBridge?.pendingAdmissionKeys ?? []),
         ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
       queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
@@ -835,8 +846,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       this.emit({ id, result: this.maintenanceSnapshot() }, clientId); return;
     }
-    if ((isCodexAdmission(message.method, message.params) && this.admissionPaused())
-      || (this.isGenerationAdmission(message.method, message.params) && this.generationAdmissionBlocked(message.params))) {
+    const maintenanceRejected = isCodexAdmission(message.method, message.params) && this.admissionPaused();
+    if (maintenanceRejected || (this.isGenerationAdmission(message.method, message.params) && this.generationAdmissionBlocked(message.params))) {
+      this.admissionRejected(String(message.method), message.params, clientId, maintenanceRejected ? "maintenance" : "generation-fence");
       if (id !== null) this.emit({ id, error: codexMaintenanceError() }, clientId);
       return;
     }
