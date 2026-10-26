@@ -40,7 +40,7 @@ import type { BrowserPresentationHandle } from "./browser-presentation-coordinat
 import type { WebBrowserPageRuntime } from "./web-browser-runtime";
 import { useWorkbenchPresentationRoot } from "../components/workbench-presentation-root";
 import { useShellPresentation } from '../components/shell-presentation';
-import { useNeweraBrowserLayout } from '../components/use-newera-browser-layout';
+import { useTouchBrowserLayout } from '../components/use-touch-browser-layout';
 const BrowserMobileToolbar = lazy(() => import('./browser-mobile-toolbar'));
 
 const FIT_VIEWPORT = { type: "fit", width: 1440, height: 900 } as const;
@@ -52,7 +52,7 @@ function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
 
 export default function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
   const intl = useIntl();
-  const newera = useNeweraBrowserLayout();
+  const newera = useTouchBrowserLayout();
   const shell = useShellPresentation();
   const mobile = newera && !!shell?.rightPanelFullWidth && panelTab.region === 'right';
   const portalContainer = useWorkbenchPresentationRoot();

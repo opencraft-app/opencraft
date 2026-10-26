@@ -30,7 +30,7 @@ try {
         Object.assign(viewport, { height, offsetTop, scale });
         if (!panOnly) viewport.dispatchEvent(new Event("resize")); viewport.dispatchEvent(new Event("scroll"));
       };
-      document.addEventListener("DOMContentLoaded", () => { document.documentElement.dataset.uiDensity = "touch"; document.documentElement.dataset.touchNewera = "on"; });
+      document.addEventListener("DOMContentLoaded", () => { document.documentElement.dataset.uiDensity = "touch";; });
     }, device);
     const page = await context.newPage();
     const errors: string[] = []; page.on("pageerror", e => { errors.push(e.message); console.error("PAGEERROR", e.message); });

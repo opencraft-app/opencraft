@@ -71,7 +71,6 @@ async function migrateLegacyShellPreferences(
 }
 
 export async function openWorkbenchUiPreferences(options: {
-  readonly presentation?: "standalone" | "embedded";
   readonly factory?: IDBFactory;
   readonly storage?: Pick<Storage, "getItem" | "removeItem">;
   readonly createChannel?: (name: string) => BroadcastChannel;
@@ -87,9 +86,7 @@ export async function openWorkbenchUiPreferences(options: {
       ...(options.createChannel === undefined ? {} : { createChannel: options.createChannel }),
     })
     : new DesktopUiPreferenceStore(desktopPort);
-  const runtime = await UiPreferencesRuntime.open({ installation }, {
-    defaults: { "chat.touchNewera": options.presentation !== "embedded" },
-  });
+  const runtime = await UiPreferencesRuntime.open({ installation });
   await migrateLegacyShellPreferences(runtime, options.storage ?? window.localStorage);
   return runtime;
 }

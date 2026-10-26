@@ -64,9 +64,9 @@ Expo Layout/Navigation 拥有：
 
 ### Newera mobile browser chrome
 
-The touch-density Newera Web presentation uses bottom browser chrome when a
-narrow window presents an active full-width browser panel. Desktop, Newera-off
-and non-browser panels retain their existing chrome. The installation's density
+The unified touch experience uses bottom browser chrome when a narrow window
+presents an active full-width browser panel. Compact density, wide windows and
+non-browser panels retain their existing chrome. The installation's density
 projection and Shell's actual full-width state select presentation; neither
 changes the remote page's shared viewport or device profile.
 

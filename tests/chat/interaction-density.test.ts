@@ -30,23 +30,18 @@ test("automatic density follows capability; persisted overrides win and reset re
 });
 
 
-test("Newera stays opt-in and projects persisted presentation without changing density", async () => {
-  const store = new MemoryUiPreferenceStore();
-  let runtime = await UiPreferencesRuntime.open({ installation: store });
+test("touch presentation has one authority and does not project a second toggle", async () => {
+  const runtime = await UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() });
   const root = { dataset: {} as Record<string, string> };
   const query = { matches: false, addEventListener() {}, removeEventListener() {} };
   const document = { documentElement: root, defaultView: { matchMedia: () => query } } as unknown as Document;
-  let dispose = bindInteractionDensity(document, runtime);
-  assert.equal(root.dataset.touchNewera, "off");
-  await runtime.set("chat.touchNewera", true);
-  assert.equal(root.dataset.touchNewera, "on");
-  assert.equal(root.dataset.uiDensity, "compact");
-  dispose(); assert.equal(root.dataset.touchNewera, undefined); await runtime.close();
-  runtime = await UiPreferencesRuntime.open({ installation: store });
-  dispose = bindInteractionDensity(document, runtime);
-  assert.equal(runtime.get("chat.touchNewera"), true);
-  assert.equal(root.dataset.touchNewera, "on");
-  await runtime.set("chat.touchNewera", false);
-  assert.equal(root.dataset.touchNewera, "off");
-  dispose(); await runtime.close();
+  const dispose = bindInteractionDensity(document, runtime);
+  assert.deepEqual(root.dataset, { uiDensity: "compact" });
+  await runtime.set("interface.touchFriendly", "on");
+  assert.deepEqual(root.dataset, { uiDensity: "touch" });
+  await runtime.set("interface.touchFriendly", "off");
+  assert.deepEqual(root.dataset, { uiDensity: "compact" });
+  dispose();
+  assert.deepEqual(root.dataset, {});
+  await runtime.close();
 });

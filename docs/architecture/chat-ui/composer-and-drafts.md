@@ -487,12 +487,14 @@ uses 94% theme material coverage (editor glass is independent), so the moving
 transcript does not compete with accessory text. Reduced-transparency and
 unsupported-filter fallbacks remain opaque. The live-diff pill uses its own opaque elevated theme surface and does not share the rail glass.
 
-Newera defaults belong to the Workbench entry's preference runtime: standalone on,
-embedded off when no valid user choice exists. Defaults are not stored on startup;
-explicit choices win and the density projection still gates the touch presentation.
-Preference reset and malformed-record fallback use that runtime's entry defaults.
+Touch interaction and the Newera presentation use the one installation preference
+`interface.touchFriendly`. Automatic / On / Off is selected in Appearance through
+SettingsSegmented; Chat has no second switch. Both standalone and embedded default
+to Automatic. Existing touch choices persist unchanged; old `chat.touchNewera`
+records are retained but no longer read or written by the current preference schema.
+Actual pointer modality and available container space remain separate inputs.
 
-Newera触控时间线浮动回底部控件：箭头与运行点共用ScrollToBottomButton的玻璃外壳和44px圆形触控区，图形放大15%并增强笔画；沿用主题Newera材质及减少透明/强制色彩/无滤镜实底回退。两态不得改变锚点、尺寸或滚动语义；桌面与关闭Newera的呈现保持。
+Newera触控时间线浮动回底部控件：箭头与运行点共用ScrollToBottomButton的玻璃外壳和44px圆形触控区，图形放大15%并增强笔画；沿用主题Newera材质及减少透明/强制色彩/无滤镜实底回退。两态不得改变锚点、尺寸或滚动语义；紧凑布局与关闭触控体验时保留普通呈现。
 
 Composer四角保持对称，共用shell radius token（普通16px/Newera28px）；附属rail以同半径互补圆弧mask适配shell肩部。结构tuck等于radius且padding/负margin相消，材料扣除shell范围，仅1px边界覆盖；不得压平shell上圆角或用整块双层玻璃掩盖接缝。验收包含实际像素覆盖、四角相等和编辑器/内容间距不变。
 

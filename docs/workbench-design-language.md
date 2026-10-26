@@ -408,7 +408,7 @@ frontend-only archive. This is distinct from the expiring recycle bin.
 
 ### Touch Newera floating conversation chrome
 
-Conversation route eligibility is explicit on the shared Header. Touch density plus Newera projects only its existing left/right sidebar and more controls as circular glass surfaces; title/pencil are hidden. The direct preview button keeps its existing position and capability-gated command; the conversation menu retains Rename. Desktop, Newera-off and other route chrome remain unchanged. The shared mobile-glass mixin owns theme tint, blur, elevation and reduced-transparency/forced-colors fallback, including the stationary wide-touch portal. Safe-area spacing and 44px hit targets remain Shell-owned.
+Conversation route eligibility is explicit on the shared Header. The unified touch experience projects only its existing left/right sidebar and more controls as circular glass surfaces; title/pencil are hidden. The direct preview button keeps its existing position and capability-gated command; the conversation menu retains Rename. Compact density and other route chrome retain their existing presentation. The shared mobile-glass mixin owns theme tint, blur, elevation and reduced-transparency/forced-colors fallback, including the stationary wide-touch portal. Safe-area spacing and 44px hit targets remain Shell-owned.
 The existing Shell top-fade is enabled for this browser presentation, softly blending to transparent rather than painting a solid toolbar. It never accepts input. No duplicate menu, preference, scroll owner or editor is introduced.
 
 
@@ -604,3 +604,15 @@ breathing room and the first transcript content starts below the controls; after
 scrolling, real text continues behind the status area. A non-interactive masked
 blur and theme veil soften the upper edge without creating a solid toolbar.
 Controls remain inside safe bounds and no scroll-driven layout switch is used.
+
+
+### Unified touch setting
+
+Appearance exposes one Touch experience row with Automatic / On / Off, using the
+shared SettingsSegmented primitive. Its radio group has one tab stop, arrow-key
+wrapping (including RTL), Home/End and persistent selected feedback; touch targets
+follow the active density. Mouse/pen/touch modality remains an independent input.
+The original `interface.touchFriendly` values retain authority; both entry types
+default to Automatic. An old Newera preference record cannot independently change
+the composer, floating header or narrow browser chrome. Changing the setting keeps
+the existing editor, draft, selection, panels and scrolling owners.

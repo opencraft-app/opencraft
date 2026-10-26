@@ -30,6 +30,13 @@ through that owner before ending the session. Only Apple Home Screen PwaRuntime
 supplies the Web Push device port. Sharing the settings component does not grant
 Expo/WebView that capability or claim native background-notification support.
 
+Touch experience is owned by the Web preference runtime in both standalone and
+embedded entrypoints. The single `interface.touchFriendly` preference offers
+Automatic, On and Off; both entrypoints default to Automatic. It controls touch
+targets and touch presentation together. Actual pointer events and container
+width retain their own input and layout decisions; the native container does not
+introduce another touch preference.
+
 ## Build and use
 
 From the core workspace:

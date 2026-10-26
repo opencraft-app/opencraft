@@ -23,7 +23,7 @@ import type { ComposerController } from "@opencraft/composer-core";
 import type { BrowserTabId } from "@opencraft/browser-core";
 import { useOptionalBrowserRuntime } from "../browser/browser-runtime-context";
 import { useShellPresentation } from "./shell-presentation";
-import { useNeweraBrowserLayout } from './use-newera-browser-layout';
+import { useTouchBrowserLayout } from './use-touch-browser-layout';
 import { useIntl } from '@opencraft/i18n/react';
 import {
   ConversationTurn,
@@ -65,7 +65,7 @@ export function FloatingComposerToggle({ activeTabId, label }: {
   const { store, shown } = useFloatingComposerControls(activeTabId);
   const reduced = Boolean(useReducedMotion());
   const shell = useShellPresentation();
-  const mobile = useNeweraBrowserLayout();
+  const mobile = useTouchBrowserLayout();
   if (!shell?.rightPanelFullWidth) return null;
   const toggleLabel = shown ? "Hide floating composer" : "Show floating composer";
   return (
@@ -125,7 +125,7 @@ export function ThreadComposerPresentation({
   forceExpanded?: boolean;
 }) {
   const intl = useIntl();
-  const newera = useNeweraBrowserLayout();
+  const newera = useTouchBrowserLayout();
   const shell = useShellPresentation();
   const shellAnchor = useContext(ComposerOverlayAnchorContext);
   const registry = useContext(FloatingComposerRegistryContext);

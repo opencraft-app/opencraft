@@ -5,6 +5,7 @@ import { IDBFactory } from "fake-indexeddb";
 import {
   MemoryUiPreferenceStore,
   UiPreferencesRuntime,
+  type UiPreferenceKey,
 } from "../../packages/ui-preferences/src/index.ts";
 import { readModelSelection, rememberModelSelection } from "../../apps/workbench-web/src/runtime/model-selection-preferences.ts";
 import { IndexedDbUiPreferenceStore } from "../../apps/workbench-web/src/runtime/indexeddb-ui-preference-store.ts";
@@ -21,7 +22,7 @@ test("UI preference defaults keep Applications unpinned", async () => {
   assert.equal(runtime.get("shell.applicationsPinned"), false);
   assert.equal(runtime.get("chat.defaultFollowUpAction"), "queue");
   assert.equal(runtime.get("chat.turnNotifications"), false);
-  assert.equal(runtime.get("chat.touchNewera"), false);
+  assert.equal(runtime.get("interface.touchFriendly"), "auto");
   assert.equal(runtime.get("shell.accountPinned"), false);
   assert.equal(runtime.get("shell.navigationDetent"), "expanded");
   assert.equal(runtime.get("shell.navigationWidth"), 137);
@@ -121,59 +122,73 @@ test("invalid stored follow-up preference falls back to the authority default", 
 });
 
 
-test("workbench entry defaults do not persist and explicit choices win across entry defaults", async () => {
+test("workbench entries share automatic touch experience and preserve manual choices", async () => {
   const factory = new IDBFactory();
-  const options = {factory,storage:{getItem:()=>null,removeItem(){}},createChannel:createSilentChannel};
+  const options = { factory, storage: { getItem: () => null, removeItem() {} }, createChannel: createSilentChannel };
   let runtime = await openWorkbenchUiPreferences(options);
-  assert.equal(runtime.get("chat.touchNewera"),true);
-  assert.equal(runtime.storedRevision("chat.touchNewera"),0);
-  await runtime.close();
-  runtime = await openWorkbenchUiPreferences({...options,presentation:"embedded"});
-  assert.equal(runtime.get("chat.touchNewera"),false);
-  assert.equal(runtime.storedRevision("chat.touchNewera"),0);
+  assert.equal(runtime.get("interface.touchFriendly"), "auto");
+  assert.equal(runtime.storedRevision("interface.touchFriendly"), 0);
+  await runtime.set("interface.touchFriendly", "off");
   await runtime.close();
   runtime = await openWorkbenchUiPreferences(options);
-  await runtime.set("chat.touchNewera",false); await runtime.close();
-  runtime = await openWorkbenchUiPreferences(options);
-  assert.equal(runtime.get("chat.touchNewera"),false);
-  await runtime.set("chat.touchNewera",true);await runtime.close();
-  runtime = await openWorkbenchUiPreferences({...options,presentation:"embedded"});
-  assert.equal(runtime.get("chat.touchNewera"),true,"explicit choice is not overridden by entry default");
+  assert.equal(runtime.get("interface.touchFriendly"), "off");
+  await runtime.set("interface.touchFriendly", "on");
   await runtime.close();
+  runtime = await openWorkbenchUiPreferences(options);
+  assert.equal(runtime.get("interface.touchFriendly"), "on");
+  await runtime.reset("interface.touchFriendly");
+  assert.equal(runtime.get("interface.touchFriendly"), "auto");
+  await runtime.close();
+});
+
+test("retired Newera records neither override touch intent nor need destructive migration", async () => {
+  const legacyKey = "chat.touchNewera" as UiPreferenceKey;
+  for (const legacy of [true, false]) for (const choice of [undefined, "auto", "on", "off"] as const) {
+    const store = new MemoryUiPreferenceStore();
+    await store.compareAndSet(legacyKey, 0, JSON.stringify(legacy));
+    if (choice !== undefined) await store.compareAndSet("interface.touchFriendly", 0, JSON.stringify(choice));
+    const original = await store.load(legacyKey);
+    const runtime = await UiPreferencesRuntime.open({ installation: store });
+    assert.equal(runtime.get("interface.touchFriendly"), choice ?? "auto");
+    assert.equal("chat.touchNewera" in runtime.getSnapshot().values, false);
+    await runtime.set("interface.touchFriendly", "off");
+    assert.deepEqual(await store.load(legacyKey), original);
+    await runtime.close();
+  }
 });
 
 test("an explicit value matching a contextual default is persisted; invalid data and reset use the entry default", async () => {
   const store = new MemoryUiPreferenceStore();
-  let runtime = await UiPreferencesRuntime.open({installation:store},{defaults:{"chat.touchNewera":true}});
-  await runtime.set("chat.touchNewera",true);
-  assert.equal(runtime.storedRevision("chat.touchNewera"),1);
+  let runtime = await UiPreferencesRuntime.open({installation:store},{defaults:{"shell.accountPinned":true}});
+  await runtime.set("shell.accountPinned",true);
+  assert.equal(runtime.storedRevision("shell.accountPinned"),1);
   await runtime.close();
   runtime = await UiPreferencesRuntime.open({installation:store});
-  assert.equal(runtime.get("chat.touchNewera"),true);
-  await runtime.reset("chat.touchNewera");assert.equal(runtime.get("chat.touchNewera"),false);
+  assert.equal(runtime.get("shell.accountPinned"),true);
+  await runtime.reset("shell.accountPinned");assert.equal(runtime.get("shell.accountPinned"),false);
   await runtime.close();
-  await store.compareAndSet("chat.touchNewera",2,'"invalid"');
-  runtime = await UiPreferencesRuntime.open({installation:store},{defaults:{"chat.touchNewera":true}});
-  assert.equal(runtime.get("chat.touchNewera"),true);
-  await runtime.set("chat.touchNewera",false);await runtime.reset("chat.touchNewera");
-  assert.equal(runtime.get("chat.touchNewera"),true);await runtime.close();
+  await store.compareAndSet("shell.accountPinned",2,'"invalid"');
+  runtime = await UiPreferencesRuntime.open({installation:store},{defaults:{"shell.accountPinned":true}});
+  assert.equal(runtime.get("shell.accountPinned"),true);
+  await runtime.set("shell.accountPinned",false);await runtime.reset("shell.accountPinned");
+  assert.equal(runtime.get("shell.accountPinned"),true);await runtime.close();
 });
 
 
 test("live refresh keeps each entry fallback while sharing explicit user choices", async () => {
   const store=new MemoryUiPreferenceStore();
-  const standalone=await UiPreferencesRuntime.open({installation:store},{defaults:{"chat.touchNewera":true}});
+  const standalone=await UiPreferencesRuntime.open({installation:store},{defaults:{"shell.accountPinned":true}});
   const embedded=await UiPreferencesRuntime.open({installation:store});
-  await standalone.set("chat.touchNewera",true);
+  await standalone.set("shell.accountPinned",true);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(embedded.get("chat.touchNewera"),true);
-  await embedded.set("chat.touchNewera",false);
+  assert.equal(embedded.get("shell.accountPinned"),true);
+  await embedded.set("shell.accountPinned",false);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(standalone.get("chat.touchNewera"),false);
-  await store.compareAndSet("chat.touchNewera",2,'null');
+  assert.equal(standalone.get("shell.accountPinned"),false);
+  await store.compareAndSet("shell.accountPinned",2,'null');
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(standalone.get("chat.touchNewera"),true);
-  assert.equal(embedded.get("chat.touchNewera"),false);
+  assert.equal(standalone.get("shell.accountPinned"),true);
+  assert.equal(embedded.get("shell.accountPinned"),false);
   await standalone.close();await embedded.close();
 });
 

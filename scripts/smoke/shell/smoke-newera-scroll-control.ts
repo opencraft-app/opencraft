@@ -11,7 +11,7 @@ try {
   await page.addInitScript("window.__name=value=>value");
   await page.goto(`${vite.resolvedUrls!.local[0]}?scrollControl=1&palette=${palette}&mode=${mode}`);
   await page.waitForFunction(()=>typeof(window as any).setTouch==="function");
-  await page.evaluate(async variant=>{await(window as any).setTouch(variant!=="desktop");await(window as any).setNewera(variant!=="off");},variant);
+  await page.evaluate(async variant=>{await(window as any).setTouch(variant==="newera");},variant);
   const button=page.getByRole("button",{name:"回到底部"});await button.waitFor();
   const before=await button.boundingBox();assert(before);assert.equal(before.width,variant==="newera"?44:32);assert.equal(before.height,before.width);
   const styles=await button.evaluate(el=>{const s=getComputedStyle(el);const icon=getComputedStyle(el.querySelector("svg")!);return{bg:s.backgroundColor,filter:s.backdropFilter,icon:icon.width,stroke:icon.strokeWidth}});

@@ -66,7 +66,7 @@ try{
   await switchTo('unknown');assert.doesNotMatch(await inherited.innerText(),/Alpha|Beta|High|Medium|Low/);assert.equal(await inherited.locator('.opencraft-composer-mode__fast').count(),0,'unknown inherited metadata cannot invent Fast');await switchTo('a');assert.match(await inherited.innerText(),/Alpha model/);assert.equal(await editor.innerText(),'Side chat draft');
   // Side Chat presents the execution snapshot read-only. Its idle touch row
   // hides the metadata group, so the shared collapsed slot must retain Fast.
-  await page.evaluate(touch=>{document.documentElement.dataset.uiDensity=touch?'touch':'compact';document.documentElement.dataset.touchNewera='on';(window as any).fixture.setReadOnly(true)},touch);
+  await page.evaluate(touch=>{document.documentElement.dataset.uiDensity=touch?'touch':'compact';document.documentElement.dataset.uiDensity='touch';(window as any).fixture.setReadOnly(true)},touch);
   const editorNode=await editor.elementHandle();
   const visibleFast=()=>page.locator('[aria-label="Fast"]:visible');
   const assertFilled=async()=>{assert.equal(await visibleFast().count(),1,'exactly one visible execution Fast status');assert.notEqual(await visibleFast().locator('path').evaluate(el=>getComputedStyle(el).fill),'none','active Fast uses the shared filled glyph')};

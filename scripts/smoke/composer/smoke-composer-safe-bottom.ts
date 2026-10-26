@@ -47,7 +47,7 @@ try {
             const editor = page.locator('.opencraft-composer-editor'); await editor.waitFor();
             await page.evaluate(({ theme, inset }) => {
                 (window as any).fixtureSetTheme(theme);
-                Object.assign(document.documentElement.dataset, { uiDensity: 'touch', touchNewera: 'on' });
+                Object.assign(document.documentElement.dataset, { uiDensity: 'touch' });
                 document.documentElement.style.setProperty('--safe-layout-inset-top', inset + 'px');
                 document.documentElement.style.setProperty('--test-safe-bottom', '34px');
             }, { theme, inset });
@@ -108,7 +108,7 @@ try {
             document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')!.setAttribute('content', status);
             (window as any).fixtureProjectAppearance();
             (window as any).fixtureSetTheme(theme);
-            Object.assign(root.dataset, { theme, uiDensity: 'touch', touchNewera: 'on' });
+            Object.assign(root.dataset, { theme, uiDensity: 'touch' });
             root.style.setProperty('--test-safe-bottom', inset + 'px'); root.style.setProperty('--safe-layout-inset-top', '62px');
             document.activeElement instanceof HTMLElement && document.activeElement.blur();
             window.visualViewport!.dispatchEvent(new Event('resize'));
