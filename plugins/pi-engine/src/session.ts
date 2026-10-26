@@ -50,7 +50,7 @@ export class PiDurableSession {
   private tasks = new Map<number, TaskRecord<any, any, any>>();
   private reads: Promise<unknown> = Promise.resolve();
   private replaceTools!: (tools: Value[]) => void;
-  private constructor(private readonly options: { cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
+  private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
     ephemeral?: boolean; inherited?: PiForkContext;
     onSnapshot(snapshot: PiSnapshot): Promise<void> | void; onTool(request: Value, signal: AbortSignal): Promise<unknown>; onExit(error: Error): void }) {}
   static async open(options: PiDurableSession["options"]) {
@@ -107,7 +107,7 @@ export class PiDurableSession {
     this.harness = await Harness.open(this.storage, { models: this.options.models, registry, env: target => {
       const cwd = target.cwd ?? this.options.cwd;
       let env = this.environments.get(cwd);
-      if (!env) { env = new NodeExecutionEnv({ cwd }); this.environments.set(cwd, env); }
+      if (!env) { env = new NodeExecutionEnv({ cwd, shellEnv: { OPENCRAFT_THREAD_ID: this.options.threadId } }); this.environments.set(cwd, env); }
       return env;
     } }, context);
     void this.harness.closed.then(end => {
@@ -275,7 +275,14 @@ export class PiDurableSession {
       if (previous && (!isDeepStrictEqual(previous.input, item.input)
         || !isDeepStrictEqual(previous.additionalContext ?? null, item.additionalContext)))
         throw new Error("Client message identity already belongs to different input");
-      if (pending || receipt) return pending ? JSON.parse(JSON.stringify(pending)) as PiQueuedInput : item;
+      if (pending) return JSON.parse(JSON.stringify(pending)) as PiQueuedInput;
+      if (receipt) {
+        // A dispatched input is historical native custody, not a new enqueue.
+        // Never echo the replaying caller's nonce into an old receipt. Older
+        // native records without an admission proof remain unproven.
+        const {executionAdmission:_replayed,...projection}=item;
+        return {...projection, ...(previous?.executionAdmission ? {executionAdmission:previous.executionAdmission} : {})};
+      }
       if (queue.items.length >= 50) throw new Error("The Pi message queue is full");
       queue.items.push(item); return item;
     }, context);

@@ -166,6 +166,14 @@ export async function startEngineHost(options: {
             if (backend?.readyState === WebSocket.OPEN) backend.send(JSON.stringify(frame)); return;
           }
           const method = frame.method, params = frame.params ?? {};
+          if (typeof method === "string" && method.startsWith("opencraft/orchestration/")) {
+            const driver = params.driver ?? params.settings?.driver;
+            const provider = typeof driver === "string" ? registry.get(driver)
+              : options.providers.find(provider => provider.ownsThread(params.threadId ?? ""));
+            if (!provider || !(provider.extensions?.["opencraft/thread-orchestration"] as Value)?.version)
+              throw new Error("Orchestration driver is unavailable");
+            reply(await provider.request(method, params, state.owner)); return;
+          }
           if (method === "runtime/client/disconnect") {
             for (const provider of options.providers) provider.disconnect(state.owner);
             clients.delete(clientId);

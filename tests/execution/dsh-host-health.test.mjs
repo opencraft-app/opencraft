@@ -11,7 +11,8 @@ test('independent DSH identity is observable before any lazy engine attachment',
   const path = join(directory, 'descriptor.json');
   let health = { ok: true, engine: 'dsh', pid: 21, enginePid: 22, storage: [] };
   let requests = 0;
-  const server = createServer((_, response) => { requests++; response.end(JSON.stringify(health)); });
+  const routes = [];
+  const server = createServer((request, response) => { requests++; routes.push([request.method, request.url]); response.end(JSON.stringify(health)); });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const descriptor = { schemaVersion: 1, pid: 21, machineId: 'fixture', dataDirectory: directory,
     websocketUrl: `ws://127.0.0.1:${server.address().port}/rpc?token=synthetic` };
@@ -21,6 +22,9 @@ test('independent DSH identity is observable before any lazy engine attachment',
     assert.equal(requests, 1, 'health must not depend on an attached engine client');
     const attachment = await attachDshHost(path, directory, 'fixture');
     assert.deepEqual(await attachment.getIdentity(), await readDshHostIdentity(path));
+    assert.ok(routes.every(([method, route]) => method === 'GET' && route === '/health'),
+      'gateway attachment must only observe the existing independent Host, without native RPC or activation');
+    const attachedRequests = requests; await attachment.close(); assert.equal(requests, attachedRequests);
     health = { ...health, enginePid: 23 };
     assert.deepEqual(await readDshHostIdentity(path), { pid: 21, enginePid: 23 }, 'observations remain fresh for installer continuity checks');
     for (const invalid of [{ ...health, ok: false }, { ...health, pid: 24 }, { ...health, enginePid: 0 }]) {

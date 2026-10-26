@@ -21,7 +21,7 @@ function fixture(t: test.TestContext) {
 test("queue add persists original subject across gateway restart and another employee's start", t => {
   const f = fixture(t); let tracker = f.tracker;
   tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"input-A",input:[]}},context("A"),native);
-  tracker.observe({id:1,result:{queuedSubmission:{id:"native-queue",createdAt:Date.now()+1}}}); f.restart(); tracker = f.tracker;
+  tracker.observe({id:1,result:{queuedSubmission:{id:"native-queue",__opencraftExecutionAdmission:f.store().queueAdmissionToken("t","input-A")}}}); f.restart(); tracker = f.tracker;
   tracker.prepare({id:2,method:"thread/queue/start",params:{threadId:"t",queuedSubmissionId:"native-queue"}},context("B"),native);
   tracker.observe({id:2,result:{turn:{id:"turn"}}});
   const id = String(f.db.prepare("SELECT execution_id FROM execution_leases").get()!.execution_id);
@@ -34,7 +34,7 @@ test("queue add persists original subject across gateway restart and another emp
 test("automatic native queue start waits for native input identity and never uses a later steer", t => {
   const f=fixture(t),tracker=f.tracker;
   tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"A",input:[]}},context("A"),native);
-  tracker.observe({id:1,result:{queuedSubmission:{id:"automatic-queue",createdAt:Date.now()+1}}});
+  tracker.observe({id:1,result:{queuedSubmission:{id:"automatic-queue",__opencraftExecutionAdmission:f.store().queueAdmissionToken("t","A")}}});
   tracker.observe({method:"turn/started",params:{threadId:"t",turn:{id:"turn"}}},native);
   const id=String(f.db.prepare("SELECT execution_id FROM execution_leases").get()!.execution_id);
   assert.equal(f.store().resolve({threadId:"t",executionId:id}).status,"unknown");
@@ -134,7 +134,7 @@ test("a legacy queue replay with missing original principal cannot acquire the r
 test("an automatic A queue Turn never binds the sole pending B start that loses admission", t=>{
   const f=fixture(t),tracker=f.tracker;
   tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"A",input:[]}},context("A"),native);
-  tracker.observe({id:1,result:{queuedSubmission:{id:"queue-A",createdAt:Date.now()+1}}});
+  tracker.observe({id:1,result:{queuedSubmission:{id:"queue-A",__opencraftExecutionAdmission:f.store().queueAdmissionToken("t","A")}}});
   tracker.prepare({id:2,method:"turn/start",params:{threadId:"t",clientUserMessageId:"B",input:[]}},context("B"),native);
   const bId=String(f.db.prepare("SELECT execution_id FROM execution_leases WHERE input_id='B'").get()!.execution_id);
   tracker.observe({method:"turn/started",params:{threadId:"t",turn:{id:"queue-turn-A",items:[{type:"userMessage",clientId:"A"}]}}},native);
@@ -148,7 +148,7 @@ test("an automatic A queue Turn never binds the sole pending B start that loses 
 test("steer cannot claim an unresolved native Turn through either steering projection", t=>{
   const f=fixture(t),tracker=f.tracker;
   tracker.prepare({id:1,method:"thread/queue/add",params:{threadId:"t",clientUserMessageId:"A",input:[]}},context("A"),native);
-  tracker.observe({id:1,result:{queuedSubmission:{id:"queue-A",createdAt:Date.now()+1}}});
+  tracker.observe({id:1,result:{queuedSubmission:{id:"queue-A",__opencraftExecutionAdmission:f.store().queueAdmissionToken("t","A")}}});
   tracker.observe({method:"turn/started",params:{threadId:"t",turn:{id:"turn"}}},native);
   const id=String(f.db.prepare("SELECT execution_id FROM execution_leases WHERE turn_id='turn'").get()!.execution_id);
   tracker.prepare({id:2,method:"turn/steer",params:{threadId:"t",expectedTurnId:"turn",clientUserMessageId:"B",input:[]}},context("B"),native);
@@ -176,4 +176,31 @@ test("pre-ACK Gateway loss recovers the original execution ID, incarnation and j
     assert.equal(restored.lease.executionId,old.execution_id);assert.equal(restored.lease.generation,old.generation);
     assert.equal(restored.lease.admittedAtMs,1000);assert.equal(restored.lease.engineIncarnation,native.incarnation);assert.equal(restored.lease.principal?.subject,"A");
   }
+});
+
+
+test("ACP live inspection uses the admitted public Turn and input, never native history numbering", async t=>{
+  const {createHostExecutionTurnInspector}=await import("../../apps/opencraft-daemon/src/native-execution-inspector.js");
+  const lease={threadId:"dsh_acp_public",turnId:"acp-turn-public",inputId:"A"} as any;
+  let fallback=0;
+  for(const [observation,expected] of [
+    [{pid:42,turn:{id:"acp-turn-public",status:"inProgress",inputId:"A"}},"active"],
+    [{pid:42,turn:{id:"acp-turn-public",status:"inProgress",inputId:"B"}},"unknown"],
+    [{pid:42,turn:{id:"acp-turn-public",status:"unconfirmed",inputId:"A"}},"unknown"],
+    [{pid:42,turn:{id:"acp-turn-new",status:"inProgress",inputId:"B"}},"finished"],
+    [{pid:42,turn:null},"unknown"],
+    [{pid:42},"finished"],
+  ] as const) assert.equal(await createHostExecutionTurnInspector(async()=>observation,async()=>{fallback++;return "finished";})(lease),expected);
+  assert.equal(fallback,1);
+});
+
+test('a historical queue receipt cannot acquire a new principal through a plausible clock timestamp', t=>{
+  const f=fixture(t),tracker=f.tracker;
+  const prepared=tracker.prepare({id:1,method:'thread/queue/add',params:{threadId:'t',clientUserMessageId:'old-input',input:[],__opencraftExecutionAdmission:'renderer-forged'}},context('B'),native);
+  assert.notEqual(prepared.params.__opencraftExecutionAdmission,'renderer-forged');
+  tracker.observe({id:1,result:{queuedSubmission:{id:'old-native-queue',createdAt:Date.now()+10000,__opencraftExecutionAdmission:'original-unknown-nonce'}}});
+  tracker.prepare({id:2,method:'thread/queue/start',params:{threadId:'t',queuedSubmissionId:'old-native-queue'}},context('B'),native);
+  tracker.observe({id:2,result:{turn:{id:'old-queue-turn'}}});
+  const row=f.db.prepare("SELECT execution_id FROM execution_leases WHERE turn_id='old-queue-turn'").get()!;
+  assert.equal(f.store().resolve({threadId:'t',executionId:String(row.execution_id)}).status,'unknown');
 });

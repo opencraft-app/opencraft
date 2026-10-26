@@ -82,6 +82,18 @@ export async function attachEngineHost(path, dataDirectory, machineId, engines, 
         (await canAdmit()) ? input('submit', threadId, inputId, text) : null,
     },
     resolveWebsocketUrl: async () => (await read()).descriptor.websocketUrl,
+    getExecutionIdentity: async threadId => {
+      if (typeof threadId !== 'string' || !threadId || threadId.length > 512) throw new Error('Execution Thread required');
+      const { descriptor: d } = await read();
+      const url = new URL('/execution-origin', d.controlUrl); url.searchParams.set('threadId', threadId);
+      const response = await fetch(url, { headers: {authorization: `Bearer ${d.token}`}, signal: AbortSignal.timeout(5000) });
+      const result = await response.json();
+      if (!response.ok || result.threadId !== threadId || result.pid !== null && (!Number.isSafeInteger(result.pid) || result.pid < 1))
+        throw new Error('Execution process unavailable');
+      if (result.turn !== undefined && result.turn !== null && (typeof result.turn.id !== 'string'
+        || typeof result.turn.status !== 'string' || result.turn.inputId !== null && typeof result.turn.inputId !== 'string')) throw new Error('Invalid execution observation');
+      return {pid:result.pid,...(result.turn === undefined ? {} : {turn:result.turn})};
+    },
     getIdentity: async () => {
       const { health } = await read();
       return { pid: health.pid };
@@ -100,4 +112,12 @@ export async function readEngineHostIdentity(path) {
     descriptor.defaultEngine,
   );
   return attachment.getIdentity();
+}
+
+/** Authenticated owner resolves the physical native generation; never use a
+ * wrapper environment incarnation or the routing Host PID for remote ACP. */
+export async function readEngineExecutionIdentity(path, threadId) {
+  const d = await readPrivateJson(path);
+  const attachment = await attachEngineHost(path, d.dataDirectory, d.machineId, d.engines, d.defaultEngine);
+  return attachment.getExecutionIdentity(threadId);
 }

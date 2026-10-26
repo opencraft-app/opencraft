@@ -124,11 +124,17 @@ function bridgeAppServerSocket(client, request, options) {
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
-      const frame = identitySession ? identitySession.toNative(data.toString("utf8"), options.submissionContext) : data;
+      const frame = identitySession ? await identitySession.prepareNative(data.toString("utf8"), options.submissionContext) : data;
       if (frame !== null) upstream.send(frame, { binary: isBinary });
     } catch {
       client.close(1011, "Thread identity service unavailable"); upstream.close();
     }
+  };
+  let forwarding = Promise.resolve(), observing = Promise.resolve();
+  let forwardingBytes=0, forwardingCount=0, observingBytes=0, observingCount=0;
+  const enqueue = (data,isBinary) => {
+    if (++forwardingCount>512 || (forwardingBytes+=data.length)>64*1024*1024) { client.close(1009,"AppServer forwarding queue limit exceeded"); return; }
+    forwarding = forwarding.then(() => forward(data,isBinary)).finally(() => {forwardingCount--;forwardingBytes-=data.length;});
   };
   const pending = [];
   let pendingBytes = 0;
@@ -136,7 +142,7 @@ function bridgeAppServerSocket(client, request, options) {
 
   client.on("message", (data, isBinary) => {
     if (upstream.readyState === WebSocket.OPEN) {
-      forward(data, isBinary);
+      enqueue(data, isBinary);
       return;
     }
     if (upstream.readyState !== WebSocket.CONNECTING) return;
@@ -150,22 +156,25 @@ function bridgeAppServerSocket(client, request, options) {
 
   upstream.on("open", () => {
     for (const message of pending.splice(0)) {
-      forward(message.data, message.isBinary);
+      enqueue(message.data, message.isBinary);
     }
     pendingBytes = 0;
   });
   upstream.on("message", (data, isBinary) => {
-    if (client.readyState !== WebSocket.OPEN) return;
-    if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
-    try {
-      if (identitySession && isBinary) throw new Error("Binary identity frame");
-      // Identity restores rewritten request IDs before query initialization is correlated.
-      const restored = identitySession ? identitySession.fromNative(data.toString("utf8")) : data;
-      const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
-      if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
-    } catch {
-      client.close(1011, "Thread identity service unavailable"); upstream.close();
-    }
+    if (++observingCount>512 || (observingBytes+=data.length)>64*1024*1024) { client.close(1009,"AppServer observation queue limit exceeded"); upstream.close(); return; }
+    observing = observing.then(async () => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
+      try {
+        if (identitySession && isBinary) throw new Error("Binary identity frame");
+        // Identity restores rewritten request IDs before query initialization is correlated.
+        const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
+        const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
+        if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
+      } catch {
+        client.close(1011, "Thread identity service unavailable"); upstream.close();
+      }
+    }).finally(() => {observingCount--;observingBytes-=data.length;});
   });
   upstream.on("close", (code, reason) => {
     if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {

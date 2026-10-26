@@ -33,7 +33,8 @@ export class SessionCapabilityMcp {
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
-    private readonly options: { descriptorPath?: string; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean } = {}) {
+    private readonly options: { descriptorPath?: string; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
+      orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown> } = {}) {
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
@@ -111,7 +112,7 @@ export class SessionCapabilityMcp {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (request.url !== "/mcp" && request.url !== "/admission") { response.writeHead(404); response.end(); return; }
+    if (!["/mcp", "/admission", "/orchestration"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     const authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -127,6 +128,19 @@ export class SessionCapabilityMcp {
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString()); }
     catch { response.writeHead(400); response.end(); return; }
+    if (request.url === "/orchestration") {
+      if (!authenticated.session || !this.options.orchestration) { response.writeHead(403); response.end(); return; }
+      if (!body || typeof body !== "object" || Array.isArray(body)) { response.writeHead(400); response.end(); return; }
+      try {
+        const result = await this.options.orchestration(authenticated.session, body as Record<string, unknown>);
+        response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ result }));
+      } catch (cause) {
+        const error = cause as { status?: number; code?: string };
+        response.writeHead(error.status && error.status >= 400 && error.status <= 599 ? error.status : 503, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: typeof error.code === "string" ? error.code : "orchestration_outcome_unknown" }));
+      }
+      return;
+    }
     if (request.url === "/admission") {
       const inputId = (body as { inputId?: unknown } | null)?.inputId;
       if (!authenticated.session || typeof inputId !== "string" || inputId.length > 512 || !inputId.startsWith("actor-input:")

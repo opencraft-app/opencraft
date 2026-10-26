@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { prepareDshRuntime } from "../../scripts/prepare-dsh-runtime.mjs";
+import { threadEnvironmentEdit, terminalThreadEnvironmentEdit } from "../../scripts/patch-dsh-thread-environment.mjs";
 import checkDesktopTarget from "../../scripts/check-desktop-target.cjs";
 import { providerLifecycleEdits, nativeProviderLifecycleEdits, patchDshProviderLifecycle } from "../../scripts/patch-dsh-provider-lifecycle.mjs";
 
@@ -28,6 +29,12 @@ async function fixture(t) {
     await mkdir(join(entry, "lib"), { recursive: true });
     await writeFile(join(entry, "package.json"), '{"version":"0.1.1-rc.2"}');
     await writeFile(join(entry, "lib/bin.js"), "// fixture");
+    const bash = join(runtime, "node_modules/@deepseek-ai/dsh-bash-local/lib");
+    await mkdir(bash, { recursive: true });
+    await writeFile(join(bash, "index.js"), threadEnvironmentEdit[0]);
+    const terminal = join(runtime, "node_modules/@deepseek-ai/dsh-terminal-bash/lib");
+    await mkdir(terminal, { recursive: true });
+    await writeFile(join(terminal, "index.js"), terminalThreadEnvironmentEdit[0]);
     const pi = join(runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib");
     await mkdir(pi, { recursive: true });
     await writeFile(join(pi, "index.js"), providerLifecycleEdits.map(([before]) => before).join("\n"));
