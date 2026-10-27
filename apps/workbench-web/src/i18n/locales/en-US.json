@@ -1,4 +1,9 @@
 {
+  "chat.interaction.unconfirmed": "Response delivery is unconfirmed. Reconnecting will check its status.",
+  "chat.interaction.unavailable": "Waiting for your input. Request details could not be recovered; reconnect to try again.",
+  "chat.interaction.responding": "A response was submitted. Waiting for the server to confirm…",
+  "chat.interaction.recovering": "Waiting for your input. Recovering request details…",
+  "chat.interaction.readOnly": "Waiting for someone with permission to respond.",
   "chat.composer.reconnecting": "Reconnecting…",
   "chat.composer.loading": "Loading…",
   "chat.recovery.progress.connecting": "Connecting to server",
