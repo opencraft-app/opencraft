@@ -1,3 +1,4 @@
+import { generate } from '../../ops/observability/generate.mjs';
 import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import { createServer } from 'node:http';
@@ -11,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { limits, sanitizeEvent, windowFor } from '../../packages/observability-contract/index.mjs';
 import { createEventQueue } from '../../packages/observability-contract/queue.mjs';
-import { compare } from '../../packages/observability-query/index.mjs';
+import { compare, definitions } from '../../packages/observability-query/index.mjs';
 import { startObserve } from '../../apps/observability-service/service.mjs';
 import { socketRequest, nodeObserver } from '../../packages/observability-contract/node.mjs';
 import { run } from '../../apps/observability-cli/main.mjs';
@@ -375,4 +376,27 @@ test('operator Grafana paths accept server scope and reject traversal or URL inp
   assert.equal(observationGrafanaBasePath(),'/__opencraft_observe/grafana');
   assert.equal(observationGrafanaBasePath('/servers/example/__opencraft_observe/grafana'),'/servers/example/__opencraft_observe/grafana');
   for(const path of ['https://elsewhere.invalid/__opencraft_observe/grafana','//elsewhere.invalid/__opencraft_observe/grafana','/servers/../__opencraft_observe/grafana','/servers/%2e%2e/__opencraft_observe/grafana','/__opencraft_observe/grafana?x=1'])assert.throws(()=>observationGrafanaBasePath(path));
+});
+
+test('history first paint labels and foreground-only histograms reach the exporter and dashboard', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-paint-observe-'));
+  const service = await startObserve({directory, deploymentId:'test', metricsPort:0});
+  try {
+    const fields = {operationType:'thread_history_first_paint',cache:'cold',engine:'pi',lengthBucket:'200to499',originClass:'interactive',visibility:'visible',measurementScope:'in_page',durationMs:560};
+    assert.equal(sanitizeEvent(event({...fields,lengthBucket:'private-thread-123'})),null);
+    assert(!('threadId' in sanitizeEvent(event({...fields,threadId:'private-thread-123'}))));
+    for (const outcome of ['ok','aborted','failed','empty']) assert.equal(service.store.ingest([event({...fields,outcome})]).accepted,1);
+    service.store.ingest([event({...fields,originClass:'probe'}), event({...fields,visibility:'hidden'})]);
+    const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+    assert.match(metrics,/opencraft_thread_history_first_paint_duration_seconds_count\{cache="cold",length_bucket="200to499",engine="pi"\} 1/);
+    for (const outcome of ['ok','aborted','failed','empty']) assert(metrics.includes(`engine="pi",outcome="${outcome}",origin="interactive"}`));
+    assert(!metrics.includes('private-thread'));
+    const output = join(directory,'provisioning-source'); await generate(output);
+    const dashboard = JSON.parse(await readFile(join(output,'provisioning/dashboards/overview.json'),'utf8'));
+    for (const q of [50,95]) {
+      const definition = definitions[`operations.history_paint_p${q}`];
+      assert(dashboard.panels.some(panel=>panel.title === definition.title && panel.targets.some(target=>target.expr===definition.promql)));
+      assert(definition.promql.includes('cache, length_bucket, engine'));
+    }
+  } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
 });

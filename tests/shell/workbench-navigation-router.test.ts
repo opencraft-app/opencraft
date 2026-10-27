@@ -511,3 +511,26 @@ test("legacy website locations normalize on initial entry and real POP/forward",
     assert.deepEqual(nav.getSnapshot().location, createWorkbenchDraftLocation("local", "old"));
   } finally { nav.dispose(); }
 });
+
+test("history paint stays pending after navigation commit, re-arms warm and aborts on leaving", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchThreadLocation("local", "thread-b");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    assert.equal(nav.historyFirstPaint.getSnapshot(), null);
+    assert.equal(await nav.selectConversation(b), true);
+    const cold = nav.historyFirstPaint.getSnapshot()!;
+    assert.equal(cold.viewId, nav.getSnapshot().routeScopeId);
+    assert(cold, "route commit must not finish history paint");
+    nav.openSettings();
+    assert.equal(nav.historyFirstPaint.getSnapshot(), null);
+    assert.equal(await nav.selectConversation(b), true);
+    const warm = nav.historyFirstPaint.getSnapshot()!;
+    assert(warm); assert.notEqual(warm,cold);
+    nav.historyFirstPaint.settle(cold, "ok");
+    assert.equal(nav.historyFirstPaint.getSnapshot(),warm,"old renderer cannot finish new open");
+    nav.historyFirstPaint.settle(warm,"ok",{lengthBucket:'lt50',engine:'codex'});
+    assert.equal(nav.historyFirstPaint.getSnapshot(),null);
+  } finally { nav.dispose(); }
+});

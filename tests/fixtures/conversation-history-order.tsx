@@ -27,6 +27,8 @@ let rows: readonly AppServerTurn[] = baseline;
 let revision = 0;
 
 function Demo() {
+  const [paintKey, setPaintKey] = useState({});
+  (window as any).rearmHistoryPaint = () => setPaintKey({});
   const [state, setState] = useState({ rows, revision });
   (window as any).historyOrder = (action: "hydrate" | "stream" | "snapshot" | "complete" | "late-complete") => {
     if (action === "late-complete") rows = mergeTurns(rows, [{ id: "live", items: [{ id: "live:late", type: "commandExecution", command: "check-delayed-result", status: "failed", exitCode: 137, aggregatedOutput: "Delayed failure retained", startedAtMs: 100, completedAtMs: 400 }] }]);
@@ -51,7 +53,13 @@ function Demo() {
   return <div data-test-revision={state.revision} style={{ width: "100vw", height: "100vh" }}>
     <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
       <Conversation scrollPolicy="response-placement" timeline={timeline} threadDetailLevel="STEPS_PROSE"
-        onVisibleContentReady={() => { document.documentElement.dataset.conversationReady = "true"; }}
+        visibleContentReadyKey={paintKey}
+        onVisibleContentReady={() => {
+          document.documentElement.dataset.conversationReady = "true";
+          const receipts = (window as any).historyPaintReceipts ??= [];
+          const row = document.querySelector('[data-turn-key="live"]');
+          receipts.push({ row: row !== null, height: row?.getBoundingClientRect().height ?? 0 });
+        }}
         footer={<div style={{ height: 48 }}>Composer fixture</div>} />
     </TimelineBlockRendererProvider>
   </div>;

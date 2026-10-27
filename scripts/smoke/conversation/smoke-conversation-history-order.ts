@@ -50,6 +50,12 @@ try {
         "the live row is not remounted to hide bad ordering");
       assert.match(await page.locator('[data-turn-key="live"]').textContent(), /Answer live ·/);
     }
+    assert.equal(await page.evaluate(() => (window as any).historyPaintReceipts.length), 1,
+      "streaming and history hydration do not finish an open twice");
+    await page.evaluate(() => (window as any).rearmHistoryPaint());
+    await page.waitForFunction(() => (window as any).historyPaintReceipts.length === 2);
+    assert(await page.evaluate(() => (window as any).historyPaintReceipts.every((receipt: any) => receipt.row && receipt.height > 0)),
+      "each presentation settles after real visible history rows are laid out");
     await update("complete");
     assert.deepEqual(await order(), expected);
     const live = page.locator('[data-turn-key="live"]');

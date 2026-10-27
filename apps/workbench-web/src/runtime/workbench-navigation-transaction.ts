@@ -1,3 +1,4 @@
+import { createThreadHistoryFirstPaintObserver, type HistoryPaintAttempt } from "./thread-history-first-paint";
 import { beginObservedOperation } from "./observability";
 import { FULL_WORKBENCH_PRESENTATION, type WorkbenchPresentationPolicy } from "../workbench-presentation-policy";
 import type {
@@ -38,6 +39,7 @@ export interface WorkbenchNavigationTransactionOptions extends ApplicationRouter
 export interface WorkbenchNavigationTransaction<
   TRuntime extends WorkbenchActivatableRuntime,
 > {
+  readonly historyFirstPaint: ReturnType<typeof createThreadHistoryFirstPaintObserver>;
   getSnapshot(): ApplicationNavigationSnapshot;
   subscribe(listener: () => void): () => void;
   navigate(
@@ -82,6 +84,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
   if (!Number.isInteger(maxPreferredViews) || maxPreferredViews < 1) {
     throw new RangeError("Preferred View capacity must be a positive integer");
   }
+  const historyFirstPaint = createThreadHistoryFirstPaintObserver();
   const navigation = createApplicationNavigation(initialLocation, routerOptions);
   const listeners = new Set<() => void>();
   const preferredViews = new Map<string, { location: WorkbenchLocation; viewId: RouteScopeId }>();
@@ -175,7 +178,8 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     if (disposed) throw new Error("Workbench navigation transaction is disposed");
   };
   const rejectClosed = () => Promise.reject<boolean>(new Error("Workbench navigation transaction is disposed"));
-  const beginIntent = () => {
+  const beginIntent = (preservePaint?: HistoryPaintAttempt) => {
+    if (!preservePaint || historyFirstPaint.getSnapshot()?.finish !== preservePaint.finish) historyFirstPaint.abort();
     pendingNavigation = null;
     const epoch = ++intent;
     activation.cancelPending();
@@ -247,15 +251,26 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       () => rememberPresentedView(location, viewId));
     return true;
   };
-  const navigate = (location: WorkbenchLocation, mode: WorkbenchHistoryMode = "push", scope?: typeof activeScope) => {
+  const navigate = (location: WorkbenchLocation, mode: WorkbenchHistoryMode = "push", scope?: typeof activeScope, existingPaint?: HistoryPaintAttempt) => {
     if (disposed) return rejectClosed();
     if (blocked()) return Promise.resolve(false);
     const origin = navigation.getSnapshot();
     const viewId = scope ?? createRouteScopeId();
-    const epoch = beginIntent();
+    const epoch = beginIntent(existingPaint);
     const isWarm = scope !== undefined || preferredView(location) !== undefined || isRetainedView(canonicalLocation(location), viewId);
     const finish = beginObservedOperation("thread_open", { cache: isWarm ? "warm" : "cold" });
-    const promise = prepareNavigation(location, mode, viewId, epoch, origin).then(result => {finish(result?"ok":"aborted");return result;},error=>{finish("failed");throw error;});
+    const paint = existingPaint
+      ? historyFirstPaint.bindView(existingPaint, viewId, isWarm ? "warm" : "cold")
+      : location.kind === "thread" ? historyFirstPaint.begin(viewId, isWarm ? "warm" : "cold") : null;
+    const promise = prepareNavigation(location, mode, viewId, epoch, origin).then(result => {
+      finish(result ? "ok" : "aborted");
+      if (!result && paint) historyFirstPaint.settle(paint, ownsIntent(epoch, origin) ? "failed" : "aborted");
+      return result;
+    }, error => {
+      finish("failed");
+      if (paint) historyFirstPaint.settle(paint, "failed");
+      throw error;
+    });
     const operation = { location, viewId, promise };
     pendingNavigation = operation;
     const clear = () => { if (pendingNavigation === operation) pendingNavigation = null; };
@@ -270,6 +285,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       const fastFinish = beginObservedOperation("thread_open", { cache: "warm" });
       fastFinish("ok");
       const epoch = beginIntent();
+      if (location.kind === "thread") historyFirstPaint.begin(scope, "warm");
       commitRoute(() => navigation.push(location, { routeScopeId: scope }),
         () => rememberPresentedView(location, scope));
       // Settings may have canceled bootstrap readiness, while the local View
@@ -311,9 +327,12 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     }
     if (routerOptions.restoreViewId) {
       const epoch = beginIntent(), origin = navigation.getSnapshot();
-      return routerOptions.restoreViewId(location).then(viewId => {
+      const pendingViewId = createRouteScopeId();
+      const paint = location.kind === "thread" ? historyFirstPaint.begin(pendingViewId, "cold") : undefined;
+      const promise = Promise.resolve().then(() => routerOptions.restoreViewId!(location)).then(viewId => {
         if (!ownsIntent(epoch, origin)) return false;
         if (viewId !== undefined) {
+          if (paint) historyFirstPaint.bindView(paint, viewId, "warm");
           activation.mountInitial(location, viewId);
           activeLocation = location; activeScope = viewId;
           commitRoute(() => navigation.push(location, { routeScopeId: viewId }),
@@ -321,8 +340,16 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
           resumeReadiness(navigation.getSnapshot(), epoch);
           return true;
         }
-        return navigate(location, "push");
+        return navigate(location, "push", undefined, paint);
+      }).catch(error => {
+        if (paint) historyFirstPaint.settle(paint, "failed");
+        throw error;
       });
+      const operation = {location, viewId: pendingViewId, promise};
+      pendingNavigation = operation;
+      const clear = () => { if (pendingNavigation === operation) pendingNavigation = null; };
+      void promise.then(clear, clear);
+      return promise;
     }
     return navigate(location);
   };
@@ -337,6 +364,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     beginIntent(); commitRoute(action);
   };
   return {
+    historyFirstPaint,
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     navigate,

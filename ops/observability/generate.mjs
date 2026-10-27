@@ -13,6 +13,7 @@ const outcomeMappings = [
       failed: { text: '失败 (failed)', color: 'red' },
       timeout: { text: '超时 (timeout)', color: 'orange' },
       aborted: { text: '已中止 (aborted)', color: 'dark-red' },
+      empty: { text: '空会话 (empty)', color: 'text' },
       unfinished: { text: '未完成 (unfinished)', color: 'yellow' },
       unknown: { text: '未知 (unknown)', color: 'text' }
     }
@@ -25,6 +26,7 @@ const operationMappings = [
     options: {
       navigation: { text: '页面导航 (navigation)' },
       thread_open: { text: '打开会话 (thread_open)' },
+      thread_history_first_paint: { text: '历史首屏显示完成 (thread_history_first_paint)' },
       catalog_first: { text: '模型首选 (catalog_first)' },
       catalog_complete: { text: '完整目录加载 (catalog_complete)' },
       configuration_confirmed: { text: '配置确认 (configuration_confirmed)' },
@@ -55,6 +57,9 @@ const componentMappings = [
   }
 ];
 
+const renameByRegex = (regex, renamePattern) => ({ id: 'renameByRegex', options: { regex: `/${regex}/`, renamePattern } });
+const cacheLegendTransforms = [renameByRegex('\\[cold\\]', '[冷打开]'), renameByRegex('\\[warm\\]', '[热打开]')];
+
 export async function generate(directory = dirname(fileURLToPath(import.meta.url))) {
   const root = resolve(directory, 'provisioning');
   for (const sub of ['datasources', 'dashboards']) await mkdir(resolve(root, sub), { recursive: true });
@@ -70,6 +75,22 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           legendFormat: '{{operation}} [{{cache}}] ({{engine}})',
           mappings: operationMappings,
           description: 'operations.latency; histogram_approximation; ' + queryDefinitionRevision + '。前台关键交互操作（如打开会话、页面导航等）端到端 P95 耗时估算值。无样本不代表服务健康；直方图分位数由 5 分钟滑动窗口桶估算。'
+        },
+        {
+          key: 'operations.history_paint_p50',
+          legendFormat: '[{{cache}}] {{length_bucket}}轮 ({{engine}})',
+          transformations: [...cacheLegendTransforms,
+            renameByRegex('lt50轮', '<50轮'), renameByRegex('50to199轮', '50–199轮'),
+            renameByRegex('200to499轮', '200–499轮'), renameByRegex('500plus轮', '500+轮'), renameByRegex('unknown轮', '总轮数未知')],
+          description: '从点开会话至最后一屏历史内容完成布局并经过绘制帧；仅统计前台成功打开。空会话、失败、中止不计入。按冷/热打开、完整会话轮数与引擎分组；分页或缓存无法确定总轮数时为未知。5分钟滑动窗口直方图估算；上线前没有同口径基线，不能据此独立证明 Stage 0 因果提速。'
+        },
+        {
+          key: 'operations.history_paint_p95',
+          legendFormat: '[{{cache}}] {{length_bucket}}轮 ({{engine}})',
+          transformations: [...cacheLegendTransforms,
+            renameByRegex('lt50轮', '<50轮'), renameByRegex('50to199轮', '50–199轮'),
+            renameByRegex('200to499轮', '200–499轮'), renameByRegex('500plus轮', '500+轮'), renameByRegex('unknown轮', '总轮数未知')],
+          description: '从点开会话至最后一屏历史内容完成布局并经过绘制帧；仅统计前台成功打开。空会话、失败、中止不计入。按冷/热打开、完整会话轮数与引擎分组；分页或缓存无法确定总轮数时为未知。5分钟滑动窗口直方图估算；上线前没有同口径基线，不能据此独立证明 Stage 0 因果提速。'
         },
         {
           key: 'operations.outcomes',

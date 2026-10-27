@@ -130,6 +130,16 @@ Actor 种类与流量来源是正交字段：`actorKind` 区分 human/agent/serv
 
 ## 4. 操作与指标语义
 
+### 历史首屏显示耗时（已实现）
+
+`thread_open` 现有计时仍止于导航准备/提交。新增 `thread_history_first_paint` 从明确点开会话开始，保持跨导航准备与历史读取，直到虚拟列表已有历史行、完成滚动恢复且跨过绘制帧后结算。这是 DOM + requestAnimationFrame 的 paint proxy，不代表浏览器合成器硬件呈现时间。复用保留 View 也产生独立测量；正在展示的同一会话重复点击不产生新测量。初次页面恢复/浏览器 POP 不属于本项明确点开采样。
+
+事件只有低基数 `cache`（保留 View 为 warm，否则 cold）、`lengthBucket`（lt50、50to199、200to499、500plus、unknown）、`engine`（Host 声明的 codex/pi/dsh/unknown）和 `outcome`。长度为完整历史中的不同轮数；分页/持久显示缓存未提供完整总轮数时使用 unknown，不额外拉取历史。会话身份仅在本地隔离迟到绘制回调，不进入事件。
+
+切走/替换/销毁为 aborted，准备或历史失败为 failed，权威空历史为 empty；只有可见交互的 ok 样本进入 `opencraft_thread_history_first_paint_duration_seconds`。终态另进入 `opencraft_thread_history_first_paint_total`，保留 cache、length_bucket、engine、outcome、origin。原交互指标保持原标签与历史。
+
+`operations.history_paint_p50` 与 `operations.history_paint_p95` 是同一查询注册表生成的中文看板图，按冷/热、长度桶、引擎展示 5 分钟滑窗分位数。部署前没有同口径真实首屏样本，不能从原 thread_open 或新图倒推 Stage 0 的真实用户前后改善；新采样与既有受控验收分别报告。
+
 ### 4.1 用户等待的范围
 
 每项操作都保存 `operationType`、触发点、完成点、`measurementScope`、`evidenceKind`、负载形状及结果。不同起点不共用同名时延。

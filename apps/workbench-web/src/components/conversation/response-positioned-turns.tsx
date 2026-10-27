@@ -59,7 +59,7 @@ export interface ResponsePositionedTurnsApi extends ConversationScrollApi {
  */
 export function ResponsePositionedTurns({
   entries, timelineRevision, viewportOwner, scrollElement, initialRestoreSnapshot,
-  consumePendingLatestTurnSubmitPlacement, onVisibleContentReady, onContentLayoutCommitted,
+  consumePendingLatestTurnSubmitPlacement, onVisibleContentReady, visibleContentReadyKey, onContentLayoutCommitted,
   onApiChange, onResponseApiChange, renderTurn,
 }: {
   readonly entries: readonly TimelineTurnView[];
@@ -70,6 +70,7 @@ export function ResponsePositionedTurns({
   readonly initialRestoreSnapshot: ConversationRestoreSnapshot | null;
   readonly consumePendingLatestTurnSubmitPlacement?: () => LatestTurnPlacementSnapshot | null;
   readonly onVisibleContentReady?: () => void;
+  readonly visibleContentReadyKey?: object;
   readonly onContentLayoutCommitted?: () => void;
   readonly onApiChange: (api: WebVirtualizedTurnListApi | null) => void;
   readonly onResponseApiChange: (api: ResponsePositionedTurnsApi | null) => void;
@@ -569,6 +570,7 @@ export function ResponsePositionedTurns({
       onApiChange={onApiChange}
       onBeforeTargetPosition={onBeforeTargetPosition}
       onVisibleContentReady={onVisibleContentReady}
+      visibleContentReadyKey={visibleContentReadyKey}
       onContentLayoutCommitted={onContentLayoutCommitted}
       renderTurn={(turn, isLatest) => (
         <LatestTurnFollowContentContext.Provider value={isLatest ? observeLatestTurnFollowContent : undefined}>
