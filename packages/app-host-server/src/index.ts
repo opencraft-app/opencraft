@@ -39,12 +39,17 @@ export interface AppHostServerOptions {
   ) => DuplexTransport | Promise<DuplexTransport>;
 }
 
-interface HostRecord {
+interface HostPhysical {
   readonly transport: DuplexTransport;
+  readonly disposers: (() => void)[];
+  operation: Promise<void> | null;
+  failure: Error | null;
+}
+
+interface HostRecord {
+  readonly physical: HostPhysical;
   readonly generation: number;
   forwarding: AbortController;
-  readonly unsubscribeMessage: () => void;
-  readonly unsubscribeStatus: () => void;
 }
 
 interface HostClaim {
@@ -58,13 +63,13 @@ interface HostClaim {
 interface HostSlot {
   readonly hostId: string;
   readonly claims: Map<string, HostClaim>;
-  phase: "idle" | "starting" | "open" | "closing";
+  phase: "idle" | "starting" | "open" | "closing" | "failed";
   record: HostRecord | null;
   startOperation: Promise<HostRecord> | null;
-  closeOperation: Promise<void> | null;
+  physical: HostPhysical | null;
   startAbort: AbortController | null;
   resetOperation: Promise<void> | null;
-  serviceAdmissions: number;
+  readonly serviceAdmissions: Set<() => void>;
   lastState: TransportStatus["state"];
 }
 
@@ -81,6 +86,12 @@ function lostHostConnection(status: TransportStatus): Error {
   return Object.assign(new Error(status.reason ?? "Host disconnected during activation"), {
     code: status.failure?.code ?? "APP_HOST_DISCONNECTED",
     retryable: status.failure?.recovery !== "manual",
+  });
+}
+
+function failedPhysicalCleanup(cause: unknown): Error {
+  return Object.assign(new Error("The server could not finish disconnecting. Retry after it recovers."), {
+    code: "APP_HOST_CLEANUP_FAILED", retryable: false, cause,
   });
 }
 
@@ -131,6 +142,7 @@ export class AppHostServer {
     if (slot.resetOperation) return slot.resetOperation;
     // Install the barrier before notifying renderers. Reconnects wait before
     // acquiring their new claim; old activation/send operations lose ownership.
+    const retryFailedCleanup = slot.phase === "failed";
     const operation = Promise.resolve().then(async () => {
       slot.lastState = "closed";
       slot.startAbort?.abort();
@@ -139,7 +151,7 @@ export class AppHostServer {
         status: { state: "closed", reason: "Connection settings changed" },
       });
       slot.claims.clear();
-      await this.stopSlot(slot, true);
+      await this.stopSlot(slot, true, retryFailedCleanup);
     }).finally(() => { if (slot.resetOperation === operation) slot.resetOperation = null; });
     slot.resetOperation = operation;
     return operation;
@@ -147,7 +159,8 @@ export class AppHostServer {
 
   hostState(hostId: string): string {
     const slot = this.slots.get(hostId);
-    return slot?.resetOperation || slot?.phase === "closing" ? "closing" : slot?.phase === "starting" ? "connecting" : slot?.record?.transport.status.state ?? slot?.lastState ?? "idle";
+    if (slot?.phase === "failed") return "failed";
+    return slot?.resetOperation || slot?.phase === "closing" ? "closing" : slot?.phase === "starting" ? "connecting" : slot?.record?.physical.transport.status.state ?? slot?.lastState ?? "idle";
   }
 
   /** Trusted explicit connection intent; never grants a Client lease or starts remote work. */
@@ -157,27 +170,36 @@ export class AppHostServer {
     const slot = this.slotFor(hostId);
     while (slot.resetOperation) await this.waitForLifecycle(slot.resetOperation, "RESET");
     if (this.closed) throw new Error("App Host Server is closed");
-    slot.serviceAdmissions++;
-    try { await this.ensureSlotOpen(slot, assertAdmission); }
-    finally { slot.serviceAdmissions--; }
+    const admission = () => { assertAdmission?.(); };
+    slot.serviceAdmissions.add(admission);
+    try {
+      await this.ensureSlotOpen(slot, admission);
+      admission();
+    } finally { slot.serviceAdmissions.delete(admission); }
   }
 
   close(): Promise<void> {
     if (this.closeOperation !== null) return this.closeOperation;
     this.closed = true;
-    const operation = (async () => {
+    const slots = [...this.slots.values()];
+    const retries = new Set(slots.filter(slot => slot.phase === "failed"));
+    const operation = Promise.resolve().then(async () => {
       const connections = [...this.connections];
       this.connections.clear();
       for (const connection of connections) connection.detach();
-      const slots = [...this.slots.values()];
       for (const slot of slots) {
         slot.claims.clear();
         slot.startAbort?.abort();
       }
-      await Promise.allSettled(slots.map((slot) => this.stopSlot(slot, true)));
+      const results = await Promise.allSettled(slots.map(slot => this.stopSlot(slot, true, retries.has(slot))));
+      const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (errors.length) throw failedPhysicalCleanup(new AggregateError(errors.map(result => result.reason)));
       this.slots.clear();
-    })();
+    });
+    // A later explicit shutdown call may retry retained failed handles, while
+    // concurrent callers still share this exact cleanup operation.
     this.closeOperation = operation;
+    void operation.catch(() => { if (this.closeOperation === operation) this.closeOperation = null; });
     return operation;
   }
 
@@ -203,10 +225,10 @@ export class AppHostServer {
       if ([...this.connections].some(other => other.hasLogicalClient(clientId))) continue;
       const record = this.slots.get(hostId)?.record;
       if (!record || !this.options.logicalClientRouting) continue;
-      void record.transport.send(stampLogicalClientFrame(
+      void record.physical.transport.send(stampLogicalClientFrame(
         JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), clientId)).catch(() => undefined);
     }
-    for (const slot of released) if (slot.claims.size === 0) void this.stopSlot(slot, false);
+    for (const slot of released) if (slot.claims.size === 0) void this.stopSlot(slot, false).catch(() => undefined);
   }
 
   async handle(connection: AppHostServerConnection, message: RendererToAppHostMessage): Promise<unknown> {
@@ -287,9 +309,9 @@ export class AppHostServer {
       if (signal.aborted) { abort(); return; }
       signal.addEventListener("abort", abort, { once: true });
       try {
-        const operation = record.transport.sendWithContext
-          ? record.transport.sendWithContext(frame, context, signal)
-          : record.transport.send(frame, signal);
+        const operation = record.physical.transport.sendWithContext
+          ? record.physical.transport.sendWithContext(frame, context, signal)
+          : record.physical.transport.send(frame, signal);
         void operation.then(() => finish(false), (error) => finish(true, error));
       } catch (error) { finish(true, error); }
     });
@@ -304,10 +326,10 @@ export class AppHostServer {
       phase: "idle",
       record: null,
       startOperation: null,
-      closeOperation: null,
+      physical: null,
       startAbort: null,
       resetOperation: null,
-      serviceAdmissions: 0,
+      serviceAdmissions: new Set(),
       lastState: "idle",
     };
     this.slots.set(hostId, slot);
@@ -330,7 +352,13 @@ export class AppHostServer {
       slot.claims.set(key, claim);
     }
     try {
-      const record = await this.ensureSlotOpen(slot);
+      const record = await this.ensureSlotOpen(slot, () => {
+        // A trusted reset may revoke this reservation while it waits on an old
+        // physical cleanup. Recheck before joining or starting another owner.
+        if (this.closed || connection.isClosed || slot.resetOperation || slot.claims.get(key) !== claim) {
+          throw new Error("App Host connection closed during Host activation");
+        }
+      });
       if (
         this.closed
         || connection.isClosed
@@ -339,7 +367,7 @@ export class AppHostServer {
       ) {
         throw new Error("App Host connection closed during Host activation");
       }
-      if (record.transport.status.state !== "open") throw lostHostConnection(record.transport.status);
+      if (record.physical.transport.status.state !== "open") throw lostHostConnection(record.physical.transport.status);
       claim.generation = record.generation;
       connection.rememberLease(hostId, leaseId, record.generation);
       connection.rememberLogicalClient(key, hostId);
@@ -349,7 +377,7 @@ export class AppHostServer {
         slot.claims.delete(key);
         claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim activation failed" }));
       }
-      if (slot.claims.size === 0) void this.stopSlot(slot, false);
+      if (slot.claims.size === 0) void this.stopSlot(slot, false).catch(() => undefined);
       throw cause;
     }
   }
@@ -360,11 +388,12 @@ export class AppHostServer {
       // A trusted control request may have waited for a close barrier. Check
       // its current authority immediately before joining/starting a transport.
       assertAdmission?.();
-      if (slot.phase === "open" && slot.record?.transport.status.state === "open") {
+      if (slot.phase === "open" && slot.record?.physical.transport.status.state === "open") {
         return slot.record;
       }
+      if (slot.phase === "failed") throw slot.physical!.failure!;
       if (slot.phase === "closing") {
-        await this.waitForLifecycle(slot.closeOperation!, "CLEANUP");
+        await this.waitForLifecycle(slot.physical!.operation!, "CLEANUP");
         continue;
       }
       if (slot.phase === "starting") return this.waitForLifecycle(slot.startOperation!, "START");
@@ -376,21 +405,34 @@ export class AppHostServer {
     }
   }
 
+  private hasStartupOwner(slot: HostSlot): boolean {
+    if (slot.claims.size > 0) return true;
+    for (const admission of slot.serviceAdmissions) {
+      try { admission(); return true; }
+      catch { /* A revoked caller cannot invalidate another caller's demand. */ }
+    }
+    return false;
+  }
+
   private startSlot(slot: HostSlot): Promise<HostRecord> {
-    if (slot.phase !== "idle") throw new Error(`Cannot start Host ${slot.hostId} from ${slot.phase}`);
+    if (slot.phase !== "idle" || slot.physical !== null) throw new Error(`Cannot start Host ${slot.hostId} from ${slot.phase}`);
     slot.phase = "starting";
     slot.lastState = "connecting";
     const abort = new AbortController();
     slot.startAbort = abort;
     let operation!: Promise<HostRecord>;
-    operation = (async () => {
-      let transport: DuplexTransport | null = null;
+    // Publish the startup operation before factory/subscription callbacks run.
+    operation = Promise.resolve().then(async () => {
+      let physical: HostPhysical | null = null;
       let record: HostRecord | null = null;
       try {
-        transport = await this.options.createTransport(slot.hostId, abort.signal);
-        if (this.closed || abort.signal.aborted || (slot.claims.size === 0 && slot.serviceAdmissions === 0)) {
-          await transport.close();
-          transport = null;
+        if (this.closed || abort.signal.aborted || !this.hasStartupOwner(slot)) {
+          throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
+        }
+        const transport = await this.options.createTransport(slot.hostId, abort.signal);
+        physical = { transport, disposers: [], operation: null, failure: null };
+        slot.physical = physical;
+        if (this.closed || abort.signal.aborted || !this.hasStartupOwner(slot)) {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
         }
         const generation = ++this.generationSequence;
@@ -400,32 +442,18 @@ export class AppHostServer {
           if (status.state !== "open") record.forwarding.abort(lostHostConnection(status));
           else if (record.forwarding.signal.aborted) record.forwarding = new AbortController();
           slot.lastState = status.state;
-          this.publish(slot.hostId, generation, {
-            type: "host/status",
-            hostId: slot.hostId,
-            generation,
-            status,
-          });
+          this.publish(slot.hostId, generation, { type: "host/status", hostId: slot.hostId, generation, status });
         };
-        record = {
-          transport,
-          generation,
-          forwarding: new AbortController(),
-          unsubscribeMessage: transport.subscribeMessage((frame) => {
-            if (!ownsRecord()) return;
-            this.publish(slot.hostId, generation, {
-              type: "host/frame",
-              hostId: slot.hostId,
-              generation,
-              frame,
-            });
-          }),
-          unsubscribeStatus: transport.subscribeStatus(publishStatus),
-        };
+        // Keep each acquired disposer even if a later subscription throws.
+        physical.disposers.push(transport.subscribeMessage(frame => {
+          if (ownsRecord()) this.publish(slot.hostId, generation, { type: "host/frame", hostId: slot.hostId, generation, frame });
+        }));
+        physical.disposers.push(transport.subscribeStatus(publishStatus));
+        record = { physical, generation, forwarding: new AbortController() };
         slot.record = record;
         publishStatus({ state: "connecting" });
         await transport.connect(abort.signal);
-        if (this.closed || abort.signal.aborted || (slot.claims.size === 0 && slot.serviceAdmissions === 0)) {
+        if (this.closed || abort.signal.aborted || !this.hasStartupOwner(slot)) {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
         }
         if (transport.status.state !== "open") throw lostHostConnection(transport.status);
@@ -434,32 +462,24 @@ export class AppHostServer {
         return record;
       } catch (cause) {
         slot.lastState = abort.signal.aborted ? "closed" : "failed";
-        if (record !== null) {
-          record.forwarding.abort(cause);
-          if (!this.closed) {
-            this.publish(slot.hostId, record.generation, {
-              type: "host/status",
-              hostId: slot.hostId,
-              generation: record.generation,
-              status: { state: "failed", reason: cause instanceof Error ? cause.message : String(cause),
-                ...(record.transport.status.failure ? { failure: record.transport.status.failure } : {}),
-              },
-            });
+        if (record !== null && !this.closed) this.publish(slot.hostId, record.generation, {
+          type: "host/status", hostId: slot.hostId, generation: record.generation,
+          status: { state: "failed", reason: cause instanceof Error ? cause.message : String(cause),
+            ...(record.physical.transport.status.failure ? { failure: record.physical.transport.status.failure } : {}) },
+        });
+        if (physical !== null) {
+          await this.releasePhysical(slot, physical);
+          if (slot.startOperation === operation && slot.phase === "idle") {
+            slot.lastState = abort.signal.aborted ? "closed" : "failed";
           }
-          record.unsubscribeMessage();
-          record.unsubscribeStatus();
-          if (slot.record === record) slot.record = null;
-          await record.transport.close().catch(() => undefined);
-        } else if (transport !== null) {
-          await transport.close().catch(() => undefined);
         }
-        if (slot.phase === "starting") slot.phase = "idle";
+        else if (slot.phase === "starting") slot.phase = "idle";
         throw cause;
       } finally {
         if (slot.startOperation === operation) slot.startOperation = null;
         if (slot.startAbort === abort) slot.startAbort = null;
       }
-    })();
+    });
     slot.startOperation = operation;
     return operation;
   }
@@ -480,7 +500,7 @@ export class AppHostServer {
     }
     const claim = slot.claims.get(this.claimKey(connection, leaseId));
     if (claim?.generation !== generation) throw new Error(`Host lease ${leaseId} does not own ${hostId}`);
-    if (record.transport.status.state !== "open") throw lostHostConnection(record.transport.status);
+    if (record.physical.transport.status.state !== "open") throw lostHostConnection(record.physical.transport.status);
     return record;
   }
 
@@ -502,7 +522,7 @@ export class AppHostServer {
     connection.forgetLease(hostId, leaseId, generation);
     try {
       if (this.options.logicalClientRouting && record) {
-        await record.transport.send(stampLogicalClientFrame(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), key));
+        await record.physical.transport.send(stampLogicalClientFrame(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), key));
         connection.forgetLogicalClient(key);
       }
     } finally {
@@ -531,36 +551,60 @@ export class AppHostServer {
     }
   }
 
-  private async stopSlot(slot: HostSlot, force: boolean): Promise<void> {
+  /** One cleanup authority from factory receipt through successful release.
+   * Failure retains the same handle; only a later explicit control may retry. */
+  private releasePhysical(slot: HostSlot, physical: HostPhysical, retry = false): Promise<void> {
+    if (physical.operation !== null && !(retry && physical.failure !== null)) return physical.operation;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const operation = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    physical.operation = operation;
+    physical.failure = null;
+    slot.phase = "closing";
+    slot.lastState = "closing";
+    const record = slot.record;
+    slot.record = null;
+    // Install the physical barrier before cancellation or provider callbacks.
+    if (record?.physical === physical) {
+      record.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host generation retired" }));
+      for (const connection of this.connections) connection.forgetHost(slot.hostId, record.generation);
+    }
+    void Promise.resolve().then(async () => {
+      const errors: unknown[] = [];
+      for (const dispose of physical.disposers.splice(0)) {
+        try { dispose(); } catch (error) { physical.disposers.push(dispose); errors.push(error); }
+      }
+      try { await physical.transport.close(); } catch (error) { errors.push(error); }
+      if (errors.length) {
+        const failure = failedPhysicalCleanup(new AggregateError(errors));
+        if (slot.physical === physical && physical.operation === operation) {
+          physical.failure = failure; slot.phase = "failed"; slot.lastState = "failed";
+        }
+        reject(failure);
+      } else {
+        if (slot.physical === physical && physical.operation === operation) {
+          slot.physical = null; slot.phase = "idle"; slot.lastState = "closed";
+        }
+        resolve();
+      }
+    });
+    return operation;
+  }
+
+  private async stopSlot(slot: HostSlot, force: boolean, retryFailedCleanup = false): Promise<void> {
     if (!force && this.options.physicalHostLifetime === "server") return;
     if (!force && slot.claims.size > 0) return;
-    if (slot.phase === "closing") {
-      await slot.closeOperation;
-      return;
-    }
     if (slot.phase === "starting") {
       if (force) slot.startAbort?.abort();
       await slot.startOperation?.catch(() => undefined);
       if (!force && slot.claims.size > 0) return;
-      await this.stopSlot(slot, force);
+      // A failure arising during this intent is not an implicit second try.
+      await this.stopSlot(slot, force, false);
       return;
     }
-    if (slot.phase !== "open" || slot.record === null) return;
-    const record = slot.record;
-    slot.phase = "closing";
-    slot.record = null;
-    record.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host generation retired" }));
-    record.unsubscribeMessage();
-    record.unsubscribeStatus();
-    for (const connection of this.connections) connection.forgetHost(slot.hostId, record.generation);
-    let operation!: Promise<void>;
-    operation = record.transport.close().finally(() => {
-      if (slot.closeOperation === operation) slot.closeOperation = null;
-      if (slot.phase === "closing") slot.phase = "idle";
-    });
-    slot.closeOperation = operation;
-    await operation;
+    if (slot.physical === null) return;
+    await this.releasePhysical(slot, slot.physical, retryFailedCleanup);
   }
+
 }
 
 interface OwnedLease {
