@@ -464,3 +464,12 @@ keyboard continuity. Ordinary action menus retain their Radix focus policy. The
 surface is transparent and takes its stacking level from the actual menu content;
 there is no additional Dialog or copied business menu. Tooltip/hover previews and
 editing autocomplete are separate interactions and do not use this contract.
+
+## Bootstrap recovery continuity
+
+Before Shell mounts, resource recovery retains the current origin, route, query, hash and browser
+storage. A selected installation owns its version checks and error reports. WebKit CORS module
+failures may try one fresh resource graph; even a newer reported build must not repeatedly navigate
+an already recovered document. Persistent failures retain the explicit retry surface. This does not
+change viewport geometry or turn storage/evaluation failures into resource retries. The serving
+contract is documented in [Web resource recovery](../../docs/web-local-deployment.md#保留本地数据的模块资源恢复).
