@@ -3126,7 +3126,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
   &__primary { display: flex; flex: 1 1 0; min-width: 0; }
   &__primary > * { width: 100%; min-width: 0; }
-  &__companion { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: 50%; }
+  &__companion { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: calc((100% - var(--gap-control-group)) / 2); }
   &__companion > * { min-width: 0; max-width: 100%; }
   &__companion .settings-control-select-shell { width: auto; min-width: 0; max-width: 100%; }
   &__companion .settings-control-select { width: auto; max-width: 100%; text-overflow: ellipsis; }

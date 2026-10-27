@@ -145,6 +145,12 @@ try {
       assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, 'plugin list stays inside viewport');
     }
   }
+  await page.setViewportSize({width:1440,height:1000});
+  await library.evaluate(node=>{(node as HTMLElement).style.width='320px';(node as HTMLElement).style.maxWidth='100%';});
+  const paneSearch=await library.getByLabel('搜索扩展').boundingBox(),paneSource=await library.getByLabel('扩展来源').locator('..').boundingBox();
+  assert.ok(paneSearch&&paneSource&&Math.abs(paneSearch.y-paneSource.y)<1&&paneSearch.width>=paneSource.width,'narrow pane in a wide viewport keeps related controls together');
+  await page.screenshot({path:evidenceDirectory+'/wide-window-narrow-pane.png',fullPage:true});
+  await library.evaluate(node=>{(node as HTMLElement).style.removeProperty('width');(node as HTMLElement).style.removeProperty('max-width');});
   const searchInput = library.getByLabel('搜索扩展');
   await searchInput.fill('fixture');
   await library.getByLabel('扩展来源').selectOption('installed');

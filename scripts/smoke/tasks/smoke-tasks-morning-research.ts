@@ -107,7 +107,10 @@ for(const width of [1440,390,320])for(const theme of ['light','dark']){
  assert.equal(await card.locator('.tasks-ai-follow-up__decision p').innerText(),'Approve option A? Recommendation: A');
  assert.doesNotMatch(await card.innerText(),/Verified report|Design A after judgment/);
  const filter=page.getByRole('combobox',{name:'按 Owner 筛选',exact:true});
- await filter.selectOption('member:owner-a');assert.equal(await page.locator('[data-ai-follow-up-task-id]').count(),2);
+ await filter.selectOption('member:owner-a');
+ const selectedSearch=await pairedSearch.boundingBox(),selectedOwner=await pairedOwner.locator('..').boundingBox();
+ assert.ok(selectedSearch&&selectedOwner&&Math.abs(selectedSearch.y-selectedOwner.y)<1&&selectedSearch.width>=selectedOwner.width,'selected long Owner remains paired without crowding search');
+ assert.equal(await page.locator('[data-ai-follow-up-task-id]').count(),2);
  assert.deepEqual(await page.locator('.tasks-ai-follow-up__count').allTextContents(),['0','0','2','0','0']);
  assert.equal(await page.locator('[data-ai-follow-up-task-id="Overdue handoff"]').count(),0);
  await page.getByRole('radio',{name:'看板',exact:true}).click();await page.getByRole('radio',{name:'AI 跟进',exact:true}).click();
