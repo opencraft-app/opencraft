@@ -1,0 +1,160 @@
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -455,6 +455,100 @@
+ 
+ namespace {
+ 
++// Observation lifetime belongs to the native WebContents, not a renderer view.
++// Notify on the next UI task so JavaScript cannot re-enter TextInputManager's
++// observer iteration or retain a pointer to an unregistering view.
++constexpr char kNativeTextInputObservationKey = 0;
++
++class NativeTextInputObservation final : public base::SupportsUserData::Data,
++                                        public content::WebContentsObserver,
++                                        public content::TextInputManager::Observer {
++ public:
++  using content::WebContentsObserver::OnTextSelectionChanged;
++
++  NativeTextInputObservation(content::WebContents* contents,
++                             content::TextInputManager* manager,
++                             base::RepeatingClosure notify)
++      : content::WebContentsObserver(contents),
++        manager_(manager),
++        notify_(std::move(notify)) {
++    manager_->AddObserver(this);
++  }
++
++  ~NativeTextInputObservation() override { Stop(); }
++
++  bool Observes(content::TextInputManager* manager) const {
++    return manager_ == manager;
++  }
++
++  void WebContentsDestroyed() override { Stop(); }
++
++  void OnFocusChangedInPage(const content::FocusedNodeDetails&) override {
++    QueueNotification();
++  }
++
++  void OnUpdateTextInputStateCalled(content::TextInputManager*,
++                                    content::RenderWidgetHostViewBase*,
++                                    bool) override {
++    QueueNotification();
++  }
++  void OnImeCancelComposition(content::TextInputManager*,
++                              content::RenderWidgetHostViewBase*) override {
++    QueueNotification();
++  }
++  void OnSelectionBoundsChanged(content::TextInputManager*,
++                                content::RenderWidgetHostViewBase*) override {
++    QueueNotification();
++  }
++  void OnImeCompositionRangeChanged(content::TextInputManager*,
++                                    content::RenderWidgetHostViewBase*,
++                                    bool) override {
++    QueueNotification();
++  }
++  void OnTextSelectionChanged(content::TextInputManager*,
++                              content::RenderWidgetHostViewBase*) override {
++    QueueNotification();
++  }
++  void OnFocusedInputElementChanged(content::TextInputManager*,
++                                    content::RenderWidgetHostViewBase*) override {
++    QueueNotification();
++  }
++
++ private:
++  void Stop() {
++    weak_factory_.InvalidateWeakPtrs();
++    pending_ = false;
++    if (manager_) {
++      manager_->RemoveObserver(this);
++      manager_ = nullptr;
++    }
++    notify_.Reset();
++    Observe(nullptr);
++  }
++
++  void QueueNotification() {
++    if (!manager_ || pending_)
++      return;
++    pending_ = true;
++    content::GetUIThreadTaskRunner({})->PostTask(
++        FROM_HERE, base::BindOnce(&NativeTextInputObservation::Notify,
++                                  weak_factory_.GetWeakPtr()));
++  }
++
++  void Notify() {
++    pending_ = false;
++    auto notify = notify_;
++    // A listener may disable observation or destroy its WebContents.
++    // Keep the closure locally and do not access this object after running it.
++    notify.Run();
++  }
++
++  raw_ptr<content::TextInputManager> manager_;
++  base::RepeatingClosure notify_;
++  bool pending_ = false;
++  base::WeakPtrFactory<NativeTextInputObservation> weak_factory_{this};
++};
++
+ // Global toggle for disabling draggable regions checks.
+ bool g_disable_draggable_regions = false;
+ 
+@@ -4300,6 +4394,37 @@
+   return type_ == Type::kOffScreen;
+ }
+ 
++bool WebContents::SetNativeTextInputStateObservation(bool enabled) {
++  auto* contents = web_contents();
++  if (!contents)
++    return false;
++  if (!enabled) {
++    contents->RemoveUserData(&kNativeTextInputObservationKey);
++    return true;
++  }
++  auto* view = static_cast<content::RenderWidgetHostViewBase*>(
++      contents->GetRenderWidgetHostView());
++  auto* manager = view ? view->GetTextInputManager() : nullptr;
++  if (!manager)
++    return false;
++  auto* existing = static_cast<NativeTextInputObservation*>(
++      contents->GetUserData(&kNativeTextInputObservationKey));
++  if (existing && existing->Observes(manager))
++    return true;
++  contents->RemoveUserData(&kNativeTextInputObservationKey);
++  contents->SetUserData(
++      &kNativeTextInputObservationKey,
++      std::make_unique<NativeTextInputObservation>(
++          contents, manager,
++          base::BindRepeating(
++              [](base::WeakPtr<WebContents> contents) {
++                if (contents)
++                  contents->Emit("native-text-input-state-changed");
++              },
++              GetWeakPtr())));
++  return true;
++}
++
+ base::DictValue WebContents::GetNativeTextInputState() {
+   base::DictValue result;
+   result.Set("observationOnly", true);
+@@ -5350,6 +5475,8 @@
+       .SetMethod("isOffscreen", &WebContents::IsOffScreen)
+       .SetMethod("getNativeTextInputState",
+                  &WebContents::GetNativeTextInputState)
++      .SetMethod("setNativeTextInputStateObservation",
++                 &WebContents::SetNativeTextInputStateObservation)
+       .SetMethod("startPainting", &WebContents::StartPainting)
+       .SetMethod("stopPainting", &WebContents::StopPainting)
+       .SetMethod("isPainting", &WebContents::IsPainting)
+--- a/shell/browser/api/electron_api_web_contents.h
++++ b/shell/browser/api/electron_api_web_contents.h
+@@ -732,6 +732,7 @@
+   OffScreenRenderWidgetHostView* GetOffScreenRenderWidgetHostView() const;
+ 
+   base::DictValue GetNativeTextInputState();
++  bool SetNativeTextInputStateObservation(bool enabled);
+ 
+   // Called when received a synchronous message from renderer to
+   // get the zoom level.

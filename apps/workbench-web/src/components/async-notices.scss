@@ -1,0 +1,35 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.workbench-notices[data-sonner-toaster] {
+  z-index: var(--layer-toast);
+  pointer-events: none;
+  max-width: calc(100vw - 24px);
+  [data-sonner-toast][data-styled="true"] {
+    @include typography.role(navigation-action, primary);
+    pointer-events: auto;
+    background: var(--color-background-elevated-secondary-opaque);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+    padding: 14px 42px 14px 14px;
+    overflow-wrap: anywhere;
+    [data-description] { @include typography.role(metadata, secondary); }
+    [data-icon] { width: 20px; height: 20px; }
+    [data-icon] .ui-progress-indicator { width: 20px; height: 20px; }
+    [data-icon] .ui-progress-indicator > svg { width: 20px; height: 20px; }
+    &[data-type="error"] [data-icon] { color: var(--color-status-error); }
+    &[data-type="success"] [data-icon] { color: var(--color-status-success); }
+    [data-close-button] {
+      top: 4px; left: auto; right: 4px; transform: none;
+      width: 32px; height: 32px; border: 0; background: transparent;
+      color: var(--color-text-secondary);
+    }
+  }
+}
+@media (any-pointer: coarse) {
+  .workbench-notices[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+    padding-right: 48px;
+    [data-close-button] { width: 44px; height: 44px; top: 0; right: 0; }
+  }
+}

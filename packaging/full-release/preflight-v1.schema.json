@@ -1,0 +1,338 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "opencraft.full-release-preflight"
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "releaseSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "product": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "channel": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "upstreamRevision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "patchSetSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "revision",
+            "upstreamRevision",
+            "patchSetSha256"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "releaseId",
+        "releaseSequence",
+        "createdAt",
+        "expiresAt",
+        "product",
+        "channel",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "transport": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "npm"
+        },
+        "registry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "exactVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "registry",
+        "packageName",
+        "exactVersion"
+      ],
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "enum": [
+              "headless",
+              "daemon"
+            ]
+          },
+          "platform": {
+            "enum": [
+              "linux"
+            ]
+          },
+          "arch": {
+            "enum": [
+              "x64",
+              "arm64"
+            ]
+          },
+          "nodeAbi": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "profile",
+          "platform",
+          "arch",
+          "nodeAbi"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 16
+    },
+    "updater": {
+      "type": "object",
+      "properties": {
+        "minBootstrap": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minAgent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "helperProtocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bridge": {
+          "type": "boolean"
+        },
+        "legacy": {
+          "type": "object",
+          "properties": {
+            "archiveBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "archiveBytes",
+            "unpackedBytes",
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "minBootstrap",
+        "minAgent",
+        "helperProtocol",
+        "bridge",
+        "legacy"
+      ],
+      "additionalProperties": false
+    },
+    "revocations": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "keyIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        },
+        "releaseIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "sequence",
+        "keyIds",
+        "releaseIds"
+      ],
+      "additionalProperties": false
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "npmJsonBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "metadataBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "manifestBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "outer": {
+          "type": "object",
+          "properties": {
+            "archiveBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "archiveBytes",
+            "unpackedBytes",
+            "entries"
+          ],
+          "additionalProperties": false
+        },
+        "recursive": {
+          "type": "object",
+          "properties": {
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "diskBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "memoryBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "unpackedBytes",
+            "entries",
+            "depth",
+            "diskBytes",
+            "memoryBytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "npmJsonBytes",
+        "metadataBytes",
+        "manifestBytes",
+        "outer",
+        "recursive"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "release",
+    "transport",
+    "targets",
+    "updater",
+    "revocations",
+    "budgets"
+  ],
+  "additionalProperties": false
+}

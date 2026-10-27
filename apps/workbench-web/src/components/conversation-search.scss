@@ -1,0 +1,135 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+@use "@opencraft/design-system/typography.web" as typography;
+@use "./mobile-glass" as glass;
+
+.modal-surface.conversation-search[data-appearance="utility"] {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, calc(100dvh - 48px));
+}
+.conversation-search__input {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 56px 16px 20px; border-bottom: 1px solid var(--color-border);
+  > svg { flex-shrink: 0; color: var(--color-text-secondary); }
+  input {
+    @include typography.role(body, primary);
+    width: 100%; min-width: 0; padding: 0; border: 0;
+    outline: none; background: transparent;
+  }
+}
+.conversation-search__scope, .conversation-search__status {
+  @include typography.role(metadata, secondary);
+  padding: 10px 20px; flex-shrink: 0;
+}
+.conversation-search__results {
+  overflow-y: auto; min-height: 80px; padding: 0 8px 8px; overscroll-behavior: contain;
+  > button {
+    display: flex; align-items: center; gap: 16px; text-align: start;
+    width: 100%; min-height: max(40px, var(--size-control-hit-min)); padding: 10px 12px;
+    border: 0; border-radius: var(--radius-md); background: transparent; cursor: pointer;
+    &[aria-selected="true"], &:focus-visible { background: var(--color-background-button-secondary); }
+    &:disabled { opacity: .5; cursor: default; }
+  }
+}
+.conversation-search__title {
+  @include typography.role(thread-list-title, primary);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conversation-search__text {
+  display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;
+}
+.conversation-search__snippet {
+  @include typography.role(metadata, secondary);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap;
+  mark { color: var(--color-text); background: var(--color-background-button-secondary); }
+}
+.conversation-search__sources {
+  @include typography.role(metadata, secondary);
+  max-height: 120px; overflow-y: auto; padding: 0 20px;
+  > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  button {
+    @include typography.role(metadata, primary);
+    flex-shrink: 0; min-height: var(--size-control-hit-min); padding: 6px 10px;
+    background: transparent; border: 0; border-radius: var(--radius-md); cursor: pointer;
+    &:focus-visible { background: var(--color-background-button-secondary); }
+    @include controls.hover-capable { &:hover { background: var(--color-background-button-secondary); } }
+  }
+}
+.conversation-search__server {
+  @include typography.role(metadata, secondary);
+  max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conversation-search__status { border-top: 1px solid var(--color-border); }
+.conversation-search-position {
+  @include typography.role(metadata, secondary);
+  position: absolute; top: 16px; left: 20px; right: 20px; z-index: 1;
+  padding: 8px 12px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); background: var(--color-background-surface);
+  button { @include typography.role(metadata, primary); min-height: var(--size-control-hit-min);
+    margin-inline-start: 8px; padding: 6px 10px; border: 0; background: transparent; cursor: pointer; }
+}
+
+.conversation-search__heading, .conversation-search__result-icon { display: none; }
+.conversation-search__body { display: contents; }
+
+// Adapt the existing Radix surface; do not remount query/input on rotation or
+// introduce a second search/viewport owner. The host publishes VisualViewport.
+@mixin mobile-search-page {
+  .modal-surface.conversation-search[data-appearance="utility"] {
+    inset: 0; transform: none; max-width: none; max-height: none;
+    top: var(--search-viewport-top, 0px); left: var(--search-viewport-left, 0px);
+    width: var(--search-viewport-width, 100%); height: var(--search-viewport-height, 100dvh);
+    box-sizing: border-box; border: 0; border-radius: 0;
+    background: var(--color-background-elevated-primary-opaque); box-shadow: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    --search-bottom: max(12px, var(--search-safe-bottom, env(safe-area-inset-bottom, 0px)));
+    --search-edge: max(12px, env(safe-area-inset-left, 0px));
+    .conversation-search__body {
+      display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto;
+      overscroll-behavior: contain; padding-bottom: calc(48px + var(--search-bottom) + 20px);
+    }
+    .conversation-search__heading {
+      @include typography.role(navigation-title, primary);
+      display: block; order: 0; flex-shrink: 0; margin: 0; padding: 20px 20px 8px;
+    }
+    .conversation-search__scope { order: 1; padding-top: 0; }
+    .conversation-search__results { order: 2; flex: 0 0 auto; min-height: 0; overflow: visible; padding: 4px 12px; }
+    .conversation-search__sources { order: 3; max-height: 20%; flex-shrink: 0; }
+    .conversation-search__status { order: 4; border: 0; }
+    .conversation-search__input {
+      @include glass.surface;
+      position: absolute; bottom: 0; left: 0; right: 0; min-height: 48px; box-sizing: border-box;
+      margin: 8px calc(max(12px, env(safe-area-inset-right, 0px)) + 48px + 12px) var(--search-bottom) var(--search-edge);
+      padding: 10px 16px; border: 0; border-radius: 999px;
+      > svg { width: 20px; height: 20px; }
+      input { @include typography.role(mobile-input, primary); }
+    }
+    .modal-surface__close {
+      @include glass.surface;
+      top: auto; right: max(12px, env(safe-area-inset-right, 0px)); bottom: var(--search-bottom);
+      width: 48px; height: 48px; border-radius: 50%; color: var(--color-text);
+      > svg { width: 22px; height: 22px; }
+    }
+    .conversation-search__result-icon {
+      display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px;
+      border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text);
+      > svg { }
+    }
+    .conversation-search__results > button { gap: 12px; min-height: 64px; }
+  }
+}
+// Match existing narrow modal adaptation, with the touch density preference also
+// opting in on tablets. CSS keeps the focused input and query node continuous.
+@media (max-width: 640px) { @include mobile-search-page; }
+:root[data-ui-density="touch"] { @include mobile-search-page; }
+// Keyboard/zoom geometry has one writer: the existing Web timeline viewport port.
+:root[data-timeline-tracks-visual-viewport="true"] .modal-surface.conversation-search[data-appearance="utility"] {
+  --search-viewport-top: var(--timeline-available-viewport-top, 0px);
+  --search-viewport-left: var(--timeline-available-viewport-left, 0px);
+  --search-viewport-width: var(--timeline-available-viewport-width, 100vw);
+  --search-viewport-height: var(--timeline-available-viewport-height, 100dvh);
+}
+:root[data-timeline-keyboard-open="true"] .conversation-search { --search-safe-bottom: 0px; }

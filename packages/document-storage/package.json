@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/document-storage",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./sqlite": "./src/sqlite.ts",
+    "./client-resources": "./src/client-resources.ts",
+    "./client-local-documents": "./src/client-local-documents.ts",
+    "./client-resources-sqlite": "./src/client-resources-sqlite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0"
+  }
+}

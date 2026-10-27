@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "file": "apps/workbench-web/src/panels/workspace-pdf-preview.scss",
+      "selector": ".workspace-pdf-preview__text",
+      "property": "line-height",
+      "value": "1",
+      "owner": "PDF preview",
+      "reason": "PDF.js document text geometry must match original glyph positions, not application typography.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/panels/workspace-pdf-preview.scss",
+      "selector": ".workspace-pdf-preview__text > :not(.markedContent), .markedContent span:not(.markedContent)",
+      "property": "font-size",
+      "value": "calc(var(--text-scale-factor) * var(--font-height))",
+      "owner": "PDF preview",
+      "reason": "PDF.js document text geometry must match original glyph positions, not application typography.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/styles/app.scss",
+      "selector": ".thread-user-message &__bubble &.is-empty",
+      "property": "line-height",
+      "value": "1",
+      "owner": "chat empty bubble",
+      "reason": "Empty-message layout placeholder has no rendered text and retains its existing minimum box.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/styles/app.scss",
+      "selector": "@media (max-width: 767px) and (any-pointer: coarse) :is(\n    input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"range\"]),\n    select,\n    textarea:not(.xterm-helper-textarea),\n    [contenteditable=\"true\"]\n  )",
+      "property": "font-size",
+      "value": "max(var(--typography-mobile-input-size), 1rem)",
+      "owner": "Web mobile editor",
+      "reason": "Minimum 16 CSS px prevents touch input focus zoom; retain user rem size when larger.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/chat-render-web/src/renderers/prose/prose.scss",
+      "selector": ".opencraft-chat-document",
+      "property": "font-size",
+      "value": "var(--markdown-font-size)",
+      "owner": "chat document",
+      "reason": "Document reading size follows the user chat preference. Headings and emphasis still use registered roles.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary)",
+      "property": "font-family",
+      "value": "var(--typography-#{$name}-family)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary)",
+      "property": "font-size",
+      "value": "var(--typography-#{$name}-size)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary)",
+      "property": "font-weight",
+      "value": "var(--typography-#{$name}-weight)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary)",
+      "property": "line-height",
+      "value": "var(--typography-#{$name}-line-height)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/design-system/src/typography-mixins.web.scss",
+      "selector": "@mixin role($name, $tone: primary)",
+      "property": "letter-spacing",
+      "value": "var(--typography-#{$name}-tracking)",
+      "owner": "design-system adapter",
+      "reason": "The sole SCSS projection interpolates validated registry role names; feature consumers cannot use this exception.",
+      "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/chat-render-web/src/renderers/prose/prose.scss",
+      "selector": ".opencraft-chat-document",
+      "property": "line-height",
+      "value": "var(--markdown-line-height)",
+      "owner": "chat document",
+      "reason": "Document line height follows scoped user reading size plus the registered chat leading; inherited root calculations cannot preserve scoped preferences.",
+      "reviewWhen": "When reading preference projection or prose ownership changes; remove stale entries automatically."
+    },
+    {
+      "file": "packages/chat-render-web/src/renderers/prose/prose.scss",
+      "selector": ".opencraft-chat-document blockquote",
+      "property": "line-height",
+      "value": "var(--markdown-line-height)",
+      "owner": "chat document",
+      "reason": "Document line height follows scoped user reading size plus the registered chat leading; inherited root calculations cannot preserve scoped preferences.",
+      "reviewWhen": "When reading preference projection or prose ownership changes; remove stale entries automatically."
+    },
+    {
+      "file": "apps/workbench-web/src/browser/browser-mobile-toolbar.scss",
+      "selector": ".browser-mobile-dock__location input",
+      "property": "font-size",
+      "value": "16px",
+      "owner": "Web mobile browser",
+      "reason": "Navigation and tab-search inputs keep the 16 CSS px platform minimum that prevents iOS focus zoom; this does not set ordinary text typography.",
+      "reviewWhen": "When these input controls or the iOS focus-zoom contract changes; remove when the shared mobile input minimum provides the same guarantee."
+    },
+    {
+      "file": "apps/workbench-web/src/browser/browser-mobile-toolbar.scss",
+      "selector": ".browser-mobile-sheet &__search",
+      "property": "font-size",
+      "value": "16px",
+      "owner": "Web mobile browser",
+      "reason": "Navigation and tab-search inputs keep the 16 CSS px platform minimum that prevents iOS focus zoom; this does not set ordinary text typography.",
+      "reviewWhen": "When these input controls or the iOS focus-zoom contract changes; remove when the shared mobile input minimum provides the same guarantee."
+    }
+  ]
+}

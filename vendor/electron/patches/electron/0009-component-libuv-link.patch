@@ -1,0 +1,31 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Link the libuv target matching the Linux build mode
+
+diff --git a/BUILD.gn b/BUILD.gn
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -1728,14 +1728,16 @@
+       ]
+     }
+     if (is_linux) {
+-      ldflags = [
+-        "-pie",
+-
+-        # Required for exporting all symbols of libuv.
+-        "-Wl,--whole-archive",
+-        "obj/third_party/electron_node/deps/uv/libuv.a",
+-        "-Wl,--no-whole-archive",
+-      ]
++      ldflags = [ "-pie" ]
++      if (!is_component_build) {
++        # Static builds export all libuv symbols from the executable. Component
++        # builds already link the exported shared libuv through normal deps.
++        ldflags += [
++          "-Wl,--whole-archive",
++          "obj/third_party/electron_node/deps/uv/libuv.a",
++          "-Wl,--no-whole-archive",
++        ]
++      }
+ 
+       if (!is_component_build && is_component_ffmpeg) {
+         configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]

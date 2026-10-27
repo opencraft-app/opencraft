@@ -1,0 +1,125 @@
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/panel-controls.web" as panel-controls;
+
+.ui-button {
+  @include controls.density-target;
+  @include typography.role(control, null);
+  position: relative;
+  display: inline-flex;
+  min-width: var(--size-control-hit-min);
+  align-items: center;
+  justify-content: center;
+  gap: max(7px, var(--gap-control-density-min));
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-control, 10px);
+  outline: none;
+  background: var(--color-background-button-primary, var(--color-text));
+  color: var(--color-text-button-primary, var(--color-background-surface));
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-duration-basic) var(--ease-standard),
+    border-color var(--transition-duration-basic) var(--ease-standard),
+    color var(--transition-duration-basic) var(--ease-standard),
+    opacity var(--transition-duration-basic) var(--ease-standard);
+
+  &[data-size="sm"] { @include typography.role(control-small, null); min-height: max(32px, var(--size-control-hit-min)); padding: 0 12px; }
+  &[data-size="md"] { min-height: max(40px, var(--size-control-hit-min)); padding: 0 16px; }
+  &[data-size="lg"] { @include typography.role(control-large, null); min-height: 44px; padding: 0 24px; }
+  &[data-size="toolbar"] {
+    @include typography.role(control-compact, null);
+    height: var(--height-toolbar-control);
+    min-height: var(--height-toolbar-control);
+    border-radius: var(--radius-toolbar-control);
+    padding: 0 var(--padding-toolbar-control-inline);
+  }
+
+  &[data-variant="primary"],
+  &[data-variant="hero"] {
+    font-weight: var(--typography-primary-action-weight);
+    background: var(--color-background-button-primary, var(--color-text));
+    color: var(--color-text-button-primary, var(--color-background-surface));
+  }
+
+  &[data-variant="secondary"] {
+    background: var(--color-background-button-secondary, var(--color-background-secondary));
+    color: var(--color-text);
+  }
+
+  &[data-variant="outline"] {
+    border: 1px solid var(--color-border-default);
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  &[data-variant="ghost"],
+  &[data-variant="link"] {
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  &[data-variant="link"] {
+    min-height: 0;
+    padding-inline: 0;
+  }
+
+  // Explicit density owns geometry after legacy size/variant defaults.
+  &[data-density="compact"] { @include panel-controls.compact-action; }
+
+  &[data-variant="destructive"] {
+    background: var(--color-status-error);
+    color: var(--color-text-button-primary, #fff);
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="primary"]:hover:not(:disabled),
+    &[data-variant="hero"]:hover:not(:disabled) {
+      background: var(--color-background-button-primary-hover);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="secondary"]:hover:not(:disabled) {
+      background: var(--color-background-button-secondary-hover);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="ghost"]:hover:not(:disabled),
+    &[data-variant="link"]:hover:not(:disabled) {
+      background: var(--color-background-button-tertiary-hover);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="outline"]:not([data-density="compact"]):hover:not(:disabled) {
+      background: var(--color-background-button-tertiary-hover);
+    }
+  }
+
+  &:focus-visible {
+    @include controls.focus-indicator;
+  }
+
+  &:disabled {
+    @include controls.disabled-feedback;
+  }
+  &[aria-busy="true"] .ui-button__label { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+
+.ui-button__spinner, .settings-control-button__spinner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  animation: ui-button-spin 680ms linear infinite;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+}
+
+@keyframes ui-button-spin {
+  to { transform: rotate(1turn); }
+}
+
+.settings-control-button__spinner { position: static; flex: 0 0 14px; }

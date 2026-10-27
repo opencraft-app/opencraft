@@ -1,0 +1,24 @@
+@use "./context-menu-metrics" as menu;
+.workbench-context-menu { @include menu.surface; }
+
+.workbench-context-menu [role="menuitem"][aria-busy="true"] > svg {
+  animation: workbench-spin 800ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-context-menu [role="menuitem"][aria-busy="true"] > svg { animation: none; }
+}
+
+// Mode radio/checkbox rows share one reserved indicator column in both Radix menus.
+.workbench-context-menu .sidebar-list-mode-item[role] {
+  // Radix data-highlighted owns menu navigation focus, including keyboard.
+  // Auto-focus after pointer opening must not add a second thick outline.
+  outline: none;
+  position: relative;
+  padding: 7px 10px 7px 28px;
+  .sidebar-list-mode-indicator {
+    position: absolute; inset-inline-start: 10px; top: 50%; transform: translateY(-50%);
+    width: 13px; height: 13px; display: grid; place-items: center;
+    > svg { margin: 0; }
+  }
+}

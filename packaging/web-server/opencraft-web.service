@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCraft managed Web console
+After=network.target
+
+[Service]
+Type=simple
+User=opencraft
+# Install a pinned package into /opt/opencraft-web/bootstrap before enabling this unit.
+# Provision writable state and scoped execution-unit restart permission for this user.
+EnvironmentFile=/etc/opencraft-web.env
+ExecStart=/usr/bin/node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/cli.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=360
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,137 @@
+[
+  {
+    "name": "space",
+    "diff": "diff --git a/space name.txt b/space name.txt\nindex 3367afd..3e75765 100644\n--- a/space name.txt\t\n+++ b/space name.txt\t\n@@ -1 +1 @@\n-old\n+new\n",
+    "expected": {
+      "files": [
+        {
+          "path": "space name.txt",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "additions": 1,
+      "deletions": 1
+    }
+  },
+  {
+    "name": "unicode",
+    "diff": "diff --git \"a/\\344\\270\\255\\346\\226\\207.txt\" \"b/\\344\\270\\255\\346\\226\\207.txt\"\nindex 3367afd..3e75765 100644\n--- \"a/\\344\\270\\255\\346\\226\\207.txt\"\n+++ \"b/\\344\\270\\255\\346\\226\\207.txt\"\n@@ -1 +1 @@\n-old\n+new\n",
+    "expected": {
+      "files": [
+        {
+          "path": "中文.txt",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "additions": 1,
+      "deletions": 1
+    }
+  },
+  {
+    "name": "operators",
+    "diff": "diff --git a/operators.cpp b/operators.cpp\nindex 697df38..7fa4e32 100644\n--- a/operators.cpp\n+++ b/operators.cpp\n@@ -1,2 +1,2 @@\n---counter;\n-old\n+++counter;\n+new\n",
+    "expected": {
+      "files": [
+        {
+          "path": "operators.cpp",
+          "additions": 2,
+          "deletions": 2
+        }
+      ],
+      "additions": 2,
+      "deletions": 2
+    }
+  },
+  {
+    "name": "binary",
+    "diff": "diff --git a/binary image.bin b/binary image.bin\nindex e7be1ea5722fddec13dbce5018dc1056c0dd3fdb..f9e371ff2657e5d2bd4389e3b323fe0550e3a860 100644\nGIT binary patch\nliteral 4\nLcmZR`ODzWg0*?Vp\n\nliteral 4\nLcmZR`&q)CQ0*wJc\n\n",
+    "expected": {
+      "files": [
+        {
+          "path": "binary image.bin",
+          "additions": 0,
+          "deletions": 0
+        }
+      ],
+      "additions": 0,
+      "deletions": 0
+    }
+  },
+  {
+    "name": "rename",
+    "diff": "diff --git a/rename from.txt \"b/b/new \\345\\220\\215.txt\"\nsimilarity index 100%\nrename from rename from.txt\nrename to \"b/new \\345\\220\\215.txt\"\n",
+    "expected": {
+      "files": [
+        {
+          "path": "b/new 名.txt",
+          "additions": 0,
+          "deletions": 0
+        }
+      ],
+      "additions": 0,
+      "deletions": 0
+    }
+  },
+  {
+    "name": "mode",
+    "diff": "diff --git a/mode only name.sh b/mode only name.sh\nold mode 100644\nnew mode 100755\n",
+    "expected": {
+      "files": [
+        {
+          "path": "mode only name.sh",
+          "additions": 0,
+          "deletions": 0
+        }
+      ],
+      "additions": 0,
+      "deletions": 0
+    }
+  },
+  {
+    "name": "added",
+    "diff": "diff --git a/new file.txt b/new file.txt\nnew file mode 100644\nindex 0000000..d5f7fc3\n--- /dev/null\n+++ b/new file.txt\t\n@@ -0,0 +1 @@\n+added\n",
+    "expected": {
+      "files": [
+        {
+          "path": "new file.txt",
+          "additions": 1,
+          "deletions": 0
+        }
+      ],
+      "additions": 1,
+      "deletions": 0
+    }
+  },
+  {
+    "name": "deleted",
+    "diff": "diff --git a/deleted file.txt b/deleted file.txt\ndeleted file mode 100644\nindex 2c3f0b3..0000000\n--- a/deleted file.txt\t\n+++ /dev/null\n@@ -1 +0,0 @@\n-removed\n",
+    "expected": {
+      "files": [
+        {
+          "path": "deleted file.txt",
+          "additions": 0,
+          "deletions": 1
+        }
+      ],
+      "additions": 0,
+      "deletions": 1
+    }
+  },
+  {
+    "name": "escaped",
+    "diff": "diff --git \"a/quote \\\" and slash\\\\ name.txt\" \"b/quote \\\" and slash\\\\ name.txt\"\nindex 3367afd..3e75765 100644\n--- \"a/quote \\\" and slash\\\\ name.txt\"\t\n+++ \"b/quote \\\" and slash\\\\ name.txt\"\t\n@@ -1 +1 @@\n-old\n+new\n",
+    "expected": {
+      "files": [
+        {
+          "path": "quote \" and slash\\ name.txt",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "additions": 1,
+      "deletions": 1
+    }
+  }
+]

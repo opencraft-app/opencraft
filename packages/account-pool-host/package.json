@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/account-pool-host",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "undici": "^8.12.2",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0"
+  }
+}

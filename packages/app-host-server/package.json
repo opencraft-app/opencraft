@@ -1,0 +1,18 @@
+{
+  "name": "@opencraft/app-host-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./interactions": "./src/interactions.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  }
+}

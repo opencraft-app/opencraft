@@ -1,0 +1,52 @@
+name: Electron fork source
+
+on:
+  pull_request:
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-fork.yml
+      - .github/workflows/electron-native-artifacts.yml
+      - .gitattributes
+  push:
+    branches: [main]
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-fork.yml
+      - .github/workflows/electron-native-artifacts.yml
+      - .gitattributes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: python3
+          - os: macos-15
+            python: python3
+          - os: windows-latest
+            python: python
+          - os: macos-15-intel
+            python: python3
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Validate Actions syntax and expressions
+        if: runner.os == 'Linux'
+        env:
+          GOTOOLCHAIN: auto
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= .github/workflows/electron-fork.yml .github/workflows/electron-native-artifacts.yml
+      - run: ${{ matrix.python }} -m unittest discover -s vendor/electron/tests -v
+      - run: ${{ matrix.python }} vendor/electron/manage.py checkout
+      - run: ${{ matrix.python }} vendor/electron/manage.py verify

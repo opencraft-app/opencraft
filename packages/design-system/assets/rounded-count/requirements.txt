@@ -1,0 +1,4 @@
+fonttools[woff]==4.60.1
+brotli==1.2.0
+zopfli==0.4.3
+skia-pathops==0.8.0.post2

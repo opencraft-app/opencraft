@@ -1,0 +1,225 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Link and export APIs at Electron component boundaries
+
+diff --git a/BUILD.gn b/BUILD.gn
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -515,6 +515,7 @@
+     "shell/common:web_contents_utility",
+     "shell/services/node/public/mojom",
+     "//base:base_static",
++    "//base/third_party/double_conversion",
+     "//base/allocator:buildflags",
+     "//build/util:chromium_git_revision",
+     "//chrome:strings",
+@@ -544,6 +545,7 @@
+     "//components/tracing:tracing_metrics",
+     "//components/upload_list",
+     "//components/user_prefs",
++    "//components/viz/client",
+     "//components/viz/host",
+     "//components/viz/service",
+     "//components/webrtc",
+@@ -590,6 +592,7 @@
+     "//third_party/webrtc_overrides:webrtc_component",
+     "//third_party/widevine/cdm:headers",
+     "//third_party/zlib/google:zip",
++    "//third_party/zstd:compress",
+     "//ui/base:ozone_buildflags",
+     "//ui/base/idle",
+     "//ui/compositor",
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -258,3 +258,4 @@
+ feat_remote_tab_native_clipboard.patch
+ fix_component_pulseaudio_embedder_boundary.patch
+ fix_gtk_dialog_dynamic_symbols.patch
++fix_electron_component_exports.patch
+diff --git a/patches/chromium/fix_electron_component_exports.patch b/patches/chromium/fix_electron_component_exports.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/fix_electron_component_exports.patch
+@@ -0,0 +1,182 @@
++From: OpenCraft <dev@opencraft.app>
++Subject: Export Chromium APIs used by Electron across shared components
++
++diff --git a/content/browser/gpu/compositor_util.h b/content/browser/gpu/compositor_util.h
++--- a/content/browser/gpu/compositor_util.h
+++++ b/content/browser/gpu/compositor_util.h
++@@ -10,6 +10,8 @@
++ #include <vector>
++
++ #include "base/values.h"
+++
+++#include "content/common/content_export.h"
++
++ namespace content {
++
++@@ -36,7 +38,7 @@
++ // Returns true if main thread can be pipelined with activation.
++ bool IsMainFrameBeforeActivationEnabled();
++
++-base::Value GetFeatureStatus();
+++CONTENT_EXPORT base::Value GetFeatureStatus();
++ base::Value GetProblems();
++ std::vector<std::string> GetDriverBugWorkarounds();
++
++diff --git a/content/browser/keyboard_lock/keyboard_lock_service_impl.h b/content/browser/keyboard_lock/keyboard_lock_service_impl.h
++--- a/content/browser/keyboard_lock/keyboard_lock_service_impl.h
+++++ b/content/browser/keyboard_lock/keyboard_lock_service_impl.h
++@@ -15,12 +15,14 @@
++ #include "mojo/public/cpp/bindings/pending_receiver.h"
++ #include "third_party/blink/public/mojom/keyboard_lock/keyboard_lock.mojom.h"
++
+++#include "content/common/content_export.h"
+++
++ namespace content {
++
++ class KeyboardLockServiceImpl final
++     : public DocumentService<blink::mojom::KeyboardLockService> {
++  public:
++-  static void CreateMojoService(
+++  CONTENT_EXPORT static void CreateMojoService(
++       RenderFrameHost* render_frame_host,
++       mojo::PendingReceiver<blink::mojom::KeyboardLockService> receiver);
++
++diff --git a/gin/v8_initializer.h b/gin/v8_initializer.h
++--- a/gin/v8_initializer.h
+++++ b/gin/v8_initializer.h
++@@ -29,7 +29,7 @@
++
++ namespace gin {
++
++-void SetV8SnapshotValidator(const base::RepeatingCallback<void(v8::StartupData*)>& callback);
+++GIN_EXPORT void SetV8SnapshotValidator(const base::RepeatingCallback<void(v8::StartupData*)>& callback);
++
++ class GIN_EXPORT V8Initializer {
++  public:
++diff --git a/tools/generate_stubs/rules.gni b/tools/generate_stubs/rules.gni
++--- a/tools/generate_stubs/rules.gni
+++++ b/tools/generate_stubs/rules.gni
++@@ -14,6 +14,7 @@
++ #   path_from_source: relative path of generated files from the project root
++ #   macro_include: overrides the include for DISABLE_CFI_ICALL
++ #                  (default: base/compiler_specific.h)
+++#   export_macro: optional visibility annotation for generated stub functions
++ #   macro_deps: override the dependency for macro_include (default: //base)
++ #
++ # Example
++@@ -83,6 +84,9 @@
++         invoker.macro_include,
++       ]
++     }
+++    if (defined(invoker.export_macro)) {
+++      args += [ "--export_macro", invoker.export_macro ]
+++    }
++     args += rebase_path(invoker.sigs, root_build_dir)
++   }
++
++diff --git a/ui/gtk/BUILD.gn b/ui/gtk/BUILD.gn
++--- a/ui/gtk/BUILD.gn
+++++ b/ui/gtk/BUILD.gn
++@@ -48,7 +48,13 @@
++   public_configs = [ ":gtk_internal_config" ]
++ }
++
+++config("gtk_stubs_export") {
+++  defines = [ "IS_GTK_IMPL" ]
+++}
+++
++ generate_stubs("gtk_stubs") {
+++  export_macro = "COMPONENT_EXPORT(GTK)"
+++  configs = [ ":gtk_stubs_export" ]
++   visibility = [
++     ":gtk",
++     ":gtk_unittests",
++diff --git a/ui/gtk/gtk_compat.h b/ui/gtk/gtk_compat.h
++--- a/ui/gtk/gtk_compat.h
+++++ b/ui/gtk/gtk_compat.h
++@@ -44,10 +44,10 @@
++ namespace gtk {
++
++ // Get handle to the currently loaded gdk_pixbuf library in the process.
++-void* GetLibGdkPixbuf();
+++COMPONENT_EXPORT(GTK) void* GetLibGdkPixbuf();
++
++ // Get handle to the currently loaded gdk library in the process.
++-void* GetLibGdk();
+++COMPONENT_EXPORT(GTK) void* GetLibGdk();
++
++ // Loads libgtk and related libraries and returns true on success.
++ COMPONENT_EXPORT(GTK) bool LoadGtk(ui::LinuxUiBackend backend);
++@@ -57,7 +57,7 @@
++ // Returns true iff the runtime version of Gtk used meets
++ // |major|.|minor|.|micro|. LoadGtk() must have been called
++ // prior to calling this function.
++-bool GtkCheckVersion(uint32_t major, uint32_t minor = 0, uint32_t micro = 0);
+++COMPONENT_EXPORT(GTK) bool GtkCheckVersion(uint32_t major, uint32_t minor = 0, uint32_t micro = 0);
++
++ // The below functions replace GTK functions whose interface has
++ // changed across versions, but whose (symbol) names have not.
++@@ -99,14 +99,14 @@
++
++ ScopedGObject<GListModel> Gtk4FileChooserGetFiles(GtkFileChooser* dialog);
++
++-ScopedGObject<GtkIconInfo> Gtk3IconThemeLookupByGiconForScale(
+++COMPONENT_EXPORT(GTK) ScopedGObject<GtkIconInfo> Gtk3IconThemeLookupByGiconForScale(
++     GtkIconTheme* theme,
++     GIcon* icon,
++     int size,
++     int scale,
++     GtkIconLookupFlags flags);
++
++-ScopedGObject<GtkIconPaintable> Gtk4IconThemeLookupByGicon(
+++COMPONENT_EXPORT(GTK) ScopedGObject<GtkIconPaintable> Gtk4IconThemeLookupByGicon(
++     GtkIconTheme* theme,
++     GIcon* icon,
++     int size,
++diff --git a/ui/gtk/gtk_util.h b/ui/gtk/gtk_util.h
++--- a/ui/gtk/gtk_util.h
+++++ b/ui/gtk/gtk_util.h
++@@ -35,7 +35,7 @@
++
++ // Sets |dialog| as transient for |parent|, which will keep it on top and center
++ // it above |parent|. Do nothing if |parent| is nullptr.
++-void SetGtkTransientForAura(GtkWidget* dialog,
+++COMPONENT_EXPORT(GTK) void SetGtkTransientForAura(GtkWidget* dialog,
++                             aura::Window* parent,
++                             GtkUiPlatform* platform);
++
++@@ -154,7 +154,7 @@
++
++ // Get the 'color' property from the style context created by
++ // GetStyleContextFromCss(|css_selector|).
++-SkColor GetFgColor(const std::string& css_selector);
+++COMPONENT_EXPORT(GTK) SkColor GetFgColor(const std::string& css_selector);
++
++ ScopedCssProvider GetCssProvider(const std::string& css);
++
++@@ -167,7 +167,7 @@
++ // Renders a background from the style context created by
++ // GetStyleContextFromCss(|css_selector|) into a 24x24 bitmap and
++ // returns the average color.
++-SkColor GetBgColor(const std::string& css_selector);
+++COMPONENT_EXPORT(GTK) SkColor GetBgColor(const std::string& css_selector);
++
++ // Renders the border from the style context created by
++ // GetStyleContextFromCss(|css_selector|) into a 24x24 bitmap and
++@@ -181,7 +181,7 @@
++ std::string GetGtkSettingsStringProperty(GtkSettings* settings,
++                                          const gchar* prop_name);
++
++-GtkIconTheme* GetDefaultIconTheme();
+++COMPONENT_EXPORT(GTK) GtkIconTheme* GetDefaultIconTheme();
++
++ void GtkWindowDestroy(GtkWidget* widget);
++
++@@ -196,6 +196,6 @@
++ float GetDeviceScaleFactor();
++
++ // This should only be called on Gtk4.
++-GdkTexture* GetTextureFromRenderNode(GskRenderNode* node);
+++COMPONENT_EXPORT(GTK) GdkTexture* GetTextureFromRenderNode(GskRenderNode* node);
++
++ double GetOpacityFromContext(GtkStyleContext* context);

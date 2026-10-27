@@ -1,0 +1,37 @@
+{
+  "name": "@opencraft/design-system-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./native-controls": "./src/native-controls.tsx",
+    "./liquid-glass": "./src/liquid-glass.tsx",
+    "./progress": "./src/progress.tsx",
+    "./discrete-slider": "./src/discrete-slider.tsx",
+    "./animated-content": "./src/animated-content.tsx",
+    "./action-icons": "./src/action-icons.tsx",
+    "./timeline-icons": "./src/timeline-icons.tsx",
+    "./native-controls.web": "./src/native-controls.web.scss",
+    "./task-link-icon": "./src/task-link-icon.tsx",
+    "./dropdown-menu": "./src/dropdown-menu.tsx",
+    "./safe-layout": "./src/safe-layout.tsx",
+    "./context-menu": "./src/context-menu.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/design-system": "0.1.0",
+    "@radix-ui/react-slider": "^1.6.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "motion": "^12.38.0",
+    "@radix-ui/react-dropdown-menu": "2.2.1",
+    "@radix-ui/react-slot": "1.5.0",
+    "@radix-ui/react-context-menu": "2.4.1",
+    "@radix-ui/react-compose-refs": "1.1.5"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0"
+  }
+}

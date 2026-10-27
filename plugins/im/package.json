@@ -1,0 +1,28 @@
+{
+  "name": "@opencraft/plugin-im",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./store": "./src/store.ts",
+    ".": "./src/index.tsx",
+    "./sources": "./src/sources.tsx"
+  },
+  "dependencies": {
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/design-system": "0.1.0",
+    "@opencraft/design-system-web": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/i18n": "0.1.0",
+    "@opencraft/identity-core": "*",
+    "@opencraft/javascript-runtime": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0",
+    "@radix-ui/react-dialog": "^1.3.1",
+    "react": "19.3.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

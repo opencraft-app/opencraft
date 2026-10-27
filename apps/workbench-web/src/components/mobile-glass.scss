@@ -1,0 +1,7 @@
+@use "@opencraft/design-system/material.web" as material;
+
+// Compatibility adapter: optical rules belong to the shared design system.
+@mixin surface($floating: false) {
+  @if $floating { @include material.floating; }
+  @else { @include material.surface(menu); }
+}

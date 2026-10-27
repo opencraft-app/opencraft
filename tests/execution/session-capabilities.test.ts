@@ -1,0 +1,66 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
+import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+const tool = {name:"reply",description:"Reply",inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}};
+test("native and MCP share session policy; calls recheck revocation",async t=>{
+ const service=new SessionCapabilities();let enabled=true,calls=0;
+ service.register({id:"fixture",tools:s=>enabled&&s.serverId==="server"&&s.threadId==="one"?[tool]:[],async call(s,_n,args){assert.equal(s.threadId,"one");calls++;return args;}});
+ const mcp=new SessionCapabilityMcp(service,randomBytes(32));await mcp.listen();t.after(()=>mcp.close());
+ const one={serverId:"server",threadId:"one"},two={serverId:"server",threadId:"two"},config=mcp.config(one) as any;
+ const client=new Client({name:"fixture",version:"1"});await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));t.after(()=>client.close());
+ assert.deepEqual((await client.listTools()).tools.map(t=>t.name),["reply"]);
+ assert.equal((await client.callTool({name:"reply",arguments:{text:"hello"}})).isError,false);
+ assert.equal((await service.scoped("server").call("one","reply",{},new AbortController().signal)).success,true);assert.equal(calls,2);
+ await assert.rejects(service.call(two,"reply",{},new AbortController().signal),/authorized/);
+ const other=new Client({name:"other",version:"1"});await other.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:{Authorization:"Bearer "+mcp.token(two)}}}));t.after(()=>other.close());
+ assert.deepEqual((await other.listTools()).tools,[]);assert.equal((await other.callTool({name:"reply",arguments:{threadId:"one"}})).isError,true);
+ enabled=false;assert.deepEqual((await client.listTools()).tools,[]);assert.equal((await client.callTool({name:"reply",arguments:{}})).isError,true);assert.equal(calls,2);
+ assert.equal((await fetch(config.url,{method:"POST",body:"{}"})).status,401);
+ assert.equal((await fetch(config.url,{method:"POST",headers:{...config.http_headers,Origin:"https://untrusted.example"},body:"{}"})).status,403);
+});
+test("ambiguous owners fail closed",()=>{const s=new SessionCapabilities();for(const id of ["a","b"])s.register({id,tools:()=>[tool],async call(){return null;}});assert.throws(()=>s.tools({serverId:"s",threadId:"t"}),/conflict/);});
+
+test("new native sessions list reserved declarations but cannot call until bound; binding survives restart",async t=>{
+ const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {CapabilityBindings}=await import('../../packages/session-capabilities/src/bindings.js');
+ const dir=await mkdtemp(join(tmpdir(),'capability-bindings-'));t.after(()=>rm(dir,{recursive:true,force:true}));const path=join(dir,'bindings.sqlite'),key=randomBytes(32);
+ let store=new CapabilityBindings(path),service=new SessionCapabilities(),calls=0;
+ service.register({id:'fixture',tools:s=>s.threadId==='new'?[tool]:[],async call(){calls++;return 'ok';}});
+ let gateway=new SessionCapabilityMcp(service,key,store);await gateway.listen();const reserved=gateway.prepare([tool]),configuration=reserved.configuration as any;
+ const client=new Client({name:'pending',version:'1'});await client.connect(new StreamableHTTPClientTransport(new URL(configuration.url),{requestInit:{headers:configuration.http_headers}}));
+ assert.deepEqual((await client.listTools()).tools.map(t=>t.name),['reply']);assert.equal((await client.callTool({name:'reply',arguments:{text:'before binding'}})).isError,true);assert.equal(calls,0);
+ reserved.bind({serverId:'s',threadId:'new'});assert.throws(()=>reserved.bind({serverId:'s',threadId:'other'}));
+ assert.equal((gateway.config({serverId:'s',threadId:'new'}) as any).http_headers.Authorization,configuration.http_headers.Authorization);
+ assert.equal((await client.callTool({name:'reply',arguments:{text:'after binding'}})).isError,false);await client.close();await gateway.close();store.close();
+ store=new CapabilityBindings(path);gateway=new SessionCapabilityMcp(service,key,store);await gateway.listen();
+ t.after(async()=>{await gateway.close();store.close();});const next=gateway.config({serverId:'s',threadId:'new'}) as any;
+ assert.equal(next.http_headers.Authorization,configuration.http_headers.Authorization);
+ const reopened=new Client({name:'reopened',version:'1'});await reopened.connect(new StreamableHTTPClientTransport(new URL(next.url),{requestInit:{headers:next.http_headers}}));t.after(()=>reopened.close());
+ assert.equal((await reopened.callTool({name:'reply',arguments:{text:'restored'}})).isError,false);assert.equal(calls,2);assert.deepEqual(store.get('made-up'),null);
+});
+
+test("domain preauthorization is per tool, survives reservation binding, and never grants a call",async t=>{
+ const service=new SessionCapabilities();let admitted=false,calls=0;
+ const reply={...tool,approval:"preauthorized" as const},ordinary={...tool,name:"other"};
+ service.register({id:"fixture",tools:s=>admitted&&s.threadId==="one"?[reply,ordinary]:[],async call(){calls++;return "ok";}});
+ const mcp=new SessionCapabilityMcp(service,randomBytes(32));await mcp.listen();t.after(()=>mcp.close());
+ const reserved=mcp.prepare([reply,ordinary]),config=reserved.configuration as any;
+ assert.deepEqual(config.tools,{reply:{approval_mode:"approve"}});
+ assert.equal(config.default_tools_approval_mode,undefined);
+ const client=new Client({name:"fixture",version:"1"});await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));t.after(()=>client.close());
+ assert.ok((await client.listTools()).tools.every(t=>!("approval" in t)));
+ assert.equal((await client.callTool({name:"reply",arguments:{text:"before binding"}})).isError,true);
+ reserved.bind({serverId:"s",threadId:"one"});
+ assert.equal((await client.callTool({name:"reply",arguments:{text:"before admission"}})).isError,true);
+ admitted=true;
+ assert.deepEqual((mcp.config({serverId:"s",threadId:"one"}) as any).tools,config.tools);
+ assert.equal((await client.callTool({name:"reply",arguments:{text:"admitted"}})).isError,false);
+ admitted=false;
+ assert.equal((await client.callTool({name:"reply",arguments:{text:"revoked"}})).isError,true);
+ assert.equal(calls,1);assert.equal(mcp.config({serverId:"s",threadId:"one"}),null);
+ const defaults=mcp.prepare([ordinary]).configuration as any;assert.equal(defaults.tools,undefined);
+});

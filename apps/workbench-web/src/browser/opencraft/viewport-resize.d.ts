@@ -1,0 +1,1 @@
+export function computeDragResizeDimensions(input: { drag: { edge: string; startWidth: number; startHeight: number; startPointerX: number; startPointerY: number }; fitHeight: number; fitWidth: number; pointerX: number; pointerY: number; scale: number }): {width: number;height:number};

@@ -1,0 +1,22 @@
+[Unit]
+Description=OpenCraft private desktop input executor
+Requires=opencraft-desktop-observer-proxy.service
+After=opencraft-desktop-observer-proxy.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/opencraft/desktop-control.py
+RuntimeDirectory=opencraft-desktop-control
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
+UMask=0077
+Restart=on-failure
+RestartSec=1
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/opencraft-desktop-control
+RestrictAddressFamilies=AF_UNIX
+TimeoutStopSec=3

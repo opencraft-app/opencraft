@@ -1,0 +1,35 @@
+@use "@opencraft/design-system/controls.web" as controls;
+
+.toolbar-dock__capacity-probe { position: absolute; width: var(--size-toolbar-dock-action); height: 0; visibility: hidden; pointer-events: none; }
+.toolbar-dock { display: flex; align-items: center; gap: var(--gap-toolbar-dock); }
+.toolbar-dock__item { display: flex; align-items: center; }
+.toolbar-dock .toolbar-dock__action {
+  width: var(--size-toolbar-dock-action); height: var(--size-toolbar-dock-action);
+  border-radius: var(--radius-control); touch-action: manipulation;
+}
+.toolbar-dock__item[data-dragging] { z-index: 1; opacity: .65; }
+.toolbar-dock__editor { display: grid; gap: var(--gap-control-group); }
+.toolbar-dock__zone {
+  min-height: calc(var(--height-toolbar-control) * 2); padding: var(--padding-control-inline);
+  border: 1px solid var(--color-border-default); border-radius: var(--radius-control);
+  background: var(--color-background-elevated-secondary-opaque);
+  h3 { margin: 0 0 var(--spacing); font: inherit; color: var(--color-text-secondary); }
+  p { color: var(--color-text-tertiary); margin: var(--spacing); }
+  &[data-over] { border-color: var(--color-icon-accent); }
+}
+.toolbar-dock__choice { display: flex; align-items: center; gap: var(--gap-control-group); min-height: var(--height-toolbar-pane); }
+.toolbar-dock__choice-label { flex: 1; }
+.toolbar-dock__choice-icon { display: grid; place-items: center; color: var(--color-text-secondary); }
+.toolbar-dock__grip, .toolbar-dock__toggle {
+  display: grid; place-items: center; width: var(--height-toolbar-pane); height: var(--height-toolbar-pane);
+  border: 0; border-radius: var(--radius-control); color: var(--color-text-secondary); background: transparent;
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-button-tertiary-hover); }
+  }
+}
+.toolbar-dock__grip { cursor: grab; touch-action: none; }
+.toolbar-dock__choice[data-dragging] { opacity: 0; }
+.toolbar-dock__drag-preview {
+  color: var(--color-text); font: var(--typography-body-font);
+  background: var(--color-background-elevated-secondary-opaque); border-radius: var(--radius-control);
+}

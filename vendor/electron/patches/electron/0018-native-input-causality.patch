@@ -1,0 +1,1077 @@
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+index e4e3fc3..d84c06e 100644
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -260,3 +260,4 @@ fix_component_pulseaudio_embedder_boundary.patch
+ fix_gtk_dialog_dynamic_symbols.patch
+ fix_electron_component_exports.patch
+ fix_electron_gtk_component_dependency.patch
++feat_native_input_causality.patch
+diff --git a/patches/chromium/feat_native_input_causality.patch b/patches/chromium/feat_native_input_causality.patch
+new file mode 100644
+index 0000000..4d0e26b
+--- /dev/null
++++ b/patches/chromium/feat_native_input_causality.patch
+@@ -0,0 +1,530 @@
++diff --git a/third_party/blink/public/web/web_input_method_controller.h b/third_party/blink/public/web/web_input_method_controller.h
++--- a/third_party/blink/public/web/web_input_method_controller.h
+++++ b/third_party/blink/public/web/web_input_method_controller.h
++@@ -68,6 +68,11 @@
++     bool has_composition = false;
++     uint64_t focus_generation = 0;
++     uint64_t composition_generation = 0;
+++    uint64_t activation_id = 0;
+++    int64_t activation_timestamp_us = 0;
+++    int activation_kind = 0;
+++    int32_t activation_node_id = 0;
+++    int activation_input_type = 0;
++   };
++   struct NativeImeResultForTesting {
++     bool dispatched = false;
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++@@ -45,11 +45,22 @@
++     return {};
++   }
++   const auto& native = GetInputMethodController();
+++  const auto* activation = GetFrame()->GetPage()
+++                               ? GetFrame()
+++                                     ->GetPage()
+++                                     ->GetFocusController()
+++                                     .GetNativeInputActivationForTesting()
+++                               : nullptr;
++   return {.supported = true,
++           .busy = native.HasNativeImeTargetScope(),
++           .has_composition = native.HasComposition(),
++           .focus_generation = native.NativeImeFocusGeneration(),
++-          .composition_generation = native.NativeImeCompositionGeneration()};
+++          .composition_generation = native.NativeImeCompositionGeneration(),
+++          .activation_id = activation ? activation->id : 0,
+++          .activation_timestamp_us = activation ? activation->timestamp_us : 0,
+++          .activation_kind = activation ? activation->kind : 0,
+++          .activation_node_id = activation ? activation->node_id : 0,
+++          .activation_input_type = activation ? activation->input_type : 0};
++ }
++
++ WebInputMethodController::NativeImeResultForTesting
++diff --git a/third_party/blink/renderer/core/page/focus_controller.h b/third_party/blink/renderer/core/page/focus_controller.h
++--- a/third_party/blink/renderer/core/page/focus_controller.h
+++++ b/third_party/blink/renderer/core/page/focus_controller.h
++@@ -72,7 +72,48 @@
++   uint64_t NativeImeFocusGeneration() const {
++     return native_ime_focus_generation_;
++   }
++-  void InvalidateNativeImeFocus() { ++native_ime_focus_generation_; }
+++  void InvalidateNativeImeFocus() {
+++    ++native_ime_focus_generation_;
+++    ++native_input_activation_generation_;
+++    native_input_activation_ = {};
+++  }
+++
+++  // Causal editor identity at dispatch completion. The website retains
+++  // ownership of current text and selection; no text snapshot is retained.
+++  struct NativeInputActivationForTesting {
+++    uint64_t id = 0;
+++    int64_t timestamp_us = 0;
+++    int kind = 0;
+++    uint64_t focus_generation = 0;
+++    int32_t node_id = 0;
+++    int input_type = 0;
+++  };
+++  uint64_t BeginNativeInputActivationForTesting() {
+++    native_input_activation_ = {};
+++    return ++native_input_activation_generation_;
+++  }
+++  void SetNativeInputActivationForTesting(uint64_t generation,
+++                                          uint64_t id,
+++                                          int64_t timestamp_us,
+++                                          int kind,
+++                                          uint64_t focus,
+++                                          int32_t node_id,
+++                                          int input_type) {
+++    if (generation != native_input_activation_generation_ ||
+++        focus != native_ime_focus_generation_) {
+++      return;
+++    }
+++    native_input_activation_ = {id,    timestamp_us, kind,
+++                                focus, node_id,      input_type};
+++  }
+++  const NativeInputActivationForTesting* GetNativeInputActivationForTesting()
+++      const {
+++    return native_input_activation_.id &&
+++                   native_input_activation_.focus_generation ==
+++                       native_ime_focus_generation_
+++               ? &native_input_activation_
+++               : nullptr;
+++  }
++
++   void SetFocusedFrame(Frame*, bool notify_embedder = true);
++   void FocusDocumentView(Frame*, bool notify_embedder = true);
++@@ -159,6 +200,8 @@
++   void FocusHasChanged();
++
++   uint64_t native_ime_focus_generation_ = 0;
+++  uint64_t native_input_activation_generation_ = 0;
+++  NativeInputActivationForTesting native_input_activation_;
++   Member<Page> page_;
++   Member<Frame> focused_frame_;
++   bool is_active_;
++diff --git a/third_party/blink/renderer/platform/widget/widget_base_client.h b/third_party/blink/renderer/platform/widget/widget_base_client.h
++--- a/third_party/blink/renderer/platform/widget/widget_base_client.h
+++++ b/third_party/blink/renderer/platform/widget/widget_base_client.h
++@@ -132,6 +132,7 @@
++   virtual bool SupportsBufferedTouchEvents() = 0;
++
++   virtual void DidHandleKeyEvent() {}
+++  virtual void DidHandleNativeInputForTesting(const WebCoalescedInputEvent&) {}
++   virtual void WillHandleGestureEvent(const WebGestureEvent& event,
++                                       bool* suppress) = 0;
++   virtual void WillHandleMouseEvent(const WebMouseEvent& event) = 0;
++diff --git a/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc b/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
++--- a/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
+++++ b/third_party/blink/renderer/platform/widget/input/widget_base_input_handler.cc
++@@ -504,6 +504,17 @@
++
++   if (check_was_destroyed()) {
++     return;
+++  }
+++
+++  // Seal the focus generation in this dispatch task, before the ACK allows a
+++  // caller to query it. No posted task may recapture a later editor as its own.
+++  if (input_event.GetType() == WebInputEvent::Type::kMouseUp ||
+++      input_event.GetType() == WebInputEvent::Type::kGestureTap ||
+++      input_event.GetType() == WebInputEvent::Type::kRawKeyDown) {
+++    widget_->client()->DidHandleNativeInputForTesting(coalesced_event);
+++    if (check_was_destroyed()) {
+++      return;
+++    }
++   }
++
++   if (callback) {
++diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++@@ -3386,6 +3386,44 @@
++       .DispatchBufferedTouchEvents();
++ }
++
+++void WebFrameWidgetImpl::DidHandleNativeInputForTesting(
+++    const WebCoalescedInputEvent& coalesced_event) {
+++  auto* frame = FocusedLocalFrameInWidget();
+++  if (!frame || !frame->GetPage()) {
+++    return;
+++  }
+++  const auto& event = coalesced_event.Event();
+++  uint64_t id =
+++      static_cast<uint64_t>(coalesced_event.latency_info().trace_id());
+++  int kind = event.GetType() == WebInputEvent::Type::kMouseUp ? 1 : 2;
+++  if (event.GetType() == WebInputEvent::Type::kGestureTap) {
+++    const auto& gesture = static_cast<const WebGestureEvent&>(event);
+++    id = gesture.unique_touch_event_id;
+++    kind = 3;
+++  }
+++  if (!id || id == static_cast<uint64_t>(-1)) {
+++    return;
+++  }
+++  Persistent<Page> page(frame->GetPage());
+++  WeakPersistent<LocalFrame> weak_frame(frame);
+++  auto& focus = page->GetFocusController();
+++  const auto generation = focus.BeginNativeInputActivationForTesting();
+++  const auto focus_generation = focus.NativeImeFocusGeneration();
+++  auto& input = frame->GetInputMethodController();
+++  if (input.HasNativeImeTargetScope()) {
+++    return;
+++  }
+++  const auto node_id = input.NodeIdOfFocusedElement();
+++  const auto input_type = input.TextInputType();
+++  if (!weak_frame || weak_frame->GetPage() != page.Get() ||
+++      focus.NativeImeFocusGeneration() != focus_generation) {
+++    return;
+++  }
+++  focus.SetNativeInputActivationForTesting(
+++      generation, id, event.TimeStamp().since_origin().InMicroseconds(), kind,
+++      focus_generation, node_id, static_cast<int>(input_type));
+++}
+++
++ WebInputEventResult WebFrameWidgetImpl::HandleInputEvent(
++     const WebCoalescedInputEvent& coalesced_event) {
++   const WebInputEvent& input_event = coalesced_event.Event();
++diff --git a/third_party/blink/renderer/core/frame/web_frame_widget_impl.h b/third_party/blink/renderer/core/frame/web_frame_widget_impl.h
++--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.h
+++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.h
++@@ -135,6 +135,7 @@
++       public WidgetEventHandler,
++       public mojom::blink::UnboundedSurfaceClient {
++  public:
+++  void DidHandleNativeInputForTesting(const WebCoalescedInputEvent&) override;
++   struct PromiseCallbacks {
++     base::OnceCallback<void(base::TimeTicks)> swap_time_callback;
++     base::OnceCallback<void(const viz::FrameTimingDetails&)>
++diff --git a/third_party/blink/public/devtools_protocol/domains/Input.pdl b/third_party/blink/public/devtools_protocol/domains/Input.pdl
++--- a/third_party/blink/public/devtools_protocol/domains/Input.pdl
+++++ b/third_party/blink/public/devtools_protocol/domains/Input.pdl
++@@ -226,6 +226,29 @@
++       # Time at which the event occurred.
++       optional TimeSinceEpoch timestamp
++
+++  # Dispatches through the native per-contact injector. A receipt is not an editing capability.
+++  experimental command dispatchTouchEventWithNativeInputTicket
+++    parameters
+++      # Type of the touch event. TouchEnd and TouchCancel must not contain any touch points, while
+++      # TouchStart and TouchMove must contains at least one.
+++      enum type
+++        touchStart
+++        touchEnd
+++        touchMove
+++        touchCancel
+++      # Active touch points on the touch device. One event per any changed point (compared to
+++      # previous touch event in a sequence) is generated, emulating pressing/moving/releasing points
+++      # one by one.
+++      array of TouchPoint touchPoints
+++      # Bit field representing pressed modifier keys. Alt=1, Ctrl=2, Meta/Command=4, Shift=8
+++      # (default: 0).
+++      optional integer modifiers
+++      # Time at which the event occurred.
+++      optional TimeSinceEpoch timestamp
+++
+++    returns
+++      optional string nativeInputTicket
+++
++   # Cancels any active dragging in the page.
++   command cancelDragging
++
++diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
++--- a/content/browser/devtools/protocol/input_handler.cc
+++++ b/content/browser/devtools/protocol/input_handler.cc
++@@ -17,6 +17,8 @@
++ #include "base/functional/callback.h"
++ #include "base/functional/callback_helpers.h"
++ #include "base/memory/raw_ptr.h"
+++#include "base/strings/strcat.h"
+++#include "base/strings/string_number_conversions.h"
++ #include "base/strings/string_split.h"
++ #include "base/strings/stringprintf.h"
++ #include "base/strings/utf_string_conversions.h"
++@@ -798,9 +800,10 @@
++   }
++
++   void InjectTouchEvents(const std::vector<blink::WebTouchEvent>& events,
++-                         std::unique_ptr<DispatchTouchEventCallback> callback) {
+++                         TouchDispatchCallback callback,
+++                         bool preserve_native_input_ticket) {
++     if (!widget_host_) {
++-      callback->sendFailure(Response::InternalError());
+++      std::move(callback).Run(Response::InternalError(), {});
++       return;
++     }
++
++@@ -808,8 +811,13 @@
++     widget_host_->GetTouchEmulator(/*create_if_necessary=*/true)
++         ->Enable(input::TouchEmulator::Mode::kInjectingTouchEvents,
++                  ui::GestureProviderConfigType::CURRENT_PLATFORM);
++-    base::OnceClosure closure = base::BindOnce(
++-        &DispatchTouchEventCallback::sendSuccess, std::move(callback));
+++    const auto& last = events.back();
+++    const std::string ticket = base::StrCat(
+++        {"touch:", base::NumberToString(last.unique_touch_event_id), ":",
+++         base::NumberToString(
+++             last.TimeStamp().since_origin().InMicroseconds())});
+++    base::OnceClosure closure =
+++        base::BindOnce(std::move(callback), Response::Success(), ticket);
++     // This may destroy the injector if the events get discarded.
++     base::WeakPtr<InputHandler::InputInjector> weak_this =
++         weak_ptr_factory_.GetWeakPtr();
++@@ -817,7 +825,10 @@
++       widget_host_->GetTouchEmulator(/*create_if_necessary=*/true)
++           ->InjectTouchEvent(events[i], widget_host_->GetView(),
++                              i == events.size() - 1 ? std::move(closure)
++-                                                    : base::OnceClosure());
+++                                                    : base::OnceClosure(),
+++                             preserve_native_input_ticket
+++                                 ? events[i].unique_touch_event_id
+++                                 : 0);
++       if (!weak_this) {
++         return;
++       }
++@@ -1665,9 +1676,42 @@
++     return;
++   }
++
++-  DispatchWebTouchEvent(event_type, std::move(touch_points),
++-                        std::move(modifiers), std::move(timestamp),
++-                        std::move(callback));
+++  DispatchWebTouchEvent(
+++      event_type, std::move(touch_points), std::move(modifiers),
+++      std::move(timestamp),
+++      base::BindOnce(
+++          [](std::unique_ptr<DispatchTouchEventCallback> callback,
+++             Response response, std::string) {
+++            if (response.IsSuccess()) {
+++              callback->sendSuccess();
+++            } else {
+++              callback->sendFailure(response);
+++            }
+++          },
+++          std::move(callback)));
+++}
+++
+++void InputHandler::DispatchTouchEventWithNativeInputTicket(
+++    const std::string& event_type,
+++    std::unique_ptr<Array<Input::TouchPoint>> touch_points,
+++    std::optional<int> modifiers,
+++    std::optional<double> timestamp,
+++    std::unique_ptr<DispatchTouchEventWithNativeInputTicketCallback> callback) {
+++  DispatchWebTouchEvent(
+++      event_type, std::move(touch_points), std::move(modifiers),
+++      std::move(timestamp),
+++      base::BindOnce(
+++          [](std::unique_ptr<DispatchTouchEventWithNativeInputTicketCallback>
+++                 callback,
+++             Response response, std::string ticket) {
+++            if (response.IsSuccess()) {
+++              callback->sendSuccess(
+++                  ticket.empty() ? std::nullopt : std::make_optional(ticket));
+++            } else {
+++              callback->sendFailure(response);
+++            }
+++          },
+++          std::move(callback)), true);
++ }
++
++ void InputHandler::CancelDragging(
++@@ -1686,19 +1730,20 @@
++     std::unique_ptr<Array<Input::TouchPoint>> touch_points,
++     std::optional<int> modifiers,
++     std::optional<double> timestamp,
++-    std::unique_ptr<DispatchTouchEventCallback> callback) {
+++    TouchDispatchCallback callback,
+++    bool preserve_native_input_ticket) {
++   base::expected<std::vector<blink::WebTouchEvent>, protocol::Response>
++       maybe_events = CreateWebTouchEvents(
++           event_type, std::move(modifiers), std::move(timestamp), ScaleFactor(),
++           touch_points_, std::move(touch_points));
++   if (!maybe_events.has_value()) {
++-    callback->sendFailure(std::move(maybe_events).error());
+++    std::move(callback).Run(std::move(maybe_events).error(), {});
++     return;
++   }
++
++   std::vector<blink::WebTouchEvent> events = std::move(maybe_events).value();
++   if (events.empty()) {
++-    callback->sendSuccess();
+++    std::move(callback).Run(Response::Success(), {});
++     return;
++   }
++
++@@ -1707,7 +1752,7 @@
++   if (!widget_host || !widget_host->delegate() ||
++       !widget_host->delegate()->GetInputEventRouter() ||
++       !widget_host->GetView()) {
++-    callback->sendFailure(Response::InternalError());
+++    std::move(callback).Run(Response::InternalError(), {});
++     return;
++   }
++
++@@ -1718,7 +1763,8 @@
++       [](base::WeakPtr<InputHandler> self,
++          base::WeakPtr<RenderWidgetHostImpl> widget_host,
++          std::vector<blink::WebTouchEvent> events,
++-         std::unique_ptr<DispatchTouchEventCallback> callback, bool success) {
+++         TouchDispatchCallback callback, bool preserve_native_input_ticket,
+++         bool success) {
++         if (!self || !widget_host) {
++           return;
++         }
++@@ -1727,19 +1773,21 @@
++             ->GetRenderWidgetHostAtPointAsynchronously(
++                 widget_host->GetView(), point,
++                 base::BindOnce(&InputHandler::OnWidgetForDispatchWebTouchEvent,
++-                               self, std::move(callback), std::move(events)));
+++                               self, std::move(callback), std::move(events),
+++                               preserve_native_input_ticket));
++       },
++       weak_factory_.GetWeakPtr(), widget_host->GetWeakPtr(), std::move(events),
++-      std::move(callback)));
+++      std::move(callback), preserve_native_input_ticket));
++ }
++
++ void InputHandler::OnWidgetForDispatchWebTouchEvent(
++-    std::unique_ptr<DispatchTouchEventCallback> callback,
+++    TouchDispatchCallback callback,
++     std::vector<blink::WebTouchEvent> events,
+++    bool preserve_native_input_ticket,
++     base::WeakPtr<RenderWidgetHostViewBase> target,
++     std::optional<gfx::PointF> transformed) {
++   if (!target || !transformed.has_value()) {
++-    callback->sendFailure(Response::InternalError());
+++    std::move(callback).Run(Response::InternalError(), {});
++     return;
++   }
++   RenderWidgetHostImpl* widget_host =
++@@ -1763,7 +1811,8 @@
++           CHECK_DEREF(root_view), event.touches[j].PositionInWidget()));
++     }
++   }
++-  EnsureInjector(widget_host)->InjectTouchEvents(events, std::move(callback));
+++  EnsureInjector(widget_host)->InjectTouchEvents(
+++      events, std::move(callback), preserve_native_input_ticket);
++ }
++
++ void InputHandler::DispatchSyntheticPointerActionTouch(
++diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
++--- a/content/browser/devtools/protocol/input_handler.h
+++++ b/content/browser/devtools/protocol/input_handler.h
++@@ -139,6 +139,14 @@
++       std::optional<int> modifiers,
++       std::optional<double> timestamp,
++       std::unique_ptr<DispatchTouchEventCallback> callback) override;
+++
+++  void DispatchTouchEventWithNativeInputTicket(
+++      const std::string& type,
+++      std::unique_ptr<Array<Input::TouchPoint>> touch_points,
+++      std::optional<int> modifiers,
+++      std::optional<double> timestamp,
+++      std::unique_ptr<DispatchTouchEventWithNativeInputTicketCallback> callback)
+++      override;
++
++   void CancelDragging(
++       std::unique_ptr<CancelDraggingCallback> callback) override;
++@@ -273,12 +281,15 @@
++     base::WeakPtrFactory<DragController> weak_factory_{this};
++   };
++
+++  using TouchDispatchCallback = base::OnceCallback<void(Response, std::string)>;
+++
++   void DispatchWebTouchEvent(
++       const std::string& type,
++       std::unique_ptr<Array<Input::TouchPoint>> touch_points,
++       std::optional<int> modifiers,
++       std::optional<double> timestamp,
++-      std::unique_ptr<DispatchTouchEventCallback> callback);
+++      TouchDispatchCallback callback,
+++      bool preserve_native_input_ticket = false);
++
++   void DispatchSyntheticPointerActionTouch(
++       const std::string& type,
++@@ -304,8 +315,9 @@
++       std::optional<gfx::PointF> point);
++
++   void OnWidgetForDispatchWebTouchEvent(
++-      std::unique_ptr<DispatchTouchEventCallback> callback,
+++      TouchDispatchCallback callback,
++       std::vector<blink::WebTouchEvent> events,
+++      bool preserve_native_input_ticket,
++       base::WeakPtr<RenderWidgetHostViewBase> target,
++       std::optional<gfx::PointF> point);
++
++diff --git a/content/browser/devtools/protocol_config.json b/content/browser/devtools/protocol_config.json
++--- a/content/browser/devtools/protocol_config.json
+++++ b/content/browser/devtools/protocol_config.json
++@@ -76,7 +76,7 @@
++             },
++             {
++                 "domain": "Input",
++-                "async": ["dispatchKeyEvent", "insertText", "imeSetComposition", "dispatchMouseEvent", "dispatchDragEvent", "dispatchTouchEvent", "cancelDragging", "synthesizePinchGesture", "synthesizeScrollGesture", "synthesizeTapGesture"]
+++                "async": ["dispatchKeyEvent", "insertText", "imeSetComposition", "dispatchMouseEvent", "dispatchDragEvent", "dispatchTouchEvent", "dispatchTouchEventWithNativeInputTicket", "cancelDragging", "synthesizePinchGesture", "synthesizeScrollGesture", "synthesizeTapGesture"]
++             },
++             {
++                 "domain": "Inspector"
++diff --git a/content/browser/renderer_host/input/touch_emulator_impl.h b/content/browser/renderer_host/input/touch_emulator_impl.h
++--- a/content/browser/renderer_host/input/touch_emulator_impl.h
+++++ b/content/browser/renderer_host/input/touch_emulator_impl.h
++@@ -70,7 +70,8 @@
++   // forwarded to the client. Only works in kInjectingTouchEvents mode.
++   void InjectTouchEvent(const blink::WebTouchEvent& event,
++                         input::RenderWidgetHostViewInput* target_view,
++-                        base::OnceClosure completion_callback);
+++                        base::OnceClosure completion_callback,
+++                        uint32_t native_input_ticket_id = 0);
++
++   // Cancel any touches, for example, when focus is lost.
++   void CancelTouch();
++@@ -113,7 +114,8 @@
++   // it to the client if appropriate. Returns whether event was handled
++   // synchronously, and there will be no ack.
++   bool HandleEmulatedTouchEvent(blink::WebTouchEvent event,
++-                                input::RenderWidgetHostViewInput* target_view);
+++                                input::RenderWidgetHostViewInput* target_view,
+++                                uint32_t native_input_ticket_id = 0);
++
++   // Called when ack for injected touch has been received.
++   void OnInjectedTouchCompleted();
++diff --git a/content/browser/renderer_host/input/touch_emulator_impl.cc b/content/browser/renderer_host/input/touch_emulator_impl.cc
++--- a/content/browser/renderer_host/input/touch_emulator_impl.cc
+++++ b/content/browser/renderer_host/input/touch_emulator_impl.cc
++@@ -302,12 +302,17 @@
++
++ bool TouchEmulatorImpl::HandleEmulatedTouchEvent(
++     blink::WebTouchEvent event,
++-    input::RenderWidgetHostViewInput* target_view) {
+++    input::RenderWidgetHostViewInput* target_view,
+++    uint32_t native_input_ticket_id) {
++   CHECK(gesture_provider_, base::NotFatalUntil::M152);
++   auto weak_this = weak_ptr_factory_.GetWeakPtr();
++   scoped_refptr<ui::FilteredGestureProvider> gesture_provider(
++       gesture_provider_);
++-  event.unique_touch_event_id = ui::GetNextTouchEventId();
+++  // The causal dispatch API supplies a process-global native event id. Keep
+++  // that identity through gesture recognition; ordinary callers allocate here.
+++  event.unique_touch_event_id = native_input_ticket_id
+++                                   ? native_input_ticket_id
+++                                   : ui::GetNextTouchEventId();
++   auto result = gesture_provider->OnTouchEvent(MotionEventWeb(event));
++   if (!result.succeeded || !weak_this) {
++     return true;
++@@ -486,7 +491,8 @@
++ void TouchEmulatorImpl::InjectTouchEvent(
++     const blink::WebTouchEvent& event,
++     input::RenderWidgetHostViewInput* target_view,
++-    base::OnceClosure callback) {
+++    base::OnceClosure callback,
+++    uint32_t native_input_ticket_id) {
++   CHECK(IsEnabled() && mode_ == Mode::kInjectingTouchEvents,
++         base::NotFatalUntil::M152);
++   // Injected touch events use the target root view's coordinate space, which
++@@ -494,7 +500,8 @@
++   touch_event_ = event;
++   injected_touch_completion_callbacks_.push(std::move(callback));
++   auto weak_this = weak_ptr_factory_.GetWeakPtr();
++-  if (HandleEmulatedTouchEvent(touch_event_, target_view) && weak_this) {
+++  if (HandleEmulatedTouchEvent(touch_event_, target_view,
+++                               native_input_ticket_id) && weak_this) {
++     OnInjectedTouchCompleted();
++   }
++ }
+diff --git a/shell/browser/api/electron_api_web_contents.cc b/shell/browser/api/electron_api_web_contents.cc
+index ec809ed..b63e9ca 100644
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -32,6 +32,8 @@
+ #include "base/task/current_thread.h"
+ #include "base/threading/scoped_blocking_call.h"
+ #include "base/timer/elapsed_timer.h"
++#include "base/timer/timer.h"
++#include "base/trace_event/trace_id_helper.h"
+ #include "base/unguessable_token.h"
+ #include "base/values.h"
+ #include "chrome/browser/browser_process.h"
+@@ -77,6 +79,7 @@
+ #include "content/public/browser/render_process_host.h"
+ #include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/render_widget_host.h"
++#include "content/public/browser/render_widget_host_observer.h"
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/service_worker_context.h"
+ #include "content/public/browser/site_instance.h"
+@@ -460,6 +463,112 @@ namespace {
+ // observer iteration or retain a pointer to an unregistering view.
+ constexpr char kNativeTextInputObservationKey = 0;
+ 
++constexpr char kNativeInputTicketWaiterKey = 0;
++
++class NativeInputTicketWaiter final
++    : public base::SupportsUserData::Data,
++      public content::WebContentsObserver,
++      public content::RenderWidgetHost::InputEventObserver,
++      public content::RenderWidgetHostObserver {
++ public:
++  NativeInputTicketWaiter(content::WebContents* contents,
++                          blink::WebInputEvent::Type type,
++                          base::TimeTicks timestamp,
++                          std::string ticket,
++                          gin_helper::Promise<base::Value> promise)
++      : content::WebContentsObserver(contents),
++        type_(type),
++        timestamp_(timestamp),
++        ticket_(std::move(ticket)),
++        promise_(std::move(promise)) {
++    contents->ForEachRenderFrameHost([this](content::RenderFrameHost* frame) {
++      Attach(frame->GetRenderWidgetHost());
++    });
++    timer_.Start(FROM_HERE, base::Seconds(2),
++                 base::BindOnce(&NativeInputTicketWaiter::Finish,
++                                weak_factory_.GetWeakPtr(),
++                                "Native input acknowledgement timed out"));
++  }
++  bool pending() const { return promise_.has_value(); }
++  void ObserveTarget(content::RenderWidgetHost* host) { Attach(host); }
++  base::WeakPtr<NativeInputTicketWaiter> GetWeakPtr() {
++    return weak_factory_.GetWeakPtr();
++  }
++  void DidDispatch(bool frame_route) {
++    dispatched_ = true;
++    if (!frame_route)
++      Complete("", false);
++    else if (acknowledged_)
++      Finish("");
++  }
++  ~NativeInputTicketWaiter() override {
++    Finish("Native input dispatch superseded or destroyed");
++  }
++  void RenderFrameCreated(content::RenderFrameHost* frame) override {
++    if (promise_)
++      Attach(frame->GetRenderWidgetHost());
++  }
++  void WebContentsDestroyed() override {
++    Finish("Native input contents destroyed");
++  }
++  void RenderWidgetHostDestroyed(content::RenderWidgetHost* host) override {
++    host->RemoveInputEventObserver(this);
++    host->RemoveObserver(this);
++    hosts_.erase(host);
++  }
++  void OnInputEventAck(const content::RenderWidgetHost&,
++                       blink::mojom::InputEventResultSource,
++                       blink::mojom::InputEventResultState,
++                       const blink::WebInputEvent& event) override {
++    if (event.GetType() == type_ && event.TimeStamp() == timestamp_) {
++      acknowledged_ = true;
++      if (dispatched_)
++        Finish("");
++    }
++  }
++
++ private:
++  void Attach(content::RenderWidgetHost* host) {
++    if (!host || hosts_.contains(host))
++      return;
++    hosts_.insert(host);
++    host->AddInputEventObserver(this);
++    host->AddObserver(this);
++  }
++  void Finish(const char* error) { Complete(error, true); }
++  void Complete(const char* error, bool has_receipt) {
++    if (!promise_)
++      return;
++    timer_.Stop();
++    for (auto* host : hosts_) {
++      host->RemoveInputEventObserver(this);
++      host->RemoveObserver(this);
++    }
++    hosts_.clear();
++    auto promise = std::move(*promise_);
++    promise_.reset();
++    // Resolving/rejecting can retire the WebContents and this user data.
++    base::DictValue result;
++    if (has_receipt)
++      result.Set("nativeInputTicket", ticket_);
++    else
++      result.Set("nativeInputTicket", base::Value());
++    if (*error)
++      promise.RejectWithErrorMessage(error);
++    else
++      promise.Resolve(base::Value(std::move(result)));
++  }
++  bool dispatched_ = false;
++  bool acknowledged_ = false;
++  blink::WebInputEvent::Type type_;
++  base::TimeTicks timestamp_;
++  std::string ticket_;
++  std::optional<gin_helper::Promise<base::Value>> promise_;
++  base::flat_set<content::RenderWidgetHost*> hosts_;
++  base::OneShotTimer timer_;
++  base::WeakPtrFactory<NativeInputTicketWaiter> weak_factory_{this};
++};
++
+ class NativeTextInputObservation final : public base::SupportsUserData::Data,
+                                         public content::WebContentsObserver,
+                                         public content::TextInputManager::Observer {
+@@ -4187,6 +4296,92 @@ bool WebContents::IsFocused() const {
+ }
+ #endif
+ 
++v8::Local<v8::Promise> WebContents::SendInputEventWithNativeInputTicket(
++    v8::Isolate* isolate,
++    v8::Local<v8::Value> input_event) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  auto* view = web_contents()->GetRenderWidgetHostView();
++  if (!view) {
++    promise.RejectWithErrorMessage("Native input view unavailable");
++    return handle;
++  }
++  auto* existing = static_cast<NativeInputTicketWaiter*>(
++      web_contents()->GetUserData(&kNativeInputTicketWaiterKey));
++  if (existing && existing->pending()) {
++    promise.RejectWithErrorMessage(
++        "Native input acknowledgement already pending");
++    return handle;
++  }
++  auto* host = view->GetRenderWidgetHost();
++  auto type = gin::GetWebInputEventType(isolate, input_event);
++  const auto id = base::trace_event::GetNextGlobalTraceId();
++  ui::LatencyInfo latency;
++  latency.set_trace_id(static_cast<int64_t>(id));
++  const auto make_ticket = [&](const char* kind, base::TimeTicks time) {
++    return std::string(kind) + ":" + base::NumberToString(id) + ":" +
++           base::NumberToString(time.since_origin().InMicroseconds());
++  };
++  if (type == blink::WebInputEvent::Type::kMouseUp) {
++    blink::WebMouseEvent event;
++    if (!gin::ConvertFromV8(isolate, input_event, &event)) {
++      promise.RejectWithErrorMessage("Invalid native mouse activation");
++      return handle;
++    }
++    event.SetTimeStamp(ui::EventTimeForNow());
++    auto waiter = std::make_unique<NativeInputTicketWaiter>(
++        web_contents(), event.GetType(), event.TimeStamp(),
++        make_ticket("mouse", event.TimeStamp()), std::move(promise));
++    auto pending = waiter->GetWeakPtr();
++    web_contents()->SetUserData(&kNativeInputTicketWaiterKey,
++                                std::move(waiter));
++    bool frame_route = true;
++    if (IsOffScreen()) {
++      frame_route =
++          GetOffScreenRenderWidgetHostView()->SendMouseEvent(event, latency);
++    } else {
++      static_cast<content::RenderWidgetHostImpl*>(host)
++          ->ForwardMouseEventWithLatencyInfo(event, latency);
++    }
++    if (pending)
++      pending->DidDispatch(frame_route);
++    return handle;
++  }
++  if (type == blink::WebInputEvent::Type::kKeyDown ||
++      type == blink::WebInputEvent::Type::kRawKeyDown) {
++    input::NativeWebKeyboardEvent event(
++        blink::WebInputEvent::Type::kRawKeyDown,
++        blink::WebInputEvent::Modifiers::kNoModifiers, ui::EventTimeForNow());
++    if (!gin::ConvertFromV8(isolate, input_event, &event)) {
++      promise.RejectWithErrorMessage("Invalid native keyboard activation");
++      return handle;
++    }
++    event.SetType(blink::WebInputEvent::Type::kRawKeyDown);
++    auto* widget = static_cast<content::RenderWidgetHostImpl*>(host);
++    auto* delegate = widget->delegate();
++    auto* focused =
++        delegate ? delegate->GetFocusedRenderWidgetHost(widget) : nullptr;
++    if (!focused) {
++      promise.RejectWithErrorMessage("Native focused input view unavailable");
++      return handle;
++    }
++    auto waiter = std::make_unique<NativeInputTicketWaiter>(
++        web_contents(), event.GetType(), event.TimeStamp(),
++        make_ticket("key", event.TimeStamp()), std::move(promise));
++    waiter->ObserveTarget(focused);
++    auto pending = waiter->GetWeakPtr();
++    web_contents()->SetUserData(&kNativeInputTicketWaiterKey,
++                                std::move(waiter));
++    focused->ForwardKeyboardEventWithLatencyInfo(event, latency);
++    if (pending)
++      pending->DidDispatch(true);
++    return handle;
++  }
++  promise.RejectWithErrorMessage(
++      "Native input ticket requires mouseUp or keyDown");
++  return handle;
++}
++
+ void WebContents::SendInputEvent(v8::Isolate* isolate,
+                                  v8::Local<v8::Value> input_event) {
+   content::RenderWidgetHostView* view =
+@@ -5466,6 +5661,8 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
+       .SetMethod("stopFindInPage", &WebContents::StopFindInPage)
+       .SetMethod("focus", &WebContents::Focus)
+       .SetMethod("isFocused", &WebContents::IsFocused)
++      .SetMethod("sendInputEventWithNativeInputTicket",
++                 &WebContents::SendInputEventWithNativeInputTicket)
+       .SetMethod("sendInputEvent", &WebContents::SendInputEvent)
+       .SetMethod("beginFrameSubscription", &WebContents::BeginFrameSubscription)
+       .SetMethod("endFrameSubscription", &WebContents::EndFrameSubscription)
+diff --git a/shell/browser/api/electron_api_web_contents.h b/shell/browser/api/electron_api_web_contents.h
+index c060f99..52afc8e 100644
+--- a/shell/browser/api/electron_api_web_contents.h
++++ b/shell/browser/api/electron_api_web_contents.h
+@@ -308,6 +308,9 @@ class WebContents final : public ExclusiveAccessContext,
+ 
+   // Send WebInputEvent to the page.
+   void SendInputEvent(v8::Isolate* isolate, v8::Local<v8::Value> input_event);
++  v8::Local<v8::Promise> SendInputEventWithNativeInputTicket(
++      v8::Isolate*,
++      v8::Local<v8::Value>);
+ 
+   // Subscribe to the frame updates.
+   void BeginFrameSubscription(gin::Arguments* args);
+diff --git a/shell/browser/api/electron_api_web_frame_main.cc b/shell/browser/api/electron_api_web_frame_main.cc
+index e225fd5..87737cb 100644
+--- a/shell/browser/api/electron_api_web_frame_main.cc
++++ b/shell/browser/api/electron_api_web_frame_main.cc
+@@ -374,6 +374,33 @@ v8::Local<v8::Promise> WebFrameMain::GetNativeImeContextForTesting(
+   return handle;
+ }
+ 
++v8::Local<v8::Promise> WebFrameMain::GetNativeImeContextForInputForTesting(
++    v8::Isolate* isolate,
++    const std::string& ticket) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (ticket.empty() || ticket.size() > 128 || !HasRenderFrame() ||
++      Detached()) {
++    promise.RejectWithErrorMessage("Native IME frame is unavailable");
++    return handle;
++  }
++  GetRendererApi()->GetNativeImeContextForInputForTesting(
++      ticket,
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeImeContextPtr context) {
++                if (!context)
++                  promise.RejectWithErrorMessage(
++                      "Native IME renderer disconnected");
++                else
++                  promise.Resolve(NativeImeContextValue(*context));
++              },
++              std::move(promise)),
++          mojom::NativeImeContextPtr()));
++  return handle;
++}
++
+ v8::Local<v8::Promise> WebFrameMain::ApplyNativeImeForTesting(
+     v8::Isolate* isolate,
+     const base::DictValue& value) {
+@@ -865,6 +892,8 @@ void WebFrameMain::FillObjectTemplate(v8::Isolate* isolate,
+                  &WebFrameMain::GetNativeClipboardContextForTesting)
+       .SetMethod("copyNativeClipboardForTesting",
+                  &WebFrameMain::CopyNativeClipboardForTesting)
++      .SetMethod("getNativeImeContextForInputForTesting",
++                 &WebFrameMain::GetNativeImeContextForInputForTesting)
+       .SetMethod("getNativeImeContextForTesting",
+                  &WebFrameMain::GetNativeImeContextForTesting)
+       .SetMethod("applyNativeImeForTesting",
+diff --git a/shell/browser/api/electron_api_web_frame_main.h b/shell/browser/api/electron_api_web_frame_main.h
+index 913c75f..3023783 100644
+--- a/shell/browser/api/electron_api_web_frame_main.h
++++ b/shell/browser/api/electron_api_web_frame_main.h
+@@ -137,6 +137,9 @@ class WebFrameMain final : public gin::Wrappable<WebFrameMain>,
+       v8::Isolate*,
+       const std::string& token);
+   v8::Local<v8::Promise> GetNativeImeContextForTesting(v8::Isolate*);
++  v8::Local<v8::Promise> GetNativeImeContextForInputForTesting(
++      v8::Isolate*,
++      const std::string&);
+   v8::Local<v8::Promise> ApplyNativeImeForTesting(v8::Isolate*,
+                                                   const base::DictValue&);
+   bool Detached() const;
+diff --git a/shell/browser/osr/osr_render_widget_host_view.cc b/shell/browser/osr/osr_render_widget_host_view.cc
+index 6c4b775..478dad1 100644
+--- a/shell/browser/osr/osr_render_widget_host_view.cc
++++ b/shell/browser/osr/osr_render_widget_host_view.cc
+@@ -760,8 +760,9 @@ void OffScreenRenderWidgetHostView::SynchronizeVisualProperties() {
+   ResizeRootLayer(true);
+ }
+ 
+-void OffScreenRenderWidgetHostView::SendMouseEvent(
+-    const blink::WebMouseEvent& event) {
++bool OffScreenRenderWidgetHostView::SendMouseEvent(
++    const blink::WebMouseEvent& event,
++    const ui::LatencyInfo& latency) {
+   for (auto* proxy_view : proxy_views_) {
+     gfx::Rect bounds = proxy_view->bounds();
+     if (bounds.Contains(event.PositionInWidget().x(),
+@@ -773,7 +774,7 @@ void OffScreenRenderWidgetHostView::SendMouseEvent(
+ 
+       ui::MouseEvent ui_event = UiMouseEventFromWebMouseEvent(proxy_event);
+       proxy_view->OnEvent(&ui_event);
+-      return;
++      return false;
+     }
+   }
+ 
+@@ -788,20 +789,21 @@ void OffScreenRenderWidgetHostView::SendMouseEvent(
+           popup_event.PositionInWidget().y() -
+               popup_host_view_->popup_position_.y());
+ 
+-      popup_host_view_->ProcessMouseEvent(popup_event, ui::LatencyInfo());
+-      return;
++      popup_host_view_->ProcessMouseEvent(popup_event, latency);
++      return false;
+     }
+   }
+ 
+   if (!render_widget_host_)
+-    return;
++    return false;
+   auto* delegate = render_widget_host_->delegate();
+   if (!IsPopupWidget() && delegate && delegate->GetInputEventRouter()) {
+-    delegate->GetInputEventRouter()->RouteMouseEvent(this, &event,
+-                                                   ui::LatencyInfo());
+-    return;
++    delegate->GetInputEventRouter()->RouteMouseEvent(this, &event, latency);
++    return true;
+   }
+-  render_widget_host_->ForwardMouseEvent(event);
++  const bool frame_route = !IsPopupWidget();
++  render_widget_host_->ForwardMouseEventWithLatencyInfo(event, latency);
++  return frame_route;
+ }
+ 
+ void OffScreenRenderWidgetHostView::SendMouseWheelEvent(
+diff --git a/shell/browser/osr/osr_render_widget_host_view.h b/shell/browser/osr/osr_render_widget_host_view.h
+index 3ca4855..2621b88 100644
+--- a/shell/browser/osr/osr_render_widget_host_view.h
++++ b/shell/browser/osr/osr_render_widget_host_view.h
+@@ -34,6 +34,7 @@
+ #include "ui/compositor/layer_delegate.h"
+ #include "ui/compositor/layer_owner.h"
+ #include "ui/gfx/geometry/point.h"
++#include "ui/latency/latency_info.h"
+ 
+ #include "components/viz/host/host_display_client.h"
+ 
+@@ -223,7 +224,8 @@ class OffScreenRenderWidgetHostView
+   void ReleaseResize();
+   void SynchronizeVisualProperties();
+ 
+-  void SendMouseEvent(const blink::WebMouseEvent& event);
++  bool SendMouseEvent(const blink::WebMouseEvent& event,
++                      const ui::LatencyInfo& latency = ui::LatencyInfo());
+   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
+ 
+   void SetPainting(bool painting);
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+index 20312a4..a62077e 100644
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -93,6 +93,7 @@ interface ElectronRenderer {
+   CopyNativeClipboardForTesting(string token) => (NativeCopyResult result);
+ 
+   GetNativeImeContextForTesting() => (NativeImeContext context);
++  GetNativeImeContextForInputForTesting(string ticket) => (NativeImeContext context);
+   ApplyNativeImeForTesting(NativeImeOperation operation) => (NativeImeResult result);
+ 
+   Message(
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+index 63b9731..eb82e80 100644
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -281,6 +281,76 @@ void ElectronApiServiceImpl::GetNativeImeContextForTesting(
+   std::move(callback).Run(CaptureNativeImeContext());
+ }
+ 
++void ElectronApiServiceImpl::GetNativeImeContextForInputForTesting(
++    const std::string& ticket,
++    GetNativeImeContextForInputForTestingCallback callback) {
++  auto unavailable = mojom::NativeImeContext::New();
++  unavailable->reason = "input-context-mismatch";
++  const auto first = ticket.find(':');
++  const auto second =
++      first == std::string::npos ? first : ticket.find(':', first + 1);
++  uint64_t id = 0;
++  int64_t timestamp = 0;
++  const auto prefix = ticket.substr(0, first);
++  const int kind = prefix == "mouse"   ? 1
++                   : prefix == "key"   ? 2
++                   : prefix == "touch" ? 3
++                                       : 0;
++  if (ticket == native_ime_last_activation_ticket_ || ticket.size() > 128 ||
++      !kind || first == std::string::npos || second == std::string::npos ||
++      !base::StringToUint64(ticket.substr(first + 1, second - first - 1),
++                            &id) ||
++      !base::StringToInt64(ticket.substr(second + 1), &timestamp) || !id ||
++      timestamp <= 0) {
++    std::move(callback).Run(std::move(unavailable));
++    return;
++  }
++  auto* frame = render_frame()->GetWebFrame();
++  auto* input = frame ? frame->GetInputMethodController() : nullptr;
++  const auto matches = [&](const auto& state) {
++    return state.supported && !state.busy && !state.has_composition &&
++           state.activation_id == id &&
++           state.activation_timestamp_us == timestamp &&
++           state.activation_kind == kind;
++  };
++  if (!input) {
++    unavailable->reason = "input-target-unavailable";
++    std::move(callback).Run(std::move(unavailable));
++    return;
++  }
++  const auto activation = input->GetNativeImeStateForTesting();
++  if (!matches(activation)) {
++    unavailable->reason = !activation.supported ? "unsupported-editor"
++                          : activation.busy || activation.has_composition
++                              ? "composition-busy"
++                          : activation.activation_id != id ? "input-id-mismatch"
++                          : activation.activation_timestamp_us != timestamp
++                              ? "input-time-mismatch"
++                              : "input-kind-mismatch";
++    std::move(callback).Run(std::move(unavailable));
++    return;
++  }
++  auto weak = GetWeakPtr();
++  auto context = CaptureNativeImeContext();
++  if (!weak) {
++    std::move(callback).Run(std::move(unavailable));
++    return;
++  }
++  frame = render_frame()->GetWebFrame();
++  input = frame ? frame->GetInputMethodController() : nullptr;
++  if (!input || !context->available || !native_ime_snapshot_ ||
++      native_ime_snapshot_->node_id != activation.activation_node_id ||
++      static_cast<int>(native_ime_snapshot_->type) !=
++          activation.activation_input_type ||
++      !matches(input->GetNativeImeStateForTesting())) {
++    native_ime_token_.clear();
++    std::move(callback).Run(std::move(unavailable));
++    return;
++  }
++  native_ime_last_activation_ticket_ = ticket;
++  std::move(callback).Run(std::move(context));
++}
++
+ void ElectronApiServiceImpl::ApplyNativeImeForTesting(
+     mojom::NativeImeOperationPtr operation,
+     ApplyNativeImeForTestingCallback callback) {
+diff --git a/shell/renderer/electron_api_service_impl.h b/shell/renderer/electron_api_service_impl.h
+index 76c8e82..2e885e0 100644
+--- a/shell/renderer/electron_api_service_impl.h
++++ b/shell/renderer/electron_api_service_impl.h
+@@ -56,6 +56,9 @@ class ElectronApiServiceImpl
+   // mojom::ElectronRenderer
+   void GetNativeImeContextForTesting(
+       GetNativeImeContextForTestingCallback) override;
++  void GetNativeImeContextForInputForTesting(
++      const std::string&,
++      GetNativeImeContextForInputForTestingCallback) override;
+   void ApplyNativeImeForTesting(mojom::NativeImeOperationPtr,
+                                 ApplyNativeImeForTestingCallback) override;
+   void Message(bool internal,
+@@ -102,6 +105,7 @@ class ElectronApiServiceImpl
+   mojom::NativeImeContextPtr CaptureNativeImeContext();
+   std::optional<blink::WebTextInputInfo> native_ime_snapshot_;
+   std::string native_ime_token_;
++  std::string native_ime_last_activation_ticket_;
+   std::string native_ime_document_;
+   uint64_t native_ime_focus_generation_ = 0;
+   uint64_t native_ime_composition_generation_ = 0;
+diff --git a/shell/renderer/service_worker_data.cc b/shell/renderer/service_worker_data.cc
+index bfcd507..3de6b78 100644
+--- a/shell/renderer/service_worker_data.cc
++++ b/shell/renderer/service_worker_data.cc
+@@ -53,6 +53,11 @@ void ServiceWorkerData::GetNativeImeContextForTesting(
+   std::move(callback).Run(std::move(context));
+ }
+ 
++void ServiceWorkerData::GetNativeImeContextForInputForTesting(
++    const std::string&, GetNativeImeContextForInputForTestingCallback callback) {
++  GetNativeImeContextForTesting(std::move(callback));
++}
++
+ void ServiceWorkerData::ApplyNativeImeForTesting(
+     mojom::NativeImeOperationPtr,
+     ApplyNativeImeForTestingCallback callback) {
+diff --git a/shell/renderer/service_worker_data.h b/shell/renderer/service_worker_data.h
+index 326ae3f..0825713 100644
+--- a/shell/renderer/service_worker_data.h
++++ b/shell/renderer/service_worker_data.h
+@@ -58,6 +58,9 @@ class ServiceWorkerData : public mojom::ElectronRenderer {
+       CopyNativeClipboardForTestingCallback callback) override;
+   void GetNativeImeContextForTesting(
+       GetNativeImeContextForTestingCallback callback) override;
++  void GetNativeImeContextForInputForTesting(
++      const std::string& ticket,
++      GetNativeImeContextForInputForTestingCallback callback) override;
+   void ApplyNativeImeForTesting(
+       mojom::NativeImeOperationPtr operation,
+       ApplyNativeImeForTestingCallback callback) override;

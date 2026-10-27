@@ -1,0 +1,366 @@
+@forward "./interaction-mixins.web";
+@use "./interaction-mixins.web" as *;
+@use "./icons.web" as icons;
+@use "./typography-mixins.web" as typography;
+
+// State-only primitives: never own geometry or domain pending state.
+
+
+@mixin disabled-feedback {
+  opacity: var(--opacity-control-disabled);
+  cursor: default;
+}
+
+@mixin invalid-feedback {
+  border-color: var(--color-text-danger);
+  @media (forced-colors: active) { border-color: Mark; }
+}
+
+// A hybrid device can report hover capability even after a touch contact.
+// The document's current-input signal suppresses synthetic/sticky hover while
+// focus-visible and persistent selected/open states remain independent.
+
+
+// Essential actions cannot depend on hover, including on a hybrid device after
+// touch contact. Density remains a separate layout preference.
+
+
+// Shared quiet controls. Layout belongs to the consumer, interaction to here.
+// An input-adaptive consumer may own its hover rule while retaining the same
+// open, keyboard-focus, and disabled states from this mixin.
+@mixin quiet-control($hover: true) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  @if $hover {
+    @include hover-capable {
+      &:hover:not(:disabled) {
+        background: var(--color-background-button-tertiary-hover);
+      }
+    }
+  }
+  &[data-state="open"] {
+    background: var(--color-background-button-tertiary-hover);
+  }
+  &:focus-visible {
+    @include focus-indicator;
+  }
+  &:disabled { @include disabled-feedback; }
+}
+
+// Navigation rows share the sidebar's quiet typography and state treatment.
+// Menus keep their own denser geometry; consumers opt in only for sidebar rows.
+@mixin navigation-control {
+  > svg.ui-action-glyph { @include icons.navigation-icon; }
+  @include quiet-control;
+  @include typography.role(navigation-action, primary);
+  display: flex;
+  width: 100%;
+  min-height: var(--height-navigation-row);
+  align-items: center;
+  gap: var(--gap-navigation-row-content);
+  padding: 0 var(--padding-navigation-row-inline);
+  text-align: left;
+
+  @include hover-capable {
+    &:hover:not(:disabled) {
+      background: var(--color-background-navigation-hover);
+    }
+  }
+
+  &.is-selected, &[aria-current="page"] {
+    background: var(--color-background-navigation-current);
+    color: var(--color-text);
+  }
+
+  &.is-selected:active:not(:disabled),
+  &[aria-current="page"]:active:not(:disabled) {
+    background: var(--color-background-navigation-pressed);
+  }
+}
+
+// Application rail glyphs are not menu-leading icons. Preserve a shared box
+// across outline/selected variants and inherit state color from the button.
+@mixin application-navigation-glyph {
+  > svg {
+    flex: 0 0 var(--size-application-navigation-icon);
+    width: var(--size-application-navigation-icon);
+    height: var(--size-application-navigation-icon);
+    color: inherit;
+  }
+}
+
+@mixin application-navigation-control {
+  @include navigation-control;
+  @include application-navigation-glyph;
+  min-width: var(--size-application-navigation-hit-min);
+  min-height: var(--size-application-navigation-hit-min);
+  border-radius: var(--radius-application-navigation-control);
+  color: var(--color-text-tertiary);
+  @include hover-capable {
+    &:hover:not(:disabled) { color: var(--color-text); }
+  }
+  &[aria-current="page"] { color: var(--color-text); }
+}
+
+// Footer entrances are sidebar items, not raised buttons. Keep the resting
+// row quiet; open/pinned states use the same soft fill as navigation rows.
+@mixin sidebar-entrance {
+  @include navigation-control;
+  height: var(--height-navigation-row);
+  min-height: var(--height-navigation-row);
+  width: auto;
+  border-radius: var(--radius-lg);
+  gap: var(--gap-control-group);
+  transition: background-color var(--transition-duration-basic);
+  &[aria-pressed="true"], &:active:not(:disabled) {
+    background: var(--color-background-button-tertiary-hover);
+    color: var(--color-text);
+  }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+
+.workbench-connection-status {
+  display: inline-block;
+  flex: 0 0 var(--size-connection-status);
+  width: var(--size-connection-status);
+  height: var(--size-connection-status);
+  border: 1px solid var(--color-text-tertiary);
+  border-radius: 50%;
+  box-sizing: border-box;
+  &[data-phase="ready"] { background: var(--color-status-connected); border-color: transparent; }
+  &[data-phase="connecting"], &[data-phase="starting"], &[data-phase="reconnecting"] {
+    background: var(--color-status-pending); border-color: transparent;
+  }
+  &[data-phase="error"] { background: var(--color-status-error); border-color: transparent; }
+}
+
+// Passive resource feedback; consumers own its placement, visibility and label.
+.workbench-loading-spinner {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--color-text-secondary, #666);
+  pointer-events: none;
+  animation: workbench-loading-spin 1s linear infinite;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+  @media (forced-colors: active) { color: CanvasText; }
+}
+
+@keyframes workbench-loading-spin {
+  to { transform: rotate(1turn); }
+}
+
+// Consumers retain their visual defaults; the shared density sets a hit-area floor.
+@mixin density-target($width: 0px, $height: 0px) {
+  min-width: max(#{$width}, var(--size-control-hit-min));
+  min-height: max(#{$height}, var(--size-control-hit-min));
+}
+
+// Ordered discrete choice: paint belongs here, pointer/keyboard mechanics to Radix.
+.ui-discrete-slider {
+  min-width: 0;
+  padding: var(--spacing) var(--padding-control-inline);
+  &[data-unset] .ui-discrete-slider__range { visibility: hidden; }
+}
+.ui-discrete-slider__value {
+  @include typography.role(control-compact, null);
+  color: var(--color-text-accent);
+  min-height: 24px;
+  text-align: center;
+}
+.ui-discrete-slider__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--height-discrete-slider-hit);
+  user-select: none;
+  touch-action: pan-y;
+  &[data-disabled] { @include disabled-feedback; }
+}
+.ui-discrete-slider__track {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  height: var(--height-discrete-slider-track);
+  border-radius: var(--radius-full);
+  background: var(--color-discrete-slider-track);
+  box-shadow: inset 0 0 0 0.5px var(--color-border-default);
+}
+.ui-discrete-slider__range {
+  position: absolute;
+  height: 100%;
+  // The track clips the outer capsule; the fill must meet the thumb squarely.
+  background: var(--color-discrete-slider-fill);
+}
+.ui-discrete-slider__ticks {
+  position: absolute;
+  inset: 0 calc(var(--size-discrete-slider-thumb) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  > span {
+    width: var(--size-discrete-slider-tick);
+    height: var(--size-discrete-slider-tick);
+    border-radius: var(--radius-full);
+    background: var(--color-text-tertiary);
+    &[data-filled] { background: var(--color-discrete-slider-thumb); opacity: 0.55; }
+    @media (prefers-reduced-motion: no-preference) { transition: background-color 120ms ease, opacity 120ms ease; }
+  }
+}
+.ui-discrete-slider__thumb {
+  display: block;
+  width: var(--size-discrete-slider-thumb);
+  height: var(--size-discrete-slider-thumb);
+  border-radius: var(--radius-full);
+  background: var(--color-discrete-slider-thumb);
+  box-shadow: var(--shadow-discrete-slider-thumb), inset 0 0 0 0.5px var(--color-border-default);
+  @include hover-capable { &:hover { box-shadow: var(--shadow-discrete-slider-thumb), inset 0 0 0 1px var(--color-border-default); } }
+}
+.ui-discrete-slider__limits {
+  @include typography.role(metadata, tertiary);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-control-group);
+}
+@media (forced-colors: active) {
+  .ui-discrete-slider__track { background: Canvas; border: 1px solid CanvasText; }
+  .ui-discrete-slider__range { background: Highlight; }
+  .ui-discrete-slider__thumb { background: Canvas; border: 1px solid CanvasText; }
+}
+
+// Compact capsule uses the shared slider metrics and retains its 44px hit area.
+.ui-discrete-slider[data-appearance="capsule"] {
+  padding: 0;
+  .ui-discrete-slider__value { margin-bottom: calc(var(--spacing) * 2); }
+  .ui-discrete-slider__surface {
+    padding: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+  }
+  .ui-discrete-slider__track { overflow: visible; background: var(--color-discrete-slider-track); box-shadow: inset 0 0 0 0.5px var(--color-border-default); height: var(--height-discrete-slider-track); }
+  .ui-discrete-slider__range {
+    inset-inline-start: 0;
+    background: transparent;
+    // One rounded paint box; joining a narrow range and a circle distorts the first stops.
+    &::after {
+      content: ""; position: absolute; inset-block: 0;
+      inset-inline-start: calc((var(--size-discrete-slider-thumb) - var(--height-discrete-slider-track)) / 2);
+      inset-inline-end: calc(var(--height-discrete-slider-track) / -2);
+      border-radius: var(--radius-full); background: var(--color-discrete-slider-fill);
+      background-image: linear-gradient(100deg, color-mix(in srgb, var(--color-discrete-slider-thumb) 12%, transparent), transparent);
+    }
+  }
+  // The Radix target remains at the actual stop and keeps its native focus ring.
+  // Only paint interpolates; hit areas and committed values never wait for it.
+  .ui-discrete-slider__thumb { flex: none; aspect-ratio: 1; box-sizing: border-box; background: transparent; box-shadow: none; }
+  .ui-discrete-slider__visual-rail {
+    position: absolute;
+    inset: 0 calc(var(--size-discrete-slider-thumb) / 2);
+    pointer-events: none;
+  }
+  .ui-discrete-slider__visual-thumb {
+    position: absolute;
+    top: 50%;
+    width: var(--size-discrete-slider-thumb);
+    height: var(--size-discrete-slider-thumb);
+    margin-block-start: calc(var(--size-discrete-slider-thumb) / -2);
+    margin-inline-start: calc(var(--size-discrete-slider-thumb) / -2);
+  }
+  .ui-discrete-slider__knob {
+    display: block;
+    width: 100%; height: 100%;
+    border-radius: var(--radius-full);
+    background: var(--color-discrete-slider-thumb);
+    box-shadow: var(--shadow-discrete-slider-thumb), inset 0 0 0 0.5px var(--color-border-default);
+  }
+  &[data-pressed] .ui-discrete-slider__knob {
+    box-shadow: var(--shadow-discrete-slider-thumb), 0 0 0 3px color-mix(in srgb, var(--color-discrete-slider-fill) 13%, transparent);
+  }
+  .ui-discrete-slider__limits { display: none; }
+}
+
+.ui-animated-content { overflow: hidden; }
+.ui-animated-content__view { display: flow-root; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-animated-content__view { animation: ui-choice-view-enter 160ms ease-out; }
+}
+@keyframes ui-choice-view-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (forced-colors: active) {
+  .ui-discrete-slider[data-appearance="capsule"] {
+    .ui-discrete-slider__range::after { background: Highlight; }
+    .ui-discrete-slider__knob { background: Canvas; outline: 1px solid CanvasText; }
+    &[data-pressed] .ui-discrete-slider__knob { box-shadow: none; }
+  }
+}
+
+// Single-choice rows retain native radio semantics and one input-adaptive target.
+@mixin choice-control($appearance: default) {
+  @include typography.role(body, primary);
+  display: flex;
+  min-height: max(var(--height-choice-row), var(--size-control-hit-min));
+  align-items: center;
+  gap: calc(var(--spacing) * 2.5);
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-choice-control);
+  background: transparent;
+  cursor: pointer;
+  @include hover-capable {
+    &:hover:not(:has(input:disabled)) { background: var(--color-background-navigation-hover); }
+  }
+  &:has(input:checked) {
+    background: var(--color-background-choice-selected);
+    border-color: var(--color-border-choice-selected);
+  }
+  :root:not([data-touch-interaction]) &:has(input:focus-visible) { @include focus-indicator; }
+  &:has(input:disabled) { cursor: default; }
+  > input[type="radio"] {
+    appearance: none;
+    display: grid;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    place-content: center;
+    margin: 0;
+    border: 1px solid var(--color-text-tertiary);
+    border-radius: var(--radius-full);
+    background: transparent;
+    outline: none;
+    &:checked {
+      border-color: var(--opencraft-base-accent);
+      background: var(--opencraft-base-accent);
+      &::after { content: ""; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--color-text-on-accent); }
+    }
+  }
+  > span { min-width: 0; overflow-wrap: anywhere; }
+  @if $appearance == quiet {
+    @include typography.role(control, primary);
+    border-radius: var(--radius-2xl);
+    transition: background-color var(--transition-duration-basic), border-color var(--transition-duration-basic);
+    &:has(input:checked) {
+      background: color-mix(in srgb, var(--color-text) 6%, transparent);
+      border-color: transparent;
+    }
+    &:active:not(:has(input:disabled)) { background: var(--color-background-navigation-pressed); }
+    > input[type="radio"]:checked {
+      border-color: var(--color-background-button-primary);
+      background: var(--color-background-button-primary);
+      &::after { background: var(--color-text-button-primary); }
+    }
+    @media (prefers-reduced-motion: reduce) { transition: none; }
+  }
+  @media (forced-colors: active) {
+    &:has(input:checked) { border-color: Highlight; }
+    > input[type="radio"] { appearance: auto; &:checked::after { display: none; } }
+  }
+}

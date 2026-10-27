@@ -1,0 +1,27 @@
+{
+  "name": "@opencraft/plugin-voice-input",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cloud-speech": "./src/cloud-speech.ts",
+    "./runtime-entry": "./src/runtime-entry.ts"
+  },
+  "dependencies": {
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/composer-core": "0.1.0",
+    "@opencraft/design-system-web": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/i18n": "0.1.0",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

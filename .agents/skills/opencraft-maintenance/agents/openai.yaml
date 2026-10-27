@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCraft 维护总纲"
+  short_description: "OpenCraft 架构、交互状态所有权、布局动画与原生验收的维护总纲"
+  default_prompt: "使用 $opencraft-maintenance 维护 OpenCraft：先明确用户可见目标与状态所有权，再按任务边界实施并用真实交互证据验收。"

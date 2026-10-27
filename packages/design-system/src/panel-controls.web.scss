@@ -1,0 +1,37 @@
+@use "./typography.web" as typography;
+@use "./controls.web" as controls;
+
+// Compact secondary actions belong to the design system, not desktop CSS.
+@mixin compact-action {
+  @include typography.role(control-panel, null);
+  height: auto;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  // The outline action changes state immediately, without a tween.
+  transition: none;
+  &:disabled { opacity: var(--opacity-control-compact-disabled); }
+  &[data-variant="outline"] {
+    background: var(--color-background-button-secondary);
+    @include controls.hover-capable {
+      &:hover:not(:disabled) { background: var(--color-background-button-secondary-hover); }
+    }
+    &[data-state="open"] { background: var(--color-background-button-secondary-hover); }
+  }
+  @include controls.density-target(0px, 24px);
+}
+
+.ui-progress-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  line-height: 0;
+  contain: layout paint style;
+  > svg { display: block; flex: 0 0 auto; }
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ui-progress-rotate var(--duration-progress-cycle) var(--timing-progress-cycle) infinite;
+  }
+}
+@keyframes ui-progress-rotate { to { transform: rotate(1turn); } }

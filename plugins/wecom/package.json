@@ -1,0 +1,1 @@
+{"name":"@opencraft/plugin-wecom","version":"0.1.0","private":true,"type":"module","exports":{"./server":"./src/server.ts"},"dependencies":{"@opencraft/plugin-im":"0.1.0","ws":"^8.22.0"},"scripts":{"typecheck":"tsc --noEmit"}}

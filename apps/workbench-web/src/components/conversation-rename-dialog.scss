@@ -1,0 +1,27 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+// Form geometry is independent of the lazy Settings page stylesheet.
+.modal-surface.conversation-rename-dialog[data-size="compact"] {
+  width: min(384px, calc(100vw - 36px));
+  > form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    min-width: 0;
+    padding: 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  h2 {
+    @include typography.role(panel-title);
+    margin: 0;
+    padding-inline-end: 32px;
+  }
+}
+.conversation-rename-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}

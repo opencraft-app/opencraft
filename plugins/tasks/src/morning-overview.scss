@@ -1,0 +1,15 @@
+@use "@opencraft/design-system/typography.web" as type;
+.tasks-morning {
+  flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain;
+  padding-bottom: calc(var(--spacing) * 5); @include type.role(body);
+  h3 { @include type.role(sidebar-section); margin: 0; }
+  &__intro > p { margin-block: calc(var(--spacing) * 3); color: var(--color-text-secondary); }
+  &__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--spacing) * 3); border-top: 1px solid var(--color-border-subtle); padding-top: calc(var(--spacing) * 5); margin-top: calc(var(--spacing) * 6); }
+  &__metric { min-width: 0; padding: calc(var(--spacing) * 3); }
+  &__metric > div { display: flex; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__metric svg { flex-shrink: 0; color: var(--color-text-secondary); }
+  &__metric h3, &__metric > span { @include type.role(metadata); }
+  &__metric > span { color: var(--color-text-secondary); }
+  .tasks-morning__metric-value { @include type.role(body); color: var(--color-text-secondary); margin-block: calc(var(--spacing) * 2); }
+}
+@container tasks (max-width: 760px) { .tasks-morning__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

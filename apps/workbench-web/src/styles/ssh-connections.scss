@@ -1,0 +1,35 @@
+@use "@opencraft/design-system/menu.web" as menu;
+@use "@opencraft/design-system/typography.web" as typography;
+
+.ssh-connections {
+  min-width: 0;
+  .settings-control-list-item { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .settings-control-list-item__actions { flex-wrap: nowrap; grid-column: auto; }
+  > .settings-control-section { margin-top: 24px; }
+  &__status { display: inline-flex; align-items: center; gap: 6px;
+    i { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-tertiary); }
+    &[data-state="open"] i { background: var(--color-status-success); }
+  }
+  &__fingerprint { display: block; overflow-wrap: anywhere; padding-block: 12px; }
+}
+.ssh-connections-menu {
+  @include menu.surface;
+  z-index: var(--layer-floating-control);
+  min-width: 184px;
+}
+.ssh-connections-menu__item { @include menu.item; }
+.ssh-connections-menu__item--danger { color: var(--color-text-danger); }
+.ssh-connections-menu__separator { height: 0.5px; margin: 4px; background: var(--color-border-default); }
+.ssh-connections-dialog__overlay { position: fixed; inset: 0; z-index: var(--layer-confirmation-modal); background: rgb(0 0 0 / 30%); }
+.ssh-connections-dialog {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: var(--layer-confirmation-modal);
+  width: min(500px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px;
+  border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); background: var(--color-background-surface); color: var(--color-text); box-shadow: var(--shadow-300);
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h2 { @include typography.role(settings-section-title); margin: 0; }
+  p, summary { @include typography.role(metadata, secondary); }
+  .settings-control-row { grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); }
+  .settings-control-row__value { min-width: 0; width: 100%; }
+  code { overflow-wrap: anywhere; }
+  .settings-control-actions { margin-top: 16px; }
+}

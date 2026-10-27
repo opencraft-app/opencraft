@@ -1,0 +1,126 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Preserve Linux audio names across component library boundaries
+
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -256,3 +256,4 @@
+ cherry-pick-e98f6e2e4f23.patch
+ feat_target_bound_native_ime.patch
+ feat_remote_tab_native_clipboard.patch
++fix_component_pulseaudio_embedder_boundary.patch
+diff --git a/patches/chromium/fix_component_pulseaudio_embedder_boundary.patch b/patches/chromium/fix_component_pulseaudio_embedder_boundary.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/fix_component_pulseaudio_embedder_boundary.patch
+@@ -0,0 +1,91 @@
++From: OpenCraft <dev@opencraft.app>
++Subject: Keep PulseAudio components independent of the embedder executable
++
++diff --git a/content/browser/audio/audio_service.cc b/content/browser/audio/audio_service.cc
++--- a/content/browser/audio/audio_service.cc
+++++ b/content/browser/audio/audio_service.cc
++@@ -33,9 +33,6 @@
++ #include "services/audio/public/mojom/audio_service.mojom.h"
++ #include "services/audio/service.h"
++ #include "services/audio/service_factory.h"
++-#if BUILDFLAG(IS_LINUX)
++-#include "electron/shell/common/application_info.h"
++-#endif
++
++ #if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS) && BUILDFLAG(IS_WIN)
++ #define PASS_EDID_ON_COMMAND_LINE 1
++@@ -122,10 +119,6 @@
++     mojo::PendingReceiver<audio::mojom::AudioService> receiver,
++     uint32_t codec_bitmask) {
++   std::vector<std::string> switches;
++-#if BUILDFLAG(IS_LINUX)
++-  // Set ELECTRON_PA_APP_NAME variable for pulse_util to grab and set pa_context name
++-  setenv("ELECTRON_PA_APP_NAME", electron::GetPossiblyOverriddenApplicationName().c_str(), 1);
++-#endif
++ #if BUILDFLAG(IS_MAC)
++   // On Mac, the audio service requires a CFRunLoop provided by a
++   // UI MessageLoop type, to run AVFoundation and CoreAudio code.
++diff --git a/media/audio/pulse/pulse_util.cc b/media/audio/pulse/pulse_util.cc
++--- a/media/audio/pulse/pulse_util.cc
+++++ b/media/audio/pulse/pulse_util.cc
++@@ -8,9 +8,11 @@
++ #include <string.h>
++
++ #include <memory>
+++#include <string_view>
++ #include <type_traits>
++
++ #include "base/command_line.h"
+++#include "base/environment.h"
++ #include "base/files/file_path.h"
++ #include "base/logging.h"
++ #include "base/memory/ptr_util.h"
++@@ -21,7 +23,6 @@
++ #include "build/branding_buildflags.h"
++ #include "media/audio/audio_device_description.h"
++ #include "media/base/audio_timestamp_helper.h"
++-#include "electron/shell/common/platform_util.h"
++
++ #if defined(DLOPEN_PULSEAUDIO)
++ #include "media/audio/pulse/pulse_stubs.h"
++@@ -36,6 +37,18 @@
++ namespace pulse {
++
++ namespace {
+++
+++// Keep the media component independent of the Electron executable. Match
+++// platform_util::GetXdgAppId(), including its unset-versus-empty semantics.
+++std::string GetApplicationIconName() {
+++  auto name = base::Environment::Create()->GetVar("CHROME_DESKTOP");
+++  if (!name) {
+++    return base::CommandLine::ForCurrentProcess()->GetProgram().BaseName().value();
+++  }
+++  if (name->ends_with(".desktop"))
+++    name->resize(name->size() - std::string_view(".desktop").size());
+++  return *name;
+++}
++
++ #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
++ #define PRODUCT_STRING "Google Chrome"
++@@ -478,9 +491,7 @@
++   // Create a new recording stream and
++   // tells PulseAudio what the stream icon should be.
++   ScopedPropertyList property_list;
++-  const std::string cmd_name =
++-    base::CommandLine::ForCurrentProcess()->GetProgram().BaseName().value();
++-  const std::string app_id = platform_util::GetXdgAppId().value_or(cmd_name);
+++  const std::string app_id = GetApplicationIconName();
++   pa_proplist_sets(property_list.get(), PA_PROP_APPLICATION_ICON_NAME,
++                    app_id.c_str());
++   *stream = pa_stream_new_with_proplist(context, "RecordStream",
++@@ -591,9 +602,7 @@
++   // Open playback stream and
++   // tell PulseAudio what the stream icon should be.
++   ScopedPropertyList property_list;
++-  const std::string cmd_name =
++-    base::CommandLine::ForCurrentProcess()->GetProgram().BaseName().value();
++-  const std::string app_id = platform_util::GetXdgAppId().value_or(cmd_name);
+++  const std::string app_id = GetApplicationIconName();
++   pa_proplist_sets(property_list.get(), PA_PROP_APPLICATION_ICON_NAME,
++                    app_id.c_str());
++   *stream = pa_stream_new_with_proplist(
+diff --git a/shell/browser/electron_browser_client.cc b/shell/browser/electron_browser_client.cc
+--- a/shell/browser/electron_browser_client.cc
++++ b/shell/browser/electron_browser_client.cc
+@@ -603,6 +603,15 @@
+       command_line->GetSwitchValueASCII(::switches::kProcessType);
+
+ #if BUILDFLAG(IS_LINUX)
++  // The embedder owns the app name. Set it on the existing UI-thread child
++  // launch hook, before spawning AudioService, without a content -> Electron
++  // executable symbol dependency in component builds.
++  if (process_type == ::switches::kUtilityProcess &&
++      command_line->GetSwitchValueASCII(::switches::kUtilitySubType) ==
++          "audio.mojom.AudioService") {
++    setenv("ELECTRON_PA_APP_NAME",
++           GetPossiblyOverriddenApplicationName().c_str(), 1);
++  }
+   pid_t pid;
+   if (crash_reporter::GetHandlerSocket(nullptr, &pid)) {
+     command_line->AppendSwitchASCII(

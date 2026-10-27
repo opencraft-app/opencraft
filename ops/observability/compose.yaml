@@ -1,0 +1,49 @@
+name: opencraft-observe
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.163.1@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806
+    network_mode: host
+    command: [--config=/etc/otelcol/config.yaml]
+    volumes: [./collector.yaml:/etc/otelcol/config.yaml:ro]
+    restart: unless-stopped
+    mem_limit: 192m
+    cpus: 0.25
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '2'}}
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    network_mode: host
+    command: [--config.file=/etc/prometheus/prometheus.yaml, --web.listen-address=127.0.0.1:23302, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=30d, --storage.tsdb.retention.size=10GB, --query.max-concurrency=5, --query.timeout=4s]
+    volumes: [./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro, '${OPENCRAFT_OBSERVE_DIRECTORY:?private observation directory required}/prometheus:/prometheus']
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.25
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '2'}}
+  loki:
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    network_mode: host
+    command: [-config.file=/etc/loki/config.yaml]
+    volumes: [./loki.yaml:/etc/loki/config.yaml:ro, '${OPENCRAFT_OBSERVE_DIRECTORY:?private observation directory required}/loki:/loki']
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.25
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '2'}}
+  grafana:
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    network_mode: host
+    environment:
+      GF_SERVER_ROOT_URL: '${OPENCRAFT_OBSERVE_PUBLIC_ORIGIN:?public host origin required}/__opencraft_observe/grafana/'
+    volumes: [./grafana.ini:/etc/grafana/grafana.ini:ro, ./provisioning:/etc/grafana/provisioning:ro, grafana:/var/lib/grafana, '${OPENCRAFT_OBSERVE_DIRECTORY:?private observation directory required}/grafana:/run/opencraft-grafana']
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.25
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '2'}}
+volumes:
+  grafana: {}

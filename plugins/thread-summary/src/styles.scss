@@ -1,0 +1,44 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+
+.thread-summary {
+  &__scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 4px 12px 12px; @include typography.role(body); }
+  &__section + &__section { border-top: 1px solid var(--color-border-subtle); margin-top: 12px; padding-top: 8px; }
+  &__section-heading {
+    display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding: 6px 4px;
+    border: 0; border-radius: 6px; background: transparent; text-align: start; cursor: pointer;
+    @include typography.role(sidebar-section, secondary);
+    > svg { flex-shrink: 0; color: var(--color-text-tertiary); transition: transform 160ms ease; }
+    .is-collapsed { transform: rotate(-90deg); }
+  }
+  &__count { display: grid; place-items: center; min-width: 20px; height: 20px; margin-inline-start: auto; padding-inline: 5px; border-radius: 6px; background: var(--color-surface-secondary); font-variant-numeric: tabular-nums; @include typography.role(metadata, secondary); }
+  &__list { list-style: none; margin: 0; padding: 0; }
+  &__root { display: flex; align-items: center; gap: 6px; padding: 4px 6px 6px; @include typography.role(metadata, tertiary); > svg { flex-shrink: 0; } > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+  &__row {
+    display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 7px 6px; text-align: start; overflow-wrap: anywhere;
+    > svg, > .thread-summary__step { flex-shrink: 0; margin-top: 2px; color: var(--color-text-tertiary); }
+    > span:not(.thread-summary__step) { min-width: 0; }
+    p { margin: 0; }
+    small { display: block; margin-top: 2px; @include typography.role(metadata, tertiary); }
+  }
+  &__step { display: grid; place-items: center; width: 16px; height: 16px; }
+  &__step-dot { width: 8px; height: 8px; border: 1px solid var(--color-text-tertiary); border-radius: 50%; }
+  [data-step-status="in-progress"] &__step-dot { background: var(--color-text); border-color: var(--color-text); }
+  [data-step-status="complete"] { color: var(--color-text-secondary); }
+  &__link { @include typography.role(body); border: 0; border-radius: 6px; background: transparent; cursor: pointer; transition: background-color 120ms ease; &:disabled { cursor: default; } }
+  &__file { align-items: center; min-height: 34px; > svg { margin-top: 0; } }
+  &__filename { flex: 1; small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
+  &__file-label { display: flex; min-width: 0; white-space: nowrap; > span:first-child { overflow: hidden; text-overflow: ellipsis; } }
+  &__extension { flex-shrink: 0; }
+  &__file-kind { flex-shrink: 0; width: 20px; text-align: center; @include typography.role(metadata, secondary); }
+  [data-file-kind="add"] &__file-kind { color: var(--color-decoration-added); }
+  [data-file-kind="delete"] &__file-kind { color: var(--color-decoration-deleted); }
+  &__command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__empty { padding: 24px 6px 32px; > span { @include typography.role(panel-empty-title); } p { margin: 8px 0 0; @include typography.role(body, secondary); } }
+  &__footnote { margin: 16px 6px 0; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); @include typography.role(caption, tertiary); }
+  &__section-heading:focus-visible, &__link:focus-visible { @include controls.focus-indicator; outline-offset: -2px; }
+  @include controls.hover-capable { &__link:hover:not(:disabled), &__section-heading:hover { background: var(--color-surface-secondary); } }
+  &__link:active:not(:disabled), &__section-heading:active { background: var(--color-surface-secondary); }
+  @include controls.touch-input { &__row, &__section-heading { min-height: 44px; } }
+  @media (prefers-reduced-motion: reduce) { &__section-heading svg, &__link { transition: none; } }
+}

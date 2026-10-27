@@ -1,0 +1,30 @@
+// The background is a sibling plane: icons, focus rings and menus are never
+// filtered. The shared tokens also own opaque and forced-color alternatives.
+.ui-liquid-glass {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background: var(--material-liquid-background);
+  box-shadow: var(--material-liquid-shadow);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    -webkit-backdrop-filter: var(--material-liquid-filter);
+    backdrop-filter: var(--material-liquid-lens, var(--material-liquid-filter));
+    background: var(--material-liquid-reflection);
+    box-shadow: var(--material-liquid-rim);
+  }
+}
+.ui-liquid-glass__filters { position: absolute; pointer-events: none; }
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .ui-liquid-glass::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

@@ -1,0 +1,41 @@
+@use "sass:list";
+@use "sass:map";
+@use "./typography/roles.web" as generated;
+
+$text-tones: (
+  primary: var(--color-text),
+  secondary: var(--color-text-secondary),
+  tertiary: var(--color-text-tertiary),
+  disabled: var(--color-text-tertiary),
+  danger: var(--color-text-danger),
+);
+
+@mixin role($name, $tone: primary) {
+  @if list.index(generated.$typography-role-names, $name) == null {
+    @error "Unknown typography role: #{$name}";
+  }
+  @if $tone != null and not map.has-key($text-tones, $tone) {
+    @error "Unknown TextTone: #{$tone}";
+  }
+
+  // Control variants own tone; null projects typography without resetting it.
+  @if $tone != null { color: map.get($text-tones, $tone); }
+  font-family: var(--typography-#{$name}-family);
+  font-size: var(--typography-#{$name}-size);
+  font-weight: var(--typography-#{$name}-weight);
+  line-height: var(--typography-#{$name}-line-height);
+  letter-spacing: var(--typography-#{$name}-tracking);
+}
+
+// Rasterization is a platform rendering policy, not part of an individual
+// semantic text role. `auto` follows the browser/OS default and keeps macOS
+// desktop chrome from being globally thinned by grayscale antialiasing.
+@mixin rendering-policy {
+  font-optical-sizing: auto;
+  font-kerning: normal;
+  font-synthesis: none;
+  font-variant-ligatures: common-ligatures contextual;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+}

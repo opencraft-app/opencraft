@@ -1,0 +1,22 @@
+[Unit]
+Description=OpenCraft verified desktop observation transport
+Requires=opencraft-desktop-observation.service
+After=opencraft-desktop-observation.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/opencraft/desktop-observer.py
+RuntimeDirectory=opencraft-desktop-observer
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=false
+RestrictAddressFamilies=AF_UNIX AF_INET
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+MemoryMax=128M
+TasksMax=128
+Restart=on-failure
+RestartSec=3

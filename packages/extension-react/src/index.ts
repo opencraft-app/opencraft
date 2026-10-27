@@ -1,0 +1,196 @@
+import type { ComponentType, ReactNode } from "react";
+
+import type { ViewContribution } from "@opencraft/extension-contract";
+import type { HostConnectionProfile, ProvisionHostInput, ThreadReadReceiptPort, AccountModelDefaultsPort } from "@opencraft/workbench-runtime";
+
+export * from "./composer-actions";
+export * from "./image-editor";
+export * from "./settings-controls";
+export * from "./settings-panel";
+export * from "./adaptive-panel";
+export * from "./settings-search-select";
+
+export type { ProvisionHostInput } from "@opencraft/workbench-runtime";
+
+/** Host-owned operations exposed to a trusted platform View. */
+export interface PlatformViewHost {
+  /** Verified account projection for personal presentation; never an authorization grant. */
+  readonly currentUser?: { readonly providerId: string; readonly id: string; readonly handle: string } | null;
+  readonly authentication?: AuthenticationFlowPort;
+  readonly platform: "web" | "electron" | "expo";
+  readonly activeHostId: string;
+  readonly profiles: readonly HostConnectionProfile[];
+  /** Establishes the selected Agent Runtime without choosing a Thread or workspace. */
+  ensureRuntimeReady?(hostId: string): Promise<void>;
+  provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
+  removeHost(hostId: string): Promise<boolean>;
+  openView(viewId: string, resourceUri?: string | null): void;
+  /** Resolve a stable Server/Thread identity through the application's current route directory. */
+  openConversation?(serverId: string, threadId: string): void | Promise<void>;
+  openSettings?(section: string): void;
+  /** Pushes a new deep-link entry for another resource owned by the active View. */
+  pushViewResource(viewId: string, resourceUri: string): void;
+  replaceViewResource(viewId: string, resourceUri: string): void;
+  /** Host-owned image pipeline shared by chat attachments and trusted Views. */
+  prepareImageUpload?(blob: Blob): Promise<Blob>;
+}
+
+export interface PlatformViewRegions {
+  /** Route-owned content rendered by the persistent platform Header. */
+  readonly Header?: ComponentType<{ readonly children: ReactNode }>;
+  /** Platform-owned compact selector for controls rendered inside Header. */
+  readonly ToolbarSelect?: ComponentType<PlatformToolbarSelectProps>;
+  /** Platform-owned capability content; plugins supply only the selected Host identity. */
+  readonly ConnectorLibrary?: ComponentType<{ readonly hostId: string }>;
+  /** Application-scoped extension inventory; independent of the selected execution Host. */
+  readonly ExtensionLibrary?: ComponentType;
+}
+
+export interface PlatformToolbarSelectOption {
+  readonly value: string;
+  readonly label: ReactNode;
+  readonly textValue: string;
+  /** Semantic visual role; the platform chooses the concrete icon and size. */
+  readonly visual?: "local" | "remote";
+  readonly disabled?: boolean;
+}
+
+export interface PlatformToolbarSelectProps {
+  readonly value: string | null;
+  readonly options: readonly PlatformToolbarSelectOption[];
+  readonly onValueChange: (value: string) => void;
+  readonly label: string;
+  readonly title?: ReactNode;
+  readonly placeholder?: ReactNode;
+  readonly disabled?: boolean;
+}
+
+export interface ExtensionSettingsViewProps {
+  /** Host-owned non-blocking operation error; does not alter View geometry. */
+  readonly reportError?: (notice: { readonly key: string; readonly message: string }) => void;
+  /** Only the dedicated sign-in presentation receives a pre-existing flow lease. */
+  readonly authenticationFlowId?: string;
+  /** Present only when this View is hosted in a dismissible utility window. */
+  readonly onDismiss?: () => void;
+  readonly contribution: ViewContribution;
+  readonly host: PlatformViewHost;
+  readonly regions?: PlatformViewRegions;
+  readonly activation: {
+    readonly viewId: string;
+    readonly resourceUri: string | null;
+  };
+}
+
+export interface PlatformViewRendererContribution {
+  readonly viewType: string;
+  readonly Component: ComponentType<ExtensionSettingsViewProps>;
+}
+
+export interface PlatformAccountSnapshot {
+  /** Provider-scoped stable subject and explicit account handle; absent for display-only data. */
+  readonly identity?: { readonly id: string; readonly handle: string } | null;
+  /** Verified local display hint for new submissions; not a transport credential. */
+  readonly submissionSender?: { readonly kind: "employee"; readonly loginName: string } | null;
+  /** Verified, opaque account scope for account read state; never a credential or display name. */
+  readonly readStateScope?: string | null;
+  readonly revision: number;
+  /** Provider-owned label when its identity is not yet authenticated. */
+  readonly anonymousLabel?: string;
+  readonly anonymousLabelMessage?: { readonly id: string; readonly defaultMessage: string };
+  readonly phase: "anonymous" | "loading" | "authenticated" | "error";
+  readonly name: string | null;
+  readonly avatarUrl: string | null;
+  readonly planLabel: string | null;
+  readonly usageRemainingPercent: number | null;
+  readonly error: string | null;
+  readonly environmentRequests?: readonly { readonly id: string; readonly name: string; readonly status: string }[];
+}
+
+/**
+ * Trusted product adapter for an account authority. The shell owns only the
+ * menu/modal chrome; authentication, refresh and account content remain owned
+ * by the contributing product extension.
+ */
+export interface PlatformAccountContribution {
+  /** Authenticated server authority for personal per-Host model defaults. */
+  readonly modelDefaults?: AccountModelDefaultsPort;
+  /** Verified account authority for cross-device read receipts, independent of chat Host. */
+  readonly readReceipts?: ThreadReadReceiptPort;
+  /** Explicit footer precedence; equal priorities remain exclusive. Default: 0. */
+  readonly entrancePriority?: number;
+  readonly signInOptions?: readonly { readonly id: string; readonly label: string; readonly description: string }[];
+  readonly authenticationProviderId?: string;
+  readonly signInViewId?: string;
+  readonly id: string;
+  readonly viewId: string;
+  /** Optional, provider-owned environment creation View; Shell owns only presentation. */
+  readonly environmentCreation?: {
+    readonly label: string;
+    readonly viewId: string;
+  };
+  getSnapshot(): PlatformAccountSnapshot;
+  subscribe(listener: () => void): () => void;
+  refresh(): Promise<unknown>;
+  /** Absent for gateway-owned identities without a supported logout operation. */
+  readonly signOut?: () => Promise<void>;
+}
+
+export interface OwnedPlatformViewRenderer extends PlatformViewRendererContribution {
+  readonly ownerId: string;
+}
+
+export interface PlatformViewRendererSnapshot {
+  readonly revision: number;
+  readonly renderers: readonly OwnedPlatformViewRenderer[];
+}
+
+/** Framework-specific renderer registry; stable extension contracts stay JSX-free. */
+export class PlatformViewRendererRegistry {
+  private readonly records = new Map<string, OwnedPlatformViewRenderer>();
+  private readonly listeners = new Set<() => void>();
+  private revision = 0;
+  private snapshot: PlatformViewRendererSnapshot = Object.freeze({ revision: 0, renderers: [] });
+
+  getSnapshot = (): PlatformViewRendererSnapshot => this.snapshot;
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  register(ownerId: string, contribution: PlatformViewRendererContribution): () => void {
+    const viewType = contribution.viewType.trim();
+    if (!viewType) throw new RangeError("Platform View renderer requires viewType");
+    if (this.records.has(viewType)) throw new Error(`Platform View renderer ${viewType} is already registered`);
+    const record = Object.freeze({ ownerId, viewType, Component: contribution.Component });
+    this.records.set(viewType, record);
+    this.publish();
+    return () => {
+      if (this.records.get(viewType) !== record) return;
+      this.records.delete(viewType);
+      this.publish();
+    };
+  }
+
+  resolve(viewType: string): ComponentType<ExtensionSettingsViewProps> | null {
+    return this.records.get(viewType)?.Component ?? null;
+  }
+
+  private publish(): void {
+    this.snapshot = Object.freeze({
+      revision: ++this.revision,
+      renderers: Object.freeze([...this.records.values()]),
+    });
+    for (const listener of this.listeners) listener();
+  }
+}
+import type { AuthenticationFlowPort } from "@opencraft/workbench-runtime";
+
+export * from "./thread-badges";
+
+export * from "./identity-avatar";
+
+export * from "./thread-list-grouping";
+
+export { createDeferredView } from "./deferred-view";
+
+export * from "./thread-participation";

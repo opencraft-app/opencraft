@@ -1,0 +1,43 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.notice-center-trigger {
+  position: relative;
+  .notice-center-badge {
+    @include typography.role(metadata, primary);
+    position: absolute;
+    top: 0;
+    right: -4px;
+    min-width: 14px;
+    padding-inline: 2px;
+    border-radius: var(--radius-full);
+    background: var(--color-background-elevated-secondary-opaque);
+    border: 1px solid var(--color-border-default);
+  }
+}
+.notice-center {
+  @include typography.role(navigation-action, primary);
+  z-index: var(--layer-floating-control);
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(540px, var(--radix-popover-content-available-height));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-background-elevated-secondary-opaque);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px 4px; }
+  h2 { @include typography.role(navigation-action, primary); margin: 0; }
+  button { @include typography.role(metadata, secondary); background: transparent; border: 0; min-height: 36px; padding: 6px; border-radius: var(--radius-md); cursor: pointer; }
+  .notice-center-scope { @include typography.role(metadata, secondary); margin: 0; padding: 0 16px 12px; }
+  .notice-center-empty { @include typography.role(metadata, secondary); margin: 0; padding: 24px 16px; }
+  ul { list-style: none; margin: 0; padding: 0 16px; overflow-y: auto; overscroll-behavior: contain; }
+  li { display: flex; align-items: flex-start; gap: 10px; padding-block: 12px; border-top: 1px solid var(--color-border-default); }
+  li > svg { flex: 0 0 auto; margin-top: 2px; }
+  li > div { min-width: 0; overflow-wrap: anywhere; }
+  p { margin: 0; }
+  .notice-center-detail, time, .notice-center-occurrences { @include typography.role(metadata, secondary); }
+  li[data-tone="error"] > svg { color: var(--color-status-error); }
+  li[data-tone="success"] > svg { color: var(--color-status-success); }
+}
+@media (any-pointer: coarse) { .notice-center button { min-height: 44px; } }

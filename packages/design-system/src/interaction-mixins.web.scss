@@ -1,0 +1,26 @@
+// Input and focus policy without global CSS output.
+@mixin focus-indicator {
+  outline: var(--width-control-focus-ring) solid var(--color-border-focus);
+  outline-offset: var(--offset-control-focus-ring);
+  @media (forced-colors: active) { outline-color: Highlight; }
+}
+
+@mixin hover-capable {
+  @media (any-hover: hover) and (any-pointer: fine) {
+    @if & {
+      :root:not([data-touch-interaction]) & { @content; }
+    } @else {
+      // Also support complete selectors in shared stylesheets at the root.
+      :root:not([data-touch-interaction]) { @content; }
+    }
+  }
+}
+
+@mixin touch-input {
+  @media (any-pointer: coarse), (hover: none) { @content; }
+  @if & {
+    :root[data-touch-interaction] & { @content; }
+  } @else {
+    :root[data-touch-interaction] { @content; }
+  }
+}

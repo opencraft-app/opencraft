@@ -1,0 +1,43 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+
+.desktop-welcome-modal { overflow-y: auto; }
+.desktop-welcome {
+  box-sizing: border-box;
+  width: min(100%, 920px);
+  margin: auto;
+  padding: calc(var(--spacing) * 18) calc(var(--spacing) * 8) calc(var(--spacing) * 10);
+  color: var(--color-text);
+}
+.desktop-welcome__heading {
+  margin-bottom: calc(var(--spacing) * 10);
+  h1 { @include typography.role(display-title); margin: calc(var(--spacing) * 8) 0 calc(var(--spacing) * 3); }
+  p { @include typography.role(body, secondary); margin: 0; max-width: 60ch; }
+}
+.desktop-welcome__brand { @include typography.role(panel-title); }
+.desktop-welcome__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--spacing) * 5); }
+.desktop-welcome__choice {
+  display: flex; flex-direction: column; min-width: 0;
+  padding: calc(var(--spacing) * 6); border: .5px solid var(--color-border-default);
+  border-radius: var(--radius-token-settings-card); background: var(--color-background-panel);
+  h2 { @include typography.role(panel-title); margin: calc(var(--spacing) * 5) 0 calc(var(--spacing) * 2); }
+  > p { @include typography.role(body, secondary); margin: 0 0 calc(var(--spacing) * 6); }
+  .settings-control-button { align-self: flex-start; }
+}
+.desktop-welcome__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-lg); background: var(--color-background-button-secondary); color: var(--color-icon-primary); }
+.desktop-welcome__local-action { display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--spacing) * 3); margin-top: auto; }
+.desktop-welcome__hint, .desktop-welcome__validation { @include typography.role(metadata, secondary); }
+.desktop-welcome__server-form {
+  display: flex; flex-direction: column; margin-top: auto;
+  label { @include typography.role(settings-label); margin-bottom: calc(var(--spacing) * 2); }
+  .settings-control-input { min-width: 0; }
+  .settings-control-button { min-width: 120px; }
+  .settings-control-button__spinner { position: absolute; }
+  .settings-control-button[aria-busy='true'] { color: transparent; .settings-control-button__spinner { color: var(--color-text-button-secondary); } }
+}
+.desktop-welcome__validation { min-height: 2lh; margin-top: var(--spacing); color: var(--color-text-danger); }
+.desktop-welcome__footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: calc(var(--spacing) * 3); margin-top: calc(var(--spacing) * 6); @include typography.role(metadata, secondary); }
+@media(max-width:680px) {
+  .desktop-welcome { padding: calc(var(--spacing) * 12) calc(var(--spacing) * 5) calc(var(--spacing) * 6); }
+  .desktop-welcome__choices { grid-template-columns: minmax(0, 1fr); }
+  .desktop-welcome__heading { margin-bottom: calc(var(--spacing) * 6); }
+}
