@@ -1,0 +1,661 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "opencraft.full-release"
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "releaseSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "product": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "channel": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "upstreamRevision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "patchSetSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "revision",
+            "upstreamRevision",
+            "patchSetSha256"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "releaseId",
+        "releaseSequence",
+        "createdAt",
+        "expiresAt",
+        "product",
+        "channel",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "transport": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "npm"
+        },
+        "registry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "exactVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "registry",
+        "packageName",
+        "exactVersion"
+      ],
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "enum": [
+              "headless",
+              "daemon"
+            ]
+          },
+          "platform": {
+            "enum": [
+              "linux"
+            ]
+          },
+          "arch": {
+            "enum": [
+              "x64",
+              "arm64"
+            ]
+          },
+          "nodeAbi": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "profile",
+          "platform",
+          "arch",
+          "nodeAbi"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 16
+    },
+    "updater": {
+      "type": "object",
+      "properties": {
+        "minBootstrap": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minAgent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "helperProtocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bridge": {
+          "type": "boolean"
+        },
+        "legacy": {
+          "type": "object",
+          "properties": {
+            "archiveBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "archiveBytes",
+            "unpackedBytes",
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "minBootstrap",
+        "minAgent",
+        "helperProtocol",
+        "bridge",
+        "legacy"
+      ],
+      "additionalProperties": false
+    },
+    "revocations": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "keyIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        },
+        "releaseIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "sequence",
+        "keyIds",
+        "releaseIds"
+      ],
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "componentId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "buildId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "sourceRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "enabledPolicy": {
+            "enum": [
+              "preserve",
+              "external"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "tree"
+              },
+              "root": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "fileListSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "unpackedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "entries": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "kind",
+              "root",
+              "fileListSha256",
+              "unpackedBytes",
+              "entries"
+            ],
+            "additionalProperties": false
+          },
+          "fileList": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "enum": [
+                    "0644",
+                    "0755"
+                  ]
+                }
+              ],
+              "items": false
+            },
+            "minItems": 1,
+            "maxItems": 100000
+          },
+          "provides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "name",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0,
+            "maxItems": 100000
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "componentId": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "componentId",
+                "name",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0,
+            "maxItems": 100000
+          },
+          "activation": {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "enum": [
+                  "web-transaction",
+                  "generation",
+                  "drained-owner",
+                  "helper",
+                  "external"
+                ]
+              },
+              "unitRole": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+              },
+              "authority": {
+                "enum": [
+                  "verified",
+                  "unsupported",
+                  "external"
+                ]
+              },
+              "retainedHistory": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "strategy",
+              "unitRole",
+              "authority",
+              "retainedHistory"
+            ],
+            "additionalProperties": false
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "minItems": 1,
+            "maxItems": 100000
+          }
+        },
+        "required": [
+          "componentId",
+          "role",
+          "version",
+          "buildId",
+          "sourceRevision",
+          "required",
+          "enabledPolicy",
+          "content",
+          "fileList",
+          "provides",
+          "requires",
+          "activation",
+          "licenses"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 128
+    },
+    "stores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "owner": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "migrationPolicy": {
+            "const": "compatible-only"
+          },
+          "compatibility": {
+            "enum": [
+              "verified",
+              "unknown"
+            ]
+          },
+          "proof": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "storeId",
+          "owner",
+          "migrationPolicy",
+          "compatibility",
+          "proof"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 100000
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "const": "compatible-retained-only"
+        },
+        "automaticSnapshotRestore": {
+          "const": false
+        },
+        "proof": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "policy",
+        "automaticSnapshotRestore",
+        "proof"
+      ],
+      "additionalProperties": false
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "npmJsonBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "metadataBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "manifestBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "outer": {
+          "type": "object",
+          "properties": {
+            "archiveBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "archiveBytes",
+            "unpackedBytes",
+            "entries"
+          ],
+          "additionalProperties": false
+        },
+        "recursive": {
+          "type": "object",
+          "properties": {
+            "unpackedBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "diskBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "memoryBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "unpackedBytes",
+            "entries",
+            "depth",
+            "diskBytes",
+            "memoryBytes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "npmJsonBytes",
+        "metadataBytes",
+        "manifestBytes",
+        "outer",
+        "recursive"
+      ],
+      "additionalProperties": false
+    },
+    "proofs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "status": {
+            "enum": [
+              "verified",
+              "blocked",
+              "external"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 100000
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "release",
+    "transport",
+    "targets",
+    "updater",
+    "revocations",
+    "components",
+    "stores",
+    "rollback",
+    "budgets",
+    "proofs"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencraft.app/schemas/full-release-v1.json"
+}

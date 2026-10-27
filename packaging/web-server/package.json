@@ -16,7 +16,8 @@
     "opencraft-execution.service",
     "opencraft-dsh-host.service",
     "opencraft-engine-host.service",
-    "opencraft-acp-host.service"
+    "opencraft-acp-host.service",
+    "release/"
   ],
   "engines": {
     "node": ">=22"
