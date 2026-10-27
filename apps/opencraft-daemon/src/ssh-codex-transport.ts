@@ -149,7 +149,7 @@ export class SshCodexTransport implements DuplexTransport {
       child.stderr.on("data", data => { stderr = (stderr + String(data)).slice(-4096); });
       const stream = new SshProbeStream(child, marker);
       this.stream = stream;
-      const socket = new WebSocket("ws://codex-app-server/rpc", { perMessageDeflate: false, maxPayload: this.options.maxReceiveFrameBytes ?? this.options.maxFrameBytes ?? 100 * 1024 * 1024, createConnection: () => stream });
+    const socket = new WebSocket("ws://codex-app-server/rpc", { perMessageDeflate: false, maxPayload: this.options.maxReceiveFrameBytes ?? this.options.maxFrameBytes ?? 512 * 1024 * 1024, createConnection: () => stream });
       this.socket = socket;
       const current = () => generation === this.generation && this.socket === socket;
       await new Promise<void>((resolve, reject) => {
