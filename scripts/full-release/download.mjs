@@ -64,9 +64,13 @@ export async function npmTransport(spec) {
   if (auth.token) headers.authorization = 'Bearer ' + auth.token;
   else if (auth.auth) headers.authorization = 'Basic ' + auth.auth;
   const fetch = require('make-fetch-happen');
-  return requested => fetch(requested, { ...opts, headers, cert: auth.cert || opts.cert, key: auth.key || opts.key,
-    proxy: opts.httpsProxy || opts.proxy, noProxy: opts.noProxy, strictSSL: opts.strictSSL,
-    redirect: 'manual', cache: 'no-store', retry: 0, compress: false, timeout: 300000 });
+  return (requested, { method = 'GET', body, headers: requestHeaders = {} } = {}) => {
+    const normalized = Object.fromEntries(Object.entries(requestHeaders).map(([key, value]) => [key.toLowerCase(), value]));
+    return fetch(internalTarballUrl(requested, spec.registry), { ...opts, method, body,
+      headers: { ...normalized, ...headers }, cert: auth.cert || opts.cert, key: auth.key || opts.key,
+      proxy: opts.httpsProxy || opts.proxy, noProxy: opts.noProxy, strictSSL: opts.strictSSL,
+      redirect: 'manual', cache: 'no-store', retry: 0, compress: false, timeout: 300000 });
+  };
 }
 
 export async function downloadNpmArchive(spec) {
