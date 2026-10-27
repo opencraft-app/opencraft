@@ -10,6 +10,22 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('HostLogicalRetirement', None),
+    ('HostLogicalRetirement-Service', None),
+    ('HostLogicalRetirement-Peer', None),
+    ('HostLogicalRetirement-WithoutClock', None),
+    ('HostLogicalRetirement-WaitNotice', 'temporal:ReleaseProgress'),
+    ('HostLogicalRetirement-LateOwner', 'OwnerBeforeProvider'),
+    ('HostLogicalRetirement-TimeoutRelease', 'PhysicalConserved'),
+    ('HostLogicalRetirement-DuplicateUnknown', 'UnknownOnce'),
+    ('HostLogicalRetirement-AdmitFailed', 'AdmissionSafe'),
+    ('HostLogicalRetirement-Retarget', 'CurrentRegistration'),
+    ('HostLogicalRetirement-ClosePeer', 'PeerAlive'),
+    ('HostLogicalRetirement-CloseService', 'ServiceAlive'),
+    ('HostLogicalRetirement-NoClock', 'temporal:CallerProgress'),
+    ('HostLogicalRetirement-NoLocal', 'temporal:ReleaseProgress'),
+    ('HostLogicalRetirement-NoPhysical', 'temporal:CallerProgress'),
+
     ('HostCleanupAdmission', None),
     ('HostCleanupAdmission-Revoked', 'NoRevokedAdmission'),
     ('HostCleanupAdmission-Barrier', 'PhysicalBarrier'),

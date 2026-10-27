@@ -939,3 +939,39 @@ prototypes or production sources. Held-startup cancellation and service authorit
 revocation have component regressions, not a claim of exhaustive randomized
 coverage. Resources hidden by a rejecting factory, dishonest successful release
 and provider progress without cooperation remain outside the guarantee.
+
+
+## Logical disconnect notification retirement
+
+HostLogicalRetirement adds 15 configurations: four positive cases cover normal,
+service-owned and peer-owned physical lifetimes plus physical-start progress
+without a notification clock. Eleven negative controls isolate waiting for a
+notification before physical cleanup, late owner publication, treating timeout
+as physical release, duplicate unknown writes, admission despite failed cleanup,
+stale completion retargeting, closing a peer/service Host, and missing clock,
+local or physical cooperation. Positive distinct-state counts are 156/54/54/156.
+They are finite obligations, not a refinement proof or remote execution semantics.
+
+The twentieth suite, `notifications`, checks one saved logical retirement
+transaction and explicit recovery through actual AppHostServer,
+MessagePortAppHostClient/channels and initialized JsonRpcAppServerClient. An
+input-owned ledger predicts notification attempts, local close/control results,
+physical calls and released resources, admission failures, peer echo and fresh
+healing. Provider writes can succeed, reject, throw or stay pending despite abort;
+physical close outcomes are independent. Late notification results, local
+deadlines, detach, provider repair, admission probes and actual physical release
+are saved events. Teardown is outside the assertions. Saved `heal` may explicitly
+reset a failed owner; it does not invent implicit provider progress.
+
+```sh
+npm run test:recovery-chaos -- --suite notifications --seed 20261027 --cases 1000 --steps 120 --output /tmp/notification-chaos
+npm run test:recovery-chaos -- --suite notifications --mutant duplicate-notice --seed 0 --output /tmp/notification-control
+npm run test:recovery-chaos -- --replay /tmp/notification-chaos/failure-minimal.json --output /tmp/notification-replay
+```
+
+The synthetic controls `wait-notice`, `duplicate-notice` and `admit-failed` test
+exact-rule detection and shrinking; they are separate from unchanged-old-class
+counterexamples. Component regressions cover synchronous reentry, multiple
+failed owners and stale physical results. This random suite does not claim the
+entire repeated-transaction/multi-Host product, a bound on uncooperative foreign
+provider memory, remote handler acknowledgement, or physical phone validation.

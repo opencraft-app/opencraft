@@ -1207,3 +1207,45 @@ the random suite does not claim their complete combined state space. No guarante
 covers a factory that hides a resource before rejecting without returning its
 handle, a provider that falsely reports successful release, or unconditional
 progress when physical cleanup never settles.
+
+
+## Logical disconnect notification ownership
+
+A logical disconnect write has its own captured registration and physical record.
+It is not a remote acknowledgement of resource disposal or execution cancellation.
+The Server publishes the operation before invoking the clock or provider, catches
+synchronous throws, and shares an unknown pending attempt with Renderer detach.
+Only a native rejection already known at detach permits that explicit retry.
+
+Removing the local claim starts any eligible physical cleanup independently of
+notification I/O. A successful physical release retires that record's remaining
+notification observers. A failed physical cleanup ends their local waits with the
+physical failure while retaining its handle and admission barrier. A notification
+deadline never releases a physical resource. Peer claims and server-owned physical
+lifetimes continue to govern whether physical cleanup is eligible.
+
+Each notification observer uses the existing lifecycle timeout and clock. Expiry
+reports manual `APP_HOST_DISCONNECT_TIMEOUT` and signals cancellation of that write;
+a provider may ignore it. Known or unknown logical cleanup failure fences new
+registrations with `APP_HOST_LOGICAL_CLEANUP_FAILED`. Already admitted peers keep
+their own forwarding authority and can continue RPCs. This prevents serial
+registration churn from accumulating failed cleanup identities without imposing
+an unrelated numeric quota or terminating the shared bridge. A late successful
+write removes only its captured failure; all other failures remain fenced. A
+trusted physical reset can also release those owners. Late results never revive
+a timed-out caller or remove a newer registration or physical record.
+
+The local registry remains the authority for failed cleanup until its own write
+succeeds or its physical owner releases. This is not a hard bound on foreign
+provider memory when it ignores abort and retains promises. Nor does successful
+write completion prove the remote handler ran. Existing native logical-disconnect
+handlers and remote execution policy are unchanged.
+
+HostLogicalRetirement is a finite abstraction of owner publication, notification
+observation, physical cleanup, peer/service lifetime, admission fencing and late
+completion. Missing-clock and missing-physical-cooperation controls delimit its
+conditional liveness claims. Component tests additionally exercise multiple
+failures and real RPC peers. The notification chaos suite checks one saved
+retirement transaction plus explicit recovery using actual Server, bridge,
+channels and initialized RPC clients; it does not claim all possible repeated
+transaction, multi-Host, provider or device interleavings.
