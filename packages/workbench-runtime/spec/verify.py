@@ -10,6 +10,23 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('PortCleanup', None),
+    ('PortCleanup-Connection', None),
+    ('PortCleanup-Server', None),
+    ('PortCleanup-Peer', None),
+    ('PortCleanup-Service', None),
+    ('PortCleanup-Normal', None),
+    ('PortCleanup-Wait', 'LocalSettlement'),
+    ('PortCleanup-ShortCircuit', 'BothAttempted'),
+    ('PortCleanup-Forget', 'HandleConserved'),
+    ('PortCleanup-Repeat', 'SuccessOnce'),
+    ('PortCleanup-Swallow', 'HonestFailure'),
+    ('PortCleanup-ClosePeer', 'PeerProtected'),
+    ('PortCleanup-Late', 'NoLateAdmission'),
+    ('PortCleanup-SkipNative', 'temporal:NativeProgress'),
+    ('PortCleanup-NoLocal', 'temporal:LocalProgress'),
+    ('PortCleanup-NoRepair', 'temporal:PortProgress'),
+
     ('InteractionSourceAdmission-PeerOtherThread', None),
     ('InteractionSourceAdmission-FingerprintOtherThread', None),
     ('InteractionSourceAdmission', None),

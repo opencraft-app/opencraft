@@ -1306,3 +1306,50 @@ resources and caller outcomes. It exercises success/rejection/held writes, local
 deadlines, late outcomes, own failure-fence challenges and actual peer RPC. Healing
 is an explicit input that repairs declared providers and resets the two Hosts; it
 is not a production retry or a claim of the full arbitrary multi-Host product.
+
+## Port retirement and disposal failure
+
+A bridge's logical terminal cut and successful external Port disposal are separate
+facts. The Client invalidates delivery, rejects its captured readiness, connect,
+normal RPC and release waits, and captures one terminal publication before calling
+Port disposers. A throwing remove/close callback cannot skip those obligations.
+Late Port input has no authority after retirement. Reentrant close joins the same
+cut; a later explicit close retries only unsuccessful disposers on the original
+Port. Successful remove/close work is not repeated. Cleanup failures remain
+observable as an `AggregateError`; the terminal error delivered to existing waits
+retains the original connection failure.
+
+The Server retires the connection's claims and logical registrations before
+external Port cleanup. Failed Port handles remain in a separate retired cleanup
+registry, with no admission authority. Connection disposal respects existing
+peer/service physical lifetimes. Global shutdown attempts every Port and every
+eligible physical cleanup even if another disposer throws, reports their combined
+failures, and retains failed handles for explicit same-owner retry. A failure is
+not permission to manufacture a replacement resource or to close a healthy peer.
+
+`accept` registers its connection before starting the Port. Messages synchronously
+received during subscribe/start are buffered until startup succeeds; failed startup
+cannot admit a native Host. Client startup also stops after synchronous terminal
+input. Both constructors attempt rollback of their new subscription and Port,
+preserving the primary initialization error and any cleanup errors. If a Client
+constructor throws, the caller still holds its passed Port for further explicit
+cleanup; no returned Client handle or guaranteed external-provider release exists.
+The Server can retain a failed construction's Port for its own shutdown retry.
+A disposer may throw after an external side effect: only confirmed success removes
+its obligation, and retries stay on the original handle.
+
+`PortCleanup.tla` adds sixteen bounded configurations: Client, connection, global
+shutdown, peer, service and healthy controls; seven exact safety controls plus
+native-retirement and two fairness counterexamples. Local continuation is required
+for retirement; successful eventual Port disposal additionally needs provider
+recovery and explicit retry. It does not prove TypeScript refinement, constructor
+transactions or release by a permanently failing provider. Component tests cover
+startup rollback, combined Port/native failures and synchronous reentry separately.
+
+The `ports` chaos suite executes actual public Client/Server constructors and
+close/hello/connect APIs against a saved-input ledger. Fault injection is confined
+to declared external Port callbacks. The oracle checks local wait settlement,
+once-only terminal publication, independent native cleanup and exact per-handle
+retry counts through fault changes, reentry, late input and recovery. Synthetic
+observation controls are distinct from immutable old-constructor comparisons.
+Saved traces retain source hashes, exact-rule shrinking and ordinary replay.
