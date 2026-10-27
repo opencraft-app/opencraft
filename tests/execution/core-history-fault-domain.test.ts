@@ -19,7 +19,7 @@ type HistoryFixture = { reader: CodexCoreReadIsolation; main: CodexCoreSocket; s
 test("a held history RPC acknowledges its frame and cannot block Resume on the same AppHost lane", async () => {
   await fixture(async ({ reader, endpoint, requests }) => {
     const native = new CodexNativeCoreTransport("/unused/control.sock", "synthetic-token");
-    (native.control as any).health = async () => endpoint;
+    (native.control as any).health = async () => ({ ...endpoint, pid: process.ppid, codexPid: process.pid });
     (native as any).reads = reader;
     const server = new AppHostServer({ createTransport: () => native });
     const { port1, port2 } = new MessageChannel();
