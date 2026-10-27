@@ -1,3 +1,4 @@
+import { internalTarballUrl, downloadNpmArchive } from '../full-release/download.mjs';
 import { fullReleaseTrust } from '../full-release/trust.mjs';
 import { verifyPreflight, enforcePolicy, HARD_LIMITS } from '../full-release/contract.mjs';
 import { verifyFullArchive, readReplayState, writeReplayState } from '../full-release/archive.mjs';
@@ -80,15 +81,23 @@ export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 
         enforcePolicy(fullRelease, manifest.opencraftFullRelease.keyId, fullReleaseTrust, await readReplayState(stateFile));
         if (fullRelease.transport.exactVersion !== manifest.version || fullRelease.release.channel !== channel || fullRelease.transport.registry !== registry) throw new Error('Full release transport mismatch');
       }
-      return { version: manifest.version, buildId: metadata.buildId, integrity, ...(fullRelease ? { fullRelease } : {}) };
+      return { version: manifest.version, buildId: metadata.buildId, integrity, ...(fullRelease ? { fullRelease, tarball: internalTarballUrl(manifest.dist.tarball, registry) } : {}) };
     },
     async download(release, directory) {
       if (fullReleaseTrust && packageName === fullReleaseTrust.packageName) {
-        const exact = await npm(['view', `${packageName}@${release.version}`, '--json']);
+        let exact = await npm(['view', `${packageName}@${release.version}`, '--json']);
+        if (Array.isArray(exact)) { if (exact.length !== 1) throw new Error('Unexpected npm release'); exact = exact[0]; }
         const checked = verifyPreflight(exact.opencraftFullRelease, fullReleaseTrust);
         enforcePolicy(checked, exact.opencraftFullRelease.keyId, fullReleaseTrust, await readReplayState(stateFile));
         if (exact.version !== release.version || exact.dist?.integrity !== release.integrity || checked.transport.exactVersion !== release.version
-          || JSON.stringify(checked) !== JSON.stringify(release.fullRelease)) throw new Error('Checked full release identity changed');
+          || JSON.stringify(checked) !== JSON.stringify(release.fullRelease)
+          || internalTarballUrl(exact.dist.tarball, registry) !== release.tarball) throw new Error('Checked full release identity changed');
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        const path = join(directory, 'release.tgz');
+        await downloadNpmArchive({ url: release.tarball, registry, userconfig, packageName, destination: path,
+          archiveBytes: checked.budgets.outer.archiveBytes, integrity: release.integrity });
+        await verifyFullArchive(path, fullReleaseTrust, { state: await readReplayState(stateFile), preflight: checked });
+        return path;
       }
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const packed = await npm(['pack', `${packageName}@${release.version}`, '--pack-destination', directory, '--json'], directory, 32 * 1024 * 1024);

@@ -490,3 +490,13 @@ launcher before enabling plugins so rollback uses the same compatibility gate;
 legacy launchers do not implement this contract. Rollback among compatible
 releases preserves plugins. Removing a plugin is a separate operator action;
 application rollback never uninstalls it.
+
+Signed npm consumers bind the archive URL to the checked exact version and SRI.
+They use the existing deployment user's npm configuration for an HTTPS stream,
+reject redirects, count compressed bytes against the signed limit while reading,
+and verify SRI before scanning tar contents. They never pass untrusted signed
+archives through `npm pack` and its eager buffering/content inventory. The same
+stream port accepts an exact receipt size for publication verification. Historical
+unsigned sources keep their existing npm compatibility path. Fixed launchers must
+receive this implementation before their first complete-package npm download;
+maintaining only the application worker does not replace the launcher's updater.
