@@ -1,3 +1,4 @@
+import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import { isDeepStrictEqual } from "node:util";
 import { DshCapabilityBroker, type DshHostCapability } from "./dsh-capability-broker.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
@@ -159,6 +160,10 @@ export class DshCapabilityLink {
               if (this.routing && this.routing.native(logicalId) !== event.sessionId) throw new Error("Retired capability generation");
               const execution = this.authority.table.get(logicalId);
               if (!execution || execution.state !== "running") throw new Error("No active execution authority");
+              const coordinates = this.routing?.forkCoordinates(logicalId, Number(execution.nativeTurnId));
+              const nativeTurnId = coordinates ? String(coordinates.lastTurn) : execution.nativeTurnId;
+              if (coordinates && coordinates.nativeId !== event.sessionId || event.nativeTurnId !== nativeTurnId)
+                throw new Error("Capability belongs to another native turn");
               const epoch = execution.epoch;
               const result = await this.broker.invoke(logicalId, execution.turnId, event.capabilityId, event.arguments, abort.signal, execution.connection) as any;
               if (abort.signal.aborted || endpoint !== this.endpoint || this.authority.table.get(logicalId)?.epoch !== epoch) return;
@@ -182,4 +187,14 @@ export class DshCapabilityLink {
     this.mounted.clear();
     await Promise.allSettled(this.inFlight);
   }
+}
+
+/** Refresh and synchronize even an empty catalog: the preceding execution may
+ * have installed Host tools and their Skill in the same native Agent. */
+export async function prepareDshExecutionCapabilities(threadId: string, inputId: string | undefined,
+  host: SessionCapabilityPort | undefined, broker: DshCapabilityBroker, link: DshCapabilityLink | null | undefined, activeTurnId?: string) {
+  await host?.refresh?.(threadId, inputId ? { inputId } : activeTurnId ? { turnId: activeTurnId } : undefined);
+  const expected = broker.list(threadId).length;
+  if (link) verifyDshCapabilityRegistration(expected, await link.register(threadId));
+  else if (expected > 0) throw new Error("This host cannot register engine capabilities");
 }

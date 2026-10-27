@@ -9,7 +9,7 @@ function fixture() {
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
   Object.assign(adapter, { options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
-    sessionMcpRefreshes: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), cancelNativeRelease() {},
+    sessionMcpRefreshes: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
     async requestPhysical(method: string, params: any) {
       calls.push({ method, params });
       if (method === "thread/read") { assert.equal(params.includeTurns, false); return { thread: { status: { type: status } } }; }
@@ -109,4 +109,17 @@ test("configuration installed at creation is reused without resuming a new empty
   const f = fixture();
   f.adapter.observeMetadataResult("thread/start", { config: { "mcp_servers.opencraft_session": config() } }, { thread: { id: "new" } });
   await f.adapter.prepareSessionMcp("new"); assert.equal(f.calls.length, 0);
+});
+
+
+test("early MCP reservation retains the attested standalone native incarnation", async () => {
+  const f = fixture(), origins: unknown[][] = [];
+  Object.defineProperty(f.adapter, "executionLeases", { value: { begin(...args: unknown[]) { origins.push(args); return "execution"; } } });
+  f.adapter.nativeCore = { executionIncarnation: "attested-native" };
+  f.adapter.nativeTransport = { async send() {} };
+  let prepared: unknown[] = [];
+  f.adapter.options.sessionMcp = async (...args: unknown[]) => { prepared = args; return config(); };
+  await f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one", clientUserMessageId: "input" } });
+  assert.deepEqual(origins, [["one", "input", "attested-native"], ["one", "input", "attested-native"]]);
+  assert.deepEqual(prepared, ["one", "input", "execution"]);
 });

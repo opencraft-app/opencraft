@@ -34,6 +34,7 @@ import { HOST_STORAGE } from "@opencraft/appserver-protocol/host-storage";
 import {
   DshCapabilityLink,
   verifyDshCapabilityRegistration,
+  prepareDshExecutionCapabilities,
 } from "./dsh-capability-link.js";
 import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
@@ -364,15 +365,14 @@ export async function startLocalAgentHost(options: {
     inject: params => capabilityLink!.thread("inject", { ...params, sessionId: routing.native(String(params.sessionId)) }),
     release: params => capabilityLink!.thread("release", { ...params, sessionId: routing.native(String(params.sessionId)) }),
   });
-  const prepareThreadExecution = async (threadId: string) => {
+  const prepareThreadExecution = async (threadId: string, inputId?: string) => {
     await adapter.activateThread(threadId);
     await skillRefresh.ensureFresh();
-    await options.sessionCapabilities?.refresh?.(threadId);
-    const expected = capabilities.list(threadId).length;
-    if (expected > 0) {
-      if (!capabilityLink) throw new Error("This host cannot register engine capabilities");
-      verifyDshCapabilityRegistration(expected, await capabilityLink.register(threadId));
-    }
+    const current = authority.table.get(threadId);
+    // Goal edits do not replace the running submission's employee. New inputs
+    // still take precedence; source-less idle continuations get no authority.
+    await prepareDshExecutionCapabilities(threadId, inputId, options.sessionCapabilities, capabilities, capabilityLink,
+      current?.state === "running" ? current.turnId : undefined);
   };
   const hostInputOwner: DshExecutionOwner = { connectionId: "opencraft-host-input", identity: { id: "opencraft-host-input", username: "Host input" } };
   capabilities.allowHostExecution(hostInputOwner);
@@ -634,7 +634,10 @@ export async function startLocalAgentHost(options: {
         const targetThread = (request.params as { threadId?: string } | null)?.threadId;
         if (request.method.startsWith("turn/") && typeof targetThread === "string") lifecycle.assertOpen(targetThread);
         const prepareExecution = async () => {
-          if (["turn/start", "thread/queue/start", "thread/goal/set"].includes(request.method as string) && typeof targetThread === "string") await prepareThreadExecution(targetThread);
+          const parameters = request.params as { clientUserMessageId?: unknown; queuedSubmissionId?: string } | undefined;
+          const queued = request.method === "thread/queue/start" && typeof targetThread === "string"
+            ? parameters?.queuedSubmissionId ? authority.queueStore.find(targetThread, parameters.queuedSubmissionId) : authority.queueStore.pending(targetThread)[0] : null;
+          if (["turn/start", "thread/queue/start", "thread/goal/set"].includes(request.method as string) && typeof targetThread === "string") await prepareThreadExecution(targetThread, queued?.clientUserMessageId ?? (typeof parameters?.clientUserMessageId === "string" ? parameters.clientUserMessageId : undefined));
         };
         if (request.method === "runtime/http/cancel") {
           const id = (request.params as { requestId: string }).requestId;

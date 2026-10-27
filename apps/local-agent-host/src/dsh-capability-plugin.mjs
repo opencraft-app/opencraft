@@ -111,7 +111,9 @@ export async function apply(ctx, config) {
       resolve: result => { clean(); resolve(result); },
       reject: fail,
     });
-    calls.push({ type: "capability-request", id, sessionId, capabilityId: capability.id, arguments: args });
+    const events = execution.agent?.session.events ?? [];
+    const nativeTurn = events.findLast(event => event.type === "turn/start")?.data?.turn;
+    calls.push({ type: "capability-request", id, sessionId, nativeTurnId: nativeTurn === undefined ? null : String(nativeTurn), capabilityId: capability.id, arguments: args });
   });
   const recoverGeneration = async body => {
     const pendingIntent = await checkpoints.readIntent(body.logicalSessionId);

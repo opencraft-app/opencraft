@@ -133,7 +133,7 @@ interface CapacityRetry {
 
 interface SharedCodexRoutingOptions {
   /** Trusted Host composition. Never accepted from renderer requests. */
-  readonly sessionMcp?: (threadId: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
+  readonly sessionMcp?: (threadId: string, inputId?: string, executionId?: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
   readonly observationComponent?: 'core' | 'gateway';
   readonly tokenUsage?: {
     readonly queryWorkerEntry?: string;
@@ -2988,7 +2988,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly sessionMcpConfigurations = new Map<string, unknown>();
   private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
   private sessionMcpGeneration = 0;
-  private async prepareSessionMcp(threadId: string): Promise<void> {
+  private async prepareSessionMcp(threadId: string, inputId?: string, executionId?: string): Promise<void> {
     if (!threadId || !this.options.sessionMcp) return;
     for (;;) {
       const pending = this.sessionMcpRefreshes.get(threadId);
@@ -2999,7 +2999,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         continue;
       }
       const generation = this.sessionMcpGeneration;
-      const operation = Promise.resolve().then(() => this.refreshSessionMcp(threadId, generation)).finally(() => {
+      const operation = Promise.resolve().then(() => this.refreshSessionMcp(threadId, generation, inputId, executionId)).finally(() => {
         if (this.sessionMcpRefreshes.get(threadId) === operation) this.sessionMcpRefreshes.delete(threadId);
       });
       this.sessionMcpRefreshes.set(threadId, operation);
@@ -3007,11 +3007,11 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
 
-  private async refreshSessionMcp(threadId: string, generation: number): Promise<void> {
+  private async refreshSessionMcp(threadId: string, generation: number, inputId?: string, executionId?: string): Promise<void> {
     const current = () => {
       if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
     };
-    const configuration = structuredClone(await this.options.sessionMcp!(threadId));
+    const configuration = structuredClone(await this.options.sessionMcp!(threadId, inputId, executionId));
     current();
     const previous = this.sessionMcpConfigurations.get(threadId);
     if (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined)) return;
@@ -3065,7 +3065,13 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.sessionMcpConfigurations.set(threadId, configuration);
   }
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
-    if (message.method === "turn/start") await this.prepareSessionMcp(string(record(message.params).threadId));
+    if (message.method === "turn/start") {
+      const params = record(message.params), threadId = string(params.threadId);
+      const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
+      message = { ...message, params: { ...params, clientUserMessageId: inputId } };
+      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      await this.prepareSessionMcp(threadId, inputId, executionId);
+    }
     if ((this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && (message.method === "turn/start" || message.method === "turn/steer")) {
       const params=record(message.params),delegationId=this.options.collaboration?.inputDelegation?.(string(params.threadId),string(params.clientUserMessageId),string(params.expectedTurnId)||undefined);
       message={...message,params:{...params,__opencraftDelegationId:delegationId??null}};

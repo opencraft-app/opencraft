@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./mcp": "./src/mcp.ts",
     "./bindings": "./src/bindings.ts",
-    "./remote": "./src/remote.ts"
+    "./remote": "./src/remote.ts",
+    "./authenticated-mcp": "./src/authenticated-mcp.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

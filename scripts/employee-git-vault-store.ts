@@ -82,7 +82,7 @@ export class EmployeeGitVaultStore {
     validateKey('binding-presence', host);
     return !!this.db.prepare('SELECT 1 FROM employee_git_credentials WHERE host=? AND credential IS NOT NULL LIMIT 1').get(host);
   }
-  read(account: string, host: string): GitVaultRecord {
+  private readValue(account: string, host: string): { revision: number; credential: unknown } {
     validateKey(account, host);
     const row = this.db.prepare('SELECT revision,credential FROM employee_git_credentials WHERE account=? AND host=?').get(account, host);
     if (!row) return { revision: 0, credential: null };
@@ -93,10 +93,25 @@ export class EmployeeGitVaultStore {
       const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(0, 12));
       decipher.setAAD(this.aad(account, host)); decipher.setAuthTag(data.subarray(-16));
       clear = Buffer.concat([decipher.update(data.subarray(12, -16)), decipher.final()]);
-      const credential: GitVaultCredential = JSON.parse(clear.toString('utf8'));
-      validateGitVaultCredential(credential);
+      const credential: unknown = JSON.parse(clear.toString('utf8'));
       return { revision: Number(row.revision), credential };
     } finally { clear?.fill(0); }
+  }
+  read(account: string, host: string): GitVaultRecord {
+    const record = this.readValue(account, host);
+    if (record.credential !== null) validateGitVaultCredential(record.credential as GitVaultCredential);
+    return record as GitVaultRecord;
+  }
+  /** Separate namespace for a service secret. It is never a Git credential. */
+  readSecret(account: string, service: string): { revision: number; secret: string | null } {
+    const record = this.readValue(account, service);
+    if (record.credential !== null && (typeof record.credential !== 'string' || !record.credential || record.credential.length > 4096 || /[\r\n\0]/u.test(record.credential))) throw new GitVaultError('unavailable', 503);
+    return { revision: record.revision, secret: record.credential as string | null };
+  }
+  writeSecret(account: string, service: string, revision: number, secret: string | null): { revision: number; configured: boolean } {
+    if (secret !== null && (typeof secret !== 'string' || !secret || secret.length > 4096 || /[\r\n\0]/u.test(secret))) throw new GitVaultError('invalid');
+    this.writeValue(account, service, revision, secret);
+    return { revision: revision + 1, configured: secret !== null };
   }
   status(account: string, host: string): GitVaultStatus {
     const { revision, credential } = this.read(account, host);
@@ -106,23 +121,26 @@ export class EmployeeGitVaultStore {
         fingerprint: signing.fingerprint, registration: signing.registration, ...(signing.remoteKeyId ? { remoteKeyId: signing.remoteKeyId } : {}) } : null };
   }
   write(account: string, host: string, revision: number, credential: GitVaultCredential | null): GitVaultStatus {
+    if (credential) validateGitVaultCredential(credential);
+    this.writeValue(account, host, revision, credential);
+    return this.status(account, host);
+  }
+  private writeValue(account: string, host: string, revision: number, credential: unknown): void {
     validateKey(account, host);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new GitVaultError('invalid');
-    if (credential) validateGitVaultCredential(credential);
     const payload = credential ? this.encrypt(account, host, credential) : null;
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (this.read(account, host).revision !== revision) throw new GitVaultError('conflict', 409);
+      if (this.readValue(account, host).revision !== revision) throw new GitVaultError('conflict', 409);
       // Keep a tombstone on delete: stale revision zero must never overwrite a later generation.
       this.db.prepare('INSERT INTO employee_git_credentials(account,host,revision,credential) VALUES(?,?,?,?) ON CONFLICT(account,host) DO UPDATE SET revision=excluded.revision,credential=excluded.credential')
         .run(account, host, revision + 1, payload);
       this.db.exec('COMMIT');
-      return this.status(account, host);
     } catch (error) { if (this.db.isTransaction) this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { try { this.db.close(); } finally { this.key.fill(0); } }
   private aad(account: string, host: string): Buffer { return Buffer.from(JSON.stringify(['employee-git-vault', 1, account, host, 'credential'])); }
-  private encrypt(account: string, host: string, credential: GitVaultCredential): Buffer {
+  private encrypt(account: string, host: string, credential: unknown): Buffer {
     const clear = Buffer.from(JSON.stringify(credential)), iv = randomBytes(12);
     try {
       const cipher = createCipheriv('aes-256-gcm', this.key, iv); cipher.setAAD(this.aad(account, host));
