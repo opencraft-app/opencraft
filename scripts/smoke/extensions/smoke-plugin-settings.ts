@@ -15,6 +15,8 @@ import React from 'react';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createWebWorkbenchApplication,WorkbenchRoot} from '/apps/workbench-web/src/workbench-root.tsx';
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
+import {useUiPreferencesRuntime} from '/apps/workbench-web/src/runtime/ui-preferences-runtime.tsx';
+import {bindInteractionDensity} from '/apps/workbench-web/src/runtime/interaction-density.ts';
 import {setInternalDeveloperMode} from '/apps/workbench-web/src/internal-developer-mode.ts';
 import {projectExtensionCatalog} from '/packages/extension-runtime/src/catalog.ts';
 import '/apps/workbench-web/src/styles/app.scss';
@@ -37,7 +39,8 @@ await supervisor.extensionManager.installModuleUrl(location.origin+'/fixture-plu
 await supervisor.extensionManager.setEnabled('example.installed',false);
 const nav=supervisor.navigation;
 nav.openSettings('appearance');
-createIntlTestRoot(document.getElementById('app'),undefined,'zh-CN').render(<WorkbenchRoot application={application}/>);
+function DensityBoundary(){const preferences=useUiPreferencesRuntime();React.useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);return <WorkbenchRoot application={application}/>;}
+createIntlTestRoot(document.getElementById('app'),undefined,'zh-CN').render(<DensityBoundary/>);
 window.proof={
  route:()=>nav.getSnapshot().applicationRoute,
  open:()=>nav.openSettings('plugins'),
@@ -93,6 +96,46 @@ try {
   await page.goto(server.resolvedUrls!.local[0]);
   await page.waitForSelector('body[data-ready="true"]', { timeout: 60000 });
   const nav = page.getByRole('navigation', { name: 'Settings sections', exact: true });
+  // Exercise the actual appearance route before entering the extension catalog.
+  const density = page.getByRole('radiogroup', {name:'触控体验',exact:true});
+  const appearance = page.getByRole('radiogroup', {name:'外观模式',exact:true});
+  await density.getByRole('radio', {name:'关闭',exact:true}).tap();
+  await page.waitForFunction(() => document.documentElement.dataset.uiDensity === 'compact');
+  const compactButton = appearance.getByRole('radio', {name:'浅色',exact:true});
+  const compactHeight = (await compactButton.boundingBox())!.height;
+  const retainedModeButton = await compactButton.elementHandle();
+  for (const width of [390,320,1280]) for (const theme of ['light','dark']) {
+    await page.setViewportSize({width,height:1000});
+    await page.mouse.move(width - 1,999); await page.keyboard.press('Escape');
+    await density.getByRole('radio', {name:'开启',exact:true}).tap();
+    await page.waitForFunction(() => document.documentElement.dataset.uiDensity === 'touch');
+    const target = appearance.getByRole('radio', {name:'深色',exact:true});
+    await target.scrollIntoViewIfNeeded();
+    const hit = (await target.boundingBox())!;
+    const face = await target.evaluate(node => ({height:parseFloat(getComputedStyle(node,'::before').height),pointerEvents:getComputedStyle(node,'::before').pointerEvents}));
+    assert.ok(hit.height >= 44, 'the real inset button retains its touch target');
+    assert.equal(face.height, compactHeight, 'touch density retains the compact inset paint height');
+    assert.ok(face.height < hit.height && face.pointerEvents === 'none', 'paint is smaller than, and cannot intercept, the real hit box');
+    await page.touchscreen.tap(hit.x + hit.width/2, hit.y + 1);
+    assert.equal(await target.getAttribute('aria-checked'),'true','upper hit band outside the paint selects the option');
+    const light = appearance.getByRole('radio', {name:'浅色',exact:true});
+    const lower = (await light.boundingBox())!;
+    await page.touchscreen.tap(lower.x + lower.width/2, lower.y + lower.height - 1);
+    assert.equal(await light.getAttribute('aria-checked'),'true','lower hit band outside the paint selects the option');
+    await light.focus(); await page.keyboard.press('ArrowRight');
+    assert.equal(await target.getAttribute('aria-checked'),'true','arrow keys retain the shared radio interaction');
+    await page.keyboard.press('Home');
+    assert.equal(await light.evaluate((node,original) => node === original, retainedModeButton),true,'density/theme/resize retain the actual control node');
+    await page.evaluate(theme => (window as any).proof.theme(theme),theme);
+    await page.waitForTimeout(180);
+    await mkdir(evidenceDirectory, {recursive:true});
+    await page.screenshot({path:evidenceDirectory+'/appearance-'+theme+'-'+width+'.png',fullPage:true});
+  }
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.ok(await compactButton.evaluate(node => getComputedStyle(node,'::before').transitionDuration.split(',').every(value => parseFloat(value) <= 0.001)),'reduced motion includes inset paint');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:1440,height:1000});
+  if (!await nav.isVisible()) await page.keyboard.press('Control+Backslash');
   await nav.getByRole('button', { name: '插件', exact: true }).click();
   const library = page.getByRole('region', { name: '扩展管理', exact: true });
   await library.getByLabel('搜索扩展').waitFor();

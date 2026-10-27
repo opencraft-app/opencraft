@@ -3230,17 +3230,38 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 }
 
 .segmented-control[data-appearance="inset"] {
+  --height-segmented-face: 28px;
+  position: relative;
+  isolation: isolate;
   display: inline-grid;
   grid-auto-columns: minmax(68px, 1fr);
   grid-auto-flow: column;
   gap: 2px;
-  border: 0.5px solid color-mix(in srgb, var(--color-border-default) 58%, transparent);
+  border: 0.5px solid transparent;
   border-radius: 10px;
   padding: 2px;
-  background: color-mix(in srgb, var(--color-surface-secondary) 90%, transparent);
+  background: transparent;
+
+  // Paint stays compact; the real buttons retain the shared touch-hit floor.
+  &::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset-inline: -0.5px;
+    top: 50%;
+    height: calc(var(--height-segmented-face) + 5px);
+    transform: translateY(-50%);
+    box-sizing: border-box;
+    border: 0.5px solid color-mix(in srgb, var(--color-border-default) 58%, transparent);
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--color-surface-secondary) 90%, transparent);
+    pointer-events: none;
+  }
 
   button {
-    height: max(28px, var(--size-control-hit-min));
+    position: relative;
+    isolation: isolate;
+    height: max(var(--height-segmented-face), var(--size-control-hit-min));
     border: 0;
     border-radius: 8px;
     outline: none;
@@ -3262,17 +3283,38 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
       }
     }
 
+    &::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset-inline: 0;
+      top: 50%;
+      height: var(--height-segmented-face);
+      transform: translateY(-50%);
+      border-radius: inherit;
+      background: transparent;
+      pointer-events: none;
+      transition:
+        background-color var(--transition-duration-basic) var(--ease-standard),
+        box-shadow var(--transition-duration-basic) var(--ease-standard);
+    }
+
     &[aria-checked="true"] {
-      background: var(--color-background-elevated-primary-opaque);
-      box-shadow: 0 0 0 0.5px var(--color-border-default), 0 1px 2px rgb(0 0 0 / 8%);
+      background: transparent;
+      box-shadow: none;
       color: var(--color-text);
       font-weight: var(--typography-primary-action-weight);
+      &::before {
+        background: var(--color-background-elevated-primary-opaque);
+        box-shadow: 0 0 0 0.5px var(--color-border-default), 0 1px 2px rgb(0 0 0 / 8%);
+      }
     }
 
     &:focus-visible {
       position: relative;
       z-index: 1;
-      box-shadow: 0 0 0 2px var(--focus-ring);
+      box-shadow: none;
+      &::before { box-shadow: 0 0 0 2px var(--focus-ring); }
     }
 
     letter-spacing: var(--typography-control-compact-tracking)
@@ -3804,6 +3846,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   .settings-control-input,
   .settings-control-select-shell,
   .settings-control-segmented button,
+  .segmented-control[data-appearance="inset"] button::before,
   .settings-control-switch,
   .settings-control-switch span,
   .settings-theme-card,
