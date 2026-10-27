@@ -87,8 +87,11 @@ test('npm package installs, switches without disconnecting existing execution so
     const checked = await until(status, result => !result.checking && result.latest !== null);
     assert.equal(checked.latest.version, '1.1.0'); assert.equal(checked.updateAvailable, true);
     let releaseDownload; fixture.holdDownload(new Promise(resolve => { releaseDownload = resolve; }));
-    assert.equal((await post('install', { version: '1.1.0' })).status, 202);
-    assert.equal((await post('install', { version: '1.1.0' })).status, 409);
+    const accepted = await post('install', { version: '1.1.0' });
+    assert.equal(accepted.status, 202);
+    const duplicate = await post('install', { version: '1.1.0' });
+    assert.equal(duplicate.status, 202);
+    assert.equal((await duplicate.json()).jobId, (await accepted.json()).jobId);
     assert.equal((await status()).current.version, '1.0.0'); await echo('downloading');
     releaseDownload(); fixture.holdDownload(null);
     const installed = await until(status, result => result.job?.phase === 'completed');

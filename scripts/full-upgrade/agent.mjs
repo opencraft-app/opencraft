@@ -3,6 +3,8 @@ import { realpath as realEntryPath } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { pageControl, reconcileWebChildren } from './page.mjs';
+import { webChildControl } from './web-child.mjs';
 import { Journal } from './journal.mjs';
 import { generationControl } from './generation-control.mjs';
 import { inspect } from './inspect.mjs';
@@ -17,12 +19,34 @@ export async function startAgent(config, entry = process.argv[1]) {
   // P3 adapters intentionally absent. Persisted uncertain work cannot acquire
   // permission from a fresh process, a new boot, or a healthy website.
   for (const job of await journal.list()) {
-    if (!['blocked', 'completed', 'rolled-back', 'active-draining', 'recovery-required'].includes(job.state)) {
+    if (!['blocked', 'completed', 'rolled-back', 'active-draining', 'recovery-required', 'failed', 'deferred'].includes(job.state)) {
       job.state = 'recovery-required'; job.revision++; await journal.save(job);
     }
   }
+  await reconcileWebChildren(config, journal, bootId);
+  let reconciliationPending = false;
   const server = await serve(socketPath(config, 'agent'), async input => {
     invariant(input && Object.keys(input).every(k => ['action', 'operationId', 'planId', 'planDigest'].includes(k)), 'invalid-request');
+    if (input.action === 'page-status' && !reconciliationPending) {
+      reconciliationPending = true;
+      void server.enqueue(() => reconcileWebChildren(config, journal, bootId)).catch(() => {}).finally(() => { reconciliationPending = false; });
+    }
+    if (input.action === 'page-stop') {
+      const result = await pageControl(config, input, journal, bootId);
+      void server.enqueue(async () => {
+        const job = await journal.load(input.operationId);
+        if (job.state === 'active-draining' && job.stopRequested) {
+          job.state = 'deferred'; job.revision++; await journal.save(job);
+        }
+      }).catch(() => {});
+      return result;
+    }
+    if (input.action.startsWith('page-')) return pageControl(config, input, journal, bootId);
+    if (input.action === 'web-admission') {
+      await reconcileWebChildren(config, journal, bootId);
+      return { recoveryRequired: (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
+    }
+    if (input.action === 'web-child') return webChildControl(config, input, journal, bootId);
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,
       mode: config.mode, ownerAdapters: config.generationRecipePath ? ['codex-generation', 'acp-generation'] : [], jobs: await journal.list() };
     if (input.action === 'request-ci') {
@@ -48,7 +72,7 @@ export async function startAgent(config, entry = process.argv[1]) {
       manifestSha256: plan.target.manifestSha256, inventoryFingerprint: inventory.fingerprint, bootId, steps: [] });
     job.state = 'blocked'; job.revision++; await journal.save(job);
     return { job, planId: plan.planId, executable: false, blockedReasons: plan.blockedReasons };
-  });
+  }, 0o600, { concurrentActions: ['page-status', 'page-stop', 'status'] });
   return { server, journal, identity };
 }
 export async function main(args = process.argv.slice(2)) {

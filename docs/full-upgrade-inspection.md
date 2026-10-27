@@ -4,8 +4,9 @@ P2a provides a Linux/systemd observer and a pure advisory planner. It does not
 install, stage, prepare, activate, fence, restart, restore, retire or change any
 owner. The output is local administrator diagnostics, not a browser response:
 paths, unit names, environment **key names** and machine identities remain local.
-The page in P2d must consume an authorized projection rather than exposing this
-raw object. No interface text is introduced.
+The P2d Settings page consumes the authorized agent projection described in
+[upgrade control](full-upgrade-agent.md#settings-projection-and-official-web-children-p2d),
+rather than exposing this raw object. The standalone inspection introduces no UI text.
 
 The signed server archive includes `runtime/upgrade-inspect.mjs`. Run it with the
 same supported Node ABI as the target release, using the deployment's fixed Node

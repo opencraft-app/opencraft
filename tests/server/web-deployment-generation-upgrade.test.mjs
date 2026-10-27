@@ -134,3 +134,38 @@ test('P2c locked snapshot drift cannot replace the signed plan owner/Host identi
   const f = await fixture(t); f.state.host = 'replacement-host-lease';
   assert.equal((await switchGeneration(f.args)).state, 'blocked'); assert.deepEqual(f.calls, []);
 });
+
+
+test('P2d IPC stop remains available during generation prepare and prevents activation', async t => {
+  const f = await fixture(t);
+  const { serve, request } = await import('../../scripts/full-upgrade/ipc.mjs');
+  const { pageControl } = await import('../../scripts/full-upgrade/page.mjs');
+  const { dirname } = await import('node:path');
+  const root = dirname(f.args.lockPath), socket = join(root, 'control.sock');
+  let releasePrepare, startedPrepare;
+  const waiting = new Promise(done => { releasePrepare = done; });
+  const started = new Promise(done => { startedPrepare = done; });
+  const original = f.owner.prepare;
+  f.owner.prepare = async (...args) => { startedPrepare(); await waiting; return original(...args); };
+  const server = await serve(socket, input => input.action === 'generation-apply' ? switchGeneration(f.args)
+    : pageControl({ stateRoot: root }, input, f.journal, 'boot1'), 0o600, { concurrentActions: ['page-status', 'page-stop'] });
+  t.after(() => new Promise(done => server.close(done)));
+  const applying = request(socket, { action: 'generation-apply' });
+  try {
+    await started;
+    const status = await request(socket, { action: 'page-status' }, 3000);
+    assert.equal(status.jobs[0].state, 'checking');
+    const stop = await request(socket, { action: 'page-stop', operationId: f.args.operationId }, 3000);
+    assert.equal(stop.stopRequested, true);
+  } finally { releasePrepare(); }
+  assert.equal((await applying).state, 'deferred');
+  assert.deepEqual(f.calls, ['prepare', 'cleanup']); assert.equal(f.state.current, 'old');
+  assert.equal((await switchGeneration(f.args)).state, 'deferred');
+});
+test('P2d stop during activation waits for the exact new default and keeps old bindings', async t => {
+  const f = await fixture(t), activate = f.owner.activate;
+  f.owner.activate = async (...args) => { await activate(...args); await f.journal.requestStop(f.args.operationId); };
+  assert.equal((await switchGeneration(f.args)).state, 'deferred');
+  assert.equal(f.state.current, 'new'); assert.equal(f.state.generations[0].state, 'draining');
+  assert.deepEqual(f.calls, ['prepare', 'activate:new']);
+});

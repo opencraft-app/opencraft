@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: fileURLToPath(new URL('../tests/playwright', import.meta.url)), testMatch: 'web-updates.spec.mjs',
+  testDir: fileURLToPath(new URL('../tests/playwright', import.meta.url)), testMatch: ['web-updates.spec.mjs', 'full-upgrade.spec.mjs'],
   // Each worker owns its temporary registry, state directories and ports.
   fullyParallel: true, workers: 2, timeout: 60_000,
   expect: { timeout: 20_000 },

@@ -1,10 +1,10 @@
 # Persistent upgrade control (P2b)
 
 P2b supplies a Linux/systemd agent, a narrow helper and an independent handoff
-watchdog. It does not implement Codex/ACP generation activation, owner admission
-fences or the update page. A P2a inspection is still read-only and blocked. No
-real owner adapter is registered; the internal executor is exercised with
-synthetic owners. Official Web installation remains a separate existing owner.
+watchdog. P2c adds generation-only Codex/ACP operations; P2d connects the existing
+Settings update page to an administrator-only projection and official Web child
+receipts. P3 owner fences and handoffs remain unavailable, so the full-stack plan
+is read-only and blocked. Official Web installation remains the existing owner.
 
 ## Processes and authority
 
@@ -19,8 +19,8 @@ The agent socket is 0600; root helper/watchdog sockets are 0660 in root-owned
 0750 runtime directories with the deployment user's group. The root-provisioned
 config is `/etc/opencraft-upgrade/config.json` (0640). A stable root-provisioned
 `trust.json` beside it is re-read on every artifact check, including after trust
-rotation; a resident watchdog never caches a prior checkout's trust keys. There is no TCP listener,
-new HTTP route, credential copy or UI text. Root and that configured deployment
+rotation; a resident watchdog never caches a prior checkout's trust keys. There is no new TCP listener or credential copy. The existing Web administrator
+session gates the narrow HTTP projection described below. Root and that configured deployment
 group are the local control authority, not ordinary chat users.
 
 The helper accepts only `status`, `request-ci` in the CI profile, and `handoff`
@@ -116,3 +116,78 @@ lost parent receipt, draining lock release, helper handoff and rollback, and
 reconciliation without repeated systemctl mutation. Power-loss persistence is
 modeled at fsync/rename boundaries; it does not claim a physical machine power
 cut. Synthetic owners do not prove P3 production fences or full upgrade safety.
+
+## Settings projection and official Web children (P2d)
+
+The managed entry discovers `/etc/opencraft-upgrade/config.json` only when its
+protected `webState` matches this deployment. `/__opencraft_updates/full` and
+`full/{check,start,stop}` require the existing deployment administrator cookie;
+POSTs also require the existing same-origin JSON checks. Chat or relay identity
+alone grants no management authority. HTTP cannot select paths, recipes, sockets,
+commands, trust keys or owner endpoints. Missing agent/signature/policy stays blocked.
+
+The agent stores a bounded plan projection separately from raw inventory. It
+re-reads provisioned trust, replay/revocations and the fixed target on every check.
+A plan never follows a moving channel. `page-start` rechecks CAS and returns the
+new plan on drift, without accepting or executing it; the administrator must click
+again after reviewing. P3 remains absent, so no full-stack start can mutate owners.
+`full-<planDigest>` identifies repeated checks of the same exact plan. Page status
+and history come from journal files, not a browser operation cache. Running,
+installed and next-start versions remain unknown unless their own authority has
+attested them; the existing Web section separately reports its installed version.
+
+Release `release/upgrade-policy.json` is an exact manifest file-list member. Its
+release ID and sequence must match the P1a signed manifest. The producer defaults
+to empty compatibility/recipe lists, which grant no execution authority. Protected
+local generation recipes and matrix bytes must have digests explicitly allowed
+in that signed policy. Production matrices bind release ID/sequence (rather than
+a circular hash of the manifest that contains their own digest), then the plan
+binds the complete manifest digest. Detached legacy test matrices remain only
+isolation evidence. Expiry, rollback sequence and revocations stay P1a authority.
+
+The official Web owner writes private fsynced `upgrade-children/<childId>.json`
+receipts, including phase, target version/build, optional verified manifest digest
+and timestamps. Agent `web-child` can only observe these files under its fixed
+`webState`; it cannot submit an install. The journal fixes the child ID before
+switching. Parent progress maps verification to checking and startup to switching.
+Completed means only this official Web/execution child completed; full-stack
+completion remains false. The official transaction retains its own `previous`,
+rollback, execution health and static old-browser assets. The parent never takes
+or re-enters the child owner's existing deployment lock; there is no second
+installer or remote CI deployment edge.
+
+Lost parent notifications reconcile the separate terminal child receipt and exact
+target version/build against `deployment.json`, without resubmitting installation.
+A target pointer without a terminal owner receipt stays recovery-required.
+Unresolved Web children also disable and reject the legacy install/rollback
+buttons, so that the older website-only action cannot bypass local recovery.
+Before admitting a new Web write, the agent reconciles child receipts in its
+serialized mutation lane; a concurrent status snapshot cannot authorize that write. Unknown/conflicting
+results stay recovery-required. A stop request is monotonic: downloading/preparing
+stops before activation; switching commits its current safe owner step before
+stopping later steps. It never kills a migration or an old task. Repeated exact
+Web install clicks return the accepted child ID instead of a second transaction.
+A failure after a committed activation does not restore a stale parent pointer.
+
+The page has no force-reconciliation or blind-retry button. Its recovery command
+is the installed control entry with `--config /etc/opencraft-upgrade/config.json
+reconcile JOB_ID`; run it with the deployment's fixed Node binary. This command
+only observes available owner receipts. Unknown generation/P3 work remains
+recovery-required until the owner-specific local recovery contract is implemented.
+
+Automatic checks use synthetic peers and isolated administrator fixtures, never
+personal credentials, paid inference or personal pushes. Human account, model,
+Git-signature and physical-device checks are separate acceptance items.
+
+
+Stop intents have their own fsynced private `stop-requests` records, so a status
+or cancellation request cannot overwrite a newer generation receipt. The agent
+allows only status/stop through its control lane while all owner mutations and
+Web reconciliation stay serial. Generation preparation honors stop before
+activation and performs constrained candidate cleanup; an activation already in
+flight finishes its exact CAS boundary before deferring later work. A settled
+active-draining job can defer further steps without deleting old references.
+A Web child's original fence also contains its child ID, allowing recovery even
+if the agent exits between the first journal record and the later intent save.
+Only the independent owner terminal receipt can distinguish failure, deferred
+cancellation and recovery-required; intermediate deployment pointers cannot.

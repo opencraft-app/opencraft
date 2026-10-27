@@ -5,6 +5,7 @@ import { verifyRetainedRelease } from '../full-release/retained.mjs';
 import { createHash } from 'node:crypto';
 import { collectInventory, fingerprint, inventoryIdentity } from './inventory.mjs';
 import { rootOwned, readAuthority } from './service-config.mjs';
+import { readReleasePolicy } from './release-policy.mjs';
 import { generationOwner } from './generation-owner.mjs';
 import { acceptGenerationPlan, switchGeneration } from './generation-upgrade.mjs';
 import { invariant, identifier } from './durable.mjs';
@@ -40,7 +41,7 @@ export async function generationControl(config, input, journal, bootId) {
     try { prior = await journal.load(input.operationId); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (prior) {
       invariant(prior.planDigest === input.planDigest, 'idempotency-conflict');
-      if (!['completed', 'rolled-back', 'active-draining', 'blocked', 'recovery-required'].includes(prior.state)) {
+      if (!['completed', 'rolled-back', 'active-draining', 'blocked', 'recovery-required', 'deferred', 'failed'].includes(prior.state)) {
         prior.state = 'recovery-required'; prior.revision++; await journal.save(prior);
       }
       return { job: prior, scope: 'generation-only', fullStackExecutable: false };
@@ -48,14 +49,18 @@ export async function generationControl(config, input, journal, bootId) {
   }
   invariant(config.generationRecipePath && isAbsolute(config.generationRecipePath), 'generation-recipe-unavailable');
   await rootOwned(config.generationRecipePath);
-  const recipe = parseStrictJson(await readFile(config.generationRecipePath));
+  const recipeBytes = await readFile(config.generationRecipePath);
+  const recipe = parseStrictJson(recipeBytes);
   invariant(recipe.schemaVersion === 1 && ['codex', 'acp'].includes(recipe.kind) && identifier(recipe.targetId), 'invalid-generation-recipe');
   for (const key of ['matrixPath', 'signaturePath']) { invariant(isAbsolute(recipe[key]), 'invalid-matrix-path'); await rootOwned(recipe[key]); }
   const matrixBytes = await readFile(recipe.matrixPath), signature = parseStrictJson(await readFile(recipe.signaturePath));
   const { trust, state } = await readAuthority(config);
   const manifestBytes = await readFile(join(config.targetRoot, 'release/full-release.json'));
   const manifestSignature = parseStrictJson(await readFile(join(config.targetRoot, 'release/full-release.sig')));
-  acceptManifest(manifestBytes, manifestSignature, trust, state);
+  const { record: signedManifest } = acceptManifest(manifestBytes, manifestSignature, trust, state);
+  const releasePolicy = await readReleasePolicy(config.targetRoot, signedManifest);
+  invariant(releasePolicy.recipes.some(row => row.recipeSha256 === sha256(recipeBytes)
+    && row.matrixSha256 === sha256(matrixBytes)), 'recipe-not-authorized-by-release');
   // Verify the full signed closure before starting a CLI. Private ACP config
   // remains owner-pinned and is explicitly included in the signed recipe hash.
   const deployment = parseStrictJson(await readFile(join(config.webState, 'deployment.json')));
@@ -107,7 +112,7 @@ export async function generationControl(config, input, journal, bootId) {
   const combination = { ownerId: owner.id, targetId: recipe.targetId, from: fingerprint(before),
     to: fingerprint({ definition: recipe.definition, configurationSha256: policy.privateConfigSha256, executionSha256 }), profile: inventory.profile, platform: inventory.platform, arch: inventory.arch };
   const plan = acceptGenerationPlan({ manifestSha256: sha256(manifestBytes), inventoryFingerprint: inventory.fingerprint,
-    policy, matrixBytes, signature, trust: { ...trust, revokedKeyIds: [...(trust.revokedKeyIds ?? []), ...(state.revokedKeyIds ?? [])] }, combination });
+    policy, matrixBytes, signature, release: signedManifest.release, trust: { ...trust, revokedKeyIds: [...(trust.revokedKeyIds ?? []), ...(state.revokedKeyIds ?? [])] }, combination });
   if (input.action === 'generation-inspect') return { plan, scope: 'generation-only', fullStackExecutable: false };
   invariant(input.action === 'generation-apply' && input.planDigest === plan.planDigest, 'plan-drift');
   // Re-read fixed authorities under the host deployment lock. Only this
@@ -116,7 +121,7 @@ export async function generationControl(config, input, journal, bootId) {
     const live = await readAuthority(config);
     acceptManifest(manifestBytes, manifestSignature, live.trust, live.state);
     acceptGenerationPlan({ manifestSha256: sha256(manifestBytes), inventoryFingerprint: inventory.fingerprint,
-      policy, matrixBytes, signature, trust: { ...live.trust, revokedKeyIds: [...(live.trust.revokedKeyIds ?? []), ...(live.state.revokedKeyIds ?? [])] }, combination });
+      policy, matrixBytes, signature, release: signedManifest.release, trust: { ...live.trust, revokedKeyIds: [...(live.trust.revokedKeyIds ?? []), ...(live.state.revokedKeyIds ?? [])] }, combination });
     return sha256(await readFile(config.generationRecipePath)) === policy.recipeSha256
       && (recipe.kind !== 'acp' || sha256(await readFile(recipe.definition.configPath)) === policy.privateConfigSha256)
       && (recipe.kind !== 'acp' || await acpExecutionIdentity(parseStrictJson(await readFile(recipe.definition.configPath)), root) === executionSha256)
