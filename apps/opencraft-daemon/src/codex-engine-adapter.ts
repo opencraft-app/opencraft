@@ -1575,9 +1575,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (generation.routingEpoch !== this.generationRoutingEpoch || this.generationLosses.has(key)) return;
       this.generationLosses.add(key);
       const candidates = new Set(Array.isArray(params.threadIds) ? params.threadIds.filter((id): id is string => typeof id === "string") : []);
+      for (const id of candidates) this.humanInteractions.markSourceUnavailable(id);
       const affected = new Set([...this.activeTurns.keys(), ...this.nativeSubscribedThreads, ...this.activeGoalThreads,
         ...(this.queue?.pendingThreads() ?? []), ...(this.recovery?.pendingThreadIds() ?? [])]);
       for (const id of affected) if (candidates.has(id) || this.generationRoutes.get(id) === params.generationId) {
+        this.humanInteractions.markSourceUnavailable(id);
         this.executionLeases?.suspend(id);
         this.recovery?.lost(id); this.activeTurns.delete(id); this.nativeSubscribedThreads.delete(id); this.reconcileGenerationThread(id);
       }
@@ -3100,6 +3102,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private publishStatus(status: TransportStatus): void {
     this.statusValue = status;
     if (["failed", "closing", "closed"].includes(status.state)) {
+      this.humanInteractions.markSourceUnavailable();
       this.threadTitles?.reset();
       this.sessionMcpGeneration += 1;
       this.sessionMcpConfigurations.clear();

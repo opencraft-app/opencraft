@@ -332,7 +332,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       threadId: snapshot.threadId, turnId: typeof source.params.turnId === "string" ? source.params.turnId : null,
       itemId: typeof source.params.itemId === "string" ? source.params.itemId : typeof source.params.callId === "string" ? source.params.callId : null,
       params: source.params, receivedAtMs: source.receivedAtMs,
-      responseState: source.state, canRespond: snapshot.canRespond,
+      responseState: source.state, canRespond: snapshot.canRespond && source.canRespond !== false,
     } as PendingInteraction & { threadId: string; canRespond: boolean }));
     for (const i of old) this.shared.delete(i.requestId);
     for (const i of next) this.shared.set(i.requestId, i);

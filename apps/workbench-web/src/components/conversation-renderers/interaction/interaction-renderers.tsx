@@ -86,7 +86,7 @@ function useInteractionSubmission(requestId: string) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (responseState === undefined || responseState === "pending") { setState("idle"); setError(null); }
-  }, [requestId, responseState]);
+  }, [requestId, responseState, canRespond]);
   const submit = useCallback(async (action: ConversationInteractionAction) => {
     if (respond === null || canRespond === false || (responseState !== undefined && responseState !== "pending") || state === "submitting") return;
     setState("submitting");
@@ -821,7 +821,7 @@ export function ConversationPendingInteractionPanel({
           ? <p role="status" className="thread-interaction-card__status">{intl.formatMessage(block.responseState === "unconfirmed"
             ? { id: "chat.interaction.unconfirmed", defaultMessage: "Response delivery is unconfirmed. Reconnecting will check its status." }
             : block.responseState === "responding" ? { id: "chat.interaction.responding", defaultMessage: "A response was submitted. Waiting for the server to confirm…" }
-            : { id: "chat.interaction.readOnly", defaultMessage: "Waiting for someone with permission to respond." })}</p> : null}
+            : { id: "chat.interaction.readOnly", defaultMessage: "This request cannot be answered from this view right now." })}</p> : null}
         {block.type === "approval"
           ? <ApprovalBlock block={block} />
           : block.type === "question"

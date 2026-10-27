@@ -51,3 +51,10 @@ test("the broker sends a response command, retains the card until native settlem
     f.emit(f.snapshot("source", 4, [])); assert.equal(f.stored.size, 0);
   } finally { f.broker.dispose(); }
 });
+
+test("source availability is independent of subscription permission", () => {
+  const f = fixture();
+  try { const snapshot = f.snapshot("source", 1); snapshot.requests[0].canRespond = false; f.emit(snapshot);
+    assert.equal([...f.stored.values()][0].canRespond, false);
+  } finally { f.broker.dispose(); }
+});

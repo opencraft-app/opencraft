@@ -23,6 +23,7 @@ export class DshInteractions {
     for (const value of this.pending.values()) listener(value.request);
     return () => { this.listeners.delete(listener); };
   }
+  markSourceUnavailable(): void { this.preparing.clear(); this.shared.markSourceUnavailable(); }
   close() { this.shared.clear(); this.preparing.clear(); this.pending.clear(); this.listeners.clear(); }
   private settle(id: string) {
     this.preparing.delete(id);

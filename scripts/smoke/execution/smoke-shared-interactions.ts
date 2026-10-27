@@ -57,6 +57,10 @@ try {
   const pending = (id: number) => interactions.capture({ id, method: "item/commandExecution/requestApproval", params: { threadId: "thread", turnId: "turn", itemId: `item-${id}`, command: "echo safe" } });
   pending(1);
   for (const page of [a, b]) await page.getByRole("button", { name: /Allow once/ }).waitFor();
+  interactions.markSourceUnavailable("thread");
+  for (const page of [a, b]) { await page.getByText("This request cannot be answered from this view right now.", { exact: true }).waitFor(); assert.equal(await page.getByRole("button", { name: /Allow once/ }).isDisabled(), true); }
+  pending(1);
+  for (const page of [a, b]) await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button => button.textContent?.includes("Allow once") && !button.disabled));
   await a.screenshot({ path: `${output}/pending-mobile.png` });
   await a.getByRole("button", { name: /Allow once/ }).click();
   for (const page of [a, b]) { await page.getByText("A response was submitted. Waiting for the server to confirm…", { exact: true }).waitFor(); assert.equal(await page.getByRole("button", { name: /Allow once/ }).isDisabled(), true); }

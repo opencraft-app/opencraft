@@ -62,7 +62,7 @@ export class CodexCoreBridge implements DuplexTransport {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.connection = new CodexCoreSocket({
       health: signal => this.control.health(signal), message: frame => this.receive(frame),
-      status: value => { for (const listener of this.statuses) listener(value); },
+      status: value => { if (["failed", "closing", "closed"].includes(value.state)) this.human.markSourceUnavailable(); for (const listener of this.statuses) listener(value); },
     });
   }
   get status(): TransportStatus { return this.connection.status; }
@@ -172,6 +172,7 @@ export class CodexCoreBridge implements DuplexTransport {
     delete message.__opencraftGeneration;
     if (message.method === "opencraft/codex/generation/lost") {
       const params = record(message.params), ids = Array.isArray(params.threadIds) ? params.threadIds : [];
+      for (const id of ids) if (typeof id === "string") this.human.markSourceUnavailable(id);
       for (const clientId of this.initialized) {
         const threadIds = ids.filter(id => typeof id === "string" && this.threads.get(id)?.has(clientId));
         if (threadIds.length) this.emit({ ...message, params: { ...params, threadIds } }, clientId);
