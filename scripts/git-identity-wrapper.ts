@@ -72,7 +72,7 @@ function conflicts(args: string[]): boolean {
     const arg = args[i]!;
     const config = ['-c', '--config', '--config-env'].includes(arg) ? args[++i] ?? ''
       : arg.startsWith('-c') ? arg.slice(2) : /^--config(?:-env)?=/u.test(arg) ? arg.slice(arg.indexOf('=') + 1) : '';
-    if (/^(?:credential\.|http\.|gpg\.|user\.|url\.|protocol\.|core\.(?:askpass|sshcommand))/iu.test(config)) return true;
+    if (/^(?:credential\.|http\.|gpg\.|user\.|url\.|protocol\.|core\.(?:askpass|sshcommand)|submodule\.recurse|fetch\.recursesubmodules)/iu.test(config)) return true;
   }
   return false;
 }
@@ -235,6 +235,16 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     const parameters: Array<[string, string]> = [];
     const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
     if (serverRead) {
+      if ([...rawUrls].some(url => !urls.has(url))) throw new Error('Git identity: server read requires a canonical remote without URL rewrites');
+      if (command !== 'ls-remote') {
+        if (tail.some(arg => arg.startsWith('--rec'))) throw new Error('Git identity: run recursive network commands in each explicit submodule repository');
+        for (const key of ['submodule.recurse', 'fetch.recurseSubmodules']) {
+          const value = await queryGit('config', '--get', key).catch(() => '');
+          if (value && !/^(?:false|no|off|0)$/iu.test(value)) throw new Error('Git identity: disable recursive Git configuration and use each explicit submodule repository');
+        }
+      }
+      // Fetch defaults to on-demand recursion even without an explicit setting.
+      parameters.push(['submodule.recurse', 'false'], ['fetch.recurseSubmodules', 'false']);
       for (const [url, https] of httpsUrls) {
         const ssh = `git@${host}:${new URL(https!).pathname.slice(1)}`;
         if (personalHttpsRemote(ssh, host) !== https) throw new Error('Git identity: server read requires a canonical repository path');

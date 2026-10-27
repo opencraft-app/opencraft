@@ -352,6 +352,23 @@ esac
   assert.deepEqual(await readFile(join(f.work, '.git/config')), before);
   assert.equal(f.credentials(), 0, 'server reads do not request personal HTTP credentials');
   const readsBefore = await readFile(marker, 'utf8');
+  for (const args of [
+    ['clone', '--recurse-submodules', 'https://github.com/synthetic/repo.git', join(f.root, 'recursive-clone')],
+    ['fetch', '--recurse-submodules=on-demand', 'origin'],
+    ['pull', '--recurse-submodules', 'origin', 'main'],
+    ['clone', '--config', 'submodule.recurse=true', 'https://github.com/synthetic/repo.git', join(f.root, 'recursive-config-clone')],
+  ]) {
+    const recursive = await f.managed(...args); assert.equal(recursive.code, 128); assert.match(recursive.err, /recursive|conflicting command/u);
+  }
+  for (const key of ['submodule.recurse', 'fetch.recurseSubmodules']) {
+    await f.native('config', key, 'true');
+    const recursive = await f.managed('fetch', 'origin'); assert.equal(recursive.code, 128); assert.match(recursive.err, /recursive Git configuration/u);
+    await f.native('config', '--unset', key);
+  }
+  await f.native('config', 'url.https://github.com/.insteadOf', 'work:');
+  const alias = await f.managed('ls-remote', 'work:synthetic/repo.git'); assert.equal(alias.code, 128); assert.match(alias.err, /canonical remote without URL rewrites/u);
+  await f.native('config', '--unset', 'url.https://github.com/.insteadOf');
+  assert.equal(await readFile(marker, 'utf8'), readsBefore, 'recursive and rewritten URLs are refused before server SSH');
   await f.native('config', 'http.proxy', 'http://127.0.0.1:9');
   const pushed = await f.managed('push', 'origin', 'HEAD:refs/heads/no-server-push'); assert.notEqual(pushed.code, 0);
   assert.equal(await readFile(marker, 'utf8'), readsBefore, 'push never invokes server SSH');

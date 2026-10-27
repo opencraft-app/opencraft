@@ -73,7 +73,10 @@ default remains personal HTTPS. For configured, attested commands on those hosts
 HOME/SSH agent. Canonical HTTPS URLs are rewritten for that invocation only.
 This is a deliberate read-access policy, not a retry after authentication fails;
 it grants the server account's read access and does not prove employee read
-permissions. Repository/global configuration stays unchanged. Pull-created commits
+permissions. Repository/global configuration stays unchanged. Recursive CLI/configuration is
+rejected; implicit fetch recursion is disabled, so each submodule must be read in
+its own explicit managed repository. Preexisting URL rewrites are rejected before
+networking rather than relying on a second native rewrite. Pull-created commits
 retain personal identity and signing, with a signing-only program selecting the
 personal agent independently from SSH transport. Push and local writes retain
 personal authentication and never enter server SSH. Unknown ownership and expired
