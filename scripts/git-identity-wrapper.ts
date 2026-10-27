@@ -197,7 +197,7 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
   // No remote/profile means no safe identity guess. Confirm unconfigured before retaining legacy behavior.
   const cloneConflict = command === 'clone' && conflicts(tail);
   const candidates = command === 'submodule' || cloneConflict || !managedHosts.length ? supported : managedHosts;
-  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host }) })));
+  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host, operation: command }) })));
   const sessions = bindings.filter(binding => binding.reply.status === 'configured');
   let releaseHome: (() => Promise<void>) | undefined;
   try {
@@ -207,6 +207,9 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     if (isAlias) throw new Error('Git identity: use the explicit Git command instead of an alias in managed execution');
     if (hosts.size !== 1 || managedHosts.length !== 1 || sessions.length !== 1) throw new Error('Git identity profile is ambiguous; select one managed HTTPS remote');
     const { host, reply } = sessions[0]!;
+    if (command === 'push' && (process.env.OPENCRAFT_GIT_PERSONAL_SSH_PUSH_HOSTS ?? '').split(',').includes(host) && !reply.sshAuth)
+      throw new Error('Git identity: generate a personal SSH key in employee settings and add its public key to your code host before pushing');
+    const personalSsh = command === 'push' && !!reply.sshAuth;
     const httpsUrls = new Map([...urls].map(url => [url, personalHttpsRemote(url, host)]));
     if (network.has(command) && [...httpsUrls].some(([url, https]) => !https || (url !== https && !rawUrls.has(url))))
       throw new Error('Personal Git credentials require a matching HTTPS remote or canonical SSH remote without conflicting URL rewrites');
@@ -249,6 +252,26 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
         const ssh = `git@${host}:${new URL(https!).pathname.slice(1)}`;
         if (personalHttpsRemote(ssh, host) !== https) throw new Error('Git identity: server read requires a canonical repository path');
         if (url === https) parameters.push([`url.${ssh}.insteadOf`, url]);
+      }
+    } else if (personalSsh) {
+      if ([...rawUrls].some(url => !urls.has(url))) throw new Error('Git identity: personal SSH requires canonical URLs without rewrites');
+      const publicPath = join(env.HOME!, 'authentication.pub');
+      await writeFile(publicPath, reply.sshAuth.publicKey + '\n', { mode: 0o600, flag: 'wx' });
+      // Ignore inherited agent/config/identities and all password fallbacks. Only the public key has a file projection.
+      const originalHome = process.env.HOME || homedir();
+      env.SSH_AUTH_SOCK = reply.sshAuth.socket;
+      env.GIT_SSH_VARIANT = 'ssh';
+      env.GIT_SSH_COMMAND = ['/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
+        '-o', `IdentityAgent=${reply.sshAuth.socket}`, '-i', publicPath, '-o', 'PreferredAuthentications=publickey',
+        '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no', '-o', 'StrictHostKeyChecking=yes',
+        '-o', `UserKnownHostsFile=${join(originalHome, '.ssh/known_hosts')}`, '-o', 'ClearAllForwardings=yes', '-o', 'ForwardAgent=no'].map(shellQuote).join(' ');
+      parameters.push(['credential.helper', ''], ['protocol.allow', 'never'], ['protocol.ssh.allow', 'always'],
+        ['submodule.recurse', 'false'], ['push.recurseSubmodules', 'no']);
+      if (tail.some(arg => arg.startsWith('--rec'))) throw new Error('Git identity: push each submodule explicitly');
+      for (const [url, https] of httpsUrls) {
+        const ssh = `git@${host}:${new URL(https!).pathname.slice(1)}`;
+        if (personalHttpsRemote(ssh, host) !== https) throw new Error('Git identity: personal SSH requires canonical repository paths');
+        if (url !== ssh) parameters.push([`url.${ssh}.insteadOf`, url]);
       }
     } else {
       parameters.push(['credential.helper', ''], ['credential.username', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']);
