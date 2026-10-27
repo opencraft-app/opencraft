@@ -215,3 +215,39 @@ test('packaged offline enrollment boots a token-free Headless team with pinned H
   await app.close(); app = await startHeadlessServer(options);
   assert.equal((await call('/')).status, 200, 'original identity issuer and published service survive restart');
 });
+
+test('Headless publishes its managed Web entry through the real Hub transport', async t => {
+  const { startHeadlessServer } = await import('../../scripts/headless-server.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'headless-managed-hub-'));
+  const data = join(dir, 'data'), web = join(dir, 'web');
+  await mkdir(data,{mode:0o700}); await mkdir(web);
+  await writeFile(join(web, 'index.html'), 'backend static assets');
+  await writeFile(join(web, 'version.json'), JSON.stringify({schemaVersion:1,buildId:'fixture',headlessServer:true,headlessHostId:'opencraft-server'}));
+  const pair = keys(), authority = {issuer:'managed-entry-fixture',publicKey:pair.publicKey,providers:['enterprise-identity']};
+  const upstream = new HubNetwork(join(dir, 'upstream.json'), {authority});
+  const provider = {authenticate:(req: any) => req.headers['x-test-auth'] === 'yes' ? principal : null};
+  const relay = createRelayServer([], {hub:upstream,networkRoute:service => ({hubId:service.hubId,instanceId:service.hubId,origin:service.origin,credential:'',identityProvider:provider,
+    signer:new AssertionSigner({issuer:authority.issuer,instanceId:service.hubId,origin:service.origin},pair.privateKey)})});
+  let app: Awaited<ReturnType<typeof startHeadlessServer>> | undefined;
+  let text = 'managed Web release one';
+  const entry = createServer((_req,res) => res.end(text));
+  t.after(async () => {
+    await app?.close(); upstream.close(); await relay.close();
+    await new Promise<void>(resolve => {entry.close(() => resolve());entry.closeAllConnections();});
+    await rm(dir,{recursive:true,force:true});
+  });
+  const entryPort = await listen(entry), upstreamPort = await listen(relay.server);
+  const base = `http://127.0.0.1:${upstreamPort}`;
+  configure(upstream,base); upstream.start(upstreamPort);
+  const bootstrap = new HubNetwork(join(data,'hub-network.json'));
+  try {
+    command(bootstrap,{action:'connect',invitation:invite(upstream,['http://team-c.test'],false),trustIdentity:true,publishOrigin:'http://team-c.test'});
+  } finally {bootstrap.close();}
+  app = await startHeadlessServer({root:dir,webRoot:web,dataDirectory:data,port:0,hubTargetPort:entryPort,
+    accessControl:true,accessMemberProviders:['enterprise-identity'],
+    startAgentHost:async () => ({websocketUrl:'ws://127.0.0.1:9/rpc',async close(){}})});
+  await waitFor(() => upstream.routes().some(route => route.service.origin === 'http://team-c.test'));
+  assert.equal((await virtualGet(base,'/')).body,text);
+  text = 'managed Web release two';
+  assert.equal((await virtualGet(base,'/')).body,text,'a Web-only update must not leave Hub clients on backend assets');
+});

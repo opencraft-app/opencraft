@@ -88,6 +88,7 @@ function parsePort(value) {
 export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory = homedir) {
   let port = 10000;
   let host = "127.0.0.1";
+  let hubTargetPort;
   let allowUnauthenticatedPublic = false;
   let localDesktop = false;
   let trustedInternalDesktop = false;
@@ -114,6 +115,9 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
     if (argument === "--help" || argument === "-h") return { help: true };
     if (argument === "--port") {
       port = parsePort(argv[++index]);
+    } else if (argument === "--hub-target-port") {
+      hubTargetPort = parsePort(argv[++index]);
+      if (hubTargetPort === 0) throw new Error("--hub-target-port requires a nonzero loopback port");
     } else if (argument === "--host") {
       host = argv[++index];
       if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("--host must be 127.0.0.1 or 0.0.0.0");
@@ -195,7 +199,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   defaultEngine ??= engines[0];
   if (!engines.includes(defaultEngine)) throw new Error("Default engine must be enabled");
-  return { help: false, host, port, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+  return { help: false, host, port, ...(hubTargetPort === undefined ? {} : { hubTargetPort }), ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(machineName ? { machineName } : {}),
     ...(sshConfig ? { sshConfig } : {}),
     ...(accessControl ? { accessControl } : {}), ...(relayConnectFile ? { relayConnectFile } : {}),
@@ -228,6 +232,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const port = options.port ?? 10000;
   const host = options.host ?? "127.0.0.1";
   parsePort(port);
+  const hubTargetPort = options.hubTargetPort;
+  if (hubTargetPort !== undefined && parsePort(hubTargetPort) === 0) throw new Error("Hub target requires a nonzero loopback port");
   if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("Invalid headless listener host");
   if (host === "0.0.0.0" && options.allowUnauthenticatedPublic !== true
     && !options.accessControl && !options.accessMemberProviders?.length && !options.relayConnectFile) {
@@ -732,7 +738,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       address = await ingress.listen({ host: listenHost, port });
     } else address = await web.listen({ host: listenHost, port });
     if (relayConfiguration) relay = connectRelay({ ...relayConfiguration.options, targetPort: relayConfiguration.options.targetPort ?? address.port });
-    hubController.node?.start(address.port);
+    hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
     imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId)});
     capabilitiesReadyResolve();
@@ -751,7 +757,7 @@ export async function runHeadlessCli({ parseArguments = parseHeadlessArguments, 
       process.stdout.write('Optional human login (bundled opencraft.account plugin for local accounts): --human-auth-config ABSOLUTE_PRIVATE_JSON (local accounts and OIDC); initialize new instances at /setup with a private setupTokenFile, or recover with human-account. setupTokenFile enables instance membership; otherwise add --access-control explicitly.\n');
       process.stdout.write('Optional same-machine managed Web workspace: --local-access-file ABSOLUTE_PRIVATE_FILE (also OPENCRAFT_LOCAL_ACCESS_FILE); the same private key file must be configured at the outer managed Web entry.\n');
       for (const line of help) process.stdout.write(line + '\n');
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--machine-name NAME] [--engines dsh,pi|pi|dsh] [--default-engine dsh|pi] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--hub-target-port PORT] [--data-dir PATH] [--machine-name NAME] [--engines dsh,pi|pi|dsh] [--default-engine dsh|pi] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
       return;
     }
     const server = await startServer(args);

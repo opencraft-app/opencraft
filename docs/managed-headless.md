@@ -72,6 +72,12 @@ JSON 文件，仅包含 `argv` 字符串数组，解析沿既有 Headless 命令
 SSH/员工配置；`OPENCRAFT_RUNTIME_DIRECTORY`、`OPENCRAFT_DSH_EXECUTABLE`、`OPENCRAFT_CODEX_EXECUTABLE`
 固定既有引擎位置。core socket/token 通过原正式变量传入，token 不在归档或网页配置中。
 
+通过 Hub 发布本实例时，在 Headless 配置的 `argv` 中显式加入
+`--hub-target-port WEB_PORT`，把 Hub 的本地业务目标固定到受管 Web 入口。
+省略时保留直连 Headless listener 的原行为。该选项仅指定回环端口，
+不改变节点身份、签名、成员授权或更新器的管理权限；不能把执行后端端口
+误当网站入口，否则仅网站更新时 Hub 客户端仍会取得旧资产。
+
 稳定 Web 设置 `OPENCRAFT_HEADLESS_BACKEND_URL=http://127.0.0.1:PORT`，Headless HTTP/WS 路由
 转发给独立 execution；静态资产、更新授权及事务归稳定 Web。若原部署含 SSH/HTTP 复用，
 `OPENCRAFT_HEADLESS_SSH_TARGET` 指向同一 Headless loopback origin，稳定入口按 HTTP/SSH

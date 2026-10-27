@@ -766,3 +766,16 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("headless Hub target is an explicit nonzero loopback port", async () => {
+  assert.equal(parseHeadlessArguments(["--hub-target-port", "18080"], {}).hubTargetPort, 18080);
+  assert.equal(parseHeadlessArguments([], {}).hubTargetPort, undefined);
+  for (const value of ["0", "-1", "65536", "1.5", "invalid"]) {
+    assert.throws(() => parseHeadlessArguments(["--hub-target-port", value], {}));
+  }
+  assert.throws(() => parseHeadlessArguments(["--hub-target-port"], {}));
+  for (const value of [0, -1, 65536, 1.5, "invalid"]) {
+    await assert.rejects(startHeadlessServer({ hubTargetPort: value }));
+  }
+});
