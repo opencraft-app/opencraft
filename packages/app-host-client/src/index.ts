@@ -195,6 +195,9 @@ export class MessagePortAppHostClient {
   private leaseSequence = 0;
   private closed = false;
   private terminalError: Error | null = null;
+  private portListenerOwned = false;
+  private portClosed = false;
+  private terminating = false;
 
   constructor(
     private readonly port: AppHostPort,
@@ -209,13 +212,22 @@ export class MessagePortAppHostClient {
     // the original Promise rejectable for callers without creating an
     // application-level unhandled rejection in that valid hostless case.
     void this.ready.catch(() => undefined);
-    this.port.addEventListener("message", this.receive);
-    this.port.start();
-    this.port.postMessage({
-      type: "hello",
-      protocolVersion: APP_HOST_PROTOCOL_VERSION,
-      rendererId,
-    });
+    try {
+      this.portListenerOwned = true;
+      this.port.addEventListener("message", this.receive);
+      if (this.closed) return;
+      this.port.start();
+      if (this.closed) return;
+      this.port.postMessage({
+        type: "hello",
+        protocolVersion: APP_HOST_PROTOCOL_VERSION,
+        rendererId,
+      });
+    } catch (cause) {
+      try { this.terminate(cause instanceof Error ? cause : new Error(String(cause))); }
+      catch (cleanup) { throw new AggregateError([cause, cleanup], "App Host initialization and cleanup failed", { cause }); }
+      throw cause;
+    }
   }
 
   waitUntilReady(): Promise<void> {
@@ -436,33 +448,50 @@ export class MessagePortAppHostClient {
   }
 
   private terminate(error: Error): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const frame of this.framePublications) frame.active = false;
-    this.terminalError = error;
-    const status: TransportStatus = { state: "failed", reason: error.message,
-      ...(appHostFailure(error) ? { failure: appHostFailure(error) } : {}) };
-    for (const owners of this.hostLifetimes.values()) for (const owner of owners) owner.retire(status);
-    this.hostLifetimes.clear();
-    this.port.removeEventListener("message", this.receive);
-    this.port.close();
-    this.rejectReady(error);
-    for (const request of this.pending.values()) { request.clearTimer(); request.reject(error); }
-    this.pending.clear();
-    for (const request of this.releases.values()) { request.clearTimer(); request.reject(error); }
-    this.releases.clear();
-    this.lateResults.clear();
-    // Admit every Host cut before any observer can modify a later registry.
-    const terminal: HostEvent = { generation: 0, terminalReason: error.message, terminalFailure: appHostFailure(error) };
-    for (const listeners of this.hostListeners.values()) this.publications.push(listeners.capture(terminal));
-    this.publications.push(() => {
-      for (const listeners of this.hostListeners.values()) listeners.clear();
-      this.hostListeners.clear();
-    });
-    this.drainPublications();
+    // Logical retirement must finish even if an external Port disposer throws.
+    // Reentrant close shares this cut; a later explicit close retries only the
+    // retained disposers, never republishes terminal or repeats successful work.
+    if (this.terminating) return;
+    this.terminating = true;
+    try {
+      if (!this.closed) {
+        this.closed = true;
+        for (const frame of this.framePublications) frame.active = false;
+        this.terminalError = error;
+        const status: TransportStatus = { state: "failed", reason: error.message,
+          ...(appHostFailure(error) ? { failure: appHostFailure(error) } : {}) };
+        for (const owners of this.hostLifetimes.values()) for (const owner of owners) owner.retire(status);
+        this.hostLifetimes.clear();
+        this.rejectReady(error);
+        for (const request of this.pending.values()) { request.clearTimer(); request.reject(error); }
+        this.pending.clear();
+        for (const request of this.releases.values()) { request.clearTimer(); request.reject(error); }
+        this.releases.clear();
+        this.lateResults.clear();
+        // Admit every Host cut before any observer can modify a later registry.
+        const terminal: HostEvent = { generation: 0, terminalReason: error.message, terminalFailure: appHostFailure(error) };
+        for (const listeners of this.hostListeners.values()) this.publications.push(listeners.capture(terminal));
+        this.publications.push(() => {
+          for (const listeners of this.hostListeners.values()) listeners.clear();
+          this.hostListeners.clear();
+        });
+        this.drainPublications();
+      }
+      const errors: unknown[] = [];
+      if (this.portListenerOwned) {
+        try { this.port.removeEventListener("message", this.receive); this.portListenerOwned = false; }
+        catch (cause) { errors.push(cause); }
+      }
+      if (!this.portClosed) {
+        try { this.port.close(); this.portClosed = true; }
+        catch (cause) { errors.push(cause); }
+      }
+      if (errors.length) throw new AggregateError(errors, "App Host Port cleanup failed");
+    } finally { this.terminating = false; }
   }
 
   private readonly receive = (event: MessageEvent<unknown>) => {
+    if (this.closed) return;
     const message = event.data as AppHostToRendererMessage;
     if (message?.type === "fatal") {
       this.terminate(appHostError(message.error));

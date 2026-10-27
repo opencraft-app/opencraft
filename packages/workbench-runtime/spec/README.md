@@ -1078,3 +1078,25 @@ publication counts and caller error classification. The `empty-claim` observatio
 control shrinks separately from real old-constructor comparisons. Prior v1 traces
 remain replayable; generated events are capped at the parser's 10000-event limit
 so maximum-size failure artifacts can be loaded by the normal replay command.
+
+`PortCleanup.tla` separates logical retirement from successful external Port
+remove/close. Six positive configurations cover Client, connection, global shutdown,
+peer, service and healthy cases. Seven exact safety controls exercise local-wait
+stranding, short-circuit disposal, lost failed handles, repeated successful disposal,
+swallowed errors, peer closure and late admission. Three temporal controls withhold
+native retirement, local continuation or provider recovery. The sixteen configs do
+not prove constructor transactions, TypeScript refinement or unconditional release
+of a permanently failing provider; real component tests cover startup reentry and
+combined native/Port failures.
+
+```bash
+npm run test:recovery-chaos -- --suite ports --seed 20261027 --cases 1000 --steps 120 --output /tmp/port-cleanup-chaos
+```
+
+The `ports` ledger drives real public constructors/Port callbacks and shutdown,
+checking captured local waits, once-only terminal publication, native/peer lifetime
+and per-handle retry counts. `orphan-wait`, `orphan-native`, `forget-handle` and
+`duplicate-terminal` are observation controls with exact-rule shrinking and normal
+replay. Separate old/new comparisons inject immutable real constructors without
+changing prototypes, private state or SUT source. Generated saved inputs remain
+within the parser's 10000-event limit.

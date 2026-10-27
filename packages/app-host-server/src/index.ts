@@ -126,6 +126,7 @@ function hostScopedKey(hostId: string, identity: string): string {
 export class AppHostServer {
   private readonly slots = new Map<string, HostSlot>();
   private readonly connections = new Set<AppHostServerConnection>();
+  private readonly connectionCleanup = new Set<AppHostServerConnection>();
   private readonly forwardingAdmissions = new WeakMap<object, () => void>();
   private generationSequence = 0;
   private connectionSequence = 0;
@@ -159,6 +160,7 @@ export class AppHostServer {
       (connection, message) => this.admitForwarding(connection, message),
     );
     this.connections.add(connection);
+    connection.start();
     return connection;
   }
 
@@ -211,16 +213,19 @@ export class AppHostServer {
     const slots = [...this.slots.values()];
     const retries = new Set(slots.filter(slot => slot.phase === "failed"));
     const operation = Promise.resolve().then(async () => {
-      const connections = [...this.connections];
+      const connections = new Set([...this.connections, ...this.connectionCleanup]);
       this.connections.clear();
-      for (const connection of connections) connection.detach();
+      const errors: unknown[] = [];
+      for (const connection of connections) {
+        try { connection.detach(); } catch (cause) { errors.push(cause); }
+      }
       for (const slot of slots) {
         slot.claims.clear();
         slot.startAbort?.abort();
       }
       const results = await Promise.allSettled(slots.map(slot => this.stopSlot(slot, true, retries.has(slot))));
-      const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (errors.length) throw failedPhysicalCleanup(new AggregateError(errors.map(result => result.reason)));
+      for (const result of results) if (result.status === "rejected") errors.push(result.reason);
+      if (errors.length) throw failedPhysicalCleanup(new AggregateError(errors));
       this.slots.clear();
     });
     // A later explicit shutdown call may retry retained failed handles, while
@@ -228,6 +233,12 @@ export class AppHostServer {
     this.closeOperation = operation;
     void operation.catch(() => { if (this.closeOperation === operation) this.closeOperation = null; });
     return operation;
+  }
+
+  /** Retired Port handles have no admission authority; shutdown can retry them. */
+  trackConnectionCleanup(connection: AppHostServerConnection, pending: boolean): void {
+    if (pending) this.connectionCleanup.add(connection);
+    else this.connectionCleanup.delete(connection);
   }
 
   removeConnection(connection: AppHostServerConnection): void {
@@ -721,7 +732,12 @@ interface OwnedLease {
 export class AppHostServerConnection {
   private readonly leases = new Map<string, OwnedLease>();
   private readonly logicalClients = new Map<string, HostLogicalClient>();
-  private readonly unsubscribePort: () => void;
+  private unsubscribePort: (() => void) | null = null;
+  private portClosed = false;
+  private cleaningPort = false;
+  private retiring = false;
+  private activated = false;
+  private readonly earlyMessages: unknown[] = [];
   private readonly receiveOperations = new Map<string, Promise<void>>();
   private ready = false;
   private closed = false;
@@ -734,66 +750,122 @@ export class AppHostServerConnection {
     readonly submissionContext: TransportSubmissionContext = { sender: null },
     private readonly admitForwarding: (connection: AppHostServerConnection, message: RendererToAppHostMessage) => void = () => {},
   ) {
-    this.unsubscribePort = port.subscribe((value) => {
-      const message = typeof value === "object" && value !== null && "type" in value && value.type === "host/send"
-        ? { ...value } : value;
-      // A reachability probe must never queue behind Host activation or sends.
-      if (this.ready && !this.closed && typeof message === "object" && message !== null
-        && "type" in message && message.type === "connection/probe"
-        && "requestId" in message && typeof message.requestId === "string"
-        && message.requestId.length > 0 && message.requestId.length <= 4096) {
-        this.post({ type: "response", requestId: message.requestId, ok: true, result: null });
-        return;
-      }
-      // Claim control is owned by the slot, not by the previous RPC's I/O queue.
-      // Otherwise a hung close/send can prevent even the admission deadline
-      // from starting. Writable frame ordering remains on the per-host queue.
-      if (this.ready && !this.closed && typeof message === "object" && message !== null
-        && "type" in message && (message.type === "host/connect" || message.type === "host/disconnect")) {
-        void this.receive(message);
-        return;
-      }
-      // hello establishes connection authority synchronously. Thereafter only
-      // messages for the same Host require ordering; a slow Host must not
-      // block another Host sharing this socket.
-      if (typeof message === "object" && message !== null && "type" in message && message.type === "hello") {
-        void this.receive(message);
-        return;
-      }
-      if (!this.ready) return;
-      const hostId = typeof message === "object" && message !== null && "hostId" in message && typeof message.hostId === "string"
-        ? message.hostId : "";
-      if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
-        this.admitForwarding(this, message as RendererToAppHostMessage);
-      }
-      const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
-        () => this.receive(message),
-        () => this.receive(message),
-      );
-      this.receiveOperations.set(hostId, operation);
-      const clear = () => { if (this.receiveOperations.get(hostId) === operation) this.receiveOperations.delete(hostId); };
-      void operation.then(clear, clear);
-    });
-    port.start();
+    try {
+      this.unsubscribePort = port.subscribe(value => {
+        if (!this.activated) { if (!this.closed) this.earlyMessages.push(value); return; }
+        this.receivePort(value);
+      });
+    } catch (cause) {
+      try { this.detach(); }
+      catch (cleanup) { throw new AggregateError([cause, cleanup], "App Host initialization and cleanup failed", { cause }); }
+      throw cause;
+    }
   }
+
+  /** accept registers this owner before any queued startup message is admitted. */
+  start(): void {
+    if (this.activated || this.closed) return;
+    try {
+      this.port.start();
+      if (this.closed) return;
+      this.activated = true;
+      for (const value of this.earlyMessages.splice(0)) {
+        if (this.closed) break;
+        this.receivePort(value);
+      }
+    } catch (cause) {
+      try { this.close(); }
+      catch (cleanup) { throw new AggregateError([cause, cleanup], "App Host initialization and cleanup failed", { cause }); }
+      throw cause;
+    }
+  }
+
+  private readonly receivePort = (value: unknown): void => {
+    if (this.closed) return;
+    const message = typeof value === "object" && value !== null && "type" in value && value.type === "host/send"
+      ? { ...value } : value;
+    // A reachability probe must never queue behind Host activation or sends.
+    if (this.ready && !this.closed && typeof message === "object" && message !== null
+      && "type" in message && message.type === "connection/probe"
+      && "requestId" in message && typeof message.requestId === "string"
+      && message.requestId.length > 0 && message.requestId.length <= 4096) {
+      this.post({ type: "response", requestId: message.requestId, ok: true, result: null });
+      return;
+    }
+    // Claim control is owned by the slot, not by the previous RPC's I/O queue.
+    // Otherwise a hung close/send can prevent even the admission deadline
+    // from starting. Writable frame ordering remains on the per-host queue.
+    if (this.ready && !this.closed && typeof message === "object" && message !== null
+      && "type" in message && (message.type === "host/connect" || message.type === "host/disconnect")) {
+      void this.receive(message);
+      return;
+    }
+    // hello establishes connection authority synchronously. Thereafter only
+    // messages for the same Host require ordering; a slow Host must not
+    // block another Host sharing this socket.
+    if (typeof message === "object" && message !== null && "type" in message && message.type === "hello") {
+      void this.receive(message);
+      return;
+    }
+    if (!this.ready) return;
+    const hostId = typeof message === "object" && message !== null && "hostId" in message && typeof message.hostId === "string"
+      ? message.hostId : "";
+    if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
+      this.admitForwarding(this, message as RendererToAppHostMessage);
+    }
+    const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
+      () => this.receive(message),
+      () => this.receive(message),
+    );
+    this.receiveOperations.set(hostId, operation);
+    const clear = () => { if (this.receiveOperations.get(hostId) === operation) this.receiveOperations.delete(hostId); };
+    void operation.then(clear, clear);
+  };
 
   get isClosed(): boolean { return this.closed; }
 
   close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.unsubscribePort();
-    this.port.close();
-    this.server.removeConnection(this);
+    if (this.retiring) return;
+    this.retiring = true;
+    try {
+      if (!this.closed) {
+        this.closed = true;
+        this.earlyMessages.length = 0;
+        this.server.removeConnection(this);
+      }
+      this.cleanupPort();
+    } finally { this.retiring = false; }
   }
 
   detach(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.unsubscribePort();
-    this.port.close();
-    this.leases.clear();
-    this.logicalClients.clear();
+    if (this.retiring) return;
+    this.retiring = true;
+    try {
+      this.closed = true;
+      this.earlyMessages.length = 0;
+      this.leases.clear();
+      this.logicalClients.clear();
+      this.cleanupPort();
+    } finally { this.retiring = false; }
+  }
+
+  private cleanupPort(): void {
+    if (this.cleaningPort) return;
+    this.cleaningPort = true;
+    this.server.trackConnectionCleanup(this, true);
+    const errors: unknown[] = [];
+    try {
+      if (this.unsubscribePort !== null) {
+        try { this.unsubscribePort(); this.unsubscribePort = null; }
+        catch (cause) { errors.push(cause); }
+      }
+      if (!this.portClosed) {
+        try { this.port.close(); this.portClosed = true; }
+        catch (cause) { errors.push(cause); }
+      }
+      if (!errors.length) this.server.trackConnectionCleanup(this, false);
+      if (errors.length) throw new AggregateError(errors, "App Host Port cleanup failed");
+    } finally { this.cleaningPort = false; }
   }
 
   post(message: AppHostToRendererMessage): void {
