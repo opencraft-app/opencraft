@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { c } from 'tar';
 import { parseStrictJson, parseManifest, fileListDigest, sha256, signBytes, acceptManifest,
   signPreflight, verifyPreflight, HARD_LIMITS, LEGACY_LIMITS } from '../../scripts/full-release/contract.mjs';
+import { acceptReleasePolicy } from '../../scripts/full-upgrade/release-policy.mjs';
 import { sealPackage, npmPack } from '../../scripts/full-release/producer.mjs';
 import { verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
 
@@ -59,6 +60,7 @@ test('sealing under a restrictive umask produces canonical modes without followi
   const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script]);
   const packed = JSON.parse(stdout);
   const verified = await verifyFullArchive(join(root, packed.filename), trust);
+  assert.equal(acceptReleasePolicy(verified.record, await readFile(join(pkg, 'release/upgrade-policy.json'))).recipes.length, 0);
   assert.equal(verified.files.find(([path]) => path === 'runtime/main.mjs')[3], '0644');
   assert.equal(verified.files.find(([path]) => path === 'runtime/run')[3], '0755');
   for (const path of ['release/full-release.json', 'release/full-release.sig']) assert.ok(verified.captured.has(path));

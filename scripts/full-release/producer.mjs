@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { parseNpmPackResult } from '../web-deployment/npm-pack-result.mjs';
 import { scanArchive, verifyFullArchive } from './archive.mjs';
-import { fileListDigest, signPreflight, signBytes, parseManifest, preflightFor, sha256 } from './contract.mjs';
+import { fileListDigest, signPreflight, signBytes, parseManifest, parseStrictJson, preflightFor, sha256 } from './contract.mjs';
 import { createPublicKey } from 'node:crypto';
 import { fullComponents, prepareFullMetadata } from './components.mjs';
 const exec = promisify(execFile);
@@ -38,6 +38,17 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
   if (trustedKeys && trust.keys[keyId] !== trustedKeys[keyId]) throw new Error('Full release signing key does not match fixed trust root');
   await rm(join(packageRoot, 'release/full-release.json'), { force: true });
   await rm(join(packageRoot, 'release/full-release.sig'), { force: true });
+  // A release without owner attestations intentionally ships an empty,
+  // signed policy. CI must explicitly supply verified recipes in a future P3.
+  const policyPath = join(packageRoot, 'release/upgrade-policy.json');
+  await mkdir(join(packageRoot, 'release'), { recursive: true });
+  let policy;
+  try { policy = parseStrictJson(await readFile(policyPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  policy ??= { schemaVersion: 1, kind: 'opencraft.upgrade-policy', compatibility: [], recipes: [] };
+  if ((policy.releaseId && policy.releaseId !== template.release.releaseId)
+    || (policy.releaseSequence && policy.releaseSequence !== template.release.releaseSequence)) throw new Error('Upgrade policy release identity mismatch');
+  policy.releaseId = template.release.releaseId; policy.releaseSequence = template.release.releaseSequence;
+  await writeFile(policyPath, JSON.stringify(policy) + '\n');
   const packagePath = join(packageRoot, 'package.json');
   const pkg = JSON.parse(await readFile(packagePath, 'utf8'));
   const web = JSON.parse(await readFile(join(packageRoot, 'web/version.json'), 'utf8'));

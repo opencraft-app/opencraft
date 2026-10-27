@@ -7,6 +7,7 @@ import { WEB_UPDATE_PATH, parseWebUpdateStatus } from '@opencraft/web-update-pro
 import type { WebUpdateStatus } from '@opencraft/web-update-protocol';
 import { SettingsPageHeader, SettingsSection, SettingsGroup, SettingsRow, SettingsActions, SettingsButton, SettingsNotice, SettingsTextInput } from '@opencraft/extension-react';
 
+import { FullUpgradeSettings } from './full-upgrade-settings';
 import { browserServerContext } from '../runtime/server-context';
 
 export function currentPlatform(): "web" | "electron" {
@@ -125,6 +126,7 @@ function ManagedWebUpdatesSettings() {
   const needsRefresh = status && currentBuild !== status.current.buildId;
   return <>
     <SettingsPageHeader title={intl.formatMessage({ id: 'webUpdates.title', defaultMessage: 'Website updates' })} description={status?.execution ? intl.formatMessage({ id: 'webUpdates.serverDescription', defaultMessage: 'Update the website and execution gateway. Codex tasks continue in the independent core; OpenCraft tasks may be interrupted.' }) : intl.formatMessage({ id: 'webUpdates.description', defaultMessage: 'Update this website from the npm registry. Your execution service keeps running.' })} />
+    <FullUpgradeSettings authenticated={status?.authenticated ?? false} />
     {query.error && <SettingsNotice tone="error">{query.error.message}</SettingsNotice>}
     {error && <SettingsNotice tone="error">{error}</SettingsNotice>}
     {status && <SettingsSection title={intl.formatMessage({ id: 'webUpdates.version', defaultMessage: 'Website version' })}>
@@ -145,15 +147,16 @@ function ManagedWebUpdatesSettings() {
       {status.execution && !status.execution.ready && !running && <SettingsNotice tone="error"><FormattedMessage id="webUpdates.executionUnavailable" defaultMessage="Execution gateway has not reached the target version or is unavailable. Check the execution service before retrying." /></SettingsNotice>}
       {status.checkError && <SettingsNotice tone="error">{status.checkErrorCode ? checkErrors[status.checkErrorCode] : status.checkError}</SettingsNotice>}
       {status.checkedAt && !status.checking && !status.latest && !status.checkError && <SettingsNotice><FormattedMessage id="webUpdates.notPublishedHint" defaultMessage="No website release is published on this channel yet. Your installed website keeps running; check again after a release is published." /></SettingsNotice>}
-      {status.job?.phase === 'failed' && <SettingsNotice tone="error">{status.job.error}</SettingsNotice>}
+      {status.recoveryRequired && <SettingsNotice tone="error"><FormattedMessage id="fullUpgrade.recovery" defaultMessage="Local recovery required" /></SettingsNotice>}
+      {status.job?.phase === 'failed' && <SettingsNotice tone="error">{status.job.error === 'upgrade-cancelled-at-safe-point' ? <FormattedMessage id="fullUpgrade.deferred" defaultMessage="Stopped at a safe point" /> : status.job.error}</SettingsNotice>}
       {updating && <SettingsNotice role="status"><FormattedMessage id="webUpdates.running" defaultMessage="Updating… You can leave this page; the server will finish the update." /></SettingsNotice>}
       {status.job?.phase === 'completed' && <SettingsNotice tone="success" role="status">{status.execution ? <FormattedMessage id="webUpdates.serverCompleted" defaultMessage="Website and execution gateway updated. Reconnecting resumes your Codex tasks." /> : <FormattedMessage id="webUpdates.completed" defaultMessage="Website version switched successfully. Existing connections keep running." />}</SettingsNotice>}
       {needsRefresh && <SettingsNotice><FormattedMessage id="webUpdates.refreshHint" defaultMessage="This page is still displaying the previous build. Refresh when you are ready." /> <SettingsButton onClick={() => location.reload()}><FormattedMessage id="webUpdates.refresh" defaultMessage="Refresh page" /></SettingsButton></SettingsNotice>}
       <SettingsActions align="start" className="web-updates-actions">
         <SettingsButton aria-busy={pending === 'check' || status.checking} disabled={pending !== null || !!running} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>
         {status.authenticated && <>
-        <SettingsButton variant="primary" aria-busy={pending === 'install'} disabled={pending !== null || !!running || !status.updateAvailable} onClick={() => void action('install', { version: status.latest?.version })}>{status.execution ? <FormattedMessage id="webUpdates.installServer" defaultMessage="Update website and execution service" /> : <FormattedMessage id="webUpdates.install" defaultMessage="Update website" />}</SettingsButton>
-        {status.canRollback && <SettingsButton disabled={pending !== null || !!running} onClick={() => void action('rollback')}><FormattedMessage id="webUpdates.rollback" defaultMessage="Roll back previous version" /></SettingsButton>}
+        <SettingsButton variant="primary" aria-busy={pending === 'install'} disabled={pending !== null || !!running || !!status.recoveryRequired || !status.updateAvailable} onClick={() => void action('install', { version: status.latest?.version })}>{status.execution ? <FormattedMessage id="webUpdates.installServer" defaultMessage="Update website and execution service" /> : <FormattedMessage id="webUpdates.install" defaultMessage="Update website" />}</SettingsButton>
+        {status.canRollback && <SettingsButton disabled={pending !== null || !!running || !!status.recoveryRequired} onClick={() => void action('rollback')}><FormattedMessage id="webUpdates.rollback" defaultMessage="Roll back previous version" /></SettingsButton>}
         <SettingsButton variant="quiet" disabled={pending !== null} onClick={() => void action('logout')}><FormattedMessage id="webUpdates.logout" defaultMessage="End administrator session" /></SettingsButton>
         </>}
       </SettingsActions>

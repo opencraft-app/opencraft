@@ -59,6 +59,12 @@ export async function install(options) {
     await mkdir(join(directory, 'release'), { recursive: true }); await chmod(join(directory, 'release'), 0o755);
     await atomicBytes(join(directory, 'release/full-release.json'), bytes, 0o644);
     await atomicBytes(join(directory, 'release/full-release.sig'), await readFile(join(root, 'release/full-release.sig')), 0o644);
+    try {
+      const policyBytes = await readFile(join(root, 'release/upgrade-policy.json'));
+      const policyEntry = accepted.record.components.flatMap(c => c.fileList).find(f => f[0] === 'release/upgrade-policy.json');
+      invariant(policyEntry?.[1] === sha256(policyBytes) && policyEntry[2] === policyBytes.length, 'unsigned-upgrade-policy');
+      await atomicBytes(join(directory, 'release/upgrade-policy.json'), policyBytes, 0o644);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; } // Older P2 archives remain blocked.
     const proof = { protocol: 1, artifactId, manifestSha256: sha256(bytes), releaseId: accepted.record.release.releaseId,
       releaseSequence: accepted.record.release.releaseSequence, keyId: envelope.keyId,
       ...Object.fromEntries(names.map((n, i) => [n + 'Sha256', sha256(data[i])])) };

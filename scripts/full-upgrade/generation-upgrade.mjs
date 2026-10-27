@@ -5,11 +5,11 @@ import { fingerprint } from './inventory.mjs';
 import { acquireLock, invariant, identifier } from './durable.mjs';
 import { receiptProjection } from './journal.mjs';
 
-export function acceptGenerationPlan({ manifestSha256, inventoryFingerprint, policy, matrixBytes, signature, trust, combination, now = Date.now() }) {
+export function acceptGenerationPlan({ manifestSha256, inventoryFingerprint, policy, matrixBytes, signature, trust, combination, release = null, now = Date.now() }) {
   verifyBytes(matrixBytes, signature, trust);
   const matrix = JSON.parse(matrixBytes);
   invariant(matrix.schemaVersion === 1 && matrix.kind === 'opencraft.generation-compatibility'
-    && matrix.manifestSha256 === manifestSha256 && Number.isSafeInteger(matrix.expiresAt) && now < matrix.expiresAt
+    && (release ? matrix.releaseId === release.releaseId && matrix.releaseSequence === release.releaseSequence : matrix.manifestSha256 === manifestSha256) && Number.isSafeInteger(matrix.expiresAt) && now < matrix.expiresAt
     && !trust.revokedKeyIds?.includes(signature.keyId), 'compatibility-matrix-unavailable');
   invariant(matrix.combinations.some(row => row.status === 'verified' && fingerprint(row.combination) === fingerprint(combination)
     && row.forward === true && row.rollback === true && row.retainBindings === true), 'combination-blocked');
@@ -32,7 +32,7 @@ export async function switchGeneration({ plan, operationId, bootId, journal, loc
     try { job = await journal.load(operationId); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (job) {
       invariant(job.planDigest === plan.planDigest, 'idempotency-conflict');
-      if (!['completed', 'blocked', 'recovery-required', 'active-draining', 'rolled-back'].includes(job.state)) {
+      if (!['completed', 'blocked', 'recovery-required', 'active-draining', 'rolled-back', 'deferred', 'failed'].includes(job.state)) {
         job.state = 'recovery-required'; job.revision++; await journal.save(job);
       }
       return job;
@@ -44,12 +44,13 @@ export async function switchGeneration({ plan, operationId, bootId, journal, loc
     const save = async state => { job.state = state; job.revision++; return journal.save(job); };
     const perform = async (index, fn) => {
       const step = job.steps[index]; step.intent = { stepId: step.stepId, action: step.action, epoch: step.epoch, fence: step.fence };
-      await save('switching');
+      await save(index === 0 ? 'checking' : index >= 2 ? 'rolling-back' : 'switching');
       const evidence = await fn();
       step.receipt = receipt(job, step, 'applied', fingerprint(evidence ?? null), evidence?.disposition);
-      await save('switching');
+      await save(index === 0 ? 'prepared' : index >= 2 ? 'rolling-back' : 'switching');
       return evidence;
     };
+    if (await journal.stopRequested(operationId)) return await save('deferred');
     if (fingerprint(before) !== plan.combination.from || !await validate(plan, 'before-prepare') || before.current === targetId || before.generations.some(g => g.id === targetId)) return await save('blocked');
     try {
       await perform(0, () => owner.prepare(targetId, before));
@@ -58,12 +59,14 @@ export async function switchGeneration({ plan, operationId, bootId, journal, loc
       // incarnation and default must still match the accepted plan.
       invariant(identity({ ...prepared, generations: prepared.generations.filter(g => g.id !== targetId) }) === identity(before), 'owner-drift');
       invariant(await validate(plan, 'before-activate'), 'plan-drift');
+      if (await journal.stopRequested(operationId)) throw new Error('stop-requested');
       const proof = await owner.preparation(targetId, before);
+      if (await journal.stopRequested(operationId)) throw new Error('stop-requested');
       await perform(1, () => owner.activate(targetId, before, proof, fingerprint({ operationId, stepId: 'activate' })));
       const active = await owner.snapshot();
       invariant(active.owner === before.owner && active.host === before.host && active.current === targetId && active.epoch === before.epoch + 1
         && active.lastActivation?.operationId === fingerprint({ operationId, stepId: 'activate' }), 'activation-unconfirmed');
-      return await save('active-draining');
+      return await save(await journal.stopRequested(operationId) ? 'deferred' : 'active-draining');
     } catch {
       if (journal.poisoned) throw new Error('journal-unavailable');
       // A persisted intent may have succeeded. Compensate only this exact
@@ -88,7 +91,7 @@ export async function switchGeneration({ plan, operationId, bootId, journal, loc
         if (restored.generations.some(g => g.id === targetId)) await perform(3, () => owner.cleanup(targetId, restored));
         const final = await owner.snapshot();
         invariant(final.owner === restored.owner && final.current === restored.current && final.epoch === restored.epoch, 'cleanup-drift');
-        return await save('rolled-back');
+        return await save(await journal.stopRequested(operationId) ? 'deferred' : 'rolled-back');
       } catch { if (journal.poisoned) throw new Error('journal-unavailable'); return await save('recovery-required'); }
     }
   } finally { await unlock(); }

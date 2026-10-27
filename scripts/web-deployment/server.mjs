@@ -1,3 +1,5 @@
+import { upgradeBridge } from './full-upgrade.mjs';
+import { atomicJson as durableJson } from '../full-upgrade/durable.mjs';
 import { loadUserPlugins, assertUserPluginCompatibility } from './user-plugins.mjs';
 import { fullReleaseTrust } from '../full-release/trust.mjs';
 import { readReplayState } from '../full-release/archive.mjs';
@@ -95,7 +97,7 @@ function lease(worker) {
 }
 
 export async function createManagedWebServer({ initialRelease, stateDirectory, registry, channel, userconfig, publicOrigin,
-  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
+  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const relayIngress = createHeadlessBackendProxy(relayIngressTarget);
   if (relayIngress && (!headlessBackend || !Number.isInteger(relayInternalPort) || relayInternalPort < 0 || relayInternalPort > 65535)) throw new Error('Relay ingress requires a protected Headless backend and loopback internal port');
@@ -103,6 +105,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
   const localAccess = await loadLocalMachineAccess(localAccessFile);
   if (localAccess && !headlessBackend) throw new Error('Local machine access requires a protected Headless backend');
   const directory = resolve(stateDirectory);
+  const upgrade = await upgradeBridge(upgradeConfigPath, directory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const releaseLock = await acquireDeploymentLock(directory);
   const statePath = join(directory, 'deployment.json');
@@ -183,6 +186,14 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       for (const [id, until] of sessions) if (until < Date.now()) sessions.delete(id);
       return token !== undefined && sessions.has(token);
     }
+    async function webRecoveryRequired(authoritative = false) {
+      if (!upgrade) return false;
+      try {
+        const status = await upgrade({ action: authoritative ? 'web-admission' : 'page-status' });
+        if (authoritative) return status.recoveryRequired;
+        return status.jobs.some(job => job.state === 'recovery-required' && job.components.some(c => c.componentId === 'web-execution'));
+      } catch { return true; } // No write is authorized from an unknown owner result.
+    }
     async function snapshot(request) {
       const executionStatus = execution ? await execution.status() : null;
       return { schemaVersion: 1, enabled: true, localInstall: true, authenticated: authenticated(request),
@@ -190,7 +201,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         latest: latest ? { version: latest.version, buildId: latest.buildId } : null,
         checking: checking !== null, checkedAt, checkError, checkErrorCode, packageName: PACKAGE_NAME, channel: source.channel || channel || 'latest',
         updateAvailable: latest !== null && isNewerVersion(latest.version, persisted.current.version),
-        canRollback: persisted.previous !== null,
+        canRollback: persisted.previous !== null, recoveryRequired: await webRecoveryRequired(),
         execution: executionStatus,
         // A terminal job is visible only after its persistence and cleanup finish.
         job: operation && persisted.job && !busy(persisted.job) ? { ...persisted.job, phase: 'starting', error: null } : persisted.job };
@@ -222,13 +233,26 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         throw error;
       }
     }
-    async function install(selected, rollback, releaseSource = source) {
-      const job = { id: randomUUID(), version: selected.version, phase: rollback ? 'starting' : 'downloading', error: null };
+    async function install(selected, rollback, releaseSource = source, childId = randomUUID()) {
+      const job = { id: childId, version: selected.version, phase: rollback ? 'starting' : 'downloading', error: null };
       const original = persisted;
+      const child = { schemaVersion: 1, id: job.id, version: selected.version, buildId: selected.buildId,
+        phase: job.phase, releaseId: selected.fullRelease?.release?.releaseId ?? null, startedAt: new Date().toISOString(), finishedAt: null, manifestSha256: null };
+      async function childState(phase) {
+        if (!upgrade) return;
+        child.phase = phase;
+        if (['completed', 'failed', 'deferred'].includes(phase)) child.finishedAt = new Date().toISOString();
+        await mkdir(join(directory, 'upgrade-children'), { recursive: true, mode: 0o700 });
+        await durableJson(join(directory, 'upgrade-children', job.id + '.json'), child);
+        // A durable official receipt survives an agent outage; status reconciles
+        // it later. An unknown notification is never an installation retry.
+        try { await upgrade({ action: 'web-child', operationId: job.id }); } catch { /* retain owner receipt */ }
+      }
       const staging = join(directory, 'staging', job.id); let releaseContainer = null; let activated = false;
       try {
         persisted = { ...original, job };
         await writeDeploymentState(statePath, persisted);
+        await childState(job.phase);
         let release;
         if (rollback) {
           release = await inspectRelease(selected.releaseRoot);
@@ -246,6 +270,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         else {
           const archive = await releaseSource.download(selected, staging);
           job.phase = 'verifying'; persisted.job = { ...job };
+          await childState('verifying');
           const unpacked = await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
           if (unpacked.version !== selected.version || unpacked.buildId !== selected.buildId) throw new Error('Downloaded release differs from the checked release');
           await assertReleaseProfile(unpacked, persisted.current);
@@ -259,11 +284,24 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         try { if ((await stat(oldAssets)).isDirectory()) await cp(oldAssets, join(release.releaseRoot, 'web/assets'), { recursive: true, force: false, errorOnExist: false }); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         if (execution) await execution.inspect(release);
+        child.manifestSha256 = release.fullRelease?.manifestSha256 ?? null;
+        child.releaseId = release.fullRelease?.releaseId ?? child.releaseId;
+        await childState('prepared');
+        if (upgrade) {
+          const observed = await upgrade({ action: 'page-status' });
+          const parent = observed.jobs.find(j => j.jobId === 'web-' + job.id);
+          if (!parent) throw new Error('Upgrade journal unavailable');
+          if (parent.stopRequested) {
+            const stopped = new Error('upgrade-cancelled-at-safe-point'); stopped.code = 'UPGRADE_CANCELLED'; throw stopped;
+          }
+        }
         job.phase = 'starting'; persisted.job = { ...job };
+        await childState('starting');
         await activate(release, job); activated = true;
+        try { await childState('completed'); } catch { console.error('[opencraft update] Child receipt requires reconciliation'); }
       } catch (error) {
         persisted = { ...original, job: { ...job, phase: 'failed', error: error.message } };
-        try { await writeDeploymentState(statePath, persisted); }
+        try { await writeDeploymentState(statePath, persisted); await childState(error.code === 'UPGRADE_CANCELLED' ? 'deferred' : error.message.includes('rollback failed') ? 'recovery-required' : 'failed'); }
         catch {
           persisted.job = { ...persisted.job, error: `${persisted.job.error}; state recovery could not be saved. Release files are retained for recovery.` };
           console.error('[opencraft update] State recovery could not be saved; release files retained');
@@ -300,6 +338,12 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       catch { json(response, 400, { error: 'Invalid request URL' }); return; }
       if (pathname === WEB_UPDATE_PATH || pathname.startsWith(`${WEB_UPDATE_PATH}/`)) {
         try {
+          if (pathname === `${WEB_UPDATE_PATH}/full` && request.method === 'GET') {
+            if (!authenticated(request)) { json(response, 401, { error: 'Deployment administrator access required' }); return; }
+            if (!upgrade) { json(response, 200, { schemaVersion: 1, plan: null, jobs: [], fullStackExecutable: false, unavailable: true }); return; }
+            const result = await upgrade({ action: 'page-status' });
+            json(response, 200, result); return;
+          }
           if (request.method === 'GET' && pathname === WEB_UPDATE_PATH) { json(response, 200, await snapshot(request)); return; }
           if (request.method !== 'POST') { json(response, 405, { error: 'POST required' }); return; }
           const origin = request.headers.origin;
@@ -324,8 +368,29 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             checking = check(); json(response, 202, { ok: true }); return;
           }
           if (!authenticated(request)) { json(response, 401, { error: 'Deployment administrator access required' }); return; }
+          if (pathname.startsWith(`${WEB_UPDATE_PATH}/full/`)) {
+            if (!upgrade) { json(response, 503, { error: 'Upgrade control unavailable' }); return; }
+            const action = pathname.slice((WEB_UPDATE_PATH + '/full/').length);
+            if (!['check', 'start', 'stop'].includes(action) || !input || Object.keys(input).some(k => !['planDigest', 'jobId'].includes(k))) {
+              json(response, 400, { error: 'Invalid upgrade request' }); return;
+            }
+            json(response, 200, await upgrade({ action: 'page-' + action,
+              ...(input.planDigest ? { planDigest: input.planDigest } : {}), ...(input.jobId ? { operationId: input.jobId } : {}) })); return;
+          }
           if (pathname === `${WEB_UPDATE_PATH}/logout`) { sessions.clear(); response.setHeader('set-cookie', `${cookieName}=; Path=${WEB_UPDATE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0`); json(response, 200, { ok: true }); return; }
+          if (pathname === `${WEB_UPDATE_PATH}/install` && persisted.job && input?.version === persisted.job.version
+            && latest?.version === input.version && (operation || busy(persisted.job) || persisted.job.phase === 'completed')) {
+            json(response, 202, { ok: true, jobId: persisted.job.id }); return;
+          }
           if (operation || busy(persisted.job) || checking) { json(response, 409, { error: 'Another update operation is running' }); return; }
+          if (await webRecoveryRequired(true)) { json(response, 409, { error: 'local-recovery-required' }); return; }
+          // Recheck admission after the asynchronous recovery observation.
+          if (pathname === `${WEB_UPDATE_PATH}/install` && persisted.job && input?.version === persisted.job.version
+            && latest?.version === input.version && (operation || busy(persisted.job) || persisted.job.phase === 'completed')) {
+            json(response, 202, { ok: true, jobId: persisted.job.id }); return;
+          }
+          if (operation || busy(persisted.job) || checking) { json(response, 409, { error: 'Another update operation is running' }); return; }
+
           let selected; let rollback = false; let releaseSource = source;
           if (pathname === `${WEB_UPDATE_PATH}/install`) {
             if (!latest || input?.version !== latest.version || !isNewerVersion(latest.version, persisted.current.version)) { json(response, 409, { error: 'Check updates again before installing' }); return; }

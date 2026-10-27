@@ -21,7 +21,7 @@ const labels = {
   key: /^(Deployment administrator key|部署管理员密钥)$/,
   logout: /^(End administrator session|结束管理会话)$/,
 };
-const button = (page, name) => page.getByRole('button', { name: labels[name] });
+const button = (page, name) => (name === 'check' ? page.getByRole('region', { name: /^(Website version|网站版本)$/ }) : page).getByRole('button', { name: labels[name] });
 // Settings are organized by machine: two configured Hosts surface as two
 // machines and the reachable accessible name carries the machine count badge.
 const machinesNav = /^(Machines|机器) ?2$/;

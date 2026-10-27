@@ -1,3 +1,7 @@
 @use "./engine-accounts";
 @use "./model-services";
 @use "./ssh-connections";
+
+.full-upgrade-recovery { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.full-upgrade-settings { min-width: 0; overflow-wrap: anywhere; }

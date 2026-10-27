@@ -9,7 +9,7 @@ const impact = strategy => ({
 
 // No execution operation is exported. A P2b executor must re-collect, re-verify
 // and compare every CAS expectation; this advisory object is never authority.
-export function createPlan({ inventory, manifestBytes, signature, trust, now = Date.now() }) {
+export function createPlan({ inventory, manifestBytes, signature, trust, releasePolicy = null, now = Date.now() }) {
   if (inventory?.schemaVersion !== 1 || inventory.kind !== 'opencraft.upgrade-inventory' || inventory.mode !== 'read-only') throw new Error('Invalid upgrade inventory');
   const { resources } = inventory;
   if (fingerprint(inventoryIdentity(inventory)) !== inventory.fingerprint) throw new Error('Inventory fingerprint mismatch');
@@ -28,7 +28,7 @@ export function createPlan({ inventory, manifestBytes, signature, trust, now = D
     ? 'target-pointer-present' : 'target-pointer-differs';
   const units = inventory.owners.flatMap(o => o.units), applicableUnits = units.filter(u => u.status !== 'not-installed');
   const stability = applicableUnits.some(u => u.stable === false) ? 'blocked' : !units.length || applicableUnits.some(u => u.status === 'unknown' || u.stable !== true) ? 'unknown' : 'verified';
-  const checks = [check('release-signature-policy', 'verified', 'signature-product-channel-expiry-platform-accepted', { manifestSha256, keyId: signature.keyId }),
+  const checks = [check('upgrade-recipes', releasePolicy?.recipes.length ? 'verified' : 'blocked', 'signed-owner-recipes-required'), check('signed-upgrade-policy', releasePolicy ? 'verified' : 'blocked', releasePolicy ? 'release-bound-policy-accepted' : 'signed-compatibility-and-recipes-unavailable'), check('release-signature-policy', 'verified', 'signature-product-channel-expiry-platform-accepted', { manifestSha256, keyId: signature.keyId }),
     check('release-authentication', replayVerified ? 'verified' : 'unknown', replayVerified ? 'current-sequence-and-revocation-state-accepted' : 'current-sequence-or-revocation-state-unavailable'),
     check('product-channel-profile', target.release.product === inventory.product && target.release.channel === inventory.channel
       && target.targets.some(t => t.profile === inventory.profile && t.platform === inventory.platform && t.arch === inventory.arch) ? 'verified' : 'blocked', 'exact-profile-required'),

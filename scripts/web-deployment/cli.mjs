@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { createProtocolIngress } from './protocol-ingress.mjs';
+import { installedUpgradeConfig } from './full-upgrade.mjs';
 import { createManagedWebServer } from './server.mjs';
 import { createExecutionDeployment } from '../server-deployment/execution.mjs';
 const executionLink = process.env.OPENCRAFT_EXECUTION_LINK;
@@ -19,7 +20,9 @@ const execution = executionLink ? createExecutionDeployment({
 const port = Number(process.env.OPENCRAFT_WEB_PORT || 10000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid Web port');
 const host = process.env.OPENCRAFT_WEB_HOST || '127.0.0.1';
+const webState = process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web');
 const app = await createManagedWebServer({
+  upgradeConfigPath: await installedUpgradeConfig(webState),
   initialRelease: process.env.OPENCRAFT_WEB_RELEASE || resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   stateDirectory: process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web'),
   execution,
