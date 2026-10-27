@@ -336,3 +336,9 @@ and owner attachment; they are not buffered as whole binaries or hashed per fram
 The persistent owner uses the same complete browser identity. Live tabs keep their
 immutable owner and mark it stale; once all pages close an empty stale owner can
 be replaced, including when only the Electron binary or native resources changed.
+
+
+The npm release source bounds metadata output separately from package inventories.
+`npm pack --json` includes every shipped file, so a complete Headless package can
+exceed the metadata response budget. Its bounded command output allowance does
+not change archive size, SHA integrity, extraction or execution-profile checks.

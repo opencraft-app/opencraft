@@ -74,6 +74,9 @@ SSH/员工配置；`OPENCRAFT_RUNTIME_DIRECTORY`、`OPENCRAFT_DSH_EXECUTABLE`、
 
 通过 Hub 发布本实例时，在 Headless 配置的 `argv` 中显式加入
 `--hub-target-port WEB_PORT`，把 Hub 的本地业务目标固定到受管 Web 入口。
+也可在 execution unit 设置 `OPENCRAFT_HUB_TARGET_PORT=WEB_PORT`；CLI 显式值优先。
+首次迁移需保留不识别此选项的旧包作为回退时，使用环境配置；旧包忽略它，
+新包固定到受管入口，不向旧包传递未知 CLI 参数。
 省略时保留直连 Headless listener 的原行为。该选项仅指定回环端口，
 不改变节点身份、签名、成员授权或更新器的管理权限；不能把执行后端端口
 误当网站入口，否则仅网站更新时 Hub 客户端仍会取得旧资产。
