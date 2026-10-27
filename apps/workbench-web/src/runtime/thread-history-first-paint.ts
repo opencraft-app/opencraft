@@ -21,6 +21,7 @@ export function historyEngine(extensions: Record<string, any> | null | undefined
 export interface HistoryPaintAttempt {
   /** Local fence only: never serialized into telemetry. */
   readonly viewId: string;
+  readonly cache: "warm" | "cold";
   readonly finish: ReturnType<typeof beginObservedOperation>;
 }
 /** One user navigation owns the pending measurement, including after route commit. */
@@ -29,18 +30,25 @@ export function createThreadHistoryFirstPaintObserver(begin = beginObservedOpera
   const listeners = new Set<() => void>();
   const publish = () => { for (const listener of listeners) listener(); };
   const settle = (attempt: HistoryPaintAttempt, outcome: "ok" | "failed" | "aborted" | "empty", details?: HistoryPaintDetails) => {
-    if (pending !== attempt) return;
+    if (pending?.finish !== attempt.finish) return;
+    const cache = pending.cache;
     pending = null;
-    attempt.finish(outcome, details ? { ...details } : {});
+    attempt.finish(outcome, {cache, ...(details ?? {})});
     publish();
   };
   return {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => pending,
+    bindView(attempt: HistoryPaintAttempt, viewId: string, cache: "warm" | "cold") {
+      if (pending?.finish !== attempt.finish) return attempt;
+      pending = {...pending, viewId, cache};
+      publish();
+      return pending;
+    },
     abort() { if (pending) settle(pending, "aborted"); },
     begin(viewId: string, cache: "warm" | "cold") {
       if (pending) settle(pending, "aborted");
-      const attempt = { viewId, finish: begin("thread_history_first_paint", { cache, lengthBucket: "unknown", engine: "unknown" }) };
+      const attempt = { viewId, cache, finish: begin("thread_history_first_paint", { cache, lengthBucket: "unknown", engine: "unknown" }) };
       pending = attempt;
       publish();
       return attempt;
