@@ -14,6 +14,7 @@ import { GitIdentityBroker, type GitExecutionIdentity } from '../../scripts/git-
 import { queryGitIdentityBroker, serveGitIdentityBroker } from '../../scripts/git-identity-ipc';
 import { exactGitHost, gitConfigParameter, parseGitInvocation, personalHttpsRemote } from '../../scripts/git-identity-wrapper';
 import { managedGitEnvironment } from '../../scripts/git-identity-environment';
+import { renderGitIdentityInstallation } from '../../scripts/git-identity-installation';
 import { generateGitSigningKey } from '../../scripts/git-identity-signer';
 // SO_PEERCRED and /proc are the supported local Linux execution boundary.
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
@@ -302,4 +303,92 @@ test('bound SSH remote uses personal HTTPS for real push/delete without changing
   }
   assert.ok(received.length>0&&received.every(v=>v===expected));assert.ok(f.credentials()>0);await assert.rejects(readFile(marker));
   const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/broker unavailable/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
+});
+
+
+test('explicit server-read policy preserves SSH transport and personal signed pull without enabling SSH push', async t => {
+  const f = await managedRepository(t), signing = generateGitSigningKey();
+  f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Employee', email: 'employee@example.test' }, token: 'synthetic-only', signing });
+  const bare = join(f.root, 'server.git'), marker = join(f.root, 'ssh-reads'), ssh = join(f.root, 'ssh');
+  assert.equal((await child('/usr/bin/git', ['init', '--bare', '-q', bare], f.env, f.root)).code, 0);
+  assert.equal((await f.native('push', bare, 'HEAD:main')).code, 0);
+  await child('/usr/bin/git', ['--git-dir', bare, 'symbolic-ref', 'HEAD', 'refs/heads/main'], f.env, f.root);
+  await writeFile(ssh, `#!/bin/sh
+set -eu
+for last do :; done
+case "$last" in
+  "git-upload-pack "*)
+    test "$SSH_AUTH_SOCK" = "$SYNTHETIC_MACHINE_SOCK"
+    test "$HOME" = "$SYNTHETIC_MACHINE_HOME"
+    printf 'read\\n' >> "$SYNTHETIC_SSH_MARKER"
+    exec /usr/bin/git-upload-pack "$SYNTHETIC_BARE" ;;
+  "git-receive-pack "*) printf 'write\\n' >> "$SYNTHETIC_SSH_MARKER"; exit 1 ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o700 });
+  Object.assign(f.managedEnv, { OPENCRAFT_GIT_SERVER_READ_HOSTS: 'github.com', GIT_SSH_COMMAND: ssh,
+    SSH_AUTH_SOCK: join(f.root, 'server-agent.sock'), SYNTHETIC_MACHINE_SOCK: join(f.root, 'server-agent.sock'),
+    SYNTHETIC_MACHINE_HOME: f.managedEnv.HOME, SYNTHETIC_SSH_MARKER: marker, SYNTHETIC_BARE: bare });
+  await f.native('remote', 'add', 'origin', 'git@github.com:synthetic/repo.git');
+  const before = await readFile(join(f.work, '.git/config'));
+  for (const url of ['git@github.com:synthetic/repo.git', 'ssh://git@github.com/synthetic/repo.git', 'https://github.com/synthetic/repo.git']) {
+    const result = await f.managed('ls-remote', '--heads', url, 'refs/heads/main');
+    assert.equal(result.code, 0, result.err); assert.match(result.out, /\trefs\/heads\/main$/u);
+    const fetched = await f.managed('fetch', url, 'main'); assert.equal(fetched.code, 0, fetched.err);
+  }
+  const cloned = await f.managed('clone', 'https://github.com/synthetic/repo.git', join(f.root, 'clone'));
+  assert.equal(cloned.code, 0, cloned.err);
+  assert.equal((await child('/usr/bin/git', ['-C', join(f.root, 'clone'), 'config', '--get', 'remote.origin.url'], f.env, f.root)).out, 'https://github.com/synthetic/repo.git');
+  const seed = join(f.root, 'seed');
+  await child('/usr/bin/git', ['clone', '-q', bare, seed], f.env, f.root);
+  await child('/usr/bin/git', ['commit', '--allow-empty', '-qm', 'remote advanced'], f.env, seed);
+  await child('/usr/bin/git', ['push', '-q', 'origin', 'main'], f.env, seed);
+  await f.native('commit', '--allow-empty', '-qm', 'local advanced');
+  const pulled = await f.managed('pull', '--no-rebase', '--no-edit', 'origin', 'main'); assert.equal(pulled.code, 0, pulled.err);
+  assert.equal((await f.native('show', '-s', '--format=%an|%ae|%cn|%ce')).out, 'Employee|employee@example.test|Employee|employee@example.test');
+  assert.equal((await f.native('rev-list', '--parents', '-1', 'HEAD')).out.split(' ').length, 3);
+  const allowed = join(f.root, 'allowed-signers'); await writeFile(allowed, `employee@example.test ${signing.publicKey}\n`);
+  const verified = await f.native('-c', 'gpg.format=ssh', '-c', `gpg.ssh.allowedSignersFile=${allowed}`, 'verify-commit', 'HEAD'); assert.equal(verified.code, 0, verified.err);
+  assert.deepEqual(await readFile(join(f.work, '.git/config')), before);
+  assert.equal(f.credentials(), 0, 'server reads do not request personal HTTP credentials');
+  const readsBefore = await readFile(marker, 'utf8');
+  for (const args of [
+    ['clone', '--recurse-submodules', 'https://github.com/synthetic/repo.git', join(f.root, 'recursive-clone')],
+    ['fetch', '--recurse-submodules=on-demand', 'origin'],
+    ['pull', '--recurse-submodules', 'origin', 'main'],
+    ['clone', '--config', 'submodule.recurse=true', 'https://github.com/synthetic/repo.git', join(f.root, 'recursive-config-clone')],
+  ]) {
+    const recursive = await f.managed(...args); assert.equal(recursive.code, 128); assert.match(recursive.err, /recursive|conflicting command/u);
+  }
+  for (const key of ['submodule.recurse', 'fetch.recurseSubmodules']) {
+    await f.native('config', key, 'true');
+    const recursive = await f.managed('fetch', 'origin'); assert.equal(recursive.code, 128); assert.match(recursive.err, /recursive Git configuration/u);
+    await f.native('config', '--unset', key);
+  }
+  await f.native('config', 'url.https://github.com/.insteadOf', 'work:');
+  const alias = await f.managed('ls-remote', 'work:synthetic/repo.git'); assert.equal(alias.code, 128); assert.match(alias.err, /canonical remote without URL rewrites/u);
+  await f.native('config', '--unset', 'url.https://github.com/.insteadOf');
+  assert.equal(await readFile(marker, 'utf8'), readsBefore, 'recursive and rewritten URLs are refused before server SSH');
+  await f.native('config', 'http.proxy', 'http://127.0.0.1:9');
+  const pushed = await f.managed('push', 'origin', 'HEAD:refs/heads/no-server-push'); assert.notEqual(pushed.code, 0);
+  assert.equal(await readFile(marker, 'utf8'), readsBefore, 'push never invokes server SSH');
+  assert.notEqual((await child('/usr/bin/git', ['--git-dir', bare, 'show-ref', '--verify', 'refs/heads/no-server-push'], f.env, f.root)).code, 0);
+  f.setIdentity({ status: 'active', account: 'synthetic:unbound', executionId: 'other-turn' });
+  const unbound = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unbound.code, 0, unbound.err);
+  f.setIdentity({ status: 'unknown' });
+  const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /broker unavailable/u);
+});
+
+test('installation launcher applies an explicit read policy to already-running callers', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-read-policy-install-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'git-identity-wrapper.mjs'), 'process.stdout.write(JSON.stringify(process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS));');
+  const spec = { installationDirectory: root, runtimeDirectory: root, node: process.execPath, nativeGit: '/usr/bin/git', brokerSocket: join(root, 'broker.sock'), hosts: ['github.com'], basePath: '/usr/bin:/bin' };
+  for (const [policy, expected] of [[undefined, 'inherited.example.test'], [[], ''], [['github.com'], 'github.com']] as const) {
+    const prepared = renderGitIdentityInstallation({ ...spec, serverReadHosts: policy });
+    const launcher = join(root, 'git'); await writeFile(launcher, prepared.launcher, { mode: 0o700 });
+    const result = await child(launcher, [], { ...process.env, OPENCRAFT_GIT_SERVER_READ_HOSTS: 'inherited.example.test' }, root);
+    assert.equal(result.code, 0, result.err); assert.equal(JSON.parse(result.out), expected);
+    assert.equal(prepared.environment.OPENCRAFT_GIT_SERVER_READ_HOSTS, policy?.join(','));
+  }
+  for (const host of ['other.example.test', 'github.com\n', 'github.com,evil.test']) assert.throws(() => renderGitIdentityInstallation({ ...spec, serverReadHosts: [host] }));
 });

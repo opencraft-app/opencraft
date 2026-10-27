@@ -64,6 +64,24 @@ explicit submodule repository. Canonical `git@host:path` and `ssh://git@host/pat
 identity profiles require an unambiguous managed remote. An unconfigured command
 keeps its original environment in full.
 
+Deployments may explicitly opt exact managed hosts into `serverReadHosts` when
+personal HTTPS Git is unavailable but the server has established SSH read access.
+The rendered launcher exports `OPENCRAFT_GIT_SERVER_READ_HOSTS`, so callers using
+the stable launcher receive the policy without restarting execution owners. The
+default remains personal HTTPS. For configured, attested commands on those hosts,
+`clone`, `fetch`, `pull` and `ls-remote` use canonical SSH and the original server
+HOME/SSH agent. Canonical HTTPS URLs are rewritten for that invocation only.
+This is a deliberate read-access policy, not a retry after authentication fails;
+it grants the server account's read access and does not prove employee read
+permissions. Repository/global configuration stays unchanged. Recursive CLI/configuration is
+rejected; implicit fetch recursion is disabled, so each submodule must be read in
+its own explicit managed repository. Preexisting URL rewrites are rejected before
+networking rather than relying on a second native rewrite. Pull-created commits
+retain personal identity and signing, with a signing-only program selecting the
+personal agent independently from SSH transport. Push and local writes retain
+personal authentication and never enter server SSH. Unknown ownership and expired
+leases still fail closed; unconfigured commands retain their original behavior.
+
 New commits use the configured author and committer. Amend, rebase, cherry-pick,
 and am preserve authors and set the committer. Revert creates a new commit with
 the current employee as author and committer. GitHub-compatible SSH
