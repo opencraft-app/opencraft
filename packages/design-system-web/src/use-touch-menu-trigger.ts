@@ -23,17 +23,13 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       const button = event.currentTarget;
       const document = button.ownerDocument;
       const { pointerId } = event;
-      let cancelled = false;
-      const cancel = () => { cancelled = true; tap.current = false; };
+      tap.current = true;
+      const cancel = () => { tap.current = false; };
       const anotherPointer = (next: PointerEvent) => { if (next.pointerId !== pointerId) cancel(); };
       const release = (next: PointerEvent) => {
         if (next.pointerId !== pointerId) return;
-        const bounds = button.getBoundingClientRect();
-        // The browser classifies movement and duration before emitting click.
-        // A second pixel/time threshold silently rejects native accepted taps.
-        tap.current = !cancelled && button.isConnected && !button.disabled
-          && next.clientX >= bounds.left && next.clientX <= bounds.right
-          && next.clientY >= bounds.top && next.clientY <= bounds.bottom;
+        // Release only retires listeners. The browser owns hit testing and
+        // click classification; missing a derived release is not cancellation.
         cleanup.current?.();
         cleanup.current = undefined;
       };
@@ -52,7 +48,7 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       if (!touch.current || event.detail === 0) return;
       event.preventDefault();
       event.stopPropagation();
-      const activate = enabled && tap.current;
+      const activate = enabled && tap.current && event.currentTarget.isConnected && !event.currentTarget.disabled;
       reset();
       if (activate) onTap();
     },

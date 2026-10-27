@@ -71,6 +71,12 @@ try {
       assert.equal(await add.getAttribute("data-state"), "open", "native click remains authoritative across incidental ancestor scroll");
       await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
       await page.evaluate(() => { const root = document.getElementById("root")!; root.style.cssText = ""; root.querySelector<HTMLElement>("main")!.style.minHeight = "100dvh"; });
+      // A native click can still arrive when a derived release listener did
+      // not. It must not require an independently reconstructed pointer tap.
+      await page.evaluate(() => window.addEventListener("pointerup", event => event.stopImmediatePropagation(), { once: true, capture: true }));
+      await add.tap(); await menu.waitFor();
+      assert.equal(await add.getAttribute("data-state"), "open", "accepted native click does not require a derived pointerup receipt");
+      await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
       await session.detach();
     }
     if (reopenOnly) {
