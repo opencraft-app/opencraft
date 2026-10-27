@@ -26,9 +26,6 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       let cancelled = false;
       const cancel = () => { cancelled = true; tap.current = false; };
       const anotherPointer = (next: PointerEvent) => { if (next.pointerId !== pointerId) cancel(); };
-      const scroll = (next: Event) => {
-        if (next.target === document || (next.target instanceof Element && next.target.contains(button))) cancel();
-      };
       const release = (next: PointerEvent) => {
         if (next.pointerId !== pointerId) return;
         const bounds = button.getBoundingClientRect();
@@ -44,12 +41,10 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       document.addEventListener("pointerdown", anotherPointer, true);
       document.addEventListener("pointerup", release, true);
       document.addEventListener("pointercancel", abort, true);
-      document.addEventListener("scroll", scroll, true);
       cleanup.current = () => {
         document.removeEventListener("pointerdown", anotherPointer, true);
         document.removeEventListener("pointerup", release, true);
         document.removeEventListener("pointercancel", abort, true);
-        document.removeEventListener("scroll", scroll, true);
       };
     },
     onClick(event) {

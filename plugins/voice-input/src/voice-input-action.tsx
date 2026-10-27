@@ -40,12 +40,18 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
       // its region. Pointer release belongs to the gesture, not that DOM button.
       const release = (event: PointerEvent) => pressGesture.release(event.pointerId);
       const blur = () => pressGesture.release();
+      // Native contact retirement is independent of derived pointer delivery.
+      // A short mic tap must not leave its 150ms hold armed after lift-off.
+      const touchEnd = (event: TouchEvent) => { if (event.touches.length === 0) pressGesture.release(); };
       window.addEventListener("pointerup", release, true);
       window.addEventListener("pointercancel", release, true);
       window.addEventListener("blur", blur);
+      window.addEventListener("touchend", touchEnd, true);
+      window.addEventListener("touchcancel", blur, true);
       return () => {
         pressGesture.reset(); window.removeEventListener("pointerup", release, true);
         window.removeEventListener("pointercancel", release, true); window.removeEventListener("blur", blur);
+        window.removeEventListener("touchend", touchEnd, true); window.removeEventListener("touchcancel", blur, true);
       };
     }, [pressGesture]);
     const audioLevels = useMemo(() => {
