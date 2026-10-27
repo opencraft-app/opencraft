@@ -44,6 +44,7 @@ interface HarnessOptions {
   failResume?: boolean;
   resumeErrorData?: unknown;
   oversizedFullPage?: boolean;
+  maxFullTurnsLimit?: number;
   historySizeError?: import("@opencraft/appserver-protocol").JsonRpcErrorObject;
   maxItemsLimit?: number;
   oversizedResumePage?: boolean;
@@ -183,7 +184,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
         return;
       }
       if (message.method === "thread/turns/list") {
-        if (options.oversizedFullPage && params.itemsView === "full") {
+        if ((options.oversizedFullPage || (options.maxFullTurnsLimit !== undefined && Number(params.limit) > options.maxFullTurnsLimit)) && params.itemsView === "full") {
           peer.send(encodeJsonRpcMessage({ id: message.id, error: options.historySizeError ?? { code: -32000, message: "decoded message length too large" } }));
           return;
         }
@@ -1984,6 +1985,38 @@ test("Read and older history adapt full-page and Item budgets without Resume", a
     assert.deepEqual(h.requests.filter(r => r.method === "thread/read").map(r => Boolean(r.params.initialTurnsPage)), [true, false]);
     assert.equal(h.requests.filter(r => r.method === "thread/turns/list" && r.params.itemsView === "notLoaded").length, 2);
     assert.equal(h.requests.filter(r => r.method === "thread/items/list").at(-1)?.params.limit, 1);
+  } finally { await h.close(); }
+});
+
+test("Read shrinks full Turn pages before hydrating Items and preserves native older cursors", async () => {
+  const full = (id: string) => ({ id, itemsView: "full", items: [{ id: `${id}-answer`, type: "agentMessage", text: id }] });
+  const h = await createHarness({ historyMode: "paginated", maxFullTurnsLimit: 2, historySizeError: typedHistoryBudgetError,
+    turnsPages: {
+      null: { data: [full("latest"), full("recent")], nextCursor: "native-older" },
+      "native-older": { data: [full("old")], nextCursor: null },
+    } });
+  try {
+    const view = await h.runtime.resume.read("thread-one");
+    assert.deepEqual(view.turns.map(turn => turn.id), ["recent", "latest"]);
+    const older = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(older.turns.map(turn => turn.id), ["old", "recent", "latest"]);
+    assert.deepEqual(older.turns.map(turn => turn.items[0]?.id), ["old-answer", "recent-answer", "latest-answer"]);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/turns/list").map(r =>
+      [r.params.cursor, r.params.limit, r.params.itemsView]), [
+      [null, 10, "full"], [null, 5, "full"], [null, 2, "full"],
+      ["native-older", 10, "full"], ["native-older", 5, "full"], ["native-older", 2, "full"],
+    ]);
+    assert.equal(h.requests.some(r => r.method === "thread/items/list" || r.method === "thread/resume"), false);
+  } finally { await h.close(); }
+});
+
+test("Read does not retry a full Turn page rejected for a non-budget reason", async () => {
+  const h = await createHarness({ historyMode: "paginated", maxFullTurnsLimit: 0,
+    historySizeError: { code: -32602, message: "invalid page request" } });
+  try {
+    await assert.rejects(h.runtime.resume.read("thread-one"), /invalid page request/);
+    assert.equal(h.requests.filter(r => r.method === "thread/turns/list").length, 1);
+    assert.equal(h.requests.some(r => r.method === "thread/items/list" || r.method === "thread/resume"), false);
   } finally { await h.close(); }
 });
 

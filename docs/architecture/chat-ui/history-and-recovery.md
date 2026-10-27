@@ -47,6 +47,13 @@ without the page before using this reader. Legacy providers keep full-history
 compatibility. Full pages retain all Items, older cursors and chronological order;
 no tool output or interaction is truncated to improve timing.
 
+Read-only opening and older-page loading halve an oversized full Turn page down
+to one Turn before falling back to headers and adaptive Item reads. A successful
+smaller page retains its native continuation cursor, so the remaining Turns load
+on demand. This avoids eagerly hydrating every Turn in the rejected large page
+over a shared remote connection. Only typed history-size failures trigger this
+adaptation; other failures propagate, and no Resume or mutation is retried.
+
 ConversationDisplayContinuity keeps at most 64 already-projected text displays
 in its existing account/Host/Thread scope. `peek` exposes a synchronous paint-only
 snapshot, including before an asynchronous persistence write finishes.
