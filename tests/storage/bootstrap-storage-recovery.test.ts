@@ -8,7 +8,7 @@ const bootstrap = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1]).find(script => script.includes("isResizeObserverDeliveryWarning"))!;
 
 function fixture({ recoverySupported = false, recovered = false, latestBuildId = "same-build",
-  stored = new Map<string, string>() } = {}) {
+  stored = new Map<string, string>(), serverBase = "", storageBlocked = false } = {}) {
   const listeners = new Map<string, (event: any) => void>();
   const reports: { url: string; body?: any }[] = [];
   const elements = new Map<string, any>();
@@ -22,7 +22,7 @@ function fixture({ recoverySupported = false, recovered = false, latestBuildId =
   const context = vm.createContext({
     addEventListener: (type: string, listener: (event: any) => void) => listeners.set(type, listener),
     document: {
-      getElementById: () => surface,
+      getElementById: (id: string) => id === "opencraft-server-context" ? (serverBase ? { textContent: JSON.stringify({ basePath: serverBase }) } : null) : surface,
       querySelector: (selector: string) => ({ getAttribute: () => selector.includes("resource-recovery") ? (recoverySupported ? "supported" : null) : "same-build", setAttribute() {} }),
       createElement: () => ({ style: {}, setAttribute() {}, querySelector: field }),
       body: { append: (element: any) => { surface = element; } },
@@ -38,7 +38,7 @@ function fixture({ recoverySupported = false, recovered = false, latestBuildId =
     innerHeight: 768,
     location: { origin: "https://example.test", pathname: "/local/thread", href: `https://example.test/local/thread?keep=1${recovered ? "&opencraft-resource-recovery=prior" : ""}`, reload: () => { ++reloads; }, replace: (url: string) => { navigations.push(url); } },
     localStorage: { getItem: () => null },
-    sessionStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
+    sessionStorage: { getItem: (key: string) => { if (storageBlocked) throw new Error("blocked"); return stored.get(key) ?? null; }, setItem: (key: string, value: string) => { if (storageBlocked) throw new Error("blocked"); stored.set(key, value); } },
     setTimeout() {},
   });
   vm.runInContext(bootstrap, context);
@@ -154,4 +154,54 @@ test("identity migration timeout stays in storage recovery even when a new relea
   f.field("button").onclick();
   assert.equal(f.reloads(), 1);
   assert.deepEqual(f.navigations, []);
+});
+
+
+test("WebKit CORS module rejection retries once, then retains explicit recovery", async () => {
+  const expression = "new TypeError('Cross-origin script load denied by Cross-Origin Resource Sharing policy.')";
+  const first = fixture({ recoverySupported: true });
+  await vm.runInContext(`__opencraftRecoverRelease(${expression})`, first.context);
+  assert.equal(first.navigations.length, 1);
+  const retry = fixture({ recoverySupported: true, recovered: true });
+  await vm.runInContext(`__opencraftRecoverRelease(${expression})`, retry.context);
+  assert.equal(retry.navigations.length, 0);
+  assert.match(retry.field("[data-release-error]").textContent, /Cross-origin script load denied/);
+  retry.field("button").onclick();
+  assert.equal(retry.navigations.length, 1);
+});
+
+test("a changed release refreshes the graph and cannot loop as builds advance", async () => {
+  const first = fixture({ recoverySupported: true, latestBuildId: "new-build", storageBlocked: true });
+  await vm.runInContext("__opencraftRecoverRelease(new Error('chunk unavailable'))", first.context);
+  assert.equal(first.reloads(), 0);
+  assert.equal(first.navigations.length, 1);
+  const retry = fixture({ recoverySupported: true, recovered: true, latestBuildId: "even-newer", storageBlocked: true });
+  await vm.runInContext("__opencraftRecoverRelease(new Error('chunk unavailable'))", retry.context);
+  assert.equal(retry.reloads(), 0);
+  assert.equal(retry.navigations.length, 0);
+  assert.equal(retry.field("[data-recovery-title]").textContent, "界面资源未能加载");
+});
+
+test("early recovery checks and reports belong to the selected installation", async () => {
+  for (const serverBase of ["/servers/selected", "/__opencraft_servers/selected"]) {
+    const f = fixture({ serverBase });
+    await vm.runInContext("__opencraftRecoverRelease(new Error('chunk unavailable'))", f.context);
+    assert.match(f.reports[0].url, new RegExp("^" + serverBase + "/version.json\\?recovery="));
+    assert.equal(f.reports[1].url, serverBase + "/__opencraft_runtime_error");
+    await vm.runInContext("__opencraftReportEarlyFailure({source:'module-import',message:'failed'})", f.context);
+    assert.equal(f.reports.at(-1)?.url, serverBase + "/__opencraft_runtime_error");
+  }
+});
+
+test("resource diagnostics omit query strings, credentials and other origins", async () => {
+  const f = fixture();
+  f.context.performance = { getEntriesByType: () => [
+    { name: "https://user:password@example.test/assets/broken.js?private=secret", initiatorType: "script", duration: 3, transferSize: 0, responseStatus: 0 },
+    { name: "https://login.test/private.js?secret", initiatorType: "script" },
+    { name: "https://example.test/private-api", initiatorType: "fetch" },
+  ] };
+  await vm.runInContext("__opencraftRecoverRelease(new Error('chunk unavailable'))", f.context);
+  const report = f.reports.find(report => report.body?.source === "chunk-load")!.body;
+  assert.deepEqual(report.resources, [{ url: "https://example.test/assets/broken.js", duration: 3, transferSize: 0, responseStatus: 0 }]);
+  assert.doesNotMatch(JSON.stringify(report), /password|private=secret|login.test/);
 });
