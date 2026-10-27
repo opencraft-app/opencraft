@@ -1060,9 +1060,10 @@ SUT state. The extended shared-interaction browser smoke uses real WebSocket,
 Broker and cards at mobile/desktop widths to distinguish an old caller's failure
 from the current shared answer state. It does not exercise a real user's account.
 
-`InteractionSourceAdmission.tla` adds thirteen bounded configurations for the
+`InteractionSourceAdmission.tla` adds fifteen bounded configurations for the
 availability/admission product: fingerprint and validation revocation, another
-Thread's revocation, an admitted peer and authoritative producer replay. Seven
+Thread's revocation, an admitted peer and authoritative producer replay. Positive configurations include
+all three external boundaries crossed with both revocation targets. Seven
 safety controls require exact failures for empty claims, wrong error classification,
 global revocation, validation after fingerprint revocation, missing replay authority
 and replay that improperly reopens an admitted peer. Two temporal controls remove

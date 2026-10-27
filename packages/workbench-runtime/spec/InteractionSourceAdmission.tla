@@ -43,7 +43,7 @@ TypeOK == /\ s.available \in [Threads -> BOOLEAN]
 ScopeIsolation == Target = "B" => s.available["A"]
 NoEmptyClaim == (s.returned /\ s.state = "responding") => s.writes # {}
 CallerClassification == s.returned =>
- s.result = IF Target = "A" THEN "unavailable" ELSE "submitted"
+ s.result = IF Target = "A" THEN "unavailable" ELSE IF s.peer THEN "already-submitted" ELSE "submitted"
 ValidationAuthority == (Boundary = "fingerprint" /\ Target = "A" /\ s.returned) => s.validators = 0
 ReplayAuthority == s.replayed => s.available[Target]
 AtMostOneWriter == Cardinality(s.writes) <= 1
