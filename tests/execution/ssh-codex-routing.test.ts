@@ -204,15 +204,15 @@ test("native fork preserves the caller's no-fixed-deadline contract", async cont
     assert.equal(f.frames.at(-1).result.thread.id, "forked");
   } finally { await f.adapter.close(); }
 });
-test("logical detach cannot unsubscribe another reader; owner-only approval and resumed successor claim", async () => {
+test("logical detach preserves another reader and shared human approval admits one subscribed answer", async () => {
   const f = setup();
   try {
     await f.initialize();
     for (const client of ["a", "b"]) { await f.send(client, 2, "thread/resume", { threadId: "t" }); f.physical.receive({ id: f.physical.sent.at(-1).id, result: { thread: { id: "t" } } }); }
     f.frames.length = 0;
     f.physical.receive({ id: "approval", method: "item/commandExecution/requestApproval", params: { threadId: "t", turnId: "turn" } });
-    assert.equal(f.frames.length, 1); assert.equal(f.frames[0][LOGICAL_CLIENT_FIELD], "a");
-    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
+    assert.deepEqual(f.frames.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["a", "b"]);
+    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "unsubscribed" }));
     assert.ok(!f.physical.sent.some(message => message.id === "approval"));
     await f.detach("a");
     assert.ok(!f.physical.sent.some(message => message.method === "thread/unsubscribe"));
@@ -220,11 +220,13 @@ test("logical detach cannot unsubscribe another reader; owner-only approval and 
     f.physical.receive({ method: "item/agentMessage/delta", params: { threadId: "t", delta: "live" } });
     assert.equal(f.frames.length, 1); assert.equal(f.frames[0][LOGICAL_CLIENT_FIELD], "b");
     await f.send("b", 3, "thread/resume", { threadId: "t" }); f.physical.receive({ id: f.physical.sent.at(-1).id, result: { thread: { id: "t" } } });
-    assert.equal(f.frames.filter(frame => frame.id === "approval").length, 1);
+    assert.equal(f.frames.filter(frame => frame.id === "approval").length, 0, "an already offered request is not dispatched twice");
     await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "a" }));
     assert.ok(!f.physical.sent.some(message => message.id === "approval"));
     await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
     assert.equal(f.physical.sent.filter(message => message.id === "approval").length, 1);
+    await f.adapter.send(JSON.stringify({ id: "approval", result: { decision: "accept" }, [LOGICAL_CLIENT_FIELD]: "b" }));
+    assert.equal(f.physical.sent.filter(message => message.id === "approval").length, 1, "duplicate legacy answer cannot repeat native execution");
   } finally { await f.adapter.close(); }
 });
 test("no local extension or unowned connection-resource RPC is forwarded remotely", async () => {
