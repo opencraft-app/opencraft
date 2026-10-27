@@ -97,6 +97,9 @@ establish the capacity of a nested tool surface.
 - Secondary refresh/more actions use their supported compact presentation.
   A narrow container alone is not a reason to stretch each action across a row.
   A genuinely primary form transaction can keep its established full-width role.
+- Treat visible control faces and hit boxes as separate geometry. A touch target
+  floor does not require a tall painted pill; reserve the hit box in layout and
+  keep its compact face centered, with no overlapping neighboring targets.
 - Preserve readable typography, shared touch targets and visible focus. Long
   localized values must not crowd out the input or overflow. A bounded select may
   truncate its closed value while its native chooser retains the full option;

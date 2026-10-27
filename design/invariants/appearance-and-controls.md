@@ -221,3 +221,14 @@ one row at all costs. Detailed composition and acceptance belong to
 Extension search/source, developer URL/install and AI follow-up search/Owner
 consume the pair. Other consumers require individual review; this contract does
 not certify all existing toolbars or imply physical-device acceptance.
+
+## Compact inset segmented control paint
+
+The shared inset SegmentedControl separates its visible track/selection face from
+the physical button hit box. Touch density retains the shared minimum on real
+buttons and reserves that space in layout; it does not stretch the painted pill.
+Track, selected face and keyboard focus use the existing compact inset geometry,
+palette and reduced-motion behavior. Paint layers ignore pointer events. Tap the
+upper/lower hit band outside the face to verify selection, and retain arrow-key,
+disabled and preference/focus continuity. Toolbar appearance keeps its existing
+visual role. This is shared control presentation, not a second touch preference.
