@@ -37,7 +37,7 @@ try {
     await page.waitForTimeout(200);
     const geometry = await page.evaluate(()=>{
       const rect=(selector:string)=>document.querySelector(selector)!.getBoundingClientRect().toJSON();
-      return {column:rect('.shell-sidebar__column'),context:rect('.shell-sidebar__context'),nav:rect('.shell-sidebar__navigation'),footer:rect('.shell-sidebar__rail-footer'),app:rect('.app-shell-header__applications'),window:rect('button.app-shell-header__right-panel-toggle'),buttons:[...document.querySelectorAll('.shell-sidebar-navigation [data-action-id]')].map(el=>el.getBoundingClientRect().toJSON())};
+      return {column:rect('.shell-sidebar__column'),context:rect('.shell-sidebar__context'),nav:rect('.shell-sidebar__navigation'),footer:rect('.shell-sidebar__rail-footer'),app:rect('.app-shell-header__applications'),toggle:rect('[data-chrome-action-id="sidebar-toggle"][data-chrome-action-host-role="persistent"]'),buttons:[...document.querySelectorAll('.shell-sidebar-navigation [data-action-id]')].map(el=>el.getBoundingClientRect().toJSON())};
     });
     assert.ok(Math.abs(geometry.context.width-geometry.column.width)<1,JSON.stringify(geometry));
     assert.ok(geometry.nav.y>=geometry.context.bottom-1);
@@ -45,7 +45,7 @@ try {
     assert.ok(geometry.nav.right<=geometry.footer.x+1);
     assert.ok(geometry.buttons.every(rect=>Math.abs(rect.y-geometry.buttons[0].y)<1),'all destinations are horizontal');
     await page.screenshot({path:output+'/current.png'});
-    assert.ok(geometry.app.right<=geometry.window.x+1 && geometry.window.x-geometry.app.right<24,JSON.stringify(geometry));
+    assert.ok(geometry.app.x>=geometry.toggle.right-1 && geometry.app.x-geometry.toggle.right<24,JSON.stringify(geometry));
     assert.equal(await page.locator('.shell-sidebar-navigation [data-action-id="shell.applications"]').count(),0);
     for(const selector of ['[data-surface="settings"]','[data-surface="account"]']) {
       assert.equal(await page.locator(selector).evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true);
