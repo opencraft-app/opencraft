@@ -1353,3 +1353,48 @@ once-only terminal publication, independent native cleanup and exact per-handle
 retry counts through fault changes, reentry, late input and recovery. Synthetic
 observation controls are distinct from immutable old-constructor comparisons.
 Saved traces retain source hashes, exact-rule shrinking and ordinary replay.
+
+## WebSocket close acceptance and factory custody
+
+The WebSocket adapter's `isClosed` cuts delivery, queued writes, handshake and
+probe timers. It does not attest that `socket.close()` returned successfully.
+The adapter retains a separate close-accepted fact and retries the original raw
+Socket after a throwing provider. A normal returned close request allows renewal
+without waiting for its later TCP close event; neither fact acknowledges remote
+execution termination.
+
+The shared factory owns the current bridge until its adapter confirms close
+acceptance. `Client.close()` can synchronously join an in-flight termination, so
+its return alone cannot clear the parent reference. Retirement checks the captured
+owner and the adapter's confirmation before clearing `current`. A new connection
+intent first retries an old failed cleanup and then rechecks whole-factory
+disposal, since the raw provider can synchronously reenter `factory.close()`.
+Failed cleanup ends the local connect attempt and retains its owner; it cannot
+allocate another Socket, replay a frame or retarget a later Host lease.
+
+Factory shutdown revokes every local Host transport before invoking raw-Socket or
+recovery-event disposers. Both external obligations are attempted independently;
+errors preserve their original causes. Synchronous reentry joins shutdown and
+cannot discard unresolved custody. Confirmed event unsubscription and raw close
+are not repeated, while failed obligations remain available to explicit retry.
+Provider failure after an external side effect still requires confirmation rather
+than trusting `readyState` or an already observed terminal label.
+
+`SocketDisposal.tla` checks nineteen bounded configurations for one old Socket
+and one possible successor: seven positive scenarios, nine exact safety controls
+and three temporal controls. It separates the adapter's reported acceptance,
+actual provider return, parent custody, local write retirement and replacement
+allocation. The held-close control establishes renewal without TCP-close
+fairness. Local caller settlement requires local continuation; eventual cleanup
+additionally requires provider recovery and a fair explicit retry. Constructor
+failure before a bridge is admitted, arbitrary external-provider heap bounds and
+TypeScript refinement are outside this model.
+
+The `sockets` chaos suite uses real public factory and transport APIs, declared
+Socket/recovery-event providers and a saved-input ledger. Provider close acceptance
+is separate from `readyState`, close events and a fake resource's release. Checks
+cover healed retry, allocation fencing, shutdown write/message cuts, synchronous
+reentry, successful-disposer counts and local connect/send outcomes. The provider
+diary freezes the first accepted call count so repeated success cannot overwrite
+its own baseline. Synthetic observation controls and immutable old/new factory
+comparisons are separate; no SUT private state, prototypes or source are patched.

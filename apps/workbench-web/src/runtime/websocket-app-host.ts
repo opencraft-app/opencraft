@@ -56,6 +56,7 @@ class WebSocketAppHostPort {
   private readonly startedAt = Date.now();
   private phase: AppHostConnectionPhase = "connecting";
   private closed = false;
+  private socketCloseAccepted = false;
   private supportsProbe = false;
   private probeSequence = 0;
   private probe: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
@@ -63,6 +64,9 @@ class WebSocketAppHostPort {
   failureDiagnostic: TransportFailureDiagnostic | undefined;
 
   get isClosed(): boolean { return this.closed; }
+  // close() accepting the request is distinct from a terminal notification or
+  // remote execution acknowledgement. A throwing provider retains this debt.
+  get closeAccepted(): boolean { return this.socketCloseAccepted; }
   get isReady(): boolean { return this.phase === "ready" && !this.closed; }
 
   constructor(
@@ -144,13 +148,17 @@ class WebSocketAppHostPort {
   }
 
   close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.clearHandshakeTimer();
-    this.cancelProbe();
-    this.queued.length = 0;
-    this.listeners.clear();
-    this.socket.close();
+    if (!this.closed) {
+      this.closed = true;
+      this.clearHandshakeTimer();
+      this.cancelProbe();
+      this.queued.length = 0;
+      this.listeners.clear();
+    }
+    if (!this.socketCloseAccepted) {
+      this.socket.close();
+      this.socketCloseAccepted = true;
+    }
   }
 
   private publish(data: unknown): void {
@@ -368,6 +376,8 @@ export function connectWebSocketAppHost(
 ): { createTransport(hostId: string): DuplexTransport; close(): void } {
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
   let disposed = false;
+  let closing = false;
+  let recoveryDetached = false;
   const transports = new Set<RenewableAppHostTransport>();
   const events = options.recoveryEvents ?? browserRecoveryEvents;
   const unsubscribeRecovery = events.subscribe(() => {
@@ -377,10 +387,23 @@ export function connectWebSocketAppHost(
     current?.port.probeReachability();
     for (const transport of transports) transport.notifyRecoveryHint();
   });
+  const retireCurrent = (): boolean => {
+    const owner = current;
+    if (owner === null) return true;
+    owner.client.close();
+    // Client.close may have joined a synchronous termination already in flight.
+    // Its return alone cannot release the parent while raw close is unresolved.
+    if (!owner.port.closeAccepted) return false;
+    if (current === owner) current = null;
+    return true;
+  };
   return {
     createTransport(hostId) {
       if (disposed) throw new Error("App Host connection is closed");
       const transport = new RenewableAppHostTransport(() => {
+        if (disposed) throw new Error("App Host connection is closed");
+        if (current?.port.isClosed && !retireCurrent()) throw new Error("App Host Socket cleanup is in progress");
+        // A raw provider callback can synchronously dispose the whole factory.
         if (disposed) throw new Error("App Host connection is closed");
         if (current === null || current.port.isClosed) {
           const url = new URL(serverUrl(options.path ?? "/apphost"), window.location.href);
@@ -417,10 +440,19 @@ export function connectWebSocketAppHost(
     },
     close() {
       disposed = true;
-      unsubscribeRecovery();
-      for (const transport of [...transports]) void transport.close().catch(() => undefined);
-      current?.client.close();
-      current = null;
+      if (closing) return;
+      closing = true;
+      try {
+        // Every local channel loses write authority before external disposers.
+        for (const transport of [...transports]) void transport.close().catch(() => undefined);
+        const errors: unknown[] = [];
+        try { retireCurrent(); } catch (cause) { errors.push(cause); }
+        if (!recoveryDetached) {
+          try { unsubscribeRecovery(); recoveryDetached = true; }
+          catch (cause) { errors.push(cause); }
+        }
+        if (errors.length) throw new AggregateError(errors, "App Host connection cleanup failed");
+      } finally { closing = false; }
     },
   };
 }
