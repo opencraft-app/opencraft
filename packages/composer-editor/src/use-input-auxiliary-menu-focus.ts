@@ -96,6 +96,9 @@ export function useInputAuxiliaryMenuFocus(options: {
         if (preserve.current) event.preventDefault();
       },
       onCloseAutoFocus(event: Event) {
+        // An earlier menu may finish unmounting after this owner has reopened.
+        // That cleanup no longer owns focus or the current presentation lease.
+        if (latest.current.open) { event.preventDefault(); return; }
         latest.current.onCloseFocusSettling?.();
         if (preserve.current || !mounted.current) event.preventDefault();
         preserve.current = false;

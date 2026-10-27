@@ -528,6 +528,11 @@ open/close, submenu and keyboard navigation keep the same shell/anchor geometry.
 Radix close cleanup (including a host dialog continuation) finishes before the
 session checks its final focus destination. Content/attachments and active
 submission states keep their existing full presentation, with one EditorView.
+The Add menu opts out of window-blur dismissal: a native attachment surface's
+window focus transition is not an outside contact. Outside contacts, Escape and
+item selection still close it. Auxiliary-menu close cleanup loses its focus lease
+if that menu has reopened before cleanup runs; it must not focus the trigger and
+dismiss the new opening. Other menus retain their default window-blur policy.
 Dictation is an input interaction, not an implicit text-editing session: an empty
 unfocused Newera composer gives its existing row to voice controls, including
 preparing/listening/transcribing/failed/retry. Existing text or editing retains

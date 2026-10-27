@@ -2,6 +2,14 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Add menu reopen continuity
+
+The Composer Add menu remains open across transient window blur from native
+attachment surfaces. Outside contacts, Escape and selected actions still dismiss
+it. Close cleanup from an earlier opening must not restore trigger focus after
+the menu has reopened. Shared dropdowns expose an opt-in blur policy without
+blocking the window event or changing other consumers' dismissal behavior.
+
 ## Conversation model display continuity
 
 Existing conversation model and effort labels reflect its own execution or explicit draft choice before catalog hydration. Unknown settings never become a default effort. Completed model metadata may paint the matching label within one Host runtime, but cannot seed another Thread's selectable catalog or authorize submission. Historical views do not fetch new-conversation defaults.
