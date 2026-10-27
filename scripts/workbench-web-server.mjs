@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
 import { serveNotModified } from "./web-asset-cache.mjs";
 
@@ -161,6 +162,17 @@ export function injectWebsiteDeploymentConfig(html, config) {
   // Escape '<' so a deployment value can never close the inert JSON script.
   const json = JSON.stringify(config).replaceAll("<", "\\u003c");
   if (!/<head(?:\s[^>]*)?>/iu.test(html)) throw new Error("Website HTML has no head element");
+  const brands = config.userPlugins?.filter(plugin => plugin.branding) ?? [];
+  if (brands.length > 1) throw new Error('Multiple installed branding plugins');
+  if (brands.length === 1) {
+    const brand = brands[0].branding;
+    const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    html = html.replace(/<title>[^<]*<\/title>/iu, `<title>${escape(brand.name)}</title>`)
+      .replace(/<link\b[^>]*\brel=["'](?:icon|apple-touch-icon|manifest)["'][^>]*>/giu, '');
+    const icons = [['icon', brand.faviconUrl], ['apple-touch-icon', brand.appleTouchIconUrl]]
+      .filter(([, href]) => href).map(([rel, href]) => `<link rel="${rel}" href="${escape(href)}">`).join('');
+    html = html.replace(/<\/head>/iu, icons + '</head>');
+  }
   return html.replace(/<head(?:\s[^>]*)?>/iu, head => `${head}<script id="opencraft-deployment-config" type="application/json">${json}</script>`);
 }
 
@@ -209,6 +221,7 @@ export async function createWorkbenchWebServer({
   headlessBackendTarget = null,
   optionalResources = null,
   machineDisplayNames = null,
+  userPluginDirectory = null,
 } = {}) {
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -218,6 +231,8 @@ export async function createWorkbenchWebServer({
     executionLocation: "This server", url: "/appserver", workspaceBrowseRoots: ["/"] }], builtinAgents: true, hypernode: false } : websiteDeploymentConfig({
     appServerTarget: normalizedTarget, codexServerTarget: normalizedCodexTarget, hyperNodeUser,
   });
+  const userPlugins = userPluginDirectory ? await loadUserPlugins(userPluginDirectory) : null;
+  if (userPlugins?.length) deploymentConfig.userPlugins = userPlugins;
   if (machineDisplayNames !== null) {
     if (typeof machineDisplayNames !== 'object' || Array.isArray(machineDisplayNames)
       || Object.entries(machineDisplayNames).some(([id, name]) => !id || typeof name !== 'string' || !name.trim() || name.trim().length > 64 || /\p{Cc}/u.test(name))) throw new Error('Invalid machine display names');
@@ -275,6 +290,16 @@ export async function createWorkbenchWebServer({
           const found = await optionalResources.prepare(id);
           sendJson(response, found ? 200 : 404, { ok: found });
         } catch { sendJson(response, 503, { ok: false, error: "Optional resources are unavailable; retry later" }); }
+        return;
+      }
+
+      if (userPlugins?.length && url.pathname.startsWith('/__opencraft_plugins/')) {
+        try {
+          const relative = decodeURIComponent(url.pathname.slice('/__opencraft_plugins/'.length));
+          if (!userPlugins.some(plugin => relative.startsWith(plugin.manifest.id + '/'))) throw new Error('Unknown plugin');
+          const asset = await userPluginAsset(userPluginDirectory, relative);
+          await serveFile(request, response, asset, url.pathname, deploymentConfig);
+        } catch { sendJson(response, 404, { ok: false, error: 'Plugin asset not found' }); }
         return;
       }
 

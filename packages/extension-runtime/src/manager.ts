@@ -125,7 +125,22 @@ export class ExtensionManager {
           this.setState(extensionId, "failed", error);
         }
       }
-      for (const installation of this.installations.getSnapshot().records) {
+      // Persistence order is not activation order. Use current builtin manifests
+      // (which may change across releases) before restoring their dependents.
+      const pending = new Map(this.installations.getSnapshot().records.map(record => [record.extensionId, record]));
+      const ordered: ExtensionInstallationRecord[] = [];
+      while (pending.size > 0) {
+        const ready = [...pending.values()].filter(record =>
+          (this.builtins.get(record.extensionId)?.manifest.dependencies ?? record.lastResolvedManifest?.dependencies ?? [])
+            .every(id => !pending.has(id)));
+        if (ready.length === 0) {
+          // Cycles still fail through the supervisor's normal dependency error;
+          // they must not prevent independent plugins from restoring.
+          ordered.push(...pending.values()); break;
+        }
+        for (const record of ready) { ordered.push(record); pending.delete(record.extensionId); }
+      }
+      for (const installation of ordered) {
         if (installation.source.kind === "builtin" && !this.builtins.has(installation.extensionId)) continue;
         if (this.discoveryErrors.has(installation.extensionId)) continue;
         if (!installation.enabled) {

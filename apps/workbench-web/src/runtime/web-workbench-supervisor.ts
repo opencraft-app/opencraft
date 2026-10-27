@@ -1,3 +1,4 @@
+import { serverInstalledBuiltins } from './server-installed-extensions';
 import { parseDesktopServerConnection, type DesktopServerConnection } from '@opencraft/app-host-protocol/desktop-server';
 import { DesktopServerConnectionExtension, desktopServerPort } from './desktop-server-connections';
 import { SERVER_CONNECTIONS_ID, migrateServerConnectionProfiles } from "@opencraft/plugin-builtin-agents/server-connection-identity";
@@ -567,11 +568,13 @@ export async function createWebWorkbenchApplicationSupervisor(
     );
     await extensionInstallationFiber;
     startupRollback.push(() => extensionInstallationFiber.dispose());
+    const installedPlugins = websiteConfig?.userPlugins ?? [];
+    const replacedPlugins = new Set(installedPlugins.flatMap(plugin => plugin.replaces));
     const extensionManager = new ExtensionManager({
       installations: cordis.extensionInstallations,
       loader: new BrowserModuleUrlExtensionLoader(),
       supervisor: extensions,
-      builtins: [tokenUsageBuiltin, ...(platform === "web" ? clientProduct?.builtins ?? [] : [])],
+      builtins: [tokenUsageBuiltin, ...serverInstalledBuiltins(installedPlugins), ...(platform === "web" ? clientProduct?.builtins ?? [] : [])].filter(plugin => !replacedPlugins.has(plugin.manifest.id)),
     });
     startupRollback.push(() => extensionManager.dispose());
     if (options.optionalFeatureStartup !== undefined) {

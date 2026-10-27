@@ -720,3 +720,22 @@ test("removed built-ins stay dormant without affecting installed extensions and 
     } finally { await returning.dispose(); await returningSupervisor.dispose(); await runtime.fiber.dispose(); }
   }
 });
+
+test('restoration activates dependencies before lexically earlier dependents and retains independent plugins', async () => {
+  const persistence = new MemoryExtensionInstallationPersistence();
+  const owner = await repository(persistence);
+  const activated: string[] = [];
+  const supervisor = new ExtensionSupervisor({ platform: 'web' });
+  const definitions = ['a.companion', 'z.provider', 'independent'].map(id => ({
+    manifest: { ...manifest(id), ...(id === 'a.companion' ? { dependencies: ['z.provider'] } : {}) },
+    activate() { activated.push(id); },
+  }));
+  const manager = new ExtensionManager({ installations: owner.repository, supervisor, loader: loaderFor({}),
+    builtins: definitions.map(definition => ({ manifest: definition.manifest, defaultEnabled: true, async load() { return definition; } })),
+  });
+  try {
+    await manager.restore();
+    assert.equal(manager.getSnapshot().extensions.every(item => item.status === 'active'), true);
+    assert.ok(activated.indexOf('z.provider') < activated.indexOf('a.companion'));
+  } finally { await manager.dispose(); await supervisor.dispose(); await owner.fiber.dispose(); }
+});

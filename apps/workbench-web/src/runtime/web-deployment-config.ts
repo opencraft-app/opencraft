@@ -1,9 +1,11 @@
+import { parseServerInstalledExtensions, type ServerInstalledExtension } from './server-installed-extensions';
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 // Website-owned data, injected before the application module starts. Electron
 // never reads this contract; a static/Vite deployment has no injected element.
 import { createWorkbenchDraftLocation, createWorkbenchThreadLocation, type WorkbenchLocation } from "@opencraft/workbench-runtime";
 
 export interface WebDeploymentConfig {
+  readonly userPlugins?: readonly ServerInstalledExtension[];
   readonly hosts: readonly unknown[];
   readonly builtinAgents: boolean;
   readonly hypernode: boolean;
@@ -46,7 +48,7 @@ export function parseWebDeploymentConfig(raw: string | null): WebDeploymentConfi
   const names = record.machineDisplayNames;
   if (names !== undefined && (typeof names !== "object" || names === null || Array.isArray(names)
     || Object.entries(names).some(([id, name]) => !id || typeof name !== "string" || !name.trim() || name.trim().length > 64 || /\p{Cc}/u.test(name)))) throw new Error("Invalid website machine display names");
-  return { ...(names === undefined ? {} : { machineDisplayNames: Object.freeze(Object.fromEntries(Object.entries(names).map(([id, name]) => [id, (name as string).trim()]))) }), ...(record.extensions === undefined ? {} : { extensions: record.extensions as string[] }), hosts: record.hosts, builtinAgents: record.builtinAgents, hypernode: record.hypernode };
+  return { ...(record.userPlugins === undefined ? {} : { userPlugins: parseServerInstalledExtensions(record.userPlugins) }), ...(names === undefined ? {} : { machineDisplayNames: Object.freeze(Object.fromEntries(Object.entries(names).map(([id, name]) => [id, (name as string).trim()]))) }), ...(record.extensions === undefined ? {} : { extensions: record.extensions as string[] }), hosts: record.hosts, builtinAgents: record.builtinAgents, hypernode: record.hypernode };
 }
 
 export function resolveWebDeploymentConfig(

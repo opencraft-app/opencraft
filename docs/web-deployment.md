@@ -417,3 +417,41 @@ bridge establishes trusted distribution and bounded verification. It does not
 implement a persistent multi-owner coordinator, owner admission fences or claim
 that every running backend component has switched versions. Those capabilities
 require separate owner/transaction contracts.
+
+
+## Operator-installed Web plugins
+
+Managed deployments keep operator-installed trusted Web plugins in
+`<stateDirectory>/user-plugins/`, outside both `releases/` and `staging/`.
+Application install, rollback, worker recovery and service restart only change the
+application release; they do not replace this directory. Browser module-URL
+installations keep their existing client installation/artifact stores and public
+API restrictions.
+
+`plugins.json` has `schemaVersion: 1` and a `plugins` array. Each descriptor has
+an extension `manifest`, `entry: "<extension-id>/plugin.mjs"`, the module's hex
+`sha256`, and an explicit `replaces` array of bundled extension IDs. Files under
+`public/<extension-id>/` are served at `/__opencraft_plugins/<extension-id>/`
+through the normal deployment admission. Modules must be self-contained ESM
+exporting a default trusted extension definition. Only the deployment operator
+can install these modules: browser URL installations cannot acquire internal
+capabilities by claiming this descriptor or trust level. The normal extension
+manager owns activation, enable/disable state and plugin storage; replacing a
+bundled default does not delete its stored installation or data.
+
+An optional `branding` object carries initial HTML `name`, `faviconUrl`,
+`markUrl` and `appleTouchIconUrl`; asset URLs must stay within the plugin's own
+public prefix. The extension itself registers its branding through the existing
+trusted contribution channel so the application header and document lifecycle
+share the same owner. Install plugin files first, atomically replace the index
+last, then reactivate the Web worker. Serialize installation with the operator's
+normal deployment lock. Do not edit signed release files or use systemd mounts
+over version directories.
+
+Plugin-enabled deployments require `opencraftWeb.userPlugins: 1` in each
+application release. Activation of an older incompatible release fails explicitly
+and preserves the installed plugins and current release. Upgrade the fixed
+launcher before enabling plugins so rollback uses the same compatibility gate;
+legacy launchers do not implement this contract. Rollback among compatible
+releases preserves plugins. Removing a plugin is a separate operator action;
+application rollback never uninstalls it.

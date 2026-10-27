@@ -1,3 +1,4 @@
+import { loadUserPlugins, assertUserPluginCompatibility } from './user-plugins.mjs';
 import { fullReleaseTrust } from '../full-release/trust.mjs';
 import { readReplayState } from '../full-release/archive.mjs';
 import { verifyRetainedRelease, initializeReplayState } from '../full-release/retained.mjs';
@@ -45,6 +46,8 @@ async function assertReleaseProfile(release, current) {
     throw new Error('Release execution profile differs from this website; select the matching npm update channel');
 }
 async function startWorker(release, environment) {
+  const plugins = await loadUserPlugins(environment.OPENCRAFT_USER_PLUGIN_DIRECTORY);
+  await assertUserPluginCompatibility(release, plugins);
   const child = fork(join(release.releaseRoot, 'runtime/worker.mjs'), [], {
     env: { ...process.env, ...environment, OPENCRAFT_RELEASE_ROOT: release.releaseRoot },
     execArgv: [], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -119,7 +122,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
   let recovery = null;
   let active; let persisted; let closed = false; let operation = null; let checking = null; let latest = null;
   let checkedAt = null; let checkError = null; let checkErrorCode = null; const sessions = new Map(); let loginAttempts = [];
-  const environment = { OPENCRAFT_RESOURCE_CACHE_DIRECTORY: process.env.OPENCRAFT_RESOURCE_CACHE_DIRECTORY || join(directory, 'resource-cache'),
+  const environment = { OPENCRAFT_USER_PLUGIN_DIRECTORY: join(directory, 'user-plugins'), OPENCRAFT_RESOURCE_CACHE_DIRECTORY: process.env.OPENCRAFT_RESOURCE_CACHE_DIRECTORY || join(directory, 'resource-cache'),
     OPENCRAFT_NPM_REGISTRY: registry || process.env.OPENCRAFT_NPM_REGISTRY || 'https://registry.npmjs.org/',
     OPENCRAFT_NPM_USERCONFIG: userconfig || process.env.OPENCRAFT_NPM_USERCONFIG || '', OPENCRAFT_APPSERVER_URL: appServerTarget || '', OPENCRAFT_CODEX_APPSERVER_URL: codexServerTarget || '', OPENCRAFT_HYPERNODE_USER: hyperNodeUser };
   try {
@@ -170,6 +173,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         })().finally(() => { recovery = null; });
       });
     }
+    await assertUserPluginCompatibility(current, await loadUserPlugins(environment.OPENCRAFT_USER_PLUGIN_DIRECTORY));
     if (execution) await execution.apply(current);
     active = await startWorker(current, environment); track(active);
     const cookieName = 'opencraft_web_admin';

@@ -134,3 +134,27 @@ test('managed Web forwards push enrollment to Headless with authentication and b
   assert.equal((await fetch(base + '/__opencraft_push-extra')).status, 404);
   assert.equal(requests.length, 2, 'similarly named static paths never reach Headless');
 });
+
+
+test('operator plugin storage rejects tampering and incompatible release activation without removing files', async t => {
+  const { createHash } = await import('node:crypto');
+  const { loadUserPlugins, assertUserPluginCompatibility, userPluginAsset } = await import('../../scripts/web-deployment/user-plugins.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'web-user-plugins-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, 'user-plugins');
+  await mkdir(join(directory, 'public/test.plugin'), { recursive: true });
+  const module = join(directory, 'public/test.plugin/plugin.mjs');
+  const code = 'export default {};';
+  await writeFile(module, code);
+  const plugin = { manifest: { manifestVersion: 1, id: 'test.plugin', name: 'Test', version: '1.0.0', apiVersion: 1 }, entry: 'test.plugin/plugin.mjs', replaces: [], sha256: createHash('sha256').update(code).digest('hex') };
+  await writeFile(join(directory, 'plugins.json'), JSON.stringify({ schemaVersion: 1, plugins: [plugin] }));
+  const installed = await loadUserPlugins(directory);
+  await writeFile(join(root, 'package.json'), JSON.stringify({ opencraftWeb: {} }));
+  await assert.rejects(assertUserPluginCompatibility({ releaseRoot: root }, installed), /cannot load installed user plugins/);
+  assert.deepEqual(await loadUserPlugins(directory), installed);
+  await writeFile(join(root, 'package.json'), JSON.stringify({ opencraftWeb: { userPlugins: 1 } }));
+  await assertUserPluginCompatibility({ releaseRoot: root }, installed);
+  await assert.rejects(userPluginAsset(directory, '../plugins.json'), /Invalid/);
+  await writeFile(module, code + 'tampered');
+  await assert.rejects(loadUserPlugins(directory), /integrity/);
+});

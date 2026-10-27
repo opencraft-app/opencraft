@@ -39,7 +39,22 @@ test('npm package installs, switches without disconnecting existing execution so
     base = `http://127.0.0.1:${(await app.listen({ port: 0 })).port}`;
   };
   try {
+    const pluginRoot = join(stateDirectory, 'user-plugins');
+    const manifest = { manifestVersion: 1, id: 'user.example', name: 'Example', version: '1.0.0', apiVersion: 1, trust: 'trusted', platforms: ['web'], activationEvents: ['onStartupFinished'] };
+    const code = 'export default {manifest:' + JSON.stringify(manifest) + ',activate(api){api.internal.register("applicationBranding",{id:"user.example",name:"User brand"})}};';
+    await mkdir(join(pluginRoot, 'public/user.example'), { recursive: true });
+    await writeFile(join(pluginRoot, 'public/user.example/plugin.mjs'), code);
+    await writeFile(join(pluginRoot, 'plugins.json'), JSON.stringify({ schemaVersion: 1, plugins: [{ manifest, entry: 'user.example/plugin.mjs', sha256: createHash('sha256').update(code).digest('hex'), replaces: ['fixture.default'] }] }));
+    const { tsImport } = await import('tsx/esm/api');
+    const { assertInstalledPlugins } = await tsImport('../support/assert-user-plugins.ts', import.meta.url);
+    const assertPlugin = async () => {
+      await assertInstalledPlugins(base);
+      assert.equal(await (await fetch(`${base}/__opencraft_plugins/user.example/plugin.mjs`)).text(), code);
+      assert.match(await (await fetch(base + '/')).text(), /"userPlugins":\[\{"manifest":\{"manifestVersion":1,"id":"user.example"/);
+      assert.equal(await readFile(join(pluginRoot, 'public/user.example/plugin.mjs'), 'utf8'), code);
+    };
     fixture = await releaseFixture(directory); await open();
+    await assertPlugin();
     assert.equal((await status()).current.version, '1.0.0');
     const malformed = await new Promise((accept, reject) => {
       const request = httpRequest(`${base}`, { path: '//[' }, response => { response.resume(); response.on('end', () => accept(response.statusCode)); });
@@ -80,11 +95,13 @@ test('npm package installs, switches without disconnecting existing execution so
     assert.equal(installed.current.version, '1.1.0'); assert.equal(installed.canRollback, true);
     assert.equal((await (await fetch(`${base}/version.json`)).json()).buildId, 'build-1.1.0');
     assert.match(await (await fetch(`${base}/assets/lazy-100abcdef.js`)).text(), /1.0.0/);
+    await assertPlugin();
     await echo('after-update'); assert.equal(closed, false); assert.equal(backendConnections, 1);
     assert.equal((await post('rollback')).status, 202);
     await until(status, result => result.current.version === '1.0.0' && result.job.phase === 'completed');
     await assert.rejects(readFile(join(fixture.releases.get('1.0.0').packageRoot, 'web/assets/lazy-110abcdef.js')), { code: 'ENOENT' });
     assert.ok(JSON.parse(await readFile(join(stateDirectory, 'deployment.json'), 'utf8')).current.releaseRoot.startsWith(stateDirectory));
+    await assertPlugin();
     await echo('after-rollback'); assert.equal(closed, false); assert.equal(backendConnections, 1);
     const expectedIntegrity = fixture.releases.get('1.1.0').manifest.dist.integrity;
     fixture.releases.get('1.1.0').manifest.dist.integrity = 'sha512-' + Buffer.alloc(64, 7).toString('base64');
@@ -124,7 +141,7 @@ test('npm package installs, switches without disconnecting existing execution so
     const newSocket = new WebSocket(base.replace('http:', 'ws:') + '/appserver'); await once(newSocket, 'open'); newSocket.close(); await once(newSocket, 'close');
     socket.close(); await once(socket, 'close'); socket = null;
     await assert.rejects(() => createManagedWebServer({ initialRelease: fixture.releases.get('1.0.0').packageRoot, stateDirectory }), /already running/);
-    await app.close(); app = null; await open(); cookie = '';
+    await app.close(); app = null; await open(); cookie = ''; await assertPlugin();
     assert.equal((await status()).current.version, '1.0.0'); assert.equal((await status()).authenticated, false);
     assert.equal((await status()).job.phase, 'failed');
     const pidPath = join(JSON.parse(await readFile(join(stateDirectory, 'deployment.json'), 'utf8')).current.releaseRoot, 'worker-pid');
@@ -133,6 +150,7 @@ test('npm package installs, switches without disconnecting existing execution so
     await until(async () => Number(await readFile(pidPath, 'utf8')), pid => pid !== oldPid);
     await until(async () => (await fetch(`${base}/version.json`)).status, code => code === 200);
     assert.equal((await status()).current.version, '1.0.0');
+    await assertPlugin();
     const response = await fetch(`${base}/crash-during-response`, { signal: AbortSignal.timeout(3000) });
     const responsePid = Number(await readFile(pidPath, 'utf8'));
     await assert.rejects(response.text());

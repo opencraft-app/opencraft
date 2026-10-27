@@ -53,7 +53,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const html = await readFile(indexPath, 'utf8');
   await writeFile(indexPath, html.replace('</head>', `<meta name="opencraft-web-updates" content="/__opencraft_updates">${resources ? `<meta name="opencraft-web-resources" content="${web.buildId}">` : ''}</head>`));
   manifest.version = version;
-  manifest.opencraftWeb = { schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
+  manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
