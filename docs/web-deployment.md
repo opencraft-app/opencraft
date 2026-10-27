@@ -500,3 +500,9 @@ stream port accepts an exact receipt size for publication verification. Historic
 unsigned sources keep their existing npm compatibility path. Fixed launchers must
 receive this implementation before their first complete-package npm download;
 maintaining only the application worker does not replace the launcher's updater.
+
+The npm transport also accepts a streamed request body for registry operations.
+Request URLs remain bound to the configured registry; authentication comes from
+the npm toolchain, redirects remain disabled, and caller headers cannot replace
+the configured credentials. Producers can encode large publication attachments
+in bounded chunks instead of allocating one archive-sized Base64 string.

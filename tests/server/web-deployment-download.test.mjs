@@ -14,9 +14,13 @@ test('npm-authenticated HTTPS stream binds the URL, rejects redirects and bounds
   const key=join(root,'key'),cert=join(root,'cert');
   await promisify(execFile)('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=localhost']);
   const payload=Buffer.from('opaque archive bytes; this downloader never parses tar'), integrity='sha512-'+createHash('sha512').update(payload).digest('base64');
-  const requests=[];let sawCredential=false;
+  const requests=[];let sawCredential=false;let uploaded;let uploadCredential;
   const server=createServer({key:await readFile(key),cert:await readFile(cert)},(request,response)=>{
     requests.push(request.url);sawCredential ||= request.headers.authorization==='Bearer fixture-download-credential';
+    if(request.method==='PUT'){
+      uploadCredential=request.headers.authorization;
+      const chunks=[];request.on('data',chunk=>chunks.push(chunk));request.on('end',()=>{uploaded=Buffer.concat(chunks);response.writeHead(201);response.end('{}');});return;
+    }
     if(request.url==='/npm/redirect'){response.writeHead(302,{location:'/npm/never'});response.end();return;}
     if(request.url==='/npm/oversize'){response.write(Buffer.alloc(payload.length+1));response.end();return;}
     response.setHeader('content-length',payload.length);response.end(payload);
@@ -38,4 +42,10 @@ test('npm-authenticated HTTPS stream binds the URL, rejects redirects and bounds
   async function* chunks(){for(let i=0;i<100;i++){consumed++;yield Buffer.alloc(32);}}
   await assert.rejects(downloadCandidate(spec,async url=>({status:200,url,headers:new Headers(),body:chunks()})),/budget/);
   assert.equal(consumed,2);await assert.rejects(stat(spec.destination),{code:'ENOENT'});
+  const transport=await npmTransport(spec);
+  const {Readable}=await import('node:stream');
+  const written=await transport(registry+'publish',{method:'PUT',headers:{'content-type':'application/json','content-length':'7','Authorization':'untrusted-override'},body:Readable.from(['{"a":1}'])});
+  assert.equal(written.status,201);await written.text();assert.equal(uploaded.toString(),'{"a":1}');
+  assert.equal(uploadCredential,'Bearer fixture-download-credential');
+  assert.throws(()=>transport('https://unverified.invalid/'),/origin/);
 });
