@@ -220,8 +220,8 @@ export class PiEngine {
     session.hostTools = tools;
     return tools;
   }
-  private async refreshHostTools(session: Session): Promise<void> {
-    await this.options.sessionCapabilities?.refresh?.(session.id);
+  private async refreshHostTools(session: Session, inputId?: string): Promise<void> {
+    await this.options.sessionCapabilities?.refresh?.(session.id, inputId ? { inputId } : undefined);
     const previous = session.hostTools, tools = this.hostTools(session);
     session.hostTools = previous;
     if (previous !== undefined && isDeepStrictEqual(previous, tools)) return;
@@ -240,17 +240,26 @@ export class PiEngine {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
         ephemeral: session.ephemeral, inherited: session.inherited,
         agentDirectory: this.options.modelDirectory ?? this.options.directory, models: await this.modelsRuntime, tools: [...session.tools, ...this.hostTools(session)],
+        prepareRecovery: async snapshot => {
+          const active = [...projectPiSnapshot(session, snapshot)].reverse().find(turn => turn.status === "inProgress");
+          if (!active) return undefined;
+          const inputId = active.items.find((item: Value) => item.type === "userMessage" && item.__opencraftMessageKind !== "steering")?.clientId;
+          // Restore from the durable native submission before any scheduler or
+          // shell follow-up can resume; never use a reconnecting browser owner.
+          await this.options.sessionCapabilities?.refresh?.(session.id, { turnId: active.id, ...(typeof inputId === "string" ? { inputId } : {}) });
+          return [...session.tools, ...this.hostTools(session)];
+        },
         onSnapshot: snapshot => this.accept(session, snapshot),
         onTool: async (request, signal) => {
           const hostTool = session.hostTools?.find(tool => tool.piName === request.name);
           if (hostTool) {
-            if (!session.active) throw new Error("No active Pi execution");
+            if (!session.active || request.turnId !== session.active.id) throw new Error("No active Pi execution");
             if (hostTool.orchestration === true) {
               const inputId = session.active.items.find((item: Value) => item.type === "userMessage")?.clientId;
               return this.orchestration!.call(session.id, session.active.id, String(request.id), hostTool.name,
                 request.arguments, signal, typeof inputId === "string" ? inputId : undefined);
             }
-            return this.options.sessionCapabilities!.call(session.id, hostTool.name, request.arguments, signal);
+            return this.options.sessionCapabilities!.call(session.id, hostTool.name, request.arguments, signal, { turnId: request.turnId, callId: String(request.id) });
           }
           const tool = session.tools.find(tool => tool.piName === request.name), owner = session.owner, lease = session.lease;
           if (!tool || !owner || !lease || lease.signal.aborted || !session.active) throw new Error("No live platform tool owner");
@@ -365,7 +374,7 @@ export class PiEngine {
       throw new Error("Pi queue changed or the thread is still active");
     }
     try {
-      await this.refreshHostTools(session);
+      await this.refreshHostTools(session, item.clientId ?? undefined);
       const owner = this.queueOwners.get(item.id);
       if (owner) this.attach(session, owner);
       session.pendingRecovery = true;
@@ -910,7 +919,7 @@ export class PiEngine {
       if (clientId && await (await this.native(session)).execution(turnId)) throw new Error("This message identity has already been withdrawn");
       if (session.active) throw new Error("Pi thread already has an active turn");
       if (session.archived) throw new Error("Unarchive the Pi thread before executing");
-      await this.refreshHostTools(session);
+      await this.refreshHostTools(session, clientId ?? undefined);
       // Validate the full submission before applying persistent overrides.
       assertPiFields(params);
       const ref = selection(params.model ?? session.model), model = (await this.modelsRuntime).getModel(ref.provider, ref.modelId);

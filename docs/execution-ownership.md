@@ -843,3 +843,27 @@ A standalone Core has no generation envelope. Its authenticated health identifie
 ### Bounded execution lease reconciliation
 
 Gateway initialization reads only native facts needed by unsettled execution leases. Known Turn IDs are matched against paginated `notLoaded` headers; only admissions without a Turn ID need small `summary` pages to establish the exact original input. Stop after the target set is observed, keep missing outcomes unknown, and do not create leases for unrelated historical Turns. Recovery must not fetch `thread/read` with `includeTurns: true`, since a full transcript can monopolize a shared SSH transport and repeat at every reconnection.
+
+### Execution-bound authenticated MCP capabilities
+
+Trusted Headless identity adapters may return `capabilityProviders` backed by
+`SessionCapabilities`. Capability execution context is supplied by native Host
+adapters, never tool arguments. `AuthenticatedMcpProvider` obtains an opaque
+account/revision and the current immutable execution identity from the product
+resolver; it sends the service token only in the upstream HTTP Authorization
+header. Native configuration contains only a loopback endpoint and a signed
+execution capability. Catalogs are account/revision scoped; authenticated MCP
+clients are operation scoped, with no cross-account upstream sessions.
+
+Codex prepares configuration while idle before each start, binding the original
+input and execution ID. Its existing connection/generation fences remain in
+force. DSH captures native turn identity before IPC and checks it against its
+execution authority. Pi reads the tool task and first durable submission from
+the active native run. Remote Hosts forward signed native context to the same
+provider. A thread bearer alone grants no employee authority. Pending inputs may
+list declarations; calls require an admitted active execution. Every outbound
+request and returned result rechecks employee admission, execution and credential
+revision. Revocation cancels in-flight transports; uncertain writes are not
+replayed. Upstream errors are generic and reflected secrets are redacted from
+catalogs and results. These are trusted same-UID Host boundaries, not a sandbox
+against malicious shell access to process memory.

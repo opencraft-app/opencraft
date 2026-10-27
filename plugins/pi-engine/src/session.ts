@@ -63,6 +63,7 @@ export class PiDurableSession {
   private replaceTools!: (tools: Value[]) => void;
   private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
     ephemeral?: boolean; inherited?: PiForkContext;
+    prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
     onSnapshot(snapshot: PiSnapshot): Promise<void> | void; onTool(request: Value, signal: AbortSignal): Promise<unknown>; onExit(error: Error): void }) {}
   static async open(options: PiDurableSession["options"]) {
     const session = new PiDurableSession(options);
@@ -117,8 +118,16 @@ export class PiDurableSession {
           cancel = () => reject(new Error("Platform tool cancelled"));
           ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
         });
+        const origin = await this.root.commit(async tx => {
+          const live = await tx.doc(LiveDoc, this.root.id);
+          const owns = [...live.tools ?? [], ...live.nestedTools ?? []].some(slot => slot.taskId === api.taskId);
+          if (!owns || live.run?.inputs[0] === undefined) throw new Error("Tool execution has expired");
+          const input = await this.storage.submission(live.run.inputs[0], ctx);
+          if (!input?.requestId) throw new Error("Tool execution has no native submission");
+          return input.requestId;
+        }, ctx);
         let result: Value;
-        try { result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value; }
+        try { result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args, turnId: origin }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value; }
         finally { if (cancel) ctx.abortSignal?.removeEventListener("abort", cancel); }
         const output = (result?.contentItems ?? []).map((item: Value) => {
           if (item.type === "inputText" && typeof item.text === "string") return { type: "text" as const, text: item.text };
@@ -152,6 +161,8 @@ export class PiDurableSession {
     }
     for (const record of await this.pages(cursor => this.storage.scanSubmissions({ conversationId: this.root.id }, 100, cursor, context)))
       this.submissions.set(record.id, record);
+    const recoveredTools = await this.options.prepareRecovery?.(await this.snapshot());
+    if (recoveredTools) this.replaceTools(recoveredTools);
     this.stream = await watchEvents(this.harness, this.root.id, context);
     this.stream.start(async events => {
       for (const event of events) if (event.type === "submission") this.submissions.set(event.record.id, event.record);

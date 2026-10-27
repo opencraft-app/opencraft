@@ -668,7 +668,7 @@ test("Pi temporary fork validates before allocation and does not survive engine 
 for (const ephemeral of [false,true]) test(`Host tools and browser tools coexist on an existing ${ephemeral?"temporary":"durable"} Pi session`,async t=>{
  const directory=await mkdtemp(join(tmpdir(),"pi-host-tools-"));let target="",hostCalls=0,browserCalls=0;
  const {models,faux}=fixtureModels([]);
- const engine=new PiEngine({directory,cwd:directory,models,sessionCapabilities:{tools:id=>id===target?[{name:"im_reply",description:"Reply",inputSchema:{type:"object",properties:{}}}]:[],async call(id,name){assert.equal(id,target);assert.equal(name,"im_reply");hostCalls++;return {success:true,contentItems:[{type:"inputText",text:"receipt"}]};}}});
+ const engine=new PiEngine({directory,cwd:directory,models,sessionCapabilities:{tools:id=>id===target?[{name:"im_reply",description:"Reply",inputSchema:{type:"object",properties:{}}}]:[],async call(id,name,_args,_signal,execution){assert.equal(id,target);assert.equal(name,"im_reply");assert.ok(execution?.turnId?.startsWith(target+":turn:"));assert.ok(execution?.callId);hostCalls++;return {success:true,contentItems:[{type:"inputText",text:"receipt"}]};}}});
  t.after(async()=>{await engine.close();await rm(directory,{recursive:true,force:true});});
  const owner:ExecutionEngineClient={notify(){},async request(){browserCalls++;return {success:true,contentItems:[{type:"inputText",text:"browser"}]};}};
  const created=await engine.request("thread/start",{model:piModel("faux","faux-1"),cwd:directory,ephemeral},owner);target=created.thread.id;
@@ -1227,4 +1227,25 @@ test('a direct or legacy Pi input without native admission proof never echoes a 
   await f.engine.request('turn/start',{threadId:thread.id,clientUserMessageId:'legacy',input},noTools);
   const replay=await f.engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'legacy',input,__opencraftExecutionAdmission:'new-caller-nonce'},noTools);
   assert.equal(replay.queuedSubmission.__opencraftExecutionAdmission,undefined);
+});
+
+test('Pi restores execution-scoped Host tools from the durable original input before recovery', async t => {
+ const directory=await mkdtemp(join(tmpdir(),'pi-mcp-recovery-')); let calls=0;
+ const declaration={name:'current_user',description:'Current user',inputSchema:{type:'object',properties:{}}};
+ const initial=fixtureModels([fauxAssistantMessage('unfinished response '.repeat(30))],20);
+ const original=new PiEngine({directory,cwd:directory,models:initial.models,sessionCapabilities:{tools:()=>[declaration],async call(){throw new Error('Not yet');}}});
+ const created=await original.request('thread/start',{model:piModel('faux','faux-1'),cwd:directory},noTools);
+ const partial=new Promise<void>(resolve=>{const stop=original.subscribe(method=>{if(method==='item/agentMessage/delta'){stop();resolve();}});});
+ const started=await original.request('turn/start',{threadId:created.thread.id,clientUserMessageId:'original-employee-input',input:[{type:'text',text:'work'}]},noTools);
+ await partial; await original.close();
+ let prepared=false; const refreshes:unknown[]=[];
+ const next=fixtureModels([fauxAssistantMessage([fauxToolCall('opencraft_host_current_user',{}, {id:'recovered-call'})],{stopReason:'toolUse'}),fauxAssistantMessage('done')]);
+ const reopened=new PiEngine({directory,cwd:directory,models:next.models,sessionCapabilities:{
+  async refresh(threadId,execution){assert.equal(threadId,created.thread.id);refreshes.push(execution);assert.equal(execution?.inputId,'original-employee-input');assert.equal(execution?.turnId,started.turn.id);prepared=true;},
+  tools:()=>prepared?[declaration]:[],async call(_thread,_name,_args,_signal,execution){assert.equal(execution?.turnId,started.turn.id);calls++;return {success:true,contentItems:[{type:'inputText',text:'employee'}]};},
+ }});
+ t.after(async()=>{await reopened.close();await rm(directory,{recursive:true,force:true});});
+ const done=completed(reopened);await reopened.request('thread/resume',{threadId:created.thread.id},noTools);
+ assert.equal((await done).status,'completed');assert.equal(refreshes.length,1);assert.equal(calls,1);
+ const read=await reopened.request('thread/read',{threadId:created.thread.id,includeTurns:true},noTools);assert.equal(read.thread.turns.length,1);
 });

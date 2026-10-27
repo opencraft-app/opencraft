@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
-import type { CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
+import type { CapabilityExecution, CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
 
 /** Same-uid independent Host attachment. The descriptor is rediscovered for each
  * operation; gateway restarts never create a second capability authority. */
@@ -16,17 +16,17 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
     if (!info.isFile() || !process.getuid || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error("Session capability attachment requires owned private files");
     return readFile(path);
   }
-  private async connection(threadId: string) {
+  private async connection(threadId: string, execution?: CapabilityExecution) {
     const descriptor = JSON.parse((await this.privateFile(join(this.directory, "session-capabilities.json"))).toString());
     const url = new URL(descriptor.url);
     if (descriptor.schemaVersion !== 1 || url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/mcp"
       || url.search || url.hash || url.username || url.password) throw new Error("Invalid session capability descriptor");
     const key = await this.privateFile(join(this.directory, "session-capabilities.key"));
     if (key.length !== 32) throw new Error("Invalid session capability key");
-    return { url, headers: { Authorization: "Bearer " + sessionCapabilityToken(key, { serverId: this.serverId, threadId }) } };
+    return { url, headers: { Authorization: "Bearer " + sessionCapabilityToken(key, { serverId: this.serverId, threadId, execution }) } };
   }
-  private async client<T>(threadId: string, run: (client: Client) => Promise<T>): Promise<T> {
-    const { url, headers } = await this.connection(threadId);
+  private async client<T>(threadId: string, run: (client: Client) => Promise<T>, execution?: CapabilityExecution): Promise<T> {
+    const { url, headers } = await this.connection(threadId, execution);
     const client = new Client({ name: "opencraft-host", version: "1" });
     try {
       await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers, signal: AbortSignal.timeout(30_000) } }));
@@ -34,16 +34,16 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
     } finally { await client.close(); }
   }
   tools(threadId: string) { return this.catalog.get(threadId) ?? []; }
-  async refresh(threadId: string): Promise<void> {
+  async refresh(threadId: string, execution?: CapabilityExecution): Promise<void> {
     this.catalog.delete(threadId);
     if (this.catalog.size >= 256) this.catalog.delete(this.catalog.keys().next().value!);
     // Gateway absence must not break ordinary DSH input without Host tools.
-    try { const { tools } = await this.client(threadId, client => client.listTools()); this.catalog.set(threadId, tools.map(tool => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema }))); }
+    try { const { tools } = await this.client(threadId, client => client.listTools(), execution); this.catalog.set(threadId, tools.map(tool => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema }))); }
     catch { /* Calls and trusted IM admission still fail closed. */ }
   }
-  async call(threadId: string, name: string, args: unknown, signal: AbortSignal): Promise<CapabilityResult> {
+  async call(threadId: string, name: string, args: unknown, signal: AbortSignal, execution?: CapabilityExecution): Promise<CapabilityResult> {
     signal.throwIfAborted();
-    const result = await this.client(threadId, client => client.callTool({ name, arguments: args as Record<string, unknown> }, undefined, { signal }));
+    const result = await this.client(threadId, client => client.callTool({ name, arguments: args as Record<string, unknown> }, undefined, { signal }), execution);
     if (!Array.isArray(result.content)) throw new Error("Invalid capability result");
     return { success: result.isError !== true, contentItems: result.content.map(item => {
       if (item.type !== "text" || typeof item.text !== "string") throw new Error("Unsupported capability result");

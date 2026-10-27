@@ -6,7 +6,7 @@ import type { ThreadLifecycle } from "./thread-lifecycle.js";
 /** Uses the Host's existing serialization, execution journal and native input.
  * Null is safe waiting; once the journal has a claim it is never absent again. */
 export function dshHostInputs(adapter: DshAppServerAdapter, authority: DshExecutionAuthority, lifecycle: ThreadLifecycle,
-  prepare: (threadId: string) => Promise<void>, owner: DshExecutionOwner): HostInputPort {
+  prepare: (threadId: string, inputId?: string) => Promise<void>, owner: DshExecutionOwner): HostInputPort {
   const port: HostInputPort = {
     async receipt(threadId, inputId) {
       const prior = authority.scheduleInput(threadId, inputId);
@@ -21,7 +21,7 @@ export function dshHostInputs(adapter: DshAppServerAdapter, authority: DshExecut
       const { goal } = await adapter.dispatch("thread/goal/get", { threadId }) as any;
       if (goal?.status === "active" && goal?.execution?.activation === "armed") return null;
       if (!await canAdmit()) return null;
-      await prepare(threadId);
+      await prepare(threadId, inputId);
       if (!await canAdmit() || authority.table.get(threadId) || authority.leases.get(threadId)) return null;
       try {
         const { turn } = await adapter.dispatchOwned("turn/start", { threadId, clientUserMessageId: inputId,

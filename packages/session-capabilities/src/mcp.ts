@@ -23,7 +23,7 @@ export function capabilitySigningKey(path: string): Buffer {
   return key;
 }
 export function sessionCapabilityToken(key: Buffer, session: CapabilitySession): string {
-  const payload = Buffer.from(JSON.stringify(["session", session.serverId, session.threadId])).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(session.execution ? ["execution", session.serverId, session.threadId, session.execution] : ["session", session.serverId, session.threadId])).toString("base64url");
   return payload + "." + createHmac("sha256", key).update(payload).digest("base64url");
 }
 export class SessionCapabilityMcp {
@@ -57,7 +57,17 @@ export class SessionCapabilityMcp {
     if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) return null;
     try {
       const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
-      if (!Array.isArray(pair) || pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
+      if (!Array.isArray(pair)) return null;
+      if (pair[0] === "execution" && pair.length === 4) {
+        const [_, serverId, threadId, execution] = pair;
+        if (![serverId, threadId].every(v => typeof v === "string" && v && v.length <= 512)
+          || !execution || typeof execution !== "object" || Array.isArray(execution)
+          || Object.keys(execution).some(k => !["executionId", "inputId", "turnId", "incarnation", "callId"].includes(k))
+          || Object.values(execution).some(v => typeof v !== "string" || !v || v.length > 512)
+          || !execution.inputId && !execution.turnId) return null;
+        return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }) };
+      }
+      if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
       if (pair[0] === "binding" && pair.length === 2) {
         const session = this.bindings?.get(pair[1]) ?? this.memoryBindings.get(pair[1]);
         if (session) return { session, reservationId: pair[1] };
@@ -88,7 +98,7 @@ export class SessionCapabilityMcp {
     const tools = this.capabilities.tools(session);
     if (!this.url || !tools.length) return null;
     const id = this.bindings?.id(session) ?? [...this.memoryBindings].find(([, s]) => s.serverId === session.serverId && s.threadId === session.threadId)?.[0];
-    return this.configuration(id ? this.bindingToken(id) : this.token(session), tools);
+    return this.configuration(id && !session.execution ? this.bindingToken(id) : this.token(session), tools);
   }
   /** Host-only creation reservation. Listing a declaration never authorizes a
    * call; the real native identity must be bound and domain admission committed. */
@@ -150,6 +160,7 @@ export class SessionCapabilityMcp {
     }
     const mcp = new Server({ name: "opencraft-session", version: "1.0.0" }, { capabilities: { tools: {} } });
     mcp.setRequestHandler(ListToolsRequestSchema, async () => {
+      if (authenticated.session) await this.capabilities.refresh(authenticated.session);
       const tools = authenticated.session ? this.capabilities.tools(authenticated.session) : authenticated.tools ?? [];
       const staged = authenticated.reservationId ? this.pending.get(authenticated.reservationId) : undefined;
       if (tools.length && authenticated.reservationId) this.pending.delete(authenticated.reservationId);

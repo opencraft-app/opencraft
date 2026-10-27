@@ -119,17 +119,21 @@ export class ImChannelService {
     }
     this.unregisterCapabilities = dependencies.capabilities?.register({
       id: 'im.reply',
-      tools: session => [
-        ...(this.im.replyAvailable(session) ? [IM_REPLY_TOOL] : []),
-        ...(this.im.readAvailable(session) ? IM_READ_TOOLS : []),
-        ...(this.wecomHistory.available(session) ? [...WECOM_HISTORY_TOOLS, WECOM_POST_TOOL] : []),
-      ],
+      tools: session => {
+        const ref = { serverId: session.serverId, threadId: session.threadId };
+        return [
+          ...(this.im.replyAvailable(ref) ? [IM_REPLY_TOOL] : []),
+          ...(this.im.readAvailable(ref) ? IM_READ_TOOLS : []),
+          ...(this.wecomHistory.available(ref) ? [...WECOM_HISTORY_TOOLS, WECOM_POST_TOOL] : []),
+        ];
+      },
       call: (session, name, args, signal) => {
-        if (name === WECOM_POST_TOOL.name) return this.wecomPosts.call(session, args, signal);
-        if (WECOM_HISTORY_TOOLS.some(tool => tool.name === name)) return this.wecomHistory.call(session, name, args, signal);
-        if (IM_READ_TOOLS.some(tool => tool.name === name)) return this.im.read(session, name, args, signal);
+        const ref = { serverId: session.serverId, threadId: session.threadId };
+        if (name === WECOM_POST_TOOL.name) return this.wecomPosts.call(ref, args, signal);
+        if (WECOM_HISTORY_TOOLS.some(tool => tool.name === name)) return this.wecomHistory.call(ref, name, args, signal);
+        if (IM_READ_TOOLS.some(tool => tool.name === name)) return this.im.read(ref, name, args, signal);
         if (name !== 'im_reply') throw Error('capability_denied');
-        return this.im.reply(session, args, signal);
+        return this.im.reply(ref, args, signal);
       },
     });
     this.adapters = new Map();

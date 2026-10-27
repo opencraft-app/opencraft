@@ -353,6 +353,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         resolveIdentity: request => instanceAccess?.authenticate(request) ?? null,
         getInstanceAccess: () => instanceAccess, machineIdentity, actors: actorStore, sshIngressEnabled: !!ingressConfiguration });
       validateHeadlessIdentity(identity);
+      for (const provider of identity?.capabilityProviders ?? []) capabilities.register(provider);
     }
     if (options.accessMemberProviders?.length && !identity?.providers.length && !relayConfiguration && !humanConfiguration && !hubController.node?.store.state.authority)
       throw new Error('Authenticated membership requires an identity provider');
@@ -592,7 +593,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => options.createCodexTransport?.() ?? new CodexEngineAdapter({
-          sessionMcp: async threadId => { await capabilitiesReady; return capabilityMcp.config({serverId:actorCollaboration.execution.serverId,threadId}); },
+          sessionMcp: async (threadId, inputId, executionId) => {
+            await capabilitiesReady;
+            const session = {serverId:actorCollaboration.execution.serverId, threadId, ...(inputId ? {execution:{inputId, ...(executionId ? {executionId} : {})}} : {})};
+            await capabilities.refresh(session);
+            return capabilityMcp.config(session);
+          },
           createThreadMetadata,
           tokenUsage: {
             queryWorkerEntry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url)))

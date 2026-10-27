@@ -46,7 +46,7 @@ export class DshCapabilityBroker {
     return !!previous && previous.owner === owner && isDeepStrictEqual(previous.capabilities, normalizeCapabilities(specs));
   }
   list(threadId: string): readonly DshHostCapability[] {
-    const host = (this.host?.tools(threadId) ?? []).map(tool => ({ ...tool, id: tool.name, namespace: null, timeoutMs: 30_000 }));
+    const host = (this.host?.tools(threadId) ?? []).map(tool => ({ ...tool, id: tool.name, namespace: null, timeoutMs: 60_000 }));
     const browser = this.registrations.get(threadId)?.capabilities ?? [];
     if (browser.some(tool => host.some(h => h.id === tool.id))) throw new Error("Capability name reserved by Host");
     return [...host, ...browser];
@@ -69,7 +69,7 @@ export class DshCapabilityBroker {
   }
   invoke(threadId: string, turnId: string, capabilityId: string, args: unknown, signal: AbortSignal, owner: DshExecutionOwner): Promise<unknown> {
     const hostTool = this.host?.tools(threadId).find(tool => tool.name === capabilityId);
-    if (hostTool) return this.host!.call(threadId, hostTool.name, args, signal);
+    if (hostTool) return this.host!.call(threadId, hostTool.name, args, signal, { turnId });
     const registration = this.registrations.get(threadId);
     if (!registration || registration.owner !== owner && !this.hostOwners.has(owner)) return Promise.reject(new Error("No capability owner for this execution"));
     const capability = registration.capabilities.find(value => value.id === capabilityId);

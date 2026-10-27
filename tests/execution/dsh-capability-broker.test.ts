@@ -191,3 +191,44 @@ test("DSH coalesces native tool registration, retries failures and fences a repl
   link.attach(endpoint); await link.register("s");
   assert.equal(calls.at(-1).params.capabilities[0].description, "v3");
 });
+
+test('DSH generation tools compare native coordinates and reject retired native sessions and turns', async t => {
+ const {DshSessionRouting}=await import('../../apps/local-agent-host/src/dsh-session-routing.js');
+ const routing=new DshSessionRouting(':memory:');routing.publish('logical',{logicalId:'logical',nativeId:'generation-one',generation:1,seedThroughSeq:10,seedThroughTurn:2,previousLastSeq:30,previousLastTurn:8});
+ const authority=new DshExecutionAuthority(':memory:');const claim=authority.claim('logical',a,'request');authority.nativeStarted(claim,'dsh-turn-logical-9','9');
+ let calls=0;const broker=new DshCapabilityBroker(undefined,{tools:()=>[{name:'reply',description:'Reply',inputSchema:{type:'object'}}],async call(_thread,_name,_args,_signal,execution){assert.equal(execution?.turnId,'dsh-turn-logical-9');calls++;return {success:true,contentItems:[]};}});
+ let events=[{type:'capability-request',id:'good',sessionId:'generation-one',nativeTurnId:'3',capabilityId:'reply',arguments:{}},{type:'capability-request',id:'old-turn',sessionId:'generation-one',nativeTurnId:'2',capabilityId:'reply',arguments:{}},{type:'capability-request',id:'old-native',sessionId:'logical',nativeTurnId:'9',capabilityId:'reply',arguments:{}}];
+ const results:any[]=[];let ready!:()=>void;const completed=new Promise<void>(resolve=>{ready=resolve;});
+ const server=createServer(async(req,res)=>{if(req.url==='/events'){const batch=events;events=[];res.end(JSON.stringify({events:batch}));return;}let body='';for await(const chunk of req)body+=chunk;results.push(JSON.parse(body));res.end('{}');if(results.length===3)ready();});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const link=new DshCapabilityLink('x'.repeat(64),broker,authority,routing);link.attach(`http://127.0.0.1:${(server.address() as any).port}`);
+ t.after(async()=>{await link.close();broker.close();authority.close();routing.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
+ await Promise.race([completed,new Promise((_,reject)=>setTimeout(()=>reject(new Error('tool IPC timed out')),3000))]);
+ assert.equal(calls,1);assert.ok(results.find(r=>r.id==='good').result);assert.equal(results.find(r=>r.id==='old-turn').error,true);assert.equal(results.find(r=>r.id==='old-native').error,true);
+});
+
+test('DSH clears native Host tools when the next execution has an empty catalog',async t=>{
+ const {prepareDshExecutionCapabilities}=await import('../../apps/local-agent-host/src/dsh-capability-link.js');
+ let enabled=false;const native:string[][]=[];
+ const host={async refresh(_thread:string,input?:{inputId?:string}){enabled=input?.inputId==='bound';},tools:()=>enabled?[{name:'reply',description:'Reply',inputSchema:{type:'object'}}]:[],async call(){return {success:true,contentItems:[]};}};
+ const broker=new DshCapabilityBroker(undefined,host),authority=new DshExecutionAuthority(':memory:');
+ const server=createServer(async(req,res)=>{if(req.url==='/events'){res.end('{"events":[]}');return;}let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw||'{}');if(req.url==='/register'){native.push(body.capabilities.map((t:any)=>t.name));res.end(JSON.stringify({registered:body.capabilities.length}));}else res.end('{}');});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const link=new DshCapabilityLink('x'.repeat(64),broker,authority);link.attach(`http://127.0.0.1:${(server.address() as any).port}`);
+ t.after(async()=>{await link.close();broker.close();authority.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
+ await prepareDshExecutionCapabilities('thread','bound',host,broker,link);await prepareDshExecutionCapabilities('thread','unbound',host,broker,link);assert.deepEqual(native,[['reply'],[]]);
+});
+
+
+test('editing an active DSH goal retains tools of its native execution owner',async t=>{
+ const {prepareDshExecutionCapabilities}=await import('../../apps/local-agent-host/src/dsh-capability-link.js');
+ let visible=false;const contexts:unknown[]=[];const registrations:string[][]=[];
+ const host={async refresh(_thread:string,context?:{inputId?:string;turnId?:string}){contexts.push(context);visible=context?.inputId==='original-input'||context?.turnId==='native-owner-turn';},tools:()=>visible?[{name:'reply',description:'Reply',inputSchema:{type:'object'}}]:[],async call(){return {success:true,contentItems:[]};}};
+ const broker=new DshCapabilityBroker(undefined,host),authority=new DshExecutionAuthority(':memory:');
+ const server=createServer(async(req,res)=>{if(req.url==='/events'){res.end('{"events":[]}');return;}let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw||'{}');if(req.url==='/register'){registrations.push(body.capabilities.map((t:any)=>t.name));res.end(JSON.stringify({registered:body.capabilities.length}));}else res.end('{}');});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const link=new DshCapabilityLink('x'.repeat(64),broker,authority);link.attach(`http://127.0.0.1:${(server.address() as any).port}`);
+ t.after(async()=>{await link.close();broker.close();authority.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
+ await prepareDshExecutionCapabilities('thread','original-input',host,broker,link);
+ const claim=authority.claim('thread',a,'request');authority.nativeStarted(claim,'native-owner-turn','1');
+ await prepareDshExecutionCapabilities('thread',undefined,host,broker,link,authority.table.get('thread')!.turnId);
+ assert.deepEqual(registrations,[['reply']],'a goal edit does not replace tools of an active execution');
+ assert.deepEqual(contexts,[{inputId:'original-input'},{turnId:'native-owner-turn'}]);
+});
