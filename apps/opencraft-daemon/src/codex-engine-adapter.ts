@@ -326,7 +326,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (!Array.isArray(thread.turns)) continue;
         const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
         this.executionLeases?.reconcile(threadId, thread.turns.map((turn: unknown) => ({ id: string(record(turn).id), status: string(record(turn).status), items: Array.isArray(record(turn).items) ? record(turn).items as readonly unknown[] : [] })),
-          generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : undefined);
+          generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
       } catch { this.diagnostic({ event: "execution-lease-reconciliation-pending" }); }
     }
   }
@@ -1559,7 +1559,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const generation = record(message.__opencraftGeneration), fences = record(generation.fences);
     delete message.__opencraftGeneration;
     const executionIncarnation = typeof generation.generationId === "string" && Number.isSafeInteger(generation.incarnation)
-      ? JSON.stringify([generation.generationId, generation.incarnation]) : undefined;
+      ? JSON.stringify([generation.generationId, generation.incarnation]) : this.nativeCore?.executionIncarnation;
     if (typeof generation.routingEpoch === "string" && fences.routingEpoch === generation.routingEpoch) this.applyGenerationFences(fences as unknown as import("@opencraft/account-pool-host").CodexGenerationFenceState);
     if (generation.routingEpoch === this.generationRoutingEpoch && typeof generation.threadId === "string" && typeof generation.generationId === "string") this.generationRoutes.set(generation.threadId, generation.generationId);
     if (generation.routingEpoch === this.generationRoutingEpoch && typeof generation.generationId === "string" && Number.isSafeInteger(generation.incarnation)) {
@@ -3066,7 +3066,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
       // This durable write precedes the physical send: native tools may start before the ACK.
-      this.executionLeases.begin(string(params.threadId), inputId);
+      this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
     }
     if (this.options.kind === "remote") {
       return this.options.transport.send(JSON.stringify(message)).catch(() => {
