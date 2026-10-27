@@ -1100,3 +1100,27 @@ and per-handle retry counts. `orphan-wait`, `orphan-native`, `forget-handle` and
 replay. Separate old/new comparisons inject immutable real constructors without
 changing prototypes, private state or SUT source. Generated saved inputs remain
 within the parser's 10000-event limit.
+
+`SocketDisposal.tla` adds nineteen finite configurations for layered WebSocket
+cleanup: seven positive paths (including failure after a side effect, shutdown and
+renewal reentry, and an accepted request with a held close event), nine exact
+safety controls and three missing-fairness counterexamples. Adapter-reported
+acceptance, actual raw close return, parent custody, local retirement and one
+possible successor are separate facts. An accepted close permits renewal without
+TCP-close fairness; eventual successful cleanup additionally assumes provider
+recovery and an explicit retry. This is not a constructor-transaction, TypeScript
+refinement, remote execution ACK or arbitrary failing-provider heap proof.
+
+```bash
+npm run test:recovery-chaos -- --suite sockets --seed 20261027 --cases 1000 --steps 120 --output /tmp/socket-disposal-chaos
+```
+
+The `sockets` ledger drives the actual public WebSocket factory/transport with
+raw-Socket and recovery-event providers. Saved inputs vary close failure before
+or after effects, accepted-but-held close events, native loss, two Host intents,
+send, late frames, factory shutdown and reentrant cleanup. First successful
+provider call counts are immutable observations, rather than a baseline reset by
+later calls. `forget-debt`, `admit-before-close`, `drop-local-close` and
+`repeat-close` are exact-rule shrinking controls; ordinary replay omits the control.
+Unchanged old/new factories run against the same independent oracle separately.
+Generated artifacts remain within the parser's 10000-event limit.

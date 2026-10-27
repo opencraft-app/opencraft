@@ -10,6 +10,26 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('SocketDisposal', None),
+    ('SocketDisposal-Healthy', None),
+    ('SocketDisposal-Renewal', None),
+    ('SocketDisposal-After', None),
+    ('SocketDisposal-Held', None),
+    ('SocketDisposal-ShutdownReentry', None),
+    ('SocketDisposal-RenewalReentry', None),
+    ('SocketDisposal-SkipRetry', 'AcceptanceHonest'),
+    ('SocketDisposal-Forget', 'DebtConserved'),
+    ('SocketDisposal-Bypass', 'AllocationSafe'),
+    ('SocketDisposal-EventFirst', 'LocalRetirement'),
+    ('SocketDisposal-EarlyParent', 'DebtConserved'),
+    ('SocketDisposal-Repeat', 'SuccessOnce'),
+    ('SocketDisposal-Disposed', 'AllocationSafe'),
+    ('SocketDisposal-Swallow', 'HonestFailure'),
+    ('SocketDisposal-SkipEvent', 'BothAttempted'),
+    ('SocketDisposal-NoLocal', 'temporal:CallerProgress'),
+    ('SocketDisposal-NoRecovery', 'temporal:CleanupProgress'),
+    ('SocketDisposal-NoRetry', 'temporal:CleanupProgress'),
+
     ('PortCleanup', None),
     ('PortCleanup-Connection', None),
     ('PortCleanup-Server', None),
