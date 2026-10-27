@@ -5,10 +5,14 @@
 @use "./liquid-glass.web";
 @use "./navigation.web";
 
+// A backdrop needs a positioned host, but layout belongs to the consumer.
+// Low-specificity defaults keep absolute/fixed actions positioned even when
+// shared control styles arrive after their layout stylesheet.
+:where(.ui-button, .ui-control-surface) { position: relative; }
+
 .ui-button {
   @include controls.density-target;
   @include typography.role(control, null);
-  position: relative;
   display: inline-flex;
   min-width: var(--size-control-hit-min);
   align-items: center;
@@ -195,7 +199,6 @@
 .ui-control-surface[data-control-surface="floating"] {
   @include material.liquid;
 }
-.ui-control-surface { position: relative; }
 .ui-control-surface > .ui-liquid-glass {
   top: 50%;
   bottom: auto;

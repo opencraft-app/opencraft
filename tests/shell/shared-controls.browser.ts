@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createServer } from "vite";
-const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const { chromium, webkit } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = resolve(process.env.OPENCRAFT_CONTROLS_OUTPUT ?? ".local/control-refactor-evidence");
 const vite = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error",
@@ -14,7 +14,7 @@ const vite = await createServer({
     server.middlewares.use((request, response, next) => {
       if (request.url !== "/") return next();
       response.setHeader("content-type", "text/html");
-      response.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/shared-controls.tsx"></script>');
+      response.end('<meta name="viewport" content="width=device-width,initial-scale=1"><style>.fixture-fixed-control { position: fixed; right: 24px; bottom: 24px; }</style><div id="root"></div><script type="module" src="/tests/fixtures/shared-controls.tsx"></script>');
     });
   } }],
 });
@@ -22,7 +22,7 @@ let browser: any;
 const evidence: unknown[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
-  browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
+  browser = await (process.env.OPENCRAFT_SMOKE_ENGINE === "webkit" ? webkit : chromium).launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
   for (const touch of [false, true]) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: touch });
     const page = await context.newPage(); const errors: string[] = [];
@@ -34,6 +34,29 @@ try {
     await page.waitForFunction(() => Boolean((window as any).controlsFixture));
     const density = () => page.locator("html").getAttribute("data-ui-density");
     assert.equal(await density(), touch ? "touch" : "compact", "auto follows input capability on a wide viewport");
+    const positioned = page.getByRole("button", { name: "Positioned scroll action", exact: true });
+    const geometry = await positioned.evaluate(button => {
+      const rect = button.getBoundingClientRect(), anchor = button.parentElement!.getBoundingClientRect();
+      return { position: getComputedStyle(button).position, center: rect.x + rect.width / 2,
+        anchorCenter: anchor.x + anchor.width / 2, inViewport: rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight,
+        hit: button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)) };
+    });
+    assert.equal(geometry.position, "absolute", "material cannot override the scroll action's layout owner");
+    assert.ok(Math.abs(geometry.center - geometry.anchorCenter) < 1, "scroll action stays centered on its anchor");
+    assert.ok(geometry.inViewport && geometry.hit, "a visible scroll action stays onscreen and can be hit");
+    await positioned.click();
+    assert.equal(await page.evaluate(() => (window as any).positionClicks), 1);
+    const arrowBox = await positioned.boundingBox();
+    await page.evaluate(() => (window as any).controlsFixture.setWorking(true));
+    await positioned.locator("i").first().waitFor();
+    assert.deepEqual(await positioned.boundingBox(), arrowBox, "working dots retain the same positioned hit region");
+    await positioned.click();
+    assert.equal(await page.evaluate(() => (window as any).positionClicks), 2);
+    await page.evaluate(() => (window as any).controlsFixture.setWorking(false));
+
+    assert.equal(await page.getByRole("button", { name: "Fixed floating action" }).evaluate(el => getComputedStyle(el).position), "fixed", "early consumer CSS retains fixed placement");
+    assert.equal(await page.getByRole("button", { name: "Save changes", exact: true }).evaluate(el => getComputedStyle(el).position), "relative", "ordinary controls retain a backdrop host");
+
     const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
     const navigationGeometry = () => navigation.evaluate(node => {
       const list = node.getBoundingClientRect(), style = getComputedStyle(node);
@@ -128,7 +151,7 @@ try {
     await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
     assert.equal(await page.getByLabel("Retained draft").inputValue(), "Unsaved draft stays here");
     assert.deepEqual(errors, []);
-    evidence.push({ touchCapability: touch, auto: true, manualOverride: true, narrowPointer: true, wideTouch: true, stableEditor: true, stablePendingBox: true, expandedRegionQuiet: true, popupOpenFeedback: true, navigation: { gutter: 8, stableSelection: true, narrowPointer: true, touchHitTarget: true }, focus, themes: 4 });
+    evidence.push({ placement: { absolute: true, fixed: true, relativeDefault: true, centeredHit: true, stableWorkingDots: true }, touchCapability: touch, auto: true, manualOverride: true, narrowPointer: true, wideTouch: true, stableEditor: true, stablePendingBox: true, expandedRegionQuiet: true, popupOpenFeedback: true, navigation: { gutter: 8, stableSelection: true, narrowPointer: true, touchHitTarget: true }, focus, themes: 4 });
     await context.close();
   }
   if (process.env.OPENCRAFT_CONTROLS_LIVE_URL) {
