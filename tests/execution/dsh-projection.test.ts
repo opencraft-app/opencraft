@@ -236,3 +236,17 @@ test("approval never upgrades an unsupported decision to a persistent grant", as
   await bridge.respond("a", { result: { decision: "accept" } });
   assert.deepEqual(sent[0], { ok: true, value: { sessionId: "s", approvalId: "audit", outcome: "allowed-once" } });
 });
+
+test("shared DSH admission validates before claiming and broadcasts one native response", async () => {
+  let finish!: () => void, writes = 0;
+  const bridge = new DshInteractions({ respond: async () => { writes++; await new Promise<void>(resolve => { finish = resolve; }); return { accepted: true }; } }, async () => ({ turnId: "turn" }), () => {});
+  await bridge.receive({ type: "approval/requested", rpcId: "approval", approvalId: "audit", sessionId: "thread", toolName: "bash" });
+  const id = bridge.shared.snapshot("thread", true).requests[0]!.id;
+  await assert.rejects(bridge.respondShared("thread", id, "invalid", { decision: "acceptForSession" }), /persistent grants/);
+  assert.equal(bridge.shared.snapshot("thread", true).requests[0]!.state, "pending");
+  const first = bridge.respondShared("thread", id, "client-a", { decision: "accept" });
+  assert.equal(bridge.shared.snapshot("thread", true).requests[0]!.state, "responding");
+  assert.equal(await bridge.respondShared("thread", id, "client-b", { decision: "decline" }), "already-submitted");
+  assert.equal(writes, 1); finish(); await first;
+  assert.equal(bridge.shared.snapshot("thread", true).requests.length, 0); bridge.close();
+});
