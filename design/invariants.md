@@ -292,3 +292,25 @@ require device acceptance.
 ## Settings action and stacked-row layout
 
 SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment.
+
+### Settings card content inset
+
+SettingsRow owns the content inset from `--padding-token-settings-row-inline`;
+SettingsGroup card separators use that same inset. SettingsPanel may change row
+layout and vertical density but preserves the inline inset for default and stacked
+card rows. Page gutters and card padding are different spaces; a valid outer gutter
+does not prove that content is inset from its card edge.
+
+`SettingsGroup appearance="plain"` explicitly opts out of the card surface,
+separators and inline row inset. Compact `settings-panel-form` fields likewise
+retain their explicit form layout. Product plugins provide content and never
+repair these shared spaces with local padding. Validate computed row insets and
+label/value gaps after composing the real container, including narrow/wide utility
+panels and pages; inspect the affected content, not only the panel's outer box.
+The Settings navigation smoke covers page, utility card, plain and form composition;
+product employee-details smoke additionally covers the actual modal consumer.
+
+SettingsPanel body owns top/bottom breathing room and outer gutters. Direct child
+sections retain their section gap even when a notice or action group precedes
+them; adjacency to another section is not required. Actions below a card retain
+the shared action gap. These spaces remain independent of card row insets.

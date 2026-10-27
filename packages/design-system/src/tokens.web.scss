@@ -123,6 +123,7 @@
   --height-token-settings-control: max(32px, var(--size-control-hit-min));
   --width-token-settings-control: 352px;
   --padding-token-settings-panel: 24px;
+  --padding-token-settings-row-inline: calc(var(--spacing) * 4);
   --gap-token-settings-sections: 40px;
   --radius-token-settings-card: 16px;
   // Keeping the value at the root lets the transcript and Composer consume

@@ -68,7 +68,10 @@ export function SettingsSection({
 
 export interface SettingsGroupProps extends HTMLAttributes<HTMLDivElement> { readonly appearance?: "card" | "plain" }
 
-/** One inset Settings card. Direct child rows receive the shared separator contract. */
+/**
+ * Card rows retain their shared inline inset in pages and utility panels.
+ * Explicit appearance="plain" removes the card surface, separators and row inset.
+ */
 export function SettingsGroup({ children, className, appearance = "card", ...props }: SettingsGroupProps) {
   return <div {...props} data-appearance={appearance} className={classes("settings-control-group", className)}>{children}</div>;
 }
