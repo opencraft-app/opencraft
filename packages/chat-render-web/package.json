@@ -22,7 +22,7 @@
     "@opencraft/i18n": "0.1.0",
     "@radix-ui/react-context-menu": "^2.4.1",
     "@radix-ui/react-tooltip": "^1.4.1",
-    "katex": "^0.19.0",
+    "katex": "^0.19.1",
     "mermaid": "11.17.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"

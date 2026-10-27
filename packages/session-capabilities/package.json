@@ -11,7 +11,7 @@
     "./authenticated-mcp": "./src/authenticated-mcp.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@opencraft/sqlite-node": "0.1.0"
   },
   "scripts": {
