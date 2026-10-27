@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Journal } from './journal.mjs';
+import { generationControl } from './generation-control.mjs';
 import { inspect } from './inspect.mjs';
 import { serve, request } from './ipc.mjs';
 import { PROTOCOL, readConfig, socketPath, entryIdentity } from './service-config.mjs';
@@ -16,18 +17,22 @@ export async function startAgent(config, entry = process.argv[1]) {
   // P3 adapters intentionally absent. Persisted uncertain work cannot acquire
   // permission from a fresh process, a new boot, or a healthy website.
   for (const job of await journal.list()) {
-    if (!['blocked', 'completed', 'recovery-required'].includes(job.state)) {
+    if (!['blocked', 'completed', 'rolled-back', 'active-draining', 'recovery-required'].includes(job.state)) {
       job.state = 'recovery-required'; job.revision++; await journal.save(job);
     }
   }
   const server = await serve(socketPath(config, 'agent'), async input => {
     invariant(input && Object.keys(input).every(k => ['action', 'operationId', 'planId', 'planDigest'].includes(k)), 'invalid-request');
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,
-      mode: config.mode, ownerAdapters: [], jobs: await journal.list() };
+      mode: config.mode, ownerAdapters: config.generationRecipePath ? ['codex-generation', 'acp-generation'] : [], jobs: await journal.list() };
     if (input.action === 'request-ci') {
       invariant(config.mode === 'ci' && identifier(input.operationId), 'ci-only');
       // This is a CI wake-up request, not acceptance of a full-upgrade plan.
       return request(socketPath(config, 'helper'), { action: 'request-ci', operationId: input.operationId });
+    }
+    if (['generation-inspect', 'generation-apply'].includes(input.action)) {
+      invariant(identifier(input.operationId), 'invalid-operation');
+      return generationControl(config, input, journal, bootId);
     }
     invariant(input.action === 'inspect' && identifier(input.operationId), 'unsupported-action');
     let prior;

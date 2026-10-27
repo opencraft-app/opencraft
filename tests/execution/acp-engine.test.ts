@@ -289,3 +289,18 @@ test("ACP source context lookup ignores a same-operation destination ticket in a
   assert.equal(context.orchestrationGenerationId, "a"); assert.equal(f.host.snapshot().generations[0].occupancy.preparedTickets, 0);
   await f.host.manage("suspend", { id: "a" }); assert.equal(f.host.snapshot().generations[0].pid, null);
 });
+
+test("P2c ACP preparation is bound to Host incarnation and admission epoch, including ABA", async t => {
+  const f = await generationFixture(t);
+  await f.host.manage("add", { id: "b", configPath: join(f.root, "b.json"), expectedCurrent: "a" });
+  const first = await f.host.manage("preparation", { id: "b" });
+  await f.host.manage("activate", { id: "b", expectedCurrent: "a", preparation: first.preparation });
+  await f.host.manage("activate", { id: "a", expectedCurrent: "b" });
+  await assert.rejects(f.host.manage("activate", { id: "b", expectedCurrent: "a", preparation: first.preparation }), /preparation/);
+  const next = await f.host.manage("preparation", { id: "b" });
+  const before = f.host.snapshot().ownerIncarnation;
+  await f.restart(); assert.notEqual(f.host.snapshot().ownerIncarnation, before);
+  await assert.rejects(f.host.manage("preparation", { id: "b", expectedOwner: before }), /owner changed/);
+  await assert.rejects(f.host.manage("activate", { id: "b", expectedCurrent: "a", preparation: next.preparation }), /preparation/);
+  assert.equal(f.host.snapshot().current, "a");
+});

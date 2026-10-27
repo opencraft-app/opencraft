@@ -1,5 +1,5 @@
 import { canonicalGenerationPath } from "./generation-files.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { realpath, readFile, stat } from "node:fs/promises";
 import { join, sep, dirname } from "node:path";
 import type { CodexAppServerHealth, CodexGenerationHostUsage, CodexGenerationFenceState, CodexGenerationDirectory } from "@opencraft/account-pool-host";
@@ -23,6 +23,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   private readonly retiring = new Set<string>();
   private readonly checking = new Set<string>();
   private readonly probes = new Map<string, { incarnation: number; peer: GenerationPeer; unexpectedRequests: number }>();
+  private readonly preparations = new Map<string, { id: string; incarnation: number; epoch: number; identity: string; host: string; expires: number }>();
   private closed = false;
   private monitor: ReturnType<typeof setInterval> | undefined;
   private monitoring: Promise<void> | undefined;
@@ -45,8 +46,9 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       homes: generations.map(generation => ({ generationId: generation.id, codexHome: join(generation.runtimeDataDirectory, "runtime"), incarnation: generation.incarnation })),
       route: route ? { threadId: threadId!, generationId: route.generationId } : null };
   }
-  async prepare(definition: GenerationDefinition, legacy = false): Promise<GenerationRecord> {
+  async prepare(definition: GenerationDefinition, legacy = false, expectedOwner?: string, expectedHost?: string): Promise<GenerationRecord> {
     if (this.closed) throw new Error("Generation runtime is closing");
+    this.verifyOwner(expectedOwner, expectedHost);
     const executionUid = this.options.executionUid ?? process.getuid!(), executionGid = this.options.executionGid ?? process.getgid!();
     if ((definition.executionUid !== undefined && definition.executionUid !== executionUid) || (definition.executionGid !== undefined && definition.executionGid !== executionGid)) throw new Error("Generation execution identity differs from this deployment");
     if (definition.externalUnit) {
@@ -62,6 +64,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
         if (!canonicalPath.startsWith(canonicalParent + sep) || canonicalPath.split(sep).includes("..")) throw new Error("Generation path is outside deployment roots");
       }
     }
+    this.verifyOwner(expectedOwner, expectedHost);
     const generation = this.registry.register({ ...definition, executionUid, executionGid });
     if (legacy) {
       if (await realpath(definition.runtimeDataDirectory) !== await realpath(this.options.dataDirectory)) throw new Error("Legacy generation must own the original runtime directory");
@@ -72,7 +75,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     await this.ensure(generation.id); return this.registry.get(generation.id)!;
   }
   async ensure(id: string, preserveRetiredPayload = false, refresh = false): Promise<CodexAppServerHealth> {
-    if (this.closed || this.retiring.has(id) || this.registry.get(id)?.state === "retiring") throw paused();
+    if (this.closed || this.retiring.has(id) || ["retiring", "revoking"].includes(this.registry.get(id)?.state ?? "")) throw paused();
     const pending = this.starting.get(id); if (pending) return pending;
     const cached = this.cached.get(id);
     if (!refresh && cached && this.now() - cached.at < 1_000) return cached.health;
@@ -108,10 +111,69 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     }
     this.registry.setMetadata(`runtime:${id}`, identity); this.cached.set(id, { at: this.now(), health }); return health;
   }
-  async activate(id: string, expectedEpoch: number): Promise<number> {
+  private hostIdentity(): string {
+    const host = rpcRecord(this.registry.metadata("host-usage"));
+    return JSON.stringify([this.registry.ownerEpoch, host.instanceId ?? null, host.lease ?? null]);
+  }
+  preparationOwner(): string { return createHash("sha256").update(this.hostIdentity()).digest("hex"); }
+  private verifyOwner(expectedOwner?: string, expectedHost?: string): void {
+    if (expectedOwner !== undefined && expectedOwner !== this.registry.ownerEpoch || expectedHost !== undefined && expectedHost !== this.preparationOwner()) throw new Error("Generation owner or Host changed");
+  }
+  async preparation(id: string, expectedOwner?: string, expectedHost?: string): Promise<string> {
+    this.verifyOwner(expectedOwner, expectedHost);
+    await this.ensure(id, true, true);
+    this.verifyOwner(expectedOwner, expectedHost);
+    const g = this.registry.get(id)!;
+    if (!["ready", "active", "draining"].includes(g.state)) throw new Error("Generation is not prepared");
+    const token = randomUUID();
+    this.preparations.set(token, { id, incarnation: g.incarnation, epoch: this.registry.epoch(),
+      identity: JSON.stringify(this.registry.metadata(`runtime:${id}`)), host: this.hostIdentity(), expires: this.now() + 60_000 });
+    return token;
+  }
+  private verifyPreparation(id: string, expectedEpoch: number, token: string): void {
+    const proof = this.preparations.get(token), g = this.registry.get(id);
+    if (!proof || proof.id !== id || proof.epoch !== expectedEpoch || this.registry.epoch() !== expectedEpoch
+      || proof.incarnation !== g?.incarnation || proof.identity !== JSON.stringify(this.registry.metadata(`runtime:${id}`))
+      || proof.host !== this.hostIdentity() || proof.expires < this.now()) throw new Error("Generation preparation changed or expired");
+  }
+  async revoke(id: string, expectedEpoch: number, token: string): Promise<{ revoked: true }> {
+    if (this.retiring.has(id) || this.starting.has(id) || this.checking.has(id)) throw paused();
+    // Take the lifecycle fence before any await. No in-flight ensure can pass
+    // the starting check and no later ensure/activate can race the final stop.
+    this.retiring.add(id);
+    try {
+      this.verifyPreparation(id, expectedEpoch, token);
+      this.registry.assertRevocable(id, this.registry.get(id)!.incarnation, expectedEpoch);
+      const health = await this.open(id, true);
+      this.verifyPreparation(id, expectedEpoch, token);
+      const g = this.registry.get(id)!;
+      if (this.acceptedReasons(id).length || (health.pendingCallbacks ?? 0) > 0 || (health.pendingOrchestrationMutations ?? 0) > 0) throw new Error("Candidate has accepted work");
+      const native = await this.probe(g, health), loaded = rpcRecord(await native.peer.call("thread/loaded/list", {}));
+      if (!Array.isArray(loaded.data) || loaded.data.length || native.unexpectedRequests) throw new Error("Candidate has native threads or unknown work");
+      if (!await this.options.supervisor.processesQuiet(this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity)) throw new Error("Candidate native processes are not quiet");
+      this.verifyPreparation(id, expectedEpoch, token);
+      this.registry.beginRevoke(id, g.incarnation, expectedEpoch);
+      this.preparations.delete(token);
+      const identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
+      await this.options.supervisor.stop(g, identity);
+      this.registry.finishRevoke(id, g.incarnation);
+      this.cached.delete(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
+      this.registry.setMetadata(`revocation:${id}`, { version: 1, at: this.now(), incarnation: g.incarnation, routingEpoch: this.registry.ownerEpoch });
+      return { revoked: true };
+    } finally { this.retiring.delete(id); }
+  }
+  async activate(id: string, expectedEpoch: number, preparation?: string, expectedOwner?: string, expectedHost?: string, operationId?: string): Promise<number> {
+    this.verifyOwner(expectedOwner, expectedHost);
+    if (operationId !== undefined && !/^[a-f0-9]{64}$/u.test(operationId)) throw new Error("Invalid activation operation");
     if (this.registry.epoch() !== expectedEpoch) throw new Error("Generation admission epoch changed");
     // Shared per-HOME starting lease serializes cold validation with concurrent reads.
-    await this.ensure(id, true); return this.registry.activate(id, expectedEpoch);
+    await this.ensure(id, true, preparation !== undefined);
+    if (preparation !== undefined) this.verifyPreparation(id, expectedEpoch, preparation);
+    if (this.retiring.has(id) || this.registry.get(id)?.state === "revoking") throw paused();
+    this.verifyOwner(expectedOwner, expectedHost);
+    const epoch = this.registry.activate(id, expectedEpoch, operationId);
+    if (preparation !== undefined) this.preparations.delete(preparation);
+    return epoch;
   }
   async discard(id: string): Promise<void> {
     const generation = this.registry.get(id);

@@ -18,7 +18,7 @@ export interface GenerationDefinition {
   /** Only for explicitly adopting an independently running owner. */
   readonly externalUnit?: string;
 }
-export type GenerationState = "candidate" | "ready" | "active" | "draining" | "retiring" | "retired" | "discarded";
+export type GenerationState = "candidate" | "ready" | "active" | "draining" | "retiring" | "retired" | "discarded" | "revoking";
 export interface GenerationRecord extends GenerationDefinition {
   readonly state: GenerationState;
   readonly incarnation: number;
@@ -120,7 +120,7 @@ export class CodexGenerationRegistry {
     if (!generation || generation.state !== "active") throw new Error("No generation is accepting new Threads");
     return { generation, epoch: Number(row.epoch) };
   }
-  activate(id: string, expectedEpoch: number): number {
+  activate(id: string, expectedEpoch: number, operationId?: string): number {
     return this.transaction(() => {
       const admission = this.database.prepare("SELECT generation_id,epoch FROM admission WHERE singleton=1").get()!;
       if (Number(admission.epoch) !== expectedEpoch) throw new Error("Generation admission epoch changed");
@@ -130,6 +130,8 @@ export class CodexGenerationRegistry {
       // Every previously admitted HOME follows future upgrades, including cold reopened HOMEs.
       this.database.prepare("UPDATE generations SET state='draining' WHERE state='active' OR (state='ready' AND incarnation>1)").run();
       this.database.prepare("UPDATE generations SET state='active' WHERE id=?").run(id);
+      this.setMetadata(`admitted:${id}`, true);
+      this.setMetadata("last-activation", { operationId: operationId ?? null, generationId: id, epoch: expectedEpoch + 1, owner: this.ownerEpoch });
       this.database.prepare("UPDATE admission SET generation_id=?,epoch=epoch+1 WHERE singleton=1").run(id);
       return expectedEpoch + 1;
     });
@@ -223,6 +225,25 @@ export class CodexGenerationRegistry {
     if (![next.executable, next.bundle, next.node].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
     this.database.prepare("UPDATE generations SET definition=?,state='candidate' WHERE id=?").run(JSON.stringify(next), id);
     return this.get(id)!;
+  }
+  assertRevocable(id: string, incarnation: number, expectedEpoch: number): void {
+    const generation = this.get(id);
+    if (this.epoch() !== expectedEpoch || !generation || generation.state !== "ready" || generation.incarnation !== incarnation
+      || generation.externalUnit || this.metadata(`admitted:${id}`) || this.durableThreadIds(id).length
+      || Number(this.database.prepare("SELECT count(*) AS n FROM creation_claims WHERE generation_id=?").get(id)!.n)) {
+      throw new Error("Only a never admitted owned ready candidate can be revoked");
+    }
+  }
+  beginRevoke(id: string, incarnation: number, expectedEpoch: number): void {
+    this.transaction(() => {
+      this.assertRevocable(id, incarnation, expectedEpoch);
+      this.database.prepare("UPDATE generations SET state='revoking' WHERE id=?").run(id);
+    });
+  }
+  finishRevoke(id: string, incarnation: number): void {
+    const generation = this.get(id);
+    if (!generation || generation.state !== "revoking" || generation.incarnation !== incarnation) throw new Error("Revocation identity changed");
+    this.database.prepare("UPDATE generations SET state='discarded' WHERE id=?").run(id);
   }
   discard(id: string): void {
     const generation = this.get(id);

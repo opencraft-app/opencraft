@@ -80,7 +80,7 @@ const modelPort = await listen(model), reservation = createServer(), proxyPort =
 const dataDirectory = join(root, "data"), endpoint = join(root, "account/control.sock"), routerEndpoint = join(root, "routing/control.sock");
 const store = new AccountPoolStore({ databasePath: join(dataDirectory, "account-pool.sqlite"), secretsDirectory: join(dataDirectory, "secrets") });
 store.addAccount({ id: "synthetic", provider: "codex", label: "Synthetic", upstreamAccountId: "synthetic", enabled: true, priority: 0 }, { accessToken: "synthetic-no-external-access", refreshToken: null, expiresAt: null }); store.close(); await generationCopyOwner(dataDirectory, executionUid, executionGid);
-const cwd = resolve(import.meta.dirname, "../../.."), control = new CodexCoreControlClient(endpoint, token);
+const cwd = process.env.OPENCRAFT_DRILL_SOURCE_ROOT ?? resolve(import.meta.dirname, "../../.."), control = new CodexCoreControlClient(endpoint, token);
 let executionOldCli = oldCli, executionNewCli = newCli, executionBundle = join(cwd, "apps/codex-core/dist/app-server.cjs");
 {
   await cp(dirname(dirname(oldCli)), join(root, "cli-old"), { recursive: true });
@@ -133,7 +133,7 @@ async function admin(operation?: string, params?: object) {
 const report: any = { root, evidence, versions, executionUid, executionGid, adopting, routingUnderSystemd, scenarios: [] };
 try {
   // Reproduce a first bootstrap crash immediately after durable registration.
-  core = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", "core", config], { cwd, env: { PATH: process.env.PATH, HOME: join(root, "home"), TMPDIR: root, LANG: "C.UTF-8", RUST_LOG: "error" }, stdio: ["ignore", "pipe", "pipe"] });
+  core = spawn(process.execPath, (process.env.OPENCRAFT_DRILL_CORE_ENTRY ? [process.env.OPENCRAFT_DRILL_CORE_ENTRY, "core", config] : ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", "core", config]), { cwd, env: { PATH: process.env.PATH, HOME: join(root, "home"), TMPDIR: root, LANG: "C.UTF-8", RUST_LOG: "error" }, stdio: ["ignore", "pipe", "pipe"] });
   const errors: string[] = []; core.stdout!.resume(); core.stderr!.on("data", c => errors.push(String(c)));
   await wait(() => control.appServerLaunch(), "account plane");
   await chown(dirname(endpoint), executionUid, executionGid); await chown(endpoint, executionUid, executionGid);
@@ -160,7 +160,16 @@ try {
   const oldIdle = (await rpc("thread/start", { cwd: root, model: "gpt-test", approvalPolicy: "never", sandbox: "danger-full-access" })).thread.id;
   const stream = await turn("OLD-STREAM"), shell = await turn("OLD-SHELL"); await wait(() => ticks >= 2 && readFile(markers.shell, "utf8").then(t => t.includes("start"), () => false), "live stream and shell");
   await admin("prepare", { definition: definition("new", executionNewCli) });
-  const activateAt = Date.now(); await admin("activate", { id: "new", expectedEpoch: 1 }); await writeFile(markers.barrier, "switched");
+  const unused = definition("unused", executionNewCli);
+  await admin("prepare", { definition: unused });
+  await wait(async () => {
+    const revokeProof = await admin("preparation", { id: "unused" });
+    await admin("revoke", { id: "unused", expectedEpoch: 1, preparation: revokeProof.preparation });
+    return true;
+  }, "unadmitted candidate startup children become quiet before revocation");
+  assert.equal((await admin()).generations.find((g: any) => g.id === "unused").state, "discarded");
+  report.scenarios.push({ name: "P2c ready unadmitted candidate revoked with original default and active work intact" });
+  const activateAt = Date.now(); await admin("activate", { id: "new", expectedEpoch: 1, preparation: (await admin("preparation", { id: "new" })).preparation }); await writeFile(markers.barrier, "switched");
   const fresh = await turn("NEW-THREAD"); await completed(fresh);
   const routes = (await admin()).fences.routes;
   const homeDirectory = await control.generationDirectory(fresh.threadId);
@@ -171,17 +180,20 @@ try {
   const storage = new CodexNativeStorage(control, () => join(dataDirectory, "runtime"));
   const freshPath = (await rpc("thread/read", { threadId: fresh.threadId })).thread.path;
   const freshSource = await storage.resolve(fresh.threadId, freshPath);
+  // Keep a native turn on the new generation while its default is retracted;
+  // an idle, fully drained generation may legitimately retire in the meantime.
+  const retainedNew = await turn("OLD-STREAM", fresh.threadId);
   // Default rollback preserves all new-generation writes and leaves old running tasks intact.
-  await admin("activate", { id: "old", expectedEpoch: 2 });
+  await admin("activate", { id: "old", expectedEpoch: 2, preparation: (await admin("preparation", { id: "old" })).preparation });
   const rollback = await turn("AFTER-ROLLBACK"); await completed(rollback);
   assert.equal((await admin()).fences.routes.find((r: any) => r.threadId === rollback.threadId).generationId, "old");
   assert.equal((await rpc("thread/read", { threadId: fresh.threadId })).thread.id, fresh.threadId);
-  await admin("activate", { id: "new", expectedEpoch: 3 });
+  await admin("activate", { id: "new", expectedEpoch: 3, preparation: (await admin("preparation", { id: "new" })).preparation });
   await freshSource.validate();
   report.scenarios.push({ name: "atomic default rollback preserves current writes in both HOMEs", rollback, fresh });
   const again = await turn("OLD-AGAIN", oldIdle); await completed(again);
   const directory = await rpc("thread/list", { limit: 100 }); assert.ok([stream, shell, fresh].every(ids => directory.data.some((t: any) => t.id === ids.threadId)));
-  await completed(stream); await completed(shell); assert.equal(await readFile(markers.shell, "utf8"), "start\ndone\n");
+  await completed(stream); await completed(shell); await completed(retainedNew); assert.equal(await readFile(markers.shell, "utf8"), "start\ndone\n");
   assert.equal((await stat(markers.shell)).uid, executionUid, "shell retains the fixed execution UID");
   const after = await admin(); assert.deepEqual(after.generations.find((g: any) => g.id === "old").runtime, oldBefore);
   report.scenarios.push({ name: "two real CLI versions, stream and shell cross activation", stream, shell, fresh, activateAt, durationSeconds: 36, shellStarts: 1, shellCompletions: 1, oldIdentityUnchanged: true, sharedAccountCore: true });
@@ -210,6 +222,7 @@ try {
     assert.equal(homes.size, 2);
     report.scenarios.push({ name: "both real CLI HOMEs supply scoped usage and canonical cached history after default CAS", separateHomes: 2, warmHistoryValidated: true });
   } finally { await cache.close(); }
+  if (process.env.OPENCRAFT_DRILL_GENERATION_ONLY !== "1") {
   // Same old Thread remains on its original HOME after the default switch.
   const oldState = (await admin()).generations.find((g: any) => g.id === "old"); assert.equal(oldState.runtime.cliVersion, versions[0]);
   // Let the monitor retire the genuinely idle old generation, then reopen its HOME with current CLI.
@@ -238,6 +251,8 @@ try {
   assert.equal(socket.readyState, WebSocket.OPEN);
   assert.ok(notifications.some(m => m.method === "opencraft/codex/generation/lost" && m.params.generationId === "new"));
   report.scenarios.push({ name: "default generation crash recovers independently while other generation stream completes", live, recovered, before: activeBefore, after: (await admin()).generations.find((g: any) => g.id === "new").runtime });
+  }
+  report.scope = process.env.OPENCRAFT_DRILL_GENERATION_ONLY === "1" ? "generation-only" : "full-lifecycle";
   report.requests = requests; report.status = "passed";
 } catch (reason) { report.status = "failed"; report.error = reason instanceof Error ? reason.stack : String(reason); throw reason; }
 finally {
@@ -247,7 +262,7 @@ finally {
       if (execFileSync("systemctl", ["show", routingUnit, "-p", "LoadState", "--value"], { encoding: "utf8" }).trim() !== "not-found") execFileSync("systemctl", ["stop", routingUnit]);
     } catch (reason) { report.routingCleanupError = String(reason); }
   }
-  try { const { CodexGenerationRegistry } = await import("../../../apps/codex-core/src/generation-registry.js"); const registry = new CodexGenerationRegistry(options.registryDirectory); const { SystemdGenerationSupervisor } = await import("../../../apps/codex-core/src/generation-supervisor.js"); const supervisor = new SystemdGenerationSupervisor({ registryDirectory: process.env.OPENCRAFT_DRILL_REGISTRY_DIRECTORY ?? options.registryDirectory, coreEndpoint: endpoint, dataDirectory, tokenFile, token, scope: "system" }); for (const g of registry.list()) { const identity = registry.metadata(`runtime:${g.id}`); if (identity && g.state !== "retired") await supervisor.stop(g, identity as any); else if (g.state === "candidate") await supervisor.discardUnready(g); } registry.close(); } catch (reason) { report.cleanupError = String(reason); }
+  try { const { CodexGenerationRegistry } = await import("../../../apps/codex-core/src/generation-registry.js"); const registry = new CodexGenerationRegistry(options.registryDirectory); const { SystemdGenerationSupervisor } = await import("../../../apps/codex-core/src/generation-supervisor.js"); const supervisor = new SystemdGenerationSupervisor({ registryDirectory: process.env.OPENCRAFT_DRILL_REGISTRY_DIRECTORY ?? options.registryDirectory, coreEndpoint: endpoint, dataDirectory, tokenFile, token, scope: "system" }); for (const g of registry.list()) { const identity = registry.metadata(`runtime:${g.id}`); if (identity && !["retired", "discarded"].includes(g.state)) await supervisor.stop(g, identity as any); else if (g.state === "candidate") await supervisor.discardUnready(g); } registry.close(); } catch (reason) { report.cleanupError = String(reason); }
   // Fixture-only fallback also cleans an owned unit that failed before registry registration.
   try {
     const prefix = `opencraft-codex-${createHash("sha256").update(options.registryDirectory).digest("hex").slice(0, 12)}-`;

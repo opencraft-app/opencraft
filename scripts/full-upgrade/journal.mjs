@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { atomicJson, privateDirectory, readPrivateJson, acquireLock, identifier, invariant } from './durable.mjs';
 
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const states = new Set(['queued', 'blocked', 'switching', 'active-draining', 'completed', 'deferred', 'recovery-required']);
+const states = new Set(['queued', 'blocked', 'switching', 'active-draining', 'completed', 'rolled-back', 'deferred', 'recovery-required']);
 // Only this explicit, bounded receipt projection is persistent. Never serialize
 // owner responses, HTTP bodies, commands, credentials or raw exception messages.
 export function receiptProjection(value) {
@@ -15,6 +15,7 @@ export function receiptProjection(value) {
   for (const field of ['epoch', 'affectedCount']) {
     if (value[field] !== undefined) { invariant(Number.isSafeInteger(value[field]) && value[field] >= 0, 'invalid-receipt-count'); result[field] = value[field]; }
   }
+  if (value.disposition !== undefined) { invariant(['activated', 'discarded', 'dormant', 'retired', 'retained'].includes(value.disposition), 'invalid-disposition'); result.disposition = value.disposition; }
   if (value.healthy !== undefined) { invariant(typeof value.healthy === 'boolean', 'invalid-health'); result.healthy = value.healthy; }
   return result;
 }

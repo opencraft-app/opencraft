@@ -82,3 +82,24 @@ access profile. The default rejects those requests and cannot prepare a child
 that requires Full access. DSH native policy is configured independently through
 its explicit generation environment and profile; the adapter does not broaden a
 restricted source delegation.
+
+## Prepared default activation
+
+Generation snapshots expose `ownerIncarnation`, `admissionEpoch`, provider
+incarnation and historical binding counts. `preparation` returns an opaque
+receipt bound to that owner, native PID, configuration digest, current default
+and admission epoch; it expires after one minute. Upgrade activation supplies
+`expectedCurrent`, `expectedEpoch`, `expectedOwner`, `operationId` and
+`preparation`. Preparation also checks the expected owner; activation persists
+the operation receipt together with the default. The epoch also rejects an
+ABA default change. Host restart or native replacement invalidates old receipts.
+The private endpoint accepts these fields; it does not add a public model route.
+
+ACP still has no discard. Candidate cleanup uses existing occupancy guards:
+`retire` requires no active work and no historical binding; otherwise only an
+idle resumable generation may `suspend` into `dormant`. The upgrade journal
+records this disposition. A dormant binding resumes in its original generation.
+Registry publication fsyncs the file and parent directory; persistence failure
+stops admission instead of continuing from an uncertain in-memory default.
+
+See [generation upgrade transactions](full-upgrade-generations.md).
