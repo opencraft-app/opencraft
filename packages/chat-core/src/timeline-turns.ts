@@ -51,6 +51,7 @@ export interface TimelineTurnView {
   readonly turnId: TurnId;
   readonly status: TimelineStatus;
   readonly frames: readonly TimelineFrame[];
+  readonly interactionWait?: TimelineSnapshot["interactionWait"];
 }
 
 /** React presentation identity; `turnKey` remains the protocol Turn locator. */
@@ -150,7 +151,7 @@ export function deriveTimelineLatestTurnPhase(
 }
 
 export function groupTimelineFramesByTurn(
-  timeline: Pick<TimelineSnapshot, "frames">,
+  timeline: Pick<TimelineSnapshot, "frames" | "interactionWait">,
 ): readonly TimelineTurnView[] {
   const turns: TimelineTurnView[] = [];
   const indexByTurnId = new Map<TurnId, number>();
@@ -164,6 +165,7 @@ export function groupTimelineFramesByTurn(
         turnId: frame.turnId,
         status: frame.status,
         frames: [frame],
+        ...(timeline.interactionWait?.turnId === frame.turnId ? { interactionWait: timeline.interactionWait } : {}),
       });
       continue;
     }

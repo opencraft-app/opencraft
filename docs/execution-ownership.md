@@ -49,7 +49,7 @@ Hub 可经直连、中继等方式级联成更大的网络，不要求全互联�
 | Capability 声明与访问租约 | Server capability broker | 绑定 Thread 和具体 Client attachment；可撤销 |
 | 引擎内工具挂载 | 引擎插件 | 绑定当前 native Agent 实例；不等于访问权限本身 |
 | Turn 执行权 | Host execution authority | 连接 owner、执行 epoch、Turn 身份；直到明确终态 |
-| Codex 待处理交互的投递路由 | Host 的 Codex adapter | 绑定物理 AppServer request ID、Thread 与当前 logical Client；断线撤销答复权但不删除请求 |
+| 人类待处理交互 | Host shared interactions + native source | Thread 范围快照与版本、原生请求身份、唯一答复准入；全部已接纳订阅者可见 |
 | View 与导航 | Client Shell | 页面呈现、焦点、订阅；Renderer 不是协议 owner |
 
 同一个 Thread 可以存在且可读取，但没有活跃引擎实例。关闭 View 不等于停止 Turn；连接撤销不等于删除历史。原生 preset 属于引擎 composition，外部 Browser/Terminal/Connector 工具通过可撤销 scope 接入，不能把客户端回调权限固化进 preset。
@@ -174,38 +174,42 @@ shell 工作区、深度、输出、运行/空闲时限及命令 watchdog 由执
 
 ## Interaction 响应与重连对账
 
-Server 发起的 approval、question、option picker 与 MCP elicitation 仍由 Server
-拥有 pending/resolved 真相。Client 点击 Skip、允许或提交只产生一个响应意图，
-不能在 JSON-RPC response 写入物理 transport 前宣称请求已经结束。Renderer 只呈现
-`pending/submitting/error`，不保存重放墓碑，也不因按钮点击自行删除权威请求。
+Codex 与 DSH 的人类交互通过 `opencraft/shared-interactions` v1 协商。审批、权限、
+提问、MCP elicitation 和已指定的动态表单工具使用同一 Host coordinator；普通可执行
+工具保持唯一执行路由。Host 用 `opencraft/interactions/changed` 广播 Thread 快照，
+客户端可通过 `opencraft/interactions/read` 补基线。快照带 producer epoch、单调 revision、
+稳定请求身份与 `pending/responding/unconfirmed`；客户端拒绝迟到版本和已退役 producer。
+收到新快照无需刷新页面或重新取得工具执行租约。
 
-每个 Client 的 Host-scoped Workbench runtime 持有有界的 response delivery ledger，
-跨同一 runtime 的 physical client generation 保留 exact response。Ledger identity
-绑定 Thread、server-request method 与 Turn，并优先使用稳定 Item/call ID；缺少 Item
-时才回退类型保真的 request ID。同 identity
-复用不同请求 payload 或不同 response 必须拒绝。response 写入 transport 后进入
-短期 delivered tombstone；结果未知时保留 resolving response。Server 在重连后重发
-同一请求时，Client 自动回放完全相同的 response，不重新发布 pending View。
+全部已初始化、成功订阅 Thread 的客户端可观察；提交 `opencraft/interactions/respond`
+是当前实例访问权下的显式命令，服务端在写出前重验客户端代次、订阅及可信资源租约。
+历史 watch 不会自动启动 Turn，但可显式回答已存在的人类请求。没有 Thread 订阅的
+连接不能读取或回答。UI 没有 response port 时仍为只读，不推导新的角色或跨实例权限。
 
-delivery receipt 只证明本次 JSON-RPC response 已交给 transport，不能证明 Provider
-已经执行。Server 若通过 `serverRequest/resolved` 宣布独立终结，Client 删除对应
-ledger entry。当前 ledger 是 Client runtime 内存状态，用于跨 transport generation
-对账；跨 Client/应用重启的 pending/resolving/resolved 持久化仍应由 Server 实现，
-不得把 localStorage、React state 或 Client ledger 升格为 Server authority。
+Host 在广播 responding 前同步裁决唯一回答。重复或相反回答不再次写原生通道；
+submission ID 复用不同回答会拒绝。写入成功只代表已提交，卡片保留到原生
+`serverRequest/resolved` 或对应 Turn 明确终态。写出失败保留 unconfirmed，不能当作
+未提交重新批准；源重放才可证明 pending。原生 request ID 类型、来源 lifetime 与
+Turn 保持隔离，终结后复用 wire ID 创建新请求，不复活旧回答。
 
-Codex stdio adapter 在同一物理 Host generation 内另持有投递路由表，不取代
-AppServer 的 pending 真相：它保留待答复请求的原始帧与 Thread ID，并只接受当前
-Thread 交互 owner 的 response。logical Client 断线或取消订阅时，adapter 撤销其
-答复权但保留请求；其他在线 Client 不因订阅或连接存在而自动取得请求。新的
-logical Client 成功 `thread/resume` 后才能认领无主请求并收到原始帧；迟到的旧
-resume 回执不能恢复已断开的 owner。AppServer 独立发出 `serverRequest/resolved`
-时删除对应路由。路由表有界且只存于 Host 进程；服务重启后的恢复仍由 AppServer
-与 Client ledger 的协议对账承担，不声称跨进程持久化或多租户授权。
+Codex APP callback lane 保留人类请求，网关离线期间的新请求也留存；网关重连初始化
+后重放原身份与提交阶段，不自动回答、超时取消或重新执行已提交响应。该保障跨 Gateway
+生命周期，尚不声称跨 APP/Native 进程重启的永久日志；原生恢复仍须重新建立真实 pending。
+生产升级必须分别核验 Gateway、router 与 APP payload，不能只用 Web sourceRevision
+声称旧 APP 已热更新。
+
+协商新协议的页面只消费被动快照，避免多个原始 RPC handler 同时作答。旧客户端保留
+原始请求兼容路由，仍由 Host 裁决唯一回答。旧客户端 response delivery ledger 只在旧协议
+路径重放 exact response；它不拥有共享真相或新的原生执行权。
+
+原生明确报告 waitingOnApproval / waitingOnUserInput 而没有请求细节时，界面呈现
+“正在恢复待处理请求”，同步当前状态后至多为当前连接/Turn 恢复一次原会话；这不创建
+Turn。恢复失败显示未能恢复的明确状态，不长期停在 Thinking。普通静默不能推断等待原因。
 
 同一 Codex stdio 连接上的原生 Thread 订阅属于 Host，不属于任何单个 logical
 Client。Client 的 `thread/unsubscribe` 只撤销其读者身份；pending `thread/resume`
 在回执前是临时读者，取消或断线同步撤销，旧 Client incarnation 的回复既不能
-恢复读者/交互 owner，也不能投递给同 ID 的新连接。Host 的已接纳 Turn、未结
+恢复读者/答复权，也不能投递给同 ID 的新连接。Host 的已接纳 Turn、未结
 队列和待答 server request 独立要求保留原生事件流；只有无读者、无这些需求且
 原生 Thread 空闲时才能回收物理订阅。回收与新原生工作按 Thread 串行化。
 

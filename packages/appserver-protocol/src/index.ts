@@ -26,3 +26,5 @@ export * from "./conversation-schedules";
 export * from "./schedule-time";
 
 export * from "./turn-recovery";
+
+export * from "./shared-interactions";

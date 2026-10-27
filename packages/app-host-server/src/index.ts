@@ -880,3 +880,5 @@ export class AppHostServerConnection {
     }
   }
 }
+
+export { HostInteractions, InteractionFault } from "./interactions";

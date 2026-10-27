@@ -93,3 +93,24 @@ test('a routing epoch alone cannot advertise orchestration, while the new facade
   await transport.connect();assert.equal(transport.supportsOrchestration,false);assert.equal(transport.supportsOrchestrationRouting,scenario.version===1);await transport.close();
  }
 });
+
+test('all human waits arriving detached replay, retain submitted state and retire only on native confirmation',async t=>{
+ const f=await fixture(t,30),first=await f.connect();await until(()=>f.requests.some(m=>m.method==='initialized'));
+ first.socket.terminate();await until(()=>first.socket.readyState===WebSocket.CLOSED);await delay(10);
+ const methods=['item/commandExecution/requestApproval','item/fileChange/requestApproval','item/permissions/requestApproval','item/tool/requestUserInput','mcpServer/elicitation/request'];
+ for(const [id,method] of methods.entries())f.nativeSockets[0]!.send(JSON.stringify({id,method,params:{threadId:'thread',turnId:'turn',itemId:`item-${id}`}}));
+ await delay(60);assert.equal(f.requests.filter(m=>!m.method&&typeof m.id==='number').length,0,'human waits cannot time out into an automatic answer');
+ const next=await f.connect();await until(()=>next.messages.filter(m=>methods.includes(m.method)).length===5);
+ const requests=next.messages.filter(m=>methods.includes(m.method));
+ assert.equal(new Set(requests.map(m=>m.__opencraftInteractionKey)).size,5);assert.ok(requests.every(m=>m.__opencraftInteractionState==='pending'));
+ next.send({id:0,result:{decision:'accept'}});next.send({id:0,result:{decision:'decline'}});await until(()=>f.requests.some(m=>m.id===0));
+ next.socket.terminate();await until(()=>next.socket.readyState===WebSocket.CLOSED);await delay(10);
+ const last=await f.connect();await until(()=>last.messages.filter(m=>methods.includes(m.method)).length===5);
+ const submitted=last.messages.find(m=>m.method===methods[0]);assert.equal(submitted.__opencraftInteractionKey,requests[0].__opencraftInteractionKey);assert.equal(submitted.__opencraftInteractionState,'responding');
+ assert.equal(f.requests.filter(m=>m.id===0).length,1);assert.equal(f.nativeSockets.length,1);
+ f.nativeSockets[0]!.send(JSON.stringify({method:'serverRequest/resolved',params:{threadId:'thread',requestId:0}}));
+ f.nativeSockets[0]!.send(JSON.stringify({method:'turn/completed',params:{threadId:'thread',turn:{id:'turn',status:'completed'}}}));
+ await until(()=>last.messages.some(m=>m.method==='turn/completed'));last.socket.terminate();await until(()=>last.socket.readyState===WebSocket.CLOSED);await delay(10);
+ const settled=await f.connect();settled.send({id:'barrier',method:'fixture/barrier',params:{}});await until(()=>f.requests.some(m=>m.method==='fixture/barrier'));
+ assert.equal(settled.messages.filter(m=>methods.includes(m.method)).length,0);
+});

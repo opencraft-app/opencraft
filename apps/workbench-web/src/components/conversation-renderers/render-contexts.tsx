@@ -24,6 +24,8 @@ import {
 export type ConversationInteractionAction = WorkbenchInteractionAction;
 
 export interface ConversationInteractionContextValue {
+  readonly responseState?: "pending" | "responding" | "unconfirmed";
+  readonly canRespond?: boolean;
   readonly drafts?: Map<string, unknown>;
   readonly respond: ((requestId: string, action: ConversationInteractionAction) => Promise<void>) | null;
 }

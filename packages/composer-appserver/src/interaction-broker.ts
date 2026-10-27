@@ -1,3 +1,4 @@
+import { SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, parseSharedInteractionSnapshot, type SharedInteractionSnapshot } from "@opencraft/appserver-protocol";
 import type {
   AppServerClient,
   ServerRequestResponseContext,
@@ -23,6 +24,7 @@ export interface AppServerInteractionBrokerConfig {
   readonly hostId: string;
   readonly client: Pick<AppServerClient, "handleServerRequest" | "interceptServerRequest" | "subscribeStatus">;
   readonly store: PendingInteractionStore;
+  readonly sharedClient?: Pick<AppServerClient, "request" | "subscribeNotification" | "initializeResult">;
   readonly ledger?: AppServerInteractionLedger;
   readonly now?: () => number;
 }
@@ -215,12 +217,24 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
   private readonly removeHandlers: (() => void)[];
   private readonly removeStatus: () => void;
   private disposed = false;
+  private readonly sharedClient: AppServerInteractionBrokerConfig["sharedClient"];
+  private readonly shared = new Map<string, PendingInteraction & { threadId: string; canRespond: boolean }>();
+  private readonly sharedSnapshots = new Map<string, { epoch: string; revision: number }>();
+  private readonly retiredSharedEpochs = new Set<string>();
+  private connectionRevision = 0;
+  private readonly removeShared: (() => void) | undefined;
 
   constructor(config: AppServerInteractionBrokerConfig) {
     this.hostId = config.hostId;
     this.store = config.store;
     this.now = config.now ?? Date.now;
     this.ledger = config.ledger ?? new AppServerInteractionLedger();
+    this.sharedClient = config.sharedClient;
+    this.removeShared = config.sharedClient?.subscribeNotification(event => {
+      if (event.method !== SHARED_INTERACTIONS_CHANGED || this.disposed) return;
+      const snapshot = parseSharedInteractionSnapshot(event.params);
+      if (snapshot) this.applyShared(snapshot);
+    });
     this.removeHandlers = [
       config.client.handleServerRequest("item/commandExecution/requestApproval", (params, request, context) =>
         this.capture(request.method, params, request.id, context)),
@@ -244,6 +258,11 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     ];
     this.removeStatus = config.client.subscribeStatus((status) => {
       if (status.state === "closed" || status.state === "failed") {
+        this.connectionRevision++;
+        for (const [id, interaction] of this.shared) {
+          const unavailable = { ...interaction, canRespond: false };
+          this.shared.set(id, unavailable); this.store.upsertPendingInteraction(unavailable);
+        }
         this.failAll(new AppServerInteractionError("DISCONNECTED", status.reason ?? "AppServer disconnected"));
       }
     });
@@ -253,6 +272,19 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
   async respond(key: ConversationKey, response: InteractionResponse): Promise<void> {
     if (key.hostId !== this.hostId) {
       throw new AppServerInteractionError("HOST_MISMATCH", "Interaction belongs to a different Host");
+    }
+    const shared = this.shared.get(response.requestId);
+    if (shared && this.sharedClient) {
+      if (shared.threadId !== key.threadId) throw new AppServerInteractionError("HOST_MISMATCH", "Interaction belongs to a different conversation");
+      if (!shared.canRespond) throw new AppServerInteractionError("REQUEST_NOT_FOUND", "This subscription cannot answer the interaction");
+      const result = responseResult({ method: shared.method, interaction: shared }, response);
+      const revision = this.connectionRevision;
+      const reply = await this.sharedClient.request(SHARED_INTERACTIONS_RESPOND, {
+        threadId: shared.threadId, interactionId: shared.requestId.slice("host-interaction:".length),
+        submissionId: `answer:${crypto.randomUUID()}`, result: result as Record<string, unknown>,
+      });
+      if (!this.disposed && revision === this.connectionRevision) this.applyShared(reply.snapshot);
+      return;
     }
     const pending = this.pending.get(response.requestId);
     if (pending === undefined || pending.interaction.threadId !== key.threadId) {
@@ -271,7 +303,41 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     this.disposed = true;
     for (const remove of this.removeHandlers.reverse()) remove();
     this.removeStatus();
+    this.removeShared?.();
+    for (const interaction of this.shared.values()) this.store.removePendingInteraction(interaction.threadId, interaction.requestId);
+    this.shared.clear(); this.sharedSnapshots.clear(); this.retiredSharedEpochs.clear();
     this.failAll(new AppServerInteractionError("DISCONNECTED", "Interaction broker disposed"));
+  }
+
+
+  async sync(threadId: string): Promise<void> {
+    if (!this.sharedClient?.initializeResult?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION]) return;
+    const revision = this.connectionRevision;
+    const snapshot = await this.sharedClient.request(SHARED_INTERACTIONS_READ, { threadId });
+    if (!this.disposed && revision === this.connectionRevision) this.applyShared(snapshot);
+  }
+  private applyShared(value: unknown): void {
+    const snapshot = parseSharedInteractionSnapshot(value);
+    if (this.disposed || !snapshot) return;
+    const epochKey = JSON.stringify([snapshot.threadId, snapshot.epoch]);
+    if (this.retiredSharedEpochs.has(epochKey)) return;
+    const previous = this.sharedSnapshots.get(snapshot.threadId);
+    if (previous && previous.epoch !== snapshot.epoch) this.retiredSharedEpochs.add(JSON.stringify([snapshot.threadId, previous.epoch]));
+    while (this.retiredSharedEpochs.size > 1024) this.retiredSharedEpochs.delete(this.retiredSharedEpochs.values().next().value!);
+    if (previous?.epoch === snapshot.epoch && previous.revision > snapshot.revision) return;
+    this.sharedSnapshots.set(snapshot.threadId, { epoch: snapshot.epoch, revision: snapshot.revision });
+    const old = [...this.shared.values()].filter(i => i.threadId === snapshot.threadId);
+    const next = snapshot.requests.map(source => ({
+      requestId: `host-interaction:${source.id}`, method: source.method,
+      threadId: snapshot.threadId, turnId: typeof source.params.turnId === "string" ? source.params.turnId : null,
+      itemId: typeof source.params.itemId === "string" ? source.params.itemId : typeof source.params.callId === "string" ? source.params.callId : null,
+      params: source.params, receivedAtMs: source.receivedAtMs,
+      responseState: source.state, canRespond: snapshot.canRespond,
+    } as PendingInteraction & { threadId: string; canRespond: boolean }));
+    for (const i of old) this.shared.delete(i.requestId);
+    for (const i of next) this.shared.set(i.requestId, i);
+    for (const i of old) if (!this.shared.has(i.requestId)) this.store.removePendingInteraction(i.threadId, i.requestId);
+    for (const i of next) this.store.upsertPendingInteraction(i);
   }
 
   private capture<TMethod extends AppServerServerMethod>(

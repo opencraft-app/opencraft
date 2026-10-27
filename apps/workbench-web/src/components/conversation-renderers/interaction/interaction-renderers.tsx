@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import { CheckIcon as Check, ChevronDownIcon as ChevronDown, ChevronLeftIcon as ChevronLeft, ChevronRightIcon as ChevronRight, SearchIcon as Search, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { NativeSelect } from "@opencraft/design-system-web/native-controls";
 import {
@@ -80,15 +81,14 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
 }
 
 function useInteractionSubmission(requestId: string) {
-  const { respond } = useContext(ConversationInteractionContext);
+  const { respond, responseState, canRespond } = useContext(ConversationInteractionContext);
   const [state, setState] = useState<"idle" | "submitting" | "failed">("idle");
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setState("idle");
-    setError(null);
-  }, [requestId]);
+    if (responseState === undefined || responseState === "pending") { setState("idle"); setError(null); }
+  }, [requestId, responseState]);
   const submit = useCallback(async (action: ConversationInteractionAction) => {
-    if (respond === null || state === "submitting") return;
+    if (respond === null || canRespond === false || (responseState !== undefined && responseState !== "pending") || state === "submitting") return;
     setState("submitting");
     setError(null);
     try {
@@ -97,8 +97,8 @@ function useInteractionSubmission(requestId: string) {
       setState("failed");
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, [requestId, respond, state]);
-  return { disabled: respond === null || state === "submitting", error, state, submit };
+  }, [requestId, respond, state, responseState, canRespond]);
+  return { disabled: respond === null || canRespond === false || (responseState !== undefined && responseState !== "pending") || state === "submitting", error, state, submit };
 }
 
 function ApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "approval" }> }) {
@@ -783,6 +783,7 @@ export function ConversationPendingInteractionPanel({
   draftScope,
   requestTurnId,
 }: ConversationPendingInteractionPanelProps) {
+  const intl = useIntl();
   const allowEntryMotion = useContext(ConversationEntryMotionContext);
   const reduceMotion = useReducedMotion();
   const identity = block === null ? null : JSON.stringify([requestTurnId, interactionDraftIdentity(block)]);
@@ -792,11 +793,13 @@ export function ConversationPendingInteractionPanel({
   }, [draftScope, draftStore, entry]);
   const interactionContext = useMemo<ConversationInteractionContextValue>(() => ({
     drafts: entry?.values,
+    responseState: block?.responseState,
+    canRespond: block?.canRespond,
     respond: onRespondInteraction === undefined ? null : async (requestId, action) => {
       await onRespondInteraction(requestId, action);
       if (entry !== undefined && draftScope !== undefined) draftStore?.release(draftScope, entry);
     },
-  }), [draftScope, draftStore, entry, onRespondInteraction]);
+  }), [draftScope, draftStore, entry, onRespondInteraction, block?.responseState, block?.canRespond]);
   const setupCatalog = useMemo<SetupContextCatalogValue>(() => ({
     sources: setupContextSources,
     loading: setupContextLoading,
@@ -814,6 +817,11 @@ export function ConversationPendingInteractionPanel({
         initial={reduceMotion || !allowEntryMotion ? false : { opacity: 0, y: 6 }}
         transition={{ duration: reduceMotion ? 0 : 0.2, ease: [0.2, 0, 0, 1] }}
       >
+        {block.responseState === "responding" || block.responseState === "unconfirmed" || block.canRespond === false
+          ? <p role="status" className="thread-interaction-card__status">{intl.formatMessage(block.responseState === "unconfirmed"
+            ? { id: "chat.interaction.unconfirmed", defaultMessage: "Response delivery is unconfirmed. Reconnecting will check its status." }
+            : block.responseState === "responding" ? { id: "chat.interaction.responding", defaultMessage: "A response was submitted. Waiting for the server to confirm…" }
+            : { id: "chat.interaction.readOnly", defaultMessage: "Waiting for someone with permission to respond." })}</p> : null}
         {block.type === "approval"
           ? <ApprovalBlock block={block} />
           : block.type === "question"

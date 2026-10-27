@@ -11,7 +11,8 @@
   "dependencies": {
     "@opencraft/account-pool-host": "0.1.0",
     "ws": "^8.22.0",
-    "@opencraft/sqlite-node": "0.1.0"
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

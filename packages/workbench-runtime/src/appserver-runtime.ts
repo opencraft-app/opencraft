@@ -1,3 +1,4 @@
+import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -1207,10 +1208,38 @@ export function createAppServerWorkbenchRuntime(
         disposed: false,
       };
       let liveView = currentSession.views.get(threadId);
+      let interactionRecoveryKey: string | null = null;
       binding.removeLiveViewListener = currentSession.views.subscribeThread(threadId, () => {
         const view = currentSession.views.get(threadId), previous = liveView;
         liveView = view;
         if (!view || binding.disposed || session !== currentSession || client !== currentClient) return;
+        const status = view.thread?.status;
+        const waiting = humanInteractionWaitReason(status) !== null;
+        if (!waiting || view.pendingInteractions.length > 0) interactionRecoveryKey = null;
+        else if (currentClient.initializeResult?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION]) {
+          const key = `${view.connectionGeneration}:${view.turns.at(-1)?.id ?? "thread"}`;
+          if (interactionRecoveryKey !== key) {
+            interactionRecoveryKey = key;
+            currentSession.views.update(threadId, v => ({ ...v, interactionRecovery: "recovering" }));
+            const stillWaiting = () => {
+              if (binding.disposed || session !== currentSession || client !== currentClient) return false;
+              const now = currentSession.views.get(threadId), s = now?.thread?.status;
+              return now?.pendingInteractions.length === 0 && humanInteractionWaitReason(s) !== null;
+            };
+            void Promise.resolve().then(async () => {
+              await interactions?.sync(threadId);
+              if (stillWaiting()) {
+                // Reattach a known native human wait; this never starts a Turn.
+                await currentSession.resume.activate({ threadId });
+                await interactions?.sync(threadId);
+              }
+            }).catch(() => {}).finally(() => {
+              if (binding.disposed || session !== currentSession || client !== currentClient) return;
+              currentSession.views.update(threadId, v => ({ ...v, interactionRecovery: stillWaiting() ? "unavailable" : undefined }));
+            });
+          }
+        }
+        if (currentSession.views.get(threadId) !== view) return; // A synchronous observer published a newer wait state.
         const value = projectThreadViewForReplica(view, binding.projectionCache);
         const retained = binding.replica.get(threadId);
         if (!retained || typeof retained !== "object" || Array.isArray(retained)
@@ -1224,6 +1253,7 @@ export function createAppServerWorkbenchRuntime(
         binding.replica.reportPreview(threadId, { ...retained,
           ...(previous?.execution !== view.execution ? { execution: value.execution } : {}),
           pendingInteractions: value.pendingInteractions,
+          interactionRecovery: value.interactionRecovery ?? null,
         });
       });
       let previousActivity = bindingActivity(binding);
@@ -1504,6 +1534,8 @@ export function createAppServerWorkbenchRuntime(
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           if (legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
+          // Passive snapshots recover independently of any further model/tool activity.
+          if (interactions) await interactions.sync(binding.threadId);
         } finally { stopPreview?.(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
@@ -1550,7 +1582,10 @@ export function createAppServerWorkbenchRuntime(
     attempt?.progress(transport?.status.state === "open" ? "initialize" : "transport",
       transport?.status.state === "open" ? Math.max(30_000, config.requestTimeoutMs ?? 30_000) + 5_000 : 45_000);
     if (currentClient.initializeResult === null) recovery.connectionStage(currentTransport?.status.state === "open" ? "initializing" : "connecting");
-    await currentClient.connect(config.initialize ?? defaultInitialize, attempt?.signal, attempt?.assertCurrent);
+    const initialize = config.initialize ?? defaultInitialize;
+    await currentClient.connect({ ...initialize, capabilities: { ...initialize.capabilities,
+      extensions: { ...initialize.capabilities?.extensions, [SHARED_INTERACTIONS_EXTENSION]: { version: 1 } },
+    } }, attempt?.signal, attempt?.assertCurrent);
     ensureLifecycle(generation);
     attempt?.assertCurrent();
     if (currentClient !== client || transport === null || transport !== currentTransport
@@ -1777,6 +1812,7 @@ export function createAppServerWorkbenchRuntime(
       interactions = new AppServerInteractionBroker({
         hostId,
         client,
+        sharedClient: client,
         ledger: interactionLedger,
         store: session.views,
       });
