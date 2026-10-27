@@ -232,3 +232,13 @@ palette and reduced-motion behavior. Paint layers ignore pointer events. Tap the
 upper/lower hit band outside the face to verify selection, and retain arrow-key,
 disabled and preference/focus continuity. Toolbar appearance keeps its existing
 visual role. This is shared control presentation, not a second touch preference.
+
+
+## Floating control placement ownership
+
+Optical material never assigns the host's positioning mode. Shared buttons and
+control surfaces provide a low-specificity relative default for their backdrop;
+consumer layout rules retain absolute or fixed placement regardless of stylesheet
+loading order. A visible scroll-to-bottom action must stay centered on its
+existing footer anchor, inside the viewport and reachable by hit testing. Its
+arrow and working dots share that same position and existing scroll command.

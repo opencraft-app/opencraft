@@ -6,6 +6,7 @@ import { Button, IconButton, DisclosureButton } from "@opencraft/design-system-w
 import { NavigationList, NavigationGroup, NavigationItem } from "@opencraft/design-system-web/navigation";
 import { MessageIcon, GridIcon } from "@opencraft/design-system-web/action-icons";
 import { SettingsButton } from "@opencraft/extension-react";
+import { ScrollToBottomButton } from "../../apps/workbench-web/src/components/scroll-to-bottom-button";
 import { AppShell } from "../../apps/workbench-web/src/components/app-shell";
 import { AppShellHeader } from "../../apps/workbench-web/src/components/app-shell-header";
 import { Sidebar } from "../../apps/workbench-web/src/components/sidebar";
@@ -26,11 +27,13 @@ function Fixture() {
   const [preview, setPreview] = useState(false);
   const [pending, setPending] = useState(false);
   const [destination, setDestination] = useState("chats");
+  const [working, setWorking] = useState(false);
   useEffect(() => {
     Object.assign(window, { controlsFixture: {
       setTouch: (mode: "auto" | "on" | "off") => preferences.set("interface.touchFriendly", mode),
       setTheme: (mode: "light" | "dark", blue = false) => { setThemePreference(mode); setAppearanceThemeId(blue ? longingThemeId : coreThemeId); },
       finish: () => finish?.(),
+      setWorking,
     } });
     return bindInteractionDensity(document, preferences);
   }, [preferences]);
@@ -57,7 +60,13 @@ function Fixture() {
     leftPanel={<Sidebar threads={[]} activeHostId="local" activeThreadId={null} sidebarLayout={layout}
       onSelectThread={noop} onNewTask={noop} onOpenSettings={noop} showFooter={false} showStart={false} showNewChat />}>
     <section style={{ padding: 32, maxWidth: 700 }}>
-      <h1>Workspace controls</h1><input aria-label="Retained draft" defaultValue="Keep draft" />
+      <h1>Workspace controls</h1>
+      <div aria-label="Scroll action anchor" style={{ position: "relative", height: 80, width: 280 }}>
+        <div className="thread-scroll-to-bottom-anchor" style={{ position: "absolute", insetInline: 0, bottom: 0 }}>
+          <ScrollToBottomButton label="Positioned scroll action" show showWorkingDots={working} onClick={() => { (window as any).positionClicks = ((window as any).positionClicks ?? 0) + 1; }} />
+        </div>
+      </div>
+      <IconButton surface="floating" className="fixture-fixed-control" aria-label="Fixed floating action"><MessageIcon /></IconButton><input aria-label="Retained draft" defaultValue="Keep draft" />
       <p>Integrated actions share the bar. Floating actions own one backdrop.</p>
       <SettingsButton loading={pending} onClick={() => void save()}>Save configuration</SettingsButton>
       <Button variant="primary" size="sm" loading={pending} onClick={() => void save()}>Save changes</Button>

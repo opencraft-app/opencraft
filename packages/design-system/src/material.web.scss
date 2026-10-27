@@ -30,7 +30,6 @@
 // One live lens per control/group. Children retain their existing focus/press
 // owner; isolation keeps this negative background plane inside the host.
 @mixin liquid {
-  position: relative;
   isolation: isolate;
   background: transparent;
   -webkit-backdrop-filter: none;

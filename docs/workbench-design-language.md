@@ -21,7 +21,11 @@ the same Shell navigation owner.
 
 Floating Sidebar header actions use the shared `IconButton` with the floating
 surface. The control owns its material and interaction states; callers provide
-the action and shared glyph, without adding a second glass backdrop.
+the action and shared glyph, without adding a second glass backdrop. Optical
+material does not set host positioning. Shared controls provide only a
+low-specificity relative default; Shell/feature layout retains absolute or fixed
+placement even when the shared stylesheet loads later. The existing conversation
+scroll action stays centered above its footer and remains hit-testable when visible.
 
 ## Scheduled task catalog
 
