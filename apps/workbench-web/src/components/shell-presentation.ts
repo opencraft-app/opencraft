@@ -11,7 +11,7 @@ export const ShellPresentationContext = createContext<{
   /** Shell-owned mobile action overlay, outside the conversation scrollport. */
   mobileSidebar?: boolean;
   sidebarActionHost?: HTMLElement | null;
-  /** Global Applications destination beside the preview-window control. */
+  /** Global Applications destination in the leading navigation rail. */
   applicationsAction?: NavigationAction;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;

@@ -79,7 +79,8 @@ export function AppShellNavigationControls({
   }, [actions, hostRole, sidebarDocked, presentation?.sidebarControlsInSidebar]);
   const { headerLeftFitWidth } = useAppShellLayoutMotion();
   const visibleBrand = brand;
-  const hasNavigationContent = Boolean(visibleBrand) || presentedActions.length > 0;
+  const applicationsAction = hostRole === "persistent" ? presentation?.applicationsAction : undefined;
+  const hasNavigationContent = Boolean(visibleBrand) || presentedActions.length > 0 || Boolean(applicationsAction);
   const measureRef = useRef<HTMLDivElement | null>(null);
   const toggleSidebar = useCallback(() => {
     if (hostRole === "transient") {
@@ -186,6 +187,7 @@ export function AppShellNavigationControls({
               <ButtonPlaceholder className="chrome-button" />
             </span>
           ))}
+          {applicationsAction ? <ButtonPlaceholder className="chrome-button" /> : null}
         </div>
       </div>
       <div
@@ -203,6 +205,25 @@ export function AppShellNavigationControls({
               {controls[action]}
             </span>
           ))}
+          {applicationsAction ? (
+            <span className="app-shell-header__window-action no-drag">
+              <IconButton
+                surface={touch ? "floating" : "integrated"}
+                className="chrome-button app-shell-header__applications"
+                type="button"
+                data-action-id="shell.applications.header"
+                aria-label={applicationsAction.title}
+                aria-current={applicationsAction.active ? "page" : undefined}
+                title={applicationsAction.title}
+                onClick={() => {
+                  presentation?.dismissSidebarAfterSelection();
+                  applicationsAction.onInvoke();
+                }}
+              >
+                <NavigationIcon name={applicationsAction.icon} selected={applicationsAction.active} />
+              </IconButton>
+            </span>
+          ) : null}
         </div>
       </div>
     </>
@@ -357,12 +378,9 @@ export function AppShellHeader({
           aria-hidden="true"
           className="app-shell-header__end-measure"
         >
-          {showRightPanelAction || headerAction || presentation?.applicationsAction ? (
+          {showRightPanelAction || headerAction ? (
             <div className="app-shell-header__end-actions"><ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">
               {headerAction ? headerActionSizing ?? Array.from({ length: headerActionCount }, (_, index) => <ButtonPlaceholder key={index} className="chrome-button" />) : null}
-              {presentation?.applicationsAction ? <ButtonPlaceholder className="chrome-button">
-                <NavigationIcon name={presentation.applicationsAction.icon} selected={presentation.applicationsAction.active} />
-              </ButtonPlaceholder> : null}
               {showRightPanelAction ? <ButtonPlaceholder className="chrome-button app-shell-header__right-panel-toggle">
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
               </ButtonPlaceholder> : null}
@@ -405,22 +423,6 @@ export function AppShellHeader({
             <ControlSurface surface={touch ? "floating" : "integrated"} className="app-shell-header__action-group">
 
             {headerAction}
-            {presentation?.applicationsAction ? (
-              <IconButton
-                className="chrome-button app-shell-header__applications"
-                type="button"
-                data-action-id="shell.applications.header"
-                aria-label={presentation.applicationsAction.title}
-                aria-current={presentation.applicationsAction.active ? "page" : undefined}
-                title={presentation.applicationsAction.title}
-                onClick={() => {
-                  presentation.dismissSidebarAfterSelection();
-                  presentation.applicationsAction?.onInvoke();
-                }}
-              >
-                <NavigationIcon name={presentation.applicationsAction.icon} selected={presentation.applicationsAction.active} />
-              </IconButton>
-            ) : null}
             {showRightPanelAction ? (
               <IconButton
                 className="chrome-button app-shell-header__right-panel-toggle"
