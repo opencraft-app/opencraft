@@ -1,6 +1,6 @@
 import * as Primitive from "@radix-ui/react-dropdown-menu";
 import { Slot } from "@radix-ui/react-slot";
-import { forwardRef, useContext, useState, type ComponentPropsWithoutRef, type PointerEventHandler } from "react";
+import { forwardRef, useContext, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type PointerEventHandler } from "react";
 import { useComposedRefs } from "@radix-ui/react-compose-refs";
 import { MenuInteraction as Activation, MenuDismissSurface } from "./menu-interaction";
 import { useTouchMenuTrigger } from "./use-touch-menu-trigger";
@@ -9,12 +9,32 @@ import { useTouchMenuTrigger } from "./use-touch-menu-trigger";
 // content consumes outside contacts independently of the root focus modality.
 export * from "@radix-ui/react-dropdown-menu";
 
-export type DropdownMenuProps = Omit<ComponentPropsWithoutRef<typeof Primitive.Root>, "modal">;
+export type DropdownMenuProps = Omit<ComponentPropsWithoutRef<typeof Primitive.Root>, "modal"> & {
+  /** Native system surfaces may temporarily take window focus without an outside contact. */
+  dismissOnWindowBlur?: boolean;
+};
 
-export function Root({ open: controlled, defaultOpen = false, onOpenChange, children, ...props }: DropdownMenuProps) {
+export function Root({ open: controlled, defaultOpen = false, onOpenChange, dismissOnWindowBlur = true, children, ...props }: DropdownMenuProps) {
   const [local, setLocal] = useState(defaultOpen);
   const open = controlled ?? local;
+  const windowBlur = useRef<Event | null>(null);
+  useLayoutEffect(() => {
+    if (!open || dismissOnWindowBlur) return;
+    const captureBlur = (event: Event) => {
+      if (event.target === window) windowBlur.current = event;
+    };
+    // Install before Radix's passive blur listener, including at the Window target.
+    window.addEventListener("blur", captureBlur, true);
+    return () => {
+      window.removeEventListener("blur", captureBlur, true);
+      windowBlur.current = null;
+    };
+  }, [open, dismissOnWindowBlur]);
   const change = (next: boolean) => {
+    // Radix does not expose a cancellable window-blur dismissal event. Its
+    // close callback runs synchronously inside that dispatch. currentTarget
+    // resets afterwards, so later clicks/Escape still close even in this task.
+    if (!next && !dismissOnWindowBlur && windowBlur.current?.currentTarget === window) return;
     if (controlled === undefined) setLocal(next);
     onOpenChange?.(next);
   };

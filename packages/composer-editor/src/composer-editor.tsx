@@ -2412,7 +2412,7 @@ export const OpenCraftComposer = forwardRef<
                 <Plus size={20} />
               </button>
             ) : (
-              <DropdownMenu.Root open={addMenuOpen} onOpenChange={changeAddMenu}>
+              <DropdownMenu.Root open={addMenuOpen} onOpenChange={changeAddMenu} dismissOnWindowBlur={false}>
                 <DropdownMenu.Trigger asChild>
                   <button
                     {...addFocus.triggerProps}
