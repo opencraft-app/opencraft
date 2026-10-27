@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, open, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { ExecutionEngineClient, ExecutionEngineProvider } from "@opencraft/appserver-client";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
@@ -7,7 +7,7 @@ import { AcpEngine, type AcpEngineOptions, type AcpOrchestrationPort } from "./i
 
 type Value = Record<string, any>;
 interface Generation { id: string; configPath: string; state: "serving" | "draining" | "dormant" | "retired"; configurationDigest?: string }
-interface Registry { schemaVersion: 1; current: string; generations: Generation[] }
+interface Registry { lastActivation?: { operationId: string | null; generationId: string; epoch: number; owner: string }; admissionEpoch?: number; schemaVersion: 1; current: string; generations: Generation[] }
 export interface AcpGenerationHostOptions {
   id: "acp" | "dsh-acp" | "claude-code";
   dataDirectory: string;
@@ -32,6 +32,8 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     "opencraft/agent-driver": { version: 1, generationDraining: true, callbackReplay: true },
     ...(this.orchestration ? { "opencraft/thread-orchestration": { version: 1, driver: this.id === "dsh-acp" ? "dsh" : this.id, callbackReplay: true } } : {}) }; }
   readonly inputs: HostInputPort;
+  readonly ownerIncarnation = randomUUID();
+  private readonly preparations = new Map<string, { id: string; current: string; epoch: number; identity: string; expires: number }>();
   private registry!: Registry;
   private readonly providers = new Map<string, AcpEngine>();
   private readonly bindings = new Map<string, string>();
@@ -40,6 +42,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   private readonly admissions = new Map<string, number>();
   private starting: Promise<void> | null = null;
   private mutation: Promise<unknown> = Promise.resolve();
+  private persistenceFailed = false;
   private persistence: Promise<void> = Promise.resolve();
   private orchestration?: AcpOrchestrationPort;
   constructor(private readonly options: AcpGenerationHostOptions) {
@@ -67,8 +70,16 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   private save(): Promise<void> {
     const serialized = JSON.stringify(this.registry), path = join(this.options.dataDirectory, "generations.json");
     const operation = this.persistence.catch(() => {}).then(async () => {
+      if (this.persistenceFailed) throw new Error("ACP registry persistence is unavailable");
       const temporary = `${path}.${randomUUID()}.tmp`;
-      await writeFile(temporary, serialized, { mode: 0o600 }); await rename(temporary, path);
+      let file;
+      try {
+        file = await open(temporary, "wx", 0o600); await file.writeFile(serialized); await file.sync(); await file.close(); file = undefined;
+        await rename(temporary, path);
+        const directory = await open(this.options.dataDirectory, "r");
+        try { await directory.sync(); } finally { await directory.close(); }
+      } catch (error) { this.persistenceFailed = true; throw error; }
+      finally { await file?.close(); await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
     });
     this.persistence = operation; return operation;
   }
@@ -95,6 +106,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     } catch (error) { await provider.close(); throw error; }
   }
   start(): Promise<void> {
+    if (this.persistenceFailed) return Promise.reject(new Error("ACP registry persistence is unavailable"));
     return this.starting ??= (async () => {
       await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
       try { this.registry = JSON.parse(await readFile(join(this.options.dataDirectory, "generations.json"), "utf8")); }
@@ -164,12 +176,22 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   }
   incarnation(threadId: string): string { return this.owner(threadId).incarnation; }
   executionObservation(threadId: string) { return this.owner(threadId).executionObservation(threadId); }
-  snapshot(): Value { return { current: this.registry.current, generations: this.registry.generations.map(record => ({ ...record, configPath: undefined, pid: this.providers.get(record.id)?.processId ?? null, occupancy: this.providers.get(record.id)?.occupancy ?? null })) }; }
+  snapshot(): Value { return { ownerIncarnation: this.ownerIncarnation, lastActivation: this.registry.lastActivation ?? null, admissionEpoch: this.registry.admissionEpoch ?? 0, current: this.registry.current, generations: this.registry.generations.map(record => ({ ...record, configPath: undefined, pid: this.providers.get(record.id)?.processId ?? null, incarnation: this.providers.get(record.id)?.incarnation ?? null, bindings: [...this.bindings.values()].filter(id => id === record.id).length, occupancy: this.providers.get(record.id)?.occupancy ?? null })) }; }
   /** Private local control; suspension preserves bindings and native provenance. */
-  manage(action: "add" | "activate" | "suspend" | "retire", input: { id: string; configPath?: string; expectedCurrent?: string }): Promise<Value> {
+  manage(action: "add" | "activate" | "suspend" | "retire" | "preparation", input: { id: string; configPath?: string; expectedCurrent?: string; expectedEpoch?: number; expectedOwner?: string; operationId?: string; preparation?: string }): Promise<Value> {
     const operation = this.mutation.catch(() => {}).then(async () => {
+      if (input.expectedOwner !== undefined && input.expectedOwner !== this.ownerIncarnation) throw new Error("ACP owner changed");
+      if (input.operationId !== undefined && !/^[a-f0-9]{64}$/u.test(input.operationId)) throw new Error("Invalid ACP activation operation");
       await this.start(); if (!generationId(input.id)) throw new Error("Invalid ACP generation id");
+      if (input.expectedEpoch !== undefined && input.expectedEpoch !== (this.registry.admissionEpoch ?? 0)) throw new Error("ACP admission epoch changed");
       if (input.expectedCurrent !== undefined && input.expectedCurrent !== this.registry.current) throw new Error("ACP current generation changed");
+      if (action === "preparation") {
+        const record = this.registry.generations.find(record => record.id === input.id), provider = this.providers.get(input.id);
+        if (!record || record.state === "retired" || record.state === "dormant" || !provider?.processId) throw new Error("ACP candidate is not ready");
+        const token = randomUUID();
+        this.preparations.set(token, { id: input.id, current: this.registry.current, epoch: this.registry.admissionEpoch ?? 0, identity: JSON.stringify([this.ownerIncarnation, provider.incarnation, provider.processId, record.configurationDigest]), expires: Date.now() + 60_000 });
+        return { ...this.snapshot(), preparation: token };
+      }
       if (action === "add") {
         if (!isAbsolute(input.configPath ?? "") || this.registry.generations.some(record => record.id === input.id)) throw new Error("ACP generation already exists or configuration path is invalid");
         const record: Generation = { id: input.id, configPath: input.configPath!, state: "serving" };
@@ -181,10 +203,17 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
         this.transitioning.add(record.id);
         try {
           const provider = this.providers.get(record.id)!;
+          if (input.preparation !== undefined) {
+            const proof = this.preparations.get(input.preparation);
+            if (!proof || proof.id !== record.id || proof.current !== this.registry.current || proof.epoch !== (this.registry.admissionEpoch ?? 0) || proof.expires < Date.now()
+              || proof.identity !== JSON.stringify([this.ownerIncarnation, provider.incarnation, provider.processId, record.configurationDigest])) throw new Error("ACP preparation changed or expired");
+            this.preparations.delete(input.preparation);
+          }
           if (action === "activate") {
             if (record.state === "dormant") await provider.start();
             const old = this.registry.generations.find(record => record.id === this.registry.current)!;
-            old.state = "draining"; record.state = "serving"; this.registry.current = record.id; await this.save();
+            old.state = "draining"; record.state = "serving"; this.registry.current = record.id; this.registry.admissionEpoch = (this.registry.admissionEpoch ?? 0) + 1;
+            this.registry.lastActivation = { operationId: input.operationId ?? null, generationId: record.id, epoch: this.registry.admissionEpoch, owner: this.ownerIncarnation }; await this.save();
           } else {
             if (record.id === this.registry.current) throw new Error("Cannot suspend or retire the current ACP generation");
             if ((this.admissions.get(record.id) ?? 0) > 0 || Object.values(provider.occupancy).some(count => count > 0)) throw new Error("ACP generation still has active turns, callbacks, preparations or unacknowledged receipts");

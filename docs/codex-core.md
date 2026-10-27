@@ -259,3 +259,28 @@ input、objective、工具参数或请求正文。新建 Thread 尚无 ID 或 ID
 诊断输出失败不改变拒绝及其 RPC 错误，另输出固定失败标记，不输出异常正文。
 服务部署需将诊断输出接入持久日志；跨 Host 重启的窗口总数按时间范围内的事件条数汇总，
 不能把重置后的实例计数当成整个窗口累计值。持久日志不可用时明确报告审计不完整。
+
+## Prepared generation activation and revocation
+
+Private generation control supports `preparation {id}`, returning an opaque,
+short-lived receipt for the routing owner, current Host lease, native process
+identity, generation incarnation and admission epoch. Upgrade callers pass it to
+`activate {id, expectedEpoch, preparation, expectedOwner, expectedHost, operationId}`. Both preparation and activation check the plan expected owner/Host identity.
+Activation atomically persists its operation receipt with the default. It refreshes health and
+checks the receipt again at the admission CAS. Replacing the router or Host,
+restarting a native owner, changing the default or expiry invalidates it. The
+legacy manual API remains available; an upgrade adapter requires the new receipt.
+
+`revoke {id, expectedEpoch, preparation}` handles only owned `ready` candidates
+that have never been activated, have no historical route or creation claim, and
+have quiet native children. `discard` remains limited to never-ready candidates.
+Revocation takes the shared lifecycle fence before its first asynchronous
+probe, preventing a delayed ensure from restarting the discarded owner. It durably enters `revoking` before stopping the exact identified owner;
+only confirmed stop changes it to `discarded`. Uncertain stop leaves `revoking`,
+which cannot admit, activate or automatically restart, including after router
+restart. Artifacts and HOME remain on disk. No old goal, queue, approval or
+historical binding is cancelled to obtain readiness. Previously activated HOMEs
+use normal draining and retirement, never candidate revocation.
+
+See [generation upgrade transactions](full-upgrade-generations.md) for plan
+acceptance, compatibility and compensation boundaries.

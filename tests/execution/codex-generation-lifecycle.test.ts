@@ -15,7 +15,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-life-"));
   const running = new Map<string, { close(): Promise<void>; serial: number }>(), serials = new Map<string, number>();
   const stopped: string[] = [], cold: string[] = [];
-  const native = new Map<string, { status: "idle" | "active"; goal: boolean; pendingCallbacks?:number; pendingOrchestrationMutations?:number }>([["old", { status: "idle", goal: false }], ["new", { status: "idle", goal: false }]]);
+  const native = new Map<string, { status: "idle" | "active"; goal: boolean; loaded?:boolean; pendingCallbacks?:number; pendingOrchestrationMutations?:number }>([["old", { status: "idle", goal: false }], ["new", { status: "idle", goal: false }]]);
   let quiet = true, failStop = false;
   const supervisor: GenerationSupervisor = {
     async start(g) {
@@ -24,7 +24,7 @@ async function fixture() {
         ws.on("connection", socket => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); socket.on("message", data => {
           const m = JSON.parse(String(data)); if (m.id === undefined) return;
           const state = native.get(g.id)!; let result: unknown = {};
-          if (m.method === "thread/loaded/list") result = { data: [`${g.id}-thread`] };
+          if (m.method === "thread/loaded/list") result = { data: g.id === "spare" && !state.loaded ? [] : [`${g.id}-thread`] };
           if (m.method === "thread/read") result = { thread: { id: `${g.id}-thread`, ephemeral: false, status: { type: state.status } } };
           if (m.method === "thread/goal/get") result = { goal: state.goal ? { status: "active" } : null };
           socket.send(JSON.stringify({ id: m.id, result }));
@@ -52,7 +52,7 @@ async function fixture() {
   const publish = (blockedThreadIds: string[] = [], acknowledgedFenceEpoch = runtime.fences().fenceEpoch, unscopedBusy = false) => runtime.publishHostUsage({ ...lease, sequence: ++sequence, blockedThreadIds, acknowledgedFenceEpoch, unscopedBusy, discoveryComplete: true });
   publish(); await runtime.activate("new", 1);
   const waitFence = async () => { for (let n = 0; n < 200 && !runtime.fences().fencedGenerationIds.includes("old"); n++) await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(runtime.fences().fencedGenerationIds.includes("old"), true); };
-  return { runtime, stopped, cold, native, publish, waitFence, running, setQuiet(value: boolean) { quiet = value; }, failNextStop() { failStop = true; },
+  return { runtime, supervisor, stopped, cold, native, publish, waitFence, running, setQuiet(value: boolean) { quiet = value; }, failNextStop() { failStop = true; },
     replaceHost() { const previous = lease; lease = host(); sequence = 0; return previous; },
     async close() { await runtime.close(); for (const process of running.values()) await process.close(); await rm(root, { recursive: true, force: true }); } };
 }
@@ -181,4 +181,124 @@ test("pending owned callbacks and unacknowledged creation receipts block retirem
     }
     assert.equal(f.running.has("old"),true);
   }finally{await f.close();}
+});
+
+test("P2c readiness expires across Host leases, native incarnation changes and default CAS", async () => {
+  const f = await fixture();
+  try {
+    let proof = await f.runtime.preparation("old");
+    f.replaceHost();
+    await assert.rejects(f.runtime.activate("old", 2, proof), /preparation/);
+    proof = await f.runtime.preparation("old");
+    await f.running.get("old")!.close(); f.running.delete("old");
+    await assert.rejects(f.runtime.activate("old", 2, proof), /preparation/);
+    proof = await f.runtime.preparation("old");
+    assert.equal(await f.runtime.activate("old", 2, proof), 3);
+    await assert.rejects(f.runtime.activate("new", 2), /epoch/);
+    assert.equal(f.runtime.registry.route("old-thread")!.generationId, "old");
+  } finally { await f.close(); }
+});
+
+async function spare(f: Awaited<ReturnType<typeof fixture>>) {
+  const { state, incarnation, ...base } = f.runtime.registry.get("new")!;
+  const root = base.cwd;
+  f.native.set("spare", { status: "idle", goal: false });
+  await f.runtime.prepare({ ...base, id: "spare", runtimeDataDirectory: join(root, "spare", "data"), endpoint: join(root, "spare", "control.sock") });
+  return f.runtime.preparation("spare");
+}
+test("P2c only a never admitted ready candidate can be revoked; HOME and old work are retained", async () => {
+  const f = await fixture();
+  try {
+    const proof = await spare(f);
+    await assert.rejects(f.runtime.discard("spare"), /cannot be discarded/);
+    assert.deepEqual(await f.runtime.revoke("spare", 2, proof), { revoked: true });
+    assert.equal(f.runtime.registry.get("spare")!.state, "discarded");
+    assert.equal(f.running.has("new"), true); assert.equal(f.running.has("old"), true);
+    assert.equal(f.runtime.registry.current().generation.id, "new");
+    const previous = await f.runtime.preparation("old");
+    await assert.rejects(f.runtime.revoke("old", 2, previous), /never admitted/);
+  } finally { await f.close(); }
+});
+test("P2c uncertain candidate stop leaves durable revoking fence and never starts it again", async () => {
+  const f = await fixture();
+  try {
+    const proof = await spare(f); f.failNextStop();
+    await assert.rejects(f.runtime.revoke("spare", 2, proof), /synthetic stop lost/);
+    assert.equal(f.runtime.registry.get("spare")!.state, "revoking");
+    // Even an explicit retry cannot call start through the persisted fence.
+    await f.running.get("spare")!.close(); f.running.delete("spare");
+    const start = f.supervisor.start; let starts = 0;
+    f.supervisor.start = async g => { starts++; return start(g); };
+    await assert.rejects(f.runtime.revoke("spare", 2, proof)); assert.equal(starts, 0);
+    await assert.rejects(f.runtime.ensure("spare"), /maintenance/);
+    await assert.rejects(f.runtime.activate("spare", 2), /maintenance/);
+    assert.equal(f.runtime.registry.current().generation.id, "new");
+  } finally { await f.close(); }
+});
+test("P2c a ready candidate with any historical binding or live OS work cannot be revoked", async () => {
+  const f = await fixture();
+  try {
+    let proof = await spare(f); f.setQuiet(false);
+    await assert.rejects(f.runtime.revoke("spare", 2, proof), /not quiet/);
+    f.setQuiet(true); f.runtime.registry.discover("historical-spare", "spare");
+    proof = await f.runtime.preparation("spare");
+    await assert.rejects(f.runtime.revoke("spare", 2, proof), /never admitted/);
+    assert.equal(f.running.has("spare"), true);
+  } finally { await f.close(); }
+});
+
+
+test("P2c revocation holds the lifecycle fence throughout a suspended quiet probe", async () => {
+  const f = await fixture();
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; }), quiet = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const proof = await spare(f);
+    f.supervisor.processesQuiet = async () => { entered(); await held; return true; };
+    const revoke = f.runtime.revoke("spare", 2, proof);
+    await quiet;
+    await assert.rejects(f.runtime.ensure("spare", true, true), /maintenance/);
+    await assert.rejects(f.runtime.preparation("spare"), /maintenance/);
+    await assert.rejects(f.runtime.activate("spare", 2), /maintenance/);
+    release(); await revoke;
+    assert.equal(f.runtime.registry.get("spare")!.state, "discarded"); assert.equal(f.running.has("spare"), false);
+  } finally { release(); await f.close(); }
+});
+test("P2c in-flight starting prevents revocation before stop can race delayed start", async () => {
+  const f = await fixture();
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const proof = await spare(f), start = f.supervisor.start;
+    f.supervisor.start = async g => { if (g.id === "spare") { entered(); await held; } return start(g); };
+    const ensuring = f.runtime.ensure("spare", true, true); await started;
+    await assert.rejects(f.runtime.revoke("spare", 2, proof), /maintenance/);
+    release(); await ensuring;
+    f.supervisor.start = start;
+    await f.runtime.revoke("spare", 2, await f.runtime.preparation("spare"));
+    assert.equal(f.running.has("spare"), false);
+  } finally { release(); await f.close(); }
+});
+test("P2c native preparation checks expected routing/Host identity and activation records the exact operation", async () => {
+  const f = await fixture();
+  try {
+    const owner = f.runtime.registry.ownerEpoch, host = f.runtime.preparationOwner();
+    await assert.rejects(f.runtime.preparation("old", "other-owner", host), /owner or Host/);
+    f.replaceHost();
+    await assert.rejects(f.runtime.preparation("old", owner, host), /owner or Host/);
+    const proof = await f.runtime.preparation("old", owner, f.runtime.preparationOwner());
+    const operationId = "a".repeat(64);
+    await f.runtime.activate("old", 2, proof, owner, f.runtime.preparationOwner(), operationId);
+    assert.deepEqual(f.runtime.registry.metadata("last-activation"), { operationId, generationId: "old", epoch: 3, owner });
+  } finally { await f.close(); }
+});
+
+
+test("P2c a ready candidate with direct native work is retained even without a routing claim", async () => {
+  const f = await fixture();
+  try {
+    const proof = await spare(f); f.native.get("spare")!.loaded = true;
+    await assert.rejects(f.runtime.revoke("spare", 2, proof), /native threads or unknown work/);
+    assert.equal(f.running.has("spare"), true); assert.equal(f.runtime.registry.get("spare")!.state, "ready");
+  } finally { await f.close(); }
 });

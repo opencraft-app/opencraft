@@ -55,7 +55,7 @@ export async function startCodexGenerationService(options: {
   let socket: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let closing: Promise<void> | undefined;
-  const state = () => ({ routingEpoch: runtime.registry.ownerEpoch, admissionEpoch: runtime.registry.epoch(),
+  const state = () => ({ preparationOwner: runtime.preparationOwner(), lastActivation: runtime.registry.metadata("last-activation"), routingEpoch: runtime.registry.ownerEpoch, admissionEpoch: runtime.registry.epoch(),
     generations: runtime.registry.list().map(generation => ({ ...generation,
       runtime: runtime.registry.metadata(`runtime:${generation.id}`), drain: runtime.registry.metadata(`drain:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
@@ -85,8 +85,10 @@ export async function startCodexGenerationService(options: {
         if (value.operation === "claim") return { status: 200, value: runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
         if (value.operation === "state") return { status: 200, value: runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
       } else {
-        if (value.operation === "prepare") return { status: 200, value: await runtime.prepare(params.definition as unknown as GenerationDefinition, params.legacy === true) };
-        if (value.operation === "activate") return { status: 200, value: { admissionEpoch: await runtime.activate(String(params.id ?? ""), Number(params.expectedEpoch)) } };
+        if (value.operation === "prepare") return { status: 200, value: await runtime.prepare(params.definition as unknown as GenerationDefinition, params.legacy === true, params.expectedOwner as string | undefined, params.expectedHost as string | undefined) };
+        if (value.operation === "preparation") return { status: 200, value: { preparation: await runtime.preparation(String(params.id ?? ""), params.expectedOwner as string | undefined, params.expectedHost as string | undefined) } };
+        if (value.operation === "revoke") return { status: 200, value: await runtime.revoke(String(params.id ?? ""), Number(params.expectedEpoch), String(params.preparation ?? "")) };
+        if (value.operation === "activate") return { status: 200, value: { admissionEpoch: await runtime.activate(String(params.id ?? ""), Number(params.expectedEpoch), params.preparation === undefined ? undefined : String(params.preparation), params.expectedOwner as string | undefined, params.expectedHost as string | undefined, params.operationId as string | undefined) } };
         if (value.operation === "discard") { await runtime.discard(String(params.id ?? "")); return { status: 200, value: { discarded: true } }; }
         if (value.operation === "retire") return { status: 200, value: await runtime.retire(String(params.id ?? "")) };
       }

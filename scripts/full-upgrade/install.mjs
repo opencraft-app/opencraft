@@ -84,6 +84,11 @@ export async function install(options) {
     let previousConfig;
     try { previousConfig = JSON.parse(await readFile(configPath, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (previousConfig) invariant(['mode', 'stateRoot', 'controlStateRoot', 'runtimeRoot', 'artifactRoot', 'deployLock', 'webState', 'serviceUser', 'node'].every(k => previousConfig[k] === config[k]), 'explicit-bootstrap-migration-required');
+    if (previousConfig?.generationRecipePath) {
+      invariant(safePath(previousConfig.generationRecipePath), 'invalid-generation-recipe-path');
+      await rootOwned(previousConfig.generationRecipePath);
+      config.generationRecipePath = previousConfig.generationRecipePath;
+    }
     await atomicJson(configPath, config); await chmod(configPath, 0o640); await chown(configPath, 0, gid);
     for (const [path, owner] of [[config.stateRoot, uid], [config.controlStateRoot, 0]]) {
       await mkdir(path, { recursive: true, mode: 0o700 }); await chmod(path, 0o700); await chown(path, owner, owner === uid ? gid : 0);

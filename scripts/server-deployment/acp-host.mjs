@@ -73,7 +73,7 @@ export async function startIndependentAcpHost(options) {
           const chunks = []; let size = 0;
           for await (const chunk of request) { size += chunk.length; if (size > 16384) throw new Error('Control body too large'); chunks.push(chunk); }
           const { action, ...input } = JSON.parse(Buffer.concat(chunks).toString());
-          if (!['add', 'activate', 'suspend', 'retire'].includes(action) || Object.keys(input).some(key => !['id', 'configPath', 'expectedCurrent'].includes(key))) throw new Error('Invalid generation operation');
+          if (!['add', 'activate', 'suspend', 'retire', 'preparation'].includes(action) || Object.keys(input).some(key => !['id', 'configPath', 'expectedCurrent', 'expectedEpoch', 'expectedOwner', 'operationId', 'preparation'].includes(key))) throw new Error('Invalid generation operation');
           const result = await provider.manage(action, input);
           response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(result));
         })().catch(() => { response.writeHead(409); response.end(JSON.stringify({ error: 'generation_operation_rejected' })); }); return;
