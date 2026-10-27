@@ -131,7 +131,7 @@ export class ExtensionManager {
       const ordered: ExtensionInstallationRecord[] = [];
       while (pending.size > 0) {
         const ready = [...pending.values()].filter(record =>
-          (this.builtins.get(record.extensionId)?.manifest.dependencies ?? record.lastResolvedManifest?.dependencies ?? [])
+          ((this.builtins.get(record.extensionId)?.manifest ?? record.lastResolvedManifest)?.dependencies ?? [])
             .every(id => !pending.has(id)));
         if (ready.length === 0) {
           // Cycles still fail through the supervisor's normal dependency error;

@@ -734,6 +734,10 @@ test('restoration activates dependencies before lexically earlier dependents and
     builtins: definitions.map(definition => ({ manifest: definition.manifest, defaultEnabled: true, async load() { return definition; } })),
   });
   try {
+    // A release can remove the provider's former dependency on its companion.
+    // Saved discovery metadata must not recreate the obsolete cycle.
+    await owner.repository.put({ ...installation('z.provider', true), source: { kind: 'builtin' },
+      lastResolvedManifest: { ...manifest('z.provider'), dependencies: ['a.companion'] } });
     await manager.restore();
     assert.equal(manager.getSnapshot().extensions.every(item => item.status === 'active'), true);
     assert.ok(activated.indexOf('z.provider') < activated.indexOf('a.companion'));
