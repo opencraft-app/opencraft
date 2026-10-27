@@ -176,20 +176,25 @@ async function fetchAllTurnItems(
   }
 }
 
-/** Full pages may exceed the wire budget; headers retain their native cursor,
- * then the existing adaptive Item reader restores the body without Resume. */
+/** Shrink oversized full pages before resorting to per-Turn Item hydration.
+ * Each successful page keeps its native cursor; even a large single Turn can
+ * still use the existing adaptive Item reader without Resume. */
 export async function readTurnsPage(
   context: Pick<ResumeHistoryContext, "client" | "threadId" | "requestTimeoutMs" | "signal">,
   cursor: string | null,
   limit = 10,
 ): Promise<ThreadTurnsListResponse> {
+  let pageLimit = limit;
   const request = (itemsView: "full" | "notLoaded") => context.client.request("thread/turns/list", {
-    threadId: context.threadId, cursor, limit, itemsView, sortDirection: "desc",
+    threadId: context.threadId, cursor, limit: pageLimit, itemsView, sortDirection: "desc",
   }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
-  try { return requireTurnsPage(await request("full"), "thread/turns/list"); }
-  catch (error) {
-    if (!isHistoryResponseTooLargeError(error)) throw error;
-    return requireTurnsPage(await request("notLoaded"), "thread/turns/list");
+  while (true) {
+    try { return requireTurnsPage(await request("full"), "thread/turns/list"); }
+    catch (error) {
+      if (!isHistoryResponseTooLargeError(error)) throw error;
+      if (pageLimit <= 1) return requireTurnsPage(await request("notLoaded"), "thread/turns/list");
+      pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+    }
   }
 }
 
