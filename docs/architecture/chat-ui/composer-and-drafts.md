@@ -851,3 +851,13 @@ writes before transport. Restored sending becomes unknown; exact proof may retir
 it, but no automatic retry is permitted. Remembered account partitions only enable
 local read/edit; verified identity, live Host/baseline and existing send admission
 remain required. This does not add a generic command or background-sync layer.
+
+
+### Native contact retirement for input actions
+
+Shared menu triggers defer touch activation to native click. An incidental
+ancestor scroll does not independently reject a click the browser accepted;
+pointer cancellation, multiple contacts and context-menu gestures still cancel
+activation. The microphone button retires its pending hold on native touch end
+and cancellation as well as pointer release. A completed short contact must not
+leave a timer that starts recording over the editor later.

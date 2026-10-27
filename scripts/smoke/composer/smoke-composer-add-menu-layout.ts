@@ -52,6 +52,33 @@ try {
     const add = page.locator(".opencraft-composer-footer__attachment > button").first();
     const menu = page.locator(".opencraft-composer-add-menu"), outside = page.getByLabel("Outside input");
     const activate = async (target: any) => test.touch ? target.tap() : target.click();
+    if (durationOnly && !webkitMode) {
+      // Browser-accepted click survives a layout/keyboard driven scroll while
+      // the finger is still on Add. Scroll itself is not tap cancellation.
+      await page.evaluate(() => {
+        const root = document.getElementById("root")!;
+        root.style.cssText = "height:700px;overflow:auto";
+        root.querySelector<HTMLElement>("main")!.style.minHeight = "1600px";
+        root.addEventListener("pointerdown", () => { root.scrollTop = 1; }, { once: true, capture: true });
+      });
+      const session = await context.newCDPSession(page);
+      const box = (await add.boundingBox())!;
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2, id: 1 }] });
+      await page.waitForTimeout(120);
+      assert.equal(await page.locator("#root").evaluate(node => node.scrollTop), 1);
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await menu.waitFor();
+      assert.equal(await add.getAttribute("data-state"), "open", "native click remains authoritative across incidental ancestor scroll");
+      await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+      await page.evaluate(() => { const root = document.getElementById("root")!; root.style.cssText = ""; root.querySelector<HTMLElement>("main")!.style.minHeight = "100dvh"; });
+      // A native click can still arrive when a derived release listener did
+      // not. It must not require an independently reconstructed pointer tap.
+      await page.evaluate(() => window.addEventListener("pointerup", event => event.stopImmediatePropagation(), { once: true, capture: true }));
+      await add.tap(); await menu.waitFor();
+      assert.equal(await add.getAttribute("data-state"), "open", "accepted native click does not require a derived pointerup receipt");
+      await page.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
+      await session.detach();
+    }
     if (reopenOnly) {
       await outside.focus();
       await editor.evaluate(el => (window as any).keptEditor = el);

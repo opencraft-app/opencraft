@@ -2,6 +2,14 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## Native touch contact retirement
+
+A native accepted trigger click is not rejected merely because an ancestor
+scrolled during the contact. Pointer cancellation, multiple contacts and native
+context menus still retire activation. Native touchend/touchcancel also retire
+the microphone button hold, independently of derived pointerup delivery; lifting
+a short contact cannot leave a delayed recording timer armed.
+
 ## Add menu reopen continuity
 
 The Composer Add menu remains open across transient window blur from native
