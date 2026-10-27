@@ -163,6 +163,19 @@ export function SettingsListItem({
   );
 }
 
+export interface SettingsControlPairProps extends HTMLAttributes<HTMLDivElement> {
+  readonly primary: ReactNode;
+  readonly companion: ReactNode;
+}
+
+/** A flexible input and its adjacent filter/action; callers retain all state. */
+export function SettingsControlPair({ primary, companion, className, ...props }: SettingsControlPairProps) {
+  return <div {...props} className={classes("settings-control-pair", className)}>
+    <div className="settings-control-pair__primary">{primary}</div>
+    <div className="settings-control-pair__companion">{companion}</div>
+  </div>;
+}
+
 export const SettingsTextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function SettingsTextInput({ className, ...props }, ref) {
     return <input {...props} ref={ref} className={classes("settings-control-input", className)} />;

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { projectExtensionCatalog, type ExtensionManager, type ExtensionSupervisor } from "@opencraft/extension-runtime";
-import { SettingsGroup, SettingsListItem, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
+import { SettingsControlPair, SettingsGroup, SettingsListItem, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
 import { useInternalDeveloperMode } from "../../internal-developer-mode";
 import { Button } from "../ui/button";
 import { ConfirmationModalSurface } from "../modal/confirmation-modal-surface";
@@ -57,12 +57,12 @@ export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<Ext
       </div> : <p>内建扩展随应用更新，暂不支持单独停用或移除。</p>}
       {errors[detail.id] ? <SettingsNotice tone="error">{errors[detail.id]}</SettingsNotice> : null}
     </> : <>
-      <div className="extension-library__toolbar">
-        <SettingsTextInput aria-label="搜索扩展" placeholder="搜索扩展" value={query} onChange={event => setQuery(event.target.value)} />
-        <SettingsSelect aria-label="扩展来源" value={source} onChange={event => setSource(event.target.value)}>
+      <SettingsControlPair className="extension-library__toolbar"
+        primary={<SettingsTextInput aria-label="搜索扩展" placeholder="搜索扩展" value={query} onChange={event => setQuery(event.target.value)} />}
+        companion={<SettingsSelect aria-label="扩展来源" value={source} onChange={event => setSource(event.target.value)}>
           <option value="all">全部来源</option><option value="builtin">内建</option><option value="installed">用户安装</option>
-        </SettingsSelect>
-      </div>
+        </SettingsSelect>}
+      />
       <SettingsGroup>{filtered.map(row => <SettingsListItem key={row.id}
         label={row.name} description={row.description || row.capabilities.join("、") || row.id}
         metadata={`${row.source === "builtin" ? "内建" : "用户安装"} · ${row.version} · ${statusLabels[row.status] ?? row.status}`}
@@ -76,8 +76,9 @@ export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<Ext
         event.preventDefault(); void change("install", async () => { await manager.installModuleUrl(url); setUrl(""); });
       }}>
         <label htmlFor="extension-library-url">从 URL 安装可信扩展</label>
-        <div className="extension-library__toolbar"><SettingsTextInput id="extension-library-url" type="url" required disabled={pending.has("install")} value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/extension.mjs" />
-        <Button type="submit" disabled={pending.has("install")}>安装</Button></div>
+        <SettingsControlPair className="extension-library__toolbar"
+          primary={<SettingsTextInput id="extension-library-url" type="url" required disabled={pending.has("install")} value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/extension.mjs" />}
+          companion={<Button type="submit" disabled={pending.has("install")}>安装</Button>} />
         {errors.install ? <SettingsNotice tone="error">{errors.install}</SettingsNotice> : null}
       </form> : null}
     </>}

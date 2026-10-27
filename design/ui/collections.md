@@ -79,6 +79,49 @@ they must not stretch a short reading list across the full window without purpos
 Use actual container capacity, not a device-name branch, and preserve selection,
 scroll position, focus and drafts when the layout changes.
 
+## Responsive toolbars and related controls
+
+Determine the reading task, control relationships and overflow priority before
+implementation. Use the actual container capacity: a narrow desktop pane, split
+view and phone have the same space constraint. Viewport width alone does not
+establish the capacity of a nested tool surface.
+
+- Keep a search input and one filter, or an input and its submit action, together
+  on one row at supported ordinary narrow capacities. Let the input take the
+  remaining space; size the companion to its content, with a bounded share for
+  long values. Avoid fixed input/filter bases that cause premature wrapping.
+- For several filters, retain search and the most useful direct controls; move
+  secondary criteria into the existing accessible filter disclosure/menu when
+  capacity requires it. Keep active-filter state discoverable and reversible.
+  If reflow is necessary, move complete functional groups in reading order.
+- Secondary refresh/more actions use their supported compact presentation.
+  A narrow container alone is not a reason to stretch each action across a row.
+  A genuinely primary form transaction can keep its established full-width role.
+- Preserve readable typography, shared touch targets and visible focus. Long
+  localized values must not crowd out the input or overflow. A bounded select may
+  truncate its closed value while its native chooser retains the full option;
+  custom controls must provide an equivalent way to read the complete value.
+- Keep the same input, selection, focus and draft through resize or disclosure.
+  CSS composition is preferred when state and interaction are unchanged. At
+  extreme capacity or enlarged text, an explicit group reflow is preferable to
+  clipped content, inaccessible controls or reducing touch/text size.
+
+The route owns width, gutters and scrolling; shared controls own typography,
+hit areas and interaction; the feature owns priority and grouping. Repeated
+input/companion composition belongs to `SettingsControlPair` in
+`packages/extension-react/src/settings-controls.tsx`, with styles at the existing
+Workbench Settings control owner. It does not own search/filter state or the
+outer toolbar's overflow decisions. Use it only for a real pair; multi-filter
+forms and action groups keep their own semantic composition.
+
+Verify the affected actual route at representative narrow/wide capacities,
+including a narrow pane in a wider window, long values and relevant languages.
+Check that paired controls share a row, the input retains useful space, controls
+meet touch targets, and resize preserves node identity, focus and field values.
+Exercise touch and keyboard and inspect the complete page. No-overflow checks
+alone do not establish good composition. Report simulated and physical-device
+coverage separately; scope validation to the changed consumers.
+
 ## Put feedback at the level it describes
 
 - Server connection state belongs beside the group identity. Task state belongs

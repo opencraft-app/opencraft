@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
+import { build } from "esbuild";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 // Real application bootstrap, Settings, Router, Supervisor and Manager. Only
@@ -12,6 +15,7 @@ import React from 'react';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createWebWorkbenchApplication,WorkbenchRoot} from '/apps/workbench-web/src/workbench-root.tsx';
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
+import {setInternalDeveloperMode} from '/apps/workbench-web/src/internal-developer-mode.ts';
 import {projectExtensionCatalog} from '/packages/extension-runtime/src/catalog.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 import {createSmokeClientProduct} from '/tests/fixtures/client-product.ts';
@@ -40,6 +44,7 @@ window.proof={
  back:()=>nav.back(),
  catalog:()=>projectExtensionCatalog(supervisor.extensions.getSnapshot(),supervisor.extensionManager.getSnapshot(),supervisor.extensions.contributions.getSnapshot()),
  theme:setThemePreference,
+ developer:setInternalDeveloperMode,
  mode:supervisor.mode,
 };
 document.body.dataset.ready='true';`;
@@ -50,7 +55,16 @@ const server = await createServer({ configFile: false, cacheDir: ".local/plugin-
   esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] },
   server: { host: "127.0.0.1", port: 0, hmr: false }, plugins: [{
     name: "plugin-settings-proof", resolveId: id => id === "/proof.tsx" ? id : null,
-    load: id => id === "/proof.tsx" ? source : null,
+    async load(id) {
+      if (id === "/proof.tsx") return source;
+      // Dev fixtures need the same CJS-to-ESM conversion as the production bundle.
+      if (id.includes("/packages/remote-interaction/src/") && id.endsWith(".cjs")) {
+        const names = Object.keys(require(id));
+        const bundled = await build({ stdin: { resolveDir: process.cwd(), contents: `export {${names.join(",")}} from ${JSON.stringify(id)}` }, bundle: true, format: "esm", platform: "browser", write: false });
+        return bundled.outputFiles[0].text;
+      }
+      return null;
+    },
     configureServer(vite) { vite.middlewares.use((req, res, next) => {
       if (req.url === "/") {
         res.setHeader("Content-Type", "text/html");
@@ -65,7 +79,7 @@ let browser: any;
 try {
   await server.listen();
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
   await page.addInitScript("window.__name = target => target;");
   const externalOrigins: string[] = [];
   const origin = new URL(server.resolvedUrls!.local[0]).origin;
@@ -103,21 +117,51 @@ try {
   await mkdir(evidenceDirectory, { recursive: true });
   for (const theme of ['light','dark']) {
     await page.evaluate(theme => (window as any).proof.theme(theme), theme);
-    for (const width of [1440,390]) {
+    for (const width of [1440,430,390,320]) {
       await page.setViewportSize({ width, height: 1000 });
-      const toggle = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible').first();
-      if ((await toggle.getAttribute('aria-expanded') === 'true') !== (width > 600)) await toggle.click();
-      // Leave the toggle's hover/focus zone and dismiss the floating index,
-      // as a user does before reading the narrow content surface.
-      if (width <= 600) await page.keyboard.press("Escape");
-      await page.mouse.click(width - 8, 100);
-      await page.mouse.move(width - 8, 120);
+      // Keep the pointer outside both transient navigation regions before dismissing.
+      await page.mouse.move(width - 1, 999);
+      await page.keyboard.press("Escape");
       await page.waitForTimeout(400);
+      const searchBox = await library.getByLabel('搜索扩展').boundingBox();
+      const sourceBox = await library.getByLabel('扩展来源').locator("..").boundingBox();
+      assert.ok(searchBox && sourceBox && Math.abs(searchBox.y - sourceBox.y) < 1, 'extension search/source stay on one row');
+      assert.ok(searchBox.width >= sourceBox.width, 'the filter must leave useful space for search');
+      if (width <= 600) assert.ok(searchBox.height >= 44 && sourceBox.height >= 44, 'paired controls retain shared touch targets');
+      await page.evaluate(() => (window as any).proof.developer(true));
+      const urlInput = library.getByLabel('从 URL 安装可信扩展', { exact: true });
+      await urlInput.fill('https://example.com/a-long-extension-module.mjs');
+      const urlBox = await urlInput.boundingBox();
+      const installBox = await library.getByRole('button', {name:'安装',exact:true}).boundingBox();
+      assert.ok(urlBox && installBox && Math.abs(urlBox.y + urlBox.height / 2 - installBox.y - installBox.height / 2) < 1, 'URL/install remain paired');
+      await page.mouse.move(width - 1, 999);
+      await page.keyboard.press("Escape");
+      await library.getByLabel('搜索扩展').scrollIntoViewIfNeeded();
+      await page.mouse.move(width - 8, 120);
+      await page.waitForTimeout(300);
       await page.screenshot({ path: evidenceDirectory+'/'+theme+'-'+width+'.png', fullPage: true });
+      await page.evaluate(() => (window as any).proof.developer(false));
       const box = await library.boundingBox();
-      assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1 && (width > 600 || box.width > 300), 'plugin list stays inside viewport');
+      assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, 'plugin list stays inside viewport');
     }
   }
+  const searchInput = library.getByLabel('搜索扩展');
+  await searchInput.fill('fixture');
+  await library.getByLabel('扩展来源').selectOption('installed');
+  const retainedInput = await searchInput.elementHandle();
+  await searchInput.tap();
+  await page.keyboard.press('End');
+  for (const width of [1440,320,430]) {
+    await page.setViewportSize({width,height:1000});
+    assert.equal(await searchInput.evaluate((node, original) => node === original && document.activeElement === node, retainedInput), true, 'resize retains input node and focus');
+    assert.equal(await searchInput.inputValue(), 'fixture');
+    assert.equal(await library.getByLabel('扩展来源').inputValue(), 'installed');
+  }
+  await library.getByLabel('扩展来源').focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await searchInput.fill('');
+  await library.getByLabel('扩展来源').selectOption('all');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => (window as any).proof.back());
   await page.waitForFunction(() => (window as any).proof.route().slug === 'appearance');

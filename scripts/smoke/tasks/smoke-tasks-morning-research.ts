@@ -65,6 +65,19 @@ for(const width of [1440,390,320])for(const theme of ['light','dark']){
  await page.getByText('待审阅 · 方式未核实',{exact:true}).first().waitFor();
  const bounds=await page.locator('.tasks-ai-follow-up').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,body:document.documentElement.scrollWidth,viewport:innerWidth}));assert.ok(bounds.scroll<=bounds.width+1&&bounds.body<=bounds.viewport+1,JSON.stringify({width,theme,bounds}));
 
+ const pairedSearch=page.getByRole('searchbox',{name:'搜索跟进事项',exact:true});
+ const pairedOwner=page.getByRole('combobox',{name:'按 Owner 筛选',exact:true});
+ // A real long member option must not displace the input from the filter row.
+ await pairedOwner.locator('option[value="member:owner-a"]').evaluate(node=>{node.textContent='一位名字很长的成员 — Long localized owner name';});
+ const searchBounds=await pairedSearch.boundingBox(),ownerBounds=await pairedOwner.locator("..").boundingBox();
+ assert.ok(searchBounds&&ownerBounds&&Math.abs(searchBounds.y-ownerBounds.y)<1,'follow-up search/Owner stay on one row with long values '+JSON.stringify({width,theme,searchBounds,ownerBounds}));
+ assert.ok(searchBounds.width>=ownerBounds.width,'Owner leaves useful search capacity');
+ if(width<600)assert.ok(searchBounds.height>=44&&ownerBounds.height>=44,'follow-up pair retains touch targets');
+ const inputNode=await pairedSearch.elementHandle();await pairedSearch.focus();
+ for(const nextWidth of [width<600?1440:320,width]){
+  await page.setViewportSize({width:nextWidth,height:1000});
+  assert.equal(await pairedSearch.evaluate((node,original)=>node===original&&node===document.activeElement,inputNode),true,'follow-up resize preserves input/focus');
+ }
  const card=page.locator('[data-ai-follow-up-task-id="Oldest handoff"]');
  assert.equal(await card.locator('h4').innerText(),'Oldest handoff');
  const title=card.locator('h4');

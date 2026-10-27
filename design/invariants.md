@@ -217,6 +217,9 @@ for overflow, mobile boundaries and state continuity.
 
 ### Appearance and controls
 
+- [Responsive related-control groups](invariants/appearance-and-controls.md#responsive-related-control-groups) — capacity, grouping, priority and continuity
+
+
 - [Mobile paint and content boundaries](invariants/shell-and-layout.md#experimental-mobile-web-container) — full viewport backgrounds with safe-area content insets.
 - [Window appearance projection](invariants/appearance-and-controls.md#window-appearance-projection) — theme intent, host/display mode, startup, standalone WebKit edge-color compatibility and native evidence boundaries.
 

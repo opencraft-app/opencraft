@@ -1,7 +1,7 @@
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon as ArrowRight, ClockIcon as Clock } from "@opencraft/design-system-web/action-icons";
-import { SegmentedControl, SettingsButton, SettingsSelect, SettingsTextInput } from "@opencraft/extension-react";
+import { SettingsControlPair, SegmentedControl, SettingsButton, SettingsSelect, SettingsTextInput } from "@opencraft/extension-react";
 import { useIntl } from "@opencraft/i18n/react";
 import type { TaskConversation, TaskDetail, TaskMember, TasksRequestPort } from "@opencraft/appserver-protocol";
 import { activeFollowUpTask, FOLLOW_UP_LANES, followUpProjection, followUpDwellStart, followUpTaskKey, readFollowUpEvents, type FollowUpProjection } from "./ai-follow-up-model";
@@ -104,13 +104,13 @@ export function AIFollowUp({ tasks, members, activity, port, ownerFilter, onOwne
       <SegmentedControl label={text("跟进范围", "Follow-up scope")} value={selection.scope} onValueChange={scope => onSelectionChange({ ...selection, scope })} options={[
         { value: "all", label: text("全部事项", "All work") }, { value: "mine", label: text("待我判断", "Needs me") }, { value: "owned", label: text("我负责的", "My work") },
       ]} />
-      <div className="tasks-ai-follow-up__filters">
-        <SettingsTextInput type="search" aria-label={text("搜索跟进事项", "Search follow-up tasks")} placeholder={text("搜索事项或材料…", "Search tasks or materials…")} value={selection.search} onChange={e => onSelectionChange({ ...selection, search: e.target.value })} />
-        <label><span>Owner</span><SettingsSelect aria-label={text("按 Owner 筛选", "Filter by owner")} value={ownerFilter} onChange={e => onOwnerFilterChange(e.target.value)}>
+      <SettingsControlPair className="tasks-ai-follow-up__filters"
+        primary={<SettingsTextInput type="search" aria-label={text("搜索跟进事项", "Search follow-up tasks")} placeholder={text("搜索事项或材料…", "Search tasks or materials…")} value={selection.search} onChange={e => onSelectionChange({ ...selection, search: e.target.value })} />}
+        companion={<label><span>Owner</span><SettingsSelect aria-label={text("按 Owner 筛选", "Filter by owner")} value={ownerFilter} onChange={e => onOwnerFilterChange(e.target.value)}>
           <option value="">{text("所有 Owner", "All owners")}</option><option value="unassigned">{text("未分配", "Unassigned")}</option>
           {ownerIds.map(id => <option key={id} value={`member:${id}`}>{ownerName(id)}</option>)}
-        </SettingsSelect></label>
-      </div>
+        </SettingsSelect></label>}
+      />
     </div>
     <div className="tasks-ai-follow-up__summary">
       <span>{text(`当前 ${active.length} 项`, `${active.length} tasks`)}{selection.scope !== "all" && !myMemberId ? text(" · 请先在任务筛选中关联我的成员身份", " · Link your member identity in task filters first") : ""}</span>
