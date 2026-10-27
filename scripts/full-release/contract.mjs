@@ -156,6 +156,13 @@ export function parseManifest(bytes) {
   if (total > record.budgets.outer.unpackedBytes || count > record.budgets.outer.entries) fail();
   return record;
 }
+export function parseReplayState(bytes) {
+  const value = parseStrictJson(bytes, HARD_LIMITS.metadataBytes);
+  if (!Number.isSafeInteger(value.highestSequence) || value.highestSequence < 1 || !/^[a-f0-9]{64}$/.test(value.manifestSha256)
+    || !Number.isSafeInteger(value.revocationSequence) || value.revocationSequence < 1
+    || !Array.isArray(value.revokedKeyIds) || !Array.isArray(value.revokedReleaseIds)) throw new Error('Invalid full release replay state');
+  return value;
+}
 export function preflightFor(record) {
   return { schemaVersion: 1, kind: 'opencraft.full-release-preflight', ...Object.fromEntries(
     ['release', 'transport', 'targets', 'updater', 'revocations', 'budgets'].map(key => [key, record[key]])) };

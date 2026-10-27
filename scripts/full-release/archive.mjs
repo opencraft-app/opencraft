@@ -5,7 +5,7 @@ import { Parser } from 'tar';
 import { createReadStream } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
-import { HARD_LIMITS, safePath, isSignatureFile, parseStrictJson, acceptManifest, verifyPreflight, preflightFor } from './contract.mjs';
+import { HARD_LIMITS, safePath, isSignatureFile, parseStrictJson, parseReplayState, acceptManifest, verifyPreflight, preflightFor } from './contract.mjs';
 
 // Read entries as streams; never buffer executable/native payloads. This pass
 // happens before extraction, and rejects aliases, duplicate paths and links.
@@ -76,11 +76,7 @@ export async function scanArchive(archive, limits = HARD_LIMITS) {
 export async function readReplayState(path) {
   if (!path) return {};
   try {
-    const value = parseStrictJson(await readFile(path), HARD_LIMITS.metadataBytes);
-    if (!Number.isSafeInteger(value.highestSequence) || value.highestSequence < 1 || !/^[a-f0-9]{64}$/.test(value.manifestSha256)
-      || !Number.isSafeInteger(value.revocationSequence) || value.revocationSequence < 1
-      || !Array.isArray(value.revokedKeyIds) || !Array.isArray(value.revokedReleaseIds)) throw new Error('Invalid full release replay state');
-    return value;
+    return parseReplayState(await readFile(path));
   } catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
 }
 export async function writeReplayState(path, value) {
