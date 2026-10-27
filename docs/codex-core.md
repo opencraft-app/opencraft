@@ -2,7 +2,7 @@
 
 服务器可显式启用 `@opencraft/codex-core`。默认兼容形态将 `codex app-server`、账户池代理、登录、凭据刷新与用量维护放在同一个独立长驻进程中；显式拆分形态把 APP Server 移至另一个独立 unit，账号 Core 可以单独升级。执行网关和 daemon 只持客户端连接。关闭最后一个页面、关闭 daemon 或重启执行侧不终止所选常驻执行 owner 中的活动轮次、shell 工具、原生 queue 与 goal。
 
-桌面端默认继续使用 daemon 内嵌 stdio 模式。没有 `--codex-core-endpoint` 时不会探测或启动核心服务。服务器执行更新可接入[受管更新器](web-deployment.md#服务器执行端更新)，只切换网关、daemon 和 capability adapter，保持 core 与 CLI 运行。网页/网关发布不等待 Core 更新、目标完成或账户源码同步；两者分别报告实际版本。多代会话分配与 DSH 宿主自身平滑升级仍属后续设计。
+桌面端默认继续使用 daemon 内嵌 stdio 模式。没有 `--codex-core-endpoint` 时不会探测或启动核心服务。服务器执行更新可接入[受管更新器](web-deployment.md#服务器执行端更新)，只切换网关、daemon 和 capability adapter，保持 core 与 CLI 运行。网页/网关发布不等待 Core 更新、目标完成或账户源码同步；两者分别报告实际版本。Codex 多代会话分配、候选准备与 CAS 切换已经实现，详见[代升级契约](full-upgrade-generations.md)；DSH 宿主自身平滑升级仍属后续设计。
 
 ## 所有权与协议
 
