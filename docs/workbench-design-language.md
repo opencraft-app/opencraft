@@ -9,6 +9,20 @@ guide is a target contract, not a claim that existing pages have been migrated.
 The target sidebar and draft target picker use the existing workbench palette,
 typography and surfaces, not a separate the downstream product theme.
 
+## Route-scoped sidebar suppression
+
+`AppShell.sidebarSuppressed` controls the current route's presentation without
+rewriting the saved Sidebar open state or width. While suppressed, transient
+and drawer requests are dismissed; gestures, the Sidebar shortcut, resize
+handles and floating portals cannot acquire the Sidebar. Suppression also
+releases floating content ownership and cannot leave the foreground page
+blocked. Returning to an eligible route projects the saved preference through
+the same Shell navigation owner.
+
+Floating Sidebar header actions use the shared `IconButton` with the floating
+surface. The control owns its material and interaction states; callers provide
+the action and shared glyph, without adding a second glass backdrop.
+
 ## Scheduled task catalog
 
 The scheduled task document uses the shared SettingsContent width, inset and
