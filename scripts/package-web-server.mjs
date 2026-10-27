@@ -75,6 +75,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     bundle: true, platform: 'node', format: 'esm', target: 'node24',
     define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)),
       'process.env.OPENCRAFT_FULL_UPGRADE_PROFILE_JSON': JSON.stringify(JSON.stringify(fullUpgradeProfile)) } });
+  for (const entry of ['agent', 'helper', 'watchdog', 'control', 'install']) {
+    await build({ entryPoints: [join(repositoryRoot, `scripts/full-upgrade/${entry}.mjs`)], outfile: join(packageRoot, `runtime/upgrade-${entry}.mjs`),
+      bundle: true, platform: 'node', format: 'esm', target: 'node24',
+      define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)) } });
+  }
   // Independent relay/admin entry points travel with the same fixed-source artifact;
   // they remain inactive unless the operator configures a separate deployment.
   for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account'].map(name => [join(repositoryRoot, `scripts/${name}.ts`), name])]) {
