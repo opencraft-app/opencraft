@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
+import { ExecutionLeaseStore } from "../../apps/opencraft-daemon/src/execution-lease-store.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
@@ -20,9 +25,9 @@ class Physical implements DuplexTransport {
   subscribeStatus(listener: (status: TransportStatus) => void) { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   async close() { this.publish({ state: "closed" }); }
 }
-function setup() {
+function setup(options: { attachmentHistoryDirectory?: string } = {}) {
   const physical = new Physical();
-  const adapter = new CodexEngineAdapter({ kind: "remote", transport: physical, logDiagnostic: () => undefined });
+  const adapter = new CodexEngineAdapter({ kind: "remote", transport: physical, logDiagnostic: () => undefined, ...options });
   const frames: any[] = [];
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   const send = (client: string, id: number | string, method: string, params: unknown = {}) => adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
@@ -273,4 +278,37 @@ test("transport acknowledgement waits for write; failed mutation is unknown and 
     assert.equal(f.adapter.status.failure?.code, "SSH_LINK_LOST");
     await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(f.physical.sent.length, sent);
   } finally { await f.adapter.close(); }
+});
+
+for (const unknownTurn of [false, true]) test(`remote initialization reconciles ${unknownTurn ? "unknown input" : "known Turn"} leases without full history`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "ssh-lease-reconcile-"));
+  const owner = new OpenCraftHostStateDatabase(root), leases = new ExecutionLeaseStore(owner.database);
+  leases.capture("thread", "original-input", { principal: null, ownership: "unowned" });
+  const executionId = leases.begin("thread", "original-input");
+  if (!unknownTurn) leases.started("thread", "target", "original-input");
+  leases.suspend(); owner.close();
+  const f = setup({ attachmentHistoryDirectory: root });
+  const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+  try {
+    await f.initialize();
+    const request = () => f.physical.sent.filter(frame => frame.method === "thread/turns/list").at(-1);
+    const first = request();
+    assert.ok(first, "native initialization must start a bounded lease read");
+    assert.equal(first.params.itemsView, unknownTurn ? "summary" : "notLoaded");
+    assert.equal(first.params.sortDirection, "desc");
+    f.physical.receive({ id: first.id, result: { data: [{ id: "unrelated", status: "completed",
+      items: unknownTurn ? [{ type: "userMessage", clientId: "other-input" }] : [], itemsView: first.params.itemsView }], nextCursor: "older" } });
+    await settle();
+    const second = request();
+    assert.equal(second.params.cursor, "older");
+    f.physical.receive({ id: second.id, result: { data: [{ id: "target", status: "completed",
+      items: unknownTurn ? [{ type: "userMessage", clientId: "original-input" }] : [], itemsView: second.params.itemsView }], nextCursor: "unneeded" } });
+    await settle();
+    assert.equal(f.physical.sent.filter(frame => frame.method === "thread/turns/list").length, 2, "stop after the exact unsettled lease is resolved");
+    assert.ok(!f.physical.sent.some(frame => frame.method === "thread/read"), "never download full history during initialization");
+    const store = (f.adapter as any).executionLeases as ExecutionLeaseStore;
+    assert.equal(store.resolve({ threadId: "thread", executionId }).status, "expired");
+    assert.equal((f.adapter as any).hostState.database.prepare("SELECT 1 FROM execution_leases WHERE turn_id='unrelated'").get(), undefined,
+      "reconciliation cannot create unrelated historical execution leases");
+  } finally { await f.adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

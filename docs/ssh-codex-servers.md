@@ -67,6 +67,10 @@ OpenCraft installation on the remote machine.
   tool bodies. Turn-scoped reconciliation searches recent summaries and stops
   at that Turn. Catalog discovery must not flood the shared SSH connection with
   complete Item histories just to recover participant identities.
+- Initialization reconciles only unsettled execution leases. Known Turn IDs use
+  paginated headers; unknown admission IDs use small summary pages. Stop after
+  the exact targets are observed, preserve unknown outcomes for missing targets,
+  and never request a full transcript or create leases for unrelated history.
 
 ## Trust and credentials
 
