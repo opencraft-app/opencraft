@@ -3008,9 +3008,9 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   > *:not(:last-child)::after {
     position: absolute;
     z-index: 1;
-    right: 16px;
+    right: var(--padding-token-settings-row-inline);
     bottom: 0;
-    left: 16px;
+    left: var(--padding-token-settings-row-inline);
     height: 0.5px;
     background: var(--color-border-default);
     content: "";
@@ -3024,7 +3024,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 12px 16px;
+  padding: 12px var(--padding-token-settings-row-inline);
 
 }
 

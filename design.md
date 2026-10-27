@@ -227,3 +227,8 @@ insets, action emphasis, density and state feedback. Use the relevant
 [collection acceptance checks](design/ui/collections.md#verify-the-composition)
 for list or management pages. Fix the cause at its owner when a shared container
 breaks these rules; do not compensate with a different margin in every feature.
+
+Settings card rows preserve the shared content inset inside both full pages and
+utility SettingsPanel containers. Only explicit plain groups and compact form
+layouts remove it; container gutters do not replace card padding. See the
+[Settings card inset contract](design/invariants.md#settings-card-content-inset).

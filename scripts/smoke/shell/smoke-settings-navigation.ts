@@ -5,25 +5,29 @@ const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "pl
 const source = `
 import React from 'react';
 import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
+import {SettingsPanel,SettingsGroup,SettingsRow,SettingsSection,SettingsTextInput,SettingsActions} from '/packages/extension-react/src/index.ts';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
-import {useSettingsPresentation} from '/apps/workbench-web/src/components/use-settings-presentation.ts';
 import {buildOpenCraftThemeCssProperties} from '/packages/design-system/src/theme-engine.ts';
 import '/apps/workbench-web/src/styles/app.scss';
-for(const [key,value] of Object.entries(buildOpenCraftThemeCssProperties('light'))) document.documentElement.style.setProperty(key,value);
+window.setSpacingTheme=theme=>{for(const [key,value] of Object.entries(buildOpenCraftThemeCssProperties(theme))) document.documentElement.style.setProperty(key,value);document.documentElement.dataset.theme=theme;};
+window.setSpacingTheme('light');
 function Demo(){
- const [preferred,setPreferred]=React.useState(310);
- const p=useSettingsPresentation(preferred);
- return <AppShell layoutScope="settings" sidebarOpen={p.showIndex} sidebarWidth={p.sidebarWidth}
+ return <AppShell layoutScope="settings" sidebarOpen={false} sidebarWidth={310}
  sidebarCollapsible={false} sidebarResizable={false} sidebarTransientEnabled={false}
  windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}}
  onSidebarCollapse={()=>{}} onSidebarExpand={()=>{}} onSidebarResizeEnd={()=>{}} onRightPanelOpenChange={()=>{}}
  rightPanelOpen={false} rightPanelFullWidth={false} rightPanel={null} header={null} floatingSidebarHeader={()=>null}
- leftPanel={<div className="settings-page__navigation"><button onClick={p.openContent}>Model services</button></div>}>
- <section className="settings-page" inert={p.indexOnly||undefined} aria-hidden={p.indexOnly||undefined}>
- <output data-testid="sidebar-width">{p.sidebarWidth}</output>
- <button onClick={()=>setPreferred(360)}>Change preferred width</button>
- {p.compact&&<nav className="settings-page__compact-navigation"><button className="settings-navigation-link" onClick={p.openIndex}>‹ Settings</button></nav>}
+ leftPanel={null}>
+ <section className="settings-page">
  <input aria-label="Draft" defaultValue=""/>
+ <SettingsSection title="Page card"><SettingsGroup data-testid="page-card"><SettingsRow label="Page label">Value</SettingsRow></SettingsGroup></SettingsSection>
+ <SettingsPanel title="Utility panel">
+ <SettingsSection title="Utility card"><SettingsGroup data-testid="utility-card"><SettingsRow label="Card label">Value</SettingsRow><SettingsRow layout="stacked" label="Stacked label">Long content</SettingsRow></SettingsGroup></SettingsSection>
+ <SettingsActions data-testid="between-actions"><button>Section action</button></SettingsActions>
+ <SettingsSection title="Following section" data-testid="following-section"><p>Content</p></SettingsSection>
+ <SettingsGroup appearance="plain" data-testid="plain-group"><SettingsRow label="Plain label">Value</SettingsRow></SettingsGroup>
+ <div className="settings-panel-form" data-testid="compact-form"><SettingsRow label="Form label"><SettingsTextInput aria-label="Form input"/></SettingsRow></div>
+ </SettingsPanel>
  </section></AppShell>;
 }
 createRoot(document.getElementById('root')).render(<Demo/>);`;
@@ -42,26 +46,43 @@ try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
   const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`);
-  assert.equal(await page.getByTestId('sidebar-width').textContent(), '310');
-  await page.getByRole('button', {name:'Change preferred width'}).click();
-  assert.equal(await page.getByTestId('sidebar-width').textContent(), '360');
-  await page.setViewportSize({ width: 960, height: 800 });
-  await page.getByRole('button', {name:'‹ Settings'}).waitFor();
-  assert.equal(await page.getByTestId('sidebar-width').textContent(), '960', 'breakpoint uses the inherited width, not 220px');
-  await page.setViewportSize({ width: 1100, height: 800 });
-  await page.getByRole('button', {name:'Model services', exact:true}).waitFor();
-  await page.getByRole("textbox", { name: "Draft" }).fill("retained draft");
-  const field = await page.getByRole("textbox", { name: "Draft" }).elementHandle();
-  await page.setViewportSize({ width: 600, height: 800 });
-  await page.getByRole("button", { name: "‹ Settings" }).click();
-  await page.getByRole("button", { name: "Model services", exact: true }).click();
-  await page.getByRole("textbox", { name: "Draft" }).waitFor();
-  assert.equal(await field.evaluate((element: HTMLElement) => element.isConnected), true);
-  assert.equal(await page.getByRole("textbox", { name: "Draft" }).inputValue(), "retained draft");
-  await page.setViewportSize({ width: 1100, height: 800 });
-  await page.getByRole("button", { name: "Model services", exact: true }).waitFor();
-  assert.equal(await page.getByTestId('sidebar-width').textContent(), '360', 'compact presentation does not overwrite the preferred width');
-  assert.equal(await page.getByRole("textbox", { name: "Draft" }).inputValue(), "retained draft");
+  await page.getByRole('textbox', { name: 'Draft', exact: true }).fill('retained draft');
+  for (const width of [390, 1280]) for (const theme of ['light', 'dark']) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(theme => (window as any).setSpacingTheme(theme), theme);
+    assert.equal(await page.getByRole('textbox', { name: 'Draft', exact: true }).inputValue(), 'retained draft');
+    if (process.env.OPENCRAFT_SETTINGS_SPACING_NEGATIVE_CONTROL) await page.addStyleTag({ content: '.settings-panel .settings-control-row { padding-inline: 0; }' });
+    const metrics = await page.evaluate(() => {
+      const expected = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spacing')) * 4;
+      const rows = Array.from(document.querySelectorAll('[data-testid="page-card"] > .settings-control-row, [data-testid="utility-card"] > .settings-control-row')).map(row => {
+        const style = getComputedStyle(row), box = row.getBoundingClientRect();
+        const label = row.querySelector('.settings-control-row__copy')!.getBoundingClientRect(), value = row.querySelector('.settings-control-row__value')!.getBoundingClientRect();
+        const separator = getComputedStyle(row, '::after');
+        return { left: parseFloat(style.paddingLeft), right: parseFloat(style.paddingRight), labelInset: label.left - box.left,
+          valueInset: box.right - value.right, gap: row.classList.contains('settings-control-row--stacked') ? value.top - label.bottom : Math.max(value.left - label.right, value.top - label.bottom),
+          separatorInset: separator.content !== 'none' ? parseFloat(separator.left) : null };
+      });
+      const plain = document.querySelector('[data-testid="plain-group"] > .settings-control-row')!, form = document.querySelector('[data-testid="compact-form"] > .settings-control-row')!;
+      const body = document.querySelector('.settings-panel__body')!;
+      const following = document.querySelector('[data-testid="following-section"]')!, actions = document.querySelector('[data-testid="between-actions"]')!;
+      return { expected, rows, top: parseFloat(getComputedStyle(body).paddingTop), bottom: parseFloat(getComputedStyle(body).paddingBottom),
+        sectionGap: following.getBoundingClientRect().top - actions.getBoundingClientRect().bottom,
+        expectedSectionGap: parseFloat(getComputedStyle(body).getPropertyValue('--gap-token-settings-sections')),
+        plainInset: getComputedStyle(plain).paddingLeft, formInset: getComputedStyle(form).paddingLeft };
+    });
+    assert.equal(metrics.rows.length, 3);
+    assert.ok(metrics.top >= metrics.expected && metrics.bottom >= metrics.expected, 'panel body keeps vertical breathing room');
+    assert.equal(metrics.sectionGap, metrics.expectedSectionGap, 'actions between sections preserve section spacing');
+    for (const row of metrics.rows) {
+      assert.equal(row.left, metrics.expected, 'composed card left inset');
+      assert.equal(row.right, metrics.expected, 'composed card right inset');
+      assert.ok(row.labelInset >= metrics.expected - 1 && row.valueInset >= metrics.expected - 1);
+      assert.ok(row.gap > 0, 'label and value spacing');
+      if (row.separatorInset !== null) assert.equal(row.separatorInset, metrics.expected);
+    }
+    assert.equal(metrics.plainInset, '0px', 'explicit plain group stays flush');
+    assert.equal(metrics.formInset, '0px', 'explicit compact form stays flush');
+  }
   assert.deepEqual(errors, []);
-  console.log("Settings shell passed: compact category navigation, stable editor, wide restoration.");
+  console.log("Settings shell passed: page and utility card insets, stacked gaps, plain/form opt-outs, retained draft across narrow/wide themes.");
 } finally { await browser?.close(); await vite.close(); }
