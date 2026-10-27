@@ -21,6 +21,8 @@ export type ThreadPendingInteraction = {
     readonly turnId: string | null;
     readonly itemId: string | null;
     readonly receivedAtMs: number;
+    readonly responseState?: "pending" | "responding" | "unconfirmed";
+    readonly canRespond?: boolean;
     readonly params: AppServerServerRequestParams<TMethod>;
   }
 }[AppServerServerMethod];
@@ -77,6 +79,7 @@ export interface ThreadGuardianApprovalReview {
 }
 
 export interface ThreadView {
+  readonly interactionRecovery?: "recovering" | "unavailable";
   readonly hostId: string;
   readonly threadId: string;
   readonly revision: number;

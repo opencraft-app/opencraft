@@ -11,6 +11,11 @@ export interface TimelineAnchor {
   readonly id: string;
 }
 
+export interface InteractionAvailability {
+  readonly canRespond?: boolean;
+  readonly responseState?: "pending" | "responding" | "unconfirmed";
+}
+
 export interface TimelineBlockBase<TType extends string> {
   readonly type: TType;
   readonly id: string;
@@ -401,7 +406,7 @@ export interface SubagentTimelineBlock extends TimelineBlockBase<"subagent"> {
   readonly status: TimelineExecutionStatus;
 }
 
-export interface ApprovalTimelineBlock extends TimelineBlockBase<"approval"> {
+export interface ApprovalTimelineBlock extends TimelineBlockBase<"approval">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: string | null;
@@ -446,7 +451,7 @@ export interface UserInputQuestion {
   readonly isSecret: boolean;
 }
 
-export interface QuestionTimelineBlock extends TimelineBlockBase<"question"> {
+export interface QuestionTimelineBlock extends TimelineBlockBase<"question">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: string | null;
@@ -455,7 +460,7 @@ export interface QuestionTimelineBlock extends TimelineBlockBase<"question"> {
 }
 
 /** Product option picker delivered through request_option_picker. */
-export interface OptionPickerTimelineBlock extends TimelineBlockBase<"option-picker"> {
+export interface OptionPickerTimelineBlock extends TimelineBlockBase<"option-picker">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: "item/tool/call" | "item/tool/requestOptionPicker";
@@ -468,7 +473,7 @@ export interface OptionPickerTimelineBlock extends TimelineBlockBase<"option-pic
 }
 
 /** Product-owned onboarding step requested through setup_codex_step. */
-export interface SetupStepTimelineBlock extends TimelineBlockBase<"setup-step"> {
+export interface SetupStepTimelineBlock extends TimelineBlockBase<"setup-step">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: "item/tool/call";
@@ -477,14 +482,14 @@ export interface SetupStepTimelineBlock extends TimelineBlockBase<"setup-step"> 
 }
 
 /** Product-owned context-source picker, available as dynamic and compatibility RPCs. */
-export interface SetupContextPickerTimelineBlock extends TimelineBlockBase<"setup-context-picker"> {
+export interface SetupContextPickerTimelineBlock extends TimelineBlockBase<"setup-context-picker">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: "item/tool/call" | "item/tool/requestSetupCodexContextPicker";
   readonly state: "pending" | "answered" | "cancelled";
 }
 
-export interface McpElicitationTimelineBlock extends TimelineBlockBase<"elicitation"> {
+export interface McpElicitationTimelineBlock extends TimelineBlockBase<"elicitation">, InteractionAvailability {
   readonly requestId: string;
   readonly targetItemId: string | null;
   readonly method: "mcpServer/elicitation/request";
@@ -621,7 +626,14 @@ export type TimelineFrame =
   | EventTimelineFrame
   | InteractionTimelineFrame;
 
+export interface InteractionWaitPresentation {
+  readonly turnId: TurnId;
+  readonly reason: "approval" | "input";
+  readonly recovery: "recovering" | "unavailable";
+}
+
 export interface TimelineSnapshot {
+  readonly interactionWait?: InteractionWaitPresentation;
   readonly key: ConversationKey;
   readonly revision: number;
   readonly phase: ConversationPhase;

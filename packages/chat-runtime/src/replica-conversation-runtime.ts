@@ -1,3 +1,4 @@
+import { humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { userInputQuestionExtensions } from "@opencraft/chat-core";
 import type {
   QueuedSubmission as ProtocolQueuedSubmission,
@@ -414,6 +415,8 @@ function sourcePendingInteractions(
             : asTurnId(string(candidate.turnId)!),
         itemId: string(candidate.itemId),
         receivedAtMs,
+        ...(["pending", "responding", "unconfirmed"].includes(String(candidate.responseState)) ? { responseState: candidate.responseState } : {}),
+        ...(typeof candidate.canRespond === "boolean" ? { canRespond: candidate.canRespond } : {}),
         params: candidate.params,
       } as unknown as PendingInteraction,
     ];
@@ -798,7 +801,10 @@ function attachPendingInteractions(
     items.push({
       id: `server-request:${interaction.requestId}`,
       type: projected.type,
-      payload: projected.payload,
+      payload: { ...projected.payload,
+        ...(interaction.responseState ? { responseState: interaction.responseState } : {}),
+        ...(interaction.canRespond === undefined ? {} : { canRespond: interaction.canRespond }),
+      },
     });
   }
   return turns;
@@ -1428,7 +1434,7 @@ export function createReplicaConversationRuntime(
     const turns = projectActions(
       attachPendingInteractions(reviewedTurns, pendingInteractions),
     );
-    const timeline = projectTimeline(
+    const projectedTimeline = projectTimeline(
       {
         key: config.key,
         revision: replica.revision,
@@ -1438,6 +1444,12 @@ export function createReplicaConversationRuntime(
       },
       projectors,
     );
+    const waitingTurn = [...turns].reverse().find(t => t.status === "streaming" || t.status === "pending");
+    const waitReason = humanInteractionWaitReason(thread.status);
+    const timeline = waitingTurn && waitReason && pendingInteractions.length === 0
+      ? { ...projectedTimeline, interactionWait: { turnId: asTurnId(waitingTurn.id), reason: waitReason as "approval" | "input",
+        recovery: view.interactionRecovery === "recovering" ? "recovering" as const : "unavailable" as const } }
+      : projectedTimeline;
     const turnsPagination = isRecord(view.turnsPagination)
       ? view.turnsPagination
       : {};

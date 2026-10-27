@@ -553,6 +553,7 @@ function Turn({
   threadDetailLevel: ConversationDetailLevel;
   turn: TimelineTurnView;
 }) {
+  const intl = useIntl();
   const forkTurn = useContext(ConversationDocumentContext).onForkTurn;
   const toolActivityPresenters = useContext(ToolActivityPresenterContext);
   const renderMcpApps = useContext(ConversationDocumentContext).mcpApps !== undefined;
@@ -617,6 +618,11 @@ function Turn({
           threadDetailLevel={threadDetailLevel}
         />
       ))}
+      {turn.interactionWait ? <p className="thread-interaction-card__status" role="status" data-interaction-recovery={turn.interactionWait.recovery}>
+        {intl.formatMessage(turn.interactionWait.recovery === "recovering"
+          ? { id: "chat.interaction.recovering", defaultMessage: "Waiting for your input. Recovering request details…" }
+          : { id: "chat.interaction.unavailable", defaultMessage: "Waiting for your input. Request details could not be recovered; reconnect to try again." })}
+      </p> : null}
       {turn.status === "complete" || turn.status === "failed" || turn.status === "interrupted"
         ? <VisibleTurnReceipt turnId={turn.turnId} /> : null}
     </section>

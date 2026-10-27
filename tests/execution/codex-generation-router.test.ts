@@ -269,3 +269,18 @@ test("delegated spawn follows its capable source across legacy default rollback 
     assert.equal(f.calls.filter(call=>call.method==="thread/start").length,2);
   }finally{await f.close();}
 });
+
+test("an active native replay keeps its public request identity and resolved ID reuse gets a fresh identity", async () => {
+ const f=await fixture();
+ try {
+  const thread=(await f.rpc('thread/start')).thread.id;
+  await f.rpc('fixture/approval',{threadId:thread});await f.rpc('fixture/approval',{threadId:thread});
+  const requests=f.messages.filter(m=>m.method==='item/commandExecution/requestApproval');assert.equal(requests.length,2);assert.equal(requests[0].id,requests[1].id);
+  await f.rpc('fixture/resolveApproval',{threadId:thread});await f.rpc('fixture/approval',{threadId:thread});
+  const fresh=f.messages.filter(m=>m.method==='item/commandExecution/requestApproval').at(-1);assert.notEqual(fresh.id,requests[0].id);
+  f.client.send(JSON.stringify({id:requests[0].id,result:{decision:'accept'}}));
+  f.client.send(JSON.stringify({id:fresh.id,result:{decision:'decline'}}));
+  for(let n=0;n<100&&!f.replies.length;n++)await new Promise(resolve=>setTimeout(resolve,5));
+  assert.deepEqual(f.replies.map(r=>[r.id,(r.result as any).decision]),[[7,'decline']]);
+ } finally {await f.close();}
+});

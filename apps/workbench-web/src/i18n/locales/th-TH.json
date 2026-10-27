@@ -1,4 +1,9 @@
 {
+  "chat.interaction.unconfirmed": "ยังไม่ยืนยันการส่งคำตอบ ระบบจะตรวจสอบสถานะเมื่อเชื่อมต่ออีกครั้ง",
+  "chat.interaction.unavailable": "กำลังรอข้อมูลจากคุณ แต่กู้คืนรายละเอียดคำขอไม่ได้ โปรดเชื่อมต่อใหม่เพื่อลองอีกครั้ง",
+  "chat.interaction.responding": "ส่งคำตอบแล้ว กำลังรอเซิร์ฟเวอร์ยืนยัน…",
+  "chat.interaction.recovering": "กำลังรอข้อมูลจากคุณ และกู้คืนรายละเอียดคำขอ…",
+  "chat.interaction.readOnly": "กำลังรอผู้เข้าร่วมที่มีสิทธิ์ตอบ",
   "chat.composer.reconnecting": "กำลังเชื่อมต่ออีกครั้ง…",
   "chat.composer.loading": "กำลังโหลด…",
   "chat.recovery.progress.connecting": "กำลังเชื่อมต่อเซิร์ฟเวอร์",

@@ -25,6 +25,8 @@ export type PendingInteraction = {
     readonly turnId: TurnId | null;
     readonly itemId: string | null;
     readonly receivedAtMs: number;
+    readonly responseState?: "pending" | "responding" | "unconfirmed";
+    readonly canRespond?: boolean;
     readonly params: AppServerServerRequestParams<TMethod>;
   };
 }[AppServerServerMethod];

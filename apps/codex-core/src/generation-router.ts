@@ -101,8 +101,13 @@ class RoutingSession {
         this.router.routesUpdated();
         this.router.runtime.observe(live, message);
         if (message.id !== undefined && typeof message.method === "string") {
-          const key = `ocg:${this.epoch}:${randomUUID()}`;
-          this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false }); this.emit({ ...message, id: key });
+          // A producer may replay a still-live request during Resume. Keep one
+          // mapping until its native resolution; ID reuse after resolution gets
+          // a fresh public identity, so stale responses cannot answer it.
+          const liveRequest = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === message.id);
+          const key = liveRequest?.[0] ?? `ocg:${this.epoch}:${randomUUID()}`;
+          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false });
+          this.emit({ ...message, id: key });
         } else this.emit({ ...message, __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id,
           incarnation, admissionEpoch: ticket.admissionEpoch, threadId: tid } });
     };

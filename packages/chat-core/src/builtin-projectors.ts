@@ -440,7 +440,15 @@ function simpleProjector(
     name,
     itemTypes,
     project(item, context) {
-      return project(item, record(item.payload), context);
+      const source = record(item.payload), projected = project(item, source, context);
+      if (projected.block && "requestId" in projected.block) {
+        return { ...projected, block: { ...projected.block,
+          ...(typeof source.canRespond === "boolean" ? { canRespond: source.canRespond } : {}),
+          ...(["pending", "responding", "unconfirmed"].includes(String(source.responseState))
+            ? { responseState: source.responseState as "pending" | "responding" | "unconfirmed" } : {}),
+        } };
+      }
+      return projected;
     },
   };
 }

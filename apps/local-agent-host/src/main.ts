@@ -1,3 +1,4 @@
+import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
@@ -73,6 +74,8 @@ interface LogicalClient {
   readonly owner: import("./dsh-execution-authority.js").DshExecutionOwner;
   readonly offered: Set<string>;
   readonly openedThreads: Set<string>;
+  initialized?: boolean;
+  sharedInteractions?: boolean;
   unsubscribeInteractions?: () => void;
 }
 
@@ -545,6 +548,14 @@ export async function startLocalAgentHost(options: {
         if (!id || lifecycle.receivesNotifications(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
       }
     });
+    const publishShared = (threadId: string, state: LogicalClient) => {
+      if (!state.sharedInteractions || !state.initialized || !(state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) return;
+      sendClient(socket, state.clientId, { jsonrpc: "2.0", method: SHARED_INTERACTIONS_CHANGED,
+        params: adapter.interactions.shared.snapshot(threadId, true) });
+    };
+    const unsubscribeShared = adapter.interactions.shared.subscribe(threadId => {
+      for (const state of clients.values()) publishShared(threadId, state);
+    });
     const unsubscribeProcesses = processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
     const connectorChanged = (id: string) => { for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "connectors/managed/changed", params: { id } }); };
     connectorListeners.add(connectorChanged);
@@ -569,6 +580,20 @@ export async function startLocalAgentHost(options: {
           console.error("[opencraft local host] interaction response failed", error);
           socket.close(1011, "Interaction response failed; reconnect to recover pending requests");
         }
+        return;
+      }
+      if (request && typeof request === "object" && "id" in request && (request.method === SHARED_INTERACTIONS_READ || request.method === SHARED_INTERACTIONS_RESPOND)) {
+        const p = (request.params ?? {}) as Record<string, unknown>, threadId = typeof p.threadId === "string" ? p.threadId : "";
+        if (!state.initialized || !(openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) {
+          send(socket, { id: request.id, error: { code: 403, message: "Conversation subscription required" } }); return;
+        }
+        try {
+          if (request.method === SHARED_INTERACTIONS_READ) { send(socket, { id: request.id, result: adapter.interactions.shared.snapshot(threadId, true) }); return; }
+          if (typeof p.interactionId !== "string" || !p.interactionId || typeof p.submissionId !== "string" || !p.submissionId
+            || typeof p.result !== "object" || p.result === null || Array.isArray(p.result)) throw new Error("Invalid interaction response");
+          const disposition = await adapter.interactions.respondShared(threadId, p.interactionId, p.submissionId, p.result);
+          if (clients.get(clientId) === state) send(socket, { id: request.id, result: { disposition, snapshot: adapter.interactions.shared.snapshot(threadId, true) } });
+        } catch (error) { if (clients.get(clientId) === state) send(socket, { id: request.id, error: rpcError(error) }); }
         return;
       }
       // JSON-RPC notifications (including initialized) have no response.
@@ -725,6 +750,8 @@ export async function startLocalAgentHost(options: {
             dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
         if (request.method === "initialize") {
+          state.initialized = true;
+          state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];
           const initialized = result as import("@opencraft/appserver-protocol").AppServerInitializeResponse;
           result = {
             ...initialized,
@@ -732,6 +759,7 @@ export async function startLocalAgentHost(options: {
               ...initialized.capabilities,
               extensions: {
                 ...initialized.capabilities?.extensions,
+                [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
@@ -745,6 +773,7 @@ export async function startLocalAgentHost(options: {
         if (request.method === "thread/delete" && typeof targetThread === "string") await adapter.invalidateTranscriptCache(targetThread);
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
+        if (typeof capabilityThreadId === "string" && ["thread/start", "thread/resume", "thread/fork", "thread/read", "turn/start"].includes(request.method)) publishShared(capabilityThreadId, state);
         if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);
         send(socket, { jsonrpc: "2.0", id: request.id, result }, request.method);
         // Initialization (including preflight) must not claim another client's
@@ -756,7 +785,7 @@ export async function startLocalAgentHost(options: {
           if (typeof threadId === "string") openedThreads.add(threadId);
           state.unsubscribeInteractions?.();
           state.unsubscribeInteractions = adapter.interactions.subscribe(interaction => {
-            if (!openedThreads.has(interaction.params.threadId) || offered.has(interaction.id)) return;
+            if (state.sharedInteractions || !openedThreads.has(interaction.params.threadId) || offered.has(interaction.id)) return;
             offered.add(interaction.id);
             sendClient(socket, clientId, { jsonrpc: "2.0", ...interaction });
           });
@@ -767,6 +796,7 @@ export async function startLocalAgentHost(options: {
       });
     });
     socket.once("close", () => {
+      unsubscribeShared();
       for (const pending of httpRequests.values()) pending.abort();
       socketClients.delete(socket);
       for (const state of [...clients.values()]) void disconnectClient(state).catch(() => undefined);

@@ -1,3 +1,5 @@
+import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { ExecutionLeaseStore, snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
@@ -280,6 +282,17 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly threadInteractionOwners = new Map<string, string>();
   private readonly collaborationCalls = new Map<string, symbol>();
   private readonly serverRequests = new Map<string, PendingServerRequest>();
+  private readonly humanInteractions = new HostInteractions();
+  private readonly sharedInteractionClients = new Set<string>();
+  private readonly removeHumanInteractionListener = this.humanInteractions.subscribe(threadId => {
+    for (const clientId of this.threadTargets(threadId)) this.publishHumanInteractions(threadId, clientId);
+  });
+  private publishHumanInteractions(threadId: string, clientId: string): void {
+    if (!this.initializedClients.has(clientId) || !this.sharedInteractionClients.has(clientId)) return;
+    this.emit({ method: SHARED_INTERACTIONS_CHANGED, params: this.humanInteractions.snapshot(threadId,
+      this.threadClients.get(threadId)?.has(clientId) === true || this.historyWatchers.get(threadId)?.has(clientId) === true) }, clientId);
+  }
+
   private readonly internalRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; threadId: string; method: string; params: RpcRecord; usageAttemptId?:string; recoveryAdmission?: boolean }>();
   private readonly threadOperations = new Map<string, Promise<void>>();
   private readonly activeTurns = new Map<string, string>();
@@ -774,7 +787,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       pendingAdmissions: new Set([...this.admissionsInFlight.values(), ...(this.coreBridge?.pendingAdmissionKeys ?? []),
         ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
       queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
-      pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + (this.coreBridge?.pendingApprovals ?? 0),
+      pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + this.humanInteractions.size + (this.coreBridge?.pendingApprovals ?? 0),
       capacityRetries: this.capacityRetries.size };
   }
 
@@ -812,6 +825,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     for (const request of this.serverRequests.values()) {
       if (request.threadId) blocked.add(request.threadId); else unscopedBusy = true;
     }
+    for (const threadId of this.nativeSubscribedThreads) if (this.humanInteractions.hasThread(threadId)) blocked.add(threadId);
     return { routingEpoch: this.generationRoutingEpoch, acknowledgedFenceEpoch: this.generationFenceEpoch, blockedThreadIds: [...blocked], unscopedBusy, discoveryComplete: this.generationDiscoveryComplete && !this.coreReinitializing && this.physicalInitialized && this.statusValue.state === "open" };
   }
 
@@ -849,6 +863,36 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    if (id !== null && (message.method === SHARED_INTERACTIONS_READ || message.method === SHARED_INTERACTIONS_RESPOND)) {
+      const p = record(message.params), threadId = string(p.threadId);
+      const reader = this.threadClients.get(threadId)?.has(clientId) || this.historyWatchers.get(threadId)?.has(clientId);
+      if (!this.initializedClients.has(clientId) || !reader) { this.emit({ id, error: { code: 403, message: "Conversation subscription required" } }, clientId); return; }
+      // A read subscription does not start execution. Answering an existing
+      // human wait is an explicit command under the instance's current access.
+      const canRespond = reader === true;
+      const epoch = this.clientEpoch(clientId);
+      try {
+        if (message.method === SHARED_INTERACTIONS_READ) {
+          this.emit({ id, result: this.humanInteractions.snapshot(threadId, canRespond) }, clientId); return;
+        }
+        context.resourceOwner?.assertCurrent();
+        if (!canRespond) throw new InteractionFault({ code: "READ_ONLY" }, "This subscription cannot answer interactions");
+        if (!string(p.interactionId) || !string(p.submissionId) || !p.result || typeof p.result !== "object" || Array.isArray(p.result))
+          throw new InteractionFault({ code: "INVALID_RESPONSE" }, "Invalid interaction response");
+        const disposition = await this.humanInteractions.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result),
+          async (source, result) => {
+            if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== epoch || !(this.threadClients.get(threadId)?.has(clientId) || this.historyWatchers.get(threadId)?.has(clientId))) throw new Error("Interaction subscription expired");
+            context.resourceOwner?.assertCurrent();
+            await this.writePhysical({ id: source.id, result });
+          });
+        if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === epoch)
+          this.emit({ id, result: { disposition, snapshot: this.humanInteractions.snapshot(threadId, true) } }, clientId);
+      } catch (cause) {
+        if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === epoch) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000,
+          message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId);
+      }
+      return;
+    }
     const historyParams = record(message.params);
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
     const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
@@ -941,6 +985,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     if (id !== null && message.method === undefined && ("result" in message || "error" in message)) {
+      const humanThread = this.humanInteractions.threadForNative(id);
+      if (humanThread !== null) {
+        if (!this.initializedClients.has(clientId) || !this.humanInteractions.wasOffered(id, clientId) || this.sharedInteractionClients.has(clientId)) return;
+        if ("result" in message) await this.humanInteractions.respondNative(id, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result),
+          (source, result) => this.writePhysical({ id: source.id, result }));
+        return;
+      }
       const request = this.serverRequests.get(JSON.stringify(id));
       if (request?.ownerClientId !== clientId || !this.initializedClients.has(clientId)) return;
       this.serverRequests.delete(JSON.stringify(id));
@@ -1322,6 +1373,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.threadInteractionOwners.clear();
       this.collaborationCalls.clear();
       this.serverRequests.clear();
+      this.humanInteractions.clear();
+      this.sharedInteractionClients.clear();
+      this.removeHumanInteractionListener();
       this.activeTurns.clear();
       for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
       this.goalContinuationTimers.clear();
@@ -1344,6 +1398,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.clientEpochs.set(clientId, ++this.clientSequence);
     const pending: PendingRequest = { clientId, clientEpoch: this.clientEpoch(clientId), originalId: id, method: "initialize", params: record(message.params) };
     this.initializedClients.add(clientId);
+    if (record(record(pending.params.capabilities).extensions)[SHARED_INTERACTIONS_EXTENSION]) this.sharedInteractionClients.add(clientId);
     if (this.initializeResult !== null) {
       this.diagnostic({ event: "client-initialize", clientId, source: "cached", outcome: "succeeded", pid: this.child?.pid ?? null });
       this.emit({ id, result: this.initializeResult }, clientId);
@@ -1472,6 +1527,13 @@ export class CodexEngineAdapter implements DuplexTransport {
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };
       }
+      const sharedValue = record(this.initializeResult), sharedCaps = record(sharedValue.capabilities);
+      const sharedExtensions = record(sharedCaps.extensions), sharedAccess = record(sharedExtensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+      this.initializeResult = { ...sharedValue, capabilities: { ...sharedCaps, extensions: { ...sharedExtensions,
+        [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
+        ...(Array.isArray(sharedAccess.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...sharedAccess,
+          methods: [...new Set([...sharedAccess.methods, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND])] } } : {}),
+      } } };
       message = { ...message, result: this.initializeResult };
     }
     this.physicalInitializePending = false;
@@ -1659,6 +1721,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
       const turn = record(record(message.params).turn);
+      this.humanInteractions.resolveTurn(threadId, string(turn.id));
       this.executionLeases?.finished(threadId, string(turn.id));
       this.recovery?.finished(threadId, string(turn.id));
       const recovery = this.recovery?.snapshot(threadId);
@@ -1684,6 +1747,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.clearCapacityRetry(threadId);
     if (message.method === "serverRequest/resolved") {
+      const rawId = responseId(record(message.params).requestId);
+      if (rawId !== null) this.humanInteractions.resolveNative(rawId, threadId);
       const requestId = responseId(record(message.params).requestId);
       if (requestId !== null) {
         const key = JSON.stringify(requestId);
@@ -1792,6 +1857,15 @@ export class CodexEngineAdapter implements DuplexTransport {
       }).then(value=>respond(true,value),(error:unknown)=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status:typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
       return;
     }
+    if (isHumanInteraction(message.method, message.params)) {
+      const threadId = string(record(message.params).threadId);
+      if (!threadId) return;
+      try { this.humanInteractions.capture(message as unknown as InteractionSourceRequest); }
+      catch { void this.writePhysical({ id, error: { code: -32083, message: "Interaction source could not be admitted" } }).catch(() => {}); return; }
+      for (const viewer of this.threadClients.get(threadId) ?? []) if (!this.sharedInteractionClients.has(viewer))
+        this.humanInteractions.offerLegacy(threadId, viewer, source => this.emit(source as unknown as RpcRecord, viewer));
+      return;
+    }
     const key = JSON.stringify(id);
     if (this.serverRequests.has(key)) return;
     const threadId = string(record(message.params).threadId);
@@ -1810,6 +1884,8 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private claimInteractionOwner(threadId: string, clientId: string): void {
     if (!threadId) return;
+    this.publishHumanInteractions(threadId, clientId);
+    if (!this.sharedInteractionClients.has(clientId)) this.humanInteractions.offerLegacy(threadId, clientId, source => this.emit(source as unknown as RpcRecord, clientId));
     const current = this.threadInteractionOwners.get(threadId);
     if (current && current !== clientId && this.initializedClients.has(current)) return;
     this.threadInteractionOwners.set(threadId, clientId);
@@ -1821,6 +1897,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private releaseServerRequests(clientId: string, threadId?: string): void {
+    this.humanInteractions.forgetClient(clientId, threadId);
     for (const request of this.serverRequests.values()) {
       if (request.ownerClientId === clientId && (threadId === undefined || request.threadId === threadId)) {
         request.ownerClientId = null;
@@ -1901,7 +1978,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.activeGoalThreads.has(threadId)) return true;
     if (this.capacityRetries.has(threadId)) return true;
     if (this.activeTurns.has(threadId) || this.queue?.firstUnsettled(threadId) != null) return true;
-    if ([...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
+    if (this.humanInteractions.hasThread(threadId) || [...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
     if ([...this.pending.values()].some(request => request.params.threadId === threadId
       && (request.method === "turn/start" || request.method === "turn/steer"))) return true;
     return [...this.internalRequests.values()].some(request => request.threadId === threadId);
@@ -1962,6 +2039,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     let clients = this.historyWatchers.get(threadId);
     if (!clients) { clients = new Set(); this.historyWatchers.set(threadId, clients); }
     clients.add(clientId);
+    this.publishHumanInteractions(threadId, clientId);
   }
 
   private subscribeThread(threadId: string, clientId: string): void {
@@ -1982,6 +2060,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.desktopService?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
     this.clientEpochs.delete(clientId);
     this.initializedClients.delete(clientId);
+    this.sharedInteractionClients.delete(clientId);
     const affected = new Set<string>();
     for (const [threadId, clients] of this.threadClients) {
       if (clients.delete(clientId)) affected.add(threadId);

@@ -1,4 +1,9 @@
 {
+  "chat.interaction.unconfirmed": "Penghantaran jawapan belum disahkan. Status akan disemak selepas menyambung semula.",
+  "chat.interaction.unavailable": "Menunggu input anda. Butiran permintaan tidak dapat dipulihkan; sambung semula untuk mencuba lagi.",
+  "chat.interaction.responding": "Jawapan telah dihantar. Menunggu pengesahan pelayan…",
+  "chat.interaction.recovering": "Menunggu input anda. Memulihkan butiran permintaan…",
+  "chat.interaction.readOnly": "Menunggu peserta yang mempunyai kebenaran untuk menjawab.",
   "chat.composer.reconnecting": "Menyambung semula…",
   "chat.composer.loading": "Memuatkan…",
   "chat.recovery.progress.connecting": "Menyambung ke pelayan",

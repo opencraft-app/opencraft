@@ -560,11 +560,11 @@ export function createTimelineTurnPresentationPlan(turn: TimelineTurnView, regis
     interruptedByThisClient: seed?.interruptedByThisClient ?? false, hookStats: seed?.hookStats ?? null,
     anchors: assistants.flatMap(frame => frame.anchors), blocks,
   } : null;
-  const activeReasoningId = active && latestObservation?.type === "reasoning" && readReasoningContent(latestObservation) ? latestObservation.id : null;
+  const activeReasoningId = active && !turn.interactionWait && latestObservation?.type === "reasoning" && readReasoningContent(latestObservation) ? latestObservation.id : null;
   const finalReasoningPresenter: typeof presentReasoning = (block) => reasoningPresenter(block, block.id === activeReasoningId);
   let assistant = assistantFrame ? createAssistantTurnPresentationPlan(assistantFrame, registry, partitionOptions, finalReasoningPresenter) : null;
   let thinkingOwner: TimelineTurnThinkingOwner = { type: "none" };
-  if (assistant && assistantFrame) {
+  if (assistant && assistantFrame && !turn.interactionWait) {
     const last = assistant.slots.at(-1);
     let innerOwner: AgentActivityContentUnit | undefined;
     if (last?.type === "agent-activity" && last.segmentEnd === "open") innerOwner = [...last.contentUnits].reverse().find(unit => unit.type !== "worked-for");

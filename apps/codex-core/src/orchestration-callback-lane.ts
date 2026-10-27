@@ -1,3 +1,4 @@
+import { isHumanInteraction } from "@opencraft/appserver-protocol";
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chmod, unlink } from 'node:fs/promises';
@@ -8,7 +9,7 @@ const object = (value: unknown): Record<string, unknown> => value !== null && ty
 const tools = new Set(['thread_spawn','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
 const idKey = (id: unknown) => JSON.stringify(id);
 const send = (socket: WebSocket | null, value: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
-interface Callback { message: Record<string, unknown>; answered: boolean; timer?: ReturnType<typeof setTimeout> }
+interface Callback { message: Record<string, unknown>; answered: boolean; human?: boolean; timer?: ReturnType<typeof setTimeout> }
 interface Mutation { fingerprint: string; reply?: Record<string, unknown>; clients: {socket: WebSocket; id: unknown}[] }
 
 /** The native WebSocket belongs to the APP Host, including while a gateway is absent.
@@ -65,6 +66,19 @@ class CallbackLane {
       }
       if(message.method==='thread/deleted'||message.method==='thread/archived'||message.method==='thread/unloaded'||message.method==='thread/status/changed'&&object(params.status).type==='notLoaded')this.threadDelegations.delete(tid);
       const isTool=this.replay && message.method==='item/tool/call' && tools.has(String(params.tool)) && !params.namespace;
+      const isHuman = isHumanInteraction(message.method, params);
+      if (isHuman && message.id !== undefined) {
+        const key = idKey(message.id), previous = this.callbacks.get(key);
+        message = { ...message, __opencraftInteractionKey: previous?.message.__opencraftInteractionKey ?? `human:${this.incarnation}:${randomUUID()}`,
+          __opencraftInteractionState: previous?.answered ? previous.message.__opencraftInteractionState ?? "responding" : "pending" };
+        if (previous) previous.message = message;
+        else {
+          if ([...this.callbacks.values()].filter(value => value.human).length >= 256) {
+            send(this.upstream, { id: message.id, error: { code: -32083, message: "Too many pending human requests" } }); return;
+          }
+          this.callbacks.set(key, { message, answered: false, human: true });
+        }
+      }
       if (isTool && message.id!==undefined) {
         const key=idKey(message.id);
         const callId=typeof params.callId==='string' ? params.callId:key;
@@ -101,7 +115,9 @@ class CallbackLane {
     if (method==='initialized') {
       if (!this.initialized) {this.initialized=true;send(this.upstream,message);}
       this.ready=true;
-      for (const callback of this.callbacks.values()) if (!callback.answered) {
+      // Human waits have no disconnect deadline and survive Gateway lifetime.
+      // Submitted human responses replay state only; they never execute again.
+      for (const callback of this.callbacks.values()) if (!callback.answered || callback.human) {
         clearTimeout(callback.timer);callback.timer=undefined;send(socket,callback.message);
       }
       return;
@@ -116,8 +132,11 @@ class CallbackLane {
       const key=idKey(message.id),callback=this.callbacks.get(key);
       if(message.__opencraftCallbackIncarnation && !callback)return;
       if (callback) {
-        if (callback.answered || message.__opencraftCallbackIncarnation!==this.incarnation || message.__opencraftToolCallKey!==callback.message.__opencraftToolCallKey) return;
+        if (callback.answered) return;
+        if (!callback.human && (message.__opencraftCallbackIncarnation!==this.incarnation || message.__opencraftToolCallKey!==callback.message.__opencraftToolCallKey)) return;
+        if (this.upstream.readyState !== WebSocket.OPEN) throw new Error("Native response channel is unavailable");
         callback.answered=true;clearTimeout(callback.timer);
+        if (callback.human) callback.message = { ...callback.message, __opencraftInteractionState: "responding" };
       }
       const {__opencraftCallbackIncarnation:_incarnation,__opencraftToolCallKey:_call,...native}=message;
       send(this.upstream,native);return;
@@ -150,7 +169,7 @@ class CallbackLane {
   }
   private armCallback(key: string): void {
     const callback=this.callbacks.get(key);
-    if (!callback || callback.answered || callback.timer) return;
+    if (!callback || callback.human || callback.answered || callback.timer) return;
     callback.timer=setTimeout(()=>{
       if (this.callbacks.get(key)!==callback || callback.answered) return;
       callback.answered=true;
@@ -159,7 +178,7 @@ class CallbackLane {
   }
   private resolveCallback(key: string): void { const callback=this.callbacks.get(key);clearTimeout(callback?.timer);this.callbacks.delete(key); }
   get pendingMutations(): number { return this.mutations.size; }
-  get pendingCallbacks(): number { return [...this.callbacks.values()].filter(value=>!value.answered).length; }
+  get pendingCallbacks(): number { return [...this.callbacks.values()].filter(value=>value.human || !value.answered).length; }
   close(): void {
     if (this.closed) return;this.closed=true;
     this.upstream.terminate();this.client?.terminate();

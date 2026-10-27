@@ -262,3 +262,27 @@ the Workbench notification owner with a stable footer hint, rather than adding a
 layout-changing diagnostic block.
 
 Question card presentation and its stylesheet are loaded together when a timeline contains a question. The pending fallback keeps the original question readable; theme and draft state stay with their existing owners, and the card is not part of the required startup CSS graph.
+
+### Shared human request lifecycle
+
+Codex and DSH advertise `opencraft/shared-interactions` v1. The Host projects human
+requests to every admitted Thread subscriber, including late watchers, as versioned
+snapshots. UI request identity remains stable across Gateway reconnect and route
+remapping. Ordinary executable tool callbacks keep their existing single owner.
+
+Cards retain their inputs and controls while pending. A submitted answer transitions
+all subscribers to responding; controls are disabled until native resolution. Failed
+delivery retains unconfirmed feedback and cannot silently authorize a second answer.
+Only native request resolution or the matching terminal Turn removes the request.
+A read-only render surface supplies no response port. Connection loss revokes action
+availability without promoting a retained snapshot back into authority.
+
+Explicit native human-wait flags without a matching request render recovery feedback
+in the existing Turn, replacing its Thinking placeholder. The runtime reads shared
+state and, if still needed, reattaches the original Thread once per connection/Turn.
+An unsuccessful recovery stays visible and suggests reconnecting. Silence alone does
+not create an approval, an error, a timeout or an automatic response.
+
+The existing panel, input checkpoints, theme tokens and locale owner provide this
+presentation. Snapshots carry response state and availability through the protocol,
+ThreadView and Timeline projector; React state does not own settlement.

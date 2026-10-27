@@ -1,3 +1,5 @@
+import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { CodexCoreSocket } from "./codex-core-socket";
 import { CODEX_MAINTENANCE_READ, CODEX_MAINTENANCE_EXTENSION, CODEX_MAINTENANCE_CAPABILITY, codexAdmissionKey, codexMaintenanceError, isCodexAdmission } from "./codex-maintenance.js";
 import { CodexCoreControlClient } from "@opencraft/account-pool-host";
@@ -33,8 +35,24 @@ export class CodexCoreBridge implements DuplexTransport {
   private readonly disconnected = new Set<string>();
   private readonly threads = new Map<string, Set<string>>();
   private readonly readers = new Map<string, Set<string>>();
+  private readonly confirmedReaders = new Map<string, Set<string>>();
+  private readonly confirmedThreads = new Set<string>();
+  private canObserve(threadId: string, clientId: string): boolean {
+    return this.initialized.has(clientId) && (this.confirmedThreads.has(JSON.stringify([threadId, clientId])) || this.confirmedReaders.get(threadId)?.has(clientId) === true);
+  }
   private readonly revisions = new Map<string, number>();
   private readonly serverRequests = new Map<string, string>();
+  private readonly human = new HostInteractions();
+  private readonly sharedClients = new Set<string>();
+  private readonly clientEpochs = new Map<string, number>();
+  private readonly removeHuman = this.human.subscribe(threadId => {
+    for (const client of new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])) this.publishHuman(threadId, client);
+  });
+  private publishHuman(threadId: string, clientId: string): void {
+    if (this.sharedClients.has(clientId) && this.canObserve(threadId, clientId)) this.emit({ method: SHARED_INTERACTIONS_CHANGED,
+      params: this.human.snapshot(threadId, this.canObserve(threadId, clientId)) }, clientId);
+  }
+
   private sequence = 0;
   private initializeResult: unknown | null = null;
   private initializing = false;
@@ -50,7 +68,7 @@ export class CodexCoreBridge implements DuplexTransport {
   get status(): TransportStatus { return this.connection.status; }
   get pendingAdmissionKeys(): string[] { return [...this.pending.values()].filter(request => isCodexAdmission(request.method, request.params))
     .map(request => codexAdmissionKey(request.method, request.params, JSON.stringify([request.clientId, request.originalId]))); }
-  get pendingApprovals(): number { return this.serverRequests.size; }
+  get pendingApprovals(): number { return this.serverRequests.size + this.human.size; }
   subscribeMessage(listener: (frame: string) => void): () => void { this.messages.add(listener); return () => this.messages.delete(listener); }
   subscribeStatus(listener: (status: TransportStatus) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   private emit(message: RpcRecord, clientId?: string): void {
@@ -69,6 +87,22 @@ export class CodexCoreBridge implements DuplexTransport {
     delete message[LOGICAL_CLIENT_FIELD];
     if (message.method === "runtime/client/disconnect") { this.disconnect(clientId); return; }
     const id = idOf(message.id);
+    if (id !== null && (message.method === SHARED_INTERACTIONS_READ || message.method === SHARED_INTERACTIONS_RESPOND)) {
+      const p = record(message.params), threadId = string(p.threadId);
+      const allowed = () => this.canObserve(threadId, clientId);
+      if (!allowed()) { this.emit({ id, error: { code: 403, message: "Conversation subscription required" } }, clientId); return; }
+      const epoch = this.clientEpochs.get(clientId);
+      try {
+        if (message.method === SHARED_INTERACTIONS_READ) { this.emit({ id, result: this.human.snapshot(threadId, true) }, clientId); return; }
+        if (!string(p.interactionId) || !string(p.submissionId) || !p.result || typeof p.result !== "object" || Array.isArray(p.result)) throw new Error("Invalid interaction response");
+        const disposition = await this.human.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), async (source, result) => {
+          if (!allowed() || epoch !== this.clientEpochs.get(clientId)) throw new Error("Interaction subscription expired");
+          this.write({ id: source.id, result });
+        });
+        if (allowed() && epoch === this.clientEpochs.get(clientId)) this.emit({ id, result: { disposition, snapshot: this.human.snapshot(threadId, true) } }, clientId);
+      } catch (cause) { if (epoch === this.clientEpochs.get(clientId)) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000, message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId); }
+      return;
+    }
     if (message.method === CODEX_MAINTENANCE_READ && id !== null) {
       if (!this.initialized.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       this.emit({ id, result: this.maintenance?.() ?? null }, clientId); return;
@@ -86,6 +120,9 @@ export class CodexCoreBridge implements DuplexTransport {
     if (message.method === "initialize") {
       if (id === null) throw new Error("Initialize requires an id");
       this.disconnected.delete(clientId); this.initialized.add(clientId);
+      this.clientEpochs.set(clientId, ++this.sequence);
+      this.sharedClients.delete(clientId);
+      if (record(record(record(message.params).capabilities).extensions)[SHARED_INTERACTIONS_EXTENSION]) this.sharedClients.add(clientId);
       if (this.initializeResult !== null) { this.emit({ id, result: this.initializeResult }, clientId); return; }
       const pending = { clientId, originalId: id, method: "initialize", params: record(message.params) };
       if (this.initializing) { this.waiters.push(pending); return; }
@@ -95,6 +132,11 @@ export class CodexCoreBridge implements DuplexTransport {
     }
     if (message.method === "initialized") return;
     if (id !== null && typeof message.method !== "string") {
+      if (this.human.threadForNative(id) !== null) {
+        if (this.initialized.has(clientId) && !this.sharedClients.has(clientId) && this.human.wasOffered(id, clientId) && "result" in message)
+          await this.human.respondNative(id, `legacy:${clientId}:${JSON.stringify(id)}`, record(message.result), async (source, result) => { this.write({ id: source.id, result }); });
+        return;
+      }
       if (this.serverRequests.get(JSON.stringify(id)) !== clientId) return;
       this.serverRequests.delete(JSON.stringify(id)); this.write(message); return;
     }
@@ -105,7 +147,7 @@ export class CodexCoreBridge implements DuplexTransport {
       if (message.method === "thread/read" && params.watch === true && this.initialized.has(clientId)) {
         let readers = this.readers.get(threadId);
         if (!readers) { readers = new Set(); this.readers.set(threadId, readers); }
-        readers.add(clientId);
+        readers.add(clientId); this.publishHuman(threadId, clientId);
       }
       if (message.method === "thread/unsubscribe") {
         this.removeReader(threadId, clientId);
@@ -147,7 +189,7 @@ export class CodexCoreBridge implements DuplexTransport {
           if ("result" in message) {
             const result = record(message.result), capabilities = record(result.capabilities);
             this.initializeResult = { ...result, capabilities: { ...capabilities, extensions: {
-              ...record(capabilities.extensions), "opencraft/read-history": { version: 1, initialTurnsPage: false }, [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+              ...record(capabilities.extensions), [SHARED_INTERACTIONS_EXTENSION]: { version: 1 }, "opencraft/read-history": { version: 1, initialTurnsPage: false }, [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
               ...(this.maintenance ? { [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY } : {}),
             } } };
             message = { ...message, result: this.initializeResult };
@@ -160,7 +202,7 @@ export class CodexCoreBridge implements DuplexTransport {
         }
         if ("result" in message && (pending.method === "thread/start" || pending.method === "thread/fork")) {
           const threadId = string(record(record(message.result).thread).id);
-          if (!this.disconnected.has(pending.clientId)) this.subscribe(threadId, pending.clientId);
+          if (!this.disconnected.has(pending.clientId)) this.subscribe(threadId, pending.clientId, true);
           else if (!this.threads.has(threadId)) this.unsubscribeNative(threadId);
         } else if ("error" in message && pending.subscriptionRevision !== undefined && !this.disconnected.has(pending.clientId)) {
           const threadId = string(pending.params.threadId);
@@ -169,39 +211,63 @@ export class CodexCoreBridge implements DuplexTransport {
             else { this.remove(threadId, pending.clientId); if (!this.threads.has(threadId)) this.unsubscribeNative(threadId); }
           }
         }
+        if ("result" in message && !this.disconnected.has(pending.clientId)) {
+          const threadId = string(pending.params.threadId);
+          if (pending.method === "thread/resume" || pending.method === "turn/start") this.subscribe(threadId, pending.clientId, true);
+          else if (pending.method === "thread/read" && pending.params.watch === true) {
+            const readers = this.confirmedReaders.get(threadId) ?? new Set<string>(); readers.add(pending.clientId); this.confirmedReaders.set(threadId, readers);
+            this.publishHuman(threadId, pending.clientId);
+          }
+        }
         if (!this.disconnected.has(pending.clientId)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
         return;
       }
       if (typeof message.method === "string") {
         const threadId = string(record(message.params).threadId);
+        if (threadId && isHumanInteraction(message.method, message.params)) {
+          this.human.capture(message as unknown as InteractionSourceRequest);
+          for (const viewer of this.targets(threadId)) if (this.canObserve(threadId, viewer) && !this.sharedClients.has(viewer)) this.human.offerLegacy(threadId, viewer, source => this.emit(source as unknown as RpcRecord, viewer));
+          return;
+        }
         const owner = threadId ? this.targets(threadId)[0] : this.initialized.values().next().value;
         if (owner) { this.serverRequests.set(JSON.stringify(id), owner); this.emit(message, owner); }
       }
       return;
     }
     const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
+    if (message.method === "turn/completed") this.human.resolveTurn(threadId, string(record(record(message.params).turn).id));
+    if (message.method === "serverRequest/resolved") {
+      const raw = idOf(record(message.params).requestId);
+      if (raw !== null) this.human.resolveNative(raw, threadId);
+    }
     const targets = threadId ? [...new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])] : [...this.initialized];
     for (const target of targets) this.emit(message, target);
   }
   private targets(threadId: string): string[] { return [...(this.threads.get(threadId) ?? [])]; }
-  private subscribe(threadId: string, clientId: string): void {
+  private subscribe(threadId: string, clientId: string, confirmed = false): void {
     if (!threadId) return;
+    if (confirmed) this.confirmedThreads.add(JSON.stringify([threadId, clientId]));
     this.revisions.set(JSON.stringify([threadId, clientId]), ++this.sequence);
     let clients = this.threads.get(threadId);
     if (!clients) { clients = new Set(); this.threads.set(threadId, clients); }
     clients.add(clientId);
+    this.publishHuman(threadId, clientId);
+    if (this.confirmedThreads.has(JSON.stringify([threadId, clientId])) && !this.sharedClients.has(clientId)) this.human.offerLegacy(threadId, clientId, source => this.emit(source as unknown as RpcRecord, clientId));
   }
   private remove(threadId: string, clientId: string): void {
+    this.confirmedThreads.delete(JSON.stringify([threadId, clientId])); this.human.forgetClient(clientId, threadId);
     this.revisions.set(JSON.stringify([threadId, clientId]), ++this.sequence);
     const clients = this.threads.get(threadId); clients?.delete(clientId);
     if (clients?.size === 0) this.threads.delete(threadId);
   }
   private removeReader(threadId: string, clientId: string): void {
+    const confirmed = this.confirmedReaders.get(threadId); confirmed?.delete(clientId); if (confirmed?.size === 0) this.confirmedReaders.delete(threadId);
     const readers = this.readers.get(threadId); readers?.delete(clientId);
     if (readers?.size === 0) this.readers.delete(threadId);
   }
   private disconnect(clientId: string): void {
     this.disconnected.add(clientId); this.initialized.delete(clientId);
+    this.sharedClients.delete(clientId); this.clientEpochs.delete(clientId); this.human.forgetClient(clientId);
     for (const threadId of this.readers.keys()) this.removeReader(threadId, clientId);
     for (const [threadId, clients] of this.threads) {
       if (!clients.has(clientId)) continue;
@@ -221,5 +287,6 @@ export class CodexCoreBridge implements DuplexTransport {
     this.connection.close();
     this.pending.clear(); this.waiters.length = 0; this.initialized.clear(); this.disconnected.clear();
     this.threads.clear(); this.readers.clear(); this.revisions.clear(); this.serverRequests.clear();
+    this.human.clear(); this.removeHuman(); this.sharedClients.clear(); this.clientEpochs.clear(); this.confirmedReaders.clear(); this.confirmedThreads.clear();
   }
 }

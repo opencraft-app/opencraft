@@ -2715,3 +2715,26 @@ test("snapshot observer stop reentry joins the reserved intent", async () => {
   try { const original = runtime.interrupt(asTurnId("turn-one")); assert.equal(nested, original); await original; assert.equal(calls, 1); }
   finally { remove(); runtime.dispose(); }
 });
+
+test("explicit native human wait without a request replaces Thinking and preserves shared response state", () => {
+  for (const flag of ["waitingOnApproval", "waitingOnUserInput"]) {
+    const replica = new FakeReplica(threadView({ pendingInteractions: [], interactionRecovery: "recovering",
+      thread: { id: "thread-one", status: { type: "active", activeFlags: [flag] } } }));
+    const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+    try {
+      const snapshot = runtime.getSnapshot();
+      assert.equal(snapshot.timeline.interactionWait?.reason, flag === "waitingOnApproval" ? "approval" : "input");
+      const turn = groupTimelineFramesByTurn(snapshot.timeline).at(-1)!;
+      assert.equal(turn.interactionWait?.recovery, "recovering");
+      assert.equal(createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true }).thinkingOwner.type, "none");
+    } finally { runtime.dispose(); }
+  }
+  const base = threadView() as Record<string, any>;
+  base.pendingInteractions[0].responseState = "responding"; base.pendingInteractions[0].canRespond = false;
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica: new FakeReplica(base), commands: commands(), history: { async loadOlder() {} } });
+  try {
+    const block = runtime.getSnapshot().timeline.frames.flatMap(frame => frame.blocks).find(block => block.type === "approval");
+    assert.equal(block?.type === "approval" && block.responseState, "responding");
+    assert.equal(block?.type === "approval" && block.canRespond, false);
+  } finally { runtime.dispose(); }
+});

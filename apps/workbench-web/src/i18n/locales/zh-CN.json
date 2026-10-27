@@ -1,4 +1,9 @@
 {
+  "chat.interaction.unconfirmed": "答复是否送达尚未确认，重新连接后将核对状态。",
+  "chat.interaction.unavailable": "正在等待你处理，但未能恢复请求详情；请重新连接后重试。",
+  "chat.interaction.responding": "已提交答复，等待服务端确认…",
+  "chat.interaction.recovering": "正在等待你处理，正在恢复请求详情…",
+  "chat.interaction.readOnly": "等待有权限的参与者处理。",
   "chat.composer.reconnecting": "正在重新连接…",
   "chat.composer.loading": "正在加载…",
   "chat.recovery.progress.connecting": "正在连接服务器",
