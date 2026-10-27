@@ -1264,3 +1264,45 @@ missing local/physical cooperation. The notification generator version 2 adds
 explicit native loss and ordinary recovery, including physical failure and held
 cleanup/deadline interleavings. These obligations supplement the earlier model;
 its healthy-native registration fence alone did not establish this composition.
+
+
+## Host-scoped logical registration identity
+
+A Renderer connection may hold leases on multiple Hosts. Its lease registry and
+logical cleanup registry use the complete `(hostId, leaseId/clientId)` tuple.
+Lease names may coincide across different physical Hosts without naming the same
+claim. A logical ID stamped onto native frames stays scoped by its physical Host;
+this change does not add fields or change the native routing key on the wire.
+Fresh incarnations within a Host still require fresh lease identities, and each
+late cleanup result retains the existing captured-registration identity guard.
+
+Connection-level lookup, forgetting, peer-alias checks and detach enumeration
+retain the Host dimension. Detaching a Renderer visits every stored registration,
+including equal lease names on different Hosts. Releasing one claim sends its
+notification to that captured Host; failure fences that Host, and pending/late
+results cannot revoke another Host's native client or remove its registration.
+Server-owned lifetime and actual physical release barriers remain independent.
+
+Host and lease IDs are opaque strings. Registry keys encode a tuple, rather than
+concatenating a delimiter that can also occur inside either ID. The same rule
+applies when remembering/forgetting delivery leases: a collision there can make
+`ownsHost` silently drop a live client's native response even if the logical
+cleanup table is correct. This is local bookkeeping, not a protocol version bump.
+
+HostScopedIdentity checks two-Host registration conservation, own-target
+notification/failure, current-peer availability, delivery identity and conditional
+local/native progress. Exact controls collapse the logical namespace, alias
+delimiter keys, discard a peer or remove a fairness assumption. The finite model
+uses tuple keys; it is not a TypeScript refinement or a proof of every possible
+string codec. Actual protocol regressions cover escaped delimiter IDs, two equal
+lease names, Renderer exit, known/unknown outcomes, late results and last-claim
+cleanup, with native initialize/echo and client-revocation observations.
+
+The `scopes` chaos suite repeats rounds on the same Server and two Hosts across
+explicit heals and Renderer incarnations. Each round grants at most one fresh
+intent per Host, with shared, distinct or delimiter-colliding input names. Saved
+inputs independently predict notification targets, native registrations, physical
+resources and caller outcomes. It exercises success/rejection/held writes, local
+deadlines, late outcomes, own failure-fence challenges and actual peer RPC. Healing
+is an explicit input that repairs declared providers and resets the two Hosts; it
+is not a production retry or a claim of the full arbitrary multi-Host product.

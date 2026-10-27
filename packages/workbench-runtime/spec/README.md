@@ -993,3 +993,38 @@ without treating a status label or deadline as resource release. The fourth tool
 control `block-native-recovery` checks the new composition under its exact rule.
 A separate unchanged-first-candidate comparison exposes the implementation ordering
 gap that passed the original suite, then replays on the corrected implementation.
+
+
+### Host-scoped identity and repeated cross-Host chaos
+
+`HostScopedIdentity.tla` has twelve configurations: shared, distinct and opaque
+identity layouts, a failed-write positive case, and eight exact controls for
+registration overwrite, wrong native notification, wrong failure fence, dropped
+current response, lost detach cleanup, peer forgetting and missing local/provider
+fairness. The positive finite state spaces each contain 36 distinct states.
+The model uses proper tuples; escaped runtime-ID encoding is covered by actual
+protocol tests, not inferred as a TypeScript refinement theorem.
+
+`tests/protocol/host-scoped-identity.test.ts` uses actual Server/bridge public APIs
+for two native providers. Both clients initialize and echo before a claim or
+Renderer retires. A declared native disconnect revokes only its own initialized
+client, so misrouting is observable both as an incorrect notification target and
+as lost peer RPC. Trusted alias coverage is a separate composition-port test; it
+is not described as a normal remote wire input.
+
+The `scopes` generator repeats rounds on one Server across two Hosts and new
+Renderer incarnations. Its one fresh grant per Host per round includes equal or
+distinct lease names, opaque delimiter collisions, success/reject/hold, deadlines,
+late results, detach, failure-fence challenges and explicit repair/reset. This
+is a bounded combination with real native initialize/echo, not the full product
+of arbitrary numbers of Hosts, grants and uncooperative providers.
+
+```bash
+npm run test:recovery-chaos -- --suite scopes --seed 20261027 --cases 1000 --steps 120 --output /tmp/host-scope-chaos
+npm run test:recovery-chaos -- --replay /tmp/host-scope-chaos/failure-minimal.json --output /tmp/host-scope-replay
+```
+
+Synthetic observation controls `notify-peer`, `drop-reply` and `leak-native` test
+detection, exact-rule shrinking and normal replay without mutating production
+classes, prototypes or private fields. Actual-old-constructor comparisons are
+recorded separately from these synthetic controls.
