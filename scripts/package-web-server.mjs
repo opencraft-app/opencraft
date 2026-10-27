@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false }) {
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
@@ -71,6 +71,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       define: { 'process.env.OPENCRAFT_NPM_PACKAGE_NAME': JSON.stringify(packageName), 'process.env.OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME': JSON.stringify(resourcePackageName), 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)) },
       banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
   }
+  await build({ entryPoints: [join(repositoryRoot, 'scripts/full-upgrade/cli.mjs')], outfile: join(packageRoot, 'runtime/upgrade-inspect.mjs'),
+    bundle: true, platform: 'node', format: 'esm', target: 'node24',
+    define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)),
+      'process.env.OPENCRAFT_FULL_UPGRADE_PROFILE_JSON': JSON.stringify(JSON.stringify(fullUpgradeProfile)) } });
   // Independent relay/admin entry points travel with the same fixed-source artifact;
   // they remain inactive unless the operator configures a separate deployment.
   for (const [entry, name] of [[resolve(relayEntry), 'relay'], ...['access-admin', 'hub-admin', 'human-account'].map(name => [join(repositoryRoot, `scripts/${name}.ts`), name])]) {
