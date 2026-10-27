@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createConnection } from 'node:net';
 import nodeTest from 'node:test';
 import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
-import { createMemoryGitSigner, generateGitSigningKey, sshString } from '../../scripts/git-identity-signer';
+import { createMemoryGitSigner, createMemoryGitAuthenticator, generateGitSigningKey, sshString } from '../../scripts/git-identity-signer';
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 const credential = () => ({ identity: { username: 'synthetic', name: 'Synthetic Employee', email: 'synthetic@example.test' }, token: 'synthetic-token-only', signing: null });
@@ -101,4 +101,22 @@ test('signer rechecks live command authority and refuses authentication/non-Git 
   const gitPayload = Buffer.concat([Buffer.from('SSHSIG'), sshString('git'), sshString(''), sshString('sha512'), sshString(Buffer.alloc(64))]);
   assert.equal(await request(gitPayload), 5); allowed = true; assert.equal(await request(gitPayload), 14);
   assert.equal(await request(Buffer.from('SSH authentication challenge')), 5);
+});
+
+test('authentication agent scopes signatures to Git userauth and revokes immediately without private files', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-auth-lease-')); t.after(() => rm(root, { recursive: true, force: true }));
+  let allowed = true; const key = generateGitSigningKey(), agent = await createMemoryGitAuthenticator(key, root, 30_000, async () => allowed); t.after(() => agent.close());
+  const blob = Buffer.from(key.publicKey.split(' ')[1]!, 'base64');
+  const payload = (user: string) => Buffer.concat([sshString(Buffer.alloc(32, 1)), Buffer.from([50]), sshString(user), sshString('ssh-connection'), sshString('publickey'), Buffer.from([1]), sshString('ssh-ed25519'), sshString(blob)]);
+  const request = (bytes: Buffer) => new Promise<number>((resolve, reject) => {
+    const socket = createConnection(agent.path); let pending = Buffer.alloc(0);
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error('Agent timeout')); }, 2000);
+    socket.once('error', reject); socket.once('connect', () => socket.write(sshString(Buffer.concat([Buffer.from([13]), sshString(blob), sshString(bytes), Buffer.alloc(4)]))));
+    socket.on('data', data => { pending = Buffer.concat([pending, data]); if (pending.length >= 5 && pending.length >= pending.readUInt32BE(0) + 4) { clearTimeout(timer); socket.destroy(); resolve(pending[4]!); } });
+  });
+  assert.equal(await request(payload('git')), 14);
+  assert.equal(await request(payload('root')), 5);
+  assert.equal(await request(Buffer.concat([Buffer.from('SSHSIG'), sshString('git'), sshString(''), sshString('sha512'), sshString(Buffer.alloc(64))])), 5);
+  allowed = false; assert.equal(await request(payload('git')), 5);
+  for (const name of await readdir(root, { recursive: true })) assert.equal((await stat(join(root, name))).isFile(), false);
 });

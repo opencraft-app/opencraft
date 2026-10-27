@@ -8,17 +8,20 @@ export type SigningRegistration = 'unregistered' | 'pending' | 'registered' | 'm
 export interface GitVaultCredential {
   identity: { username: string; name: string; email: string; accountId?: string };
   token: string;
+  sshAuth?: { generation: string; publicKey: string; fingerprint: string; privateKey: string } | null;
   signing: null | { generation: string; publicKey: string; fingerprint: string; privateKey: string;
     registration: SigningRegistration; remoteKeyId?: number };
 }
 export interface GitVaultRecord { revision: number; credential: GitVaultCredential | null }
 export interface GitVaultStatus {
   revision: number; configured: boolean; identity: GitVaultCredential['identity'] | null;
+  sshAuth: Omit<NonNullable<GitVaultCredential['sshAuth']>, 'privateKey'> | null;
   tokenConfigured: boolean; signing: Omit<NonNullable<GitVaultCredential['signing']>, 'privateKey'> | null;
 }
 export class GitVaultError extends Error {
   constructor(readonly code: 'invalid' | 'conflict' | 'unavailable', readonly status = 400) { super(code); }
 }
+const PRIVATE_KEY_HEADER = '-----BEGIN PRIVATE KEY-----';
 const SCHEMA = 'CREATE TABLE employee_git_credentials (account TEXT NOT NULL, host TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), credential BLOB, PRIMARY KEY(account,host)) STRICT';
 export const EMPLOYEE_GIT_VAULT_MIGRATIONS = [{ version: 1, name: 'employee-git-credentials', sql: SCHEMA }] as const;
 
@@ -38,10 +41,13 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
   const text = (s: unknown, maximum: number) => typeof s === 'string' && s.length > 0 && s.length <= maximum && !/[\0\r\n]/u.test(s);
   if (!value?.identity || !text(value.identity.username, 128) || !text(value.identity.name, 256)
     || !text(value.identity.email, 320) || !/^[^\s@]+@[^\s@]+$/u.test(value.identity.email)
-    || !text(value.token, 4096)) throw new GitVaultError('invalid');
+    || !(text(value.token, 4096) || (value.token === '' && value.sshAuth))) throw new GitVaultError('invalid');
+  if (value.sshAuth && (!text(value.sshAuth.generation, 128) || !text(value.sshAuth.publicKey, 1024)
+    || !text(value.sshAuth.fingerprint, 128) || !value.sshAuth.privateKey.startsWith(PRIVATE_KEY_HEADER)
+    || value.sshAuth.privateKey.length > 4096)) throw new GitVaultError('invalid');
   if (value.signing && (!['unregistered', 'pending', 'registered', 'manual_required'].includes(value.signing.registration)
     || !text(value.signing.generation, 128) || !text(value.signing.publicKey, 1024)
-    || !value.signing.privateKey.startsWith('-----BEGIN PRIVATE KEY-----') || value.signing.privateKey.length > 4096)) throw new GitVaultError('invalid');
+    || !value.signing.privateKey.startsWith(PRIVATE_KEY_HEADER) || value.signing.privateKey.length > 4096)) throw new GitVaultError('invalid');
 }
 
 /** Opaque account scope is supplied by the verified identity provider, never by a browser body. */
@@ -117,6 +123,7 @@ export class EmployeeGitVaultStore {
     const { revision, credential } = this.read(account, host);
     const signing = credential?.signing;
     return { revision, configured: credential !== null, tokenConfigured: !!credential?.token,
+      sshAuth: credential?.sshAuth ? { generation: credential.sshAuth.generation, publicKey: credential.sshAuth.publicKey, fingerprint: credential.sshAuth.fingerprint } : null,
       identity: credential?.identity ?? null, signing: signing ? { generation: signing.generation, publicKey: signing.publicKey,
         fingerprint: signing.fingerprint, registration: signing.registration, ...(signing.remoteKeyId ? { remoteKeyId: signing.remoteKeyId } : {}) } : null };
   }

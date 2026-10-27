@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, stat, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer as createHttpServer } from 'node:http';
@@ -9,6 +9,8 @@ import { createServer as createHttpsServer } from 'node:https';
 import { connect as connectTcp, type Socket } from 'node:net';
 import nodeTest from 'node:test';
 import { build } from 'esbuild';
+import ssh2 from 'ssh2';
+const { Server: SshServer, utils: sshUtils } = ssh2;
 import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
 import { GitIdentityBroker, type GitExecutionIdentity } from '../../scripts/git-identity-broker';
 import { queryGitIdentityBroker, serveGitIdentityBroker } from '../../scripts/git-identity-ipc';
@@ -22,7 +24,7 @@ const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 async function fixture(t: any) {
   const root = await mkdtemp(join(tmpdir(), 'git-broker-test-'));
   const store = new EmployeeGitVaultStore(root); let identity: GitExecutionIdentity = { status: 'active', account: 'synthetic:1', executionId: 'turn1' };
-  const broker = new GitIdentityBroker({ store, hosts: ['github.com', 'unconfigured.example.test'], runtimeDirectory: root, resolve: async () => identity });
+  const broker = new GitIdentityBroker({ store, hosts: ['github.com', 'git.example.test', 'unconfigured.example.test'], runtimeDirectory: root, resolve: async () => identity });
   const opens: string[] = []; let credentials = 0;
   const request = broker.request.bind(broker);
   broker.request = async (peer, value) => {
@@ -391,4 +393,83 @@ test('installation launcher applies an explicit read policy to already-running c
     assert.equal(prepared.environment.OPENCRAFT_GIT_SERVER_READ_HOSTS, policy?.join(','));
   }
   for (const host of ['other.example.test', 'github.com\n', 'github.com,evil.test']) assert.throws(() => renderGitIdentityInstallation({ ...spec, serverReadHosts: [host] }));
+});
+
+test('personal SSH push uses the employee memory agent, rewrites HTTPS, never machine keys or tokens', async t => {
+  const f = await managedRepository(t);
+  f.managedEnv.OPENCRAFT_GIT_HOSTS = 'git.example.test';
+  f.managedEnv.OPENCRAFT_GIT_SERVER_READ_HOSTS = 'git.example.test';
+  f.managedEnv.OPENCRAFT_GIT_PERSONAL_SSH_PUSH_HOSTS = 'git.example.test';
+  const sshAuth = generateGitSigningKey(), otherKey = generateGitSigningKey();
+  const binding = { identity: { username: 'synthetic', name: 'Employee', email: 'employee@example.test' }, token: '', signing: null, sshAuth };
+  f.store.write('synthetic:1', 'git.example.test', 0, { ...binding, token: 'synthetic-unused', sshAuth: null });
+  const missing = await f.managed('push', 'https://git.example.test/synthetic/repo.git', 'HEAD:missing');
+  assert.equal(missing.code, 128); assert.match(missing.err, /generate a personal SSH key/u);
+  assert.equal(f.credentials(), 0);
+  f.store.write('synthetic:1', 'git.example.test', 1, binding);
+  f.store.write('synthetic:2', 'git.example.test', 0, { ...binding, sshAuth: otherKey });
+  const bare = join(f.root, 'server.git');
+  await child('/usr/bin/git', ['init', '--bare', '-q', bare], f.env, f.root);
+  // Only a synthetic server host key is written by the fixture; employee keys stay in the broker.
+  const hostKey = join(f.root, 'synthetic-server-host');
+  const generated = await child('/usr/bin/ssh-keygen', ['-q', '-t', 'rsa', '-b', '2048', '-m', 'PEM', '-N', '', '-f', hostKey], f.env, f.root);
+  assert.equal(generated.code, 0, generated.err);
+  let expectedPublic = sshAuth.publicKey, authenticated = 0, executions = 0;
+  const connections = new Set<any>();
+  const server = new SshServer({ hostKeys: [await readFile(hostKey)] }, connection => {
+    connections.add(connection); connection.on('close', () => connections.delete(connection)); connection.on('error', () => {});
+    connection.on('authentication', ctx => {
+      const publicBlob = Buffer.from(expectedPublic.split(' ')[1]!, 'base64');
+      if (ctx.method !== 'publickey' || ctx.username !== 'git' || !ctx.key.data.equals(publicBlob)) { ctx.reject(); return; }
+      if (!ctx.signature) { ctx.accept(); return; }
+      const key = sshUtils.parseKey(expectedPublic);
+      if (key instanceof Error || key.verify(ctx.blob!, ctx.signature, ctx.hashAlgo) !== true) { ctx.reject(); return; }
+      authenticated++; ctx.accept();
+    });
+    connection.on('ready', () => connection.on('session', accept => {
+      const session = accept(); session.on('exec', (accept, reject, info) => {
+        if (info.command !== "git-receive-pack 'synthetic/repo.git'") { reject(); return; }
+        executions++; const stream = accept();
+        const backend = spawn('/usr/bin/git-receive-pack', [bare], { env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
+        stream.pipe(backend.stdin); backend.stdout.pipe(stream, { end: false }); backend.stderr.pipe(stream.stderr, { end: false });
+        backend.on('close', code => { stream.exit(code ?? 1); stream.end(); });
+        stream.on('close', () => backend.kill());
+      });
+    }));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(async () => { for (const connection of connections) connection.end(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const port = (server.address() as any).port;
+  const home = join(f.root, 'home'); await mkdir(join(home, '.ssh'), { recursive: true });
+  await writeFile(join(home, '.ssh/known_hosts'), `git.example.test,[git.example.test]:${port} ${(await readFile(hostKey + '.pub', 'utf8')).trim()}\n`);
+  f.managedEnv.HOME = home;
+  // A native fixture redirects only the SSH destination to loopback. The actual
+  // wrapper, OpenSSH authentication, memory agent and Git receive-pack all run.
+  const native = join(f.root, 'native.cjs');
+  await writeFile(native, `const {spawnSync}=require('node:child_process');const env={...process.env};
+if(env.GIT_SSH_COMMAND?.includes('IdentityAgent='))env.GIT_SSH_COMMAND+=' -o HostName=127.0.0.1 -o HostKeyAlias=git.example.test -p '+env.SYNTHETIC_SSH_PORT;
+const r=spawnSync('/usr/bin/git',process.argv.slice(2),{env,stdio:'inherit'});process.exit(r.status??1);`);
+  const launcher = join(f.root, 'native'); await writeFile(launcher, `#!/bin/sh\nexec '${process.execPath}' '${native}' "$@"\n`, { mode: 0o700 });
+  f.managedEnv.OPENCRAFT_GIT_NATIVE = launcher; f.managedEnv.SYNTHETIC_SSH_PORT = String(port);
+  await f.native('remote', 'add', 'origin', 'https://git.example.test/synthetic/repo.git');
+  const before = await readFile(join(f.work, '.git/config'), 'utf8');
+  for (const url of ['https://git.example.test/synthetic/repo.git', 'git@git.example.test:synthetic/repo.git', 'ssh://git@git.example.test/synthetic/repo.git']) {
+    const push = await f.managed('push', url, 'HEAD:main'); assert.equal(push.code, 0, push.err);
+  }
+  assert.equal((await child('/usr/bin/git', ['--git-dir', bare, 'rev-parse', 'main'], f.env, f.root)).out, (await f.native('rev-parse', 'HEAD')).out);
+  assert.equal(await readFile(join(f.work, '.git/config'), 'utf8'), before); assert.equal(f.credentials(), 0);
+  f.setIdentity({ status: 'active', account: 'synthetic:2', executionId: 'turn2' });
+  const wrong = await f.managed('push', 'origin', 'HEAD:wrong'); assert.notEqual(wrong.code, 0, 'second employee cannot sign with first employee key');
+  expectedPublic = otherKey.publicKey;
+  assert.equal((await f.managed('push', 'origin', 'HEAD:other')).code, 0);
+  f.setIdentity({ status: 'active', account: 'synthetic:unbound', executionId: 'turn3' });
+  // Unbound employee uses the original native Git and original local file transport.
+  assert.equal((await f.managed('push', bare, 'HEAD:unbound')).code, 0);
+  assert.equal(f.credentials(), 0);
+  assert.equal(authenticated, 4); assert.equal(executions, 4, 'failed push was neither replayed nor sent through machine SSH');
+  for (const name of await readdir(f.root, { recursive: true })) {
+    const path = join(f.root, name); if (!(await stat(path)).isFile()) continue;
+    const bytes = await readFile(path);
+    for (const privateKey of [sshAuth.privateKey, otherKey.privateKey]) assert.equal(bytes.includes(Buffer.from(privateKey)), false);
+  }
 });

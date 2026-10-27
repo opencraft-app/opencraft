@@ -107,3 +107,25 @@ registration, a configured token and a verified commit are separate observations
 
 Run `npm run test:git-identity` for synthetic storage, IPC, author and signature
 tests; no real token or account is used by these tests.
+
+
+Optional personal SSH push authentication is separate from Git SSHSIG signing.
+Products can set `personalSshPushHosts` in the installation renderer; the stable
+launcher projects this policy to existing callers. A bound account on those hosts
+must explicitly create an `sshAuth` key before pushing; no HTTPS token fallback
+is attempted. Products own the explicit generation/rotation/deletion operation
+and manual public-key registration. The encrypted credential document stores
+optional authentication metadata without changing the managed SQLite schema.
+
+A push capability may expose a public key and an expiring memory-only userauth
+agent. It never returns the private key. The agent accepts only Ed25519 publickey
+userauth for user `git` and service `ssh-connection`, rechecking the original
+command authority and vault revision on each signature. It cannot sign Git
+SSHSIG or arbitrary payloads. Reads retain their configured transport policy.
+Canonical HTTPS URLs are rewritten to canonical SSH for that command; inherited
+rewrites are rejected. OpenSSH ignores user configuration and inherited agents,
+selects only the command public key/agent, keeps strict host-key verification,
+disables interactive authentication and forwarding, and never falls back after
+failure. Only a public key has a temporary filesystem projection. Unconfigured
+employees retain the original environment. The trusted shared-UID boundary above
+still applies to authentication sockets and encrypted storage.

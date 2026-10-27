@@ -22,7 +22,7 @@ function field(bytes: Buffer, offset: number): [Buffer, number] {
   if (end > bytes.length) throw new Error('invalid');
   return [bytes.subarray(offset + 4, end), end];
 }
-/** The agent signs SSHSIG Git messages only, never SSH authentication challenges. */
+/** Validate only Git SSHSIG messages; authentication uses a separate agent. */
 function gitSigningPayload(bytes: Buffer): boolean {
   try {
     if (bytes.subarray(0, 6).toString() !== 'SSHSIG') return false;
@@ -31,7 +31,7 @@ function gitSigningPayload(bytes: Buffer): boolean {
       && ((hash.toString() === 'sha512' && digest.length === 64) || (hash.toString() === 'sha256' && digest.length === 32));
   } catch { return false; }
 }
-export async function createMemoryGitSigner(signing: NonNullable<GitVaultCredential['signing']>, runtimeDirectory: string, ttlMs = 300_000, authorize: () => Promise<boolean> = async () => true) {
+async function createMemoryAgent(signing: NonNullable<GitVaultCredential['signing']>, runtimeDirectory: string, ttlMs = 300_000, authorize: () => Promise<boolean>, accepts: (bytes: Buffer) => boolean) {
   const clear = Buffer.from(signing.privateKey);
   let key: ReturnType<typeof createPrivateKey> | null;
   try { key = createPrivateKey(clear); } finally { clear.fill(0); }
@@ -47,10 +47,10 @@ export async function createMemoryGitSigner(signing: NonNullable<GitVaultCredent
       let response = Buffer.from([5]);
       try {
         if (request[0] === 11 && request.length === 1) {
-          response = Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), sshString(blob), sshString('Git signing')]);
+          response = Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), sshString(blob), sshString('Git identity')]);
         } else if (request[0] === 13 && key) {
           const [publicKey, a] = field(request, 1), [payload, b] = field(request, a);
-          if (b + 4 === request.length && request.readUInt32BE(b) === 0 && publicKey.equals(blob) && gitSigningPayload(payload)
+          if (b + 4 === request.length && request.readUInt32BE(b) === 0 && publicKey.equals(blob) && accepts(payload)
             && await authorize() && key) {
             response = Buffer.concat([Buffer.from([14]), sshString(Buffer.concat([sshString('ssh-ed25519'), sshString(sign(null, payload, key))]))]);
           }
@@ -84,4 +84,23 @@ export async function createMemoryGitSigner(signing: NonNullable<GitVaultCredent
     await chmod(path, 0o600);
     return { path, close };
   } catch (error) { await close(); throw error; }
+}
+
+/** An authentication agent accepts only SSH publickey userauth for the Git user. */
+function gitAuthenticationPayload(bytes: Buffer, publicKey: string): boolean {
+  try {
+    const [session, a] = field(bytes, 0);
+    if (session.length < 16 || session.length > 128 || bytes[a] !== 50) return false;
+    const [user, b] = field(bytes, a + 1), [service, c] = field(bytes, b), [method, d] = field(bytes, c);
+    if (bytes[d] !== 1) return false;
+    const [algorithm, e] = field(bytes, d + 1), [key, end] = field(bytes, e);
+    return user.toString() === 'git' && service.toString() === 'ssh-connection' && method.toString() === 'publickey'
+      && algorithm.toString() === 'ssh-ed25519' && key.equals(Buffer.from(publicKey.split(' ')[1]!, 'base64')) && end === bytes.length;
+  } catch { return false; }
+}
+export function createMemoryGitSigner(signing: NonNullable<GitVaultCredential['signing']>, runtimeDirectory: string, ttlMs = 300_000, authorize: () => Promise<boolean> = async () => true) {
+  return createMemoryAgent(signing, runtimeDirectory, ttlMs, authorize, gitSigningPayload);
+}
+export function createMemoryGitAuthenticator(key: NonNullable<GitVaultCredential['sshAuth']>, runtimeDirectory: string, ttlMs = 300_000, authorize: () => Promise<boolean> = async () => true) {
+  return createMemoryAgent({ ...key, registration: 'unregistered' }, runtimeDirectory, ttlMs, authorize, bytes => gitAuthenticationPayload(bytes, key.publicKey));
 }

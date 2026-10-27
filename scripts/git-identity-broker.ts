@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { EmployeeGitVaultStore, type GitVaultCredential } from './employee-git-vault-store.js';
-import { createMemoryGitSigner } from './git-identity-signer.js';
+import { createMemoryGitSigner, createMemoryGitAuthenticator } from './git-identity-signer.js';
 
 export interface GitPeer { pid: number; uid: number }
 export type GitExecutionIdentity = { status: 'active'; account: string; executionId: string }
@@ -15,6 +15,7 @@ interface Session {
   peer: GitPeer; startTicks: string; account: string; host: string; revision: number;
   threadId: string; executionId: string;
   credential: GitVaultCredential; expires: number;
+  authenticator: Awaited<ReturnType<typeof createMemoryGitAuthenticator>> | null;
   signer: Awaited<ReturnType<typeof createMemoryGitSigner>> | null;
 }
 export async function readGitProcess(pid: number) {
@@ -64,10 +65,13 @@ export class GitIdentityBroker {
             && this.options.store.read(identity.account, request.host as string).revision === record.revision;
         };
         const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
+        const authenticator = request.operation === 'push' && credential.sshAuth
+          ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
         const id = randomUUID();
         this.sessions.set(id, { peer, startTicks: start.startTicks, account: identity.account, host: request.host,
-          threadId, executionId: identity.executionId, revision: record.revision, credential, signer, expires: performance.now() + (this.options.ttlMs ?? 300_000) });
+          threadId, executionId: identity.executionId, revision: record.revision, credential, signer, authenticator, expires: performance.now() + (this.options.ttlMs ?? 300_000) });
         return { status: 'configured', sessionId: id, identity: credential.identity,
+          ...(authenticator ? { sshAuth: { socket: authenticator.path, publicKey: credential.sshAuth!.publicKey } } : {}),
           ...(signer ? { signing: { socket: signer.path, publicKey: credential.signing!.publicKey } } : {}) };
       }
       if (typeof request.sessionId !== 'string') return { status: 'unavailable' };
@@ -77,7 +81,7 @@ export class GitIdentityBroker {
       if (request.op === 'close') { await this.remove(request.sessionId); return { status: 'closed' }; }
       if (request.op !== 'credential') return { status: 'unavailable' };
       // Exact final Git credential protocol/host, not URL hints or substring matches.
-      if (request.protocol !== 'https' || request.host !== session.host || !this.options.hosts.includes(String(request.host))) return { status: 'denied' };
+      if (session.credential.sshAuth || !session.credential.token || request.protocol !== 'https' || request.host !== session.host || !this.options.hosts.includes(String(request.host))) return { status: 'denied' };
       const current = await this.options.resolve(session.peer, session.threadId);
       if (current.status === 'unknown') return { status: 'unavailable' };
       if (current.status !== 'active' || current.executionId !== session.executionId || current.account !== session.account) return { status: 'expired' };
@@ -87,7 +91,7 @@ export class GitIdentityBroker {
   }
   async close(): Promise<void> { clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id))); }
   private async remove(id: string): Promise<void> {
-    const session = this.sessions.get(id); this.sessions.delete(id); await session?.signer?.close();
+    const session = this.sessions.get(id); this.sessions.delete(id); await session?.signer?.close(); await session?.authenticator?.close();
   }
   private async reap(): Promise<void> {
     for (const [id, session] of this.sessions) {
