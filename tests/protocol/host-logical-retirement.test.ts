@@ -221,3 +221,46 @@ test('late old physical notification failure cannot fence or dispose its success
     assert.deepEqual(await next.client.requestRaw('echo', { successor: 'alive' }), { successor: 'alive' });
   } finally { await f.close(); }
 });
+
+test('a logical cleanup fence cannot block existing recovery of a non-open native transport', async () => {
+  const f = notificationFixture({ lifetime: 'server', onCreate(p, i) { if (!i) p.notifyMode = 'reject'; } });
+  try {
+    const page = f.page(), grant = await page.bridge.connectHost('a', 'before-native-loss');
+    await assert.rejects(page.bridge.disconnectHost('a', 'before-native-loss', grant.generation));
+    const old = f.physicals[0]!; old.publish({ state: 'closed' });
+    const fresh = page.channel(), opening = trackCleanup(fresh.open()); await flushCleanup();
+    assert.equal(old.closeCalls, 1, 'existing native recovery must attempt real cleanup despite a logical failure');
+    assert.equal(old.released, true); assert.equal(opening.state, 'resolved'); assert.equal(f.physicals.length, 2);
+    assert.deepEqual(await fresh.client.requestRaw('echo', { native: 'recovered' }), { native: 'recovered' });
+  } finally { await f.close(); }
+});
+
+test('native recovery still requires successful physical release when a logical fence exists', async () => {
+  const f = notificationFixture({ lifetime: 'server', onCreate(p, i) { if (!i) p.notifyMode = 'reject'; } });
+  try {
+    const page = f.page(), grant = await page.bridge.connectHost('a', 'native-failed-release');
+    await assert.rejects(page.bridge.disconnectHost('a', 'native-failed-release', grant.generation));
+    const old = f.physicals[0]!; old.mode = 'reject'; old.publish({ state: 'closed' });
+    const next = page.channel(), opening = trackCleanup(next.transport.connect()); await flushCleanup();
+    assert.equal(old.closeCalls, 1); assert.equal(old.released, false); assert.equal(f.physicals.length, 1);
+    assert.equal(opening.state, 'rejected'); assert.equal((opening.error as { code?: string }).code, 'APP_HOST_CLEANUP_FAILED');
+    old.mode = 'success'; await f.server.resetHost('a'); await next.open(); assert.equal(f.physicals.length, 2);
+  } finally { await f.close(); }
+});
+
+test('a native recovery observer timeout cannot release resources or start an unowned replacement', async () => {
+  const f = notificationFixture({ lifetime: 'server', onCreate(p, i) { if (!i) p.notifyMode = 'reject'; } });
+  try {
+    const page = f.page(), grant = await page.bridge.connectHost('a', 'native-held-release');
+    await assert.rejects(page.bridge.disconnectHost('a', 'native-held-release', grant.generation));
+    const old = f.physicals[0]!; old.mode = 'hold'; old.publish({ state: 'closed' });
+    const next = page.channel(), opening = trackCleanup(next.transport.connect()); await flushCleanup();
+    assert.equal(old.closeCalls, 1); assert.equal(opening.state, 'pending');
+    await f.deadline(); assert.equal(opening.state, 'rejected');
+    assert.equal((opening.error as { code?: string }).code, 'APP_HOST_CLEANUP_TIMEOUT');
+    assert.equal(old.released, false); assert.equal(f.physicals.length, 1);
+    old.closeGate.resolve(); await flushCleanup(); assert.equal(f.physicals.length, 1);
+    await next.open(); assert.equal(f.physicals.length, 2);
+    assert.deepEqual(await next.client.requestRaw('echo', { after: 'physical release' }), { after: 'physical release' });
+  } finally { await f.close(); }
+});

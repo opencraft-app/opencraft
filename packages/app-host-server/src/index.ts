@@ -419,8 +419,8 @@ export class AppHostServer {
         await this.waitForLifecycle(slot.physical!.operation!, "CLEANUP");
         continue;
       }
-      if (slot.physical?.logicalFailures.size) throw failedLogicalCleanup();
       if (slot.phase === "open" && slot.record?.physical.transport.status.state === "open") {
+        if (slot.record.physical.logicalFailures.size) throw failedLogicalCleanup();
         return slot.record;
       }
       if (slot.phase === "starting") return this.waitForLifecycle(slot.startOperation!, "START");

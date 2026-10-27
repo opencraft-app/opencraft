@@ -19,6 +19,7 @@ for (const [mutant, rule, events] of [
   ['wait-notice', 'NOTIFY_CLOSE_PROGRESS', [{ ...setup, lifetime: 'last-claim', notice: 'hold' }, { type: 'open' }, { type: 'retire' }]],
   ['duplicate-notice', 'NOTIFY_EXACT_ONCE', [setup, { type: 'open' }, { type: 'retire' }]],
   ['admit-failed', 'NOTIFY_ADMISSION_FENCE', [setup, { type: 'open' }, { type: 'retire' }, { type: 'admit' }]],
+  ['block-native-recovery', 'NOTIFY_NATIVE_RECOVERY', [setup, { type: 'open' }, { type: 'retire' }, { type: 'native-loss' }, { type: 'recover' }]],
 ] as [NotificationChaosMutant, string, NotificationEvent[]][]) test(`notification tool control ${mutant} shrinks under its exact rule and replays normally`, async () => {
   const run = (input: readonly NotificationEvent[]) => simulateHostNotifications(input, { mutant });
   await assert.rejects(run(events), error => error instanceof ChaosViolation && error.rule === rule);

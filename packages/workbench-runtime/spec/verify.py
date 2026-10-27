@@ -10,6 +10,14 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('HostLogicalNativeRecovery', None),
+    ('HostLogicalNativeRecovery-Failed', None),
+    ('HostLogicalNativeRecovery-LogicalFence', 'temporal:RecoveryStarts'),
+    ('HostLogicalNativeRecovery-TrustLabel', 'HandleConserved'),
+    ('HostLogicalNativeRecovery-Retarget', 'CurrentOwner'),
+    ('HostLogicalNativeRecovery-NoLocal', 'temporal:RecoveryStarts'),
+    ('HostLogicalNativeRecovery-NoPhysical', 'temporal:CallerProgress'),
+
     ('HostLogicalRetirement', None),
     ('HostLogicalRetirement-Service', None),
     ('HostLogicalRetirement-Peer', None),

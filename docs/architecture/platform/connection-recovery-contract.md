@@ -1227,7 +1227,8 @@ lifetimes continue to govern whether physical cleanup is eligible.
 Each notification observer uses the existing lifecycle timeout and clock. Expiry
 reports manual `APP_HOST_DISCONNECT_TIMEOUT` and signals cancellation of that write;
 a provider may ignore it. Known or unknown logical cleanup failure fences new
-registrations with `APP_HOST_LOGICAL_CLEANUP_FAILED`. Already admitted peers keep
+registrations on an otherwise open native record with
+`APP_HOST_LOGICAL_CLEANUP_FAILED`. Already admitted peers keep
 their own forwarding authority and can continue RPCs. This prevents serial
 registration churn from accumulating failed cleanup identities without imposing
 an unrelated numeric quota or terminating the shared bridge. A late successful
@@ -1249,3 +1250,17 @@ failures and real RPC peers. The notification chaos suite checks one saved
 retirement transaction plus explicit recovery using actual Server, bridge,
 channels and initialized RPC clients; it does not claim all possible repeated
 transaction, multi-Host, provider or device interleavings.
+
+
+A non-open native record still follows the existing actual-cleanup and replacement
+path. A logical failure cannot mask that recovery. Its observed closed status
+only triggers cleanup: real successful release is still required before a new
+factory, and failed release retains the physical fence. A timed-out recovery
+observer cannot free the resource or start an unowned replacement after late
+physical completion. HostLogicalNativeRecovery adds seven finite configurations
+for this composition: successful and failed cleanup controls, logical fencing
+that wrongly blocks recovery, trusting the native label, stale retargeting and
+missing local/physical cooperation. The notification generator version 2 adds
+explicit native loss and ordinary recovery, including physical failure and held
+cleanup/deadline interleavings. These obligations supplement the earlier model;
+its healthy-native registration fence alone did not establish this composition.

@@ -975,3 +975,21 @@ counterexamples. Component regressions cover synchronous reentry, multiple
 failed owners and stale physical results. This random suite does not claim the
 entire repeated-transaction/multi-Host product, a bound on uncooperative foreign
 provider memory, remote handler acknowledgement, or physical phone validation.
+
+
+HostLogicalNativeRecovery adds seven configurations (registry total 284). Its
+positive success/failure cases have 6/4 distinct states. Five negative controls
+isolate a logical fence masking native recovery, trusting the closed label as
+release, stale logical cleanup retargeting, and missing local/physical fairness.
+The abstraction starts with a failed logical cleanup and a non-open native record;
+new native availability is abstracted by replacement, with its detailed admission
+and observer deadlines covered by the existing models and real component tests.
+
+Notification generator version 2 includes `native-loss` and `recover`, plus
+ordinary admission after native loss. Its ledger distinguishes the old caller's
+already-final result from later recovery and physical failure. Physical reject,
+held cleanup, observer expiry, late release and explicit repair are exercised
+without treating a status label or deadline as resource release. The fourth tool
+control `block-native-recovery` checks the new composition under its exact rule.
+A separate unchanged-first-candidate comparison exposes the implementation ordering
+gap that passed the original suite, then replays on the corrected implementation.
