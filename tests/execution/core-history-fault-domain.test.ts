@@ -51,6 +51,8 @@ for (const revoked of [false, true]) test(`cached history releases send admissio
   const held = new Promise(resolve => { release = resolve; });
   adapter.initializedClients = new Set(["client"]);
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryReads = new Map();
+  adapter.options = { kind: "local" };
   adapter.clientEpoch = () => epoch;
   adapter.transcriptCache = { page: () => held };
   adapter.projectSender = (_thread: string, _client: string, value: unknown) => value;
@@ -73,6 +75,8 @@ test("cached history admission is bounded and frees capacity when reads settle",
   let release!: (value: unknown) => void, calls = 0;
   const held = new Promise(resolve => { release = resolve; });
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryReads = new Map();
+  adapter.options = { kind: "local" };
   adapter.initializedClients = new Set(["client"]);
   adapter.clientEpoch = () => 0;
   adapter.transcriptCache = { page: () => { calls++; return held; } };
