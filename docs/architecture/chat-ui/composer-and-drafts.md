@@ -533,6 +533,9 @@ window focus transition is not an outside contact. Outside contacts, Escape and
 item selection still close it. Auxiliary-menu close cleanup loses its focus lease
 if that menu has reopened before cleanup runs; it must not focus the trigger and
 dismiss the new opening. Other menus retain their default window-blur policy.
+The shared dropdown delegates its Radix-specific blur workaround to the internal
+`useRadixMenuWindowBlurGuard` hook. It can be replaced when Radix supports
+cancellable window-blur dismissal; consumers continue to declare the same policy.
 Dictation is an input interaction, not an implicit text-editing session: an empty
 unfocused Newera composer gives its existing row to voice controls, including
 preparing/listening/transcribing/failed/retry. Existing text or editing retains
