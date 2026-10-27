@@ -39,7 +39,8 @@ export function createPlan({ inventory, manifestBytes, signature, trust, now = D
     check('rollback', 'unknown', 'retained-package-pointer-is-not-content-or-schema-recovery-proof'),
     check('storage-backups', 'unknown', 'all-writers-migrations-and-isolated-restore-required', { observedStores: inventory.stores.length, targetStores: target.stores }),
     check('ports-processes-permissions-network', 'unknown', 'read-only-probe-does-not-reserve-or-prove-update-authority'),
-    check('agent-helper', 'blocked', 'p2b-persistent-agent-helper-not-installed-by-p2a')];
+    check('agent-helper', 'unknown', 'unit-observation-needs-live-agent-helper-protocol-and-authority-attestation', {
+      units: inventory.owners.filter(o => o.ownerId === 'upgrade-control').flatMap(o => o.units.map(u => ({ unit: u.unit, status: u.status, stable: u.stable ?? null }))) })];
   const disk = resources.storage;
   checks.push(check('disk-peak', 'unknown', 'additional-peak-needs-reuse-retention-unpack-and-backup-proof', {
     targetPayloadBytes: target.components.reduce((sum, c) => sum + c.content.unpackedBytes, 0),
