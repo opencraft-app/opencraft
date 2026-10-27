@@ -1,10 +1,12 @@
 import { fault } from '../observability-contract/index.mjs';
-export const queryDefinitionRevision = 'observe-v1.1.3';
+export const queryDefinitionRevision = 'observe-v1.1.5';
 const latency = 'histogram_quantile(0.95, sum by (le, operation, cache, engine) (rate(opencraft_interactive_operation_duration_seconds_bucket[5m])))';
 /** This is the only expression registry, shared by Observe and generated provisioning. */
 export const definitions = Object.freeze({
   'platform.status': { title: '平台与采集状态', kind: 'resource_sample', promql: 'opencraft_producer_age_seconds', unit: 'seconds' },
   'operations.latency': { title: '前台交互耗时（P95 估算，5分钟窗口）', kind: 'histogram_approximation', promql: latency, unit: 'seconds' },
+  'operations.history_paint_p50': { title: '历史首屏显示耗时（P50，5分钟窗口）', kind: 'histogram_approximation', promql: 'histogram_quantile(0.50, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))', unit: 'seconds' },
+  'operations.history_paint_p95': { title: '历史首屏显示耗时（P95，5分钟窗口）', kind: 'histogram_approximation', promql: 'histogram_quantile(0.95, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))', unit: 'seconds' },
   'operations.outcomes': { title: '交互操作结果分布（按来源，5分钟窗口）', kind: 'histogram_approximation', promql: 'sum by (operation, outcome, origin) (increase(opencraft_observed_operations_total[5m]))', unit: 'operations', windowSemantics:'rolling_5m_at_evaluation' },
   'recovery.episodes': { title: '重连恢复周期（领域精确聚合）', kind: 'exact_domain_aggregation', promql: 'opencraft_recovery_episodes', unit: 'episodes', windowSemantics:'rolling_24h_at_evaluation' },
   'execution.progress': { title: '执行生命周期结果分布（领域精确聚合）', kind: 'exact_domain_aggregation', promql: 'opencraft_executions', unit: 'executions', windowSemantics:'rolling_24h_at_evaluation' },
@@ -29,7 +31,7 @@ export function issues(snapshot) {
   return result;
 }
 export function compare(before, after, dimensions = {}) {
-  const allowed={operationType:['navigation','thread_open','catalog_first','catalog_complete','configuration_confirmed','submit_ready','preference_save','recovery'],cache:['cold','warm'],engine:['codex','dsh','pi','none']};
+  const allowed={operationType:['navigation','thread_open','thread_history_first_paint','catalog_first','catalog_complete','configuration_confirmed','submit_ready','preference_save','recovery'],cache:['cold','warm'],engine:['codex','dsh','pi','none']};
   if(Object.entries(dimensions).some(([key,value])=>!allowed[key]?.includes(value)))throw fault('invalid_comparison_dimensions');
   const matches=e=>Object.entries(dimensions).every(([key,value])=>e[key]===value);
   const reasons = [];

@@ -5,8 +5,8 @@ export const limits = Object.freeze({ eventBytes: 2048, batchEvents: 32, batchBy
   clientQueueBytes: 262144, rows: 500, responseBytes: 1048576, concurrency: 5,
   freshnessMs: 90000, retentionMs: 604800000, maxWindowMs: 86400000 });
 export const kinds = ['producer', 'operation', 'rpc', 'recovery', 'execution', 'queue', 'dependency', 'resource', 'client_signal'];
-export const operations = ['navigation', 'thread_open', 'catalog_first', 'catalog_complete', 'configuration_confirmed', 'submit_ready', 'preference_save', 'recovery', 'other'];
-export const outcomes = ['started', 'progress', 'ok', 'failed', 'timeout', 'aborted', 'unfinished', 'unknown'];
+export const operations = ['navigation', 'thread_open', 'thread_history_first_paint', 'catalog_first', 'catalog_complete', 'configuration_confirmed', 'submit_ready', 'preference_save', 'recovery', 'other'];
+export const outcomes = ['started', 'progress', 'ok', 'failed', 'timeout', 'aborted', 'unfinished', 'empty', 'unknown'];
 export const stages = ['connecting', 'initializing', 'backoff', 'blocked', 'queued', 'history', 'ready', 'model', 'tool', 'human', 'capacity', 'running', 'completed', 'failed', 'other'];
 export const methods = ['initialize','runtime/machine/read','thread/read','thread/resume','thread/list','thread/start','thread/fork','thread/unsubscribe','thread/archive','thread/name/set','thread/items/list','thread/turns/list','thread/loaded/list','turn/start','turn/steer','turn/interrupt','turn/continue','turn/respond','model/list','config/read','config/value/write','config/batchWrite','configRequirements/read','tasks/list','tasks/read','tasks/create','tasks/update','tasks/delete','opencraft/tasks/list','opencraft/tasks/read','opencraft/tasks/create','opencraft/tasks/update','opencraft/schedules/list','opencraft/schedules/create','opencraft/schedules/update','opencraft/schedules/delete','fs/read','fs/write','fs/stat','fs/list','fuzzyFileSearch','command/exec','command/exec/write','command/exec/terminate','process/spawn','process/kill','process/writeStdin','skills/list','skills/read','bot/list','bot/read','mcpServerStatus/list','other'];
 export const components = ['web', 'gateway', 'core', 'codex', 'dsh', 'pi', 'observe', 'collector', 'prometheus', 'loki', 'grafana'];
@@ -18,6 +18,7 @@ const enums = { kind: kinds, component: components, operationType: operations, o
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
   measurementScope: ['navigation','in_page','rpc','domain','process','client'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
+  lengthBucket: ['lt50','50to199','200to499','500plus','unknown'],
   cache: ['cold','warm','unknown'], visibility: ['visible','hidden','unknown'], engine: ['codex','dsh','pi','none','unknown'] };
 /** Unknown keys are discarded; malformed known keys reject only this record. */
 export function sanitizeEvent(input, now = Date.now()) {

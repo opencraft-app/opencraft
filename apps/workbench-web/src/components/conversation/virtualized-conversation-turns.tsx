@@ -63,6 +63,7 @@ export interface VirtualizedConversationTurnsProps {
   readonly onApiChange: (api: WebVirtualizedTurnListApi | null) => void;
   readonly onBeforeTargetPosition?: () => void;
   readonly onVisibleContentReady?: () => void;
+  readonly visibleContentReadyKey?: object;
   /** History fill consumes committed list geometry, not ancestor DOM resizes. */
   readonly onContentLayoutCommitted?: () => void;
   readonly renderTurn: (
@@ -141,6 +142,7 @@ export function VirtualizedConversationTurns({
   onApiChange,
   onBeforeTargetPosition,
   onVisibleContentReady,
+  visibleContentReadyKey,
   onContentLayoutCommitted,
   renderTurn,
 }: VirtualizedConversationTurnsProps) {
@@ -197,7 +199,7 @@ export function VirtualizedConversationTurns({
   const pendingScrollRequestRef = useRef<PendingScrollRequest | null>(null);
   const [pendingScrollRequest, setPendingScrollRequest] =
     useState<PendingScrollRequest | null>(null);
-  const visibleContentReadyRef = useRef(false);
+  const visibleContentReadyRef = useRef<unknown>(Symbol("unpainted"));
   const cancelPendingTargetPosition = useCallback(() => {
     const request = pendingScrollRequestRef.current;
     if (request === null) return;
@@ -586,20 +588,22 @@ export function VirtualizedConversationTurns({
   useEffect(() => {
     if (
       onVisibleContentReady === undefined ||
-      visibleContentReadyRef.current ||
+      visibleContentReadyRef.current === visibleContentReadyKey ||
+      pendingScrollRequest !== null ||
       (entries.length > 0 && rowElements.current.size === 0)
     )
       return;
     let secondFrame: number | null = null;
     const firstFrame = window.requestAnimationFrame(() => {
+      restoreScrollDistanceFromBottomPx?.();
       secondFrame = window.requestAnimationFrame(() => {
         if (
-          visibleContentReadyRef.current ||
+          visibleContentReadyRef.current === visibleContentReadyKey ||
+          pendingScrollRequestRef.current !== null ||
           (entriesRef.current.length > 0 && rowElements.current.size === 0)
         )
           return;
-        visibleContentReadyRef.current = true;
-        restoreScrollDistanceFromBottomPx?.();
+        visibleContentReadyRef.current = visibleContentReadyKey;
         onVisibleContentReady();
       });
     });
@@ -610,6 +614,8 @@ export function VirtualizedConversationTurns({
   }, [
     entries.length,
     onVisibleContentReady,
+    visibleContentReadyKey,
+    pendingScrollRequest,
     restoreScrollDistanceFromBottomPx,
     viewport.renderedRange,
   ]);

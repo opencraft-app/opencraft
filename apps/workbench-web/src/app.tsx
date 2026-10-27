@@ -1,3 +1,4 @@
+import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
 import { configureDesktopServer } from './runtime/configure-desktop-server';
 import { desktopServerPort } from './runtime/desktop-server-connections';
 import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
@@ -742,6 +743,31 @@ export function App({
   const visibleTimeline = useThreadOrchestrationTimeline(display.timeline,runtime.resources.orchestration,
     displayHostId === snapshot.hostId && snapshot.transport.state === "open");
   const showingDisplayCache = display.source !== "history" && display.source !== "empty";
+  const historyPaintObserver = workbenchNavigation.historyFirstPaint;
+  const historyPaintAttempt = useSyncExternalStore(historyPaintObserver.subscribe, historyPaintObserver.getSnapshot, historyPaintObserver.getSnapshot);
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "hidden") historyPaintObserver.abort(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [historyPaintObserver]);
+  const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
+  const historyPaintTurns = new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size;
+  const historyPaintLength = historyLengthBucket(historyPaintTurns,
+    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false);
+  const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
+  const historyPaintReady = historyPaintOwnsView && (visibleTimeline?.frames.length ?? 0) > 0;
+  const onHistoryVisibleContentReady = useCallback(() => {
+    if (historyPaintAttempt && historyPaintReady) historyPaintObserver.settle(historyPaintAttempt, "ok", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine]);
+  useEffect(() => {
+    if (!historyPaintAttempt || !historyPaintOwnsView) return;
+    if (snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
+      historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+    } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
+      historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+    }
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns]);
+
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
   useEffect(() => {
@@ -2097,6 +2123,8 @@ export function App({
             <div ref={summary.layoutRef} className="conversation-summary-layout" data-summary-open={summary.wide && summary.open}>
             <div className="conversation-summary-reading">
                 <Conversation
+                  onVisibleContentReady={historyPaintReady ? onHistoryVisibleContentReady : undefined}
+                  visibleContentReadyKey={historyPaintAttempt ?? undefined}
                   scrollPolicy="natural"
                   onAddSelectionToChat={conversationRouteOpen && activeThreadId !== null ? (text) => {
                     const target = composerController.getSnapshot().draft.target;

@@ -101,6 +101,17 @@ export class ObserveStore {
             for (const le of [.05,.1,.25,.5,1,2,5,10,30,60,Infinity]) if (event.durationMs / 1000 <= le) add('foreground_operation_bucket',JSON.stringify([event.operationType,event.cache??'unknown',event.engine??'unknown',le===Infinity?'+Inf':le]),1);
             add('foreground_operation_count',dimension,1);add('foreground_operation_sum',dimension,event.durationMs/1000);
           }
+          // Dedicated series preserve the existing histogram's label schema and history.
+          if (event.kind === 'operation' && event.operationType === 'thread_history_first_paint' && event.outcome && !['started','progress'].includes(event.outcome)) {
+            const dimensions = [event.cache ?? 'unknown', event.lengthBucket ?? 'unknown', event.engine ?? 'unknown'];
+            add('history_paint_outcome', JSON.stringify([...dimensions, event.outcome, event.originClass]), 1);
+            if (event.outcome === 'ok' && event.durationMs !== undefined && event.originClass === 'interactive' && event.visibility === 'visible' && event.measurementScope === 'in_page') {
+              for (const le of [.05,.1,.25,.5,1,2,5,10,30,60,Infinity]) if (event.durationMs / 1000 <= le)
+                add('history_paint_bucket', JSON.stringify([...dimensions, le === Infinity ? '+Inf' : le]), 1);
+              add('history_paint_count', JSON.stringify(dimensions), 1);
+              add('history_paint_sum', JSON.stringify(dimensions), event.durationMs / 1000);
+            }
+          }
           if(event.kind==='queue'&&event.executionId&&event.engine&&event.count!==undefined){
             this.db.prepare(`INSERT INTO queue_samples VALUES(?,?,?,?,?) ON CONFLICT(domain_key) DO UPDATE SET count=CASE WHEN excluded.observed_at>=queue_samples.observed_at THEN excluded.count ELSE queue_samples.count END,observed_at=MAX(queue_samples.observed_at,excluded.observed_at),received=MAX(queue_samples.received,excluded.received)`).run(event.engine+':'+event.executionId,event.engine,Math.floor(event.count),event.at,now);
           }

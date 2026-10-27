@@ -12,7 +12,7 @@
   },
   "tags": [
     "opencraft",
-    "observe-v1.1.3",
+    "observe-v1.1.5",
     "可观测性"
   ],
   "panels": [
@@ -32,7 +32,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "前台交互耗时（P95 估算，5分钟窗口）",
-      "description": "operations.latency; histogram_approximation; observe-v1.1.3。前台关键交互操作（如打开会话、页面导航等）端到端 P95 耗时估算值。无样本不代表服务健康；直方图分位数由 5 分钟滑动窗口桶估算。",
+      "description": "operations.latency; histogram_approximation; observe-v1.1.5。前台关键交互操作（如打开会话、页面导航等）端到端 P95 耗时估算值。无样本不代表服务健康；直方图分位数由 5 分钟滑动窗口桶估算。",
       "gridPos": {
         "x": 0,
         "y": 1,
@@ -63,6 +63,9 @@
                 },
                 "thread_open": {
                   "text": "打开会话 (thread_open)"
+                },
+                "thread_history_first_paint": {
+                  "text": "历史首屏显示完成 (thread_history_first_paint)"
                 },
                 "catalog_first": {
                   "text": "模型首选 (catalog_first)"
@@ -95,11 +98,73 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "交互操作结果分布（按来源，5分钟窗口）",
-      "description": "operations.outcomes; histogram_approximation; observe-v1.1.3。前台交互操作的成功/失败/超时状态统计（按交互来源 origin 划分）。无样本不代表服务健康；增量由 5 分钟滑动窗口估算。",
+      "title": "历史首屏显示耗时（P50，5分钟窗口）",
+      "description": "从点开会话至最后一屏历史内容完成布局并经过绘制帧；仅统计前台成功打开。空会话、失败、中止不计入。按冷/热打开、完整会话轮数与引擎分组；分页或缓存无法确定总轮数时为未知。5分钟滑动窗口直方图估算；上线前没有同口径基线，不能据此独立证明 Stage 0 因果提速。",
       "gridPos": {
         "x": 12,
         "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))",
+          "legendFormat": "[{{cache}}] {{length_bucket}}轮 ({{engine}})",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "历史首屏显示耗时（P95，5分钟窗口）",
+      "description": "从点开会话至最后一屏历史内容完成布局并经过绘制帧；仅统计前台成功打开。空会话、失败、中止不计入。按冷/热打开、完整会话轮数与引擎分组；分页或缓存无法确定总轮数时为未知。5分钟滑动窗口直方图估算；上线前没有同口径基线，不能据此独立证明 Stage 0 因果提速。",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))",
+          "legendFormat": "[{{cache}}] {{length_bucket}}轮 ({{engine}})",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "交互操作结果分布（按来源，5分钟窗口）",
+      "description": "operations.outcomes; histogram_approximation; observe-v1.1.5。前台交互操作的成功/失败/超时状态统计（按交互来源 origin 划分）。无样本不代表服务健康；增量由 5 分钟滑动窗口估算。",
+      "gridPos": {
+        "x": 12,
+        "y": 9,
         "w": 12,
         "h": 8
       },
@@ -146,6 +211,10 @@
                   "text": "已中止 (aborted)",
                   "color": "dark-red"
                 },
+                "empty": {
+                  "text": "空会话 (empty)",
+                  "color": "text"
+                },
                 "unfinished": {
                   "text": "未完成 (unfinished)",
                   "color": "yellow"
@@ -162,13 +231,13 @@
       }
     },
     {
-      "id": 4,
+      "id": 6,
       "type": "timeseries",
       "title": "已校验交互真人用户数（24小时去重）",
-      "description": "usage.activity24h; exact_domain_aggregation; observe-v1.1.3。过去 24 小时内经过认证并产生交互行为的真人独立用户数。领域精确指标，按评估时间点实时去重。",
+      "description": "usage.activity24h; exact_domain_aggregation; observe-v1.1.5。过去 24 小时内经过认证并产生交互行为的真人独立用户数。领域精确指标，按评估时间点实时去重。",
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -193,13 +262,13 @@
       }
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "timeseries",
       "title": "已校验交互真人用户数（7天去重）",
-      "description": "usage.activity; exact_domain_aggregation; observe-v1.1.3。过去 7 天内经过认证并产生交互行为的真人独立用户数。领域精确指标，按评估时间点实时去重。",
+      "description": "usage.activity; exact_domain_aggregation; observe-v1.1.5。过去 7 天内经过认证并产生交互行为的真人独立用户数。领域精确指标，按评估时间点实时去重。",
       "gridPos": {
         "x": 12,
-        "y": 9,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -224,25 +293,25 @@
       }
     },
     {
-      "id": 6,
+      "id": 8,
       "type": "row",
       "title": "RPC 依赖与网关通信",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 25,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 7,
+      "id": 9,
       "type": "timeseries",
       "title": "RPC 依赖调用次数估算（5分钟增量）",
-      "description": "dependencies.summary; histogram_approximation; observe-v1.1.3。Web 前端与网关、网关与后端各 RPC 方法的调用频次与执行结果。覆盖 thread/*, turn/*, tasks/*, fs/* 等完整方法名分类。",
+      "description": "dependencies.summary; histogram_approximation; observe-v1.1.5。Web 前端与网关、网关与后端各 RPC 方法的调用频次与执行结果。覆盖 thread/*, turn/*, tasks/*, fs/* 等完整方法名分类。",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 26,
         "w": 12,
         "h": 8
       },
@@ -289,6 +358,10 @@
                   "text": "已中止 (aborted)",
                   "color": "dark-red"
                 },
+                "empty": {
+                  "text": "空会话 (empty)",
+                  "color": "text"
+                },
                 "unfinished": {
                   "text": "未完成 (unfinished)",
                   "color": "yellow"
@@ -305,13 +378,13 @@
       }
     },
     {
-      "id": 8,
+      "id": 10,
       "type": "timeseries",
       "title": "重连恢复周期（领域精确聚合）",
-      "description": "recovery.episodes; exact_domain_aggregation; observe-v1.1.3。连接断开后执行状态恢复与重连协调的完整恢复周期次数。领域精确指标。",
+      "description": "recovery.episodes; exact_domain_aggregation; observe-v1.1.5。连接断开后执行状态恢复与重连协调的完整恢复周期次数。领域精确指标。",
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 26,
         "w": 12,
         "h": 8
       },
@@ -336,25 +409,25 @@
       }
     },
     {
-      "id": 9,
+      "id": 11,
       "type": "row",
       "title": "Agent 引擎执行与排队状态",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 34,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "timeseries",
       "title": "执行生命周期结果分布（领域精确聚合）",
-      "description": "execution.progress; exact_domain_aggregation; observe-v1.1.3。Agent 任务执行轮次在 started/progress/ok/failed/aborted 等生命周期状态上的精确分布。非终态保持 started，无偏差低报。",
+      "description": "execution.progress; exact_domain_aggregation; observe-v1.1.5。Agent 任务执行轮次在 started/progress/ok/failed/aborted 等生命周期状态上的精确分布。非终态保持 started，无偏差低报。",
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -401,6 +474,10 @@
                   "text": "已中止 (aborted)",
                   "color": "dark-red"
                 },
+                "empty": {
+                  "text": "空会话 (empty)",
+                  "color": "text"
+                },
                 "unfinished": {
                   "text": "未完成 (unfinished)",
                   "color": "yellow"
@@ -417,13 +494,13 @@
       }
     },
     {
-      "id": 11,
+      "id": 13,
       "type": "timeseries",
       "title": "活跃执行阶段分布（最新观测状态）",
-      "description": "execution.stages; exact_domain_aggregation; observe-v1.1.3。当前正在运行中的 Agent 任务所处的执行阶段（model思考/tool工具执行/human人机交互/queued排队等），自动过滤超过 30 分钟停滞的僵尸挂起。",
+      "description": "execution.stages; exact_domain_aggregation; observe-v1.1.5。当前正在运行中的 Agent 任务所处的执行阶段（model思考/tool工具执行/human人机交互/queued排队等），自动过滤超过 30 分钟停滞的僵尸挂起。",
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -448,13 +525,13 @@
       }
     },
     {
-      "id": 12,
+      "id": 14,
       "type": "timeseries",
       "title": "最长活跃执行停滞时长",
-      "description": "execution.last_progress; resource_sample; observe-v1.1.3。当前活跃任务中最早一次进度更新距离当前时间的秒数，用以监控挂起或卡死风险。",
+      "description": "execution.last_progress; resource_sample; observe-v1.1.5。当前活跃任务中最早一次进度更新距离当前时间的秒数，用以监控挂起或卡死风险。",
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -479,13 +556,13 @@
       }
     },
     {
-      "id": 13,
+      "id": 15,
       "type": "timeseries",
       "title": "捕获的排队提交数（非执行轮次）",
-      "description": "queues.summary; resource_sample; observe-v1.1.3。在执行队列中等待调度的提交项数，反映当前引擎负载排队压力。",
+      "description": "queues.summary; resource_sample; observe-v1.1.5。在执行队列中等待调度的提交项数，反映当前引擎负载排队压力。",
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -510,25 +587,25 @@
       }
     },
     {
-      "id": 14,
+      "id": 16,
       "type": "row",
       "title": "系统资源占用与进程监控",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 51,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 15,
+      "id": 17,
       "type": "timeseries",
       "title": "进程常驻物理内存 (RSS)",
-      "description": "resources.summary; resource_sample; observe-v1.1.3。各核心服务与引擎进程实际占用的物理常驻内存大小。pi 引擎与 gateway 进程独立标识上报，无混淆复计。",
+      "description": "resources.summary; resource_sample; observe-v1.1.5。各核心服务与引擎进程实际占用的物理常驻内存大小。pi 引擎与 gateway 进程独立标识上报，无混淆复计。",
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 52,
         "w": 12,
         "h": 8
       },
@@ -595,7 +672,7 @@
       "id": 90,
       "type": "timeseries",
       "title": "进程 CPU 占用核数（采样估算）",
-      "description": "process_cpu; resource_sample; observe-v1.1.3。各服务进程在采样周期内消耗的 CPU 核数速率估算。",
+      "description": "process_cpu; resource_sample; observe-v1.1.5。各服务进程在采样周期内消耗的 CPU 核数速率估算。",
       "datasource": {
         "type": "prometheus",
         "uid": "opencraft-prometheus"
@@ -656,31 +733,31 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 44,
+        "y": 52,
         "w": 12,
         "h": 8
       }
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "row",
       "title": "平台健康度与采集覆盖",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 60,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 17,
+      "id": 19,
       "type": "timeseries",
       "title": "平台与采集状态",
-      "description": "platform.status; resource_sample; observe-v1.1.3。各遥测数据生产者的生存心跳与年龄（秒）。生产者长期未心跳可能表明采集管道中断。",
+      "description": "platform.status; resource_sample; observe-v1.1.5。各遥测数据生产者的生存心跳与年龄（秒）。生产者长期未心跳可能表明采集管道中断。",
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 61,
         "w": 12,
         "h": 8
       },
@@ -744,13 +821,13 @@
       }
     },
     {
-      "id": 18,
+      "id": 20,
       "type": "timeseries",
       "title": "组件身份识别覆盖率",
-      "description": "components.versions; resource_sample; observe-v1.1.3。各运行组件的版本与构建身份是否已成功识别和关联。",
+      "description": "components.versions; resource_sample; observe-v1.1.5。各运行组件的版本与构建身份是否已成功识别和关联。",
       "gridPos": {
         "x": 12,
-        "y": 53,
+        "y": 61,
         "w": 12,
         "h": 8
       },
@@ -814,13 +891,13 @@
       }
     },
     {
-      "id": 19,
+      "id": 21,
       "type": "timeseries",
       "title": "遥测数据采集丢弃数",
-      "description": "data.coverage; resource_sample; observe-v1.1.3。各组件在客户端队列、传输或服务端由于溢出或反压丢弃的遥测事件计数。",
+      "description": "data.coverage; resource_sample; observe-v1.1.5。各组件在客户端队列、传输或服务端由于溢出或反压丢弃的遥测事件计数。",
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 69,
         "w": 12,
         "h": 8
       },
@@ -884,13 +961,13 @@
       }
     },
     {
-      "id": 20,
+      "id": 22,
       "type": "row",
       "title": "结构化诊断日志",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 69,
+        "y": 77,
         "w": 24,
         "h": 1
       }
@@ -899,7 +976,7 @@
       "id": 100,
       "type": "logs",
       "title": "结构化诊断日志（已脱敏元数据）",
-      "description": "loki.diagnostics; event_sample; observe-v1.1.3。平台实时收集的结构化诊断事件与错误现场，仅包含受控元数据，不包含任何业务私有负载与秘钥。",
+      "description": "loki.diagnostics; event_sample; observe-v1.1.5。平台实时收集的结构化诊断事件与错误现场，仅包含受控元数据，不包含任何业务私有负载与秘钥。",
       "datasource": {
         "type": "loki",
         "uid": "opencraft-loki"
@@ -914,7 +991,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 78,
         "w": 24,
         "h": 10
       }

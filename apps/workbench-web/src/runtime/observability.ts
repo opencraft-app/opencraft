@@ -53,7 +53,7 @@ export function beginObservedOperation(operationType: string, fields: Event = {}
   const started = performance.now(), operationId = createClientId();
   let settled = false;
   observeEvent({kind:'operation',operationType,operationId,outcome:'started',measurementScope:'in_page',...fields});
-  return (outcome: 'ok' | 'failed' | 'aborted' = 'ok', extra: Event = {}) => {
+  return (outcome: 'ok' | 'failed' | 'aborted' | 'empty' = 'ok', extra: Event = {}) => {
     if (settled) return; settled = true;
     observeEvent({kind:'operation',operationType,operationId,outcome,durationMs:Math.max(0,performance.now()-started),measurementScope:'in_page',...fields,...extra});
   };

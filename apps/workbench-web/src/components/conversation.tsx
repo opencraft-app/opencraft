@@ -662,6 +662,7 @@ export interface ConversationProps {
   /** Local-submit intent is owned above the renderer and consumed exactly once. */
   readonly consumePendingLatestTurnSubmitPlacement?: () => LatestTurnPlacementSnapshot | null;
   readonly onVisibleContentReady?: () => void;
+  readonly visibleContentReadyKey?: object;
   readonly onTerminalResultVisible?: (turnId: string) => void;
   readonly onVirtualizedTurnListApiChange?: (api: VirtualizedTurnListApi | null) => void;
   /** Renderer-neutral semantics supplied by product feature plugins. */
@@ -735,6 +736,7 @@ export function Conversation({
   onConversationScrollApiChange,
   consumePendingLatestTurnSubmitPlacement,
   onVisibleContentReady,
+  visibleContentReadyKey,
   onTerminalResultVisible,
   onVirtualizedTurnListApiChange,
   toolActivityPresenterRegistry = DEFAULT_TOOL_ACTIVITY_PRESENTERS,
@@ -1065,6 +1067,7 @@ export function Conversation({
                             initialRestoreSnapshot={initialRestoreSnapshot}
                             consumePendingLatestTurnSubmitPlacement={consumePendingLatestTurnSubmitPlacement}
                             onVisibleContentReady={onVisibleContentReady}
+                            visibleContentReadyKey={visibleContentReadyKey}
                             onContentLayoutCommitted={loadOlderUntilScrollable}
                             onApiChange={handleVirtualizerApiChange}
                             onResponseApiChange={handleResponseApiChange}
@@ -1081,6 +1084,7 @@ export function Conversation({
                             expandToMountedContent
                             onApiChange={handleVirtualizerApiChange}
                             onVisibleContentReady={onVisibleContentReady}
+                            visibleContentReadyKey={visibleContentReadyKey}
                             onContentLayoutCommitted={loadOlderUntilScrollable}
                             renderTurn={renderTurn}
                           />

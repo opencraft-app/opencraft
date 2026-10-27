@@ -117,6 +117,9 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
     for(const row of store.db.prepare('SELECT name,dimension,value FROM metrics').all()) {
       if(row.name==='foreground_operation_bucket'){const [operation,cache,engine,le]=JSON.parse(row.dimension);lines.push(`opencraft_interactive_operation_duration_seconds_bucket{operation="${operation}",cache="${cache}",engine="${engine}",le="${le}"} ${row.value}`);}
       if(row.name==='foreground_operation_count'||row.name==='foreground_operation_sum'){const [operation,cache,engine]=JSON.parse(row.dimension);lines.push(`opencraft_interactive_operation_duration_seconds_${row.name==='foreground_operation_count'?'count':'sum'}{operation="${operation}",cache="${cache}",engine="${engine}"} ${row.value}`);}
+      if (row.name === 'history_paint_bucket') { const [cache,length_bucket,engine,le] = JSON.parse(row.dimension); lines.push(`opencraft_thread_history_first_paint_duration_seconds_bucket{cache="${cache}",length_bucket="${length_bucket}",engine="${engine}",le="${le}"} ${row.value}`); }
+      if (row.name === 'history_paint_count' || row.name === 'history_paint_sum') { const [cache,length_bucket,engine] = JSON.parse(row.dimension); lines.push(`opencraft_thread_history_first_paint_duration_seconds_${row.name === 'history_paint_count' ? 'count' : 'sum'}{cache="${cache}",length_bucket="${length_bucket}",engine="${engine}"} ${row.value}`); }
+      if (row.name === 'history_paint_outcome') { const [cache,length_bucket,engine,outcome,origin] = JSON.parse(row.dimension); lines.push(`opencraft_thread_history_first_paint_total{cache="${cache}",length_bucket="${length_bucket}",engine="${engine}",outcome="${outcome}",origin="${origin}"} ${row.value}`); }
       if(row.name==='operation_outcome'){const [operation,outcome,origin]=JSON.parse(row.dimension);lines.push(`opencraft_observed_operations_total{operation="${operation}",outcome="${outcome}",origin="${origin}"} ${row.value}`);}
       if(row.name==='rpc'){const [method,outcome]=JSON.parse(row.dimension);lines.push(`opencraft_rpc_total{method="${method}",outcome="${outcome}"} ${row.value}`);}
     }
@@ -156,7 +159,7 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
   await new Promise((yes,no)=>{exporter.once('error',no);exporter.listen(metricsPort,metricsHost,yes);});
   function heartbeat(){store.ingest([{schemaVersion,kind:'resource',component:'observe',producerId,eventId:randomUUID(),at:now(),rssBytes:process.memoryUsage().rss,cpuSeconds:(process.cpuUsage().user+process.cpuUsage().system)/1e6,sourceRevision,buildId,observedBy:'self',identitySource:'self',producerMode:'native',originClass:'operator'}]);}
   heartbeat();void checkBackends();const timer=setInterval(()=>{void checkBackends();try{heartbeat();store.prune();}catch{store.dropped++;}},30000);timer.unref();
-  return {socketPath,store,query,snapshot,close:async()=>{clearInterval(timer);clearInterval(exportTimer);await Promise.all([new Promise(r=>api.close(r)),new Promise(r=>exporter.close(r))]);store.close();await unlink(socketPath).catch(()=>{});}};
+  return {socketPath,metricsAddress:exporter.address(),store,query,snapshot,close:async()=>{clearInterval(timer);clearInterval(exportTimer);await Promise.all([new Promise(r=>api.close(r)),new Promise(r=>exporter.close(r))]);store.close();await unlink(socketPath).catch(()=>{});}};
 }
 import { sanitizeEvent as sanitizeForExport } from '../../packages/observability-contract/index.mjs';
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
