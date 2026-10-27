@@ -153,22 +153,27 @@ test('npm preflight rejects unsupported bootstrap before any pack/download', asy
 });
 
 test('link, duplicate-path and layered-budget failures return errors without crashing the updater', async t => {
-  const {symlink,link}=await import('node:fs/promises');
+  const {Header}=await import('tar');const {gzipSync}=await import('node:zlib');
   const {scanArchive}=await import('../../scripts/full-release/archive.mjs');
   const root=await mkdtemp(join(tmpdir(),'full-release-unsafe-'));t.after(()=>rm(root,{recursive:true,force:true}));
-  const pkg=join(root,'package');await mkdir(pkg);await chmod(pkg,0o755);await writeInstalledFile(join(pkg,'main.mjs'),'test');
-  let archive=join(root,'symlink.tgz');
-  await symlink('main.mjs',join(pkg,'link.mjs'));await c({file:archive,cwd:root,gzip:true},['package']);
-  await assert.rejects(scanArchive(archive),/Unsafe/);await rm(join(pkg,'link.mjs'));
-  archive=join(root,'hardlink.tgz');
-  await link(join(pkg,'main.mjs'),join(pkg,'link.mjs'));await c({file:archive,cwd:root,gzip:true},['package']);
-  await assert.rejects(scanArchive(archive),/Unsafe/);await rm(join(pkg,'link.mjs'));
-  archive=join(root,'duplicate.tgz');
-  await c({file:archive,cwd:root,gzip:true},['package/main.mjs','package/main.mjs']);
-  for (let attempt=0;attempt<20;attempt++) await assert.rejects(scanArchive(archive),/Unsafe/);
-  archive=join(root,'budget.tgz');
-  await c({file:archive,cwd:root,gzip:true},['package']);await assert.rejects(scanArchive(archive,{...HARD_LIMITS,unpackedBytes:1}),/budget/);
-  await assert.rejects(scanArchive(archive,{...HARD_LIMITS,archiveBytes:1}),/budget/);
+  // Encode malformed fixtures directly: tar's gzip writer can fail while
+  // constructing duplicate-path archives on Node26, before the scanner runs.
+  async function archive(name,entries) {
+    const chunks=[];
+    for(const entry of entries) {
+      const body=entry.type==='File'?Buffer.from('test'):Buffer.alloc(0),block=Buffer.alloc(512);
+      new Header({mode:0o644,uid:0,gid:0,...entry,size:body.length}).encode(block);chunks.push(block);
+      if(body.length)chunks.push(body,Buffer.alloc(512-body.length));
+    }
+    chunks.push(Buffer.alloc(1024));const path=join(root,name+'.tgz');await writeFile(path,gzipSync(Buffer.concat(chunks)));return path;
+  }
+  for(const type of ['SymbolicLink','Link']) {
+    const path=await archive(type,[{path:'package/link.mjs',type,linkpath:'package/main.mjs'}]);await assert.rejects(scanArchive(path),/Unsafe/);
+  }
+  const duplicate=await archive('duplicate',[{path:'package/main.mjs',type:'File'},{path:'package/main.mjs',type:'File'}]);
+  for(let attempt=0;attempt<20;attempt++) await assert.rejects(scanArchive(duplicate),/Unsafe/);
+  const bounded=await archive('budget',[{path:'package/main.mjs',type:'File'}]);
+  await assert.rejects(scanArchive(bounded,{...HARD_LIMITS,unpackedBytes:1}),/budget/);await assert.rejects(scanArchive(bounded,{...HARD_LIMITS,archiveBytes:1}),/budget/);
 });
 
 test('explicit retained rollback verifies signature/content and cannot bypass revocation', async t => {
@@ -317,4 +322,30 @@ test('complete tree components remain consumable by the fixed bridge contract an
  await writeFile(join(pkg,'package.json'),JSON.stringify({name:trust.packageName,version:'1.0.0',license:'MIT',files:['web','runtime','execution','full','release'],opencraftWeb:{schemaVersion:1,workerProtocol:1,buildId:'fixture'}}));await writeFile(join(pkg,'LICENSE'),'MIT');await writeFile(join(pkg,'README.md'),'Deployment');await writeFile(join(pkg,'runtime/main.mjs'),'code');await writeFile(join(pkg,'web/version.json'),JSON.stringify({sourceRevision:source,buildId:'fixture'}));
  const template=fixture();template.updater.bridge=false;const packed=await sealPackage({packageRoot:pkg,directory:root,template,keyPath:key,keyId}),checked=await verifyFullArchive(join(root,packed.filename),trust);
  assert.ok(checked.record.components.some(c=>c.role==='core'));assert.ok(checked.record.components.some(c=>c.role==='cli'));assert.ok(checked.record.components.some(c=>c.role==='dsh'));assert.equal(packed.fullRelease.dryRun.integrity,packed.integrity);assert.equal(packed.fullRelease.dryRun.entries,checked.entries);assert.match(await readFile(join(pkg,'README.md'),'utf8'),/SPDX-License-Identifier: Apache-2.0/);
+});
+
+test('signed npm consumer streams the pinned URL and rejects oversized bytes before tar parsing', {timeout:60000}, async t => {
+  const {createServer}=await import('node:https');const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');
+  const root=await mkdtemp(join(tmpdir(),'signed-npm-stream-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const tlsKey=join(root,'tls-key'),cert=join(root,'tls-cert');await promisify(execFile)('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',tlsKey,'-out',cert,'-days','1','-subj','/CN=localhost']);
+  let metadata,archiveBytes,oversize=false;const paths=[];
+  const server=createServer({key:await readFile(tlsKey),cert:await readFile(cert)},(request,response)=>{
+    paths.push(request.url);
+    if(request.url==='/npm/app.tgz'){if(oversize){response.write(Buffer.alloc(20000));response.end();}else response.end(archiveBytes);return;}
+    if(request.url.startsWith('/npm/@example')){const version={...metadata};if(request.headers.accept?.includes('install-v1'))version.dist={...version.dist,tarball:'https://unverified.invalid/app.tgz'};response.setHeader('content-type','application/json');response.end(JSON.stringify({name:metadata.name,'dist-tags':{test:'1.0.0'},versions:{'1.0.0':version}}));return;}
+    response.writeHead(404);response.end();
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const registry='https://127.0.0.1:'+server.address().port+'/npm/',localTrust={...trust,registry};
+  const pkg=join(root,'package');await mkdir(join(pkg,'runtime'),{recursive:true});await mkdir(join(pkg,'web'));
+  await writeFile(join(pkg,'package.json'),JSON.stringify({name:trust.packageName,version:'1.0.0',files:['runtime','web','release'],opencraftWeb:{schemaVersion:1,workerProtocol:1,buildId:'fixture'}}));
+  await writeFile(join(pkg,'runtime/main.mjs'),'code');await writeFile(join(pkg,'LICENSE'),'license');await writeFile(join(pkg,'web/version.json'),JSON.stringify({sourceRevision:source,buildId:'fixture'}));
+  const key=join(root,'signer');await writeFile(key,privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});const record=fixture();record.transport.registry=registry;record.budgets.outer.archiveBytes=16384;
+  const packed=await sealPackage({packageRoot:pkg,directory:root,template:record,keyPath:key,keyId});archiveBytes=await readFile(join(root,packed.filename));metadata=JSON.parse(await readFile(join(pkg,'package.json'),'utf8'));metadata.dist={integrity:packed.integrity,tarball:registry+'app.tgz'};
+  const userconfig=join(root,'npmrc');await writeFile(userconfig,'strict-ssl=false\ncache='+join(root,'npm-cache')+'\n',{mode:0o600});
+  const module=new URL('../../scripts/web-deployment/releases.mjs',import.meta.url).href;
+  const script=`const {createNpmReleaseSource}=await import(${JSON.stringify(module)});const source=createNpmReleaseSource({registry:${JSON.stringify(registry)},channel:'test',packageName:${JSON.stringify(trust.packageName)},userconfig:${JSON.stringify(userconfig)}});try{const selected=await source.latest();await source.download(selected,process.argv[1]);console.log('download verified');}catch(error){console.log(error.message);process.exitCode=1;}`;
+  const options={env:{...process.env,OPENCRAFT_NPM_PACKAGE_NAME:trust.packageName,OPENCRAFT_FULL_RELEASE_TRUST_JSON:JSON.stringify(localTrust)},timeout:30000,maxBuffer:65536};
+  const positive=await promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'download')],options);assert.match(positive.stdout,/download verified/);assert.equal(paths.filter(p=>p==='/npm/app.tgz').length,1);
+  oversize=true;await assert.rejects(promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'oversize')],options),error=>error.stdout.includes('Signed release stream download failed'));await assert.rejects(readFile(join(root,'oversize/release.tgz')),{code:'ENOENT'});
 });
