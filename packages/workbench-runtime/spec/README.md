@@ -1059,3 +1059,21 @@ comparisons use the same oracle separately; neither mutates a prototype or priva
 SUT state. The extended shared-interaction browser smoke uses real WebSocket,
 Broker and cards at mobile/desktop widths to distinguish an old caller's failure
 from the current shared answer state. It does not exercise a real user's account.
+
+`InteractionSourceAdmission.tla` adds thirteen bounded configurations for the
+availability/admission product: fingerprint and validation revocation, another
+Thread's revocation, an admitted peer and authoritative producer replay. Seven
+safety controls require exact failures for empty claims, wrong error classification,
+global revocation, validation after fingerprint revocation, missing replay authority
+and replay that improperly reopens an admitted peer. Two temporal controls remove
+local or producer fairness. Caller rejection needs local continuation; a new native
+answer after revocation additionally needs an actual producer replay. The model
+does not promise automatic source recovery, writer completion or native ACK.
+
+The `replies` generator v2 saves source-unavailable events, fingerprint/validation
+revocation, peer-then-revoke and revoke-then-producer-restore callbacks. Its ledger
+predicts source availability independently of response state, including exact
+publication counts and caller error classification. The `empty-claim` observation
+control shrinks separately from real old-constructor comparisons. Prior v1 traces
+remain replayable; generated events are capped at the parser's 10000-event limit
+so maximum-size failure artifacts can be loaded by the normal replay command.

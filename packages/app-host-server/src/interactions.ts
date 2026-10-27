@@ -103,6 +103,7 @@ export class HostInteractions {
     const fingerprint = canonical(result);
     const admission = (): "already-submitted" | "resolved" | undefined => {
       if (this.entries.get(id) !== e) return "resolved";
+      if (e.value.canRespond === false) throw new InteractionFault({ code: "SOURCE_UNAVAILABLE" }, "Interaction source is unavailable");
       if (e.value.state === "pending") return;
       if (e.answer?.submissionId === submissionId && e.answer.fingerprint !== fingerprint)
         throw new InteractionFault({ code: "RESPONSE_CONFLICT" }, "Submission identity was reused with another response");

@@ -10,6 +10,21 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('InteractionSourceAdmission', None),
+    ('InteractionSourceAdmission-Fingerprint', None),
+    ('InteractionSourceAdmission-OtherThread', None),
+    ('InteractionSourceAdmission-Peer', None),
+    ('InteractionSourceAdmission-SkipValidation', 'NoEmptyClaim'),
+    ('InteractionSourceAdmission-SkipFingerprint', 'NoEmptyClaim'),
+    ('InteractionSourceAdmission-PeerClassification', 'CallerClassification'),
+    ('InteractionSourceAdmission-Global', 'ScopeIsolation'),
+    ('InteractionSourceAdmission-ValidateRevoked', 'ValidationAuthority'),
+    ('InteractionSourceAdmission-DropReplay', 'ReplayAuthority'),
+    ('InteractionSourceAdmission-ReopenPeer', 'AtMostOneWriter'),
+    ('InteractionSourceAdmission-NoLocal', 'temporal:CallerProgress'),
+    ('InteractionSourceAdmission-NoProducer', 'temporal:RecoveryProgress'),
+
+
     ('InteractionReplyOwner', None),
     ('InteractionReplyOwner-Responding', None),
     ('InteractionReplyOwner-Success', None),

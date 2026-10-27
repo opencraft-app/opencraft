@@ -820,3 +820,9 @@ Codex native 连接失败/关闭、单代 lost 和 DSH runtime unavailable 会�
 答复权并广播，保留原 pending/responding 状态而不伪造终结。通道重新 open 不恢复旧
 请求；只有原生重新投递当前请求并建立有效路由才恢复其答复权。答复裁决前及同步
 观察者发布后再次检查来源可用性，旧请求不能因页面仍在线而写入新引擎连接。
+
+指纹计算和外部校验返回后也必须在准入helper中复核来源：若期间已撤权，返回
+`SOURCE_UNAVAILABLE`，不创建answer、不额外发布responding、不调用writer。来源本身
+撤权的广播仍保留，原pending槽未消费，producer可重新投递恢复可用性。已有peer
+准入不因外层撤权被覆盖；该peer自己的writer失败仍按原attempt归属结算。发布后的
+来源失效守卫继续保留，不把拒绝准入扩展为对已观察或未知远端写入的猜测性回滚。
