@@ -1230,7 +1230,7 @@ export function createAppServerWorkbenchRuntime(
               await interactions?.sync(threadId);
               if (stillWaiting()) {
                 // Reattach a known native human wait; this never starts a Turn.
-                await currentSession.resume.activate({ threadId });
+                await currentSession.resume.activate({ threadId, force: true });
                 await interactions?.sync(threadId);
               }
             }).catch(() => {}).finally(() => {

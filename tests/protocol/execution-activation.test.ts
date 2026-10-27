@@ -146,3 +146,16 @@ test("read metadata cannot erase observed live settings before activation acknow
     f.actors[0]!.reply(); await activating; assert.equal(f.session.views.get("a")!.execution.model, "live-choice");
   } finally { await f.close(); }
 });
+
+test("explicit reattachment bypasses a completed activation without replacing the history baseline", async () => {
+  const f = await fixture();
+  try {
+    const first = f.session.resume.activate({ threadId: "a" }); await until(() => f.actors.length === 1); f.actors[0]!.reply(); await first;
+    const before = JSON.stringify(f.session.views.get("a")!.turns);
+    await f.session.resume.activate({ threadId: "a" }); assert.equal(f.actors.length, 1);
+    const reattach = f.session.resume.activate({ threadId: "a", force: true }); await until(() => f.actors.length === 2);
+    assert.equal((f.actors[1]!.params as Record<string, unknown>).excludeTurns, true);
+    f.actors[1]!.reply(); await reattach;
+    assert.equal(JSON.stringify(f.session.views.get("a")!.turns), before); assert.equal(f.reads(), 1);
+  } finally { await f.close(); }
+});

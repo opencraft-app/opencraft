@@ -391,7 +391,7 @@ export class ThreadResumeCoordinatorService extends Service {
 
   /** Prepare execution only. History Read keeps its own owner and source;
    * activation does not allocate a preview, buffer or hydration strategy. */
-  activate(options: Pick<ResumeThreadOptions, "threadId" | "signal" | "retryRejected">): Promise<void> {
+  activate(options: Pick<ResumeThreadOptions, "threadId" | "signal" | "retryRejected" | "force">): Promise<void> {
     if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
     for (;;) {
       const existing = this.activations.get(options.threadId);
