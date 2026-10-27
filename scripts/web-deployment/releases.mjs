@@ -48,11 +48,11 @@ export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(channel)) throw new Error('Invalid update channel');
   const scope = packageName.startsWith('@') ? packageName.split('/')[0] : null;
   const flags = ['--registry', registry, ...(scope ? [`--${scope}:registry=${registry}`] : []), '--ignore-scripts', '--no-audit', '--no-fund', ...(userconfig ? ['--userconfig', resolve(userconfig)] : [])];
-  async function npm(args, cwd) {
+  async function npm(args, cwd, maxBuffer = 2 * 1024 * 1024) {
     // npm stderr may contain credential-bearing registry URLs: never expose it to the browser/logs.
     try {
       const result = await exec(process.env.OPENCRAFT_NPM_EXECUTABLE || 'npm', [...args, ...flags], {
-        cwd, timeout: 120_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
+        cwd, timeout: 120_000, maxBuffer, windowsHide: true,
       });
       return JSON.parse(result.stdout);
     } catch (error) { throw npmFailure(error); }
@@ -75,7 +75,7 @@ export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 
     },
     async download(release, directory) {
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      const packed = await npm(['pack', `${packageName}@${release.version}`, '--pack-destination', directory, '--json'], directory);
+      const packed = await npm(['pack', `${packageName}@${release.version}`, '--pack-destination', directory, '--json'], directory, 32 * 1024 * 1024);
       const path = join(directory, parseNpmPackResult(packed).filename);
       const archiveStat = await stat(path);
       if (archiveStat.size > MAX_ARCHIVE_BYTES) throw new Error('Web archive too large');

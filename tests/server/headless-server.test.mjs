@@ -771,6 +771,11 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
 test("headless Hub target is an explicit nonzero loopback port", async () => {
   assert.equal(parseHeadlessArguments(["--hub-target-port", "18080"], {}).hubTargetPort, 18080);
   assert.equal(parseHeadlessArguments([], {}).hubTargetPort, undefined);
+  assert.equal(parseHeadlessArguments([], {OPENCRAFT_HUB_TARGET_PORT:"18082"}).hubTargetPort, 18082);
+  assert.equal(parseHeadlessArguments(["--hub-target-port","18083"], {OPENCRAFT_HUB_TARGET_PORT:"invalid"}).hubTargetPort, 18083);
+  for (const value of ["0", "-1", "65536", "1.5", "invalid"]) {
+    assert.throws(() => parseHeadlessArguments([], {OPENCRAFT_HUB_TARGET_PORT:value}));
+  }
   for (const value of ["0", "-1", "65536", "1.5", "invalid"]) {
     assert.throws(() => parseHeadlessArguments(["--hub-target-port", value], {}));
   }

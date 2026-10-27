@@ -85,6 +85,12 @@ function parsePort(value) {
   return port;
 }
 
+function parseHubTargetPort(value) {
+  const port = parsePort(value);
+  if (port === 0) throw new Error("Hub target requires a nonzero loopback port");
+  return port;
+}
+
 export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory = homedir) {
   let port = 10000;
   let host = "127.0.0.1";
@@ -116,8 +122,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
     if (argument === "--port") {
       port = parsePort(argv[++index]);
     } else if (argument === "--hub-target-port") {
-      hubTargetPort = parsePort(argv[++index]);
-      if (hubTargetPort === 0) throw new Error("--hub-target-port requires a nonzero loopback port");
+      hubTargetPort = parseHubTargetPort(argv[++index]);
     } else if (argument === "--host") {
       host = argv[++index];
       if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("--host must be 127.0.0.1 or 0.0.0.0");
@@ -180,6 +185,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       throw new Error(`Unknown option ${argument}`);
     }
   }
+  if (hubTargetPort === undefined && env.OPENCRAFT_HUB_TARGET_PORT !== undefined) hubTargetPort = parseHubTargetPort(env.OPENCRAFT_HUB_TARGET_PORT);
   if (!dataDirectory) {
     try { dataDirectory = join(getHomeDirectory(), ".opencraft-server"); }
     catch { throw new Error("--data-dir is required when this user has no home directory"); }
@@ -232,8 +238,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const port = options.port ?? 10000;
   const host = options.host ?? "127.0.0.1";
   parsePort(port);
-  const hubTargetPort = options.hubTargetPort;
-  if (hubTargetPort !== undefined && parsePort(hubTargetPort) === 0) throw new Error("Hub target requires a nonzero loopback port");
+  const hubTargetPort = options.hubTargetPort === undefined ? undefined : parseHubTargetPort(options.hubTargetPort);
   if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("Invalid headless listener host");
   if (host === "0.0.0.0" && options.allowUnauthenticatedPublic !== true
     && !options.accessControl && !options.accessMemberProviders?.length && !options.relayConnectFile) {
