@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { c } from 'tar';
 import { parseStrictJson, parseManifest, fileListDigest, sha256, signBytes, acceptManifest,
   signPreflight, verifyPreflight, HARD_LIMITS, LEGACY_LIMITS } from '../../scripts/full-release/contract.mjs';
-import { sealPackage } from '../../scripts/full-release/producer.mjs';
+import { sealPackage, npmPack } from '../../scripts/full-release/producer.mjs';
 import { verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -27,6 +27,41 @@ function fixture() {
 }
 const bytes = record => Buffer.from(JSON.stringify(record));
 const signed = record => signBytes(bytes(record), privateKey, keyId);
+
+test('sealing under a restrictive umask produces canonical modes without following links', async t => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { symlink, link, stat } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'full-release-restrictive-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pkg = join(root, 'package');
+  await mkdir(join(pkg, 'runtime'), { recursive: true, mode: 0o700 });
+  await mkdir(join(pkg, 'web'), { mode: 0o700 });
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['runtime', 'web'], opencraftWeb: { schemaVersion: 1, workerProtocol: 1, buildId: 'fixture' } }), { mode: 0o600 });
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }), { mode: 0o600 });
+  await writeFile(join(pkg, 'LICENSE'), 'license', { mode: 0o600 });
+  await writeFile(join(pkg, 'runtime/main.mjs'), 'console.log(1)', { mode: 0o600 });
+  await writeFile(join(pkg, 'runtime/run'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const outside = join(root, 'outside');
+  await writeFile(outside, 'outside', { mode: 0o600 });
+  await symlink(outside, join(pkg, 'runtime/omitted-link'));
+  const key = join(root, 'key.pem');
+  await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  const args = { packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId };
+  const script = `import { sealPackage } from ${JSON.stringify(new URL('../../scripts/full-release/producer.mjs', import.meta.url).href)}; process.umask(0o077); console.log(JSON.stringify(await sealPackage(${JSON.stringify(args)})));`;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script]);
+  const packed = JSON.parse(stdout);
+  const verified = await verifyFullArchive(join(root, packed.filename), trust);
+  assert.equal(verified.files.find(([path]) => path === 'runtime/main.mjs')[3], '0644');
+  assert.equal(verified.files.find(([path]) => path === 'runtime/run')[3], '0755');
+  for (const path of ['release/full-release.json', 'release/full-release.sig']) assert.ok(verified.captured.has(path));
+  assert.ok(!verified.files.some(([path]) => path === 'runtime/omitted-link'));
+  assert.equal((await stat(outside)).mode & 0o7777, 0o600);
+  assert.equal((await stat(key)).mode & 0o7777, 0o600);
+  await link(outside, join(pkg, 'runtime/hard-link'));
+  await assert.rejects(npmPack(pkg, root), /hard links/);
+  assert.equal((await stat(outside)).mode & 0o7777, 0o600);
+});
 
 test('strict parser rejects duplicate keys, unsafe numbers, invalid UTF8 and depth', () => {
   for (const input of ['{"x":1,"x":2}','{"x":1,"\\u0078":2}','{"n":9007199254740992}','{"n":1e999}','[1,]', '['.repeat(66)+'0'+']'.repeat(66), Buffer.from([0xff])]) assert.throws(() => parseStrictJson(input));

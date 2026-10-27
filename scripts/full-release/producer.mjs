@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile, readdir, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
@@ -7,7 +7,23 @@ import { scanArchive, verifyFullArchive } from './archive.mjs';
 import { fileListDigest, signPreflight, signBytes, parseManifest, preflightFor, sha256 } from './contract.mjs';
 import { createPublicKey } from 'node:crypto';
 const exec = promisify(execFile);
+async function canonicalizeStagedModes(root) {
+  // The staging tree is public payload. npm preserves restrictive modes rather
+  // than repairing them, including release files created under umask 0077.
+  await chmod(root, 0o755);
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) await canonicalizeStagedModes(path);
+    else if (entry.isFile()) {
+      const info = await stat(path);
+      if (info.nlink > 1) throw new Error('Full release staging hard links are not supported');
+      await chmod(path, info.mode & 0o111 ? 0o755 : 0o644);
+    }
+    // npm omits symbolic links. Never follow one into an unrelated tree.
+  }
+}
 export async function npmPack(root, directory, dryRun = false) {
+  await canonicalizeStagedModes(root);
   const { stdout } = await exec('npm', ['pack', '--ignore-scripts', '--json', '--workspaces=false', '--pack-destination', directory,
     ...(dryRun ? ['--dry-run'] : [])], { cwd: root, maxBuffer: 32 * 1024 ** 2 });
   return parseNpmPackResult(JSON.parse(stdout));
