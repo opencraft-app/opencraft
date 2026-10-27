@@ -45,6 +45,7 @@ export class HostInteractions {
         throw new InteractionFault({ code: "SOURCE_CONFLICT" }, "Interaction source identity was reused");
       this.nativeIds.delete(JSON.stringify(previous.source.id));
       previous.source = source;
+      previous.value = { ...previous.value, canRespond: true };
       // A producer replay, rather than a UI retry, establishes current state.
       if (source.__opencraftInteractionState) {
         previous.value = { ...previous.value, state: source.__opencraftInteractionState };
@@ -53,9 +54,18 @@ export class HostInteractions {
     } else {
       if (this.entries.size >= 256) throw new InteractionFault({ code: "LIMIT" }, "Too many pending interactions");
       this.entries.set(id, { source, offered: new Set(), value: { id, method: source.method, params: source.params,
-        state: source.__opencraftInteractionState ?? "pending", receivedAtMs: Date.now() } });
+        state: source.__opencraftInteractionState ?? "pending", canRespond: true, receivedAtMs: Date.now() } });
     }
     this.nativeIds.set(key, id); this.publish(String(source.params.threadId)); return id;
+  }
+  markSourceUnavailable(threadId?: string): void {
+    const changed = new Set<string>();
+    for (const entry of this.entries.values()) {
+      const id = String(entry.value.params.threadId);
+      if ((threadId !== undefined && threadId !== id) || entry.value.canRespond === false) continue;
+      entry.value = { ...entry.value, canRespond: false }; entry.offered.clear(); changed.add(id);
+    }
+    for (const id of changed) this.publish(id);
   }
   snapshot(threadId: string, canRespond: boolean): SharedInteractionSnapshot {
     return { threadId, epoch: this.epoch, revision: this.revisions.get(threadId) ?? 0, canRespond,
@@ -63,7 +73,7 @@ export class HostInteractions {
   }
   offerLegacy(threadId: string, clientId: string, send: (source: InteractionSourceRequest) => void): void {
     for (const e of [...this.entries.values()]) {
-      if (e.value.params.threadId !== threadId || e.value.state !== "pending" || e.offered.has(clientId)) continue;
+      if (e.value.params.threadId !== threadId || e.value.canRespond === false || e.value.state !== "pending" || e.offered.has(clientId)) continue;
       e.offered.add(clientId); send(e.source);
     }
   }
@@ -89,6 +99,7 @@ export class HostInteractions {
       throw new InteractionFault({ code: "NOT_FOUND" }, "Interaction is no longer available");
     }
     if (e.value.params.threadId !== threadId) throw new InteractionFault({ code: "SCOPE" }, "Interaction belongs to another conversation");
+    if (e.value.canRespond === false) throw new InteractionFault({ code: "SOURCE_UNAVAILABLE" }, "Interaction source is unavailable");
     const fingerprint = canonical(result);
     if (e.value.state !== "pending") {
       if (e.answer?.submissionId === submissionId && e.answer.fingerprint !== fingerprint)
@@ -102,7 +113,7 @@ export class HostInteractions {
     // Claim before publishing: synchronous observers cannot admit another answer.
     this.publish(threadId);
     if (this.entries.get(id) !== e) return "resolved";
-    if (e.answer !== answer || e.value.state !== "responding")
+    if (e.answer !== answer || e.value.state !== "responding" || e.value.canRespond === false)
       throw new InteractionFault({ code: "SOURCE_CHANGED" }, "Interaction source changed during admission");
     try { await write(e.source, result); }
     catch (cause) {

@@ -11,6 +11,8 @@ export interface SharedInteraction {
   readonly method: string;
   readonly params: Record<string, unknown>;
   readonly state: InteractionResponseState;
+  /** Source route availability, independent of subscriber access and response state. */
+  readonly canRespond?: boolean;
   readonly receivedAtMs: number;
 }
 export interface SharedInteractionSnapshot {
@@ -66,6 +68,7 @@ export function parseSharedInteractionSnapshot(value: unknown): SharedInteractio
     if (typeof r !== "object" || r === null || typeof r.id !== "string" || !r.id || seen.has(r.id)
       || typeof r.method !== "string" || typeof r.params !== "object" || r.params === null || Array.isArray(r.params)
       || r.params.threadId !== s.threadId || !isHumanInteraction(r.method, r.params)
+      || (r.canRespond !== undefined && typeof r.canRespond !== "boolean")
       || !["pending", "responding", "unconfirmed"].includes(r.state) || !Number.isFinite(r.receivedAtMs)) return null;
     seen.add(r.id);
   }

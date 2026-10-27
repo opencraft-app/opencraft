@@ -87,3 +87,21 @@ test("only explicit native active flags establish a human wait", () => {
   assert.equal(humanInteractionWaitReason({ type: "active", activeFlags: ["waitingOnUserInput"] }), "input");
   for (const status of [null, {}, { type: "idle", activeFlags: ["waitingOnApproval"] }, { type: "active", activeFlags: [] }]) assert.equal(humanInteractionWaitReason(status), null);
 });
+
+test("source loss revokes response authority without claiming resolution and only a source replay restores it", async () => {
+  const waits = new HostInteractions(); const original = { ...source(), __opencraftInteractionKey: "producer-request" };
+  const id = waits.capture(original); const other = waits.capture({ ...source(2), params: { ...source(2).params, threadId: "other" } });
+  waits.markSourceUnavailable("thread");
+  assert.equal(waits.snapshot("thread", true).requests[0]!.canRespond, false);
+  assert.equal(waits.snapshot("thread", true).requests[0]!.state, "pending");
+  assert.equal(waits.snapshot("other", true).requests[0]!.canRespond, true);
+  await assert.rejects(waits.respond("thread", id, "stale", { answers: {} }, async () => assert.fail("expired route executed")), /source is unavailable/);
+  assert.equal(waits.capture({ ...original, id: "new-route", __opencraftInteractionState: "pending" }), id);
+  let writes = 0; await waits.respond("thread", id, "fresh", { answers: {} }, async source => { assert.equal(source.id, "new-route"); writes++; });
+  assert.equal(writes, 1); waits.markSourceUnavailable(); assert.equal(waits.snapshot("other", true).requests.find(r => r.id === other)!.canRespond, false);
+});
+test("source loss during synchronous admission publication fences the native write", async () => {
+  const waits = new HostInteractions(), id = waits.capture(source());
+  waits.subscribe(() => { if (waits.snapshot("thread", true).requests[0]?.state === "responding") waits.markSourceUnavailable("thread"); });
+  await assert.rejects(waits.respond("thread", id, "answer", { answers: {} }, async () => assert.fail("revoked route executed")), /source changed during admission/);
+});
