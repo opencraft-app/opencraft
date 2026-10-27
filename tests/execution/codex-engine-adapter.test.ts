@@ -1326,6 +1326,42 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("product permission modes bind native sandbox and approvals on create, update, resume, fork and turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-permission-policy-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sequence = 0;
+  const request = async (method: string, params: Record<string, unknown>) => {
+    const id = `permissions:${++sequence}`;
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const response = await waitFor(frames, frame => frame.id === id);
+    assert.equal(response.error, undefined); return response.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = (await request("thread/start", { cwd: root, testNoServerRequest: true,
+      permissions: "opencraft:permission-mode:full" })).thread.id;
+    await request("thread/settings/update", { threadId, permissions: "opencraft:permission-mode:accept-edits" });
+    await request("thread/resume", { threadId, permissions: "opencraft:permission-mode:full" });
+    await request("thread/settings/update", { threadId, permissions: "opencraft:permission-mode:read-only" });
+    await request("thread/fork", { threadId, permissions: "opencraft:permission-mode:full" });
+    await request("turn/start", { threadId, input: [{ type: "text", text: "test" }],
+      permissions: "opencraft:permission-mode:full" });
+    await request("thread/settings/update", { threadId, permissions: "team-custom", approvalPolicy: "on-request" });
+    await request("thread/settings/update", { threadId, permissions: ":danger-full-access", approvalPolicy: "on-request" });
+    const rows = (await request("test/readPermissionRequests", {})).data;
+    assert.deepEqual(rows.map((row: any) => [row.method, row.params.permissions, row.params.approvalPolicy]), [
+      ["thread/start", ":danger-full-access", "never"],
+      ["thread/settings/update", ":workspace", "on-request"],
+      ["thread/resume", ":danger-full-access", "never"],
+      ["thread/settings/update", ":read-only", "on-request"],
+      ["thread/fork", ":danger-full-access", "never"],
+      ["turn/start", ":danger-full-access", "never"],
+      ["thread/settings/update", "team-custom", "on-request"],
+      ["thread/settings/update", ":danger-full-access", "on-request"],
+    ]);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("scheduled permission snapshots reach native Codex and survive adapter recovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-schedule-permissions-"));
   let frames: Array<Record<string, unknown>> = [], adapter = createRoutingAdapter(root, frames);
@@ -1354,6 +1390,7 @@ test("scheduled permission snapshots reach native Codex and survive adapter reco
     }
     assert.equal(inputs.length, 1);
     assert.equal(inputs.at(-1).params.permissions, ":danger-full-access");
+    assert.equal(inputs.at(-1).params.approvalPolicy, "never");
     assert.match(inputs.at(-1).params.clientUserMessageId, /^schedule:/);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

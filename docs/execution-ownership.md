@@ -304,6 +304,15 @@ execution across daylight-saving changes. The existing conversation menu is
 the only creation entry. Editing and background reads do not replace a form's
 captured revision or unsaved draft.
 
+Codex native permission profiles select the sandbox
+independently of approval policy. The Host resolves each canonical OpenCraft mode
+to both controls: Full access uses the allowed native full-access profile with
+`approvalPolicy: "never"`; Read only and Accept edits use their allowed native
+profiles with `approvalPolicy: "on-request"`. The same resolution applies to
+creation, settings updates, resumes, forks, turns and scheduled occurrences.
+Switching away from Full access restores interactive approvals. Explicit native
+or custom profile IDs retain their caller-supplied approval policy.
+
 The editor lists the Host's verified permission profiles and stores the selected
 profile on the plan. An omitted selection retains conversation defaults; legacy
 plans are never silently promoted to Full access. Each occurrence snapshots its

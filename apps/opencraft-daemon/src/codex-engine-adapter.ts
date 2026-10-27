@@ -1114,11 +1114,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (["thread/name/set", "thread/delete", "thread/archive"].includes(message.method)) this.threadTitles?.invalidate(string(params.threadId));
       if (typeof params.permissions === "string") {
         try {
-          const native = await this.resolvePermissionSelection(params.permissions, params.cwd);
-          if (native !== params.permissions) {
-            params = { ...params, permissions: native };
-            message = { ...message, params };
-          }
+          params = { ...params, ...await this.resolvePermissionSelection(params.permissions, params.cwd) };
+          message = { ...message, params };
         } catch (error) {
           this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
           return;
@@ -2228,9 +2225,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       string(error.message) || "Codex AppServer request failed", error.data);
   }
 
-  private async resolvePermissionSelection(selection: string, cwd: unknown): Promise<string> {
+  private async resolvePermissionSelection(selection: string, cwd: unknown): Promise<RpcRecord> {
     const mode = parsePermissionModeProfileId(selection);
-    if (mode === null) return selection;
+    if (mode === null) return { permissions: selection };
     let cursor: string | null = null;
     for (let page = 0; page < 10; page += 1) {
       const result = record(await this.requestPhysical("permissionProfile/list", {
@@ -2241,7 +2238,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         const profile = record(entry);
         if (codexPermissionMode(string(profile.id)) !== mode) continue;
         if (profile.allowed !== true) throw new Error(`Permission mode is disabled by Codex requirements: ${mode}`);
-        return string(profile.id);
+        // Native profiles select sandbox permissions independently of approvals.
+        // Product modes bind both controls, including when leaving Full access.
+        return { permissions: string(profile.id), approvalPolicy: mode === "full" ? "never" : "on-request" };
       }
       if (result.nextCursor == null) break;
       if (typeof result.nextCursor !== "string" || result.nextCursor === cursor) throw new Error("Codex permission catalog did not advance");
@@ -2789,14 +2788,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.actorInput(queued, 'queue');
     const selection = this.schedules?.executionPermissions(threadId, queued.clientUserMessageId);
     const thread = selection ? record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread) : null;
-    const permissions = selection ? await this.resolvePermissionSelection(selection, thread?.cwd) : null;
+    const permissions = selection ? await this.resolvePermissionSelection(selection, thread?.cwd) : {};
     const row = queue.claim(threadId, id, "unknown");
     if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is already being dispatched");
     this.emitQueueChanged(threadId);
     try {
       const response = record(await this.requestPhysical("turn/start", {
         threadId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
-        ...(permissions ? { permissions } : {}),
+        ...permissions,
         ...(referenceContext ? {additionalContext:{"opencraft.conversations":{kind:"untrusted",value:JSON.stringify(referenceContext)}}} : {}),
       },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"start")));
       if (!string(record(response.turn).id)) throw new Error("Codex returned an invalid turn/start acknowledgement");
