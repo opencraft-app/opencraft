@@ -149,7 +149,7 @@ composition owns its document and build entry, not the generic gateway.
 ## 保留本地数据的模块资源恢复
 
 受管 Web worker 在入口 HTML 声明 `opencraft-resource-recovery` 能力。
-浏览器报告网络型模块导入失败或 Vite CSS 预加载失败时，入口最多自动进行一次资源恢复；错误页的重新加载按钮也可显式重试。恢复后的 CSS 持续失败同样保留错误页，不循环导航。
+浏览器报告网络型模块导入失败（包括 WebKit 的跨域脚本加载拒绝）或 Vite CSS 预加载失败时，入口最多自动进行一次资源恢复；错误页的重新加载按钮也可显式重试。恢复后的 CSS 持续失败同样保留错误页，不循环导航。
 恢复保留原 origin、应用路径和既有 query，仅设置同名恢复 query token，worker 将入口与预加载资源指向
 `/assets/recovery-<token>/`。相对模块导入沿用此路径，worker 将其解析为原来的静态文件，
 因此整个模块依赖图使用新的浏览器缓存键，无须清理 Cookie、本地数据库、会话或配置。
@@ -157,3 +157,9 @@ composition owns its document and build entry, not the generic gateway.
 恢复仍失败时保留错误页，不自动无限刷新；普通代码执行错误和存储错误不触发此自动恢复。
 Vite preload 错误必须保留拒绝语义，不能因 `preventDefault` 将导入结果变为 `undefined`。
 未声明此能力的静态或开发服务器继续普通重载，不假定支持恢复资源路径。
+
+早期版本查询和错误上报读取所选服务器的 `opencraft-server-context` 作用域，不能把
+入口默认服务器的版本当成另一个部署的版本。检测到新版本时也使用资源恢复 URI，
+避免普通 reload 继续读取旧 HTML；同一恢复 URI 上持续失败时不再自动导航。
+错误报告只记录最近同源脚本/预加载资源的去查询参数 URL、耗时、传输量及可用状态码，
+不记录 Cookie、请求头或响应正文；模块加载错误本身不能证明具体网关/CORS 根因。
