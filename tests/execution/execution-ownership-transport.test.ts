@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { ExecutionLeaseStore } from "../../apps/opencraft-daemon/src/execution-lease-store.js";
 import { ExecutionLeaseTracker } from "../../apps/opencraft-daemon/src/execution-ownership-transport.js";
 import { ThreadIdentityDatabase, THREAD_IDENTITY_SCHEMA } from "../../apps/opencraft-daemon/src/thread-identity-database.js";
-import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
+import { observeNativeExecutionProcess, observeStandaloneCodexExecution } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
+import { spawn } from "node:child_process";
 import { openManagedDatabase } from "../../packages/sqlite-node/src/index.js";
 const native = { pid: 1, startTicks: "1", incarnation: "native-1" };
 const context = (subject: string) => ({ sender: { kind: "employee" as const, loginName: subject },
@@ -203,4 +204,18 @@ test('a historical queue receipt cannot acquire a new principal through a plausi
   tracker.observe({id:2,result:{turn:{id:'old-queue-turn'}}});
   const row=f.db.prepare("SELECT execution_id FROM execution_leases WHERE turn_id='old-queue-turn'").get()!;
   assert.equal(f.store().resolve({threadId:'t',executionId:String(row.execution_id)}).status,'unknown');
+});
+
+test("standalone Codex rejects unrelated processes and routing health", async () => {
+  await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid}));
+  await assert.rejects(observeStandaloneCodexExecution({pid:process.pid,codexPid:process.pid,routingEpoch:"routed"}));
+});
+
+test("split Core attests the independent runtime's direct native child", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+  try {
+    const native = await observeStandaloneCodexExecution({ pid: process.ppid, appServerPid: process.pid, codexPid: child.pid! });
+    assert.equal(native.incarnation, (await observeNativeExecutionProcess(child.pid!)).incarnation);
+    await assert.rejects(observeStandaloneCodexExecution({ pid: process.pid, appServerPid: process.ppid, codexPid: child.pid! }));
+  } finally { child.kill(); }
 });

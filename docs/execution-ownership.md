@@ -835,3 +835,7 @@ Codex native 连接失败/关闭、单代 lost 和 DSH runtime unavailable 会�
 撤权的广播仍保留，原pending槽未消费，producer可重新投递恢复可用性。已有peer
 准入不因外层撤权被覆盖；该peer自己的writer失败仍按原attempt归属结算。发布后的
 来源失效守卫继续保留，不把拒绝准入扩展为对已观察或未知远端写入的猜测性回滚。
+
+## Standalone Core execution origin
+
+A standalone Core has no generation envelope. Its authenticated health identifies the Core and its direct native child. On Linux the Host verifies their UID, parent relationship, boot ID and process start ticks, then records that native process incarnation before sending a Turn. Replies and Host reconciliation use the same incarnation. A disconnected transport cannot provide it. Routed deployments continue using the generation registry and never fall back to standalone process identity.

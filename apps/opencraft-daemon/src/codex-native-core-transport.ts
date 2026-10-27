@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CodexCoreReadIsolation, isIsolatedCoreRead } from "./codex-core-read-isolation";
 import { CodexCoreSocket } from "./codex-core-socket";
+import { observeStandaloneCodexExecution } from "./native-execution-origin";
 import { CodexCoreControlClient, type CodexGenerationFenceState } from "@opencraft/account-pool-host";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
@@ -21,6 +22,8 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   private callbackReady = false;
   private ownerIncarnation: string|null = null;
   private routed = false;
+  private standaloneExecution: string | undefined;
+  get executionIncarnation(): string | undefined { return this.connection.status.state === "open" ? this.standaloneExecution : undefined; }
   get supportsOrchestrationRouting():boolean{return this.routed;}
   get callbackIncarnation(): string|null {return this.ownerIncarnation;}
   get supportsOrchestration(): boolean { return this.callbackReady; }
@@ -29,7 +32,17 @@ export class CodexNativeCoreTransport implements DuplexTransport {
     this.reads = new CodexCoreReadIsolation(() => this.control.health());
     this.connection = new CodexCoreSocket({
       callbackLaneId,
-      health: async signal => { const health = await this.control.health(signal); this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId && (!health.routingEpoch || health.orchestrationRoutingVersion === 1); this.routed=health.orchestrationRoutingVersion===1; this.ownerIncarnation = health.routingEpoch ? null : health.callbackIncarnation ?? null; return health; },
+      health: async signal => {
+        const health = await this.control.health(signal);
+        this.standaloneExecution = undefined;
+        if (!health.routingEpoch && process.platform === "linux") {
+          this.standaloneExecution = (await observeStandaloneCodexExecution(health)).incarnation;
+        }
+        this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId && (!health.routingEpoch || health.orchestrationRoutingVersion === 1);
+        this.routed = health.orchestrationRoutingVersion === 1;
+        this.ownerIncarnation = health.routingEpoch ? null : health.callbackIncarnation ?? null;
+        return health;
+      },
       message: frame => { for (const listener of this.messages) listener(frame); },
       status: value => { for (const listener of this.statuses) listener(value); },
     });

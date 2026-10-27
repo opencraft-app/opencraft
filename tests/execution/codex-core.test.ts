@@ -14,11 +14,35 @@ import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src
 import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { DatabaseSync } from "node:sqlite";
+import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 
 // macOS Unix-domain sockets have a small pathname limit. Keep fixture paths
 // short and canonical, matching the identity returned by the runtime owner.
 const temporaryDirectory = realpathSync(process.platform === "darwin" ? "/tmp" : tmpdir());
 const token = "synthetic-core-token-".repeat(3);
+
+test("standalone Core records the real native process on execution leases across Host replacement", async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(true);
+    await a.rpc("employee", "initialize");
+    const { thread } = await a.rpc("employee", "thread/start", {});
+    await a.rpc("employee", "turn/start", { threadId: thread.id, clientUserMessageId: "standalone-input", input: [{ type: "text", text: "synthetic" }] });
+    const native = await observeNativeExecutionProcess((await f.control.health()).codexPid);
+    const read = () => {
+      const db = new DatabaseSync(join(f.options.dataDirectory, "opencraft-host-state.sqlite"), { readOnly: true });
+      try { return db.prepare("SELECT engine_incarnation FROM execution_leases WHERE input_id=?").get("standalone-input")?.engine_incarnation; }
+      finally { db.close(); }
+    };
+    assert.equal(read(), native.incarnation);
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("employee", "initialize");
+    await b.rpc("employee", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.equal(read(), native.incarnation);
+    assert.equal((await f.control.health()).codexPid, native.pid);
+  } finally { await f.close(); }
+});
 
 for (const overlays of [false, true]) test(`admission rejection diagnostics survive Host restart without recording input (overlays=${overlays})`, async () => {
   const f = await fixture(), audit = join(f.root, "admission-audit.jsonl"), client = "audit-client";
@@ -225,6 +249,12 @@ test("split account Core restarts with stable launch credentials while the indep
         [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
         { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
     const before = await client.health();
+    const { CodexNativeCoreTransport } = await import("../../apps/opencraft-daemon/src/codex-native-core-transport.js");
+    const host = new CodexNativeCoreTransport(options.endpoint, token);
+    try {
+      await host.connect();
+      assert.equal(host.executionIncarnation, (await observeNativeExecutionProcess(before.codexPid)).incarnation);
+    } finally { await host.close(); }
     await assert.rejects(acquireCodexWriter(options.dataDirectory), /already owned/);
     await core.close();
     // Account failure must not own, signal or remove the native runtime/socket.

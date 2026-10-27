@@ -19,7 +19,7 @@ type HistoryFixture = { reader: CodexCoreReadIsolation; main: CodexCoreSocket; s
 test("a held history RPC acknowledges its frame and cannot block Resume on the same AppHost lane", async () => {
   await fixture(async ({ reader, endpoint, requests }) => {
     const native = new CodexNativeCoreTransport("/unused/control.sock", "synthetic-token");
-    (native.control as any).health = async () => endpoint;
+    (native.control as any).health = async () => ({ ...endpoint, pid: process.ppid, codexPid: process.pid });
     (native as any).reads = reader;
     const server = new AppHostServer({ createTransport: () => native });
     const { port1, port2 } = new MessageChannel();
@@ -51,6 +51,8 @@ for (const revoked of [false, true]) test(`cached history releases send admissio
   const held = new Promise(resolve => { release = resolve; });
   adapter.initializedClients = new Set(["client"]);
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryReads = new Map();
+  adapter.options = { kind: "local" };
   adapter.clientEpoch = () => epoch;
   adapter.transcriptCache = { page: () => held };
   adapter.projectSender = (_thread: string, _client: string, value: unknown) => value;
@@ -73,6 +75,8 @@ test("cached history admission is bounded and frees capacity when reads settle",
   let release!: (value: unknown) => void, calls = 0;
   const held = new Promise(resolve => { release = resolve; });
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryReads = new Map();
+  adapter.options = { kind: "local" };
   adapter.initializedClients = new Set(["client"]);
   adapter.clientEpoch = () => 0;
   adapter.transcriptCache = { page: () => { calls++; return held; } };

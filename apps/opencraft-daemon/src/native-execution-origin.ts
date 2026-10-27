@@ -21,3 +21,16 @@ export async function observeNativeExecutionProcess(pid: number): Promise<Native
   if (before !== await start()) throw new Error("Native process incarnation changed");
   return Object.freeze({ pid, startTicks: before, incarnation: JSON.stringify(["process", bootId, pid, before]) });
 }
+
+/** Authenticated standalone Core health attests its direct native child. Routed
+ * deployments must use their generation registry instead of this process key. */
+export async function observeStandaloneCodexExecution(health: { pid: number; codexPid: number; appServerPid?: number; routingEpoch?: string }): Promise<NativeExecutionProcess> {
+  if (health.routingEpoch) throw new Error("Routed Codex requires generation execution identity");
+  const owner = await observeNativeExecutionProcess(health.appServerPid ?? health.pid);
+  const native = await observeNativeExecutionProcess(health.codexPid);
+  const stat = await readFile(`/proc/${native.pid}/stat`, "utf8");
+  if (Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u)[1]) !== owner.pid
+    || (await observeNativeExecutionProcess(owner.pid)).incarnation !== owner.incarnation
+    || (await observeNativeExecutionProcess(native.pid)).incarnation !== native.incarnation) throw new Error("Standalone Codex process ownership changed");
+  return native;
+}
