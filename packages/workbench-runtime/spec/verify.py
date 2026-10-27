@@ -10,6 +10,19 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('HostScopedIdentity', None),
+    ('HostScopedIdentity-Distinct', None),
+    ('HostScopedIdentity-Opaque', None),
+    ('HostScopedIdentity-Failed', None),
+    ('HostScopedIdentity-Flat', 'RegistrationConserved'),
+    ('HostScopedIdentity-WrongNotification', 'OwnNotification'),
+    ('HostScopedIdentity-WrongFence', 'FencedOnlyRetired'),
+    ('HostScopedIdentity-Delimiter', 'NoDroppedCurrent'),
+    ('HostScopedIdentity-LostDetach', 'temporal:CleanupProgress'),
+    ('HostScopedIdentity-ForgetPeer', 'RegistrationConserved'),
+    ('HostScopedIdentity-NoLocal', 'temporal:CallerProgress'),
+    ('HostScopedIdentity-NoProvider', 'temporal:CallerProgress'),
+
     ('HostLogicalNativeRecovery', None),
     ('HostLogicalNativeRecovery-Failed', None),
     ('HostLogicalNativeRecovery-LogicalFence', 'temporal:RecoveryStarts'),

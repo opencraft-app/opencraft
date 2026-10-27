@@ -117,6 +117,11 @@ function failedLogicalCleanup(): Error {
   });
 }
 
+/** Both values are opaque IDs. A separator cannot encode their boundaries. */
+function hostScopedKey(hostId: string, identity: string): string {
+  return JSON.stringify([hostId, identity]);
+}
+
 /** Process-scoped physical Host owner shared by every Renderer connection. */
 export class AppHostServer {
   private readonly slots = new Map<string, HostSlot>();
@@ -243,8 +248,8 @@ export class AppHostServer {
       }
       if (removed) released.add(slot);
     }
-    for (const [clientId, client] of clients) {
-      if ([...this.connections].some(other => other.hasLogicalClient(clientId))) {
+    for (const client of clients.values()) {
+      if ([...this.connections].some(other => other.hasLogicalClient(client.key, client.hostId))) {
         if (client.operation === null) this.forgetLogicalClient(client);
         continue;
       }
@@ -547,7 +552,7 @@ export class AppHostServer {
     slot.claims.delete(key);
     claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim released" }));
     connection.forgetLease(hostId, leaseId, generation);
-    const client = connection.logicalClient(key);
+    const client = connection.logicalClient(key, hostId);
     const notification = this.options.logicalClientRouting && record && client
       ? this.disconnectLogicalClient(client) : Promise.resolve();
     // Notification I/O cannot postpone acquiring the physical cleanup barrier.
@@ -559,7 +564,7 @@ export class AppHostServer {
   }
 
   private forgetLogicalClient(client: HostLogicalClient): void {
-    client.connection.forgetLogicalClient(client.key, client);
+    client.connection.forgetLogicalClient(client.key, client.hostId, client);
     client.record?.physical.logicalClients.delete(client);
     client.record?.physical.logicalFailures.delete(client);
   }
@@ -796,30 +801,32 @@ export class AppHostServerConnection {
   }
 
   rememberLease(hostId: string, leaseId: string, generation: number): void {
-    this.leases.set(`${hostId}\0${leaseId}`, { hostId, leaseId, generation });
+    this.leases.set(hostScopedKey(hostId, leaseId), { hostId, leaseId, generation });
   }
 
   forgetLease(hostId: string, leaseId: string, generation: number): void {
-    const key = `${hostId}\0${leaseId}`;
+    const key = hostScopedKey(hostId, leaseId);
     if (this.leases.get(key)?.generation === generation) this.leases.delete(key);
   }
 
   rememberLogicalClient(clientId: string, hostId: string, record: HostRecord | null = null): void {
-    const existing = this.logicalClients.get(clientId);
+    const key = hostScopedKey(hostId, clientId);
+    const existing = this.logicalClients.get(key);
     if (existing?.record === record && existing.operation === null) return;
     const client: HostLogicalClient = { key: clientId, hostId, connection: this, record, operation: null };
-    this.logicalClients.set(clientId, client);
+    this.logicalClients.set(key, client);
     record?.physical.logicalClients.add(client);
   }
 
-  logicalClient(clientId: string): HostLogicalClient | undefined { return this.logicalClients.get(clientId); }
+  logicalClient(clientId: string, hostId: string): HostLogicalClient | undefined { return this.logicalClients.get(hostScopedKey(hostId, clientId)); }
 
-  forgetLogicalClient(clientId: string, expected?: HostLogicalClient): void {
-    if (expected === undefined || this.logicalClients.get(clientId) === expected) this.logicalClients.delete(clientId);
+  forgetLogicalClient(clientId: string, hostId: string, expected?: HostLogicalClient): void {
+    const key = hostScopedKey(hostId, clientId);
+    if (expected === undefined || this.logicalClients.get(key) === expected) this.logicalClients.delete(key);
   }
 
-  hasLogicalClient(clientId: string): boolean {
-    return this.logicalClients.has(clientId);
+  hasLogicalClient(clientId: string, hostId: string): boolean {
+    return this.logicalClients.has(hostScopedKey(hostId, clientId));
   }
 
   takeLogicalClients(): Map<string, HostLogicalClient> {
