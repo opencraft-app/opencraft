@@ -11,7 +11,7 @@ const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-shared-inte
 await mkdir(output, { recursive: true });
 const interactions = new HostInteractions(), ws = new WebSocketServer({ host: "127.0.0.1", port: 0 });
 await new Promise<void>(resolve => ws.once("listening", resolve));
-let writes = 0, failWrite = false, holdNext = false, failedResponses = 0;
+let writes = 0, failWrite = false, holdNext = false, failedResponses = 0, revokeInValidation = false;
 let rejectHeld!: (error: Error) => void;
 const unlisten = interactions.subscribe(() => { for (const socket of ws.clients) if (socket.readyState === WebSocket.OPEN)
   socket.send(JSON.stringify({ method: SHARED_INTERACTIONS_CHANGED, params: interactions.snapshot("thread", true) })); });
@@ -27,7 +27,8 @@ ws.on("connection", socket => socket.on("message", async raw => {
       const disposition = await interactions.respond(p.threadId, p.interactionId, p.submissionId, p.result, async () => {
         writes++; if (failWrite) throw Error("fixture write failure");
         if (holdNext) { holdNext = false; await new Promise<void>((_resolve, reject) => { rejectHeld = reject; }); }
-      }); result = { disposition, snapshot: interactions.snapshot("thread", true) };
+      }, () => { if (revokeInValidation) { revokeInValidation = false; interactions.markSourceUnavailable("thread"); } });
+      result = { disposition, snapshot: interactions.snapshot("thread", true) };
     } else throw Error("Unexpected method");
     socket.send(JSON.stringify({ id: request.id, result }));
   } catch { failedResponses++; socket.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Fixture response delivery failed" } })); }
@@ -98,6 +99,25 @@ try {
   await late.screenshot({ path: `${output}/late-failure-mobile.png` }); await b.screenshot({ path: `${output}/late-failure-desktop.png` });
   interactions.resolveNative(4, "thread");
   for (const page of [b, late]) await page.locator(".thread-approval-request").waitFor({ state: "detached" });
+  pending(5); revokeInValidation = true;
+  const beforeRevocation = interactions.snapshot("thread", true).revision;
+  await b.getByRole("button", { name: /Allow once/ }).click();
+  for (const page of [b, late]) {
+    await page.getByText("This request cannot be answered from this view right now.", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: /Allow once/ }).isDisabled(), true);
+  }
+  assert.equal(writes, 4, "validation revocation never reaches native write");
+  assert.equal(interactions.snapshot("thread", true).requests[0]!.state, "pending", "revoked validation must not occupy an answer slot");
+  assert.equal(interactions.snapshot("thread", true).revision, beforeRevocation + 1, "only the source revocation publishes");
+  await late.screenshot({ path: `${output}/validation-revoked-mobile.png` });
+  pending(5); // Producer re-offers the route without inventing a new pending phase.
+  for (const page of [b, late]) await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button => button.textContent?.includes("Allow once") && !button.disabled));
+  await late.getByRole("button", { name: /Allow once/ }).click();
+  for (const page of [b, late]) await page.getByText("A response was submitted. Waiting for the server to confirm…", { exact: true }).waitFor();
+  assert.equal(writes, 5, "producer restoration admits exactly one real answer");
+  await late.screenshot({ path: `${output}/validation-recovered-mobile.png` }); await b.screenshot({ path: `${output}/validation-recovered-desktop.png` });
+  interactions.resolveNative(5, "thread");
+  for (const page of [b, late]) await page.locator(".thread-approval-request").waitFor({ state: "detached" });
   for (const page of [b, late]) assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  assert.deepEqual(errors, []); console.log(JSON.stringify({ result: "passed", subscribers: 3, realBroker: true, realCard: true, settlement: true, uncertainDelivery: true, lateFailurePreserved: true, oldCallerRejected: true, mobile: true, desktop: true, output }));
+  assert.deepEqual(errors, []); console.log(JSON.stringify({ result: "passed", subscribers: 3, realBroker: true, realCard: true, settlement: true, uncertainDelivery: true, lateFailurePreserved: true, oldCallerRejected: true, validationRevocation: true, producerRestoration: true, mobile: true, desktop: true, output }));
 } finally { await browser?.close(); await vite.close(); unlisten(); for (const socket of ws.clients) socket.terminate(); await new Promise<void>(resolve => ws.close(() => resolve())); }

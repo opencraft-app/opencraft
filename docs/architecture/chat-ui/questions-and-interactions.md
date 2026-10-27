@@ -299,3 +299,11 @@ code. Admission therefore checks the Entry and current response again after
 validation returns. A peer admitted during validation wins; the outer call cannot
 write a second response or publish against a retired/replaced Entry. Successful
 write completion remains delivery evidence, not native resolution.
+
+Source availability is checked at each admission boundary, including after
+fingerprinting the response and after external validation. Revocation during
+either operation rejects before creating an answer or publishing `responding`.
+The pending request stays unavailable until its producer re-offers the source;
+that replay can restore availability without resetting a falsely consumed slot.
+Revoking another Thread cannot reject this Thread's answer, and an already
+admitted peer retains its answer even when the outer validator loses its source.
