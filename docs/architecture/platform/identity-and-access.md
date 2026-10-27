@@ -71,6 +71,11 @@ For DSH, the Headless `/appserver` identity overlay owns a separate managed
 root. It records attribution and derived provider metadata, never message bodies or
 execution state, and does not open the independent Host stores. Native messages
 remain the evidence for participation; queued or rejected submissions do not count.
+The shared identity reader traverses at most 100 Turn summaries per page to
+recover native user-message IDs, excluding tool bodies. Full reconciliation
+preserves chronological order; a Turn-scoped read searches recent summaries and
+stops at that Turn. Background catalog reconciliation must not download full
+Item histories onto the same transport used by interactive sessions.
 The overlay resolves the current native address for its read-only history client;
 retiring browser clients or the Hub does not stop the independent DSH Host. Queue dispatch never reattributes
 the original submitter. History/live/shared Chat projection carry hidden sender

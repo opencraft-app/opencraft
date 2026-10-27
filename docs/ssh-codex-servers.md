@@ -62,6 +62,11 @@ OpenCraft installation on the remote machine.
   is replayed. A lost write receipt means an unknown outcome, not permission to retry.
   This first version does not add autonomous background dialing without attachments
   or cross-process interaction persistence.
+- Host identity reconciliation reads chronological `thread/turns/list` summary
+  pages (at most 100 Turns), preserving native message IDs without downloading
+  tool bodies. Turn-scoped reconciliation searches recent summaries and stops
+  at that Turn. Catalog discovery must not flood the shared SSH connection with
+  complete Item histories just to recover participant identities.
 
 ## Trust and credentials
 
