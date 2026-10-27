@@ -1028,3 +1028,34 @@ Synthetic observation controls `notify-peer`, `drop-reply` and `leak-native` tes
 detection, exact-rule shrinking and normal replay without mutating production
 classes, prototypes or private fields. Actual-old-constructor comparisons are
 recorded separately from these synthetic controls.
+
+## Shared human answer attempts
+
+`InteractionReplyOwner.tla` separates stable Entry identity from answer attempt
+identity. Twelve bounded configurations cover pending/ responding producer replay,
+successful and failed writers, validation reentry and Entry replacement. Controls
+require the exact invariant failure for Entry-only or text-only late-result guards,
+duplicate admission, publication after retirement and swallowed caller errors.
+Validation and writer progress have separate weak-fairness assumptions and separate
+missing-fairness temporal counterexamples. The model bounds two attempts and one
+producer replay/replacement; it does not prove delivery, network fairness or remote
+native execution acknowledgement.
+
+The `replies` chaos suite executes the real `HostInteractions` public API against
+an independent saved-input ledger. It varies producer state/route/object replay,
+submission ID/payload, validation reentry/rejection/replacement, oldest/newest
+writer success/failure, native resolution and clear across repeated lifetimes.
+Checks include shared state, revision and subscriber counts, exact native write
+routes/counts, caller outcome and original error identity. Same-text and same-object
+replay prevent guards based on textual submission or source identity from passing.
+
+```bash
+npm run test:recovery-chaos -- --suite replies --seed 20261027 --cases 1000 --steps 120 --output /tmp/interaction-reply-chaos
+```
+
+Synthetic observation controls `late-state`, `duplicate-write` and `drop-error`
+verify exact-rule shrinking and normal replay. Actual unchanged old/new constructor
+comparisons use the same oracle separately; neither mutates a prototype or private
+SUT state. The extended shared-interaction browser smoke uses real WebSocket,
+Broker and cards at mobile/desktop widths to distinguish an old caller's failure
+from the current shared answer state. It does not exercise a real user's account.

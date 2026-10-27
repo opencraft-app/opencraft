@@ -11,7 +11,8 @@ const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-shared-inte
 await mkdir(output, { recursive: true });
 const interactions = new HostInteractions(), ws = new WebSocketServer({ host: "127.0.0.1", port: 0 });
 await new Promise<void>(resolve => ws.once("listening", resolve));
-let writes = 0, failWrite = false;
+let writes = 0, failWrite = false, holdNext = false, failedResponses = 0;
+let rejectHeld!: (error: Error) => void;
 const unlisten = interactions.subscribe(() => { for (const socket of ws.clients) if (socket.readyState === WebSocket.OPEN)
   socket.send(JSON.stringify({ method: SHARED_INTERACTIONS_CHANGED, params: interactions.snapshot("thread", true) })); });
 ws.on("connection", socket => socket.on("message", async raw => {
@@ -25,10 +26,11 @@ ws.on("connection", socket => socket.on("message", async raw => {
       const p = request.params;
       const disposition = await interactions.respond(p.threadId, p.interactionId, p.submissionId, p.result, async () => {
         writes++; if (failWrite) throw Error("fixture write failure");
+        if (holdNext) { holdNext = false; await new Promise<void>((_resolve, reject) => { rejectHeld = reject; }); }
       }); result = { disposition, snapshot: interactions.snapshot("thread", true) };
     } else throw Error("Unexpected method");
     socket.send(JSON.stringify({ id: request.id, result }));
-  } catch { socket.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Fixture response delivery failed" } })); }
+  } catch { failedResponses++; socket.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Fixture response delivery failed" } })); }
 }));
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", esbuild: { jsx: "automatic" },
   resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-shared-interactions",
@@ -46,7 +48,10 @@ try {
   const errors: string[] = [];
   const open = async (width: number, theme = "light") => {
     const page = await browser.newPage({ viewport: { width, height: 850 } }); page.on("pageerror", (e: Error) => errors.push(e.message));
-    await page.goto(url + `&theme=${theme}`); await page.waitForFunction(() => (window as any).ready); return page;
+    await page.goto(url + `&theme=${theme}`);
+    try { await page.waitForFunction(() => (window as any).ready); }
+    catch (cause) { console.error(JSON.stringify({ browserErrors: errors })); throw cause; }
+    return page;
   };
   const a = await open(390), b = await open(1280, "dark");
   const pending = (id: number) => interactions.capture({ id, method: "item/commandExecution/requestApproval", params: { threadId: "thread", turnId: "turn", itemId: `item-${id}`, command: "echo safe" } });
@@ -63,6 +68,32 @@ try {
   for (const page of [b, late]) { await page.getByText("Response delivery is unconfirmed. Reconnecting will check its status.", { exact: true }).waitFor(); assert.equal(await page.getByRole("button", { name: /Allow once/ }).isDisabled(), true); }
   await late.screenshot({ path: `${output}/unconfirmed-mobile.png` }); await b.screenshot({ path: `${output}/unconfirmed-desktop.png` });
   assert.equal(writes, 2);
+  interactions.resolveNative(2, "thread"); failWrite = false; holdNext = true;
+  const replay = (id: number, state: "pending" | "responding") => interactions.capture({ id, method: "item/commandExecution/requestApproval",
+    params: { threadId: "thread", turnId: "turn", itemId: "reply-owner", command: "echo safe" },
+    __opencraftInteractionKey: "reply-owner-lifetime", __opencraftInteractionState: state });
+  replay(3, "pending");
+  await late.getByRole("button", { name: /Allow once/ }).click();
+  for (const page of [b, late]) await page.getByText("A response was submitted. Waiting for the server to confirm…", { exact: true }).waitFor();
+  replay(4, "pending");
+  await b.getByRole("button", { name: /Allow once/ }).click();
+  for (const page of [b, late]) await page.getByText("A response was submitted. Waiting for the server to confirm…", { exact: true }).waitFor();
+  const revision = interactions.snapshot("thread", true).revision, errorsBefore = failedResponses;
+  rejectHeld(Error("retired writer failed"));
+  await assert.doesNotReject(async () => {
+    for (let attempt = 0; failedResponses === errorsBefore && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(failedResponses, errorsBefore + 1, "the old caller still receives its failure");
+  });
+  assert.equal(interactions.snapshot("thread", true).revision, revision, "old failure cannot publish to the new answer");
+  assert.equal(writes, 4);
+  for (const page of [b, late]) {
+    await page.getByText("A response was submitted. Waiting for the server to confirm…", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Response delivery is unconfirmed. Reconnecting will check its status.", { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: /Allow once/ }).isDisabled(), true);
+  }
+  await late.screenshot({ path: `${output}/late-failure-mobile.png` }); await b.screenshot({ path: `${output}/late-failure-desktop.png` });
+  interactions.resolveNative(4, "thread");
+  for (const page of [b, late]) await page.locator(".thread-approval-request").waitFor({ state: "detached" });
   for (const page of [b, late]) assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  assert.deepEqual(errors, []); console.log(JSON.stringify({ result: "passed", subscribers: 3, realBroker: true, realCard: true, settlement: true, uncertainDelivery: true, mobile: true, desktop: true, output }));
+  assert.deepEqual(errors, []); console.log(JSON.stringify({ result: "passed", subscribers: 3, realBroker: true, realCard: true, settlement: true, uncertainDelivery: true, lateFailurePreserved: true, oldCallerRejected: true, mobile: true, desktop: true, output }));
 } finally { await browser?.close(); await vite.close(); unlisten(); for (const socket of ws.clients) socket.terminate(); await new Promise<void>(resolve => ws.close(() => resolve())); }

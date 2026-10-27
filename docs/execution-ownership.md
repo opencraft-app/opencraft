@@ -54,6 +54,17 @@ Hub 可经直连、中继等方式级联成更大的网络，不要求全互联�
 
 同一个 Thread 可以存在且可读取，但没有活跃引擎实例。关闭 View 不等于停止 Turn；连接撤销不等于删除历史。原生 preset 属于引擎 composition，外部 Browser/Terminal/Connector 工具通过可撤销 scope 接入，不能把客户端回调权限固化进 preset。
 
+### Human answer attempt ownership
+
+Within a shared human request, one answer object owns each admitted write.
+Producer `pending` replay revokes that object independently of the stable request
+Entry or textual submission ID. A failing writer must match both captured Entry
+and answer before publishing `unconfirmed`; its own caller still receives the
+original failure. Route replay retaining `responding` does not revoke the answer.
+External validation precedes admission and requires another Entry/state check on
+return, because validation may admit a peer or retire the request synchronously.
+Native resolution remains the authority for removing the shared request.
+
 ### Logical channel response ownership
 
 AppHost physical Host generations may carry several admitted logical leases in

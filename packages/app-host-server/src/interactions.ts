@@ -90,12 +90,19 @@ export class HostInteractions {
     }
     if (e.value.params.threadId !== threadId) throw new InteractionFault({ code: "SCOPE" }, "Interaction belongs to another conversation");
     const fingerprint = canonical(result);
-    if (e.value.state !== "pending") {
+    const admission = (): "already-submitted" | "resolved" | undefined => {
+      if (this.entries.get(id) !== e) return "resolved";
+      if (e.value.state === "pending") return;
       if (e.answer?.submissionId === submissionId && e.answer.fingerprint !== fingerprint)
         throw new InteractionFault({ code: "RESPONSE_CONFLICT" }, "Submission identity was reused with another response");
       return "already-submitted";
-    }
+    };
+    const beforeValidation = admission();
+    if (beforeValidation) return beforeValidation;
     validate?.(e.source, result);
+    // Validation is external code: it may retire the entry or admit a peer.
+    const afterValidation = admission();
+    if (afterValidation) return afterValidation;
     const answer = { submissionId, fingerprint };
     e.answer = answer;
     e.value = { ...e.value, state: "responding" };
@@ -106,7 +113,8 @@ export class HostInteractions {
       throw new InteractionFault({ code: "SOURCE_CHANGED" }, "Interaction source changed during admission");
     try { await write(e.source, result); }
     catch (cause) {
-      if (this.entries.get(id) === e) { e.value = { ...e.value, state: "unconfirmed" }; this.publish(threadId); }
+      // A producer pending replay can reuse Entry while revoking this answer.
+      if (this.entries.get(id) === e && e.answer === answer) { e.value = { ...e.value, state: "unconfirmed" }; this.publish(threadId); }
       throw cause;
     }
     return "submitted";

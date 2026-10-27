@@ -286,3 +286,16 @@ not create an approval, an error, a timeout or an automatic response.
 The existing panel, input checkpoints, theme tokens and locale owner provide this
 presentation. Snapshots carry response state and availability through the protocol,
 ThreadView and Timeline projector; React state does not own settlement.
+
+Response admission has two identities: the native request lifetime and the answer
+attempt. An explicit producer `pending` replay revokes the previous answer even
+when it reuses the same request object, submission ID and payload. A late writer
+failure may publish `unconfirmed` only while its captured Entry and answer object
+still own the request. The old caller continues to receive its original error.
+A `responding` route replay preserves the current answer's failure authority.
+
+Validation runs before claiming an answer, and may synchronously call external
+code. Admission therefore checks the Entry and current response again after
+validation returns. A peer admitted during validation wins; the outer call cannot
+write a second response or publish against a retired/replaced Entry. Successful
+write completion remains delivery evidence, not native resolution.

@@ -10,6 +10,20 @@ import tempfile
 
 TLC_SHA256 = "d15655eeaff4b3f7b3d65c46b838bc0f35d131b2ef4b1e473689b62c98d4726f"
 CASES = [
+    ('InteractionReplyOwner', None),
+    ('InteractionReplyOwner-Responding', None),
+    ('InteractionReplyOwner-Success', None),
+    ('InteractionReplyOwner-Validation', None),
+    ('InteractionReplyOwner-Replace', None),
+    ('InteractionReplyOwner-EntryOnly', 'CurrentState'),
+    ('InteractionReplyOwner-TextToken', 'CurrentState'),
+    ('InteractionReplyOwner-Duplicate', 'SingleAdmission'),
+    ('InteractionReplyOwner-PublishRetired', 'PublicationOwner'),
+    ('InteractionReplyOwner-Swallow', 'CallerOutcome'),
+    ('InteractionReplyOwner-NoValidation', 'temporal:ValidationProgress'),
+    ('InteractionReplyOwner-NoWriter', 'temporal:WriterProgress'),
+
+
     ('HostScopedIdentity', None),
     ('HostScopedIdentity-Distinct', None),
     ('HostScopedIdentity-Opaque', None),
