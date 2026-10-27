@@ -1,7 +1,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { queryGitIdentityBroker } from './git-identity-ipc.js';
@@ -50,6 +50,7 @@ export function parseGitInvocation(args: string[]) {
   return { prefix, command: args[i] ?? '', tail: args.slice(i + 1) };
 }
 const writes = new Set(['commit', 'merge', 'rebase', 'cherry-pick', 'revert', 'am', 'tag']);
+const reads = new Set(['fetch', 'pull', 'ls-remote', 'clone']);
 const network = new Set(['push', 'fetch', 'pull', 'ls-remote', 'clone', 'submodule']);
 function networkRepositories(command: string, args: string[]): string[] {
   const valued = new Set(['--upload-pack', '--exec', '--receive-pack', '--depth', '--deepen', '--shallow-since', '--shallow-exclude', '--negotiation-tip', '--server-option', '--filter', '--refmap', '--jobs', '-j', '-o', '--push-option', '--sort', '--exclude', '--template', '--reference', '--reference-if-able', '--origin', '--branch', '-b', '--separate-git-dir', '--config', '-c']);
@@ -218,25 +219,44 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
       }
       if (process.env.GIT_SSL_CERT || process.env.GIT_SSL_KEY) throw new Error('Git identity: conflicting client-certificate authentication');
     }
+    // This is an explicit deployment policy, never a retry after personal Git fails.
+    const serverRead = reads.has(command) && (process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS ?? '').split(',').includes(host);
     const env: NodeJS.ProcessEnv = { ...withoutTrace(process.env), OPENCRAFT_GIT_COMMAND_SESSION: reply.sessionId,
       GIT_COMMITTER_NAME: reply.identity.name, GIT_COMMITTER_EMAIL: reply.identity.email, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false' };
     env.GIT_TRACE_REDACT = '1';
-    releaseHome = await privateGitHome(env);
-    env.GIT_SSH_COMMAND = '/bin/false'; env.GIT_SSH = '/bin/false';
+    if (!serverRead) {
+      releaseHome = await privateGitHome(env);
+      env.GIT_SSH_COMMAND = '/bin/false'; env.GIT_SSH = '/bin/false';
+    }
     delete env.GIT_SSL_CERT; delete env.GIT_SSL_KEY; delete env.GIT_SSL_CERT_PASSWORD_PROTECTED;
     if (writes.has(command) || command === 'pull') {
       if (!preserveAuthor(command, tail) && !pullRebase) { env.GIT_AUTHOR_NAME = reply.identity.name; env.GIT_AUTHOR_EMAIL = reply.identity.email; }
     }
-    const parameters: Array<[string, string]> = [['credential.helper', ''], ['credential.username', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']];
-    for (const [url, https] of httpsUrls) if (https && url !== https && rawUrls.has(url))
-      parameters.push([`url.${https}.insteadOf`, url]);
-    // URL-specific headers/cookies can override the global reset; clear every inherited scope.
-    for (const key of (await queryGit('config', '--name-only', '--get-regexp', '^(http\\..*\\.(extraheader|cookiefile|emptyauth)|credential\\..*\\.username)$').catch(() => '')).split('\n').filter(Boolean)) parameters.push([key, '']);
+    const parameters: Array<[string, string]> = [];
     const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
-    parameters.push(['credential.helper', `!${shellQuote(process.execPath)} ${shellQuote(resolve(process.argv[1]!))} --opencraft-credential-helper`]);
+    if (serverRead) {
+      for (const [url, https] of httpsUrls) {
+        const ssh = `git@${host}:${new URL(https!).pathname.slice(1)}`;
+        if (personalHttpsRemote(ssh, host) !== https) throw new Error('Git identity: server read requires a canonical repository path');
+        if (url === https) parameters.push([`url.${ssh}.insteadOf`, url]);
+      }
+    } else {
+      parameters.push(['credential.helper', ''], ['credential.username', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']);
+      for (const [url, https] of httpsUrls) if (https && url !== https && rawUrls.has(url))
+        parameters.push([`url.${https}.insteadOf`, url]);
+      // URL-specific headers/cookies can override the global reset; clear every inherited scope.
+      for (const key of (await queryGit('config', '--name-only', '--get-regexp', '^(http\\..*\\.(extraheader|cookiefile|emptyauth)|credential\\..*\\.username)$').catch(() => '')).split('\n').filter(Boolean)) parameters.push([key, '']);
+      parameters.push(['credential.helper', `!${shellQuote(process.execPath)} ${shellQuote(resolve(process.argv[1]!))} --opencraft-credential-helper`]);
+    }
     if (reply.signing) {
-      env.SSH_AUTH_SOCK = reply.signing.socket;
-      parameters.push(['gpg.format', 'ssh'], ['gpg.ssh.program', 'ssh-keygen'], ['user.signingkey', `key::${reply.signing.publicKey}`], ['commit.gpgsign', 'true'], ['tag.gpgsign', 'true']);
+      let signingProgram = 'ssh-keygen';
+      if (serverRead) {
+        // Pull can create a personal signed merge while SSH transport retains
+        // the server's original agent. The broker removes this command directory.
+        signingProgram = join(dirname(reply.signing.socket), 'git-signing-command');
+        await writeFile(signingProgram, `#!/bin/sh\nSSH_AUTH_SOCK=${shellQuote(reply.signing.socket)} exec ssh-keygen "$@"\n`, { mode: 0o700, flag: 'wx' });
+      } else env.SSH_AUTH_SOCK = reply.signing.socket;
+      parameters.push(['gpg.format', 'ssh'], ['gpg.ssh.program', signingProgram], ['user.signingkey', `key::${reply.signing.publicKey}`], ['commit.gpgsign', 'true'], ['tag.gpgsign', 'true']);
     } else parameters.push(['commit.gpgsign', 'false'], ['tag.gpgsign', 'false']);
     env.GIT_CONFIG_PARAMETERS = `${process.env.GIT_CONFIG_PARAMETERS ?? ''} ${parameters.map(([key, value]) => gitConfigParameter(key, value)).join(' ')}`.trim();
     return await run(env);
