@@ -5,7 +5,7 @@ const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "pl
 const source = `
 import React from 'react';
 import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
-import {SettingsPanel,SettingsGroup,SettingsRow,SettingsSection,SettingsTextInput,SettingsActions} from '/packages/extension-react/src/index.ts';
+import {SettingsPanel,SettingsGroup,SettingsRow,SettingsSection,SettingsTextInput,SettingsActions,SettingsButton} from '/packages/extension-react/src/index.ts';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
 import {buildOpenCraftThemeCssProperties} from '/packages/design-system/src/theme-engine.ts';
 import '/apps/workbench-web/src/styles/app.scss';
@@ -30,11 +30,15 @@ function Demo(){
  </SettingsPanel>
  </section></AppShell>;
 }
-createRoot(document.getElementById('root')).render(<Demo/>);`;
+function ScrollDemo(){return <div style={{height:'100dvh',display:'flex',minHeight:0}}><div className="settings-page__viewport"><div className="settings-page__content"><SettingsPanel title="Long settings">
+ <SettingsSection title="Fields"><SettingsGroup>{Array.from({length:30},(_,i)=><SettingsRow key={i} label={'Field '+i}><SettingsTextInput aria-label={'Field '+i}/></SettingsRow>)}</SettingsGroup></SettingsSection>
+ <SettingsActions><SettingsButton onClick={()=>{window.saved=true}}>Save changes</SettingsButton></SettingsActions>
+ </SettingsPanel></div></div></div>;}
+createRoot(document.getElementById('root')).render(location.search ? <ScrollDemo/> : <Demo/>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", server: { host: "127.0.0.1", port: 0 }, plugins: [{
   name: "settings-navigation-smoke", resolveId: id => id === "/probe.tsx" ? id : null, load: id => id === "/probe.tsx" ? source : null,
   configureServer(server) { server.middlewares.use((request, response, next) => {
-    if (request.url !== "/") return next();
+    if (request.url !== "/" && request.url !== "/?scroll") return next();
     response.setHeader("content-type", "text/html");
     response.end('<div id="root"></div><script type="module" src="/probe.tsx"></script>');
   }); },
@@ -82,6 +86,22 @@ try {
     }
     assert.equal(metrics.plainInset, '0px', 'explicit plain group stays flush');
     assert.equal(metrics.formInset, '0px', 'explicit compact form stays flush');
+  }
+  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as {port:number}).port}/?scroll`);
+  await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor();
+  if (process.env.OPENCRAFT_SETTINGS_SCROLL_NEGATIVE_CONTROL) await page.addStyleTag({content:'.settings-panel__body { overscroll-behavior: contain; }'});
+  for (const width of [390,1280]) {
+    await page.setViewportSize({width,height:600});
+    const scroller=page.locator('.settings-page__viewport');
+    await page.mouse.move(width/2,300);
+    for (let attempt=0;attempt<10;attempt++) {
+      await page.mouse.wheel(0,1200); await page.waitForTimeout(50);
+      if (await scroller.evaluate(el=>el.scrollTop+el.clientHeight>=el.scrollHeight-2)) break;
+    }
+    assert.equal(await scroller.evaluate(el=>el.scrollTop>0 && el.scrollTop+el.clientHeight>=el.scrollHeight-2),true,'wheel over an unbounded SettingsPanel must scroll its document viewport to the bottom');
+    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    assert.equal(await page.evaluate(()=>(window as any).saved),true);
+    await scroller.evaluate(el=>{el.scrollTop=0;});
   }
   assert.deepEqual(errors, []);
   console.log("Settings shell passed: page and utility card insets, stacked gaps, plain/form opt-outs, retained draft across narrow/wide themes.");

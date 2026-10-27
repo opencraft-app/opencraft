@@ -31,7 +31,9 @@
   h2 { margin: 0; font: var(--typography-panel-title-font); text-wrap: balance; letter-spacing: var(--typography-panel-title-tracking); }
 }
 .settings-panel__actions { display: flex; align-items: center; }
-.settings-panel__body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: calc(var(--spacing) * 4) var(--padding-token-settings-panel); overscroll-behavior: contain; }
+// Document routes own scrolling when this body grows with its content.
+// Do not contain wheel input in a body that has no scroll range.
+.settings-panel__body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: calc(var(--spacing) * 4) var(--padding-token-settings-panel); overscroll-behavior: auto; }
 .settings-panel__body > .settings-control-section:not(:first-child) { margin-block-start: var(--gap-token-settings-sections); }
 .settings-panel__footer {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;

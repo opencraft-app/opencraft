@@ -317,3 +317,8 @@ SettingsPanel body owns top/bottom breathing room and outer gutters. Direct chil
 sections retain their section gap even when a notice or action group precedes
 them; adjacency to another section is not required. Actions below a card retain
 the shared action gap. These spaces remain independent of card row insets.
+
+SettingsPanel body allows scroll chaining when embedded in a Settings document.
+A body that fits its content must not consume wheel input needed by the outer
+Settings viewport. Utility modals retain their bounded, independently scrolling
+body; their modal owner controls background interaction.
