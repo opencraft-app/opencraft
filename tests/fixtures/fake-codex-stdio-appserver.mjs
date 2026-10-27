@@ -12,6 +12,7 @@ const threadPaths = new Map();
 const methodCounts = {};
 const history = new Map();
 const acceptedInputs = [];
+const permissionRequests = [];
 const testTools = new Map();
 const toolResults = [];
 const deferredSteerHistory = new Map();
@@ -32,6 +33,8 @@ function readThread(message) {
 }
 input.on("line", line => {
   const message = JSON.parse(line);
+  if (typeof message.params?.permissions === "string") permissionRequests.push({ method: message.method, params: message.params });
+  if (message.method === "test/readPermissionRequests") { send({ id: message.id, result: { data: permissionRequests } }); return; }
   if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
   if (message.method === "test/readMethodCounts") { send({ id: message.id, result: methodCounts }); return; }
   if (message.method === undefined && testTools.has(String(message.id))) {
