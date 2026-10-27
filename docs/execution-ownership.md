@@ -811,3 +811,12 @@ the wire nonce before native admission. Pi stores the first nonce in its native
 queue; edits and duplicates preserve it. DSH echoes it only after the new native
 queue admission path. Older Hosts or historical receipts without matching
 admission evidence stay unknown until proven, and never inherit the current user.
+
+### 原生交互来源失效
+
+订阅者权限和原生请求路由可用性分别校验。共享快照的全局 `canRespond` 表示当前订阅
+具备答复入口；单条请求的可选 `canRespond=false` 表示来源连接或 generation 已失效。
+Codex native 连接失败/关闭、单代 lost 和 DSH runtime unavailable 会同步撤销该请求的
+答复权并广播，保留原 pending/responding 状态而不伪造终结。通道重新 open 不恢复旧
+请求；只有原生重新投递当前请求并建立有效路由才恢复其答复权。答复裁决前及同步
+观察者发布后再次检查来源可用性，旧请求不能因页面仍在线而写入新引擎连接。

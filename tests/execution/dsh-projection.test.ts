@@ -250,3 +250,11 @@ test("shared DSH admission validates before claiming and broadcasts one native r
   assert.equal(writes, 1); finish(); await first;
   assert.equal(bridge.shared.snapshot("thread", true).requests.length, 0); bridge.close();
 });
+
+test("source loss during a DSH context lookup cannot revive an obsolete native request", async () => {
+  let release!: () => void;
+  const bridge = new DshInteractions({ respond: async () => ({ accepted: true }) },
+    async () => { await new Promise<void>(resolve => { release = resolve; }); return { turnId: "turn" }; }, () => {});
+  const receiving = bridge.receive(question); bridge.markSourceUnavailable(); release(); await receiving;
+  assert.equal(bridge.shared.snapshot("s", true).requests.length, 0); bridge.close();
+});

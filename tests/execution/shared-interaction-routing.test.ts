@@ -68,3 +68,14 @@ test("a pre-write response failure preserves a shared unconfirmed wait", async t
   await f.rpc("b", "thread/resume", { threadId: "fixture-thread-1" });
   assert.equal(f.snapshot("b").requests[0].state, "unconfirmed");
 });
+
+test("native failure disables every shared source until an actual request replay", async t => {
+  const f = await fixture(t); await f.init("a"); await f.rpc("a", "thread/start", { cwd: f.root, testNoServerRequest: true });
+  f.emit(); const request = f.snapshot("a").requests[0];
+  (f.adapter as any).publishStatus({ state: "failed" });
+  assert.equal(f.snapshot("a").requests[0].canRespond, false);
+  (f.adapter as any).publishStatus({ state: "open" });
+  const reply = await f.rpc("a", SHARED_INTERACTIONS_RESPOND, { threadId: "fixture-thread-1", interactionId: request.id, submissionId: "stale", result: { decision: "accept" } });
+  assert.equal(reply.error.code, -32083); assert.equal(f.snapshot("a").requests[0].canRespond, false);
+  f.emit(); assert.equal(f.snapshot("a").requests[0].id, request.id); assert.equal(f.snapshot("a").requests[0].canRespond, true);
+});

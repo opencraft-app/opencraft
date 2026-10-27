@@ -563,6 +563,7 @@ export class DshAppServerAdapter {
   async close(): Promise<void> { this.admission?.failAll(new Error("Local host closed")); this.abort.abort(); this.presentation.close(); this.interactions.close(); this.liveTools.clear(); this.latestTurns.clear(); this.sinks.clear(); await this.transcriptCache?.close(); }
 
   engineUnavailable(error: Error): void {
+    this.interactions.markSourceUnavailable();
     this.recovery?.lost();
     this.historyEpoch = randomUUID(); // Native recovery invalidates volatile projection/control state.
     this.admission?.failAll(error);
