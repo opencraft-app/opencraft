@@ -52,6 +52,77 @@ test("601 native Turns: tail and older pages are lossless; warm hit performs no 
   assert.equal((await stat(join(f.cache.directory, `${id}.turns.jsonl`))).mode & 0o777, 0o600);
 });
 
+test("ascending Turn pages use the same bounded transcript index", async t => {
+  const f = await fixture(t, 25);
+  await f.cache.read(id);
+  const first = await f.cache.page(id, null, 4, undefined, "full", "asc");
+  assert.deepEqual(first.data.map(turn => turn.id), ["turn-0", "turn-1", "turn-2", "turn-3"]);
+  assert.match(first.nextCursor!, /^transcript-asc:/);
+  const next = await f.cache.page(id, first.nextCursor, 4, undefined, "full", "asc");
+  assert.deepEqual(next.data.map(turn => turn.id), ["turn-4", "turn-5", "turn-6", "turn-7"]);
+});
+
+test("aborted cache hydration does not wait for a prior native read", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-transcript-read-cancel-"));
+  const controller = new AbortController();
+  let release!: () => void;
+  const stalled = new Promise<void>(resolve => { release = resolve; });
+  const port: NativeTranscriptPort = {
+    async readThread(threadId) { return { id: threadId, path: "/missing", turns: [] }; },
+    async listTurns() { await stalled; return { data: [], nextCursor: null }; },
+  };
+  const cache = new TranscriptReadCache(root, port);
+  t.after(async () => { release(); await cache.close(); await rm(root, { recursive: true, force: true }); });
+  const pending = cache.page("cancelled", null, 10, undefined, "full", "desc", controller.signal);
+  controller.abort(new Error("reader closed"));
+  await assert.rejects(pending, /reader closed|cancelled/);
+});
+
+test("cancelling a queued reader preserves its predecessor's serialization barrier", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-transcript-queue-cancel-"));
+  let release!: () => void, entered!: () => void, calls = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const cache = new TranscriptReadCache(root, {
+    async readThread(id) { return { id, turns: [] }; },
+    async listTurns() { if (++calls === 1) { entered(); await gate; } return { data: [], nextCursor: null }; },
+  });
+  t.after(async () => { release(); await cache.close(); await rm(root, { recursive: true, force: true }); });
+  const first = cache.page("same", null);
+  await ready;
+  const controller = new AbortController();
+  const cancelled = cache.page("same", null, 10, undefined, "full", "desc", controller.signal);
+  controller.abort(new Error("queued reader left"));
+  await assert.rejects(cancelled, /queued reader left/);
+  const third = cache.page("same", null);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1, "a cancelled waiter must not let the next writer overtake its predecessor");
+  release(); await Promise.all([first, third]); assert.equal(calls, 2);
+});
+
+test("cancelling an in-flight native read lets its successor finish and fences the late reply", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-transcript-flight-cancel-"));
+  let release!: () => void, entered!: () => void, calls = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const cache = new TranscriptReadCache(root, {
+    async readThread(id) { return { id, turns: [] }; },
+    async listTurns() {
+      if (++calls === 1) { entered(); await gate; return { data: [turn(1)], nextCursor: null }; }
+      return { data: [turn(2)], nextCursor: null };
+    },
+  });
+  t.after(async () => { release(); await cache.close(); await rm(root, { recursive: true, force: true }); });
+  const controller = new AbortController();
+  const first = cache.page("same", null, 10, undefined, "full", "desc", controller.signal);
+  await ready;
+  controller.abort(new Error("active reader left"));
+  await assert.rejects(first, /active reader left/);
+  assert.equal((await cache.page("same", null)).data[0]!.id, "turn-2");
+  release(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await cache.page("same", null)).data[0]!.id, "turn-2");
+});
+
 test("schema change and deleting the whole cache directory both reconstruct native content", async t => {
   const f = await fixture(t, 20);
   const expected = (await f.cache.read(id)).initialTurnsPage.data;

@@ -7,6 +7,7 @@ import type { AppServerThread, AppServerTurn, ThreadTurnsListResponse } from "@o
 import { canonicalRolloutPath, readRolloutIncrement, type NativeRolloutSource } from "./codex-rollout-reader.js";
 
 export const TRANSCRIPT_PROJECTION_SCHEMA = 1;
+const DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS = 30_000;
 const OUTPUT_FIELDS = ["aggregatedOutput", "output", "result", "structuredResult", "contentItems", "results"] as const;
 const SQL = `
 CREATE TABLE opencraft_cache_meta(thread_id TEXT PRIMARY KEY,projection_schema_version INTEGER NOT NULL,
@@ -64,11 +65,30 @@ export interface NativeTranscriptPort {
   nativeHome?: string;
   resolveSource?(threadId: string, path: string): Promise<NativeRolloutSource>;
   observeSnapshotSource?(threadId: string): Promise<NativeTranscriptSnapshotSource | null>;
-  readThread(threadId: string): Promise<AppServerThread>;
-  listTurns(threadId: string, cursor: string | null, limit: number): Promise<NativePage>;
+  readThread(threadId: string, signal?: AbortSignal): Promise<AppServerThread>;
+  listTurns(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection?: "asc" | "desc"): Promise<NativePage>;
 }
 function object(value: unknown): Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  throw reason instanceof Error ? reason : new Error("Transcript read cancelled");
+}
+async function awaitWithAbort<T>(value: PromiseLike<T>, signal?: AbortSignal): Promise<T> {
+  // Observe a rejected operation even when cancellation won before this call.
+  const operation = Promise.resolve(value);
+  void operation.catch(() => {});
+  throwIfAborted(signal);
+  if (!signal) return await operation;
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled"));
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try { return await Promise.race([operation, cancelled]); }
+  finally { signal.removeEventListener("abort", abort); }
 }
 function stamp(path: string, withCtime = true): { identity: string; watermark: string; position: number } {
   const s = statSync(path, { bigint: true });
@@ -157,11 +177,14 @@ export class TranscriptReadCache {
     const key = this.fileKey(threadId);
     return { turns: join(this.directory, `${key}.turns.jsonl`), blobs: join(this.directory, `${key}.blobs`) };
   }
-  private async serialize<T>(id: string, run: () => Promise<T>): Promise<T> {
+  private async serialize<T>(id: string, run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const prior = this.jobs.get(id);
-    const operation = (prior ?? Promise.resolve()).catch(() => {}).then(run);
+    // Cancellation ends a reader's wait, never the serialization barrier of
+    // its predecessor. Later writers must still queue behind actual cleanup.
+    const operation = (prior ?? Promise.resolve()).catch(() => {}).then(() => { throwIfAborted(signal); return run(); });
     this.jobs.set(id, operation);
-    try { return await operation; } finally { if (this.jobs.get(id) === operation) this.jobs.delete(id); }
+    void operation.finally(() => { if (this.jobs.get(id) === operation) this.jobs.delete(id); }).catch(() => {});
+    return awaitWithAbort(operation, signal);
   }
   private drop(threadId: string): void {
     const db = this.database(), paths = this.paths(threadId);
@@ -181,60 +204,70 @@ export class TranscriptReadCache {
   }
 
   /** Native metadata stays live; it is never served from this cache. */
-  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full"): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full", signal?: AbortSignal): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+    const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
-    const thread = await this.port.readThread(threadId);
+    const thread = await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
+    throwIfAborted(effectiveSignal);
     if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
     onValidated?.();
-    return { thread, initialTurnsPage: await this.page(threadId, null, limit, thread, itemsView) };
+    return { thread, initialTurnsPage: await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal) };
   }
-  page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full"): Promise<ThreadTurnsListResponse> {
+  page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
+    if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
+    const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
-    const ensureCurrent = () => { if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated"); };
+    const ensureCurrent = () => { throwIfAborted(effectiveSignal); if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated"); };
     return this.serialize(threadId, async () => {
       ensureCurrent();
-      const thread = metadata ?? await this.port.readThread(threadId);
+      const thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
       ensureCurrent();
       if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
-      const snapshotSource = await this.port.observeSnapshotSource?.(threadId);
+      const snapshotSource = await awaitWithAbort(Promise.resolve(this.port.observeSnapshotSource?.(threadId)), effectiveSignal);
+      ensureCurrent();
       if (!snapshotSource && (typeof thread.path !== "string" || !existsSync(thread.path))) {
-        if (cursor?.startsWith("transcript:")) throw new InvalidTranscriptCursor();
-        return this.port.listTurns(threadId, cursor, limit);
+        if (cursor?.startsWith("transcript:") || cursor?.startsWith("transcript-asc:")) throw new InvalidTranscriptCursor();
+        return awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
       }
-      const source = snapshotSource ? undefined : this.port.resolveSource ? await this.port.resolveSource(threadId, thread.path!)
+      const source = snapshotSource ? undefined : this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId, thread.path!), effectiveSignal)
         : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
       // Cache hits must obey the same path boundary as incremental reads.
-      const path = snapshotSource?.path ?? await canonicalRolloutPath(thread.path!, source!.nativeHome);
+      const path = snapshotSource?.path ?? await awaitWithAbort(canonicalRolloutPath(thread.path!, source!.nativeHome), effectiveSignal);
       ensureCurrent();
       for (let attempt = 0; attempt < 2; attempt++) {
-        const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined);
+        const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal);
         ensureCurrent();
         let page: ThreadTurnsListResponse;
         try {
-          page = this.readPage(threadId, cursor, limit, itemsView);
+          page = this.readPage(threadId, cursor, limit, itemsView, sortDirection);
         }
         catch (error) {
           if (error instanceof InvalidTranscriptCursor || attempt === 1) throw error;
           this.drop(threadId); continue;
         }
-        await (snapshotSource ?? source)!.validate(); ensureCurrent();
+        await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
         this.measured?.({ ...observed, ms: performance.now() - started });
         return page;
       }
       throw new Error("Transcript rebuild failed");
-    });
+    }, effectiveSignal);
   }
-  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded"): ThreadTurnsListResponse {
+  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded", sortDirection: "asc" | "desc"): ThreadTurnsListResponse {
     const db = this.database(), meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId)! as Row;
     let before = Number.MAX_SAFE_INTEGER;
+    let after = -Number.MAX_SAFE_INTEGER;
     if (cursor !== null) {
-      const parsed = /^transcript:([^:]+):(-?\d+)$/.exec(cursor);
-      if (!parsed || parsed[1] !== meta.epoch || !Number.isSafeInteger(Number(parsed[2]))) throw new InvalidTranscriptCursor();
-      before = Number(parsed[2]);
+      const parsed = /^(transcript|transcript-asc):([^:]+):(-?\d+)$/.exec(cursor);
+      if (!parsed || parsed[2] !== meta.epoch || !Number.isSafeInteger(Number(parsed[3]))) throw new InvalidTranscriptCursor();
+      if ((sortDirection === "asc") !== (parsed[1] === "transcript-asc")) throw new InvalidTranscriptCursor();
+      if (sortDirection === "asc") after = Number(parsed[3]);
+      else before = Number(parsed[3]);
     }
-    const rows = db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq<? ORDER BY turn_seq DESC LIMIT ?").all(threadId, before, limit + 1) as Row[];
+    const rows = (sortDirection === "asc"
+      ? db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq>? ORDER BY turn_seq ASC LIMIT ?").all(threadId, after, limit + 1)
+      : db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq<? ORDER BY turn_seq DESC LIMIT ?").all(threadId, before, limit + 1)) as Row[];
     const fd = itemsView === "full" ? openSync(this.paths(threadId).turns, "r") : null;
     try {
       const fileSize = fd === null ? 0 : fstatSync(fd).size;
@@ -265,7 +298,7 @@ export class TranscriptReadCache {
           return restored;
         }) };
       });
-      return { data, nextCursor: rows.length > limit ? `transcript:${meta.epoch}:${rows[limit - 1]!.turn_seq}` : null,
+      return { data, nextCursor: rows.length > limit ? `${sortDirection === "asc" ? "transcript-asc" : "transcript"}:${meta.epoch}:${rows[limit - 1]!.turn_seq}` : null,
         itemsPaginationByTurnId: {} };
     } finally { if (fd !== null) closeSync(fd); }
   }
@@ -290,10 +323,10 @@ export class TranscriptReadCache {
     for (const blob of old) if (!db.prepare("SELECT 1 FROM opencraft_cache_blobs WHERE thread_id=? AND blob_sha256=? LIMIT 1").get(threadId, blob.blob_sha256))
       rmSync(join(paths.blobs, `${blob.blob_sha256}.blob`), { force: true });
   }
-  private async nativePage(threadId: string, cursor: string | null): Promise<NativePage> {
+  private async nativePage(threadId: string, cursor: string | null, signal?: AbortSignal): Promise<NativePage> {
     for (let limit = 100; ; limit = Math.max(1, Math.floor(limit / 2))) {
       try {
-        const page = await this.port.listTurns(threadId, cursor, limit);
+        const page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, signal, "desc"), signal);
         if (!Array.isArray(page.data)) throw new Error("Invalid native transcript page");
         return page;
       } catch (error) {
@@ -308,13 +341,14 @@ export class TranscriptReadCache {
    * keeps its ordinal and epoch across appended Turns and the live tail's
    * updates, so an older-page cursor remains valid while execution continues.
    */
-  private async reconcileSnapshot(threadId: string, source: NativeTranscriptSnapshotSource, watermark: string, meta: Row | undefined, rebuild: boolean): Promise<{ kind: "rebuild" | "increment"; nativeBytes: number }> {
+  private async reconcileSnapshot(threadId: string, source: NativeTranscriptSnapshotSource, watermark: string, meta: Row | undefined, rebuild: boolean, signal?: AbortSignal): Promise<{ kind: "rebuild" | "increment"; nativeBytes: number }> {
     const db = this.database(), turns: AppServerTurn[] = [], cursors = new Set<string | null>();
     let cursor: string | null = null;
     do {
+      throwIfAborted(signal);
       if (cursors.has(cursor)) throw new Error("Native transcript repeated cursor");
       cursors.add(cursor);
-      const page = await this.nativePage(threadId, cursor);
+      const page = await this.nativePage(threadId, cursor, signal);
       turns.push(...page.data); cursor = page.nextCursor;
     } while (cursor !== null);
     turns.reverse();
@@ -346,7 +380,8 @@ export class TranscriptReadCache {
     if (!existsSync(this.paths(threadId).turns)) writeFileSync(this.paths(threadId).turns, "", { mode: 0o600 });
     return { kind: rebuild ? "rebuild" : "increment", nativeBytes: 0 };
   }
-  private async reconcile(threadId: string, path: string, source: NativeRolloutSource | undefined, snapshotSource?: NativeTranscriptSnapshotSource): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
+  private async reconcile(threadId: string, path: string, source: NativeRolloutSource | undefined, snapshotSource?: NativeTranscriptSnapshotSource, signal?: AbortSignal): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
+    throwIfAborted(signal);
     const db = this.database(), native = snapshotSource ? { ...snapshotSource } : stamp(path);
     native.watermark = JSON.stringify([(snapshotSource ?? source)!.key, native.watermark]);
     let meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId) as Row | undefined;
@@ -360,12 +395,13 @@ export class TranscriptReadCache {
       || !sameSource
       || meta.source_identity !== native.identity || !snapshotSource && meta.source_cursor > native.position
       || !existsSync(this.paths(threadId).turns);
-    if (snapshotSource) return this.reconcileSnapshot(threadId, snapshotSource, native.watermark, meta, rebuild);
+    if (snapshotSource) return this.reconcileSnapshot(threadId, snapshotSource, native.watermark, meta, rebuild, signal);
     // Same-size edits cannot be explained by an append cursor.
     if (meta && meta.source_cursor === native.position && meta.native_watermark !== native.watermark) rebuild = true;
     let cursor = rebuild ? 0 : Number(meta!.source_cursor), identity: string | null = rebuild ? null : meta!.source_identity;
     const dirty = new Set<string>(); let bytes = 0;
     while (!snapshotSource && cursor < native.position) {
+      throwIfAborted(signal);
       const read = await readRolloutIncrement({ path, nativeHome: source!.nativeHome, source, cursor, identity,
         select: head => /"type"\s*:\s*"(?:event_msg|turn_context|compacted)"/.test(head),
         retain: (row: any) => {
@@ -398,7 +434,7 @@ export class TranscriptReadCache {
     do {
       if (seen.has(nativeCursor)) throw new Error("Native transcript repeated cursor");
       seen.add(nativeCursor);
-      const page = await this.nativePage(threadId, nativeCursor);
+      const page = await this.nativePage(threadId, nativeCursor, signal);
       transaction(db, () => { for (const turn of page.data) {
         if (rebuild) this.storeTurn(threadId, turn, -descendingSeq++);
         else {
@@ -413,7 +449,7 @@ export class TranscriptReadCache {
     if (!rebuild) {
       // A missing boundary implies a native rewrite. Start fresh next read and
       // never publish this suffix against stale older rows.
-      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path, source, snapshotSource); }
+      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path, source, snapshotSource, signal); }
       let next = Number(max.seq ?? -1) + 1;
       transaction(db, () => { for (const turn of fresh.reverse()) {
         const row = db.prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId, turn.id) as Row | undefined;

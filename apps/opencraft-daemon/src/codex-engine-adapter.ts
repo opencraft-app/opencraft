@@ -114,6 +114,8 @@ interface PendingServerRequest {
 const MAX_PENDING_SERVER_REQUESTS = 256;
 const CAPACITY_RETRY_BASE_MS = 1_000;
 const CAPACITY_RETRY_MAX_MS = 120_000;
+const DEFAULT_HISTORY_READ_TIMEOUT_MS = 30_000;
+const MAX_HISTORY_READ_TIMEOUT_MS = 120_000;
 
 export function capacityRetryDelayMs(attempt: number): number {
   return Math.min(CAPACITY_RETRY_BASE_MS * 2 ** Math.min(attempt, 7), CAPACITY_RETRY_MAX_MS);
@@ -185,6 +187,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly spawnAppServer?: (input: { readonly args: readonly string[]; readonly cwd: string; readonly env: NodeJS.ProcessEnv }) => ChildProcessWithoutNullStreams;
+  /** Read-only history requests are independently cancellable from execution. */
+  readonly historyReadTimeoutMs?: number;
 }
 
 export interface RemoteCodexEngineOptions extends SharedCodexRoutingOptions {
@@ -344,6 +348,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
   private transcriptCache: TranscriptReadCache | null = null;
+  private cachedHistoryInFlight = 0;
+  private readonly cachedHistoryReads = new Map<string, Set<AbortController>>();
   private readonly nativeTransport: DuplexTransport | null;
   private releaseOverlays: (() => void) | null = null;
   private releaseWriter: (() => void) | null = null;
@@ -537,11 +543,11 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.transcriptCache = new TranscriptReadCache(dataRoot, {
       get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
       resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
-      readThread: async threadId => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread as AppServerThread,
-      listTurns: async (threadId, cursor, limit) => {
+      readThread: async (threadId, signal) => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread as AppServerThread,
+      listTurns: async (threadId, cursor, limit, signal, sortDirection = "desc") => {
         const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
-          threadId, cursor, limit, itemsView, sortDirection: "desc",
-        }) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
+          threadId, cursor, limit, itemsView, sortDirection,
+        }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
         let page;
         try { page = await request("full"); }
         catch (error) {
@@ -556,7 +562,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             let response: any;
             for (;;) {
               try { response = await this.requestPhysical("thread/items/list", { threadId, turnId: turn.id,
-                cursor: itemCursor, limit: budget, sortDirection: "asc" }); break; }
+                cursor: itemCursor, limit: budget, sortDirection: "asc" }, 30_000, signal); break; }
               catch (error) {
                 if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
                 budget = Math.max(1, Math.floor(budget / 2));
@@ -845,27 +851,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     const id = responseId(message.id);
     const historyParams = record(message.params);
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
-    const cachedPage = message.method === "thread/turns/list" && historyParams.sortDirection === "desc"
-      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:"));
+    const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
+      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
     if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
-      const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
-      try {
-        const limit = cachedRead ? record(historyParams.initialTurnsPage).limit : historyParams.limit;
-        const result = cachedRead ? await this.transcriptCache.read(threadId, typeof limit === "number" ? limit : 10, () => {
-          if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
-            this.watchHistory(threadId, clientId);
-        }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full")
-          : await this.transcriptCache.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full");
-        if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
-        if (historyParams.watch === true) this.watchHistory(threadId, clientId);
-        const projected = projectThreadMessageResult(this.projectSender, string(message.method), historyParams, result);
-        this.emit({ id, result: this.messageAttachments
-          ? projectThreadAttachmentResult(this.messageAttachments, string(message.method), historyParams, projected) : projected }, clientId, string(message.method));
-      } catch (error) {
-        if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
-          this.emit({ id, error: { code: -32000, message: errorMessage(error) } }, clientId);
-      }
+      // Cache hydration has its own reply; it must not retain the frame send lane.
+      void this.serveCachedHistory(clientId, id, string(message.method), historyParams, cachedRead);
       return;
     }
     if (id !== null && message.method === CODEX_MAINTENANCE_READ) {
@@ -1199,6 +1190,44 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.options.kind !== "remote") await this.writePhysical(message);
   }
 
+  private async serveCachedHistory(clientId: string, id: string | number, method: string, historyParams: RpcRecord, cachedRead: boolean): Promise<void> {
+    if (this.cachedHistoryInFlight >= 64) {
+      this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
+        data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+      return;
+    }
+    this.cachedHistoryInFlight++;
+    const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
+    const controller = new AbortController();
+    let reads = this.cachedHistoryReads.get(clientId);
+    if (!reads) { reads = new Set(); this.cachedHistoryReads.set(clientId, reads); }
+    reads.add(controller);
+    const configuredTimeout = this.options.kind === "local" ? this.options.historyReadTimeoutMs : undefined;
+    const timeoutMs = Math.max(1_000, Math.min(MAX_HISTORY_READ_TIMEOUT_MS, configuredTimeout ?? DEFAULT_HISTORY_READ_TIMEOUT_MS));
+    const timer = setTimeout(() => controller.abort(new Error("History read timed out; retry the read")), timeoutMs);
+    timer.unref?.();
+    try {
+      const limit = cachedRead ? record(historyParams.initialTurnsPage).limit : historyParams.limit;
+      const result = cachedRead ? await this.transcriptCache!.read(threadId, typeof limit === "number" ? limit : 10, () => {
+        if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+          this.watchHistory(threadId, clientId);
+      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal)
+        : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full",
+          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal);
+      if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
+      if (historyParams.watch === true) this.watchHistory(threadId, clientId);
+      const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
+      this.emit({ id, result: this.messageAttachments
+        ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected }, clientId, method);
+    } catch (error) {
+      if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
+        this.emit({ id, error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+    } finally {
+      clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);
+      if (reads.size === 0 && this.cachedHistoryReads.get(clientId) === reads) this.cachedHistoryReads.delete(clientId);
+    }
+  }
+
   subscribeMessage(listener: (frame: string) => void): () => void {
     if (this.coreBridge) return this.coreBridge.subscribeMessage(listener);
     this.listeners.add(listener); return () => this.listeners.delete(listener);
@@ -1212,6 +1241,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.coreBridge) return this.coreBridge.close();
     if (this.closeOperation !== null) return this.closeOperation;
+    for (const reads of this.cachedHistoryReads.values()) for (const read of reads) read.abort(new Error("Codex AppServer closed"));
+    this.cachedHistoryReads.clear();
     clearInterval(this.generationUsageTimer);
     for (const timer of this.generationReconciling.values()) if (timer) clearTimeout(timer);
     this.generationReconciling.clear();
@@ -1942,6 +1973,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
+    for (const read of this.cachedHistoryReads.get(clientId) ?? []) read.abort(new Error("History reader disconnected"));
+    this.cachedHistoryReads.delete(clientId);
     for (const [threadId, clients] of this.historyWatchers) {
       clients.delete(clientId);
       if (clients.size === 0) this.historyWatchers.delete(threadId);

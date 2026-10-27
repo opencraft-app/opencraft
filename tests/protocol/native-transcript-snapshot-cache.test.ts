@@ -1,17 +1,46 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { appendFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { observeNativeTranscriptFiles, TranscriptReadCache } from "@opencraft/native-history-node";
-import { createPiTranscriptCache } from "../../plugins/pi-engine/src/read-history.js";
+import { createPiTranscriptCache, readPiSnapshot } from "../../plugins/pi-engine/src/read-history.js";
 import { DshAppServerAdapter } from "../../apps/local-agent-host/src/dsh-appserver-adapter.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
 
 const turn = (n: number): AppServerTurn => ({ id: `turn-${n}`, status: "completed", items: [
   { id: `reply-${n}`, type: "agentMessage", text: `Answer ${n}` },
 ] });
+
+test("Pi cache builds a multi-page snapshot once per cancellable read", async t => {
+  const root = await mkdtemp(join(tmpdir(), "pi-multipage-cache-"));
+  await writeFile(join(root, "pi_many.sqlite"), "native source");
+  let reads = 0;
+  const cache = createPiTranscriptCache({ directory: root, dataDirectory: root,
+    async readThread(id) { return { id, turns: [] }; },
+    async readTurns(_id, signal) { reads++; assert.ok(signal); return Array.from({ length: 305 }, (_, n) => turn(n)); },
+  });
+  t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
+  assert.equal((await cache.read("pi_many")).initialTurnsPage.data[0]!.id, "turn-304");
+  assert.equal(reads, 1, "native pagination must reuse the same consistent SQLite snapshot");
+  assert.equal((await cache.page("pi_many", null, 5, undefined, "full", "asc")).data[0]!.id, "turn-0");
+  assert.equal(reads, 1);
+});
+
+test("Pi SQLite snapshot backup observes cancellation and removes its temporary directory", async t => {
+  const root = await mkdtemp(join(tmpdir(), "pi-snapshot-cancel-")), file = join(root, "source.sqlite"), cache = join(root, "cache");
+  const db = new DatabaseSync(file);
+  db.exec("CREATE TABLE filler(value BLOB); WITH RECURSIVE rows(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM rows WHERE n<4000) INSERT INTO filler SELECT zeroblob(4096) FROM rows");
+  db.close();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const controller = new AbortController();
+  const pending = readPiSnapshot(file, cache, controller.signal);
+  const timer = setTimeout(() => controller.abort(new Error("reader disconnected")), 1);
+  try { await assert.rejects(pending, /reader disconnected/); }
+  finally { clearTimeout(timer); }
+  assert.deepEqual(await readdir(cache), []);
+});
 
 test("Pi snapshot cache observes SQLite WAL commits, pages without snapshots on hits, and rebuilds disposable data", async t => {
   const root = await mkdtemp(join(tmpdir(), "pi-transcript-cache-"));

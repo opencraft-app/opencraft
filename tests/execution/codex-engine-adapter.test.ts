@@ -88,6 +88,31 @@ async function initializeClient(adapter: CodexEngineAdapter, frames: Array<Recor
   await waitFor(frames, frame => frame.id === `${clientId}:init`);
 }
 
+test("disconnect cancels a held cached history reader while the background Turn continues", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-reader-disconnect-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: object, clientId = "writer") => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: clientId }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer"); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create-held", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("start-held", "turn/start", { threadId, input: [{ type: "text", text: "continue" }] });
+    await request("pause-history", "test/pauseThreadReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "held-history", method: "thread/read", params: { threadId, initialTurnsPage: { limit: 10 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    assert.equal((adapter as any).cachedHistoryInFlight, 1);
+    await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "reader" }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((adapter as any).cachedHistoryInFlight, 0);
+    assert.equal((adapter as any).activeTurns.has(threadId), true);
+    await request("release-history", "test/pauseThreadReads", { paused: false });
+    assert.equal(frames.some(frame => frame.id === "held-history"), false);
+    await request("complete-held", "test/completeTurn", { threadId });
+    await waitFor(frames, frame => frame.method === "turn/completed" && (frame.params as any).threadId === threadId);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("model capacity failures continue with exponential backoff capped at 120 seconds", async () => {
   assert.deepEqual([0, 1, 2, 6, 7, 20].map(capacityRetryDelayMs), [1_000, 2_000, 4_000, 64_000, 120_000, 120_000]);
   const root = await mkdtemp(join(tmpdir(), "opencraft-capacity-retry-")), frames: Array<Record<string, unknown>> = [];

@@ -103,6 +103,7 @@ export class PiEngine {
   private readonly queueDrains = new Set<string>();
   private readonly queueOwners = new Map<string, EngineClient>();
   private readonly operations = new Map<string, Promise<unknown>>();
+  private readonly historyReaders = new Map<EngineClient, Set<AbortController>>();
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
@@ -113,7 +114,7 @@ export class PiEngine {
     this.transcriptCache = createPiTranscriptCache({
       dataDirectory: options.dataDirectory ?? options.directory, directory: options.directory,
       readThread: async id => this.thread(await this.session(id)) as any,
-      readTurns: async id => this.readHistory(await this.session(id)),
+      readTurns: async (id, signal) => this.readHistory(await this.session(id), signal),
     });
   }
   private compileInput(input: Value[], additionalContext: Value | null | undefined, cwd: string, model: Value) {
@@ -281,9 +282,9 @@ export class PiEngine {
       finally { session.starting = undefined; }
     })();
   }
-  private async readHistory(session: Session): Promise<PiTurn[]> {
+  private async readHistory(session: Session, signal?: AbortSignal): Promise<PiTurn[]> {
     if (session.ephemeral) return session.turns ?? [];
-    return projectPiSnapshot(session, await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts")));
+    return projectPiSnapshot(session, await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.dataDirectory ?? this.options.directory, "cache", "transcripts"), signal));
   }
   private async refresh(session: Session) { this.accept(session, await (await this.native(session)).snapshot()); return session.turns ?? []; }
   private accept(session: Session, snapshot: PiSnapshot) {
@@ -669,6 +670,19 @@ export class PiEngine {
       summary: String([...turn.items].reverse().find(item => item.type === "agentMessage")?.text ?? "").slice(-4096) };
   }
   request(method: string, params: Value, client: EngineClient): Promise<any> {
+    if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)) {
+      // Display hydration never owns the execution mutation lane. A slow
+      // SQLite snapshot must not delay Stop or another accepted input.
+      const controller = new AbortController();
+      let readers = this.historyReaders.get(client);
+      if (!readers) { readers = new Set(); this.historyReaders.set(client, readers); }
+      readers.add(controller);
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
+      return this.handle(method, params, client, undefined, signal).finally(() => {
+        readers.delete(controller);
+        if (!readers.size && this.historyReaders.get(client) === readers) this.historyReaders.delete(client);
+      });
+    }
     if (["turn/start", "turn/interrupt", "thread/archive", "thread/delete"].includes(method) && typeof params.threadId === "string")
       this.recovery?.handled(params.threadId, method === "turn/interrupt" ? "user_stop" : "user_input");
     // Schedule mutations must not wait behind the admission they need to cancel.
@@ -676,8 +690,9 @@ export class PiEngine {
       : typeof params.threadId === "string" ? params.threadId : method.startsWith("config/") ? "config" : undefined;
     return key === undefined ? this.handle(method, params, client) : this.serialize(key, () => this.handle(method, params, client));
   }
-  private async handle(method: string, params: Value, client: EngineClient, canAdmit?: () => boolean | Promise<boolean>): Promise<any> {
+  private async handle(method: string, params: Value, client: EngineClient, canAdmit?: () => boolean | Promise<boolean>, readSignal?: AbortSignal): Promise<any> {
     await this.load(); if (this.closed) throw new Error("Pi engine is closed");
+    readSignal?.throwIfAborted();
     if (method.startsWith("opencraft/orchestration/")) return this.orchestrationRequest(method, params, client);
     if (method === "opencraft/turn-recovery/read") return { recovery: this.recovery?.notice(params.threadId) ?? null };
     if (method.startsWith("opencraft/schedules/")) {
@@ -752,20 +767,20 @@ export class PiEngine {
     if (params.model && !String(params.model).startsWith("pi:")) throw new Error("This thread belongs to Pi; create a new thread to change engines");
     if (method === "thread/read") {
       if (params.initialTurnsPage) {
-        if (!session.ephemeral) return this.transcriptCache.read(session.id, params.initialTurnsPage.limit ?? 10);
-        const turns = await this.readHistory(session);
+        if (!session.ephemeral) return this.transcriptCache.read(session.id, params.initialTurnsPage.limit ?? 10, undefined, "full", readSignal);
+        const turns = await this.readHistory(session, readSignal);
         return { thread: this.thread(session), initialTurnsPage: { ...projectedTurnsPage(this.thread(session, turns), {
           threadId: session.id, limit: params.initialTurnsPage.limit ?? 10, sortDirection: "desc", itemsView: "full",
         }), itemsPaginationByTurnId: {} } };
       }
-      return { thread: this.thread(session, params.includeTurns ? await this.readHistory(session) : []) };
+      return { thread: this.thread(session, params.includeTurns ? await this.readHistory(session, readSignal) : []) };
     }
     if (method === "thread/turns/list" || method === "thread/items/list") {
-      if (method === "thread/turns/list" && !session.ephemeral && params.sortDirection !== "asc"
-        && (params.cursor == null || typeof params.cursor === "string" && params.cursor.startsWith("transcript:")))
+      if (method === "thread/turns/list" && !session.ephemeral
+        && (params.cursor == null || typeof params.cursor === "string" && (params.cursor.startsWith("transcript:") || params.cursor.startsWith("transcript-asc:"))))
         return this.transcriptCache.page(session.id, params.cursor ?? null, params.limit ?? 10,
-          undefined, params.itemsView === "notLoaded" ? "notLoaded" : "full");
-      const thread = this.thread(session, await this.readHistory(session));
+          undefined, params.itemsView === "notLoaded" ? "notLoaded" : "full", params.sortDirection === "asc" ? "asc" : "desc", readSignal);
+      const thread = this.thread(session, await this.readHistory(session, readSignal));
       return method === "thread/turns/list" ? { ...projectedTurnsPage(thread, { ...params, threadId: session.id }), itemsPaginationByTurnId: {} }
         : projectedItemsPage(thread, { ...params, threadId: session.id });
     }
@@ -954,9 +969,16 @@ export class PiEngine {
     throw new Error(`Pi does not support ${method}`);
   }
   private detach(session: Session) { session.lease?.abort(); session.lease = undefined; session.owner = undefined; }
-  disconnect(client: EngineClient) { for (const [id, owner] of this.queueOwners) if (owner === client) this.queueOwners.delete(id); for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
+  disconnect(client: EngineClient) {
+    for (const reader of this.historyReaders.get(client) ?? []) reader.abort(new Error("Pi history reader disconnected"));
+    this.historyReaders.delete(client);
+    for (const [id, owner] of this.queueOwners) if (owner === client) this.queueOwners.delete(id);
+    for (const session of this.sessions.values()) if (session.owner === client) this.detach(session);
+  }
   async close() {
     this.closed = true;
+    for (const readers of this.historyReaders.values()) for (const reader of readers) reader.abort(new Error("Pi engine is closed"));
+    this.historyReaders.clear();
     await this.recovery?.close();
     await this.scheduleService?.close();
     await Promise.allSettled(this.operations.values());

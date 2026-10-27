@@ -155,6 +155,23 @@ Pi/DSH 的 snapshot port 可能仍需读取完整原生逻辑快照，不声称�
 
 删缓存目录、索引损坏或正文/Blob 校验失败只能重建派生数据，不能修改或删除原生日志。归档或删除的缓存清理与迟到读取通过会话级失效代次协调；清理同时删除索引行及该会话的正文与 Blob。无可用文件来源的临时会话或原生 backend 保留原有只读协议兼容。回归入口为 [原生 snapshot 缓存](../tests/protocol/native-transcript-snapshot-cache.test.ts)、[Codex 缓存](../tests/protocol/transcript-read-cache.test.ts)及 [DSH 冷态来源定位](../tests/execution/dsh-thread-engine.test.mjs)；主服 Host 是否已加载这些能力仍须核对实际版本、进程与行为。
 
+### 历史读取的等待与取消
+
+`TranscriptReadCache` 的正序和倒序分页使用同一偏移索引，游标分别带方向与 epoch。
+没有缓存游标的兼容请求仍遵循原生协议；旧游标不能按新的偏移格式重新解释。
+冷缓存或 snapshot 水位变化仍可能需要完整投影，一次多页重建复用同一一致快照，
+热缓存命中不重复创建 SQLite 快照。
+
+每个缓存读取默认有 30 秒总等待预算，包含排队、元数据和原生分页；取消信号向原生
+读端传播。Pi 的快照备份逐批检查预算，扫描页间让出事件循环，退出后清理临时文件。
+单次同步 SQLite 操作不能被 JavaScript 信号抢占，取消在批次/分页边界生效。
+取消一个排队读者只结束其等待，不解除前任真实任务的串行屏障；迟到原生响应不能
+继续发布过期结果。
+
+Pi 显示读取不进入执行 mutation 队列，慢快照不能阻塞已知 Turn 的 Stop 或执行准入。
+Pi/Codex 的客户端断开撤销自己的历史读者，不取消后台 Turn/Goal，不杀命令进程。
+shell 工作区、深度、输出、运行/空闲时限及命令 watchdog 由执行引擎/沙箱持有。
+
 ## Interaction 响应与重连对账
 
 Server 发起的 approval、question、option picker 与 MCP elicitation 仍由 Server
