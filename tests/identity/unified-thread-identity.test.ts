@@ -29,11 +29,30 @@ test("Hub metadata owner persists provenance and completion; rejects tampered/ne
 });
 
 test("common history reconciliation is paginated, abortable and rejects repeated cursors", async () => {
-  const pages: unknown[] = [{ data: [{ item: { type: "userMessage", clientId: "one" } }], nextCursor: "next" },
-    { data: [{ item: { type: "userMessage", client_id: "two" } }, { item: { type: "agentMessage", clientId: "ignore" } }], nextCursor: null }];
+  const pages: unknown[] = [{ data: [{ id: "turn-1", items: [{ type: "userMessage", clientId: "one" }] }], nextCursor: "next" },
+    { data: [{ id: "turn-2", items: [{ type: "userMessage", client_id: "two" }, { type: "agentMessage", clientId: "ignore" },
+      { type: "steeringUserMessage", clientUserMessageId: "steer" }] }], nextCursor: null }];
   const calls: unknown[] = [];
-  assert.deepEqual(await readThreadMessageIds(async (_method, params) => { calls.push(params); return pages.shift(); }, "t"), ["one", "two"]);
+  assert.deepEqual(await readThreadMessageIds(async (method, params) => {
+    assert.equal(method, "thread/turns/list", "metadata must not fetch complete tool bodies");
+    calls.push(params); return pages.shift();
+  }, "t"), ["one", "two", "steer"]);
+  assert.equal((calls[0] as any).itemsView, "summary");
+  assert.equal((calls[0] as any).limit, 100);
+  assert.equal((calls[0] as any).sortDirection, "asc");
   assert.equal((calls[1] as any).cursor, "next");
   await assert.rejects(readThreadMessageIds(async () => ({ data: [], nextCursor: "same" }), "t"), /cursor/);
   await assert.rejects(readThreadMessageIds(async () => { throw Error("must not read"); }, "t", undefined, AbortSignal.abort()), /cancelled/);
+});
+
+test("Turn-scoped identity reconciliation finds recent summaries and stops at the native Turn", async () => {
+  const calls: any[] = [];
+  assert.deepEqual(await readThreadMessageIds(async (method, params) => {
+    assert.equal(method, "thread/turns/list"); calls.push(params);
+    return { data: [{ id: "newer", items: [{ type: "userMessage", clientId: "unrelated" }] },
+      { id: "target", items: [{ type: "UserMessage", clientUserMessageId: "target-message" }] }], nextCursor: "older" };
+  }, "t", "target"), ["target-message"]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].sortDirection, "desc");
+  await assert.rejects(readThreadMessageIds(async () => ({ data: [{ id: "t", items: [], itemsView: "notLoaded" }], nextCursor: null }), "t"), /summary/);
 });

@@ -65,23 +65,29 @@ export class ThreadIdentity {
   close(): void { this.metadata?.close(); }
 }
 
-/** One bounded history reader for both engines; only native-observed IDs establish participation. */
+/** Read visible message summaries, never tool bodies, to establish participation. */
 export async function readThreadMessageIds(request: (method: string, params: IdentityRecord, signal?: AbortSignal) => Promise<unknown>,
   threadId: string, turnId?: string, signal?: AbortSignal): Promise<readonly string[]> {
   const ids: string[] = [], cursors = new Set<string>();
   let cursor: string | null = null;
   for (let page = 0; page < 1000; page++) {
     if (signal?.aborted) throw new Error("Participant history read cancelled");
-    const value = identityRecord(await request("thread/items/list", {
-      threadId, ...(turnId ? { turnId } : {}), ...(cursor ? { cursor } : {}), limit: 1000, sortDirection: "asc",
+    const value = identityRecord(await request("thread/turns/list", {
+      threadId, ...(cursor ? { cursor } : {}), limit: 100, itemsView: "summary", sortDirection: turnId ? "desc" : "asc",
     }, signal));
     if (!Array.isArray(value.data)) throw new Error("Invalid metadata history page");
     for (const entry of value.data) {
-      const item = identityRecord(identityRecord(entry).item);
-      if (["userMessage", "UserMessage", "steeringUserMessage"].includes(string(item.type))) {
-        const id = string(item.clientId) || string(item.client_id) || string(item.clientUserMessageId);
-        if (id) ids.push(id);
+      const turn = identityRecord(entry);
+      if (typeof turn.id !== "string" || !Array.isArray(turn.items) || turn.itemsView === "notLoaded") throw new Error("Invalid metadata Turn summary");
+      if (turnId && turn.id !== turnId) continue;
+      for (const value of turn.items) {
+        const item = identityRecord(value);
+        if (["userMessage", "UserMessage", "steeringUserMessage"].includes(string(item.type))) {
+          const id = string(item.clientId) || string(item.client_id) || string(item.clientUserMessageId);
+          if (id) ids.push(id);
+        }
       }
+      if (turnId) return ids;
     }
     if (value.nextCursor == null) return ids;
     if (typeof value.nextCursor !== "string" || !value.nextCursor || cursors.has(value.nextCursor)) throw new Error("Invalid metadata history cursor");

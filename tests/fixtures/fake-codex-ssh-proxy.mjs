@@ -203,14 +203,15 @@ sockets.on("connection", ws => {
       reply({ id: message.id, error: { code: -32601, message: "Fixture has directories, not the Project API" } });
       return;
     }
-    if (process.env.FIXTURE_PARTICIPANT_HISTORY === "1" && message.method === "thread/items/list") {
+    if (process.env.FIXTURE_PARTICIPANT_HISTORY === "1" && message.method === "thread/turns/list") {
       process.send?.({ method: message.method, params: message.params });
       if (message.params.threadId === "hung") return;
       if (message.params.threadId === "rejected") {
         ws.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Fixture history rejected" } })); return;
       }
       ws.send(JSON.stringify({ id: message.id, result: {
-        data: [{ item: { type: "userMessage", clientId: message.params.cursor ? "m2" : "m1" } }],
+        data: [{ id: message.params.cursor ? "turn-2" : "turn-1", itemsView: "summary",
+          items: [{ type: "userMessage", clientId: message.params.cursor ? "m2" : "m1" }] }],
         nextCursor: message.params.cursor ? null : "second-page",
       } })); return;
     }
