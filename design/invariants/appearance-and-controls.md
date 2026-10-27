@@ -204,3 +204,20 @@ Complete-application checks separately cover navigation and draft continuity.
 Native status-bar color/blur and physical full-bleed remain unobserved until
 separately verified on the installed target device; a smaller layout viewport is
 not repaired or hidden by this surface.
+
+## Responsive related-control groups
+
+Collection toolbars use actual container capacity and explicit control priority.
+At supported ordinary narrow capacities, search with one filter and input with
+submit remain paired; the primary input flexes and the companion is content-sized
+and bounded for long values. `SettingsControlPair` owns this repeated composition;
+features retain state and outer group overflow. Additional criteria may collapse
+into the existing accessible filter entry; necessary reflow moves whole groups.
+Typography, touch targets, focus, drafts and selection survive adaptation. Extreme
+capacity/text scaling must retain readable, reachable controls rather than force
+one row at all costs. Detailed composition and acceptance belong to
+[responsive toolbars](../ui/collections.md#responsive-toolbars-and-related-controls).
+
+Extension search/source, developer URL/install and AI follow-up search/Owner
+consume the pair. Other consumers require individual review; this contract does
+not certify all existing toolbars or imply physical-device acceptance.

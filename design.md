@@ -29,6 +29,8 @@ reserve emphasis and accent for meaningful distinctions. Add a card, badge,
 illustration or animation when it explains something or serves explicit visual
 direction. Reusing a page's composition does not duplicate its business state.
 
+For search/filter toolbars, first establish [control grouping and overflow priority](design/ui/collections.md#responsive-toolbars-and-related-controls) at the actual container capacity.
+
 Before implementation, name the user's main task, the chosen pattern and real
 consumer, the owner of the page gutter/scrolling, and the primary versus secondary
 actions. A few lines in the existing task notes are enough; this is not an approval

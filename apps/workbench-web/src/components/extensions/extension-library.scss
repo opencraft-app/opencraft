@@ -7,14 +7,12 @@
   min-width: 0;
   @include typography.role("body");
 
-  &__toolbar, &__actions {
+  &__actions {
     display: flex;
     align-items: center;
     gap: var(--gap-control-group);
     flex-wrap: wrap;
   }
-  &__toolbar > input { flex: 1 1 200px; min-width: 0; }
-  &__toolbar > .settings-control-select-shell { flex: 0 1 180px; width: auto; }
   &__install { display: grid; gap: var(--gap-control-group); }
   .settings-control-list-item__copy { overflow-wrap: anywhere; }
 }

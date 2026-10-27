@@ -93,6 +93,9 @@ OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台
 
 ## UI 与设计系统
 
+- 搜索/筛选及输入/提交组合先明确实际容器容量、关联分组与溢出优先级，遵循[集合工具栏约束](design/ui/collections.md#responsive-toolbars-and-related-controls)；共享布局复用现有 owner，验收保留触控、可读性及工作连续性。
+
+
 新增或修改界面前，先读 [设计入口](design.md)，选择最接近的 Settings、任务/对象目录、Chat、Sidebar 或嵌入 App 范式，并查看对应真实消费者。执行方法见维护 Skill 的 [UI 工作流](.agents/skills/opencraft-maintenance/references/ui-design.md)：把范式落实为可见组合，从相关真实使用状态复核，记录实际看过的画面及判断；目录页继续按[组合规范与正反例](design/ui/collections.md)设计。默认延续 OpenCraft 现有设计语言，优先复用共享组件、交互原语和语义 token；缺少可复用能力时在正确 owner 扩展。用户明确指定视觉方向时按该方向调整，并保留可访问性与工作连续性。Token 数值仍由设计系统源码持有；隔离 App 的可用样式以实际宿主能力为准。不以无溢出、组件导入或生成截图代替视觉复核，不新增用户审批步骤。
 
 ### 微交互与交互动效的质量要求
