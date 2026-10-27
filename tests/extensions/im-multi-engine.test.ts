@@ -55,7 +55,8 @@ test('Pi IM uses native durable input and both browser/Host tools; final and dup
   const im = new ImPlugin(store,createImExecution({actors,collaboration,getAppHost:()=>appHost}),1024,true);
   im.register({id:'bot',ownerId:human.actorId,senders:{sender:human.actorId},groupScope:'chat'});
   t.after(()=>im.close());
-  capabilities.register({id:'im.reply',tools:session=>im.replyAvailable(session)?[IM_REPLY_TOOL]:[],call:(session,name,args,signal)=>im.reply(session,args,signal)});
+  const identity = (session: typeof ref) => ({ serverId: session.serverId, threadId: session.threadId });
+  capabilities.register({id:'im.reply',tools:session=>im.replyAvailable(identity(session))?[IM_REPLY_TOOL]:[],call:(session,name,args,signal)=>im.reply(identity(session),args,signal)});
   const deliveries:string[]=[];im.setDelivery(async(_channel,address,text)=>{assert.equal(address.chat,'original');deliveries.push(text);});
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall('opencraft_0_probe',{}, {id:'browser'})],{stopReason:'toolUse'}),

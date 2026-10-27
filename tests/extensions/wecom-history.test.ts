@@ -399,7 +399,9 @@ test("production signed MCP exposes and invokes all four native read tools preau
     mcp = new SessionCapabilityMcp(f.caps, randomBytes(32));
   await mcp.listen();
   t.after(() => mcp.close());
-  const config = mcp.config(ref) as any;
+  const session = { ...ref, execution: { inputId: "input", executionId: "execution" } };
+  assert.deepEqual(f.caps.tools(session), f.caps.tools(ref));
+  const config = mcp.config(session) as any;
   assert.equal(config.tools.wecom_send_post.approval_mode, "approve");
   assert.ok(
     WECOM_HISTORY_TOOLS.every(

@@ -123,7 +123,12 @@ test("production Headless provider exposes read tools through signed MCP with ex
   service.store.accept({ id: "a".repeat(64), channel_id: "bot", fingerprint: "f", actor_id: "human", source: JSON.stringify({ chatId: "wecom-channel:post", chatType: "group", senderId: "sender" }), text: "known history", route_revision: 1, decision: null, reply_address: null });
   service.store.patch("a".repeat(64), { conversation_ref: JSON.stringify(ref), state: "delivered", reply_mode: "tool", reply_ref: "opaque-anchor", reply_expires_at: Date.now() + 1000 });
   const mcp = new SessionCapabilityMcp(caps, randomBytes(32)); await mcp.listen(); t.after(() => mcp.close());
-  const config = mcp.config(ref) as any;
+  const session = { ...ref, execution: { inputId: "input", executionId: "execution" } };
+  assert.deepEqual(caps.tools(session), caps.tools(ref));
+  assert.deepEqual(caps.tools({ ...session, threadId: "new-web-thread" }), []);
+  const direct = await caps.call(session, "im_search_messages", { replyRef: "opaque-anchor", query: "history" }, signal());
+  assert.match(JSON.stringify(direct), /known history/);
+  const config = mcp.config(session) as any;
   assert.deepEqual(Object.keys(config.tools).sort(), ["im_read_context", "im_reply", "im_search_messages"]);
   assert.ok(IM_READ_TOOLS.every(tool => config.tools[tool.name].approval_mode === "approve"));
   const client = new Client({ name: "im-read", version: "1" });
@@ -135,4 +140,24 @@ test("production Headless provider exposes read tools through signed MCP with ex
   assert.deepEqual(caps.tools({ ...ref, threadId: "foreign" }), []);
   valid = false; assert.deepEqual((await client.listTools()).tools, []);
   assert.equal((await client.callTool({ name: "im_read_context", arguments: { replyRef: "opaque-anchor" } })).isError, true);
+});
+
+test("ordinary execution sessions keep their provenance when the IM provider has no tools", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "im-execution-context-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const caps = new SessionCapabilities();
+  const service = new ImChannelService({ dataDirectory: dir, capabilities: caps, credentials: {},
+    actors: {}, collaboration: { execution: { serverId: "server", hostId: "host" } }, getAppHost: () => null });
+  t.after(() => service.close());
+  const session = { ...ref, execution: { inputId: "input", executionId: "execution" } };
+  const seen: unknown[] = [];
+  caps.register({ id: "execution-provider", tools: context => {
+    seen.push(context);
+    return [{ name: "execution_probe", description: "Synthetic", inputSchema: {} }];
+  }, async call(context) { seen.push(context); return { ok: true }; } });
+  assert.deepEqual(caps.tools(session).map(tool => tool.name), ["execution_probe"]);
+  await caps.call(session, "execution_probe", {}, signal());
+  assert.ok(seen.length >= 3);
+  for (const context of seen) assert.deepEqual(context, session);
+  assert.deepEqual(session.execution, { inputId: "input", executionId: "execution" });
 });

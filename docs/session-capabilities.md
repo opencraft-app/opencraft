@@ -8,6 +8,13 @@ recovery. Both listing and execution resolve the current catalog. Duplicate
 names fail closed. A successful transport response does not itself prove an
 external effect; the domain provider's receipt does.
 
+Capability context can carry execution provenance in addition to conversation
+identity. Adapters to conversation-only domains, including IM, project
+`serverId/threadId` for both discovery and invocation. They retain those domains'
+strict identity validation and leave the full context intact for other providers.
+An ordinary Web conversation with no IM tools must still be able to prepare its
+catalog when execution provenance is present.
+
 ## Protocol and lifecycle
 
 The Streamable HTTP MCP outlet uses the pinned MCP SDK on a dedicated loopback
