@@ -18,6 +18,23 @@ export function exactGitHost(url: string): string | null {
     return parsed.hostname;
   } catch { return null; }
 }
+/** Convert only canonical Git SSH addresses; aliases and alternate SSH ports
+ * cannot select a personal HTTPS identity implicitly. */
+export function personalHttpsRemote(url: string, host: string): string | null {
+  let path: string;
+  const scp = /^git@([a-z0-9.-]+):(.+)$/u.exec(url);
+  if (scp) { if (scp[1] !== host) return null; path = scp[2]!; }
+  else {
+    try {
+      const value = new URL(url);
+      if (value.protocol === 'https:' && value.hostname === host && !value.username && !value.password && !value.port) return url;
+      if (value.protocol !== 'ssh:' || value.hostname !== host || value.username !== 'git' || value.password || value.port || value.search || value.hash) return null;
+      path = value.pathname.slice(1);
+    } catch { return null; }
+  }
+  if (!path || /[\s\\\0?#%]/u.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) return null;
+  return `https://${host}/${path}`;
+}
 export function parseGitInvocation(args: string[]) {
   const prefix: string[] = []; let i = 0;
   for (; i < args.length; i++) {
@@ -138,7 +155,7 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
   if (!socket) throw new Error('Git identity broker unavailable; refusing server-account fallback');
   const queryEnv = withoutTrace(process.env);
   const queryGit = async (...query: string[]) => execute(native, [...prefix, ...query], { maxBuffer: 262_144, env: queryEnv }).then(r => r.stdout.trim());
-  const urls = new Set<string>();
+  const urls = new Set<string>(), rawUrls = new Set<string>();
   const remotes = (await queryGit('remote').catch(() => '')).split('\n').filter(Boolean);
   const branch = await queryGit('symbolic-ref', '--quiet', '--short', 'HEAD').catch(() => '');
   const pullRebase = command === 'pull' && !tail.includes('--no-rebase') && (
@@ -152,8 +169,13 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
   const targets = tail.includes('--all') ? remotes : explicit.length ? explicit : preferred ? [preferred] : remotes;
   for (const target of targets) {
     let effective: string;
-    if (remotes.includes(target)) effective = await queryGit('remote', 'get-url', '--all', ...(pushProfile ? ['--push'] : []), target).catch(() => '');
+    if (remotes.includes(target)) {
+      effective = await queryGit('remote', 'get-url', '--all', ...(pushProfile ? ['--push'] : []), target).catch(() => '');
+      const pushUrls = pushProfile ? await queryGit('config', '--get-all', `remote.${target}.pushurl`).catch(() => '') : '';
+      for (const url of (pushUrls || await queryGit('config', '--get-all', `remote.${target}.url`).catch(() => '')).split('\n')) if (url) rawUrls.add(url);
+    }
     else {
+      rawUrls.add(target);
       // Native ls-remote --get-url expands normal insteadOf without networking.
       // For an explicit push URL, Git gives the longest pushInsteadOf match
       // precedence and does not apply another normal rewrite to its result.
@@ -184,12 +206,13 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     if (isAlias) throw new Error('Git identity: use the explicit Git command instead of an alias in managed execution');
     if (hosts.size !== 1 || managedHosts.length !== 1 || sessions.length !== 1) throw new Error('Git identity profile is ambiguous; select one managed HTTPS remote');
     const { host, reply } = sessions[0]!;
-    if (network.has(command) && [...urls].some(url => {
-      try { const value = new URL(url); return value.protocol !== 'https:' || !!value.username || !!value.password; } catch { return true; }
-    })) throw new Error('Personal Git credentials require a matching HTTPS remote without embedded credentials');
+    const httpsUrls = new Map([...urls].map(url => [url, personalHttpsRemote(url, host)]));
+    if (network.has(command) && [...httpsUrls].some(([url, https]) => !https || (url !== https && !rawUrls.has(url))))
+      throw new Error('Personal Git credentials require a matching HTTPS remote or canonical SSH remote without conflicting URL rewrites');
     if (conflicts(prefix) || cloneConflict) throw new Error('Git identity: conflicting command authentication configuration');
     if (network.has(command)) {
-      for (const url of urls) for (const key of ['http.sslCert', 'http.sslKey']) {
+      for (const url of httpsUrls.values()) for (const key of ['http.sslCert', 'http.sslKey']) {
+        if (!url) continue;
         if (await queryGit('config', '--get-urlmatch', key, url).catch(() => undefined) !== undefined)
           throw new Error('Git identity: conflicting client-certificate authentication');
       }
@@ -205,6 +228,8 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
       if (!preserveAuthor(command, tail) && !pullRebase) { env.GIT_AUTHOR_NAME = reply.identity.name; env.GIT_AUTHOR_EMAIL = reply.identity.email; }
     }
     const parameters: Array<[string, string]> = [['credential.helper', ''], ['credential.username', ''], ['credential.useHttpPath', 'true'], ['http.extraHeader', ''], ['http.cookieFile', ''], ['http.saveCookies', 'false'], ['http.emptyAuth', 'false'], ['http.followRedirects', 'false'], ['protocol.ssh.allow', 'never']];
+    for (const [url, https] of httpsUrls) if (https && url !== https && rawUrls.has(url))
+      parameters.push([`url.${https}.insteadOf`, url]);
     // URL-specific headers/cookies can override the global reset; clear every inherited scope.
     for (const key of (await queryGit('config', '--name-only', '--get-regexp', '^(http\\..*\\.(extraheader|cookiefile|emptyauth)|credential\\..*\\.username)$').catch(() => '')).split('\n').filter(Boolean)) parameters.push([key, '']);
     const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;

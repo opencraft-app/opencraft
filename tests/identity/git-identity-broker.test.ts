@@ -12,7 +12,7 @@ import { build } from 'esbuild';
 import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store';
 import { GitIdentityBroker, type GitExecutionIdentity } from '../../scripts/git-identity-broker';
 import { queryGitIdentityBroker, serveGitIdentityBroker } from '../../scripts/git-identity-ipc';
-import { exactGitHost, gitConfigParameter, parseGitInvocation } from '../../scripts/git-identity-wrapper';
+import { exactGitHost, gitConfigParameter, parseGitInvocation, personalHttpsRemote } from '../../scripts/git-identity-wrapper';
 import { managedGitEnvironment } from '../../scripts/git-identity-environment';
 import { generateGitSigningKey } from '../../scripts/git-identity-signer';
 // SO_PEERCRED and /proc are the supported local Linux execution boundary.
@@ -137,6 +137,9 @@ test('real wrapper preserves original authors on amend/cherry-pick/rebase and ne
   assert.equal((await git('rev-parse', 'HEAD')).out, before);
 });
 test('config encoding and Git global options retain exact worktree context', () => {
+  assert.equal(personalHttpsRemote('git@github.com:synthetic/repo.git', 'github.com'), 'https://github.com/synthetic/repo.git');
+  assert.equal(personalHttpsRemote('ssh://git@github.com/synthetic/repo.git', 'github.com'), 'https://github.com/synthetic/repo.git');
+  for (const u of ['git@github.com.evil.test:repo', 'git@alias:repo', 'ssh://git@github.com:2222/repo', 'ssh://other@github.com/repo', 'git@github.com:../repo', 'git@github.com:repo%2fsecret']) assert.equal(personalHttpsRemote(u, 'github.com'), null);
   assert.equal(exactGitHost('https://github.com.evil.test/repo'), 'github.com.evil.test');
   assert.equal(exactGitHost('git@github.com:synthetic/repo'), 'github.com');
   assert.deepEqual(parseGitInvocation(['-C', '/synthetic directory', '--git-dir=/synthetic/.git', 'commit', '-m', 'x']), { prefix: ['-C', '/synthetic directory', '--git-dir=/synthetic/.git'], command: 'commit', tail: ['-m', 'x'] });
@@ -175,9 +178,10 @@ test('default fetch/pull use the fetch remote while an unconfigured push target 
   const marker = join(f.root, 'ssh-invoked'), ssh = join(f.root, 'synthetic-ssh');
   await writeFile(ssh, '#!/bin/sh\nprintf invoked >> "$SYNTHETIC_SSH_MARKER"\nexit 1\n', { mode: 0o700 });
   f.managedEnv.GIT_SSH_COMMAND = ssh; f.managedEnv.SYNTHETIC_SSH_MARKER = marker;
+  await f.native('config', 'http.proxy', 'http://127.0.0.1:1'); // No external network in this routing-negative fixture.
   for (const command of ['fetch', 'pull']) {
     f.opens.length = 0; const result = await f.managed(command);
-    assert.equal(result.code, 128); assert.deepEqual(f.opens, ['github.com']);
+    assert.notEqual(result.code, 0); assert.deepEqual(f.opens, ['github.com']);
     await assert.rejects(readFile(marker));
   }
   f.opens.length = 0; await f.managed('push');
@@ -264,4 +268,38 @@ test('wrapped GitHub commit signs and verifies with a command-private HOME', asy
   const result = await f.managed('commit', '--allow-empty', '-qm', 'signed through managed wrapper'); assert.equal(result.code, 0, result.err);
   const allowed = join(f.root, 'allowed-signers'); await writeFile(allowed, `employee@example.test ${signing.publicKey}\n`);
   const verified = await f.native('-c', 'gpg.format=ssh', '-c', `gpg.ssh.allowedSignersFile=${allowed}`, 'verify-commit', 'HEAD'); assert.equal(verified.code, 0, verified.err);
+});
+
+test('bound SSH remote uses personal HTTPS for real push/delete without changing config or invoking machine SSH', async t => {
+  const f = await managedRepository(t); f.bind();
+  const bare = join(f.root, 'http-root/synthetic/repo.git'); await mkdir(join(f.root, 'http-root/synthetic'), { recursive: true });
+  await child('/usr/bin/git', ['init', '--bare', '-q', bare], f.env, f.root); await child('/usr/bin/git', ['--git-dir', bare, 'config', 'http.receivepack', 'true'], f.env, f.root);
+  const pem = await child('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', '-', '-out', '-', '-subj', '/CN=github.com', '-days', '1'], f.env, f.root);
+  const key = pem.out.match(/-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----/u)?.[0], cert = pem.out.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/u)?.[0]; assert.ok(key && cert);
+  const expected = `Basic ${Buffer.from('synthetic:synthetic-only').toString('base64')}`, received: string[] = [], sockets = new Set<Socket>();
+  const https = createHttpsServer({ key, cert }, (req, res) => {
+    if (!req.headers.authorization) { res.writeHead(401, { 'www-authenticate': 'Basic realm="fixture"' }); res.end(); return; }
+    received.push(req.headers.authorization); if (req.headers.authorization !== expected) { res.writeHead(403); res.end(); return; }
+    const u = new URL(req.url!, 'https://github.com');
+    const c = spawn('/usr/bin/git', ['http-backend'], { env: { ...f.env, GIT_PROJECT_ROOT: join(f.root, 'http-root'), GIT_HTTP_EXPORT_ALL: '1', REMOTE_USER: 'synthetic', REQUEST_METHOD: req.method!, PATH_INFO: u.pathname, QUERY_STRING: u.search.slice(1), CONTENT_TYPE: String(req.headers['content-type'] ?? '') }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const chunks: Buffer[] = []; c.stdout.on('data', b => chunks.push(b)); c.stderr.resume(); req.pipe(c.stdin);
+    c.once('close', code => { const b = Buffer.concat(chunks), at = b.indexOf('\r\n\r\n'); if (code !== 0 || at < 0) { res.writeHead(500); res.end(); return; } const headers: Record<string,string> = {}; let status = 200; for (const line of b.subarray(0,at).toString().split('\r\n')) { const i=line.indexOf(':'); if (i<0) continue; if (line.slice(0,i).toLowerCase()==='status') status=Number(line.slice(i+1).trim().split(' ')[0]); else headers[line.slice(0,i)]=line.slice(i+1).trim(); } res.writeHead(status,headers); res.end(b.subarray(at+4)); });
+  });
+  const proxy = createHttpServer(); for (const server of [https,proxy]) server.on('connection',s=>{sockets.add(s);s.on('close',()=>sockets.delete(s));}); https.listen(0,'127.0.0.1'); await once(https,'listening');
+  proxy.on('connect',(req,socket,head)=>{if(req.url!=='github.com:443'){socket.destroy();return;}const up=connectTcp((https.address() as any).port,'127.0.0.1');sockets.add(up);up.on('error',()=>socket.destroy());socket.on('error',()=>up.destroy());up.on('close',()=>sockets.delete(up));up.once('connect',()=>{socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)up.write(head);socket.pipe(up);up.pipe(socket);});}); proxy.listen(0,'127.0.0.1');await once(proxy,'listening');
+  t.after(async()=>{for(const s of sockets)s.destroy();await Promise.all([https,proxy].map(s=>new Promise<void>(r=>s.close(()=>r()))));});
+  await f.native('config','http.proxy',`http://127.0.0.1:${(proxy.address() as any).port}`);await f.native('config','http.sslVerify','false');f.managedEnv.NO_PROXY='';
+  const marker=join(f.root,'machine-ssh-invoked'),ssh=join(f.root,'machine-ssh');await writeFile(ssh,'#!/bin/sh\nprintf called > "$SYNTHETIC_SSH_MARKER"\nexit 1\n',{mode:0o700});f.managedEnv.GIT_SSH_COMMAND=ssh;f.managedEnv.SYNTHETIC_SSH_MARKER=marker;
+  await f.native('remote','add','origin','git@github.com:synthetic/repo.git');
+  for(const [i,url] of ['git@github.com:synthetic/repo.git','ssh://git@github.com/synthetic/repo.git'].entries()){
+    await f.native('remote','set-url','origin',url);const before=await readFile(join(f.work,'.git/config'),'utf8');
+    const commit=await f.managed('commit','--allow-empty','-qm','employee SSH remote');assert.equal(commit.code,0,commit.err);const sha=(await f.native('rev-parse','HEAD')).out,branch=`vault-check-${i}`;
+    const push=await f.managed('push','origin',`HEAD:refs/heads/${branch}`);assert.equal(push.code,0,push.err);
+    assert.equal((await child('/usr/bin/git',['--git-dir',bare,'rev-parse',`refs/heads/${branch}`],f.env,f.root)).out,sha);
+    const read=await f.managed('ls-remote','--heads',url,`refs/heads/${branch}`);assert.equal(read.code,0,read.err);assert.equal(read.out,`${sha}\trefs/heads/${branch}`);
+    const remove=await f.managed('push','origin','--delete',branch);assert.equal(remove.code,0,remove.err);const missing=await f.managed('ls-remote','--heads','origin',`refs/heads/${branch}`);assert.equal(missing.code,0,missing.err);assert.equal(missing.out,'');
+    assert.equal(await readFile(join(f.work,'.git/config'),'utf8'),before);
+  }
+  assert.ok(received.length>0&&received.every(v=>v===expected));assert.ok(f.credentials()>0);await assert.rejects(readFile(marker));
+  const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/broker unavailable/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
 });

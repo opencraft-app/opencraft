@@ -60,8 +60,7 @@ command-private HOME. The directory contains no token or private signing key.
 Fetch/pull use their fetch remote, while push and local commit profiles follow
 push-remote selection. Explicit URLs honor insteadOf and pushInsteadOf before
 authorization. Configured submodule network commands require executing in the
-explicit submodule repository. Redirects, embedded URL credentials and personal PAT authentication through
-SSH remotes are rejected; use a matching HTTPS remote. Multiple or absent local
+explicit submodule repository. Canonical `git@host:path` and `ssh://git@host/path` addresses for a bound host are rewritten to HTTPS for that command only; the repository remote is retained. Noncanonical SSH identities/ports, aliases, conflicting preexisting rewrites, redirects and embedded credentials are rejected. SSH transport remains disabled for a configured command, so unavailable personal authentication cannot select a machine SSH key. Multiple or absent local
 identity profiles require an unambiguous managed remote. An unconfigured command
 keeps its original environment in full.
 
