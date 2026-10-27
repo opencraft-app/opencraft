@@ -1,0 +1,29 @@
+@use "@opencraft/design-system/icons.web" as icons;
+
+.ui-navigation-list {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding-inline: var(--padding-navigation-list-inline);
+}
+.ui-navigation-group {
+  --navigation-group-focus-space: calc(var(--width-control-focus-ring) + var(--offset-control-focus-ring));
+  // Scrollers retain the whole focus contour without widening the painted row.
+  padding: var(--navigation-group-focus-space);
+  margin-inline: calc(-1 * var(--navigation-group-focus-space));
+  min-width: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--gap-navigation-rows);
+}
+
+.ui-button.ui-navigation-item[data-size="navigation"] {
+  min-height: max(var(--height-navigation-row), var(--size-control-hit-min));
+  padding: 0 var(--padding-navigation-row-inline);
+  gap: var(--gap-navigation-row-content);
+  border-radius: var(--radius-control);
+  > svg.ui-action-glyph { @include icons.navigation-leading-icon; }
+}

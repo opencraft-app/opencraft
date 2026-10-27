@@ -1,0 +1,245 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/panel-controls.web" as panel-controls;
+@use "@opencraft/design-system/material.web" as material;
+@use "./liquid-glass.web";
+@use "./navigation.web";
+
+.ui-button {
+  @include controls.density-target;
+  @include typography.role(control, null);
+  position: relative;
+  display: inline-flex;
+  min-width: var(--size-control-hit-min);
+  align-items: center;
+  justify-content: center;
+  gap: max(7px, var(--gap-control-density-min));
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-control, 10px);
+  outline: none;
+  background: var(--color-background-button-primary, var(--color-text));
+  color: var(--color-text-button-primary, var(--color-background-surface));
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-duration-basic) var(--ease-standard),
+    border-color var(--transition-duration-basic) var(--ease-standard),
+    color var(--transition-duration-basic) var(--ease-standard),
+    opacity var(--transition-duration-basic) var(--ease-standard);
+
+  &[data-size="sm"] { @include typography.role(control-small, null); min-height: max(32px, var(--size-control-hit-min)); padding: 0 12px; }
+  &[data-size="md"] { min-height: max(40px, var(--size-control-hit-min)); padding: 0 16px; }
+  &[data-size="lg"] { @include typography.role(control-large, null); min-height: 44px; padding: 0 24px; }
+  &[data-size="toolbar"] {
+    @include typography.role(control-compact, null);
+    height: var(--height-toolbar-control);
+    min-height: var(--height-toolbar-control);
+    border-radius: var(--radius-toolbar-control);
+    padding: 0 var(--padding-toolbar-control-inline);
+  }
+
+  &[data-variant="primary"],
+  &[data-variant="hero"] {
+    font-weight: var(--typography-primary-action-weight);
+    background: var(--color-background-button-primary, var(--color-text));
+    color: var(--color-text-button-primary, var(--color-background-surface));
+  }
+
+  &[data-variant="secondary"] {
+    background: var(--color-background-button-secondary, var(--color-background-secondary));
+    color: var(--color-text-button-secondary);
+  }
+
+  &[data-variant="outline"] {
+    border: 1px solid var(--color-border-default);
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  &[data-variant="ghost"],
+  &[data-variant="link"] {
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  &[data-variant="link"] {
+    min-height: 0;
+    padding-inline: 0;
+  }
+
+  // Explicit density owns geometry after legacy size/variant defaults.
+  &[data-density="compact"] { @include panel-controls.compact-action; }
+
+  &[data-variant="destructive"] {
+    background: var(--color-status-error);
+    color: var(--color-text-button-primary, #fff);
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="primary"]:hover:not(:disabled):not(:active),
+    &[data-variant="hero"]:hover:not(:disabled):not(:active) {
+      background: var(--color-background-button-primary-hover);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="secondary"]:hover:not(:disabled):not(:active) {
+      background: var(--color-background-button-secondary-hover);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="ghost"]:hover:not(:disabled):not(:active),
+    &[data-variant="link"]:hover:not(:disabled):not(:active) {
+      background: var(--color-background-button-tertiary-hover);
+      color: var(--color-text);
+    }
+  }
+
+  @include controls.hover-capable {
+    &[data-variant="outline"]:not([data-density="compact"]):hover:not(:disabled):not(:active) {
+      background: var(--color-background-button-tertiary-hover);
+    }
+  }
+
+  &:focus-visible {
+    @include controls.focus-indicator;
+  }
+
+  &:disabled {
+    @include controls.disabled-feedback;
+  }
+  &[data-control-loading="true"] .ui-button__label { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+
+.ui-button__spinner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  animation: ui-button-spin 680ms linear infinite;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+}
+
+@keyframes ui-button-spin {
+  to { transform: rotate(1turn); }
+}
+
+.ui-button__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: inherit;
+  gap: inherit;
+  > svg { flex-shrink: 0; }
+}
+
+// These semantic sizes own geometry for both controls and measurement twins.
+.ui-button[data-size="chrome"] {
+  @include typography.role(control-compact, null);
+  width: var(--size-chrome-action);
+  min-width: var(--size-chrome-action);
+  height: var(--size-chrome-action);
+  min-height: var(--size-chrome-action);
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-icon-secondary);
+  cursor: default;
+  > .ui-button__label {
+    pointer-events: none;
+    > svg { width: var(--size-chrome-icon); height: var(--size-chrome-icon); }
+  }
+}
+
+.ui-button[data-size="accessory"] {
+  @include typography.role(control-compact, null);
+  height: var(--height-accessory-control);
+  min-height: var(--height-accessory-control);
+  min-width: var(--size-control-hit-min);
+  padding: 0 var(--padding-accessory-control-inline);
+  gap: var(--gap-accessory-control-content);
+  border-radius: var(--radius-accessory-control);
+  > svg { flex: 0 0 auto; }
+}
+
+.ui-button[data-size="navigation"] {
+  @include typography.role(navigation-action, primary);
+  display: flex;
+  width: 100%;
+  min-height: max(var(--height-navigation-row), var(--size-control-hit-min));
+  padding: calc(var(--spacing) * 2) var(--padding-sidebar-activity-row-inline);
+  justify-content: flex-start;
+  gap: calc(var(--spacing) * 2);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+
+.ui-button[data-content-layout="icon"] {
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  padding: 0;
+  > .ui-button__label { display: grid; place-items: center; }
+}
+
+.ui-button[data-variant="danger"] {
+  color: var(--color-text-danger);
+  background: transparent;
+}
+
+// Material is explicitly selected by placement, never by a feature opt-in
+// attribute or a catch-all selector spanning navigation and ordinary controls.
+.ui-button[data-control-surface="floating"],
+.ui-control-surface[data-control-surface="floating"] {
+  @include material.liquid;
+}
+.ui-control-surface { position: relative; }
+.ui-control-surface > .ui-liquid-glass {
+  top: 50%;
+  bottom: auto;
+  height: var(--size-chrome-action);
+  transform: translateY(-50%);
+}
+.ui-control-surface[data-control-surface="floating"] > .ui-liquid-glass { height: 100%; }
+
+.ui-button:is([data-variant="ghost"], [data-size="navigation"])[aria-current="page"] {
+  background: var(--color-background-navigation-current);
+  color: var(--color-text);
+}
+// A region's expanded state is accessibility information, not a selected button.
+// Persistent open feedback belongs to popup triggers and explicit disclosures.
+.ui-button:is([data-state="open"], [aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"], .ui-disclosure-button[aria-expanded="true"])[data-variant="ghost"]:not(:disabled):not(:active) {
+  background: var(--color-background-button-tertiary-hover);
+  color: var(--color-text);
+}
+.ui-button[data-control-loading="true"][data-content-layout="row"] > :not(.ui-liquid-glass, .ui-button__spinner) { opacity: 0; }
+.ui-button[data-size="navigation"][aria-pressed="true"] { background: var(--color-background-navigation-current); }
+.ui-button[data-size="navigation"][data-control-surface="floating"] {
+  min-height: var(--size-material-liquid-control);
+  width: auto;
+  padding-inline: calc(var(--spacing) * 5);
+  &[data-content-layout="icon"] {
+    min-width: var(--size-material-liquid-control);
+    width: var(--size-material-liquid-control);
+    height: var(--size-material-liquid-control);
+    padding: 0;
+  }
+}
+@include controls.hover-capable {
+  .ui-button[data-size="chrome"]:hover:not(:disabled):not(:active) { color: var(--color-icon-primary); }
+  .ui-button[data-size="navigation"]:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-hover); }
+  .ui-button[data-variant="danger"]:hover:not(:disabled):not(:active) {
+    background: color-mix(in srgb, var(--color-text-danger) 8%, transparent);
+  }
+}
+.ui-button:active:not(:disabled) { background: var(--color-background-navigation-pressed); }
+.ui-button[data-variant="ghost"]:active:not(:disabled) {
+  background: var(--color-background-navigation-pressed);
+  color: var(--color-text);
+}
+.ui-button[data-variant="primary"]:active:not(:disabled),
+.ui-button[data-variant="hero"]:active:not(:disabled) {
+  background: var(--color-background-button-primary-active);
+}

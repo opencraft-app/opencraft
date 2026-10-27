@@ -1,0 +1,4 @@
+title = "OpenCraft secret scanning"
+
+[extend]
+useDefault = true

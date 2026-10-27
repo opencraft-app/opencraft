@@ -1,0 +1,450 @@
+@use "./shell-navigation.mobile";
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/menu.web" as menu;
+@use "@opencraft/design-system/icons.web" as icons;
+@use "@opencraft/design-system/typography.web" as typography;
+
+// A+D: AppShell still owns all dock/floating/gesture geometry and shared portals.
+.shell-sidebar__column {
+  --padding-shell-sidebar-inline: 8px;
+  --padding-sidebar-activity-row-inline: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%; min-height: 0; min-width: 0;
+  .sidebar-panel { padding: 0 8px 8px; }
+  .sidebar-navigation:empty { display: none; }
+  .sidebar-content-scroll {
+    display: flex; flex-direction: column; overflow: hidden; margin-top: 0;
+    mask-image: none; -webkit-mask-image: none; animation: none;
+  }
+  .sidebar-tasks { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .sidebar-activity-list { flex: 1; min-height: 0; overflow: auto; align-content: start; overscroll-behavior: contain; scrollbar-width: none; isolation: isolate; }
+  // Badges own local avatar ordering; keep that ordering below the disclosure.
+  // Their floating popovers remain in the existing Shell/Radix portals.
+  .sidebar-activity-group__items {
+    isolation: isolate;
+    // Clip only the rows crossing their own sticky label. The material remains
+    // the continuous Shell plane, including selection and avatar backgrounds.
+    clip-path: inset(var(--sidebar-heading-occlusion, 0px) -100% -100%);
+  }
+  .sidebar-thread-group-heading {
+    // The section bounds its own disclosure. Desktop scrolls the activity list;
+    // mobile scrolls the outer navigation track, with no extra scroll owner.
+    position: sticky;
+    inset-block-start: 0;
+    align-self: start;
+    // Local to the isolated activity list, below Shell chrome and portals.
+    z-index: 1;
+    background: var(--opencraft-sidebar-heading-background, var(--color-surface));
+  }
+  .sidebar-list-toolbar, .sidebar-new-chat, .sidebar-list-search, .sidebar-catalog-feedback { flex-shrink: 0; }
+}
+.shell-sidebar__scroll { display: contents; }
+.shell-sidebar__navigation.sidecar-content-slot {
+  grid-column: 1; grid-row: 2; min-height: 0; min-width: 0; height: auto; overflow: auto;
+  border-inline-end: 0;
+}
+.shell-sidebar__context.sidecar-content-slot {
+  grid-column: 1 / -1; grid-row: 1; min-height: 0; min-width: 0; overflow: hidden;
+  background: var(--opencraft-sidebar-context-background, var(--color-surface)); border-start-start-radius: 0;
+}
+.shell-sidebar__rail-footer.sidecar-content-slot {
+  grid-column: 2; grid-row: 2; height: auto;
+  border-inline-end: 0;
+}
+.shell-sidebar-navigation {
+  padding: 4px 0;
+  .shell-navigation__items--applications {
+    justify-items: center;
+    gap: 2px;
+    > button {
+      @include controls.application-navigation-control;
+      @include typography.role(metadata, primary);
+      display: flex; align-items: center; justify-content: center; gap: 0;
+      width: var(--size-application-navigation-hit-min); height: var(--size-application-navigation-hit-min); padding: 0;
+      > svg.ui-action-glyph { @include icons.navigation-leading-icon; }
+      .shell-navigation__item-label { display: none; }
+
+    }
+  }
+}
+.shell-sidebar__rail-footer .shell-navigation__footer--unified {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 8px;
+  .shell-navigation__entrance { justify-content: center; width: var(--size-application-navigation-hit-min);  }
+  .shell-navigation__name { display: none; }
+}
+
+.shell-sidebar__navigation, .shell-sidebar__rail-footer {
+  // Product policy may preserve explicit consumer sizes. Rail density must
+  // never resize Settings in the adjacent context column.
+  --size-icon-navigation: var(--size-product-navigation-icon, var(--size-application-navigation-icon));
+}
+// Keep compact desktop controls local to the rail; labeled mobile rows retain
+// their original glyph size and density-aware 44px touch targets.
+.shell-sidebar__column:not([data-navigation-layout="mobile"]) {
+  // The context list and bottom actions occupy one continuous sidebar plane.
+  background: var(--opencraft-sidebar-context-background, var(--color-surface));
+  .shell-sidebar__context.sidecar-content-slot { background: transparent; }
+  .shell-sidebar__navigation, .shell-sidebar__rail-footer {
+    --size-application-navigation-hit-min: var(--height-navigation-row);
+    align-self: end;
+    padding-block: calc(var(--spacing) * 2);
+  }
+  .shell-sidebar__navigation {
+    padding-inline-start: var(--padding-shell-sidebar-inline);
+    scrollbar-width: none;
+    .sidecar-shared-content { height: auto; }
+  }
+  .shell-sidebar-navigation {
+    padding: 0;
+    .shell-navigation__items--applications {
+      display: flex;
+      width: max-content;
+      > button { flex: 0 0 var(--size-application-navigation-hit-min); }
+    }
+  }
+  .shell-sidebar__rail-footer {
+    padding-inline: var(--spacing) var(--padding-shell-sidebar-inline);
+    .sidecar-shared-content { height: auto; }
+    .shell-navigation__footer--unified {
+      flex-direction: row;
+      gap: var(--spacing);
+      padding: 0;
+    }
+  }
+  .shell-sidebar__navigation, .shell-sidebar__rail-footer {
+    --size-application-navigation-icon: 16px;
+    --radius-application-navigation-control: var(--radius-md);
+  }
+  .shell-sidebar__navigation {
+    --size-application-navigation-icon: 20px;
+    --size-icon-navigation: var(--size-application-navigation-icon);
+  }
+  .shell-sidebar__rail-footer .shell-navigation__entrance {
+    .sidebar-account__avatar { width: 18px; height: 18px; flex-basis: 18px; }
+  }
+}
+
+
+.shell-navigation__dock {
+  position: relative;
+  overflow: visible;
+  padding-top: var(--height-toolbar);
+  background: var(--opencraft-sidebar-material-background);
+  border-right: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+
+  // Pane separation belongs to Sidecar content, never to the global Header or
+  // fixed Footer coordinate systems.
+  &::before {
+    position: absolute;
+    top: var(--height-toolbar);
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--color-border-subtle);
+    content: "";
+    pointer-events: none;
+  }
+}
+.shell-navigation__dock-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-navigation-groups);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden auto;
+  padding: 12px;
+  > section:last-child:not(:first-child) { margin-top: auto; }
+  .shell-navigation__heading {
+    color: var(--color-text-tertiary);
+    strong { font-size: var(--opencraft-sidebar-meta-font-size); font-weight: var(--typography-primary-action-weight); }
+  }
+  &[data-shell-navigation-motion="geometry"] {
+    gap: var(--shell-navigation-content-gap);
+    padding-inline: 0;
+
+    > section {
+      width: max(var(--size-application-navigation-hit-min), var(--shell-navigation-row-width));
+      min-width: 0;
+      margin-left: min(var(--shell-navigation-row-inset), calc((100% - var(--size-application-navigation-hit-min)) / 2));
+    }
+
+    .shell-navigation__items {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .shell-navigation__heading {
+      height: var(--shell-navigation-heading-height);
+      padding: 0 8px;
+      box-sizing: border-box;
+      overflow: hidden;
+      opacity: var(--shell-navigation-heading-opacity);
+      transform: translateY(var(--shell-navigation-heading-y));
+      will-change: height, opacity, transform;
+    }
+
+    .shell-navigation__items > button {
+      width: 100%;
+      gap: var(--shell-navigation-row-gap);
+      padding-inline: max(var(--shell-navigation-row-padding), calc((var(--size-application-navigation-hit-min) - var(--size-application-navigation-icon)) / 2));
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .shell-navigation__item-label,
+    .shell-navigation__identity,
+    .shell-navigation__items button > span:not(.sidebar-account__avatar),
+    .shell-navigation__items small,
+    .shell-navigation__items p {
+      opacity: var(--shell-navigation-label-opacity);
+      transform: translateX(var(--shell-navigation-label-x));
+      will-change: opacity, transform;
+    }
+
+  }
+}
+.shell-navigation__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 12px;
+  color: var(--color-text);
+  h2, strong { font: var(--typography-sidebar-section-font); margin: 0; letter-spacing: var(--typography-sidebar-section-tracking); }
+}
+.shell-navigation__items {
+  --sidebar-leading-slot-size: 28px;
+  display: grid;
+  gap: var(--menu-item-gap);
+  color: var(--color-text);
+  button {
+    @include controls.navigation-control;
+    min-height: var(--height-navigation-row);
+    cursor: pointer;
+    > span:not(.sidebar-account__avatar) { flex: 1; min-width: 0; }
+  }
+  small, p { color: var(--color-text-secondary); font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking); }
+  p { padding: 8px; }
+}
+.shell-navigation__items:not(.shell-navigation__items--applications) > button {
+  // Account surfaces retain menu density; this must not leak into the rail.
+  @include menu.item;
+  @include controls.navigation-control;
+}
+.shell-navigation__items--applications {
+  gap: var(--gap-application-navigation-items);
+  > button { @include controls.application-navigation-control; }
+}
+@media (any-pointer: coarse), (hover: none) {
+  .shell-navigation__dock-content { --size-application-navigation-hit-min: 44px; }
+}
+:root[data-touch-interaction] .shell-navigation__dock-content {
+  --size-application-navigation-hit-min: 44px;
+}
+.shell-navigation__identity { display: flex; flex-direction: column; gap: 4px; }
+.shell-navigation__footer {
+  // Normal-flow controls; relative positioning is only the menu anchor.
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: var(--padding-sidebar-entrances);
+  grid-template-columns: var(--height-navigation-row) minmax(0, 1fr);
+  gap: var(--gap-sidebar-entrances);
+  color: var(--color-text);
+  box-sizing: border-box;
+  -webkit-app-region: no-drag;
+
+}
+.shell-navigation__entrance {
+  position: relative;
+  justify-content: flex-start;
+  min-width: 0;
+  &[data-surface="applications"] {
+    @include controls.application-navigation-glyph;
+    justify-content: center;
+  }
+  &[data-surface="account"] { width: 100%; }
+  &[data-surface="updates"] {
+    .shell-navigation__icon-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--size-application-navigation-icon, 20px);
+      height: var(--size-application-navigation-icon, 20px);
+      flex-shrink: 0;
+    }
+    .shell-navigation__update-dot {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--color-accent-blue, #2563eb);
+      box-shadow: 0 0 0 1.5px var(--opencraft-sidebar-material-background, var(--color-background-primary, #ffffff));
+      pointer-events: none;
+    }
+  }
+  .sidebar-account__avatar { width: 20px; height: 20px; flex: 0 0 20px; font: var(--typography-label-font); border: 0; letter-spacing: var(--typography-label-tracking); }
+}
+.shell-navigation__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--opencraft-sidebar-font-size); }
+.shell-sign-in-menu {
+  @include menu.surface;
+  z-index: var(--layer-shell-navigation);
+  min-width: min(240px, var(--radix-dropdown-menu-content-available-width));
+  background: var(--color-background-elevated-secondary-opaque);
+}
+.shell-sign-in-menu__item { @include menu.item; }
+.shell-sign-in-menu__separator { height: 1px; margin: calc(var(--spacing) / 2) var(--gap-control-group); background: var(--color-border-subtle); }
+.shell-sign-in-menu__copy {
+  display: grid;
+  flex: 1;
+  gap: calc(var(--spacing) / 2);
+  small { font-size: var(--opencraft-sidebar-meta-font-size); color: var(--color-text-secondary); }
+}
+.shell-sign-in-menu__status { padding: var(--gap-control-group); color: var(--color-text-secondary); }
+.shell-navigation__peek {
+  @include menu.surface;
+  position: absolute;
+  z-index: var(--layer-shell-navigation);
+  left: var(--padding-sidebar-entrances);
+  bottom: calc(100% - var(--padding-sidebar-entrances) + var(--gap-control-group));
+  width: min(280px, calc(100vw - 24px));
+  max-height: calc(100dvh - 88px);
+  box-sizing: border-box;
+  background: var(--color-background-elevated-secondary-opaque);
+}
+.shell-navigation__placement { border-top: 1px solid var(--color-border-default); margin-top: 4px; padding-top: 4px; }
+.shell-navigation__drawer {
+  // Compact presentation of the application rail, not a floating menu card.
+  position: absolute;
+  z-index: var(--layer-shell-navigation);
+  left: 0;
+  bottom: 100%;
+  width: min(280px, calc(100vw - 24px));
+  height: max(0px, calc(100dvh - var(--height-toolbar) - var(--shell-navigation-bottom-reserve)));
+  box-sizing: border-box;
+  background: var(--color-background-panel);
+  border-right: 1px solid var(--color-border-subtle);
+}
+.app-shell-sidecar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 100%;
+  // One material plane spans both rails and their footer. Painting each child
+  // separately creates a white footer patch and exposes the window's gray base.
+  background: var(--opencraft-sidecar-background, var(--opencraft-sidebar-material-background));
+  backdrop-filter: var(--opencraft-sidecar-filter, var(--opencraft-sidebar-material-filter));
+  -webkit-backdrop-filter: var(--opencraft-sidecar-filter, var(--opencraft-sidebar-material-filter));
+  .shell-navigation__dock, .app-shell-left-panel {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.app-shell-sidecar::after {
+  // Paint-only boundary below the global titlebar; no layout or hit-test owner.
+  position: absolute;
+  inset: var(--height-toolbar) 0 0 auto;
+  border-right: 1px solid var(--color-border-subtle);
+  opacity: var(--app-shell-titlebar-divider-progress, 0);
+  content: "";
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .app-shell-sidecar {
+    // System colors retain a boundary below the titlebar without layout cost.
+    &::after {
+      position: absolute;
+      inset: var(--height-toolbar) 0 0 auto;
+      border-right: 1px solid CanvasText;
+      opacity: 1;
+      content: "";
+      pointer-events: none;
+    }
+  }
+}
+.app-shell-sidecar__panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  // The rail divider is internal to a two-pane Sidecar. With no context pane,
+  // the primary rail meets main content; Shell owns that outer boundary.
+  > .shell-navigation__dock:last-child::before { display: none; }
+}
+.app-shell-sidecar__footer {
+  // A real layout track, not an overlay on arbitrary application content.
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  background: transparent;
+  > .sidecar-content-slot { height: auto; }
+  &[hidden] { display: none; }
+  &[data-compact-only="true"] {
+    .shell-navigation__footer {
+      grid-template-columns: minmax(0, 1fr);
+      padding-inline: max(0px, calc((100% - var(--height-navigation-row)) / 2));
+      gap: var(--gap-sidebar-entrances);
+    }
+    .shell-navigation__name { display: none; }
+    .shell-navigation__entrance[data-surface="account"] { justify-content: center; }
+  }
+}
+
+.shell-navigation__item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.shell-navigation__items .shell-navigation__beta {
+  @include typography.role(caption, secondary);
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: var(--color-background-button-secondary);
+  white-space: nowrap;
+}
+
+.shell-navigation__item-label--full { display: none; }
+
+.shell-navigation-tooltip {
+  @include typography.role(metadata, primary);
+  z-index: 1000;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+.shell-sidebar__header {
+  display: flex; align-items: center; width: 100%; min-width: 0;
+  padding-inline-end: 8px;
+  > .app-shell-header__window-controls { flex: 1; min-width: 0; width: auto; overflow: hidden; }
+  .app-shell-header__window-controls-rail[data-navigation-brand] { width: 100%; min-width: 0; }
+  height: 100%; box-sizing: border-box;
+  > button {
+    @include controls.application-navigation-control;
+    flex: 0 0 auto; width: var(--size-application-navigation-hit-min);
+    height: var(--size-application-navigation-hit-min); justify-content: center; padding: 0;
+    > svg { width: var(--size-application-navigation-icon); height: var(--size-application-navigation-icon); }
+  }
+}
+[data-mobile-sidebar] .shell-sidebar__header > button { min-width: 44px; min-height: 44px; }
+.app-shell-header__window-controls-rail[data-navigation-brand][data-sidebar-collapsed] {
+  width: max-content;
+  > .application-brand { flex: 0 0 auto; }
+}

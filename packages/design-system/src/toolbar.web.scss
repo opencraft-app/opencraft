@@ -1,0 +1,95 @@
+@use "./menu.web" as menu;
+
+// this contract owns density, typography, icon scale and menu geometry.
+@mixin trigger {
+  max-width: var(--width-toolbar-control-max);
+  border-radius: var(--radius-toolbar-control);
+  font: var(--typography-control-compact-font);
+  letter-spacing: var(--typography-control-compact-tracking);
+
+  .ui-button__label {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: var(--gap-toolbar-control);
+  }
+
+  .ui-button__label > svg:not([data-toolbar-chevron]) {
+    width: var(--size-toolbar-control-icon);
+    height: var(--size-toolbar-control-icon);
+    flex: 0 0 var(--size-toolbar-control-icon);
+  }
+}
+
+@mixin label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-weight: var(--typography-control-compact-weight);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin chevron {
+  width: var(--size-toolbar-control-chevron);
+  height: var(--size-toolbar-control-chevron);
+  flex: 0 0 var(--size-toolbar-control-chevron);
+  color: var(--color-text-tertiary);
+}
+
+@mixin menu-surface {
+  @include menu.surface;
+  width: clamp(
+    var(--width-menu-bounded-min),
+    var(--radix-dropdown-menu-trigger-width),
+    var(--width-menu-bounded-max)
+  );
+}
+
+@mixin menu-title {
+  padding: 4px var(--padding-toolbar-control-inline) 3px;
+  color: var(--color-text-tertiary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+}
+
+@mixin menu-section {
+  @include menu.list;
+  max-height: var(--height-menu-list-max);
+  overflow-y: auto;
+}
+
+@mixin menu-item {
+  @include menu.item;
+  justify-content: space-between;
+}
+
+@mixin menu-item-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--gap-control-group);
+
+  > svg {
+    width: var(--size-toolbar-control-icon);
+    height: var(--size-toolbar-control-icon);
+    flex: 0 0 var(--size-toolbar-control-icon);
+    color: var(--color-text-secondary);
+  }
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@mixin menu-check {
+  width: var(--size-toolbar-control-icon);
+  height: var(--size-toolbar-control-icon);
+  flex: 0 0 var(--size-toolbar-control-icon);
+  color: var(--color-text);
+}

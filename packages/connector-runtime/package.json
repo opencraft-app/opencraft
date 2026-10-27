@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/connector-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contract": "./src/contract.ts",
+    "./runtime": "./src/runtime.ts",
+    "./capability-runtime": "./src/capability-runtime.ts",
+    "./approvals": "./src/approvals.ts",
+    "./lifetime": "./src/lifetime.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

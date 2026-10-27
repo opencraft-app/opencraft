@@ -1,0 +1,20 @@
+@use "@opencraft/design-system/menu.web" as menu;
+
+.ui-button.ui-choice-select__trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+}
+.ui-choice-select__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-choice-select__menu {
+  @include menu.surface;
+  width: var(--radix-dropdown-menu-trigger-width);
+  z-index: var(--layer-floating-control);
+  scrollbar-width: thin;
+}
+.ui-choice-select__option {
+  @include menu.item;
+  > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+}
+.ui-choice-select__list { @include menu.list; }
+.ui-choice-select__check { display: flex; align-items: center; justify-content: center; width: 16px; flex: 0 0 16px; color: var(--color-text-secondary); }

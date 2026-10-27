@@ -1,0 +1,41 @@
+@use "./interaction-mixins.web" as controls;
+
+// Scroll containers can become focusable without a tabindex. Reset their UA
+// outline too; a theme-owned ring is supplied only for keyboard navigation.
+:where(:focus) {
+  outline: none;
+}
+
+// WebKit may match :focus-visible on a tapped text field or on a dialog's
+// auto-focused button. Pointer modality, not :focus-visible alone, owns the
+// distinction between touch and keyboard focus presentation.
+// This is a fallback, not an owner of every component's focus presentation.
+// Keep the entire selector at zero specificity: contenteditable can match
+// :focus-visible even after a mouse click, and the Composer owns no outline.
+:where(:root:not([data-touch-interaction]) :is(a[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable]):focus-visible) {
+  @include controls.focus-indicator;
+}
+
+// Feature styles may also author their own :focus-visible outline or shadow.
+// WebKit can keep matching that pseudo-class after a touch, so the touch
+// modality must win the cascade even against those later, more specific rules.
+// Hardware Tab removes the marker before focus moves, preserving keyboard rings.
+:root[data-touch-interaction] :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+// showModal() may auto-focus a button after the originating pointer event has
+// completed. The dialog keeps that origin until its first keyboard Tab.
+dialog[data-opened-by-pointer="true"] :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+// Pointer activation and focus restoration are independent: Radix/native dialogs
+// must retain real focus without inheriting the browser's previous keyboard ring.
+// Editing fields keep their own caret/border/focus treatment. Only the outline
+// is suppressed, so selected/open surfaces and elevation are not erased.
+:root[data-pointer-focus] :focus-visible:not(input):not(textarea):not([contenteditable]):not([role="textbox"]) {
+  outline: none !important;
+}

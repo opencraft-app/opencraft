@@ -1,0 +1,78 @@
+import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "vite";
+const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/touch-experience";
+await mkdir(output, { recursive: true });
+const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] }, server: { host: "127.0.0.1", port: 0 }, plugins: [{ name: "touch-experience", configureServer(server) { server.middlewares.use((req, res, next) => {
+  if (!req.url?.startsWith("/?")) return next();
+  res.setHeader("content-type", "text/html");
+  res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/touch-newera.tsx"></script>');
+}); } }] });
+const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+await vite.listen();
+const browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
+const evidence: unknown[] = [];
+try {
+  for (const entry of ["standalone", "embedded"]) for (const touch of [true, false]) for (const mode of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: { width: touch ? 390 : 1280, height: 844 }, hasTouch: touch, isMobile: touch });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`${vite.resolvedUrls!.local[0]}?entry=${entry}&mode=${mode}`);
+    const editor = page.locator(".opencraft-composer-editor"), shell = page.locator(".opencraft-composer-shell");
+    const control = page.getByRole("radiogroup", { name: "触控体验", exact: true });
+    const option = (name: string) => control.getByRole("radio", { name, exact: true });
+    const selected = async (name: string) => assert.equal(await option(name).getAttribute("aria-checked"), "true");
+    const activate = async (name: string) => touch ? option(name).tap() : option(name).click();
+    const density = async (expected: string) => page.waitForFunction(value => document.documentElement.dataset.uiDensity === value, expected);
+    await editor.waitFor();
+    assert.equal(await control.count(), 1);
+    assert.equal(await control.getByRole("radio").count(), 3);
+    assert.equal(await page.getByRole("switch", { name: /Newera|触控/ }).count(), 0, "the old independent switches are absent");
+    await selected("自动");
+    await density(touch ? "touch" : "compact");
+    assert.equal(await shell.evaluate(node => getComputedStyle(node).borderRadius), touch ? "28px" : "16px");
+    assert.equal(await page.locator("html").getAttribute("data-touch-newera"), null);
+    await editor.fill("切换体验时保留草稿");
+    const original = await editor.elementHandle();
+    await activate("关闭");
+    await density("compact");
+    assert.equal(await editor.innerText(), "切换体验时保留草稿");
+    assert.equal(await original!.evaluate(node => node === document.querySelector(".opencraft-composer-editor")), true);
+    await page.reload();
+    await editor.waitFor();
+    await selected("关闭");
+    await density("compact");
+    await activate("开启");
+    await density("touch");
+    assert.equal(await shell.evaluate(node => getComputedStyle(node).borderRadius), "28px");
+    for (const button of await control.getByRole("radio").all()) assert((await button.boundingBox())!.height >= 44);
+    await page.reload();
+    await editor.waitFor();
+    await selected("开启");
+    await density("touch");
+    // Keyboard selection uses one tab stop and wraps; the shared primitive owns it.
+    await option("开启").focus();
+    await page.keyboard.press("ArrowRight");
+    await selected("关闭");
+    await page.keyboard.press("Home");
+    await selected("自动");
+    await page.keyboard.press("End");
+    await selected("关闭");
+    await page.keyboard.press("ArrowRight");
+    await selected("自动");
+    assert.equal(await control.locator('[tabindex="0"]').count(), 1);
+    await density(touch ? "touch" : "compact");
+    await editor.fill("最终草稿保持");
+    await page.screenshot({ path: `${output}/${entry}-${touch ? "touch" : "mouse"}-${mode}.png`, fullPage: true });
+    await page.reload();
+    await editor.waitFor();
+    await selected("自动");
+    await density(touch ? "touch" : "compact");
+    assert.deepEqual(errors, []);
+    evidence.push({ entry, touch, mode, choices: 3, automatic: true, persistedOverrides: true, sameEditor: true, keyboard: true, errors });
+    await context.close();
+  }
+  await writeFile(`${output}/result.json`, JSON.stringify(evidence, null, 2));
+  console.log("PASS: unified three-segment touch experience, automatic capability, persistence, keyboard, draft and editor continuity in both entries");
+} finally { await browser.close(); await vite.close(); }

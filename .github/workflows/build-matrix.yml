@@ -1,0 +1,226 @@
+name: build-matrix
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      validation:
+        description: Validation scope (non-Web platforms are opt-in)
+        type: choice
+        options: [web, full]
+        default: web
+      package_macos:
+        description: Build the macOS DMG (also selects full validation)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-matrix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+    with:
+      full-matrix: ${{ github.event_name == 'workflow_dispatch' && (inputs.validation == 'full' || inputs.package_macos) }}
+
+  hover-policy:
+    runs-on: ubuntu-latest
+    # Slow system-package mirrors must leave time for the browser smoke checks.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      - run: npm run check:hover
+      - run: npm run test:hover-policy
+        if: always() && steps.dependencies.outcome == 'success'
+      - id: browser
+        run: npx playwright install --with-deps chromium
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run smoke:touch-hover
+        if: always() && steps.browser.outcome == 'success'
+
+  portable:
+    needs: plan
+    if: needs.plan.outputs.has-builds == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Check project internationalization
+        run: npm run check:i18n && npm run test:i18n
+        if: matrix.target == 'web-browser'
+      - run: npm run test:react-runtime
+        if: matrix.target == 'web-browser'
+      - run: npm run typecheck --workspace @opencraft/workbench-web
+        if: matrix.target == 'web-browser'
+      - run: npm run matrix:check
+      - run: npm run matrix:build -- ${{ matrix.target }}
+      - name: Browser bootstrap regression (current engine)
+        if: matrix.target == 'web-browser'
+        run: |
+          npx playwright install --with-deps chromium
+          npm run smoke:browser-bootstrap
+      - name: Browser bootstrap regression (Chrome 116)
+        if: matrix.target == 'web-browser'
+        env:
+          OPENCRAFT_EXPECT_CHROMIUM_MAJOR: '116'
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://storage.googleapis.com/chrome-for-testing-public/116.0.5845.96/linux64/chrome-linux64.zip \
+            --output "$RUNNER_TEMP/chrome116.zip"
+          unzip -q "$RUNNER_TEMP/chrome116.zip" -d "$RUNNER_TEMP/chrome116"
+          OPENCRAFT_CHROMIUM_EXECUTABLE="$RUNNER_TEMP/chrome116/chrome-linux64/chrome" npm run smoke:browser-bootstrap
+
+  extensions:
+    needs: plan
+    if: needs.plan.outputs.extensions == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:extension-example
+      - run: npm run test:extensions
+      - run: npm run test:extension-storage
+      - run: npm run typecheck --workspace @opencraft/extension-contract
+      - run: npm run typecheck --workspace @opencraft/extension-runtime
+      - run: npm exec -- tsc --allowJs --checkJs --strict --noEmit --module ESNext --moduleResolution Bundler --target ES2022 --skipLibCheck examples/extensions/hello.mjs
+
+  macos-native:
+    needs: plan
+    if: needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:identity
+      - run: npm run build:electron:host
+      - run: npm run test:native-speech
+
+  macos-electron:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && inputs.package_macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+      OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:identity
+      - run: npm run prepare:dsh-runtime
+      - run: npm run smoke:local-agent
+      - run: npm run build:electron:release
+      - name: Package an ad-hoc signed CI DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm exec --workspace @opencraft/workbench-electron -- electron-builder --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
+      - name: Verify and launch the app from the final DMG
+        env:
+          OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-macos-smoke
+        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/workbench-electron/release/OpenCraft-*.dmg
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: electron-macos-smoke
+          path: ${{ runner.temp }}/opencraft-macos-smoke
+          retention-days: 3
+      - uses: actions/upload-artifact@v7
+        with:
+          name: electron-macos-native
+          path: apps/workbench-electron/release/OpenCraft-*
+          retention-days: 3
+
+  linux-headless:
+    needs: plan
+    if: needs.plan.outputs.headless-tests == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:headless-server
+      - run: npm run matrix:build -- headless-linux-amd64-tar
+        if: needs.plan.outputs.headless-package == 'true'
+      - run: npm run smoke:headless:linux
+        if: needs.plan.outputs.headless-package == 'true'
+      - uses: actions/upload-artifact@v7
+        if: needs.plan.outputs.headless-package == 'true'
+        with:
+          name: headless-linux-amd64-tar
+          path: release/OpenCraft-server-*-linux-amd64.tar.gz
+          retention-days: 3
+
+  build-checks:
+    if: always()
+    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, hover-policy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require selected builds to succeed
+        env:
+          EXTENSIONS_RESULT: ${{ needs.extensions.result }}
+          EXTENSIONS_SELECTED: ${{ needs.plan.outputs.extensions }}
+          HOVER_RESULT: ${{ needs.hover-policy.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          BUILD_RESULT: ${{ needs.portable.result }}
+          NATIVE_RESULT: ${{ needs.macos-native.result }}
+          PACKAGE_RESULT: ${{ needs.macos-electron.result }}
+          HEADLESS_RESULT: ${{ needs.linux-headless.result }}
+          BUILD_SELECTED: ${{ needs.plan.outputs.has-builds }}
+          NATIVE_SELECTED: ${{ needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos) }}
+          PACKAGE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs.package_macos }}
+          HEADLESS_SELECTED: ${{ needs.plan.outputs.headless-tests }}
+        run: |
+          test "$PLAN_RESULT" = success
+          test "$HOVER_RESULT" = success
+          require_selected() {
+            if [ "$1" = true ]; then
+              test "$2" = success
+            else
+              test "$1" = false && test "$2" = skipped
+            fi
+          }
+          require_selected "$EXTENSIONS_SELECTED" "$EXTENSIONS_RESULT"
+          require_selected "$BUILD_SELECTED" "$BUILD_RESULT"
+          require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"
+          require_selected "$PACKAGE_SELECTED" "$PACKAGE_RESULT"
+          require_selected "$HEADLESS_SELECTED" "$HEADLESS_RESULT"

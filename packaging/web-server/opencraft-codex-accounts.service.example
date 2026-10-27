@@ -1,0 +1,21 @@
+# Install as the existing opencraft-codex-core.service only during explicit migration.
+[Unit]
+Description=OpenCraft Codex account Core (split mode)
+After=network.target
+
+[Service]
+Type=simple
+User=opencraft
+RuntimeDirectory=opencraft-codex-core
+RuntimeDirectoryMode=0700
+UMask=0077
+WorkingDirectory=/srv/opencraft
+ExecStart=/usr/bin/node /opt/opencraft/codex-core/main.cjs --endpoint /run/opencraft-codex-core/control.sock --app-server-endpoint /run/opencraft-codex-appserver/control.sock --proxy-port 9989 --token-file /var/lib/opencraft/daemon.token --codex-executable /usr/local/bin/codex --runtime-directory /srv/opencraft --data-directory /var/lib/opencraft/codex --native-codex-home-directory /var/lib/opencraft/native-codex
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+# Drain accepted inference/credential operations, even when they exceed a usual stop timeout.
+TimeoutStopSec=infinity
+
+[Install]
+WantedBy=multi-user.target

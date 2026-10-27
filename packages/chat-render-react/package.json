@@ -1,0 +1,25 @@
+{
+  "name": "@opencraft/chat-render-react",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./code-highlight": "./src/code-highlight-engine.ts",
+    "./code-highlight-themes": "./src/code-highlight-themes.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@shikijs/core": "4.5.0",
+    "@shikijs/engine-javascript": "4.5.0",
+    "@shikijs/langs": "4.5.0",
+    "@opencraft/chat-document": "0.1.0",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0"
+  }
+}

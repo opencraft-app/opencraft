@@ -1,0 +1,18 @@
+{
+  "id": "opencraft",
+  "name": "OpenCraft Agent Workbench",
+  "kind": "application",
+  "path": ".",
+  "owner": "opencraft-app/maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "identity-access", "site-environment-routing"],
+  "summary": "维护 Chat Runtime、Web/Expo/Electron Workbench 和 AppServer 适配层。",
+  "runtime": "TypeScript、React 19、Vite、Expo、Electron、Node.js",
+  "interfaces": ["Workbench Web", "Expo native app", "Electron desktop", "AppServer protocol", "extension runtime"],
+  "dependencies": ["agent-runtime", "service-gateway", "identity"],
+  "source_docs": ["README.md", "AGENTS.md", "docs/upstream-history.md"],
+  "agent_entry": "AGENTS.md",
+  "service_docs": "docs/README.md",
+  "deploy": ["config/build-matrix.json", "scripts/publish-workbench-web.mjs"],
+  "generated_paths": ["apps/*/dist*"]
+}

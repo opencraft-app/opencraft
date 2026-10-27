@@ -1,0 +1,139 @@
+@use "./native-control-icons.generated";
+@use "@opencraft/design-system/controls.web" as controls;
+
+@mixin glyph($name) {
+  background: currentColor;
+  mask: var(--ui-control-icon-#{$name}) center / contain no-repeat;
+}
+
+// Preserve native inputs, labels, events, validation and picker activation. Only
+// their paint is adapted; browser/system popups retain platform behavior.
+:where(input[type="date"], input[type="datetime-local"])::-webkit-calendar-picker-indicator {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  @include glyph(date);
+  cursor: pointer;
+  opacity: .7;
+}
+:where(input[type="search"])::-webkit-search-cancel-button {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-inline-start: 6px;
+  @include glyph(close);
+  cursor: pointer;
+}
+:where(input.settings-control-input[type="number"], input.ui-native-number[type="number"])::-webkit-inner-spin-button {
+  appearance: none;
+  width: 16px;
+  height: 24px;
+  @include glyph(number-stepper);
+  cursor: pointer;
+}
+:where(input[type="checkbox"]) {
+  position: relative;
+  appearance: none;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  vertical-align: middle;
+  color: var(--color-text-secondary);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    @include glyph(checkbox);
+    pointer-events: none;
+  }
+  &:checked::before { @include glyph(checkbox-checked); }
+  &:indeterminate::before { @include glyph(checkbox-indeterminate); }
+  &:checked, &:indeterminate { color: var(--color-text-accent); }
+  &:disabled { @include controls.disabled-feedback; }
+}
+
+.ui-native-select {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  > select { width: 100%; box-sizing: border-box; }
+  &:not([data-list]) > select {
+    appearance: none;
+    padding-inline-end: 32px;
+  }
+  > svg {
+    position: absolute;
+    inset-inline-end: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-secondary);
+    pointer-events: none;
+  }
+  &:has(> select:disabled) > svg { @include controls.disabled-feedback; }
+}
+
+.ui-native-disclosure {
+  list-style: none;
+  &::-webkit-details-marker { display: none; }
+  &::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-inline-end: 4px;
+    vertical-align: -2px;
+    @include glyph(chevron-right);
+  }
+}
+details[open] > .ui-native-disclosure::before { @include glyph(chevron-down); }
+
+.ui-control-glyph {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  &--chevron-down { @include glyph(chevron-down); }
+  &--chevron-right { @include glyph(chevron-right); }
+}
+
+// CodeMirror owns the panel commands, keyboard scopes and labels. Its locked
+// default close button is a text glyph; adapt its visible paint at the boundary.
+.workspace-code-editor .cm-panel.cm-search button[name="close"] {
+  @include controls.quiet-control;
+  font-size: 0;
+  display: grid;
+  place-items: center;
+  width: max(28px, var(--size-control-hit-min));
+  height: max(28px, var(--size-control-hit-min));
+  &::before { content: ""; width: 16px; height: 16px; @include glyph(close); }
+}
+.workspace-code-editor .cm-editor .cm-panels {
+  color: var(--color-text);
+  background: var(--color-background-elevated-secondary);
+}
+.workspace-code-editor .cm-editor .cm-panel.cm-search {
+  .cm-textfield, .cm-button {
+    color: var(--color-text);
+    background: var(--color-background-surface);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-control);
+  }
+  padding-inline-end: calc(max(28px, var(--size-control-hit-min)) + 4px);
+}
+
+@media (forced-colors: active) {
+  // Preserve system contrast and focus treatment, including engines that do not
+  // expose native pseudo-elements. This fallback is intentional accessibility.
+  :where(input[type="date"], input[type="datetime-local"])::-webkit-calendar-picker-indicator,
+  :where(input[type="search"])::-webkit-search-cancel-button,
+  :where(input.settings-control-input[type="number"], input.ui-native-number[type="number"])::-webkit-inner-spin-button { appearance: auto; mask: none; background: revert; }
+  .ui-native-select:not([data-list]) > select { appearance: auto; padding-inline-end: revert; }
+  .ui-native-select > svg { display: none; }
+  :where(input[type="checkbox"]) { appearance: auto; &::before { display: none; } }
+  .ui-control-glyph, .ui-native-disclosure::before,
+  .workspace-code-editor .cm-panel.cm-search button[name="close"]::before { color: CanvasText; forced-color-adjust: none; }
+}

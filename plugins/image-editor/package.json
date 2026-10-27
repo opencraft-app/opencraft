@@ -1,0 +1,22 @@
+{
+  "name": "@opencraft/plugin-image-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./editor.web": "./src/editor.web.scss"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/design-system": "0.1.0",
+    "@opencraft/design-system-web": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/i18n": "0.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

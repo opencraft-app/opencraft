@@ -1,0 +1,25 @@
+# 进度
+
+- 已读取服务维护规范、验证清单、平台设计与 TDD/计划技能。
+- 当前工作树改动已记录，尚未修改生产实现。
+- Side Chat 清理重试及原始错误保留均经历红绿测试，8/8 通过。
+- 新增公开 persistence backend 路由与投影隔离；连续历史、提供方 replayState 和原生分支边界测试 2/2 通过。
+- 原生插件/打包入口接入中；启动真实隔离 DSH 校验新存储插件。
+- 新插件真实 DSH 模型/重启冒烟通过；本机、Runtime、AppHost 类型检查通过，当前聚焦 12/12。
+- 真实会话冒烟首轮测试模型查找使用了原始 ID，DTO 实际为编码路由；改用同一 decodeModel 契约，未修改产品模型路由。
+- 真实 Fork、继承上下文、边界、临时列表排除及两个逻辑订阅者已运行；落盘审计遇到 DSH 目录符号链接，改为仅递归隔离目录内实际文件，不读取链接目标。
+- SDK 迟到 unsubscribe/新消费者竞态经过红绿验证，15/15 测试通过，恢复实际服务端订阅而非只保留缓存。
+- Side Chat canonical 边界注入经过红绿验证，9/9 测试通过；注入发生在 view 获取前，支持性由宿主声明约束。
+- 真实本机原生 Fork/边界、临时落盘审计、逻辑订阅、名称/归档和重启恢复已全部通过，只调用合成本地模型。
+- 边界不制造 UI 用户 turn 的测试原实现已通过，保留 HypNode 原转译逻辑，不增加无必要特殊判断。
+- 真实 Radix 菜单/命名对话框 UI 冒烟已通过；测试入口改用项目既有 configFile:false 隔离 fixture，避开生产恢复脚本和 HMR preamble。
+- 命名旧失败保护、跨 Host 缓存、归档目录、临时最终订阅者卸载、宽限卸载/新订阅序列化、关闭临时元数据防复活均已测试。
+- 完整 OpenCraft gate exit 0；独立桌面包 codesign strict/deep 通过。
+- 实际桌面命名入口通过；Fork 导航测试误用 query threadId，实际路由为 /local/:id，按观察到的 URL 修正测试，继续实际桌面验收。
+- 桌面首次空模型 fixture 引擎私有默认不在产品可用目录，实际 Fork 正确拒绝；QA 改为显式合成本地提供商/模型（地址不可连接且不执行推理）。状态首个 DOM 点可能隐藏，等待其 ready 属性已挂载，不要求该布局点可见。
+- 实际签名桌面经 AppHost/DSH 的命名、Fork 导航、归档和恢复 UI 全部通过；截图 `/tmp/opencraft-thread-desktop.png`，不执行推理。
+- 最终聚焦生命周期 43/43、Host/AppHost 16/16；完整 gate exit 0。未提交/推送/发布。
+- 收尾审查发现启动失败遗漏目录关闭，增加 bind failure 红绿测试并关闭各失败路径的 ThreadLifecycle。
+- 断连临时线程 release:false 无重试、断连释放与新 resume 不串行均以红测复现；统一入队且保留宽限重试，测试通过。
+- 收尾修改后再次通过真实 DSH 冒烟、Host 类型检查及实际桌面菜单验收；最终包为 `apps/workbench-electron/release/thread-lifecycle-20260915-checked/mac-arm64/OpenCraft Preview.app`，codesign strict/deep 验证通过。
+- 文档检查 errors/warnings 均为空；显式源码/正式设计映射检查和 git diff --check 通过。Root 历史 Context 问题未扩散清理。

@@ -1,0 +1,28 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Keep GTK dialog APIs on the existing dynamic symbol loader
+
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -257,3 +257,4 @@
+ feat_target_bound_native_ime.patch
+ feat_remote_tab_native_clipboard.patch
+ fix_component_pulseaudio_embedder_boundary.patch
++fix_gtk_dialog_dynamic_symbols.patch
+diff --git a/patches/chromium/fix_gtk_dialog_dynamic_symbols.patch b/patches/chromium/fix_gtk_dialog_dynamic_symbols.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/fix_gtk_dialog_dynamic_symbols.patch
+@@ -0,0 +1,12 @@
++From: OpenCraft <dev@opencraft.app>
++Subject: Register the GTK dialog symbols added by Electron patches
++
++diff --git a/ui/gtk/gtk.sigs b/ui/gtk/gtk.sigs
++--- a/ui/gtk/gtk.sigs
+++++ b/ui/gtk/gtk.sigs
++@@ -197,3 +197,5 @@
++ GType gtk_settings_get_type(void);
++ GType gtk_dialog_get_type(void);
++ void gtk_dialog_set_default_response(GtkDialog* dialog, gint response_id);
+++void gtk_file_chooser_set_show_hidden(GtkFileChooser* chooser, gboolean show_hidden);
+++void gtk_print_settings_set_page_ranges(GtkPrintSettings* settings, GtkPageRange* page_ranges, gint num_ranges);

@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/appserver-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./transport": "./src/transport.ts",
+    "./utf8": "./src/utf8.ts",
+    "./clock": "./src/clock.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/identity-core": "0.1.0"
+  }
+}

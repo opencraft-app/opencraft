@@ -1,0 +1,60 @@
+@use "./typography.web" as typography;
+
+// A quiet glass/aluminium touch surface; media and input ownership stay with
+// the desktop adapter. The pad occupies its own row, never overlays pixels.
+.ui-desktop-trackpad { container-type: size; display: none; min-width: 0; min-height: 0; }
+@media (any-pointer: coarse) {
+  .ui-desktop-view:has(.ui-desktop-trackpad:not([hidden])) {
+    grid-template-rows: minmax(0, 1fr) clamp(64px, 28%, 200px);
+    row-gap: 76px;
+    .ui-desktop-view__viewport { align-items: flex-start; }
+    .ui-desktop-view__controls { left: 50%; right: auto; width: max-content; max-width: calc(100vw - 32px); translate: -50% 0; }
+    .ui-desktop-trackpad { display: flex; }
+    // Keyboard + chat leave a short aperture. Keep a real picture, 44px
+    // actions and a usable pad without overflowing the Shell reserve.
+    @container (height < 240px) {
+      padding: 8px;
+      grid-template-rows: minmax(0, 1fr) 48px;
+      row-gap: 64px;
+      .ui-desktop-view__island { padding-block: 4px; }
+    }
+  }
+}
+.ui-desktop-trackpad__surface {
+  --trackpad-top: color-mix(in srgb, var(--color-text) 5%, var(--color-background-surface));
+  --trackpad-bottom: color-mix(in srgb, var(--color-text) 10%, var(--color-background-surface));
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
+  background: linear-gradient(155deg, var(--trackpad-top), var(--trackpad-bottom));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-background-surface) 80%, transparent), 0 3px 8px #0000000a;
+  color: var(--color-text-secondary);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  &[data-pressed="true"] { box-shadow: inset 0 1px 4px #00000020; }
+}
+.ui-desktop-trackpad__title { @include typography.role(body, null); color: var(--color-text); }
+.ui-desktop-trackpad__hint, .ui-desktop-trackpad__detail {
+  @include typography.role(caption, null);
+  text-align: center;
+  pointer-events: none;
+}
+.ui-desktop-trackpad__detail { opacity: .7; }
+@media (forced-colors: active) {
+  .ui-desktop-trackpad__surface { background: Canvas; border-color: CanvasText; color: CanvasText; }
+}
+
+@container (height < 110px) {
+  .ui-desktop-trackpad__title, .ui-desktop-trackpad__detail { display: none; }
+}

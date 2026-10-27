@@ -1,0 +1,114 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+// Process summaries (including compaction) have one visual owner, independent
+// of the reading preference. Disclosure geometry/interaction stays in app.scss.
+.thread-activity-item__header,
+.thread-subagent-activity__status {
+  @include typography.role(body);
+  // Long single-line commands must use the shared role at its declared size,
+  // rather than receiving a separate mobile text-inflation factor.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.thread-thinking-placeholder {
+  @include typography.role(body, tertiary);
+}
+
+.thread-activity-item__icon {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+
+  > svg,
+  > img {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    object-fit: contain;
+  }
+
+  // Keep the painted silhouette near 15px and the stroke at 1.2 CSS pixels.
+  // Shared source canvases have different optical padding; the rail owns calibration.
+  > .ui-action-glyph { width: 22.5px; height: 22.5px; stroke-width: 1.28; }
+  > :is([data-action-glyph="square"], [data-action-glyph="document"],
+    [data-action-glyph="code-file"], [data-action-glyph="text-file"],
+    [data-action-glyph="diff-file"], [data-action-glyph="json-file"], [data-action-glyph="image-file"]) {
+    width: 25.72px; height: 25.72px; stroke-width: 1.12;
+  }
+}
+
+// Process artwork uses source-canvas padding to balance the same rail.
+.thread-activity-item__icon > .activity-glyph {
+  stroke-width: 1.44;
+
+  &[data-activity-glyph="files"],
+  &[data-activity-glyph="browser"],
+  &[data-activity-glyph="agent"] {
+    width: 22.5px;
+    height: 22.5px;
+    stroke-width: 1.28;
+  }
+
+  &[data-activity-glyph="patch"] {
+    width: 24px; height: 24px; stroke-width: 1.2;
+  }
+
+  &[data-activity-glyph="search"] {
+    width: 21.82px; height: 21.82px; stroke-width: 1.32;
+  }
+
+  &[data-activity-glyph="terminal"] {
+    width: 21.18px;
+    height: 21.18px;
+    stroke-width: 1.36;
+  }
+  &[data-activity-glyph="read"] {
+    width: 22.15px; height: 22.15px; stroke-width: 1.3;
+  }
+}
+
+// The intact base silhouette is always visible. Only active detail overlays move.
+.thread-activity-item__icon > .activity-glyph {
+  > :is(.activity-glyph__flow, .activity-glyph__ink) {
+    opacity: 0;
+    stroke: var(--color-text);
+  }
+  > .activity-glyph__flow { stroke-dasharray: 12 88; }
+  > .activity-glyph__ink { stroke-dasharray: 100; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .thread-activity-item__icon[data-running="true"] > .activity-glyph {
+    > .activity-glyph__flow { animation: activity-glyph-flow 2.8s linear infinite; }
+    > .activity-glyph__ink { animation: activity-glyph-ink 2.8s ease-in-out infinite; }
+    > .activity-glyph__cursor { animation: activity-glyph-cursor 1.4s ease-in-out infinite; }
+    > .activity-glyph__pulse { animation: activity-glyph-pulse 2.8s ease-in-out infinite; }
+  }
+}
+
+@keyframes activity-glyph-flow {
+  from { opacity: 0.8; stroke-dashoffset: 100; }
+  to { opacity: 0.8; stroke-dashoffset: 0; }
+}
+
+@keyframes activity-glyph-ink {
+  0%, 12% { opacity: 0; stroke-dashoffset: 100; }
+  35% { opacity: 0.8; }
+  65% { opacity: 0.8; stroke-dashoffset: 0; }
+  88%, 100% { opacity: 0; stroke-dashoffset: 0; }
+}
+
+@keyframes activity-glyph-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@keyframes activity-glyph-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}

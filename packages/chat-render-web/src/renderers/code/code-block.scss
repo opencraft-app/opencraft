@@ -1,0 +1,173 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+
+.chat-code-block {
+  position: relative;
+  contain: inline-size;
+  width: 100%;
+  min-width: 0;
+  margin-block: 14px;
+  // reset removes it; without the reset every fence drifts off the transcript
+  // reading axis even though the Markdown AST is correct.
+  margin-inline: 0;
+  overflow: clip;
+  border: 0;
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-background-secondary-soft-alpha, var(--alpha-06));
+  color: var(--color-text, var(--text-primary));
+
+  figcaption {
+    position: relative;
+    // Ordinary captions repaint with the surface during touch scrolling.
+    // Only the explicit sticky variant below needs a separate stacking level.
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    color: var(--color-text-tertiary, var(--text-tertiary));
+    font: var(--typography-metadata-font);
+    user-select: none;
+    background: var(--color-background-secondary-soft-alpha, var(--alpha-06));
+    letter-spacing: var(--typography-metadata-tracking);
+  }
+
+  // Sticky captions compensate for the thread scrollport's retained header
+  // padding; the generic floating-content inset uses a different coordinate space.
+  &[data-code-sticky-header="true"] figcaption {
+    position: sticky;
+    z-index: 10;
+    top: calc(-1px - var(--thread-sticky-header-top, 0px));
+    border-bottom: 1px solid var(--color-border-default, var(--border-default));
+    background-color: var(--color-surface, var(--surface-main));
+    background-image: linear-gradient(
+      var(--color-background-secondary-soft-alpha, var(--alpha-06)),
+      var(--color-background-secondary-soft-alpha, var(--alpha-06))
+    );
+  }
+}
+
+.chat-code-block[data-code-variant="preview"] {
+  border: 1px solid var(--color-border-default, var(--border-default));
+  background: transparent;
+
+  .chat-code-block__scroller {
+    max-height: calc(15lh + 16px);
+  }
+
+  .chat-code-block__actions {
+    opacity: 0;
+    @include controls.touch-input { opacity: 1; }
+  }
+
+  &:focus-within .chat-code-block__actions {
+    opacity: 1;
+  }
+  @include controls.hover-capable {
+    &:hover .chat-code-block__actions {
+      opacity: 1;
+    }
+  }
+}
+
+.chat-code-block__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-code-block__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+  margin-inline-start: auto;
+  transition: opacity var(--transition-duration-basic, 150ms) ease;
+}
+
+.chat-code-action {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: var(--cursor-interaction, default);
+
+  @include controls.hover-capable {
+    &:hover {
+      background: var(--color-background-primary-ghost-hover, var(--alpha-06));
+      color: var(--color-text, var(--text-primary));
+    }
+  }
+  &:focus-visible {
+    outline: 2px solid var(--color-ring, var(--focus-ring));
+    outline-offset: -2px;
+  }
+}
+
+.chat-code-block__scroller {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px;
+  overflow: auto;
+  outline: none;
+  font-family: var(--font-family-mono);
+  // Streaming and syntax-only DOM updates keep the shared reading size.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  // Small monospace tokens remain reserved for metadata and terminal chrome.
+  font-size: var(--opencraft-chat-font-size);
+  line-height: var(--typography-prose-code-line-height);
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-ring, var(--focus-ring));
+  }
+
+  pre {
+    width: max-content;
+    min-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent !important;
+    font: inherit;
+    tab-size: 4;
+    white-space: pre;
+  }
+
+  code {
+    font: inherit;
+  }
+}
+
+.chat-code-block__svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 384px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.chat-code-block[data-code-wrap="true"]
+  .chat-code-block__scroller
+  :is(pre, code) {
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-code-block[data-code-pending="true"] .chat-code-block__scroller {
+  opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-code-block__scroller {
+    transition: opacity var(--transition-duration-basic, 150ms) ease;
+  }
+}

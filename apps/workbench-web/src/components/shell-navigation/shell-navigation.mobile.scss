@@ -1,0 +1,151 @@
+@use "../mobile-glass" as glass;
+@use "@opencraft/design-system/controls.web" as controls;
+
+// Small-screen drawer presentation. AppShell owns the breakpoint/gesture signal;
+// the same navigation actions and context portals survive layout changes.
+.shell-sidebar__column[data-navigation-layout="mobile"] {
+  // Share the compact leading edge with group/date/thread text.
+  --space-icon-leading-inset: 0px;
+  --padding-navigation-row-inline: var(--padding-sidebar-activity-row-inline);
+  // The stationary Sidebar surface reaches the bottom edge. Floating controls
+  // retain their safe inset and ordinary 16px clearance independently of the list.
+  --shell-mobile-actions-bottom-reserve: calc(16px + var(--shell-mobile-safe-bottom));
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+
+  // Navigation and conversations share a native scrollport;
+  // display:contents keeps the existing portal/action owners without a second list.
+  .shell-sidebar__scroll {
+    grid-column: 1 / -1; grid-row: 1;
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden auto;
+    overscroll-behavior: contain; scrollbar-width: none;
+  }
+  .shell-sidebar__navigation.sidecar-content-slot,
+  .shell-sidebar__navigation > .sidecar-shared-content,
+  .shell-sidebar-navigation,
+  .shell-sidebar-navigation .shell-navigation__items--applications {
+    display: contents;
+  }
+  .shell-sidebar-navigation {
+    .shell-navigation__items--applications {
+      > button {
+        @include controls.navigation-control;
+        flex-direction: row; justify-content: flex-start;
+        width: auto; min-height: 44px; flex-shrink: 0; margin: 2px 8px; gap: var(--gap-navigation-row-content);
+        padding: 0 var(--padding-navigation-row-inline);
+        .shell-navigation__item-label {
+          display: flex; flex: 1; max-width: none;
+          white-space: normal; overflow: visible; text-overflow: clip;
+        }
+        .shell-navigation__item-label--short { display: none; }
+        .shell-navigation__item-label--full { display: inline-flex; align-items: center; gap: 6px; }
+      }
+    }
+  }
+  .shell-sidebar__context.sidecar-content-slot {
+    flex: 0 0 auto; min-height: min-content; height: auto; overflow: visible;
+    > .sidecar-shared-content { height: auto; }
+    border-start-start-radius: 0;
+    background: transparent;
+  }
+  // Settings shares the floating action row; no account strip or bottom plate.
+  // SafeLayout owns the action row's bottom inset independently of scroll paint.
+  .shell-sidebar__rail-footer.sidecar-content-slot {
+    grid-column: 2; grid-row: 1;
+    align-self: end; z-index: 2;
+    padding: 16px 16px 16px 12px;
+    border: 0; background: transparent;
+    pointer-events: none;
+  }
+  .shell-sidebar__rail-footer .shell-navigation__footer--unified {
+    display: flex; flex-direction: column; gap: 8px; width: auto; padding: 0;
+    .shell-navigation__entrance {
+      pointer-events: auto;
+      justify-content: center;
+      width: var(--size-material-liquid-control);
+
+      > svg, .shell-navigation__icon-wrapper > svg { width: 20px; height: 20px; }
+    }
+    .shell-navigation__name { display: none; }
+  }
+  // One native scrolling owner makes search and filters fold out with the list.
+  // Keeping them mounted preserves text, focus and open/filter state on resize.
+  .sidebar-panel { height: auto; overflow: visible; }
+  .sidebar-content-scroll { flex: 0 0 auto; overflow: visible; contain: none; }
+  .sidebar-tasks { flex: 0 0 auto; }
+  .sidebar-thread-group-heading { background: var(--opencraft-sidebar-heading-background, var(--shell-mobile-sidebar-background)); }
+  .sidebar-thread-group-heading .sidebar-thread-group-toggle {
+    min-height: max(44px, var(--size-control-hit-min));
+    > svg { opacity: 1; }
+  }
+  .sidebar-activity-list { flex: 0 0 auto; overflow: visible; }
+}
+
+// The list scrolls behind the floating actions to the bottom edge. End padding
+// lets its final row and pagination scroll clear of the controls and safe area;
+// it must not shorten the scrollport or create an opaque action band.
+.shell-sidebar__column[data-navigation-layout="mobile"] {
+  .shell-sidebar__scroll {
+    padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
+  }
+  &:has(.shell-navigation__footer--unified [data-surface="updates"]) .shell-sidebar__scroll {
+    // The update entrance stacks a second 48px button above the first one (8px
+    // gap) while a notice is visible; reserve both so the last row and its
+    // actions scroll clear of the two floating actions.
+    padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+  }
+  .shell-sidebar__floating-action {
+    grid-column: 1; grid-row: 1;
+    align-self: end; justify-self: start;
+    z-index: 2; min-width: 0; max-width: 100%; box-sizing: border-box;
+    padding: 16px 0 16px 16px;
+    pointer-events: none;
+    &:empty { display: none; }
+    .sidebar-new-chat {
+      pointer-events: auto;
+      width: auto; max-width: 100%; margin: 0;
+ gap: 10px;
+      > svg { width: 20px; height: 20px; flex-shrink: 0; }
+      > span:not(.ui-liquid-glass) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+  }
+}
+
+// The drawer header floats above the same native scrollport as navigation/list.
+[data-mobile-sidebar] {
+  .application-brand[data-mobile-mark="hidden"] .application-brand__mark { display: none; }
+  .app-shell-floating-left-panel__surface { position: relative; }
+  .app-shell-floating-left-panel__header {
+    position: absolute; top: var(--shell-mobile-safe-top); left: var(--shell-mobile-safe-left); right: 0;
+    z-index: 3; isolation: isolate; background: transparent; pointer-events: none;
+    &::before {
+      @include glass.surface;
+      background: var(--shell-mobile-sidebar-background);
+      content: ""; position: absolute; inset: 0 0 -12px; z-index: -1; box-shadow: none;
+      mask-image: linear-gradient(#000 calc(100% - 12px), transparent);
+    }
+  }
+  .shell-sidebar__header {
+    gap: 8px;
+    padding-inline-start: 0;
+    > button { pointer-events: auto; }
+    > .app-shell-header__window-controls { pointer-events: none; }
+    .application-brand {
+      flex: 0 1 auto; min-width: 0; padding: 8px 12px; border-radius: 999px;
+      .application-brand__wordmark { overflow: hidden; text-overflow: ellipsis; }
+    }
+    > .shell-sidebar__action {
+      pointer-events: auto; width: var(--size-chrome-action);
+      > svg { width: 20px; height: 20px; }
+    }
+  }
+  .shell-sidebar__column[data-navigation-layout="mobile"] {
+    // The native scrollport reserves the floating header once. Group headings
+    // keep their zero sticky inset; another toolbar inset would leave a row gap.
+    .shell-sidebar__scroll { padding-top: var(--height-toolbar); scroll-padding-top: var(--height-toolbar); }
+    button[data-action-id="shell.search"] { display: none; }
+  }
+}

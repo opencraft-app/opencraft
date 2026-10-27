@@ -1,0 +1,1101 @@
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -254,3 +254,4 @@
+ cherry-pick-4d2451fed3a8.patch
+ cherry-pick-3f6b73b9e0b3.patch
+ cherry-pick-e98f6e2e4f23.patch
++feat_target_bound_native_ime.patch
+diff --git a/patches/chromium/feat_target_bound_native_ime.patch b/patches/chromium/feat_target_bound_native_ime.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/feat_target_bound_native_ime.patch
+@@ -0,0 +1,646 @@
++diff --git a/third_party/blink/public/web/web_input_method_controller.h b/third_party/blink/public/web/web_input_method_controller.h
++--- a/third_party/blink/public/web/web_input_method_controller.h
+++++ b/third_party/blink/public/web/web_input_method_controller.h
++@@ -5,6 +5,7 @@
++ #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_INPUT_METHOD_CONTROLLER_H_
++ #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_INPUT_METHOD_CONTROLLER_H_
++
+++#include <cstdint>
++ #include <vector>
++
++ #include "third_party/blink/public/mojom/input/input_handler.mojom-forward.h"
++@@ -29,6 +30,35 @@
++   };
++
++   virtual ~WebInputMethodController() = default;
+++
+++  // Experimental embedding seam. Native state stays in Blink; callers must
+++  // separately enforce composition ownership and per-frame authorization.
+++  enum class NativeImeOperationForTesting { kCompose, kCommit, kCancel };
+++  struct NativeImeStateForTesting {
+++    bool supported = false;
+++    bool busy = false;
+++    bool has_composition = false;
+++    uint64_t focus_generation = 0;
+++    uint64_t composition_generation = 0;
+++  };
+++  struct NativeImeResultForTesting {
+++    bool dispatched = false;
+++    bool accepted = false;
+++    bool target_valid = false;
+++  };
+++  virtual NativeImeStateForTesting GetNativeImeStateForTesting() const {
+++    return {};
+++  }
+++  virtual NativeImeResultForTesting ApplyNativeImeForTesting(
+++      NativeImeOperationForTesting operation,
+++      const WebString& text,
+++      int selection_start,
+++      int selection_end,
+++      const WebTextInputInfo& expected,
+++      uint64_t focus_generation,
+++      uint64_t composition_generation) {
+++    return {};
+++  }
++
++   // Called to inform the WebInputMethodController of a new composition text. If
++   // selectionStart and selectionEnd has the same value, then it indicates the
++diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
++--- a/third_party/blink/renderer/core/dom/document.cc
+++++ b/third_party/blink/renderer/core/dom/document.cc
++@@ -5850,6 +5850,9 @@
++     return true;
++   }
++
+++  if (GetPage()) {
+++    GetPage()->GetFocusController().InvalidateNativeImeFocus();
+++  }
++   bool focus_change_blocked = false;
++   Element* old_focused_element = focused_element_;
++   focused_element_ = nullptr;
++diff --git a/third_party/blink/renderer/core/editing/commands/typing_command.cc b/third_party/blink/renderer/core/editing/commands/typing_command.cc
++--- a/third_party/blink/renderer/core/editing/commands/typing_command.cc
+++++ b/third_party/blink/renderer/core/editing/commands/typing_command.cc
++@@ -445,6 +445,9 @@
++         !passed_selection_for_insertion_as_undo_step.IsValidFor(document));
++   }
++
+++  ABORT_EDITING_COMMAND_IF(
+++      !frame->GetInputMethodController().IsNativeImeTargetValid());
+++
++   // Do nothing if no need to delete and insert.
++   if (passed_selection_for_insertion_as_undo_step.IsCaret() && new_text.empty())
++     return;
++diff --git a/third_party/blink/renderer/core/editing/editor.cc b/third_party/blink/renderer/core/editing/editor.cc
++--- a/third_party/blink/renderer/core/editing/editor.cc
+++++ b/third_party/blink/renderer/core/editing/editor.cc
++@@ -544,6 +544,10 @@
++     InputEvent::InputType input_type,
++     EditCommand::PasswordEchoBehavior password_echo_behavior,
++     DataTransfer* data_transfer) {
+++  // A legacy textInput handler can change focus after the IME beforeinput.
+++  if (!GetFrame().GetInputMethodController().IsNativeImeTargetValid()) {
+++    return false;
+++  }
++   const VisibleSelection& selection =
++       CreateVisibleSelection(SelectionForCommand(triggering_event));
++   if (!selection.IsContentEditable())
++diff --git a/third_party/blink/renderer/core/editing/ime/input_method_controller.cc b/third_party/blink/renderer/core/editing/ime/input_method_controller.cc
++--- a/third_party/blink/renderer/core/editing/ime/input_method_controller.cc
+++++ b/third_party/blink/renderer/core/editing/ime/input_method_controller.cc
++@@ -360,6 +360,51 @@
++
++ InputMethodController::~InputMethodController() = default;
++
+++InputMethodController::NativeImeTargetScope::NativeImeTargetScope(
+++    InputMethodController& controller)
+++    : controller_(&controller) {
+++  CHECK(!controller.native_ime_scope_active_);
+++  controller.native_ime_scope_focus_generation_ =
+++      controller.NativeImeFocusGeneration();
+++  controller.native_ime_scope_active_ = true;
+++  controller.native_ime_target_ = controller.GetDocument().FocusedElement();
+++  controller.native_ime_root_ =
+++      RootEditableElementOfSelection(controller.Selection());
+++}
+++
+++InputMethodController::NativeImeTargetScope::~NativeImeTargetScope() {
+++  controller_->native_ime_scope_active_ = false;
+++  controller_->native_ime_target_.Clear();
+++  controller_->native_ime_root_.Clear();
+++}
+++
+++bool InputMethodController::NativeImeTargetScope::IsValid() const {
+++  return controller_->IsNativeImeTargetValid();
+++}
+++
+++uint64_t InputMethodController::NativeImeFocusGeneration() const {
+++  Page* page = GetFrame().GetPage();
+++  return page ? page->GetFocusController().NativeImeFocusGeneration() : 0;
+++}
+++
+++bool InputMethodController::IsNativeImeTargetValid() const {
+++  if (!native_ime_scope_active_) {
+++    return true;
+++  }
+++  Page* page = GetFrame().GetPage();
+++  if (!IsAvailable() || !page || !Selection().IsAvailable() ||
+++      !native_ime_target_ || !native_ime_target_->isConnected() ||
+++      page->GetFocusController().FocusedFrame() != frame_ ||
+++      NativeImeFocusGeneration() != native_ime_scope_focus_generation_ ||
+++      GetDocument().FocusedElement() != native_ime_target_) {
+++    return false;
+++  }
+++  const auto& selection = Selection().GetSelectionInDomTree();
+++  return !selection.IsNone() && native_ime_root_ &&
+++         RootEditableElementOf(selection.Anchor()) == native_ime_root_ &&
+++         RootEditableElementOf(selection.Focus()) == native_ime_root_;
+++}
+++
++ bool InputMethodController::IsAvailable() const {
++   return GetExecutionContext();
++ }
++@@ -455,8 +500,9 @@
++       << "compositionType should be TextCompositionUpdate or "
++          "TextCompositionConfirm  or TextCompositionCancel, but got "
++       << static_cast<int>(composition_type);
++-  if (!frame.GetDocument())
++-    return;
+++  if (!frame.GetDocument() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   Element* target = frame.GetDocument()->FocusedElement();
++   if (!target)
++@@ -464,7 +510,7 @@
++
++   DispatchCompositionUpdateEvent(frame, text);
++   // 'compositionupdate' event handler may destroy document.
++-  if (!IsAvailable()) {
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
++     return;
++   }
++
++@@ -472,13 +518,17 @@
++       target, InputEvent::InputType::kInsertCompositionText, text);
++
++   // 'beforeinput' event handler may destroy document.
++-  if (!IsAvailable())
++-    return;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   // TODO(editing-dev): The use of UpdateStyleAndLayout
++   // needs to be audited. see http://crbug.com/590369 for more details.
++   frame.GetDocument()->UpdateStyleAndLayout(DocumentUpdateReason::kInput);
++
+++  if (!IsNativeImeTargetValid()) {
+++    return;
+++  }
++   const bool is_incremental_insertion = NeedsIncrementalInsertion(frame, text);
++
++   switch (composition_type) {
++@@ -508,6 +558,7 @@
++ }
++
++ void InputMethodController::Clear() {
+++  ++native_ime_composition_generation_;
++   RemoveSuggestionMarkerInCompositionRange();
++
++   has_composition_ = false;
++@@ -784,8 +835,9 @@
++     return false;
++   }
++
++-  if (!IsAvailable())
++-    return false;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return false;
+++  }
++
++   Clear();
++
++@@ -795,8 +847,9 @@
++
++   // textInput event handler might destroy document (input event is queued
++   // until later).
++-  if (!IsAvailable())
++-    return false;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return false;
+++  }
++
++   // No DOM update after 'compositionend'.
++   DispatchCompositionEndEvent(GetFrame(), text);
++@@ -929,10 +982,10 @@
++   if (DispatchBeforeInputInsertText(GetDocument().FocusedElement(), text) !=
++       DispatchEventResult::kNotCanceled)
++     return false;
++-  if (!IsAvailable())
++-    return false;
++-  GetEditor().InsertText(text, nullptr);
++-  return true;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return false;
+++  }
+++  return GetEditor().InsertText(text, nullptr) && IsNativeImeTargetValid();
++ }
++
++ bool InputMethodController::InsertTextAndMoveCaret(
++@@ -953,6 +1006,9 @@
++       return false;
++   }
++
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return false;
+++  }
++   // TODO(editing-dev): The use of UpdateStyleAndLayout
++   // needs to be audited. see http://crbug.com/590369 for more details.
++   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
++@@ -987,8 +1043,9 @@
++       GetFrame(), g_empty_string, 0,
++       TypingCommand::TextCompositionType::kTextCompositionCancel);
++   // Event handler might destroy document.
++-  if (!IsAvailable())
++-    return;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   // An open typing command that disagrees about current selection would cause
++   // issues with typing later on.
++@@ -1001,13 +1058,13 @@
++ bool InputMethodController::DispatchCompositionStartEvent(const String& text) {
++   Element* target = GetDocument().FocusedElement();
++   if (!target)
++-    return IsAvailable();
+++    return IsAvailable() && IsNativeImeTargetValid();
++
++   auto* event = MakeGarbageCollected<CompositionEvent>(
++       event_type_names::kCompositionstart, GetFrame().DomWindow(), text);
++   target->DispatchEvent(*event);
++
++-  return IsAvailable();
+++  return IsAvailable() && IsNativeImeTargetValid();
++ }
++
++ void InputMethodController::SetComposition(
++@@ -1023,6 +1080,9 @@
++   // See https://bugs.webkit.org/show_bug.cgi?id=46868
++   GetDocument().UpdateStyleAndLayoutTree();
++
+++  if (!IsNativeImeTargetValid()) {
+++    return;
+++  }
++   SelectComposition();
++
++   // TODO(editing-dev): The use of UpdateStyleAndLayout
++@@ -1099,8 +1159,9 @@
++                                         TypingCommand::kSelectInsertedText,
++                                         TypingCommand::kTextCompositionUpdate);
++   // Event handlers might destroy document.
++-  if (!IsAvailable())
++-    return;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   // TODO(editing-dev): The use of UpdateStyleAndLayout
++   // needs to be audited. see http://crbug.com/590369 for more details.
++@@ -1430,8 +1491,9 @@
++         TargetRangesForInputEvent(*target));
++
++     // Frame could have been destroyed by the beforeinput event.
++-    if (!IsAvailable())
+++    if (!IsAvailable() || !IsNativeImeTargetValid()) {
++       return false;
+++    }
++   }
++
++   // TODO(editing-dev): The use of UpdateStyleAndLayout
++@@ -1440,7 +1502,7 @@
++   TypingCommand::DeleteSelection(GetDocument());
++
++   // Frame could have been destroyed by the input event.
++-  return IsAvailable();
+++  return IsAvailable() && IsNativeImeTargetValid();
++ }
++
++ bool InputMethodController::DeleteSelectionWithoutAdjustment() {
++@@ -1458,8 +1520,9 @@
++         target, InputEvent::InputType::kDeleteContentBackward,
++         TargetRangesForInputEvent(*target));
++     // Frame could have been destroyed by the beforeinput event.
++-    if (!IsAvailable())
+++    if (!IsAvailable() || !IsNativeImeTargetValid()) {
++       return false;
+++    }
++   }
++
++   if (TypingCommand* last_typing_command =
++@@ -1481,7 +1544,7 @@
++       ->Apply();
++
++   // Frame could have been destroyed by the input event.
++-  return IsAvailable();
+++  return IsAvailable() && IsNativeImeTargetValid();
++ }
++
++ bool InputMethodController::MoveCaret(int new_caret_position) {
++@@ -1695,8 +1758,9 @@
++
++ void InputMethodController::GetLayoutBounds(gfx::Rect* control_bounds,
++                                             gfx::Rect* selection_bounds) {
++-  if (!IsAvailable())
++-    return;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   if (GetActiveEditContext()) {
++     return GetActiveEditContext()->GetLayoutBounds(control_bounds,
++@@ -1735,8 +1799,9 @@
++
++ WebTextInputInfo InputMethodController::TextInputInfo() const {
++   WebTextInputInfo info;
++-  if (!IsAvailable())
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
++     return info;
+++  }
++
++   if (!GetFrame().Selection().IsAvailable()) {
++     // plugins/mouse-capture-inside-shadow.html reaches here.
++@@ -1876,8 +1941,9 @@
++ }
++
++ int InputMethodController::ComputeWebTextInputNextPreviousFlags() const {
++-  if (!IsAvailable())
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
++     return kWebTextInputFlagNone;
+++  }
++
++   Element* const element = GetDocument().FocusedElement();
++   if (!element)
++@@ -1951,8 +2017,9 @@
++ ui::mojom::VirtualKeyboardPolicy
++ InputMethodController::VirtualKeyboardPolicyOfFocusedElement() const {
++   // Return the default value if ExecutionContext is not defined.
++-  if (!IsAvailable())
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
++     return ui::mojom::VirtualKeyboardPolicy::AUTO;
+++  }
++
++   AtomicString vk_policy =
++       GetVirtualKeyboardPolicyAttribute(GetDocument().FocusedElement());
++@@ -1978,7 +2045,7 @@
++ }
++
++ WebTextInputType InputMethodController::TextInputType() const {
++-  if (!IsAvailable()) {
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
++     return kWebTextInputTypeNone;
++   }
++
++@@ -2056,14 +2123,17 @@
++   FinishComposingText(kKeepSelection);
++
++   // Event handler might destroy document.
++-  if (!IsAvailable())
++-    return;
+++  if (!IsAvailable() || !IsNativeImeTargetValid()) {
+++    return;
+++  }
++
++   GetDocument().Markers().RemoveSuggestionMarkerByType(
++       SuggestionMarker::SuggestionType::kAutocorrect);
++ }
++
++ void InputMethodController::Trace(Visitor* visitor) const {
+++  visitor->Trace(native_ime_target_);
+++  visitor->Trace(native_ime_root_);
++   visitor->Trace(cached_text_input_info_);
++   visitor->Trace(frame_);
++   visitor->Trace(composition_range_);
++diff --git a/third_party/blink/renderer/core/editing/ime/input_method_controller.h b/third_party/blink/renderer/core/editing/ime/input_method_controller.h
++--- a/third_party/blink/renderer/core/editing/ime/input_method_controller.h
+++++ b/third_party/blink/renderer/core/editing/ime/input_method_controller.h
++@@ -26,6 +26,8 @@
++ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_IME_INPUT_METHOD_CONTROLLER_H_
++ #define THIRD_PARTY_BLINK_RENDERER_CORE_EDITING_IME_INPUT_METHOD_CONTROLLER_H_
++
+++#include <cstdint>
+++
++ #include "base/gtest_prod_util.h"
++ #include "third_party/blink/public/mojom/input/input_handler.mojom-blink.h"
++ #include "third_party/blink/public/platform/web_text_input_info.h"
++@@ -41,6 +43,7 @@
++ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
++ #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
++ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+++#include "third_party/blink/renderer/platform/heap/persistent.h"
++ #include "third_party/blink/renderer/platform/wtf/vector.h"
++
++ namespace blink {
++@@ -67,6 +70,29 @@
++   InputMethodController& operator=(const InputMethodController&) = delete;
++   ~InputMethodController() override;
++   void Trace(Visitor*) const override;
+++
+++  // Experimental remote-input guard. It never changes focus. Ordinary native
+++  // editing is unchanged outside this scope. The caller must reject EditContext
+++  // and plugin editors until their separate editing paths are covered.
+++  class CORE_EXPORT NativeImeTargetScope {
+++    STACK_ALLOCATED();
+++
+++   public:
+++    explicit NativeImeTargetScope(InputMethodController&);
+++    ~NativeImeTargetScope();
+++    NativeImeTargetScope(const NativeImeTargetScope&) = delete;
+++    NativeImeTargetScope& operator=(const NativeImeTargetScope&) = delete;
+++    bool IsValid() const;
+++
+++   private:
+++    Persistent<InputMethodController> controller_;
+++  };
+++  bool IsNativeImeTargetValid() const;
+++  bool HasNativeImeTargetScope() const { return native_ime_scope_active_; }
+++  uint64_t NativeImeFocusGeneration() const;
+++  uint64_t NativeImeCompositionGeneration() const {
+++    return native_ime_composition_generation_;
+++  }
++
++   // international text input composition
++   bool HasComposition() const;
++@@ -186,6 +212,11 @@
++   Document& GetDocument() const;
++   bool IsAvailable() const;
++
+++  bool native_ime_scope_active_ = false;
+++  uint64_t native_ime_scope_focus_generation_ = 0;
+++  uint64_t native_ime_composition_generation_ = 0;
+++  Member<Element> native_ime_target_;
+++  Member<Element> native_ime_root_;
++   Member<LocalFrame> frame_;
++   // Root editable text content cache for |TextInputInfo()|.
++   CachedTextInputInfo cached_text_input_info_;
++diff --git a/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc b/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
++--- a/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
+++++ b/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
++@@ -3968,4 +3968,43 @@
++   EXPECT_EQ(ui::ImeTextSpan::Type::kGrammarSuggestion, ime_text_spans[0].type);
++ }
++ #endif
+++TEST_F(InputMethodControllerTest, NativeImeFocusRoundtripExpiresTarget) {
+++  SetBodyContent("<input id=a><input id=b>");
+++  auto* a = GetElementById("a");
+++  auto* b = GetElementById("b");
+++  a->Focus();
+++  const auto generation = Controller().NativeImeFocusGeneration();
+++  {
+++    InputMethodController::NativeImeTargetScope scope(Controller());
+++    EXPECT_TRUE(scope.IsValid());
+++    b->Focus();
+++    a->Focus();
+++    EXPECT_GT(Controller().NativeImeFocusGeneration(), generation);
+++    EXPECT_FALSE(scope.IsValid());
+++  }
+++  EXPECT_FALSE(Controller().HasNativeImeTargetScope());
+++  EXPECT_TRUE(Controller().IsNativeImeTargetValid());
+++}
+++
+++TEST_F(InputMethodControllerTest, NativeImeScopeDoesNotChangeOrdinaryEditing) {
+++  SetBodyContent("<input id=a>");
+++  auto* a = To<HTMLInputElement>(GetElementById("a"));
+++  a->Focus();
+++  EXPECT_TRUE(Controller().CommitText("ordinary", {}, 0));
+++  EXPECT_EQ("ordinary", a->Value());
+++}
+++
+++TEST_F(InputMethodControllerTest,
+++       NativeImeCompositionGenerationChangesOnUpdate) {
+++  SetBodyContent("<input id=a>");
+++  GetElementById("a")->Focus();
+++  const auto generation = Controller().NativeImeCompositionGeneration();
+++  Controller().SetComposition("ni", {}, 2, 2);
+++  ASSERT_TRUE(Controller().HasComposition());
+++  EXPECT_GT(Controller().NativeImeCompositionGeneration(), generation);
+++  const auto next = Controller().NativeImeCompositionGeneration();
+++  Controller().SetComposition("nin", {}, 3, 3);
+++  EXPECT_GT(Controller().NativeImeCompositionGeneration(), next);
+++}
+++
++ }  // namespace blink
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++@@ -37,6 +37,58 @@
++   visitor->Trace(web_frame_);
++ }
++
+++WebInputMethodController::NativeImeStateForTesting
+++WebInputMethodControllerImpl::GetNativeImeStateForTesting() const {
+++  if (!GetFrame() || !GetFrame()->GetDocument() || IsEditContextActive()) {
+++    return {};
+++  }
+++  const auto& native = GetInputMethodController();
+++  return {.supported = true,
+++          .busy = native.HasNativeImeTargetScope(),
+++          .has_composition = native.HasComposition(),
+++          .focus_generation = native.NativeImeFocusGeneration(),
+++          .composition_generation = native.NativeImeCompositionGeneration()};
+++}
+++
+++WebInputMethodController::NativeImeResultForTesting
+++WebInputMethodControllerImpl::ApplyNativeImeForTesting(
+++    NativeImeOperationForTesting operation,
+++    const WebString& text,
+++    int selection_start,
+++    int selection_end,
+++    const WebTextInputInfo& expected,
+++    uint64_t focus_generation,
+++    uint64_t composition_generation) {
+++  NativeImeResultForTesting result;
+++  if (!GetFrame() || !GetFrame()->GetDocument() || IsEditContextActive()) {
+++    return result;
+++  }
+++  auto& native = GetInputMethodController();
+++  if (native.HasNativeImeTargetScope() ||
+++      (operation == NativeImeOperationForTesting::kCompose && text.IsEmpty()) ||
+++      (operation == NativeImeOperationForTesting::kCancel &&
+++       (!text.IsEmpty() || !native.HasComposition()))) {
+++    return result;
+++  }
+++  InputMethodController::NativeImeTargetScope guard(native);
+++  // TextInputInfo may update layout. Validate again inside the native scope,
+++  // after that read and immediately before dispatching any editing event.
+++  const auto current = TextInputInfo();
+++  if (!guard.IsValid() ||
+++      native.NativeImeFocusGeneration() != focus_generation ||
+++      native.NativeImeCompositionGeneration() != composition_generation ||
+++      !(current == expected)) {
+++    return result;
+++  }
+++  result.dispatched = true;
+++  result.accepted = operation == NativeImeOperationForTesting::kCommit
+++                        ? CommitText(text, {}, WebRange(), 0)
+++                        : SetComposition(text, {}, WebRange(), selection_start,
+++                                         selection_end);
+++  result.target_valid = guard.IsValid();
+++  return result;
+++}
+++
++ bool WebInputMethodControllerImpl::IsEditContextActive() const {
++   return GetInputMethodController().GetActiveEditContext();
++ }
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
++@@ -37,6 +37,15 @@
++   ~WebInputMethodControllerImpl() override;
++
++   // WebInputMethodController overrides.
+++  NativeImeStateForTesting GetNativeImeStateForTesting() const override;
+++  NativeImeResultForTesting ApplyNativeImeForTesting(
+++      NativeImeOperationForTesting,
+++      const WebString& text,
+++      int selection_start,
+++      int selection_end,
+++      const WebTextInputInfo& expected,
+++      uint64_t focus_generation,
+++      uint64_t composition_generation) override;
++   bool SetComposition(const WebString& text,
++                       const std::vector<ui::ImeTextSpan>& ime_text_spans,
++                       const WebRange& replacement_range,
++diff --git a/third_party/blink/renderer/core/page/focus_controller.cc b/third_party/blink/renderer/core/page/focus_controller.cc
++--- a/third_party/blink/renderer/core/page/focus_controller.cc
+++++ b/third_party/blink/renderer/core/page/focus_controller.cc
++@@ -1780,6 +1780,7 @@
++     return;
++   }
++
+++  InvalidateNativeImeFocus();
++   is_changing_focused_frame_ = true;
++
++   // Fenced frames will try to pass focus to a dummy frame that represents the
++@@ -1953,6 +1954,7 @@
++   DCHECK(!focused || is_active_);
++   if (is_focused_ == focused)
++     return;
+++  InvalidateNativeImeFocus();
++   is_focused_ = focused;
++   if (!is_emulating_focus_)
++     FocusHasChanged();
++diff --git a/third_party/blink/renderer/core/page/focus_controller.h b/third_party/blink/renderer/core/page/focus_controller.h
++--- a/third_party/blink/renderer/core/page/focus_controller.h
+++++ b/third_party/blink/renderer/core/page/focus_controller.h
++@@ -25,6 +25,8 @@
++
++ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_FOCUS_CONTROLLER_H_
++ #define THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_FOCUS_CONTROLLER_H_
+++
+++#include <cstdint>
++
++ #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
++ #include "third_party/blink/renderer/core/core_export.h"
++@@ -65,6 +67,12 @@
++   static const ContainerNode* ReadingFlowContainerOrDisplayContents(
++       const ContainerNode* node,
++       bool get_closest_ancestor = false);
+++
+++  // A native input capability must expire even for an A -> B -> A focus hop.
+++  uint64_t NativeImeFocusGeneration() const {
+++    return native_ime_focus_generation_;
+++  }
+++  void InvalidateNativeImeFocus() { ++native_ime_focus_generation_; }
++
++   void SetFocusedFrame(Frame*, bool notify_embedder = true);
++   void FocusDocumentView(Frame*, bool notify_embedder = true);
++@@ -150,6 +158,7 @@
++   void ActiveHasChanged();
++   void FocusHasChanged();
++
+++  uint64_t native_ime_focus_generation_ = 0;
++   Member<Page> page_;
++   Member<Frame> focused_frame_;
++   bool is_active_;
+diff --git a/shell/browser/api/electron_api_web_frame_main.cc b/shell/browser/api/electron_api_web_frame_main.cc
+--- a/shell/browser/api/electron_api_web_frame_main.cc
++++ b/shell/browser/api/electron_api_web_frame_main.cc
+@@ -12,6 +12,7 @@
+ #include "base/feature_list.h"
+ #include "base/logging.h"
+ #include "base/no_destructor.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "content/browser/renderer_host/frame_tree_node.h"         // nogncheck
+ #include "content/browser/renderer_host/render_frame_host_impl.h"  // nogncheck
+ #include "content/browser/renderer_host/render_process_host_impl.h"  // nogncheck
+@@ -21,6 +22,7 @@
+ #include "content/public/common/isolated_world_ids.h"
+ #include "gin/object_template_builder.h"
+ #include "gin/persistent.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ #include "printing/buildflags/buildflags.h"
+ #include "services/service_manager/public/cpp/interface_provider.h"
+ #include "shell/browser/api/message_port.h"
+@@ -55,6 +57,22 @@
+
+ using LifecycleState = content::RenderFrameHostImpl::LifecycleStateImpl;
+
++base::Value NativeImeContextValue(
++    const electron::mojom::NativeImeContext& context) {
++  base::DictValue value;
++  value.Set("experimental", true);
++  value.Set("productionReady", false);
++  value.Set("available", context.available);
++  value.Set("reason", context.reason);
++  value.Set("token", context.token);
++  value.Set("compositionId", context.composition_id);
++  value.Set("selectionStart", context.selection_start);
++  value.Set("selectionEnd", context.selection_end);
++  value.Set("compositionStart", context.composition_start);
++  value.Set("compositionEnd", context.composition_end);
++  return base::Value(std::move(value));
++}
++
+ // RenderFrameCreated is called for speculative frames which may not be
+ // used in certain cross-origin navigations. Invoking
+ // RenderFrameHost::GetLifecycleState currently crashes when called for
+@@ -268,6 +286,78 @@
+     return false;
+   }
+   return true;
++}
++
++v8::Local<v8::Promise> WebFrameMain::GetNativeImeContextForTesting(
++    v8::Isolate* isolate) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (!HasRenderFrame() || Detached()) {
++    promise.RejectWithErrorMessage("Native IME frame is unavailable");
++    return handle;
++  }
++  GetRendererApi()->GetNativeImeContextForTesting(
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeImeContextPtr context) {
++                if (!context)
++                  promise.RejectWithErrorMessage(
++                      "Native IME renderer disconnected");
++                else
++                  promise.Resolve(NativeImeContextValue(*context));
++              },
++              std::move(promise)),
++          mojom::NativeImeContextPtr()));
++  return handle;
++}
++
++v8::Local<v8::Promise> WebFrameMain::ApplyNativeImeForTesting(
++    v8::Isolate* isolate,
++    const base::DictValue& value) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  const auto* type = value.FindString("type");
++  const auto* token = value.FindString("token");
++  const auto* composition = value.FindString("compositionId");
++  const auto* text = value.FindString("text");
++  if (!type || !token || !text || !HasRenderFrame() || Detached() ||
++      text->size() > 65536 || token->size() > 128 ||
++      (composition && composition->size() > 128) ||
++      (*type != "compose" && *type != "commit" && *type != "cancel")) {
++    promise.RejectWithErrorMessage("Invalid experimental native IME operation");
++    return handle;
++  }
++  auto operation = mojom::NativeImeOperation::New();
++  operation->token = *token;
++  operation->composition_id = composition ? *composition : "";
++  operation->text = base::UTF8ToUTF16(*text);
++  operation->selection_start = value.FindInt("selectionStart").value_or(0);
++  operation->selection_end = value.FindInt("selectionEnd").value_or(0);
++  operation->type = *type == "compose" ? mojom::NativeImeOperationType::kCompose
++                    : *type == "commit"
++                        ? mojom::NativeImeOperationType::kCommit
++                        : mojom::NativeImeOperationType::kCancel;
++  GetRendererApi()->ApplyNativeImeForTesting(
++      std::move(operation),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeImeResultPtr result) {
++                if (!result) {
++                  promise.RejectWithErrorMessage(
++                      "Native IME renderer disconnected; result unknown");
++                  return;
++                }
++                base::DictValue value;
++                value.Set("status", result->status);
++                value.Set("dispatched", result->dispatched);
++                value.Set("context", NativeImeContextValue(*result->context));
++                promise.Resolve(base::Value(std::move(value)));
++              },
++              std::move(promise)),
++          mojom::NativeImeResultPtr()));
++  return handle;
+ }
+
+ v8::Local<v8::Promise> WebFrameMain::ExecuteJavaScript(
+@@ -709,6 +799,10 @@
+ void WebFrameMain::FillObjectTemplate(v8::Isolate* isolate,
+                                       v8::Local<v8::ObjectTemplate> templ) {
+   gin_helper::ObjectTemplateBuilder(isolate, templ)
++      .SetMethod("getNativeImeContextForTesting",
++                 &WebFrameMain::GetNativeImeContextForTesting)
++      .SetMethod("applyNativeImeForTesting",
++                 &WebFrameMain::ApplyNativeImeForTesting)
+       .SetMethod("executeJavaScript", &WebFrameMain::ExecuteJavaScript)
+       .SetMethod("collectJavaScriptCallStack",
+                  &WebFrameMain::CollectDocumentJSCallStack)
+diff --git a/shell/browser/api/electron_api_web_frame_main.h b/shell/browser/api/electron_api_web_frame_main.h
+--- a/shell/browser/api/electron_api_web_frame_main.h
++++ b/shell/browser/api/electron_api_web_frame_main.h
+@@ -132,6 +132,9 @@
+                    v8::Local<v8::Value> message_value,
+                    std::optional<v8::Local<v8::Value>> transfer);
+
++  v8::Local<v8::Promise> GetNativeImeContextForTesting(v8::Isolate*);
++  v8::Local<v8::Promise> ApplyNativeImeForTesting(v8::Isolate*,
++                                                  const base::DictValue&);
+   bool Detached() const;
+   content::FrameTreeNodeId FrameTreeNodeID() const;
+   std::string Name() const;
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -45,7 +45,38 @@
+   SetStartupData(RendererStartupData data);
+ };
+
++enum NativeImeOperationType { kCompose, kCommit, kCancel };
++
++struct NativeImeContext {
++  bool available;
++  string reason;
++  string token;
++  string composition_id;
++  int32 selection_start;
++  int32 selection_end;
++  int32 composition_start = -1;
++  int32 composition_end = -1;
++};
++
++struct NativeImeOperation {
++  string token;
++  string composition_id;
++  NativeImeOperationType type;
++  mojo_base.mojom.String16 text;
++  int32 selection_start;
++  int32 selection_end;
++};
++
++struct NativeImeResult {
++  string status;
++  bool dispatched;
++  NativeImeContext context;
++};
++
+ interface ElectronRenderer {
++  GetNativeImeContextForTesting() => (NativeImeContext context);
++  ApplyNativeImeForTesting(NativeImeOperation operation) => (NativeImeResult result);
++
+   Message(
+       bool internal,
+       string channel,
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -22,6 +22,7 @@
+ #include "shell/renderer/electron_ipc_native.h"
+
+ #include "base/no_destructor.h"
++#include "base/unguessable_token.h"
+ #include "content/public/renderer/render_thread.h"
+ #include "shell/renderer/electron_render_frame_observer.h"
+ #include "shell/renderer/renderer_client_base.h"
+@@ -29,8 +30,11 @@
+ #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-shared.h"
+ #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
+ #include "third_party/blink/public/web/blink.h"
++#include "third_party/blink/public/web/web_document.h"
++#include "third_party/blink/public/web/web_input_method_controller.h"
+ #include "third_party/blink/public/web/web_local_frame.h"
+ #include "third_party/blink/public/web/web_message_port_converter.h"
++#include "third_party/blink/public/web/web_view.h"
+ #include "v8/include/v8-context.h"
+
+ namespace electron {
+@@ -124,6 +128,183 @@
+   }
+ }
+
++mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
++  auto result = mojom::NativeImeContext::New();
++  result->reason = "unavailable";
++  native_ime_snapshot_.reset();
++  native_ime_token_.clear();
++  auto* web_frame = render_frame()->GetWebFrame();
++  if (!web_frame || !web_frame->View() ||
++      web_frame->View()->FocusedFrame() != web_frame)
++    return result;
++  auto* input = web_frame->GetInputMethodController();
++  if (!input || !input->GetNativeImeStateForTesting().supported) {
++    result->reason = "unsupported-editor";
++    return result;
++  }
++  const auto state = input->GetNativeImeStateForTesting();
++  if (state.busy) {
++    result->reason = "busy";
++    return result;
++  }
++  const auto document = web_frame->GetDocument().Token().ToString();
++  const uint64_t focus = state.focus_generation;
++  auto weak = GetWeakPtr();
++  auto info = input->TextInputInfo();
++  if (!weak)
++    return result;
++  const auto after = input->GetNativeImeStateForTesting();
++  if (web_frame->GetDocument().Token().ToString() != document ||
++      !web_frame->View() || web_frame->View()->FocusedFrame() != web_frame ||
++      !after.supported || after.busy || after.focus_generation != focus)
++    return result;
++  if (info.node_id == 0 || info.value.length() > 65536 ||
++      (info.type != blink::kWebTextInputTypeText &&
++       info.type != blink::kWebTextInputTypeTextArea &&
++       info.type != blink::kWebTextInputTypeContentEditable)) {
++    result->reason = "unsupported-editor";
++    return result;
++  }
++  const uint64_t composition = after.composition_generation;
++  if (native_ime_composition_document_ != document ||
++      native_ime_owned_focus_generation_ != focus ||
++      native_ime_owned_composition_generation_ != composition ||
++      info.composition_start < 0) {
++    native_ime_composition_id_.clear();
++  }
++  native_ime_document_ = document;
++  native_ime_focus_generation_ = focus;
++  native_ime_composition_generation_ = composition;
++  native_ime_snapshot_ = info;
++  native_ime_token_ = base::UnguessableToken::Create().ToString();
++  result->available = true;
++  result->reason.clear();
++  result->token = native_ime_token_;
++  result->composition_id = native_ime_composition_id_;
++  result->selection_start = info.selection_start;
++  result->selection_end = info.selection_end;
++  result->composition_start = info.composition_start;
++  result->composition_end = info.composition_end;
++  return result;
++}
++
++void ElectronApiServiceImpl::GetNativeImeContextForTesting(
++    GetNativeImeContextForTestingCallback callback) {
++  std::move(callback).Run(CaptureNativeImeContext());
++}
++
++void ElectronApiServiceImpl::ApplyNativeImeForTesting(
++    mojom::NativeImeOperationPtr operation,
++    ApplyNativeImeForTestingCallback callback) {
++  auto result = mojom::NativeImeResult::New();
++  auto finish = [&](const char* status) {
++    result->status = status;
++    result->context = CaptureNativeImeContext();
++    std::move(callback).Run(std::move(result));
++  };
++  if (operation->text.size() > 16384 || operation->token.size() > 128 ||
++      operation->composition_id.size() > 128 ||
++      operation->selection_start < 0 ||
++      operation->selection_end < operation->selection_start ||
++      static_cast<size_t>(operation->selection_end) > operation->text.size() ||
++      (operation->type == mojom::NativeImeOperationType::kCompose &&
++       operation->text.empty()) ||
++      (operation->type == mojom::NativeImeOperationType::kCancel &&
++       !operation->text.empty())) {
++    finish("invalid-operation");
++    return;
++  }
++  if (!native_ime_snapshot_ || operation->token.empty() ||
++      operation->token != native_ime_token_) {
++    finish("stale-target");
++    return;
++  }
++  // Consume before any website handler can run; replays cannot mutate twice.
++  native_ime_token_.clear();
++  const auto expected = *native_ime_snapshot_;
++  auto* web_frame = render_frame()->GetWebFrame();
++  if (!web_frame || !web_frame->View() ||
++      web_frame->View()->FocusedFrame() != web_frame ||
++      web_frame->GetDocument().Token().ToString() != native_ime_document_) {
++    finish("stale-target");
++    return;
++  }
++  auto* input = web_frame->GetInputMethodController();
++  if (!input || !input->GetNativeImeStateForTesting().supported) {
++    finish("unsupported-editor");
++    return;
++  }
++  const auto focus = native_ime_focus_generation_;
++  const auto composition = native_ime_composition_generation_;
++  auto weak = GetWeakPtr();
++  const auto current = input->TextInputInfo();
++  if (!weak) {
++    result->status = "frame-destroyed";
++    result->context = mojom::NativeImeContext::New();
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  const auto state = input->GetNativeImeStateForTesting();
++  if (!state.supported || state.busy ||
++      web_frame->GetDocument().Token().ToString() != native_ime_document_ ||
++      state.focus_generation != focus ||
++      state.composition_generation != composition || !(current == expected)) {
++    finish("context-changed");
++    return;
++  }
++  const bool has_composition = state.has_composition;
++  const bool owns_composition =
++      has_composition && !native_ime_composition_id_.empty() &&
++      operation->composition_id == native_ime_composition_id_ &&
++      native_ime_composition_document_ == native_ime_document_ &&
++      native_ime_owned_focus_generation_ == focus &&
++      native_ime_owned_composition_generation_ == composition;
++  if ((has_composition && !owns_composition) ||
++      (!has_composition && !operation->composition_id.empty()) ||
++      (operation->type == mojom::NativeImeOperationType::kCancel &&
++       !owns_composition)) {
++    finish("composition-mismatch");
++    return;
++  }
++  using NativeOperation =
++      blink::WebInputMethodController::NativeImeOperationForTesting;
++  const auto type = operation->type == mojom::NativeImeOperationType::kCommit
++                        ? NativeOperation::kCommit
++                    : operation->type == mojom::NativeImeOperationType::kCancel
++                        ? NativeOperation::kCancel
++                        : NativeOperation::kCompose;
++  const auto edit = input->ApplyNativeImeForTesting(
++      type, blink::WebString::FromUtf16(operation->text),
++      operation->selection_start, operation->selection_end, expected, focus,
++      composition);
++  result->dispatched = edit.dispatched;
++  if (!weak) {
++    result->status = "frame-destroyed";
++    result->context = mojom::NativeImeContext::New();
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  if (!edit.dispatched) {
++    finish("context-changed");
++    return;
++  }
++  if (edit.accepted && edit.target_valid &&
++      operation->type == mojom::NativeImeOperationType::kCompose &&
++      input->GetNativeImeStateForTesting().has_composition) {
++    if (native_ime_composition_id_.empty())
++      native_ime_composition_id_ = base::UnguessableToken::Create().ToString();
++    native_ime_composition_document_ = native_ime_document_;
++    native_ime_owned_focus_generation_ = focus;
++    native_ime_owned_composition_generation_ =
++        input->GetNativeImeStateForTesting().composition_generation;
++  } else {
++    native_ime_composition_id_.clear();
++  }
++  finish(!edit.target_valid ? "target-changed-during-operation"
++         : edit.accepted    ? "processed"
++                            : "editor-rejected");
++}
++
+ void ElectronApiServiceImpl::OnDestruct() {
+   delete this;
+ }
+diff --git a/shell/renderer/electron_api_service_impl.h b/shell/renderer/electron_api_service_impl.h
+--- a/shell/renderer/electron_api_service_impl.h
++++ b/shell/renderer/electron_api_service_impl.h
+@@ -5,6 +5,8 @@
+ #ifndef ELECTRON_SHELL_RENDERER_ELECTRON_API_SERVICE_IMPL_H_
+ #define ELECTRON_SHELL_RENDERER_ELECTRON_API_SERVICE_IMPL_H_
+
++#include <cstdint>
++#include <optional>
+ #include <string>
+
+ #include "base/memory/weak_ptr.h"
+@@ -16,6 +18,7 @@
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "shell/common/api/api.mojom.h"
++#include "third_party/blink/public/platform/web_text_input_info.h"
+
+ namespace electron {
+
+@@ -40,6 +43,10 @@
+       mojo::PendingAssociatedReceiver<mojom::ElectronFrameStartup> receiver);
+
+   // mojom::ElectronRenderer
++  void GetNativeImeContextForTesting(
++      GetNativeImeContextForTestingCallback) override;
++  void ApplyNativeImeForTesting(mojom::NativeImeOperationPtr,
++                                ApplyNativeImeForTestingCallback) override;
+   void Message(bool internal,
+                const std::string& channel,
+                electron::SerializedValue arguments) override;
+@@ -81,6 +88,16 @@
+   void OnDestruct() override;
+
+   void OnConnectionError();
++  mojom::NativeImeContextPtr CaptureNativeImeContext();
++  std::optional<blink::WebTextInputInfo> native_ime_snapshot_;
++  std::string native_ime_token_;
++  std::string native_ime_document_;
++  uint64_t native_ime_focus_generation_ = 0;
++  uint64_t native_ime_composition_generation_ = 0;
++  std::string native_ime_composition_id_;
++  std::string native_ime_composition_document_;
++  uint64_t native_ime_owned_focus_generation_ = 0;
++  uint64_t native_ime_owned_composition_generation_ = 0;
+
+   // Whether the DOM document element has been created.
+   bool document_created_ = false;

@@ -1,0 +1,83 @@
+diff --git a/shell/browser/api/electron_api_web_contents.cc b/shell/browser/api/electron_api_web_contents.cc
+index 7f7930c..2552fac 100644
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -4319,6 +4319,17 @@ base::DictValue WebContents::GetNativeTextInputState() {
+   result.Set("nodeId", state->node_id);
+   result.Set("type", static_cast<int>(state->type));
+   result.Set("mode", static_cast<int>(state->mode));
++  result.Set("action", static_cast<int>(state->action));
++  result.Set("flags", static_cast<int>(state->flags));
++  result.Set("showImeIfNeeded", state->show_ime_if_needed);
++  result.Set("alwaysHideIme", state->always_hide_ime);
++  result.Set("virtualKeyboardPolicy", static_cast<int>(state->vk_policy));
++  auto* focused = static_cast<content::RenderFrameHostImpl*>(
++      web_contents()->GetFocusedFrame());
++  if (focused && focused->IsActive() && state->node_id != 0) {
++    result.Set("targetIdentity", focused->GetDocumentToken().ToString() + ":" +
++                                     base::NumberToString(state->node_id));
++  }
+   result.Set("password", state->type == ui::TEXT_INPUT_TYPE_PASSWORD);
+   result.Set("selection", range_value(state->selection));
+   if (state->composition)
+diff --git a/shell/browser/api/electron_api_web_frame_main.cc b/shell/browser/api/electron_api_web_frame_main.cc
+index 3f718c7..e225fd5 100644
+--- a/shell/browser/api/electron_api_web_frame_main.cc
++++ b/shell/browser/api/electron_api_web_frame_main.cc
+@@ -66,6 +66,8 @@ base::Value NativeImeContextValue(
+   value.Set("reason", context.reason);
+   value.Set("token", context.token);
+   value.Set("compositionId", context.composition_id);
++  value.Set("targetIdentity", context.target_identity);
++  value.Set("inputType", context.input_type);
+   value.Set("selectionStart", context.selection_start);
+   value.Set("selectionEnd", context.selection_end);
+   value.Set("compositionStart", context.composition_start);
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+index de8fa3a..20312a4 100644
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -52,6 +52,8 @@ struct NativeImeContext {
+   string reason;
+   string token;
+   string composition_id;
++  string target_identity;
++  int32 input_type;
+   int32 selection_start;
+   int32 selection_end;
+   int32 composition_start = -1;
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+index bdf5602..63b9731 100644
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -8,6 +8,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/strings/string_number_conversions.h"
+ #include "base/trace_event/trace_event.h"
+ #include "gin/data_object_builder.h"
+ #include "mojo/public/cpp/system/platform_handle.h"
+@@ -243,9 +244,10 @@ mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
+       !after.supported || after.busy || after.focus_generation != focus)
+     return result;
+   if (info.node_id == 0 || info.value.length() > 65536 ||
+-      (info.type != blink::kWebTextInputTypeText &&
+-       info.type != blink::kWebTextInputTypeTextArea &&
+-       info.type != blink::kWebTextInputTypeContentEditable)) {
++      (!((info.type >= blink::kWebTextInputTypeText &&
++          info.type <= blink::kWebTextInputTypeURL) ||
++         info.type == blink::kWebTextInputTypeTextArea ||
++         info.type == blink::kWebTextInputTypeContentEditable))) {
+     result->reason = "unsupported-editor";
+     return result;
+   }
+@@ -261,6 +263,8 @@ mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
+   native_ime_composition_generation_ = composition;
+   native_ime_snapshot_ = info;
+   native_ime_token_ = base::UnguessableToken::Create().ToString();
++  result->target_identity = document + ":" + base::NumberToString(info.node_id);
++  result->input_type = static_cast<int32_t>(info.type);
+   result->available = true;
+   result->reason.clear();
+   result->token = native_ime_token_;

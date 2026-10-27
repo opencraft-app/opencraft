@@ -1,0 +1,20 @@
+// The surface owns available space; renderers may borrow prose gutters only
+// within that space. Without an owner (e.g. an isolated embedded document),
+// 100% deliberately means the local prose column, never the browser viewport.
+@mixin bounds {
+  --wide-block-container-max-width: max(
+    100%,
+    calc(
+      var(--chat-wide-content-available-width, 100%)
+      - var(--padding-toolbar, 16px) * 2
+      - var(--thread-content-margin, 24px) * 2
+      - var(--spacing, 4px) * 18
+      - var(--thread-wide-block-inline-shift, 0px) * 2
+    )
+  );
+  --wide-block-default-max-width: min(
+    calc(var(--markdown-wide-block-max-width, 48rem) + 8rem),
+    var(--wide-block-container-max-width),
+    var(--wide-block-panel-max-width, var(--wide-block-container-max-width))
+  );
+}

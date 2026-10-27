@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCraft independent DSH Host
+After=network.target
+
+[Service]
+Type=simple
+User=opencraft
+WorkingDirectory=/srv/opencraft
+RuntimeDirectory=opencraft-dsh-host
+RuntimeDirectoryMode=0700
+# Install a pinned release, independently of the changing execution symlink.
+EnvironmentFile=/etc/opencraft-dsh-host/environment
+ExecStart=/usr/bin/node /opt/opencraft-dsh-host/execution/dsh-host.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+UMask=0077
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

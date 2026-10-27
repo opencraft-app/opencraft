@@ -1,0 +1,3 @@
+# Unified-diff blank context lines contain one required space. Actual added
+# source lines remain checked by git apply --whitespace=error.
+patches/** whitespace=-blank-at-eol

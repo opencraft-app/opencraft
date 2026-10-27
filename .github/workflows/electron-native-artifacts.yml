@@ -1,0 +1,142 @@
+name: Electron fork native artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validate source on hosted runners, or build on provisioned large runners
+        type: choice
+        options: [validate, build]
+        default: validate
+      target:
+        description: Native target (macos targets include arm64 and x64)
+        type: choice
+        options: [all, linux-x64, windows-x64, macos-arm64, macos-x64]
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: targets
+        env:
+          TARGET: ${{ inputs.target }}
+          MODE: ${{ inputs.mode }}
+          ELECTRON_BUILD_RUNNER_LINUX_X64: ${{ vars.ELECTRON_BUILD_RUNNER_LINUX_X64 }}
+          ELECTRON_BUILD_RUNNER_WINDOWS_X64: ${{ vars.ELECTRON_BUILD_RUNNER_WINDOWS_X64 }}
+          ELECTRON_BUILD_RUNNER_MACOS_ARM64: ${{ vars.ELECTRON_BUILD_RUNNER_MACOS_ARM64 }}
+          ELECTRON_BUILD_RUNNER_MACOS_X64: ${{ vars.ELECTRON_BUILD_RUNNER_MACOS_X64 }}
+        run: python3 vendor/electron/ci.py plan --target "$TARGET" --mode "$MODE"
+  validate:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.hosted }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Verify native runner architecture
+        run: ${{ matrix.python }} vendor/electron/ci.py platform --target ${{ matrix.id }}
+      - run: ${{ matrix.python }} -m unittest discover -s vendor/electron/tests -v
+      - run: ${{ matrix.python }} vendor/electron/manage.py checkout
+      - run: ${{ matrix.python }} vendor/electron/manage.py verify
+  build:
+    needs: [plan, validate]
+    if: inputs.mode == 'build'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check build capacity before source download
+        run: ${{ matrix.python }} vendor/electron/ci.py preflight --target ${{ matrix.id }} --root "$RUNNER_TEMP"
+      - name: Set native absolute paths
+        # Python writes native Windows paths; MSYS strings must not reach Node.
+        run: |
+          ${{ matrix.python }} - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              for key, name in [('BUILD_ROOT', 'source'), ('DISTRIBUTION', 'distribution'), ('EVIDENCE', 'evidence')]:
+                  env.write(f'{key}={root / ("opencraft-electron-" + name)}\n')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Install depot_tools
+        run: |
+          git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/depot_tools"
+          echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+      - name: Materialize and sync the fork
+        run: |
+          ${{ matrix.python }} vendor/electron/manage.py checkout --root "$BUILD_ROOT"
+          ${{ matrix.python }} vendor/electron/manage.py sync --root "$BUILD_ROOT"
+      - name: Build Electron and dist.zip
+        run: ${{ matrix.python }} vendor/electron/manage.py build --root "$BUILD_ROOT" --jobs 8
+      - name: Probe and stamp the native distribution
+        # Visible, focused probe on macOS/Windows; Linux owns an Xvfb display.
+        run: |
+          prefix=()
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          "${prefix[@]}" ${{ matrix.python }} vendor/electron/prepare-desktop-artifact.py \
+            --archive "$BUILD_ROOT/src/out/OpenCraft/dist.zip" \
+            --distribution "$DISTRIBUTION" --source-root "$BUILD_ROOT" --evidence "$EVIDENCE"
+          test -f "$DISTRIBUTION/opencraft-electron-desktop-artifact.json"
+      - name: Bundle marker with the unchanged runtime archive
+        # Keep dist.zip intact: upload-artifact alone drops POSIX modes/links.
+        run: |
+          ${{ matrix.python }} - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          out = Path(os.environ['EVIDENCE'])
+          out.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(Path(os.environ['BUILD_ROOT']) / 'src/out/OpenCraft/dist.zip', out / 'dist.zip')
+          shutil.copy2(Path(os.environ['DISTRIBUTION']) / 'opencraft-electron-desktop-artifact.json', out)
+          PY
+      - name: Build and package OpenCraft with the verified fork
+        run: |
+          npm run prepare:dsh-runtime
+          npm run build:electron:release
+          ${{ matrix.python }} vendor/electron/ci.py package --target ${{ matrix.id }} --distribution "$DISTRIBUTION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: opencraft-electron-${{ matrix.id }}
+          path: |
+            apps/workbench-electron/release/**
+            ${{ runner.temp }}/opencraft-electron-evidence/**
+          if-no-files-found: error
+          retention-days: 14

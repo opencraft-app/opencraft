@@ -1,0 +1,16 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+.conversation-reference-surface {
+  display: flex; flex-direction: column; gap: 16px; padding:20px; width:min(680px,calc(100vw - 36px)); box-sizing:border-box;
+  .conversation-reference-surface__heading, .conversation-reference-surface__actions { display:flex; align-items:center; gap:12px; justify-content:space-between; }
+  .conversation-reference-surface__heading { padding-inline-end:28px; }
+  .conversation-reference-surface__actions { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
+  .conversation-reference-surface__actions > [role=status] { grid-column:1/-1; min-height:2.5em; }
+  .conversation-reference-surface__actions > button { min-width:0; white-space:normal; }
+  h2 { margin:0; @include typography.role(panel-title); }
+  .conversation-reference-surface__history { overflow:auto; min-height:120px; max-height:45dvh; overscroll-behavior:contain; }
+  p { white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0 16px; }
+  small { opacity:.65; }
+  form { display:flex; flex-direction:column; gap:12px; }
+  textarea { box-sizing:border-box; width:100%; min-height:90px; resize:vertical; border:1px solid var(--border-default); border-radius:8px; background:var(--surface-main); color:inherit; padding:10px; font:inherit; }
+  [role=status] { @include typography.role(metadata); }
+}

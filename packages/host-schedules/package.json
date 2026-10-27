@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/host-schedules",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0"
+  }
+}

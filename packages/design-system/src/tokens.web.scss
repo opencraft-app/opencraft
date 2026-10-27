@@ -1,0 +1,433 @@
+@use "./typography/generated.web";
+
+:root {
+  --size-chrome-action: 28px;
+  --size-chrome-icon: 16px;
+  // Neutral frost: backdrop supplies color, never the brand accent.
+  --material-glass-base: #fff;
+  --material-glass-floating: color-mix(in srgb, var(--material-glass-base) 32%, transparent);
+  --material-glass-panel: color-mix(in srgb, var(--material-glass-base) 64%, transparent);
+  --material-glass-menu: color-mix(in srgb, var(--material-glass-base) 82%, transparent);
+  --material-glass-filter: blur(32px) saturate(1.06);
+  --material-glass-shadow: 0 24px 80px rgb(0 0 0 / 15%), inset 0 1px rgb(255 255 255 / 40%);
+  --size-icon-composer-input: 20px;
+  --size-control-hit-min: 0px;
+  --gap-control-density-min: 0px;
+  --spacing: 4px;
+  // Floating transcript control: +15% glyph scale with a 44px touch target.
+  --size-transcript-float-touch: 44px;
+  --size-transcript-float-icon-touch: 23px;
+  --size-transcript-float-dot-touch: 4.6px;
+  --radius-composer-newera: 28px;
+  --radius-composer-newera-icon: 50%;
+  --radius-composer-newera-capsule: 999px;
+  --duration-composer-newera-expand: 180ms;
+  --blur-composer-newera: 20px;
+  --saturation-composer-newera: 112%;
+  --height-composer-newera: 56px;
+  --gap-composer-newera: 4px;
+  --padding-composer-newera: 6px;
+  --color-background-composer-newera: color-mix(in srgb, var(--color-background-elevated-primary-opaque) 62%, transparent);
+  --color-background-composer-terminal: color-mix(in srgb, var(--color-background-elevated-primary-opaque) 38%, transparent);
+  --min-height-workspace-tool-visible: calc(var(--height-toolbar) + 64px);
+  --color-border-composer-newera: color-mix(in srgb, var(--color-border-default) 65%, transparent);
+  --color-highlight-composer-newera: color-mix(in srgb, var(--color-text) 9%, transparent);
+  --shadow-composer-newera: 0 6px 24px color-mix(in srgb, var(--color-text) 9%, transparent);
+
+  --inset-composer-rail: calc(var(--spacing) * 2.5);
+  --radius-composer-shell: 16px;
+  --overlap-composer-rail: var(--radius-composer-shell);
+  --coverage-composer-material-seam: 1px;
+  --radius-composer-rail: var(--radius-2xl);
+  --width-composer-rail-border: 1px;
+  --height-composer-rail-row: 28px;
+  --height-composer-queue-row: var(--height-composer-rail-row);
+  --padding-composer-rail-row: 0 10px;
+  --gap-composer-floating-summary: calc(var(--spacing) * 2);
+  --padding-composer-floating-summary: 0 calc(var(--spacing) * 3);
+  --blur-composer-rail: 20px;
+  --saturation-composer-rail: 112%;
+  --color-background-composer-rail-opaque: var(--color-background-elevated-secondary-opaque);
+  --color-background-composer-rail: color-mix(in srgb, var(--color-background-composer-rail-opaque) 94%, transparent);
+  --color-border-composer-rail: color-mix(in srgb, var(--color-border-default) 80%, transparent);
+  --gap-control-group: calc(var(--spacing) * 2);
+  --height-discrete-slider-track: 28px;
+  --size-discrete-slider-thumb: 30px;
+  --size-discrete-slider-tick: 4px;
+  --height-discrete-slider-hit: max(44px, var(--size-control-hit-min));
+  --color-discrete-slider-track: var(--color-background-button-secondary);
+  --color-discrete-slider-fill: var(--color-icon-accent);
+  --color-discrete-slider-thumb: var(--color-background-elevated-primary-opaque);
+  --shadow-discrete-slider-thumb: 0 1px 3px color-mix(in srgb, var(--color-text) 18%, transparent);
+  --padding-control-inline: calc(var(--spacing) * 2);
+  --gap-sidebar-entrances: var(--gap-control-group);
+  --padding-sidebar-entrances: calc(var(--spacing) * 3);
+  --radius-control: 7px;
+  --height-choice-row: calc(var(--spacing) * 9);
+  --radius-choice-control: var(--radius-md);
+  --color-background-choice-selected: color-mix(in srgb, var(--color-text-accent) 7%, var(--color-background-panel));
+  --color-border-choice-selected: color-mix(in srgb, var(--color-text-accent) 38%, var(--color-border-subtle));
+  --opacity-control-disabled: 0.5;
+  --opacity-control-compact-disabled: 0.4;
+  --duration-progress-cycle: 2s;
+  --timing-progress-cycle: steps(60, end);
+  --width-control-focus-ring: 2px;
+  --offset-control-focus-ring: 2px;
+  --height-navigation-row: max(34px, var(--size-control-hit-min));
+  --height-application-navigation-row: 36px;
+  --size-application-navigation-icon: 20px;
+  --size-application-navigation-hit-min: max(var(--height-application-navigation-row), var(--size-control-hit-min));
+  --radius-application-navigation-control: 10px;
+  --gap-application-navigation-items: 8px;
+  --size-navigation-leading-slot: 28px;
+  --padding-navigation-row-inline: 7px;
+  --gap-navigation-row-content: 8px;
+  --gap-navigation-rows: 1px;
+  --gap-navigation-sections: 8px;
+  --gap-navigation-groups: 24px;
+  --height-sidebar-navigation-strip: 52px;
+  --height-sidebar-activity-row: 52px;
+  --height-sidebar-activity-title-row: max(36px, var(--size-control-hit-min));
+  --padding-sidebar-activity-row-inline: 10px;
+  --gap-sidebar-activity-groups: 4px;
+  --gap-sidebar-activity-expanded-groups: 12px;
+  --size-connection-status: 7px;
+  --color-status-connected: var(--color-decoration-added);
+  --color-status-pending: #d99b19;
+  --color-status-error: #dc4444;
+  --height-toolbar: 46px;
+  --height-shell-header-mobile: 56px;
+  --spacing-shell-header-edge-touch: 2px;
+  --size-toolbar-dock-action: max(28px, var(--size-control-hit-min));
+  --gap-toolbar-dock: 4px;
+  --width-toolbar-dock-title-budget: 220px;
+  --count-toolbar-dock-maximum: 4;
+  --size-shell-header-action-mobile: 44px;
+  --size-shell-header-icon-mobile: 20px;
+  --height-toolbar-sm: max(36px, var(--size-control-hit-min));
+  --height-toolbar-pane: max(40px, var(--size-control-hit-min));
+  --height-toolbar-control: max(32px, var(--size-control-hit-min));
+  --radius-toolbar-control: var(--radius-lg);
+  --padding-toolbar-control-inline: calc(var(--spacing) * 2);
+  --height-accessory-control: max(28px, var(--size-control-hit-min));
+  --padding-accessory-control-inline: 7px;
+  --gap-accessory-control-content: 4px;
+  --radius-accessory-control: var(--radius-md);
+  --padding-navigation-list-inline: calc(var(--spacing) * 2);
+  --gap-toolbar-control: 6px;
+  --size-toolbar-control-icon: 13px;
+  --size-toolbar-control-chevron: 10px;
+  --width-toolbar-control-max: 224px;
+  --width-menu-bounded-min: 200px;
+  --width-menu-bounded-max: 320px;
+  --height-menu-list-max: 250px;
+  --font-toolbar-control-size: var(--typography-control-compact-size);
+  --font-toolbar-control-line-height: var(--typography-control-compact-line-height);
+  --font-toolbar-control-weight: var(--typography-control-compact-weight);
+  --height-filter-control: 36px;
+  --width-filter-control: 160px;
+  --height-token-settings-row: 56px;
+  --height-token-settings-control: max(32px, var(--size-control-hit-min));
+  --width-token-settings-control: 352px;
+  --width-token-settings-copy: 240px;
+  --width-token-settings-theme-card: 260px;
+  --padding-token-settings-panel: 24px;
+  --padding-token-settings-row-inline: calc(var(--spacing) * 4);
+  --gap-token-settings-sections: 40px;
+  --radius-token-settings-card: 16px;
+  // Keeping the value at the root lets the transcript and Composer consume
+  // one reading axis instead of copying unrelated pixel constants.
+  --padding-toolbar: calc(var(--spacing) * 4);
+  --opencraft-sidebar-preferred-width: 275px;
+  --spacing-token-sidebar: clamp(240px, var(--opencraft-sidebar-preferred-width), min(520px, calc(100vw - 320px)));
+  --opencraft-right-panel-preferred-width: 600px;
+  --thread-content-max-width: 48rem;
+  --width-conversation-summary: 320px;
+  --gap-conversation-summary: calc(var(--spacing) * 6);
+  --inset-conversation-summary: calc(var(--spacing) * 4);
+  --opencraft-thread-content-max-width: 48rem;
+  --opencraft-chat-font-size: var(--typography-chat-size);
+  --opencraft-chat-code-font-size: var(--typography-code-size);
+  --opencraft-chat-line-height: calc(var(--opencraft-chat-font-size) + var(--typography-chat-leading));
+  // steps. Smaller values belong to badges, never Conversation identity.
+  --transition-duration-basic: 150ms;
+  --cubic-enter: cubic-bezier(.19, 1, .22, 1);
+  --ease-enter-snappy: cubic-bezier(.23, 1, .32, 1);
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl-base: 16px;
+  --radius-2xl: var(--radius-2xl-base);
+  --radius-full: 9999px;
+  --utility-card-radius: 24px;
+  --utility-card-padding-inline: calc(var(--spacing) * 4);
+  --utility-card-border-color: color-mix(in srgb, var(--color-border-default) 64%, transparent);
+  --utility-card-shadow: 0 10px 34px color-mix(in srgb, #000 11%, transparent), 0 1px 3px color-mix(in srgb, #000 7%, transparent);
+  // Menu surfaces own their internal rhythm. Feature code may choose the
+  // anchor alignment, but must not manufacture another padding/gap scale.
+  --menu-surface-padding: 5px;
+  --menu-item-gap: 2px;
+  --height-menu-item: 28px;
+  --padding-menu-item-block: 5px;
+  --menu-item-radius: var(--radius-md);
+  // Browser presentation planes are owned by the application shell. Feature
+  // packages may choose a semantic plane, but must never compare or invent
+  // z-index numbers of their own. In particular, a dialog opened from inside
+  // an application modal must paint above that modal, while its popovers,
+  // tooltips and transient notices remain ordered deterministically.
+  // Stationary touch chrome sits above the animated sidebar drawer (44).
+  --layer-shell-sidebar-control: 45;
+  --layer-workspace-composer: 80;
+  --layer-shell-navigation: 90;
+  --layer-application-modal: 230;
+  --layer-nested-modal: 240;
+  --layer-confirmation-modal: 245;
+  --layer-floating-control: 250;
+  --layer-tooltip: 260;
+  --layer-toast: 300;
+  // Diffuse pane depth without the optional crisp outline.
+  --elevation-prominent-diffuse: 0 3px 7.5px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+  --elevation-stroke: 0 0 0 0.5px var(--color-border-strong);
+  --elevation-sidebar:
+    var(--elevation-stroke),
+    0 3px 7.5px rgb(0 0 0 / 3%),
+    0 0 16px rgb(0 0 0 / 2%);
+  // Theme-owned shell defaults preserve the native Client-family material.
+  // First-party web themes may replace the complete material contract without
+  // reaching into AppShell or Sidecar component selectors.
+  --opencraft-window-material: color-mix(
+    in srgb,
+    var(--color-background-surface-under) 92%,
+    var(--color-text) 8%
+  );
+  --opencraft-window-highlight: radial-gradient(
+    circle at 12% -8%,
+    color-mix(in srgb, var(--color-surface-tertiary) 72%, transparent),
+    transparent 34%
+  );
+  --opencraft-main-surface-elevation: var(--elevation-prominent);
+  // Compact navigation does not divide the native titlebar reservation.
+  --background-shell-compact-titlebar: var(--color-surface);
+  // AppShell owns the material; Sidebar content never owns opacity. On the
+  // web this emulates the native macOS sidebar material, while Electron lets
+  // the BrowserWindow vibrancy surface show through directly.
+  --opencraft-sidebar-material-background: color-mix(
+    in srgb,
+    var(--color-surface-tertiary) 70%,
+    transparent
+  );
+  --opencraft-sidebar-material-filter: blur(28px) saturate(145%);
+  // top of it. Theme switching never reverses numeric token meanings.
+  --gray-0: #fff;
+  --gray-50: #f9f9f9;
+  --gray-75: #f3f3f3;
+  --gray-100: #ededed;
+  --gray-150: #dfdfdf;
+  --gray-200: #cdcdcd;
+  --gray-300: #afafaf;
+  --gray-400: #8f8f8f;
+  --gray-500: #5d5d5d;
+  --gray-550: #4f4f4f;
+  --gray-600: #414141;
+  --gray-650: #393939;
+  --gray-700: #303030;
+  --gray-750: #282828;
+  --gray-800: #212121;
+  --gray-900: #181818;
+  --gray-950: #131313;
+  --gray-1000: #0d0d0d;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root,
+:root[data-theme="light"],
+.electron-light {
+  color-scheme: light;
+  --alpha-02: rgb(26 28 31 / 2%);
+  --alpha-04: rgb(26 28 31 / 4%);
+  --alpha-06: rgb(26 28 31 / 6%);
+  --alpha-08: rgb(26 28 31 / 8%);
+  --alpha-10: rgb(26 28 31 / 10%);
+  --alpha-12: rgb(26 28 31 / 12%);
+  --alpha-16: rgb(26 28 31 / 16%);
+  --alpha-20: rgb(26 28 31 / 20%);
+  --blue: #339cff;
+  --green: #00a240;
+  --red: #e02e2a;
+  --orange: #e25507;
+  --text-primary: #1a1c1f;
+  --text-secondary: rgb(26 28 31 / 70%);
+  --text-tertiary: rgb(26 28 31 / 50%);
+  --surface-under: var(--gray-50);
+  --surface-sidebar: var(--gray-50);
+  --surface-main: var(--gray-0);
+  --surface-raised: var(--gray-0);
+  --surface-popover: rgb(255 255 255 / 96%);
+  --surface-subtle: rgb(26 28 31 / 2.5%);
+  --surface-code: rgb(26 28 31 / 5%);
+  --surface-composer: var(--gray-75);
+  --surface-message-user: rgb(26 28 31 / 6%);
+  --surface-segment-active: var(--gray-0);
+  --border-soft: rgb(26 28 31 / 5%);
+  --border-default: rgb(26 28 31 / 8%);
+  --border-strong: rgb(26 28 31 / 12%);
+  --focus-ring: var(--color-border-focus, rgb(0 0 0 / 60%));
+  --color-focus-ring: var(--focus-ring);
+  --scrollbar-thumb: rgb(26 28 31 / 18%);
+  --button-primary-background: var(--gray-1000);
+  --button-primary-foreground: var(--gray-0);
+  --button-primary-hover: var(--gray-900);
+  --composer-inset-highlight: rgb(255 255 255 / 72%);
+  --shadow-hairline: 0 0 0 0.5px rgb(0 0 0 / 10%);
+  --shadow-100: 0 1px 2px rgb(0 0 0 / 10%);
+  --shadow-300: 0 8px 20px -6px rgb(0 0 0 / 18%);
+  --elevation-prominent: var(--shadow-hairline), var(--elevation-prominent-diffuse);
+}
+
+:root[data-theme="dark"],
+.electron-dark {
+  color-scheme: dark;
+  --alpha-02: rgb(255 255 255 / 2%);
+  --alpha-04: rgb(255 255 255 / 4%);
+  --alpha-06: rgb(255 255 255 / 6%);
+  --alpha-08: rgb(255 255 255 / 8%);
+  --alpha-10: rgb(255 255 255 / 10%);
+  --alpha-12: rgb(255 255 255 / 12%);
+  --alpha-16: rgb(255 255 255 / 16%);
+  --alpha-20: rgb(255 255 255 / 20%);
+  --blue: #339cff;
+  --green: #40c977;
+  --red: #ff6764;
+  --orange: #ff8549;
+  --text-primary: var(--gray-150);
+  --text-secondary: rgb(255 255 255 / 70%);
+  --text-tertiary: rgb(255 255 255 / 50%);
+  --surface-under: #000;
+  --surface-sidebar: #000;
+  --surface-main: var(--gray-900);
+  --surface-raised: var(--gray-800);
+  --surface-popover: rgb(33 33 33 / 96%);
+  --surface-subtle: rgb(255 255 255 / 3%);
+  --surface-code: rgb(0 0 0 / 12%);
+  --surface-composer: var(--gray-800);
+  --surface-message-user: var(--gray-700);
+  --surface-segment-active: var(--gray-650);
+  --border-soft: rgb(255 255 255 / 5%);
+  --border-default: rgb(255 255 255 / 8%);
+  --border-strong: rgb(255 255 255 / 16%);
+  --focus-ring: var(--color-border-focus, rgb(255 255 255 / 70%));
+  --color-focus-ring: var(--focus-ring);
+  --scrollbar-thumb: rgb(255 255 255 / 18%);
+  --button-primary-background: var(--gray-0);
+  --button-primary-foreground: var(--gray-1000);
+  --button-primary-hover: var(--gray-100);
+  --composer-inset-highlight: rgb(255 255 255 / 3%);
+  --shadow-hairline: 0 0 0 0.5px rgb(255 255 255 / 12%);
+  --shadow-100: 0 1px 2px rgb(0 0 0 / 22%);
+  --shadow-300: 0 8px 16px -4px rgb(0 0 0 / 30%);
+  --elevation-prominent: var(--shadow-hairline), var(--elevation-prominent-diffuse);
+}
+
+// Interaction density is independent of viewport, theme and current hover modality.
+// Before the preference runtime opens, capability detection supplies the default.
+@mixin touch-density-tokens {
+  --radius-accessory-control: var(--radius-full);
+  --size-chrome-action: var(--size-shell-header-action-mobile);
+  --size-chrome-icon: var(--size-shell-header-icon-mobile);
+  --size-icon-composer-input: 24px;
+  --size-control-hit-min: 44px;
+  // Compact accessories, independent of Goal and the editor's control density.
+  --height-composer-rail-row: 32px;
+  --height-composer-queue-row: 36px;
+  --typography-sidebar-section-size: var(--typography-control-large-size);
+  --typography-sidebar-section-line-height: var(--typography-control-large-line-height);
+  --gap-control-density-min: 8px;
+}
+:root[data-ui-density="touch"] { @include touch-density-tokens; }
+@media (any-pointer: coarse) {
+  :root:not([data-ui-density]) { @include touch-density-tokens; }
+}
+
+
+// Capability projection is shared once, rather than expanded at every surface.
+:root {
+  --material-background-panel: var(--color-background-elevated-primary-opaque);
+  --material-background-menu: var(--color-background-elevated-primary-opaque);
+  --material-background-floating: var(--color-background-elevated-primary-opaque);
+  --material-backdrop-filter: none;
+  --material-shadow: var(--material-glass-shadow);
+  --material-floating-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-border-default) 65%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 55%),
+    inset 0 -1px 0 color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --material-background-panel: var(--material-glass-panel);
+    --material-background-menu: var(--material-glass-menu);
+    --material-background-floating: linear-gradient(145deg, rgb(255 255 255 / 14%), transparent 50%,
+      color-mix(in srgb, var(--color-text) 5%, transparent)), var(--material-glass-floating);
+    --material-backdrop-filter: var(--material-glass-filter);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-background-panel: var(--color-background-elevated-primary-opaque);
+    --material-background-menu: var(--color-background-elevated-primary-opaque);
+    --material-background-floating: var(--color-background-elevated-primary-opaque);
+    --material-backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  :root {
+    --material-background-panel: Canvas;
+    --material-background-menu: Canvas;
+    --material-background-floating: Canvas;
+    --material-backdrop-filter: none;
+    --material-shadow: none;
+    --material-floating-shadow: none;
+  }
+}
+
+// Floating navigation lenses have their own optical role; menu/panel blur is
+// intentionally independent. Theme surfaces supply tint, never a theme ID.
+:root {
+  --size-material-liquid-control: calc(var(--spacing) * 12);
+  --padding-material-liquid-group: calc(var(--spacing) * .5);
+  --gap-material-liquid-group: var(--spacing);
+  --material-liquid-background: var(--color-background-elevated-primary-opaque);
+  --material-liquid-blur: 12px;
+  --material-liquid-filter: none;
+  --material-liquid-reflection: none;
+  // Directional light and shade give the edge thickness without a uniform ring.
+  --material-liquid-rim: inset .5px .75px .75px rgb(255 255 255 / 32%),
+    inset -.5px -.5px 1px rgb(0 0 0 / 6%);
+  // A short contact shadow, kept neutral in both appearances.
+  --material-liquid-shadow: 0 2px 8px -2px rgb(0 0 0 / 8%),
+    0 .5px 1.5px rgb(0 0 0 / 4%);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --material-liquid-background: var(--material-glass-floating);
+    --material-liquid-filter: blur(var(--material-liquid-blur)) saturate(1.15);
+    --material-liquid-reflection: linear-gradient(155deg, rgb(255 255 255 / 6%), transparent 55%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-liquid-background: var(--color-background-elevated-primary-opaque);
+    --material-liquid-filter: none;
+    --material-liquid-reflection: none;
+  }
+}
+@media (forced-colors: active) {
+  :root {
+    --material-liquid-background: Canvas;
+    --material-liquid-filter: none;
+    --material-liquid-reflection: none;
+    --material-liquid-rim: inset 0 0 0 1px CanvasText;
+    --material-liquid-shadow: none;
+  }
+}

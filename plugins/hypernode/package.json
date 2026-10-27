@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/plugin-hypernode",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@opencraft/appserver-transport-websocket": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

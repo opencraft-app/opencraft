@@ -1,0 +1,93 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.thread-async-question {
+  max-width: min(100%, 620px);
+  margin-block: calc(var(--spacing) * 4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-2xl);
+  background: var(--color-background-elevated-secondary-opaque);
+  color: var(--color-text);
+
+  fieldset {
+    display: grid;
+    min-width: 0;
+    gap: calc(var(--spacing) * 4);
+    margin: 0;
+    padding: calc(var(--spacing) * 5) calc(var(--spacing) * 4) calc(var(--spacing) * 3);
+    border: 0;
+  }
+  &__hint, &__status, &__disclosure {
+    @include typography.role(metadata, secondary);
+  }
+  &__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    > .opencraft-chat-document {
+      @include typography.role(chat, primary);
+      font-family: var(--font-family-ui);
+    }
+    > .opencraft-chat-document > :first-child { margin-top: 0; }
+    > .opencraft-chat-document > :last-child { margin-bottom: 0; }
+  }
+  &__options {
+    display: grid;
+    gap: var(--spacing);
+    margin-inline: calc(var(--spacing) * -2);
+    label { @include controls.choice-control(quiet); }
+  }
+  textarea {
+    @include typography.role(composer, primary);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: calc(var(--typography-composer-line-height) * 3 + var(--spacing) * 5 + 2px);
+    max-height: min(240px, 40dvh);
+    overflow-y: auto;
+    resize: none;
+    padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--color-background-panel);
+    &::placeholder { color: var(--color-text-tertiary); }
+    :root:not([data-touch-interaction]) &:focus-visible { @include controls.focus-indicator; }
+  }
+  &__footer { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: calc(var(--spacing) * 3); }
+  &__hint { min-width: 0; overflow-wrap: anywhere; }
+  &__send { flex: 0 0 auto; margin-inline-start: auto; }
+  &__send .ui-button__label { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__send svg { width: 15px; height: 15px; }
+  &__status { margin: 0; }
+  fieldset:disabled textarea { color: var(--color-text-secondary); }
+  @media (forced-colors: active) {
+    border-color: CanvasText;
+    textarea { border-color: CanvasText; }
+  }
+  &[data-state="answered"] {
+    margin-block: calc(var(--spacing) * 2);
+    border-color: transparent;
+    background: var(--color-background-button-secondary);
+  }
+  &__result {
+    padding-inline: calc(var(--spacing) * 3);
+    > summary {
+      display: flex;
+      min-width: 0;
+      min-height: max(36px, var(--size-control-hit-min));
+      align-items: center;
+      gap: calc(var(--spacing) * 2);
+      list-style: none;
+      cursor: pointer;
+      &::-webkit-details-marker { display: none; }
+      :root:not([data-touch-interaction]) &:focus-visible { @include controls.focus-indicator; }
+      flex-wrap: wrap;
+      > svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--color-status-success); }
+    }
+    &[open] { padding-bottom: calc(var(--spacing) * 3); }
+    > .thread-async-question__title { margin-top: calc(var(--spacing) * 3); }
+    &[open] .thread-async-question__disclosure > svg { transform: rotate(180deg); }
+  }
+  &__answer { @include typography.role(body, primary); min-width: 0; flex: 1; overflow-wrap: anywhere; white-space: pre-wrap; }
+  &__disclosure { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--spacing); margin-inline-start: auto; }
+  &__disclosure > svg { width: 14px; height: 14px; }
+}

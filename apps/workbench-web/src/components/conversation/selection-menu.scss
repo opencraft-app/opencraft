@@ -1,0 +1,10 @@
+@use "@opencraft/design-system/menu.web" as menu;
+
+.conversation-selection-menu {
+  @include menu.surface;
+  z-index: var(--layer-confirmation-modal);
+  max-width: calc(100vw - 16px);
+  max-height: var(--radix-popover-content-available-height);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  > button { @include menu.item; cursor: pointer; }
+}

@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 4s
+scrape_configs:
+  - job_name: opencraft
+    sample_limit: 10000
+    label_limit: 8
+    static_configs:
+      - targets: [127.0.0.1:23305]

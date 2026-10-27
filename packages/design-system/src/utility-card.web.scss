@@ -1,0 +1,8 @@
+// Surface only: consumers retain content layout, scrolling and interaction ownership.
+@mixin surface($detached: false) {
+  border: 1px solid var(--utility-card-border-color);
+  border-radius: var(--utility-card-radius);
+  background: var(--color-background-elevated-primary);
+  @if $detached { background: var(--color-background-elevated-primary-opaque); }
+  box-shadow: var(--utility-card-shadow);
+}

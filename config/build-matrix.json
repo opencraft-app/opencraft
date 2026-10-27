@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "web-browser",
+      "platforms": ["linux", "darwin", "win32"],
+      "command": ["npm", "run", "build:web"],
+      "artifacts": [
+        "apps/workbench-web/dist/index.html",
+        "apps/workbench-web/dist/version.json",
+        "apps/workbench-web/dist/.vite/manifest.json"
+      ],
+      "description": "Content-addressed Vite application for HTTP static hosting"
+    },
+    {
+      "id": "electron-renderer",
+      "platforms": ["linux", "darwin", "win32"],
+      "command": ["npm", "run", "build:renderer:electron"],
+      "artifacts": [
+        "apps/workbench-web/dist-electron/index.html",
+        "apps/workbench-web/dist-electron/version.json",
+        "apps/workbench-web/dist-electron/.vite/manifest.json"
+      ],
+      "description": "Relocatable Vite renderer consumed by the Electron loopback host"
+    },
+    {
+      "id": "electron-host",
+      "platforms": ["linux", "darwin", "win32"],
+      "command": ["npm", "run", "build:electron:host"],
+      "artifacts": [
+        "apps/workbench-electron/dist-host/main.cjs",
+        "apps/workbench-electron/dist-host/preload.cjs",
+        "apps/opencraft-daemon/dist/main.cjs"
+      ],
+      "description": "Sandboxed Electron main/preload relay, static loopback origin, and independent OpenCraft Daemon"
+    },
+    {
+      "id": "electron-macos-arm64-zip",
+      "platforms": ["darwin"],
+      "command": ["npm", "run", "package:electron:mac:arm64:zip"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-arm64.zip"],
+      "description": "Unsigned Apple Silicon application ZIP; build natively on an arm64 Mac"
+    },
+    {
+      "id": "electron-macos-arm64-dmg",
+      "platforms": ["darwin"],
+      "command": ["npm", "run", "package:electron:mac:arm64:dmg"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-arm64.dmg"],
+      "description": "Apple Silicon DMG; requires the macOS sips/disk-image toolchain"
+    },
+    {
+      "id": "electron-macos-x64-zip",
+      "platforms": ["darwin"],
+      "command": ["npm", "run", "package:electron:mac:x64:zip"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-x64.zip"],
+      "description": "Unsigned Intel macOS application ZIP; build natively on an x64 Mac"
+    },
+    {
+      "id": "electron-macos-x64-dmg",
+      "platforms": ["darwin"],
+      "command": ["npm", "run", "package:electron:mac:x64:dmg"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-x64.dmg"],
+      "description": "Intel macOS DMG; requires the macOS sips/disk-image toolchain"
+    },
+    {
+      "id": "electron-linux-x64-appimage",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "package:electron:linux:x64:appimage"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-x86_64.AppImage"],
+      "description": "Portable Linux x64 desktop application"
+    },
+    {
+      "id": "electron-linux-x64-rpm",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "package:electron:linux:x64:rpm"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-x86_64.rpm"],
+      "description": "RPM package for TencentOS, RHEL, Fedora, and compatible Linux x64 systems"
+    },
+    {
+      "id": "electron-linux-x64-deb",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "package:electron:linux:x64:deb"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-amd64.deb"],
+      "description": "DEB package for Debian and Ubuntu Linux x64 systems"
+    },
+    {
+      "id": "headless-linux-amd64-tar",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "package:headless:linux:amd64"],
+      "artifacts": ["release/OpenCraft-server-0.1.0-linux-amd64.tar.gz"],
+      "description": "Headless Linux amd64 DSH/Codex Hosts and browser Workbench server archive"
+    },
+    {
+      "id": "expo-web",
+      "platforms": ["linux", "darwin", "win32"],
+      "command": ["npm", "run", "build:expo:web"],
+      "artifacts": ["apps/mobile/dist/index.html"],
+      "description": "Expo/Metro web export for the native-shaped application"
+    },
+    {
+      "id": "expo-ios-bundle",
+      "platforms": ["darwin", "linux"],
+      "command": ["npm", "run", "build:expo:ios"],
+      "artifacts": ["apps/mobile/dist/ios/main.jsbundle"],
+      "description": "Deterministic JavaScript/assets bundle; native archive remains a macOS job"
+    },
+    {
+      "id": "expo-android-internal-apk",
+      "platforms": ["linux", "darwin"],
+      "command": ["npm", "run", "build:expo:android:apk"],
+      "artifacts": ["apps/mobile/release/OpenCraft-android-internal.apk"],
+      "description": "Standalone Android release APK signed with the generated development key for internal testing"
+    },
+    {
+      "id": "expo-android-release-apk",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "build:expo:android:release"],
+      "artifacts": [
+        "apps/mobile/release/OpenCraft-dev.opencraft.workbench-android-release.apk",
+        "apps/mobile/release/OpenCraft-dev.opencraft.workbench-filing.txt"
+      ],
+      "description": "OpenCraft APK signed with an external production keystore; explicit downstream products own release identity and naming"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.opencraft-composer-model-status {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--spacing) * 2);
+  min-width: 0;
+  min-height: calc(var(--spacing) * 17);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+
+  &__icon {
+    flex: none;
+    margin-top: var(--spacing);
+    color: var(--color-text-tertiary);
+  }
+
+  &__copy { flex: 1; min-width: 0; }
+  &__title { @include typography.role(control-compact, primary); }
+  &__hint {
+    @include typography.role(metadata, secondary);
+    margin-top: var(--spacing);
+    overflow-wrap: anywhere;
+  }
+
+  .opencraft-composer-model-status__retry {
+    flex: none;
+    width: auto;
+    gap: var(--spacing);
+    color: var(--color-text-secondary);
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/react-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-use-event-hook": "0.9.6"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0"
+  }
+}

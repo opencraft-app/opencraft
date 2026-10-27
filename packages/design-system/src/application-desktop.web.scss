@@ -1,0 +1,66 @@
+// Application-desktop artwork and optical roles. Independent of document themes:
+// wallpaper labels always pair with the darkened wallpaper, windows keep their theme.
+@mixin wallpaper {
+  background-color: #034e60;
+  --application-desktop-paint:
+    radial-gradient(ellipse 38% 38% at 65% -4%, #02c6e9 0%, transparent 76%),
+    radial-gradient(ellipse 65% 48% at 44% 23%, #c2dedb 0%, #71b8c5a8 40%, transparent 78%),
+    radial-gradient(ellipse 63% 45% at 100% 54%, #007f9a 0%, transparent 75%),
+    radial-gradient(ellipse 47% 35% at 32% 86%, #7a9a77 0%, #508b7a80 44%, transparent 82%),
+    radial-gradient(ellipse 65% 52% at 10% 100%, #001b24 0%, transparent 80%),
+    linear-gradient(145deg, #003441, #067d92 48%, #00485a);
+  background-image: var(--application-desktop-paint);
+}
+
+@mixin roles {
+  --desktop-foreground: #fff;
+  --desktop-label-shadow: 0 1px 3px #002b3dd9, 0 0 9px #002b3d70;
+  --desktop-icon-size: 66px;
+  --desktop-icon-radius: 21px;
+  --desktop-icon-fill: linear-gradient(155deg, #42bbff 0%, #087efb 56%, #0754e4 100%);
+  --desktop-icon-foreground: #fff;
+  --desktop-icon-edge: inset 0 1px 1px #ffffff8c, inset 0 0 0 1px #ffffff38;
+  --desktop-icon-shadow: 0 5px 12px #002c4038;
+  --desktop-glass-background: #efffff2e;
+  --desktop-glass-opaque: #386b73;
+  --desktop-glass-border: #e4ffff60;
+  --desktop-glass-shadow: inset 0 1px 1px #ffffff8c, 0 10px 36px #00293424;
+  --desktop-glass-filter: blur(28px) saturate(1.5);
+  --desktop-dock-radius: 38px;
+  --desktop-tile-row-gap: 22px;
+  --desktop-dock-gap: 30px;
+  --desktop-press-scale: .88;
+  --desktop-hover-lift: -3px;
+  @media (prefers-reduced-motion: reduce) { --desktop-hover-lift: 0px; }
+  @media (forced-colors: active) {
+    --desktop-foreground: CanvasText;
+    --desktop-icon-fill: Canvas;
+    --desktop-icon-foreground: ButtonText;
+    --desktop-label-shadow: none;
+    --desktop-icon-edge: none;
+    --desktop-icon-shadow: none;
+    --desktop-glass-background: Canvas;
+    --desktop-glass-opaque: Canvas;
+    --desktop-glass-border: ButtonText;
+    --desktop-glass-filter: none;
+    --desktop-glass-shadow: none;
+  }
+}
+
+@mixin glass {
+  background: var(--desktop-glass-background);
+  border: 1px solid var(--desktop-glass-border);
+  box-shadow: var(--desktop-glass-shadow);
+  -webkit-backdrop-filter: var(--desktop-glass-filter);
+  backdrop-filter: var(--desktop-glass-filter);
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background: var(--desktop-glass-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+    background: var(--desktop-glass-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

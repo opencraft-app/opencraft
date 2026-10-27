@@ -1,0 +1,89 @@
+@use "./controls.web" as controls;
+@use "./material.web" as frost;
+
+// Shared floating material, independent of menu geometry and interaction.
+// Popovers must not consume translucent page/sidebar background tokens.
+%floating-menu-material {
+  border: 0.5px solid var(--color-border-default);
+  border-radius: 12px;
+  @include frost.surface(menu);
+}
+
+// Menu consumers are top-level surfaces. Group identical optical declarations
+// once per stylesheet instead of expanding them into every feature selector.
+@mixin material { @extend %floating-menu-material; }
+
+// Shared menu geometry and interaction surface. Feature menus own only content
+// and width; typography must not inherit from the surrounding page or portal.
+%floating-menu-surface {
+  max-width: min(var(--radix-dropdown-menu-content-available-width), calc(100vw - 16px));
+  max-height: min(376px, var(--radix-dropdown-menu-content-available-height), calc(100vh - 16px));
+  padding: var(--menu-surface-padding);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  @include material;
+  color: var(--color-text);
+  outline: none;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  user-select: none;
+  -webkit-app-region: no-drag;
+
+  @media (prefers-reduced-motion: no-preference) {
+    &[data-state="open"] { animation: menu-surface-enter 110ms cubic-bezier(0.16, 1, 0.3, 1); }
+    &[data-state="closed"] { animation: menu-surface-exit 80ms ease-in; }
+  }
+
+  font: var(--typography-control-compact-font);
+
+  letter-spacing: var(--typography-control-compact-tracking);
+}
+
+@mixin surface { @extend %floating-menu-surface; }
+
+// A list is separate from its floating surface: composite menus can place
+// searchable/scrolled lists beside detail panes without spacing those panes.
+@mixin list {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: var(--menu-item-gap);
+}
+
+@mixin item {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--menu-item-radius);
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  text-align: left;
+  outline: none;
+
+  // Selection persists independently of the row currently under the pointer
+  // or keyboard focus. The consumer also provides its semantic check marker.
+  &[data-selected="true"],
+  &[data-state="checked"] { background: var(--color-background-primary-ghost-hover); }
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-primary-ghost-hover); }
+  }
+  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
+  &[data-disabled] { opacity: 0.42; pointer-events: none; }
+  > svg { flex: 0 0 14px; width: 14px; height: 14px; color: var(--color-text-secondary); }
+  @include controls.density-target(0px, 28px);
+  font: var(--typography-control-compact-font);
+  letter-spacing: var(--typography-control-compact-tracking);
+}
+
+@keyframes menu-surface-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes menu-surface-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.98); }
+}

@@ -1,0 +1,27 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Give the native trackable-object counter one definition
+
+diff --git a/shell/common/gin_helper/trackable_object.h b/shell/common/gin_helper/trackable_object.h
+--- a/shell/common/gin_helper/trackable_object.h
++++ b/shell/common/gin_helper/trackable_object.h
+@@ -35,7 +35,7 @@
+  private:
+   void Destroy();
+ 
+-  static inline int32_t next_id_ = 0;
++  static int32_t next_id_;
+   const int32_t weak_map_id_ = ++next_id_;
+ 
+   base::WeakPtrFactory<TrackableObjectBase> weak_factory_{this};
+diff --git a/shell/common/gin_helper/trackable_object.cc b/shell/common/gin_helper/trackable_object.cc
+--- a/shell/common/gin_helper/trackable_object.cc
++++ b/shell/common/gin_helper/trackable_object.cc
+@@ -8,6 +8,8 @@
+ #include "shell/common/process_util.h"
+ 
+ namespace gin_helper {
++
++int32_t TrackableObjectBase::next_id_ = 0;
+ 
+ TrackableObjectBase::TrackableObjectBase() {
+   // TODO(zcbenz): Make TrackedObject work in renderer process.

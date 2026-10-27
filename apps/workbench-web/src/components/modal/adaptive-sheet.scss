@@ -1,0 +1,43 @@
+// Loaded with adaptive information dialogs; ordinary modals keep their existing geometry.
+.modal-surface__sheet-handle { display: none; }
+.modal-surface[data-presentation="adaptive-sheet"][data-size] {
+  flex-direction: column;
+  .modal-surface__close { top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%; }
+}
+
+@media (pointer: coarse) {
+  .modal-surface[data-presentation="adaptive-sheet"][data-size] .modal-surface__close { top: 8px; right: 8px; width: 44px; height: 44px; }
+}
+
+@media (max-width: 640px) {
+  .modal-surface[data-presentation="adaptive-sheet"][data-size] {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    border: 0;
+    border-radius: 24px 24px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateY(var(--modal-sheet-offset, 0px));
+    transition: transform 180ms ease-out;
+    animation: modal-sheet-enter 180ms ease-out;
+    &[data-dragging] { transition: none; }
+    .modal-surface__close { top: 28px; }
+    .modal-surface__sheet-handle {
+      display: grid;
+      flex: 0 0 24px;
+      place-items: center;
+      touch-action: none;
+      cursor: grab;
+      > span { width: 36px; height: 4px; border-radius: 4px; background: var(--color-border); }
+    }
+    .information-panel { padding-top: 8px; }
+  }
+}
+
+@keyframes modal-sheet-enter { from { translate: 0 100%; } to { translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .modal-surface[data-presentation="adaptive-sheet"][data-size] { animation: none; transition: none; }
+}

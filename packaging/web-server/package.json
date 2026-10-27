@@ -1,0 +1,33 @@
+{
+  "name": "@opencraft-app/opencraft",
+  "version": "0.1.17",
+  "description": "OpenCraft self-hosted website and managed execution gateway updates",
+  "type": "module",
+  "bin": {
+    "opencraft": "runtime/cli.mjs",
+    "opencraft-web": "runtime/cli.mjs"
+  },
+  "files": [
+    "runtime",
+    "web",
+    "README.md",
+    "opencraft-web.service",
+    "execution",
+    "opencraft-execution.service",
+    "opencraft-dsh-host.service",
+    "opencraft-engine-host.service",
+    "opencraft-acp-host.service",
+    "release/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/opencraft-app/opencraft.git"
+  }
+}

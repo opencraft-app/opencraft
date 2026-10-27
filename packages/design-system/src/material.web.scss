@@ -1,0 +1,41 @@
+// One optical material owner. Geometry, focus and presence stay with consumers.
+// Effective roles project support/accessibility once in tokens.web, avoiding a
+// separate @supports/media rule set for every menu and nested Sass consumer.
+@mixin opaque {
+  background: var(--color-background-elevated-primary-opaque);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@mixin surface($role: panel) {
+  background: var(--material-background-panel);
+  @if $role == menu { background: var(--material-background-menu); }
+  // Standard last: Lightning CSS otherwise retains only the WebKit alias.
+  -webkit-backdrop-filter: var(--material-backdrop-filter);
+  backdrop-filter: var(--material-backdrop-filter);
+  box-shadow: var(--material-shadow);
+  @media (forced-colors: active) {
+    color: CanvasText;
+    outline: 1px solid CanvasText;
+  }
+}
+
+// Small floating chrome has a lighter optical layer, with no outer shadow.
+@mixin floating {
+  @include surface;
+  background: var(--material-background-floating);
+  box-shadow: var(--material-floating-shadow);
+}
+
+// One live lens per control/group. Children retain their existing focus/press
+// owner; isolation keeps this negative background plane inside the host.
+@mixin liquid {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  border-radius: var(--radius-full);
+  > .ui-liquid-glass { display: block; }
+}
