@@ -42,8 +42,24 @@ export interface AppHostServerOptions {
 interface HostPhysical {
   readonly transport: DuplexTransport;
   readonly disposers: (() => void)[];
+  readonly logicalClients: Set<HostLogicalClient>;
+  readonly logicalFailures: Set<HostLogicalClient>;
   operation: Promise<void> | null;
   failure: Error | null;
+}
+
+interface HostLogicalClient {
+  readonly key: string;
+  readonly hostId: string;
+  readonly connection: AppHostServerConnection;
+  record: HostRecord | null;
+  operation: HostLogicalDisconnect | null;
+}
+
+interface HostLogicalDisconnect {
+  native: "pending" | "success" | "failure";
+  readonly promise: Promise<void>;
+  retire(error?: unknown): void;
 }
 
 interface HostRecord {
@@ -92,6 +108,12 @@ function lostHostConnection(status: TransportStatus): Error {
 function failedPhysicalCleanup(cause: unknown): Error {
   return Object.assign(new Error("The server could not finish disconnecting. Retry after it recovers."), {
     code: "APP_HOST_CLEANUP_FAILED", retryable: false, cause,
+  });
+}
+
+function failedLogicalCleanup(): Error {
+  return Object.assign(new Error("The server could not finish releasing a client. Retry after it recovers."), {
+    code: "APP_HOST_LOGICAL_CLEANUP_FAILED", retryable: false,
   });
 }
 
@@ -221,12 +243,15 @@ export class AppHostServer {
       }
       if (removed) released.add(slot);
     }
-    for (const [clientId, hostId] of clients) {
-      if ([...this.connections].some(other => other.hasLogicalClient(clientId))) continue;
-      const record = this.slots.get(hostId)?.record;
+    for (const [clientId, client] of clients) {
+      if ([...this.connections].some(other => other.hasLogicalClient(clientId))) {
+        if (client.operation === null) this.forgetLogicalClient(client);
+        continue;
+      }
+      const record = client.record ?? this.slots.get(client.hostId)?.record;
       if (!record || !this.options.logicalClientRouting) continue;
-      void record.physical.transport.send(stampLogicalClientFrame(
-        JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), clientId)).catch(() => undefined);
+      if (!client.record) { client.record = record; record.physical.logicalClients.add(client); }
+      void this.disconnectLogicalClient(client, true).catch(() => undefined);
     }
     for (const slot of released) if (slot.claims.size === 0) void this.stopSlot(slot, false).catch(() => undefined);
   }
@@ -368,9 +393,10 @@ export class AppHostServer {
         throw new Error("App Host connection closed during Host activation");
       }
       if (record.physical.transport.status.state !== "open") throw lostHostConnection(record.physical.transport.status);
+      if (record.physical.logicalFailures.size) throw failedLogicalCleanup();
       claim.generation = record.generation;
       connection.rememberLease(hostId, leaseId, record.generation);
-      connection.rememberLogicalClient(key, hostId);
+      if (this.options.logicalClientRouting) connection.rememberLogicalClient(key, hostId, record);
       return record;
     } catch (cause) {
       if (slot.claims.get(key) === claim) {
@@ -388,13 +414,14 @@ export class AppHostServer {
       // A trusted control request may have waited for a close barrier. Check
       // its current authority immediately before joining/starting a transport.
       assertAdmission?.();
-      if (slot.phase === "open" && slot.record?.physical.transport.status.state === "open") {
-        return slot.record;
-      }
       if (slot.phase === "failed") throw slot.physical!.failure!;
       if (slot.phase === "closing") {
         await this.waitForLifecycle(slot.physical!.operation!, "CLEANUP");
         continue;
+      }
+      if (slot.phase === "open" && slot.record?.physical.transport.status.state === "open") {
+        if (slot.record.physical.logicalFailures.size) throw failedLogicalCleanup();
+        return slot.record;
       }
       if (slot.phase === "starting") return this.waitForLifecycle(slot.startOperation!, "START");
       if (slot.phase === "open") {
@@ -430,7 +457,7 @@ export class AppHostServer {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
         }
         const transport = await this.options.createTransport(slot.hostId, abort.signal);
-        physical = { transport, disposers: [], operation: null, failure: null };
+        physical = { transport, disposers: [], logicalClients: new Set(), logicalFailures: new Set(), operation: null, failure: null };
         slot.physical = physical;
         if (this.closed || abort.signal.aborted || !this.hasStartupOwner(slot)) {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
@@ -520,16 +547,84 @@ export class AppHostServer {
     slot.claims.delete(key);
     claim.forwarding.abort(lostHostConnection({ state: "closed", reason: "Host claim released" }));
     connection.forgetLease(hostId, leaseId, generation);
+    const client = connection.logicalClient(key);
+    const notification = this.options.logicalClientRouting && record && client
+      ? this.disconnectLogicalClient(client) : Promise.resolve();
+    // Notification I/O cannot postpone acquiring the physical cleanup barrier.
+    // Its successful release retires unknown notification waits, not vice versa.
+    const cleanup = slot.claims.size === 0 ? this.stopSlot(slot, false) : Promise.resolve();
+    const [notified, cleaned] = await Promise.allSettled([notification, cleanup]);
+    if (cleaned.status === "rejected") throw cleaned.reason;
+    if (notified.status === "rejected") throw notified.reason;
+  }
+
+  private forgetLogicalClient(client: HostLogicalClient): void {
+    client.connection.forgetLogicalClient(client.key, client);
+    client.record?.physical.logicalClients.delete(client);
+    client.record?.physical.logicalFailures.delete(client);
+  }
+
+  private disconnectLogicalClient(client: HostLogicalClient, retryKnownFailure = false): Promise<void> {
+    const record = client.record;
+    if (!record) return Promise.resolve();
+    const physical = record.physical;
+    if (!physical.logicalClients.has(client)) return Promise.resolve();
+    const previous = client.operation;
+    if (physical.operation !== null) return previous?.promise ?? physical.operation;
+    // An unknown write may still be delivered. Reentry/detach joins it; only
+    // an already-known failure at this explicit detach permits one retry.
+    if (previous && !(retryKnownFailure && previous.native === "failure")) return previous.promise;
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    const abort = new AbortController();
+    const clock = this.options.lifecycleClock ?? { setTimeout, clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>) };
+    let localDone = false, timer: unknown, hasTimer = false;
+    const owns = () => client.operation === operation && physical.logicalClients.has(client);
+    const finish = (error?: unknown) => {
+      if (localDone) return;
+      localDone = true;
+      if (hasTimer) { try { clock.clearTimeout(timer); } catch { /* Local outcome still settles. */ } }
+      if (error === undefined) resolve(); else reject(error);
+    };
+    const operation: HostLogicalDisconnect = { native: "pending", promise,
+      retire(error) { finish(error); abort.abort(error); },
+    };
+    // Install the owner before clock, provider or abort callbacks can reenter.
+    client.operation = operation;
     try {
-      if (this.options.logicalClientRouting && record) {
-        await record.physical.transport.send(stampLogicalClientFrame(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), key));
-        connection.forgetLogicalClient(key);
-      }
-    } finally {
-      // A late notification cannot remove a successor claim. stopSlot rechecks
-      // all remaining claims and preserves service-owned physical lifetimes.
-      if (slot.claims.size === 0) await this.stopSlot(slot, false);
+      timer = clock.setTimeout(() => {
+        if (!owns() || localDone) return;
+        physical.logicalFailures.add(client);
+        const error = Object.assign(new Error("The server did not finish releasing a client. Retry after it recovers."), {
+          code: "APP_HOST_DISCONNECT_TIMEOUT", retryable: false,
+        });
+        operation.retire(error);
+      }, this.options.lifecycleTimeoutMs ?? 20_000);
+      hasTimer = true;
+      if (localDone) clock.clearTimeout(timer);
+    } catch (error) {
+      physical.logicalFailures.add(client); operation.retire(error);
     }
+    const succeeded = () => {
+      if (!owns()) return;
+      operation.native = "success";
+      this.forgetLogicalClient(client);
+      finish();
+    };
+    const failed = (error: unknown) => {
+      if (!owns()) return;
+      operation.native = "failure";
+      physical.logicalFailures.add(client);
+      finish(error);
+    };
+    if (!localDone && owns()) {
+      try {
+        const native = physical.transport.send(stampLogicalClientFrame(
+          JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), client.key), abort.signal);
+        void Promise.resolve(native).then(succeeded, failed);
+      } catch (error) { failed(error); }
+    }
+    return promise;
   }
 
   private publish(hostId: string, generation: number, message: AppHostToRendererMessage): void {
@@ -579,8 +674,13 @@ export class AppHostServer {
         if (slot.physical === physical && physical.operation === operation) {
           physical.failure = failure; slot.phase = "failed"; slot.lastState = "failed";
         }
+        for (const client of physical.logicalClients) client.operation?.retire(failure);
         reject(failure);
       } else {
+        for (const client of [...physical.logicalClients]) {
+          client.operation?.retire();
+          this.forgetLogicalClient(client);
+        }
         if (slot.physical === physical && physical.operation === operation) {
           slot.physical = null; slot.phase = "idle"; slot.lastState = "closed";
         }
@@ -615,7 +715,7 @@ interface OwnedLease {
 
 export class AppHostServerConnection {
   private readonly leases = new Map<string, OwnedLease>();
-  private readonly logicalClients = new Map<string, string>();
+  private readonly logicalClients = new Map<string, HostLogicalClient>();
   private readonly unsubscribePort: () => void;
   private readonly receiveOperations = new Map<string, Promise<void>>();
   private ready = false;
@@ -704,19 +804,25 @@ export class AppHostServerConnection {
     if (this.leases.get(key)?.generation === generation) this.leases.delete(key);
   }
 
-  rememberLogicalClient(clientId: string, hostId: string): void {
-    this.logicalClients.set(clientId, hostId);
+  rememberLogicalClient(clientId: string, hostId: string, record: HostRecord | null = null): void {
+    const existing = this.logicalClients.get(clientId);
+    if (existing?.record === record && existing.operation === null) return;
+    const client: HostLogicalClient = { key: clientId, hostId, connection: this, record, operation: null };
+    this.logicalClients.set(clientId, client);
+    record?.physical.logicalClients.add(client);
   }
 
-  forgetLogicalClient(clientId: string): void {
-    this.logicalClients.delete(clientId);
+  logicalClient(clientId: string): HostLogicalClient | undefined { return this.logicalClients.get(clientId); }
+
+  forgetLogicalClient(clientId: string, expected?: HostLogicalClient): void {
+    if (expected === undefined || this.logicalClients.get(clientId) === expected) this.logicalClients.delete(clientId);
   }
 
   hasLogicalClient(clientId: string): boolean {
     return this.logicalClients.has(clientId);
   }
 
-  takeLogicalClients(): Map<string, string> {
+  takeLogicalClients(): Map<string, HostLogicalClient> {
     const result = new Map(this.logicalClients);
     this.logicalClients.clear();
     return result;
