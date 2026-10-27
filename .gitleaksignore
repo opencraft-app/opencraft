@@ -1,2 +1,5 @@
 # Synthetic PEM extraction regexp, not a private key. Exact immutable commit/line only.
 ea463f3cf3113b5544cfe82368e6d497bf4d7115:tests/identity/git-identity-broker.test.ts:private-key:278
+
+# Adjacent PEM header validation literals, not key material; exact historical finding.
+a99ce34d47ae3e534ccb6ebff566ee0795f03b02:scripts/employee-git-vault-store.ts:private-key:45

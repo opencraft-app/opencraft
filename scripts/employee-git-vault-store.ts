@@ -21,6 +21,7 @@ export interface GitVaultStatus {
 export class GitVaultError extends Error {
   constructor(readonly code: 'invalid' | 'conflict' | 'unavailable', readonly status = 400) { super(code); }
 }
+const PRIVATE_KEY_HEADER = '-----BEGIN PRIVATE KEY-----';
 const SCHEMA = 'CREATE TABLE employee_git_credentials (account TEXT NOT NULL, host TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), credential BLOB, PRIMARY KEY(account,host)) STRICT';
 export const EMPLOYEE_GIT_VAULT_MIGRATIONS = [{ version: 1, name: 'employee-git-credentials', sql: SCHEMA }] as const;
 
@@ -42,11 +43,11 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
     || !text(value.identity.email, 320) || !/^[^\s@]+@[^\s@]+$/u.test(value.identity.email)
     || !(text(value.token, 4096) || (value.token === '' && value.sshAuth))) throw new GitVaultError('invalid');
   if (value.sshAuth && (!text(value.sshAuth.generation, 128) || !text(value.sshAuth.publicKey, 1024)
-    || !text(value.sshAuth.fingerprint, 128) || !value.sshAuth.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')
+    || !text(value.sshAuth.fingerprint, 128) || !value.sshAuth.privateKey.startsWith(PRIVATE_KEY_HEADER)
     || value.sshAuth.privateKey.length > 4096)) throw new GitVaultError('invalid');
   if (value.signing && (!['unregistered', 'pending', 'registered', 'manual_required'].includes(value.signing.registration)
     || !text(value.signing.generation, 128) || !text(value.signing.publicKey, 1024)
-    || !value.signing.privateKey.startsWith('-----BEGIN PRIVATE KEY-----') || value.signing.privateKey.length > 4096)) throw new GitVaultError('invalid');
+    || !value.signing.privateKey.startsWith(PRIVATE_KEY_HEADER) || value.signing.privateKey.length > 4096)) throw new GitVaultError('invalid');
 }
 
 /** Opaque account scope is supplied by the verified identity provider, never by a browser body. */
