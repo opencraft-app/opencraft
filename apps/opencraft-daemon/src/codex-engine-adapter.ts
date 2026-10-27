@@ -1,7 +1,7 @@
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
-import { ExecutionLeaseStore, snapshotExecutionSubmission } from "./execution-lease-store.js";
+import { ExecutionLeaseStore, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
@@ -319,14 +319,40 @@ export class CodexEngineAdapter implements DuplexTransport {
   private hostState: OpenCraftHostStateDatabase | null = null;
   private get executionLeases(): ExecutionLeaseStore | null { return this.hostState ? new ExecutionLeaseStore(this.hostState.database) : null; }
   private async reconcileExecutionLeases(): Promise<void> {
-    for (const threadId of this.executionLeases?.unsettledThreads() ?? []) {
+    const store = this.executionLeases;
+    for (const threadId of store?.unsettledThreads() ?? []) {
       try {
-        const result = record(await this.requestPhysical("thread/read", { threadId, includeTurns: true }));
-        const thread = record(result.thread);
-        if (!Array.isArray(thread.turns)) continue;
-        const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
-        this.executionLeases?.reconcile(threadId, thread.turns.map((turn: unknown) => ({ id: string(record(turn).id), status: string(record(turn).status), items: Array.isArray(record(turn).items) ? record(turn).items as readonly unknown[] : [] })),
-          generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
+        const targets = store!.unsettledTargets(threadId);
+        const turnIds = new Set(targets.flatMap(target => target.turnId ? [target.turnId] : []));
+        const inputIds = new Set(targets.filter(target => !target.turnId).map(target => target.inputId));
+        let cursor: string | null = null;
+        const seen = new Set<string>();
+        for (let page = 0; page < 1000 && (turnIds.size || inputIds.size); page++) {
+          // A known Turn needs only its native status. An unknown admission
+          // needs original input IDs from summaries, never the full transcript.
+          const result = record(await this.requestPhysical("thread/turns/list", {
+            threadId, cursor, limit: inputIds.size ? 10 : 100,
+            itemsView: inputIds.size ? "summary" : "notLoaded", sortDirection: "desc",
+          }));
+          if (!Array.isArray(result.data)) throw new Error("Invalid execution reconciliation page");
+          const matched: { id: string; status: string; items: readonly unknown[] }[] = [];
+          for (const value of result.data) {
+            const turn = record(value), id = string(turn.id), status = string(turn.status);
+            if (!id || !status) throw new Error("Invalid execution reconciliation Turn");
+            const items = Array.isArray(turn.items) ? turn.items : [];
+            const inputs = originalExecutionInputIds({ items });
+            if (!turnIds.has(id) && !inputs.some(input => inputIds.has(input))) continue;
+            matched.push({ id, status, items });
+            turnIds.delete(id);
+            for (const input of inputs) inputIds.delete(input);
+          }
+          const generation = this.generationRoutes.get(threadId), incarnation = generation ? this.generationIncarnations.get(generation) : undefined;
+          store!.reconcile(threadId, matched,
+            generation && incarnation !== undefined ? JSON.stringify([generation, incarnation]) : this.nativeCore?.executionIncarnation);
+          if (result.nextCursor == null || (!turnIds.size && !inputIds.size)) break;
+          if (typeof result.nextCursor !== "string" || !result.nextCursor || seen.has(result.nextCursor)) throw new Error("Invalid execution reconciliation cursor");
+          cursor = result.nextCursor; seen.add(cursor);
+        }
       } catch { this.diagnostic({ event: "execution-lease-reconciliation-pending" }); }
     }
   }

@@ -839,3 +839,7 @@ Codex native 连接失败/关闭、单代 lost 和 DSH runtime unavailable 会�
 ## Standalone Core execution origin
 
 A standalone Core has no generation envelope. Its authenticated health identifies the Core and its direct native child. On Linux the Host verifies their UID, parent relationship, boot ID and process start ticks, then records that native process incarnation before sending a Turn. Replies and Host reconciliation use the same incarnation. A disconnected transport cannot provide it. Routed deployments continue using the generation registry and never fall back to standalone process identity.
+
+### Bounded execution lease reconciliation
+
+Gateway initialization reads only native facts needed by unsettled execution leases. Known Turn IDs are matched against paginated `notLoaded` headers; only admissions without a Turn ID need small `summary` pages to establish the exact original input. Stop after the target set is observed, keep missing outcomes unknown, and do not create leases for unrelated historical Turns. Recovery must not fetch `thread/read` with `includeTurns: true`, since a full transcript can monopolize a shared SSH transport and repeat at every reconnection.

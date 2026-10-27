@@ -257,6 +257,10 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
   unsettledThreads(): string[] {
     return this.db.prepare("SELECT DISTINCT thread_id FROM execution_leases WHERE ended_at_ms IS NULL AND state IN ('active','pending','unknown')").all().map(row => String(row.thread_id));
   }
+  unsettledTargets(threadId: string): readonly { turnId: string | null; inputId: string }[] {
+    return this.db.prepare("SELECT turn_id,input_id FROM execution_leases WHERE thread_id=? AND ended_at_ms IS NULL AND state IN ('active','pending','unknown')")
+      .all(threadId).map(row => ({ turnId: row.turn_id as string | null, inputId: String(row.input_id) }));
+  }
   reconcile(threadId: string, turns: readonly { id: string; status: string; items?: readonly unknown[] }[], engineIncarnation?: string): void {
     for (const turn of turns) {
       const inputs = originalExecutionInputIds(turn);
