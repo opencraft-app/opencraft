@@ -35,6 +35,46 @@ function completed(engine: PiEngine) {
   });
 }
 
+test("held Pi display history does not serialize Stop behind the reader", async t => {
+  const f = await fixture(t, []);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; }), ready = new Promise<void>(resolve => { entered = resolve; });
+  const original = (f.engine as any).readHistory.bind(f.engine);
+  (f.engine as any).readHistory = async () => { entered(); await gate; return []; };
+  const reading = f.engine.request("thread/read", { threadId: thread.id, includeTurns: true }, noTools);
+  t.after(() => { release(); });
+  await ready;
+  let timer!: ReturnType<typeof setTimeout>;
+  try {
+    await Promise.race([
+      f.engine.request("turn/interrupt", { threadId: thread.id }, noTools),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Stop was blocked by history")), 2000); }),
+    ]);
+  } finally { clearTimeout(timer); release(); (f.engine as any).readHistory = original; }
+  await reading;
+});
+
+test("disconnect cancels only the Pi display reader without aborting native execution", async t => {
+  const f = await fixture(t, []);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  let abortedExecution = false;
+  const session = (f.engine as any).sessions.get(thread.id);
+  const nativeAbort = session.native.abort.bind(session.native);
+  session.native.abort = async () => { abortedExecution = true; return nativeAbort(); };
+  const original = (f.engine as any).readHistory.bind(f.engine);
+  (f.engine as any).readHistory = async (_session: unknown, signal: AbortSignal) => {
+    entered(); await new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  };
+  const reading = f.engine.request("thread/read", { threadId: thread.id, initialTurnsPage: { limit: 10 } }, noTools);
+  await ready; f.engine.disconnect(noTools);
+  await assert.rejects(reading, /disconnected/);
+  assert.equal(abortedExecution, false);
+  (f.engine as any).readHistory = original;
+});
+
 test("native durable session streams, persists and restores without DSH", async t => {
   const f = await fixture(t, [fauxAssistantMessage("hello\u2028world")]);
   const created = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);

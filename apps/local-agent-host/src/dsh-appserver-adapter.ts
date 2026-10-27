@@ -41,6 +41,7 @@ import { TranscriptReadCache, type NativeTranscriptSnapshotSource } from "@openc
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
 type RecordValue = Record<string, unknown>;
+const HISTORY_READ_TIMEOUT_MS = 30_000;
 export interface DshThreadEnginePort {
   goal?(params: RecordValue): Promise<any>;
   describe?(params: RecordValue): Promise<any>;
@@ -344,8 +345,8 @@ export class DshAppServerAdapter {
     this.transcriptCache = new TranscriptReadCache(dataDirectory, {
       readThread: async id => makeThread(await this.summary(id)),
       observeSnapshotSource: observeSource,
-      listTurns: async (id, cursor, limit) => {
-        const history = await this.history(id, cursor, limit, "desc", "full");
+      listTurns: async (id, cursor, limit, signal, sortDirection: "asc" | "desc" = "desc") => {
+        const history = await this.history(id, cursor, limit, sortDirection, "full", undefined, signal);
         return { data: history.pageTurns as unknown as AppServerTurn[], nextCursor: history.nextCursor };
       },
     });
@@ -375,25 +376,32 @@ export class DshAppServerAdapter {
   private readonly historyMetrics = new AsyncLocalStorage<{ nativeReads: number; nativeEvents: number; projectionMs: number }>();
   private historyEpoch = randomUUID();
   private readonly historyFlights = new Map<string, Promise<DshHistoryPage>>();
-  private readHistoryPage(sessionId: string, beforeSeq?: number): Promise<DshHistoryPage> {
+  private readHistoryPage(sessionId: string, beforeSeq?: number, signal?: AbortSignal): Promise<DshHistoryPage> {
     const key = JSON.stringify([sessionId, beforeSeq]);
+    const request = () => this.client.call<DshHistoryPage>("session.history", {
+      sessionId, maxMessages: 50, ...(beforeSeq === undefined ? {} : { beforeSeq }),
+    }, signal ? AbortSignal.any([this.abort.signal, signal]) : this.abort.signal);
+    // A view-scoped reader must not cancel a shared live-history flight for
+    // another consumer. Such reads use their own request instead of joining
+    // the shared flight.
+    if (signal) return request();
     const prior = this.historyFlights.get(key);
     if (prior) return prior;
     const metrics = this.historyMetrics.getStore();
     if (metrics) metrics.nativeReads++;
-    const operation = this.client.call<DshHistoryPage>("session.history", {
-      sessionId, maxMessages: 50, ...(beforeSeq === undefined ? {} : { beforeSeq }),
-    }, this.abort.signal).then(page => { if (metrics) metrics.nativeEvents += page.events.length; return page; }).finally(() => {
+    const operation = request().then(page => { if (metrics) metrics.nativeEvents += page.events.length; return page; }).finally(() => {
       if (this.historyFlights.get(key) === operation) this.historyFlights.delete(key);
     });
     this.historyFlights.set(key, operation);
     return operation;
   }
   private async readTurn(sessionId: string, id: string): Promise<TurnAccumulator[]> {
+    const deadline = AbortSignal.timeout(HISTORY_READ_TIMEOUT_MS);
+    const signal = AbortSignal.any([this.abort.signal, deadline]);
     let before: number | undefined;
     const chunks: DshHistoryEntry[][] = [];
     for (;;) {
-      const page = await this.readHistoryPage(sessionId, before);
+      const page = await this.readHistoryPage(sessionId, before, signal);
       const first = page.events[0]?.event.seq;
       if (page.hasMore && (first === undefined || (before !== undefined && first >= before))) throw new Error("Native history cursor made no progress");
       chunks.unshift(page.events);
@@ -1059,7 +1067,9 @@ export class DshAppServerAdapter {
     return found;
   }
 
-  private async fullHistory(sessionId: string): Promise<TurnAccumulator[]> {
+  private async fullHistory(sessionId: string, signal?: AbortSignal): Promise<TurnAccumulator[]> {
+    const deadline = AbortSignal.timeout(HISTORY_READ_TIMEOUT_MS);
+    const readSignal = signal ? AbortSignal.any([this.abort.signal, signal, deadline]) : AbortSignal.any([this.abort.signal, deadline]);
     await this.summary(sessionId);
     const events: DshHistoryEntry[] = [];
     let before: number | undefined;
@@ -1067,7 +1077,7 @@ export class DshAppServerAdapter {
     for (;;) {
       const page = await this.client.call<DshHistoryPage>("session.history", {
         sessionId, maxMessages: 100, ...(before === undefined ? {} : { beforeSeq: before }),
-      });
+      }, readSignal);
       if (before === undefined) latestProjections = page.projections;
       events.unshift(...page.events);
       if (!page.hasMore) break;
@@ -1159,6 +1169,7 @@ export class DshAppServerAdapter {
     sortDirection: "asc" | "desc" = "desc",
     itemsView?: "full" | "notLoaded",
     firstPage?: DshHistoryPage,
+    signal?: AbortSignal,
   ): Promise<{
     turns: TurnAccumulator[];
     pageTurns: TurnAccumulator[];
@@ -1172,7 +1183,7 @@ export class DshAppServerAdapter {
       let seed = firstPage;
       const window = await readTurnWindow(boundary => {
         if (seed !== undefined && boundary === before) { const page = seed; seed = undefined; return Promise.resolve(page); }
-        return this.readHistoryPage(sessionId, boundary);
+        return this.readHistoryPage(sessionId, boundary, signal);
       }, before, count);
       const summary = await this.summary(sessionId);
       if (window.projections) this.summaries.set(sessionId, { ...summary, projections: window.projections });
@@ -1191,7 +1202,7 @@ export class DshAppServerAdapter {
       return { turns, pageTurns, nextCursor: window.nextBefore === undefined ? null : historyCursor(sessionId, window.nextBefore),
         headCursor: turns.length ? historyCursor(sessionId, before) : null, nextSeq: (window.events.at(-1)?.event.seq ?? -1) + 1 };
     }
-    const turns = await this.fullHistory(sessionId);
+    const turns = await this.fullHistory(sessionId, signal);
     const thread = { id: sessionId, turns };
     const page = projectedTurnsPage(thread, {
       threadId: sessionId,
@@ -1633,10 +1644,11 @@ export class DshAppServerAdapter {
       case "thread/turns/list":
       case "thread/items/list": {
         const threadId = string(value.threadId);
-        if (this.transcriptCache && method === "thread/turns/list" && value.sortDirection !== "asc"
-          && (value.cursor == null || String(value.cursor).startsWith("transcript:")) && !(await this.summary(threadId)).ephemeral) {
+        const requestedSortDirection = value.sortDirection === "asc" ? "asc" : "desc";
+        if (this.transcriptCache && method === "thread/turns/list"
+          && (value.cursor == null || String(value.cursor).startsWith("transcript:") || String(value.cursor).startsWith("transcript-asc:")) && !(await this.summary(threadId)).ephemeral) {
           return this.transcriptCache.page(threadId, value.cursor as string | null ?? null, number(value.limit, 20), undefined,
-            value.itemsView === "notLoaded" ? "notLoaded" : "full");
+            value.itemsView === "notLoaded" ? "notLoaded" : "full", requestedSortDirection);
         }
         if (method === "thread/turns/list" && value.sortDirection !== "asc" && (value.cursor == null || String(value.cursor).includes("dsh-turns"))) {
           const result = await this.history(threadId, value.cursor, value.limit, "desc", value.itemsView as "full" | "notLoaded");

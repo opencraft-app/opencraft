@@ -2,6 +2,7 @@ import { PiQueueDoc, type PiQueueState } from "./queue.js";
 import { DatabaseSync, backup } from "node:sqlite";
 import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { setImmediate } from "node:timers/promises";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, ROOT_CONVERSATION_ID, type Cursor, type Page } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -15,9 +16,9 @@ export function createPiTranscriptCache(options: {
   dataDirectory: string;
   directory: string;
   readThread(threadId: string): Promise<AppServerThread>;
-  readTurns(threadId: string): Promise<AppServerTurn[]>;
+  readTurns(threadId: string, signal?: AbortSignal): Promise<AppServerTurn[]>;
 }): TranscriptReadCache {
-  const snapshots = new Map<string, Promise<AppServerTurn[]>>();
+  const snapshots = new Map<string, { promise: Promise<AppServerTurn[]>; signal?: AbortSignal }>();
   return new TranscriptReadCache(options.dataDirectory, {
     readThread: options.readThread,
     async observeSnapshotSource(threadId) {
@@ -25,17 +26,21 @@ export function createPiTranscriptCache(options: {
       const file = join(options.directory, `${threadId}.sqlite`);
       return observeNativeTranscriptFiles(options.directory, [file, `${file}-wal`], JSON.stringify(["pi", options.directory, threadId]));
     },
-    async listTurns(threadId, cursor, limit) {
+    async listTurns(threadId, cursor, limit, signal, sortDirection = "desc") {
       let snapshot = snapshots.get(threadId);
-      if (!snapshot) { snapshot = options.readTurns(threadId); snapshots.set(threadId, snapshot); }
+      if (!snapshot || snapshot.signal !== signal) {
+        snapshot = { promise: options.readTurns(threadId, signal), signal };
+        snapshots.set(threadId, snapshot);
+      }
       try {
-        const turns = (await snapshot).slice().reverse();
+        const turns = (await snapshot.promise).slice();
+        if (sortDirection !== "asc") turns.reverse();
         const offset = cursor === null ? 0 : Number(cursor);
         if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid Pi native transcript cursor");
         const nextCursor = offset + limit < turns.length ? String(offset + limit) : null;
-        if (nextCursor === null) snapshots.delete(threadId);
+        if (nextCursor === null && snapshots.get(threadId) === snapshot) snapshots.delete(threadId);
         return { data: turns.slice(offset, offset + limit), nextCursor };
-      } catch (error) { snapshots.delete(threadId); throw error; }
+      } catch (error) { if (snapshots.get(threadId) === snapshot) snapshots.delete(threadId); throw error; }
     },
   });
 }
@@ -44,22 +49,39 @@ export function createPiTranscriptCache(options: {
  * A consistent disposable SQLite snapshot lets the native Storage reader own
  * document materialization and entry semantics, including live partial output.
  */
-export async function readPiSnapshot(file: string, cacheDirectory: string): Promise<PiSnapshot> {
+export async function readPiSnapshot(file: string, cacheDirectory: string, signal?: AbortSignal): Promise<PiSnapshot> {
+  const deadline = performance.now() + 30_000;
+  const throwIfAborted = () => {
+    if (performance.now() >= deadline) throw new Error("Pi history read timed out");
+    if (!signal?.aborted) return;
+    throw signal.reason instanceof Error ? signal.reason : new Error("Pi history read cancelled");
+  };
+  throwIfAborted();
   await mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
   const directory = await mkdtemp(join(cacheDirectory, "pi-read-"));
   try {
     const source = new DatabaseSync(file, { readOnly: true });
-    try { await backup(source, join(directory, "snapshot.sqlite")); } finally { source.close(); }
+    try { await backup(source, join(directory, "snapshot.sqlite"), { rate: 100, progress: throwIfAborted }); }
+    finally { source.close(); }
+    throwIfAborted();
     await chmod(join(directory, "snapshot.sqlite"), 0o600);
     const storage = await openNodeSqliteStorage(join(directory, "snapshot.sqlite"));
     try {
       const pages = async <T>(read: (cursor: Cursor | undefined) => Promise<Page<T, Cursor>>): Promise<T[]> => {
         const records: T[] = []; let cursor: Cursor | undefined;
-        do { const page = await read(cursor); records.push(...page.items); cursor = page.next; } while (cursor !== undefined);
+        do {
+          throwIfAborted();
+          const page = await read(cursor); records.push(...page.items); cursor = page.next;
+          // Native SQLite materialization may resolve synchronously. Yield so
+          // connection cancellation and timers can reach this read between pages.
+          await setImmediate();
+        } while (cursor !== undefined);
+        throwIfAborted();
         return records;
       };
       const scope = { kind: "conversation" as const, conversationId: ROOT_CONVERSATION_ID };
       const doc = async (kind: string, fallback: object) => {
+        throwIfAborted();
         const record = await storage.findDocument({ kind, scope }, "current", context);
         return record ? (await storage.document(record.id, "current", context))!.value : fallback;
       };
