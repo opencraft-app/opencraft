@@ -16,9 +16,10 @@ import semver from 'semver';
 import { assertHeadlessWebRelease } from './headless-web-release.mjs';
 import { parseNpmPackResult } from './web-deployment/npm-pack-result.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, assertPackageName } from './web-deployment/package-identity.mjs';
+import { sealPackage } from './full-release/producer.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [] }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullRelease = null, fullReleaseTrust = null }) {
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
   if (!['daemon', 'headless'].includes(executionProfile) || (!execution && executionProfile !== 'daemon')) throw new Error('Invalid execution profile');
@@ -55,13 +56,14 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   manifest.opencraftWeb = { schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
+  await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
   const unit = await readFile(join(repositoryRoot, 'packaging/web-server/opencraft-web.service'), 'utf8');
   await writeFile(join(packageRoot, 'opencraft-web.service'), unit.replace(`node_modules/${PUBLIC_PACKAGE_NAME}/`, `node_modules/${packageName}/`));
   for (const entry of ['cli', 'worker', 'controlled-registry', 'prefetch']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/web-deployment/${entry}.mjs`)], outfile: join(packageRoot, `runtime/${entry}.mjs`),
       bundle: true, platform: 'node', format: 'esm', target: 'node22',
       external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
-      define: { 'process.env.OPENCRAFT_NPM_PACKAGE_NAME': JSON.stringify(packageName), 'process.env.OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME': JSON.stringify(resourcePackageName) },
+      define: { 'process.env.OPENCRAFT_NPM_PACKAGE_NAME': JSON.stringify(packageName), 'process.env.OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME': JSON.stringify(resourcePackageName), 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)) },
       banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
   }
   // Independent relay/admin entry points travel with the same fixed-source artifact;
@@ -139,6 +141,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
+  if (fullRelease) {
+    const result = await sealPackage({ packageRoot, directory, ...fullRelease });
+    return { version, buildId: web.buildId, packageRoot, archive: join(directory, result.filename), integrity: result.integrity, sha: result.shasum, images, fullRelease: result.fullRelease };
+  }
   const { stdout } = await promisify(execFile)('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
   const result = parseNpmPackResult(JSON.parse(stdout));
   return { version, buildId: web.buildId, packageRoot, archive: join(directory, result.filename), integrity: result.integrity, sha: result.shasum, images, ...(resources ? { resources } : {}) };

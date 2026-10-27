@@ -1,6 +1,9 @@
+import { fullReleaseTrust } from '../full-release/trust.mjs';
+import { verifyPreflight, enforcePolicy, HARD_LIMITS } from '../full-release/contract.mjs';
+import { verifyFullArchive, readReplayState, writeReplayState } from '../full-release/archive.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { readFile, mkdir, readdir, stat, chmod } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { x } from 'tar';
 import semver from 'semver';
@@ -41,7 +44,7 @@ export async function inspectRelease(root) {
   if (!(await stat(join(root, 'runtime/worker.mjs'))).isFile()) throw new Error('Web worker missing');
   return { releaseRoot: resolve(root), version: manifest.version, buildId: metadata.buildId };
 }
-export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 'latest', userconfig, packageName = PACKAGE_NAME } = {}) {
+export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 'latest', userconfig, packageName = PACKAGE_NAME, stateFile = null } = {}) {
   if (![PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, PUBLIC_RESOURCE_PACKAGE].includes(packageName)) throw new Error('Unexpected npm package name');
   const registryUrl = new URL(registry);
   if (!['https:', 'http:'].includes(registryUrl.protocol) || registryUrl.username || registryUrl.password) throw new Error('Invalid npm registry');
@@ -71,37 +74,76 @@ export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 
       const metadata = parseWebReleaseMetadata(manifest.opencraftWeb);
       const integrity = manifest.dist?.integrity;
       if (typeof integrity !== 'string' || !/^(sha512|sha256)-[A-Za-z0-9+/]+={0,2}$/.test(integrity)) throw new Error('Release integrity missing or unsupported');
-      return { version: manifest.version, buildId: metadata.buildId, integrity };
+      let fullRelease = null;
+      if (fullReleaseTrust && packageName === fullReleaseTrust.packageName) {
+        fullRelease = verifyPreflight(manifest.opencraftFullRelease, fullReleaseTrust);
+        enforcePolicy(fullRelease, manifest.opencraftFullRelease.keyId, fullReleaseTrust, await readReplayState(stateFile));
+        if (fullRelease.transport.exactVersion !== manifest.version || fullRelease.release.channel !== channel || fullRelease.transport.registry !== registry) throw new Error('Full release transport mismatch');
+      }
+      return { version: manifest.version, buildId: metadata.buildId, integrity, ...(fullRelease ? { fullRelease } : {}) };
     },
     async download(release, directory) {
+      if (fullReleaseTrust && packageName === fullReleaseTrust.packageName) {
+        const exact = await npm(['view', `${packageName}@${release.version}`, '--json']);
+        const checked = verifyPreflight(exact.opencraftFullRelease, fullReleaseTrust);
+        enforcePolicy(checked, exact.opencraftFullRelease.keyId, fullReleaseTrust, await readReplayState(stateFile));
+        if (exact.version !== release.version || exact.dist?.integrity !== release.integrity || checked.transport.exactVersion !== release.version
+          || JSON.stringify(checked) !== JSON.stringify(release.fullRelease)) throw new Error('Checked full release identity changed');
+      }
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const packed = await npm(['pack', `${packageName}@${release.version}`, '--pack-destination', directory, '--json'], directory, 32 * 1024 * 1024);
       const path = join(directory, parseNpmPackResult(packed).filename);
       const archiveStat = await stat(path);
-      if (archiveStat.size > MAX_ARCHIVE_BYTES) throw new Error('Web archive too large');
-      await verifyArchiveIntegrity(path, release.integrity);
+      // Re-read exact-version metadata under the pinned identity before fetching.
+      const signed = fullReleaseTrust && packageName === fullReleaseTrust.packageName;
+      const limit = signed ? HARD_LIMITS.archiveBytes : MAX_ARCHIVE_BYTES;
+      if (archiveStat.size > limit) throw new Error('Web archive too large');
+      await verifyArchiveIntegrity(path, release.integrity, ['sha512', 'sha256'], limit);
+      if (signed) await verifyFullArchive(path, fullReleaseTrust, { state: await readReplayState(stateFile), preflight: release.fullRelease });
       return path;
     },
   };
 }
-export async function unpackPackage(archive, directory) {
+export async function unpackPackage(archive, directory, limits = null) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  let bytes = 0; let count = 0; let invalid = false;
-  await x({ file: archive, cwd: directory, strict: true, preservePaths: false,
+  let bytes = 0; let count = 0; let invalid = false; const fileModes = new Map();
+  await x({ file: archive, cwd: directory, strict: true, preservePaths: false, preserveOwner: false,
+    ...(process.getuid ? { uid: process.getuid(), gid: process.getgid() } : {}),
+    chmod: true, processUmask: process.umask(), dmode: 0o755,
     filter(path, entry) {
       const parts = path.split('/');
       if (!path.startsWith('package/') || parts.includes('..') || path.includes('\\')
-        || !['File', 'Directory'].includes(entry.type) || ++count > 20_000
-        || (bytes += entry.size || 0) > MAX_UNPACKED_BYTES) { invalid = true; return false; }
+        || !['File', 'Directory'].includes(entry.type) || ++count > (limits?.entries || 20_000)
+        || (bytes += entry.size || 0) > (limits?.unpackedBytes || MAX_UNPACKED_BYTES)) { invalid = true; return false; }
+      if (entry.type === 'Directory') {
+        if (limits && (entry.mode & 0o7777) !== 0o755) { invalid = true; return false; }
+        entry.mode = 0o755;
+      } else fileModes.set(path, entry.mode & 0o777);
       return true;
     },
   });
   if (invalid) throw new Error('Unsafe Web archive contents');
+  // Explicitly normalize implicit directories too; archive ownership and the
+  // service process umask must not change the installed execution identity.
+  if (limits) {
+    async function normalizeDirectories(path) {
+      await chmod(path, 0o755);
+      for (const entry of await readdir(path, { withFileTypes: true })) if (entry.isDirectory()) await normalizeDirectories(join(path, entry.name));
+    }
+    await normalizeDirectories(join(directory, 'package'));
+    for (const [path, mode] of fileModes) await chmod(join(directory, path), mode);
+  }
   const entries = await readdir(directory);
   if (entries.length !== 1 || entries[0] !== 'package') throw new Error('Invalid Web archive layout');
   return join(directory, 'package');
 }
-export async function unpackRelease(archive, directory) {
-  return inspectRelease(await unpackPackage(archive, directory));
+export async function unpackRelease(archive, directory, { stateFile = null } = {}) {
+  let accepted = null;
+  if (fullReleaseTrust) accepted = await verifyFullArchive(archive, fullReleaseTrust, { state: await readReplayState(stateFile) });
+  const release = await inspectRelease(await unpackPackage(archive, directory, accepted?.record.budgets.outer));
+  if (accepted && stateFile) await writeReplayState(stateFile, accepted.state);
+  return accepted ? { ...release, fullRelease: { manifestSha256: accepted.state.manifestSha256,
+    releaseId: accepted.record.release.releaseId, releaseSequence: accepted.record.release.releaseSequence,
+    authorization: 'verified-installation' } } : release;
 }
 export const isNewerVersion = (next, current) => semver.gt(next, current);

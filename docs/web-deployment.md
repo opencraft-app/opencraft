@@ -342,3 +342,62 @@ The npm release source bounds metadata output separately from package inventorie
 `npm pack --json` includes every shipped file, so a complete Headless package can
 exceed the metadata response budget. Its bounded command output allowance does
 not change archive size, SHA integrity, extraction or execution-profile checks.
+
+## Signed full-release bridge
+
+A distribution may opt into the full-release bridge through its packaging
+composition. The fixed bootstrap embeds its own trust roots; keys contained in
+an incoming package never establish trust. Public distribution defaults remain
+independent of downstream signing policy.
+
+The formal contracts are `packaging/full-release/manifest-v1.schema.json` and
+`preflight-v1.schema.json`. `scripts/full-release/contract.mjs` adds semantic
+checks: duplicate JSON keys, safe integer bounds, exact source identities,
+UTF-8 sorted file tuples, canonical POSIX paths and modes, disjoint component
+roots, dependency identities and hard resource ceilings. Signatures authenticate
+original UTF-8 manifest bytes using Ed25519. Only `release/full-release.json` and
+`release/full-release.sig` are excluded from the signed payload inventory.
+The signer first observes npm's actual archive, then signs its complete inventory,
+durably binds the release identity to that manifest digest before signing,
+repackages once, and independently scans the final tgz to verify the two release
+files, every payload byte/mode and the declared limits. Private signing keys are
+never placed in the staging tree. The single signing owner also persists the final
+archive SHA512 outside the package. A changed build must use a new identity;
+publication retries reuse the original retained archive. Preliminary packs never
+overwrite it.
+
+`package.json.opencraftFullRelease` is a small signed preflight envelope retrievable
+with npm metadata before downloading a large archive. It binds product/channel,
+exact npm version, source, release sequence, expiry, revocation watermark,
+platform/ABI, required bootstrap/helper protocols and budgets. It intentionally
+does not contain its own archive or manifest digest, which would create a cycle:
+package.json is itself part of the signed payload. After download, the manifest
+signature and identical preflight fields establish the final binding. A changed
+channel cannot replace an already selected exact version/integrity.
+
+The authenticated sequence and manifest digest persist in `full-release-state.json`
+under the existing deployment writer lock. Same-byte retries are accepted; lower
+sequences, same-sequence different content, expired/revoked releases, stale
+revocation watermarks and unsupported bootstrap/platform combinations fail before
+activation. First installation and fixed-bootstrap maintenance authenticate the
+installed signed payload and initialize the same watermark before starting workers.
+The committed `current` pointer carries its authenticated manifest digest and
+release identity. That authorization survives replacement or failure of later jobs.
+Authenticated staging may advance the high-water mark without activating a payload;
+the last committed current remains restartable, and unsigned/lower replay is still
+rejected for new installations. Pointer commits are durable before accepting jobs.
+Administrator rollback verifies the retained manifest/signature and every
+original payload file, persists an explicit target-digest intent and keeps the high-water
+mark; it checks the target against current authenticated revocations, rather than
+requiring an old target manifest to contain newer revocation data. Rollback never
+restores an old database snapshot or lowers either watermark. Explicit and implicit
+archive directories install as 0755 and every extracted entry belongs to the
+deployment user/group, independently of archive uid/gid or process umask.
+
+Bridge archives remain within 512 MiB compressed, 2 GiB expanded and 20,000 outer
+entries. An old bootstrap must first receive the official bridge maintenance;
+replacing only a Web worker does not upgrade the fixed bootstrap. The current
+bridge establishes trusted distribution and bounded verification. It does not
+implement a persistent multi-owner coordinator, owner admission fences or claim
+that every running backend component has switched versions. Those capabilities
+require separate owner/transaction contracts.

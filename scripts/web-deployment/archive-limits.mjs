@@ -6,15 +6,15 @@ import { stat } from 'node:fs/promises';
 // and expanded bounds; verify large archives without buffering them in memory.
 export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 export const MAX_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024;
-export async function verifyArchiveIntegrity(path, integrity, allowedAlgorithms = ['sha512', 'sha256']) {
+export async function verifyArchiveIntegrity(path, integrity, allowedAlgorithms = ['sha512', 'sha256'], maxArchiveBytes = MAX_ARCHIVE_BYTES) {
   const match = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/.exec(integrity || '');
   if (!match || !allowedAlgorithms.includes(match[1])) throw new Error('Invalid release integrity');
-  if ((await stat(path)).size > MAX_ARCHIVE_BYTES) throw new Error('Release archive too large');
+  if ((await stat(path)).size > maxArchiveBytes) throw new Error('Release archive too large');
   const hash = createHash(match[1]);
   let bytes = 0;
   for await (const chunk of createReadStream(path)) {
     bytes += chunk.length;
-    if (bytes > MAX_ARCHIVE_BYTES) throw new Error('Release archive too large');
+    if (bytes > maxArchiveBytes) throw new Error('Release archive too large');
     hash.update(chunk);
   }
   const actual = hash.digest(), expected = Buffer.from(match[2], 'base64');

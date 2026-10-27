@@ -1,9 +1,12 @@
+import { fullReleaseTrust } from '../full-release/trust.mjs';
+import { readReplayState } from '../full-release/archive.mjs';
+import { verifyRetainedRelease, initializeReplayState } from '../full-release/retained.mjs';
 import { fork } from 'node:child_process';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, request as httpRequest } from 'node:http';
 import { createConnection } from 'node:net';
-import { readFile, writeFile, mkdir, rename, rm, cp, stat, readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readFile, writeFile, mkdir, rename, rm, cp, stat, readdir, open } from 'node:fs/promises';
+import { join, resolve, dirname } from 'node:path';
 import { createLocalReleaseSource } from './local-release.mjs';
 import semver from 'semver';
 import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes } from './headless-backend.mjs';
@@ -89,7 +92,7 @@ function lease(worker) {
 }
 
 export async function createManagedWebServer({ initialRelease, stateDirectory, registry, channel, userconfig, publicOrigin,
-  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig }) }) {
+  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const relayIngress = createHeadlessBackendProxy(relayIngressTarget);
   if (relayIngress && (!headlessBackend || !Number.isInteger(relayInternalPort) || relayInternalPort < 0 || relayInternalPort > 65535)) throw new Error('Relay ingress requires a protected Headless backend and loopback internal port');
@@ -100,6 +103,17 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const releaseLock = await acquireDeploymentLock(directory);
   const statePath = join(directory, 'deployment.json');
+  async function writeDeploymentState(path, value) {
+    await stateWriter(path, value);
+    // The current pointer authorizes restart independently of newer staged
+    // manifests and replaceable jobs, so make that commit durable first.
+    if (fullReleaseTrust) {
+      const file = await open(path, 'r');
+      try { await file.sync(); } finally { await file.close(); }
+      const parent = await open(dirname(path), 'r');
+      try { await parent.sync(); } finally { await parent.close(); }
+    }
+  }
   const keyPath = join(directory, 'admin-key');
   const workers = new Set(); const tunnels = new Set();
   let recovery = null;
@@ -117,12 +131,20 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       await mkdir(installedRoot, { recursive: true });
       await cp(seed.releaseRoot, installedRoot, { recursive: true });
       persisted = { schemaVersion: 1, current: await inspectRelease(installedRoot), previous: null, job: null };
-      await stateWriter(statePath, persisted);
+      await writeDeploymentState(statePath, persisted);
     }
     if (persisted.schemaVersion !== 1) throw new Error('Incompatible deployment state');
     const current = await inspectRelease(persisted.current.releaseRoot);
     if (current.version !== persisted.current.version || current.buildId !== persisted.current.buildId) throw new Error('Installed release identity changed');
-    if (busy(persisted.job)) { persisted.job = { ...persisted.job, phase: 'failed', error: 'Update interrupted before activation; the installed release was preserved' }; await stateWriter(statePath, persisted); }
+    if (fullReleaseTrust) {
+      const authenticated = await initializeReplayState(current.releaseRoot, fullReleaseTrust,
+        join(directory, 'full-release-state.json'), persisted.current.fullRelease);
+      if (!persisted.current.fullRelease) {
+        persisted.current = { ...persisted.current, fullRelease: authenticated.identity };
+        await writeDeploymentState(statePath, persisted);
+      }
+    }
+    if (busy(persisted.job)) { persisted.job = { ...persisted.job, phase: 'failed', error: 'Update interrupted before activation; the installed release was preserved' }; await writeDeploymentState(statePath, persisted); }
     try { await writeFile(keyPath, `${randomBytes(32).toString('hex')}\n`, { mode: 0o600, flag: 'wx' }); }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
     const key = (await readFile(keyPath, 'utf8')).trim();
@@ -180,10 +202,10 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         if (execution) await execution.apply(release);
         if (closed) throw new Error('Deployment is stopping');
         const next = { schemaVersion: 1, current: release, previous: persisted.current, job: { ...job, phase: 'completed', error: null } };
-        await stateWriter(statePath, next);
+        await writeDeploymentState(statePath, next);
         if (!candidate.alive || closed) {
           // The old pointer and worker remain authoritative until activation.
-          await stateWriter(statePath, persisted);
+          await writeDeploymentState(statePath, persisted);
           throw new Error('New Web worker exited during activation');
         }
         const old = active; active = candidate; persisted = next; retire(old);
@@ -202,16 +224,25 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       const staging = join(directory, 'staging', job.id); let releaseContainer = null; let activated = false;
       try {
         persisted = { ...original, job };
-        await stateWriter(statePath, persisted);
+        await writeDeploymentState(statePath, persisted);
         let release;
         if (rollback) {
           release = await inspectRelease(selected.releaseRoot);
           await assertReleaseProfile(release, persisted.current);
+          if (fullReleaseTrust) {
+            job.rollbackIntent = await verifyRetainedRelease(selected.releaseRoot, fullReleaseTrust,
+              await readReplayState(join(directory, 'full-release-state.json')));
+            release.fullRelease = { manifestSha256: job.rollbackIntent.manifestSha256,
+              releaseId: job.rollbackIntent.releaseId, releaseSequence: job.rollbackIntent.releaseSequence,
+              authorization: 'verified-installation' };
+            persisted.job = { ...job };
+            await writeDeploymentState(statePath, persisted);
+          }
         }
         else {
           const archive = await releaseSource.download(selected, staging);
           job.phase = 'verifying'; persisted.job = { ...job };
-          const unpacked = await unpackRelease(archive, join(staging, 'unpacked'));
+          const unpacked = await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
           if (unpacked.version !== selected.version || unpacked.buildId !== selected.buildId) throw new Error('Downloaded release differs from the checked release');
           await assertReleaseProfile(unpacked, persisted.current);
           releaseContainer = join(directory, 'releases', job.id);
@@ -228,7 +259,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         await activate(release, job); activated = true;
       } catch (error) {
         persisted = { ...original, job: { ...job, phase: 'failed', error: error.message } };
-        try { await stateWriter(statePath, persisted); }
+        try { await writeDeploymentState(statePath, persisted); }
         catch {
           persisted.job = { ...persisted.job, error: `${persisted.job.error}; state recovery could not be saved. Release files are retained for recovery.` };
           console.error('[opencraft update] State recovery could not be saved; release files retained');
@@ -300,7 +331,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
               || typeof input.buildId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(input.buildId)) {
               json(response, 409, { error: 'Local release must have a newer exact version and valid build identity' }); return;
             }
-            releaseSource = createLocalReleaseSource(input.archive);
+            releaseSource = createLocalReleaseSource(input.archive, { stateFile: join(directory, 'full-release-state.json') });
             selected = { version: input.version, buildId: input.buildId, integrity: input.integrity };
           } else if (pathname === `${WEB_UPDATE_PATH}/rollback`) {
             if (!persisted.previous) { json(response, 409, { error: 'No previous release is available' }); return; }
