@@ -751,7 +751,7 @@ export function App({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [historyPaintObserver]);
   const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
-  const historyPaintTurns = new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size;
+  const historyPaintTurns = historyPaintOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
   const historyPaintLength = historyLengthBucket(historyPaintTurns,
     !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false);
   const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
