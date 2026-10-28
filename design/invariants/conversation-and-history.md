@@ -383,3 +383,9 @@ A Host reconnect must populate the same decorated initialization cache before
 publishing readiness, even when no View initialized before the disconnect. The
 first View then consumes that cache; it must not initialize an already initialized
 native routing socket again. The native one-initialize contract remains authoritative.
+
+A rejected initial Core handshake or a failure while completing that handshake
+retires the raw routing socket after returning the failure to its callers. A
+failed initialize may already have consumed that socket's one-initialize slot.
+The existing delayed reconnect establishes a fresh routing connection; it never
+replays a submitted execution request or changes the retained callback lane's owner.
