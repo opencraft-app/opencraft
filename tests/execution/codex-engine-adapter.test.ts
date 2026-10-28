@@ -1568,6 +1568,14 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget });
     const read = () => call("thread/read", { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } });
     const cold = await read(), warm = await read();
+    const metadata = await call("thread/read", { threadId, includeTurns: false });
+    assert.deepEqual(metadata.thread.id, threadId);
+    assert.match(metadata.__opencraftHistoryTiming.pairId, /^[a-f0-9-]{36}$/);
+    assert.notEqual(metadata.__opencraftHistoryTiming.pairId, cold.__opencraftHistoryTiming.pairId);
+    assert.equal(metadata.__opencraftHistoryTiming.nativeRpcCount, 1);
+    assert.equal(metadata.__opencraftHistoryTiming.metadataMs, metadata.__opencraftHistoryTiming.nativeRpcMs);
+    assert(metadata.__opencraftHistoryTiming.coreMs >= metadata.__opencraftHistoryTiming.nativeRpcMs);
+    assert.equal(metadata.__opencraftHistoryTiming.queueMs, undefined, "direct native reads do not invent cache queue time");
     assert.deepEqual(warm.initialTurnsPage, cold.initialTurnsPage);
     assert.match(cold.__opencraftHistoryTiming.pairId, /^[a-f0-9-]{36}$/);
     assert.notEqual(cold.__opencraftHistoryTiming.pairId, warm.__opencraftHistoryTiming.pairId);
