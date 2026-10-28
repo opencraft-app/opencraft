@@ -65,7 +65,7 @@ test('missing or invalid native history headers cannot certify a cold handoff',a
  const options={coldDependencyRoots:[resolve('node_modules')],dataDirectory:join(root,'agent'),descriptorPath:join(root,'connection.json'),runtimeDirectory:root,skillsDirectory:skills,
  dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
  const host=await startIndependentDshHost(options);t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
- await new DshClient(host.dshUrl).call('session.create',{cwd:root});
+ const created:any=await new DshClient(host.dshUrl).call('session.create',{cwd:root});
  await host.nativeOwner('inspect');
  const entries=await readdir(options.dataDirectory,{recursive:true});const log=entries.find(path=>/session\.jsonl(?:\.zstd)?$/.test(path));assert.ok(log,JSON.stringify(entries));
  const corrupt=join(dirname(dirname(join(options.dataDirectory,log))),'corrupt-session');await mkdir(corrupt);
@@ -73,7 +73,18 @@ test('missing or invalid native history headers cannot certify a cold handoff',a
  const target=join(corrupt,basename(log));await writeFile(target,'');
  assert.equal((await host.handoff.inspect()).coverage,'unknown');
  await assert.rejects(host.handoff.control('release',expected(host)));
+ const verifyReconciliation=async()=>{
+   for(const method of ['host.describe','session.cancel']){
+     const rpcId='after-failed-seal-'+method+'-'+Date.now();
+     const reply=await fetch(new URL('/api/'+method,host.dshUrl),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId,method,payload:{sessionId:created.sessionId}})});
+     assert.equal(reply.status,200,'fenced reconciliation remains admitted after failed seal');
+     const receipt=reply.headers.get('x-opencraft-dsh-receipt');
+     if(receipt){const ack=await fetch(new URL('/api/opencraft-owner-receipt',host.dshUrl),{method:'POST',body:JSON.stringify({rpcId,receipt})});assert.equal(ack.status,200);}
+   }
+ };
+ await verifyReconciliation();
  const invalid=Buffer.from('{"type":"invalid"}\n');await writeFile(target,log.endsWith('.zstd')?zstdCompressSync(invalid):invalid);
  assert.equal((await host.handoff.inspect()).coverage,'unknown');await assert.rejects(host.handoff.control('release',expected(host)));
+ await verifyReconciliation();
  await rm(corrupt,{recursive:true});assert.equal((await host.handoff.inspect()).coverage,'complete');
 });

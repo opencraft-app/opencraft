@@ -44,9 +44,9 @@ export class DshOwnerHandoff {
       } else if (action === 'release') {
         // Close every native lane, including reads and cancellation, before the
         // final observation. Host authority seals synchronously before stop.
-        await this.host.nativeOwner('seal-release');
         let stopping = false;
         try {
+          await this.host.nativeOwner('seal-release');
           const proof = await this.inspect();
           await this.authority.release(input,()=>proof,async()=>{
             stopping = true;
@@ -56,7 +56,7 @@ export class DshOwnerHandoff {
             this.released = true;
           });
         } catch (error) {
-          if (!stopping) await this.host.nativeOwner('abort-release');
+          if (!stopping) await this.host.nativeOwner('abort-release').catch(()=>{});
           throw error;
         }
       } else if (action === 'cold-ready') await this.authority.coldReady(input,await this.coldProof());

@@ -255,8 +255,14 @@ export async function apply(ctx, config) {
       const route = req.url;
       if (req.method === "POST" && route === "/native-owner" && nativeOwner) {
         if (body.action === "seal-bootstrap") nativeOwner.sealBootstrap();
-        else if (body.action === "seal-release") nativeOwner.sealRelease();
-        else if (body.action === "abort-release") nativeOwner.abortRelease();
+        else if (body.action === "abort-release") {
+          nativeOwner.abortRelease();res.end(JSON.stringify({aborted:true}));return;
+        } else if (body.action === "seal-release") {
+          nativeOwner.sealRelease();
+          try { res.end(JSON.stringify(await nativeOwner.inspect())); }
+          catch (error) { nativeOwner.abortRelease();throw error; }
+          return;
+        }
         else if (body.action === "fence") nativeOwner.fence();
         else if (body.action === "resume") nativeOwner.resume();
         else if (body.action !== "inspect") throw new Error("Invalid native owner action");
