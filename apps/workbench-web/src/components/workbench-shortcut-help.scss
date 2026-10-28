@@ -7,7 +7,7 @@
 }
 .workbench-shortcut-list {
   dl { margin-block: 16px; }
-  dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 10px; border-bottom: 1px solid var(--color-border); }
+  dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 8px; border-bottom: 1px solid var(--color-border); }
   dt { @include typography.role(body, primary); }
   dd { @include typography.role(metadata, secondary); margin: 0; flex-shrink: 0; }
   kbd { font: inherit; }

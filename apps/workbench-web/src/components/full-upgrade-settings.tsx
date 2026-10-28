@@ -4,6 +4,7 @@ import { FormattedMessage, useIntl } from '@opencraft/i18n/react';
 import { WEB_UPDATE_PATH, parseFullUpgradeStatus } from '@opencraft/web-update-protocol';
 import type { UpgradeState } from '@opencraft/web-update-protocol';
 import { SettingsSection, SettingsGroup, SettingsRow, SettingsActions, SettingsButton, SettingsNotice } from '@opencraft/extension-react';
+import { SettingsIdentifier } from './settings-identifier';
 
 const key = ['full-upgrade'] as const;
 const messages = {
@@ -50,14 +51,14 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
     {(failed || query.error || data?.unavailable) && <SettingsNotice tone="error"><FormattedMessage id="fullUpgrade.unavailable" defaultMessage="Upgrade control unavailable. Try again." /></SettingsNotice>}
     {plan && <>
       <SettingsGroup>
-        <SettingsRow label={<FormattedMessage id="fullUpgrade.release" defaultMessage="Target release" />} description={plan.channel ?? undefined}>{plan.releaseId ?? '—'}</SettingsRow>
+        <SettingsRow label={<FormattedMessage id="fullUpgrade.release" defaultMessage="Target release" />} description={plan.channel ?? undefined}>{plan.releaseId ? <SettingsIdentifier value={plan.releaseId} /> : '—'}</SettingsRow>
         <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />}>{stateText(plan.status)}</SettingsRow>
       </SettingsGroup>
       <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
         <p className="full-upgrade-revision">{plan.sourceRevision}</p>
         {plan.blockedReasons.map(reason => <p className="full-upgrade-revision" key={reason}>{reason}</p>)}
         {plan.components.length > 0 && <SettingsGroup>{plan.components.map(c => <SettingsRow key={c.componentId} label={c.role} description={stateText(c.state)}>
-          {c.runningVersion ?? '—'} → {c.targetVersion}
+          {c.runningVersion ? <SettingsIdentifier value={c.runningVersion} /> : '—'} → {c.targetVersion ? <SettingsIdentifier value={c.targetVersion} /> : '—'}
         </SettingsRow>)}</SettingsGroup>}
       </details>
     </>}
