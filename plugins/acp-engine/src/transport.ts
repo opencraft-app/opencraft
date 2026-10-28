@@ -14,6 +14,7 @@ export interface AcpTransportOptions {
   onNotification(method: string, params: AcpObject): void;
   onRequest(method: string, params: AcpObject): Promise<unknown>;
   onExit?(): void;
+  onUnconfirmed?(): void;
 }
 
 /** Engine-side stdio ownership. Disconnecting a gateway never closes this pipe. */
@@ -22,6 +23,9 @@ export class AcpStdioTransport {
   private sequence = 0;
   private readonly pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer?: NodeJS.Timeout }>();
   private closing = false;
+  private inboundRequests = 0;
+  private unconfirmedRequests = 0;
+  get occupancy() { return { pendingNativeRequests: this.pending.size, pendingNativeCallbacks: this.inboundRequests, unconfirmedNativeRequests: this.unconfirmedRequests }; }
   private initialized: Promise<AcpObject> | null = null;
   constructor(private readonly options: AcpTransportOptions) {}
   get pid(): number | null { return this.child?.pid ?? null; }
@@ -43,6 +47,7 @@ export class AcpStdioTransport {
       const stopped = () => {
         if (this.child !== child) return;
         this.child = null; lines.close();
+        if (!this.closing && this.pending.size) { this.unconfirmedRequests += this.pending.size; this.options.onUnconfirmed?.(); }
         for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(new Error("ACP engine connection closed")); }
         this.pending.clear();
         if (!this.closing) this.options.onExit?.();
@@ -60,7 +65,7 @@ export class AcpStdioTransport {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = timeoutMs > 0 ? setTimeout(() => {
-        this.pending.delete(id); reject(new Error(`ACP ${method} outcome is unconfirmed`));
+        this.pending.delete(id); this.unconfirmedRequests++; this.options.onUnconfirmed?.(); reject(new Error(`ACP ${method} outcome is unconfirmed`));
       }, timeoutMs) : undefined;
       timer?.unref();
       this.pending.set(id, { resolve, reject, timer });
@@ -75,8 +80,10 @@ export class AcpStdioTransport {
     if (!frame || typeof frame !== "object" || Array.isArray(frame)) throw new Error("Invalid ACP frame");
     if (typeof frame.method === "string") {
       if (frame.id === undefined) { this.options.onNotification(frame.method, frame.params ?? {}); return; }
+      this.inboundRequests++;
       try { this.send({ jsonrpc: "2.0", id: frame.id, result: await this.options.onRequest(frame.method, frame.params ?? {}) }); }
       catch { this.send({ jsonrpc: "2.0", id: frame.id, error: { code: -32603, message: "Host operation failed" } }); }
+      finally { this.inboundRequests--; }
       return;
     }
     const call = this.pending.get(frame.id);

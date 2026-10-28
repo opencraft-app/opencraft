@@ -19,6 +19,8 @@ export async function startEngineHost(options: {
   defaultEngine: string;
   legacy?: { id: string; label: string; start(): Promise<LegacyHost> };
   machine?: unknown;
+  admitRequest?: <T>(method: string, operation: () => Promise<T>) => Promise<T>;
+  strictClose?: boolean;
   resources?: { projectDirectory?: string; attachmentDirectory?: string };
 }) {
   const resources = options.resources || !options.legacy ? new LocalHostResources(options.resources) : undefined;
@@ -165,6 +167,7 @@ export async function startEngineHost(options: {
             }
             if (backend?.readyState === WebSocket.OPEN) backend.send(JSON.stringify(frame)); return;
           }
+          const dispatch = async () => {
           const method = frame.method, params = frame.params ?? {};
           if (typeof method === "string" && method.startsWith("opencraft/orchestration/")) {
             const driver = params.driver ?? params.settings?.driver;
@@ -320,6 +323,8 @@ export async function startEngineHost(options: {
             return;
           }
           reply(await callLegacy(method, params, clientId));
+          };
+          await (options.admitRequest ? options.admitRequest(frame.method, dispatch) : dispatch());
         } catch (error) {
           if (frame.id !== undefined) send({ jsonrpc: "2.0", id: frame.id, [LOGICAL_CLIENT_FIELD]: clientId,
             error: error instanceof AppServerRpcError ? { code: error.code, message: error.message, data: error.data }
@@ -340,9 +345,10 @@ export async function startEngineHost(options: {
       for (const socket of sockets.clients) socket.terminate();
       await new Promise<void>(resolve => sockets.close(() => resolve()));
       await new Promise<void>(resolve => server.close(() => resolve()));
-      await Promise.allSettled(options.providers.map(provider => provider.close()));
+      const outcomes = await Promise.allSettled(options.providers.map(provider => provider.close()));
       await resources?.close();
       await (await legacy?.catch(() => undefined))?.close();
+      if (options.strictClose) { const failure = outcomes.find(outcome => outcome.status === "rejected"); if (failure?.status === "rejected") throw failure.reason; }
     },
   };
 }

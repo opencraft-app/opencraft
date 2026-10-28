@@ -1,9 +1,11 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import lockfile from 'proper-lockfile';
+import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { AcpGenerationHost } from '../../plugins/acp-engine/src/generations.ts';
@@ -14,6 +16,24 @@ import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/sr
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { readPrivateJson } from './dsh-host-client.mjs';
 
+/** Linux/systemd is the first supported OS-work authority. Unknown topology
+ * never certifies idle. Include nested delegated cgroups and all descendants. */
+export function inspectAcpCgroup(nativePids) {
+  try {
+    const relative = readFileSync('/proc/self/cgroup', 'utf8').trim().match(/^0::(\/[^\n]+\.service)$/m)?.[1];
+    if (!relative || relative.split('/').includes('..')) throw new Error('Unsupported cgroup');
+    const pids = new Set();
+    const collect = path => {
+      for (const pid of readFileSync(join(path, 'cgroup.procs'), 'utf8').trim().split(/\s+/).filter(Boolean)) pids.add(Number(pid));
+      for (const entry of readdirSync(path, { withFileTypes: true })) if (entry.isDirectory()) collect(join(path, entry.name));
+    };
+    collect('/sys/fs/cgroup' + relative);
+    if (!pids.has(process.pid)) throw new Error('Cgroup identity changed');
+    pids.delete(process.pid); for (const pid of nativePids) { if (!pids.delete(pid)) throw new Error("Native peer escaped owner cgroup"); }
+    return { coverage: 'complete', activeCount: pids.size };
+  } catch { return { coverage: 'unknown', activeCount: null }; }
+}
+
 /** Explicit independent ACP/Claude process owner. A gateway only attaches to
  * its descriptor; generation changes are private local control operations. */
 export async function startIndependentAcpHost(options) {
@@ -21,14 +41,21 @@ export async function startIndependentAcpHost(options) {
   if (![descriptorPath, dataDirectory, runtimeDirectory].every(path => typeof path === 'string' && isAbsolute(path))
     || !['acp', 'dsh-acp', 'claude-code'].includes(id)) throw new Error('Invalid independent ACP Host configuration');
   await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
-  const release = await lockfile.lock(join(dataDirectory, 'acp-owner'), { realpath: false, retries: 0 });
+  const releaseKernel = await acquireLock(join(dataDirectory, 'acp-writer.lock'));
+  let release;
+  try { release = await lockfile.lock(join(dataDirectory, 'acp-owner'), { realpath: false, retries: 0 }); } catch (error) { await releaseKernel(); throw error; }
+  const bootId = await bootIdentity();
+  const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'),
+    sourceRevision: process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId: process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null,
+    node: process.version, nodeAbi: process.versions.modules };
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`, token = randomUUID();
   let provider, host, server, closed;
   try {
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
     const capabilities = new RemoteSessionCapabilities(options.sessionCapabilitiesDirectory ?? identityDirectory, `server:${machine.machineId}:${id}`);
-    provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, readConfig: async (path, generationId) => {
+    provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
+      runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
       // The runtime that supplies the ACP profile is explicit and versioned by
       // the operator. Never replace or restart the previous DSH web owner.
@@ -45,7 +72,8 @@ export async function startIndependentAcpHost(options) {
         incarnation: provider.incarnation(threadId), turnId, callId, name, arguments: args, ...(inputId ? { inputId } : {}),
       }, signal),
     });
-    host = await startEngineHost({ providers: [provider], defaultEngine: id, machine });
+    host = await startEngineHost({ providers: [provider], defaultEngine: id, machine, strictClose: true,
+      admitRequest: (method, operation) => provider.admitHostRequest(method, operation) });
     if (!host.ready) throw new Error('Independent ACP Host did not become ready');
     server = createServer((request, response) => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -63,10 +91,20 @@ export async function startIndependentAcpHost(options) {
         } catch { response.writeHead(404); response.end('{}'); }
         return;
       }
+      if (url.pathname === '/owner-handoff' && request.method === 'POST') {
+        void (async () => {
+          const chunks = []; let size = 0;
+          for await (const chunk of request) { size += chunk.length; if (size > 4096) throw new Error('Control body too large'); chunks.push(chunk); }
+          const { action, ...input } = JSON.parse(Buffer.concat(chunks).toString());
+          if (!['fence','inspect','release','cold-ready','resume'].includes(action) || Object.keys(input).some(key => !['expectedOwner','expectedEpoch','operationId','fence','identity'].includes(key))) throw new Error('Invalid Host control');
+          const value = await provider.ownerControl(action, input);
+          response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify({ ...value, bootId, runtime, pid: process.pid }));
+        })().catch(() => { response.writeHead(409); response.end(JSON.stringify({ error: 'owner_handoff_rejected' })); }); return;
+      }
       if (url.pathname === '/health'  && request.method === 'GET') {
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify({ ok: true, protocolVersion: 1, pid: process.pid, machineId: machine.machineId,
-          engines: [id], defaultEngine: id, storage: host.storageOutcomes, ...provider.snapshot() })); return;
+          engines: [id], defaultEngine: id, bootId, runtime, storage: host.storageOutcomes, ...provider.snapshot(), occupancy: provider.occupancy() })); return;
       }
       if (url.pathname === '/generations' && request.method === 'POST') {
         void (async () => {
@@ -89,13 +127,14 @@ export async function startIndependentAcpHost(options) {
     return { websocketUrl: host.websocketUrl, provider, async close() {
       return closed ??= (async () => {
         try { server.closeAllConnections(); await new Promise(accept => server.close(accept)); await host.close(); }
-        finally { await rm(descriptorPath, { force: true }); await release(); }
+        finally { await rm(descriptorPath, { force: true }); }
+        await release(); await releaseKernel();
       })();
     } };
   } catch (error) {
     server?.closeAllConnections(); if (server?.listening) await new Promise(accept => server.close(accept));
     if (host) await host.close(); else await provider?.close();
-    await rm(temporary, { force: true }); await release(); throw error;
+    await rm(temporary, { force: true }); await release(); await releaseKernel(); throw error;
   }
 }
 
