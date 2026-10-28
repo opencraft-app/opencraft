@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -37,9 +37,9 @@ async function fixture() {
   const reserve = createServer(); await new Promise<void>(r => reserve.listen(0, "127.0.0.1", r));
   options.proxyPort = (reserve.address() as any).port; await new Promise<void>(r => reserve.close(() => r()));
   const config = join(root, "core.json"); await writeFile(config, JSON.stringify(options), { mode: 0o600 });
-  async function start() {
+  async function start(extraEnvironment: Record<string, string> = {}) {
     const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", "core", config], {
-      cwd: resolve(import.meta.dirname, "../.."), env: { PATH: process.env.PATH, HOME: root }, stdio: ["ignore", "pipe", "pipe"] });
+      cwd: resolve(import.meta.dirname, "../.."), env: { PATH: process.env.PATH, HOME: root, ...extraEnvironment }, stdio: ["ignore", "pipe", "pipe"] });
     children.push(child); let errors = ""; child.stderr!.on("data", b => { errors += b; });
     await new Promise<void>((resolve, reject) => {
       child.stdout!.on("data", b => { if (String(b).includes("ready\n")) resolve(); });
@@ -47,7 +47,7 @@ async function fixture() {
     });
     const descriptor = join(root, `descriptor-${child.pid}.json`);
     await writeFile(descriptor, JSON.stringify({ schemaVersion: 1, pid: child.pid, endpoint: socket, token }), { mode: 0o600 });
-    return { child, adapter: accountCoreOwner(descriptor) };
+    return { child, adapter: accountCoreOwner(descriptor), logs: () => errors };
   }
   async function stop(child: ChildProcess) {
     if (child.exitCode !== null || child.signalCode !== null) return;
@@ -261,4 +261,47 @@ test("fixed CLI configuration cannot switch paths through an identical launcher"
     const restored=await f.start(),cold=await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
     await restored.adapter.releaseFence(f.input(cold),cold); assert.equal(await f.account(),200);
   } finally {await f.close();}
+});
+
+test("malformed private credentials fail startup and cold recovery without logging their contents", async () => {
+  const f=await fixture(),secretPath=join(f.data,'secrets/account-a.json');
+  const original=await readFile(secretPath),canary='PRIVATE_CREDENTIAL_CANARY_42';
+  const rejected=async()=>{let error:Error|undefined;try{await f.start();}catch(e){error=e as Error;}assert.ok(error);assert.equal(error.message.includes('PRIVATE_CREDENTIAL'),false);};
+  try {
+    await writeFile(secretPath,canary,{mode:0o600});await rejected();
+    await writeFile(secretPath,original,{mode:0o600});const first=await f.start();await delay(50);
+    const fence=await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    await first.adapter.releaseWriter({...f.input(fence),proof:fence.proof.identity});await f.stop(first.child);
+    await writeFile(secretPath,canary,{mode:0o600});await rejected();
+    await writeFile(secretPath,JSON.stringify({kind:'codex-auth-file',path:{secret:canary}}),{mode:0o600});await rejected();
+    await writeFile(secretPath,original,{mode:0o600});const restored=await f.start(),cold=await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
+    await restored.adapter.releaseFence(f.input(cold),cold);assert.equal(await f.account(),200);
+  }finally{await f.close();}
+});
+
+
+test("cold admission rejects a changed stable service environment and restores the original selector", async () => {
+  const f=await fixture();
+  try {
+    const first=await f.start();await delay(50);const fence=await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    await first.adapter.releaseWriter({...f.input(fence),proof:fence.proof.identity});await f.stop(first.child);
+    const candidate=await f.start({OPENCRAFT_CORE_TEST_SELECTOR:'changed'});
+    await assert.rejects(candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot())));await f.stop(candidate.child);
+    const restored=await f.start(),cold=await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
+    await restored.adapter.releaseFence(f.input(cold),cold);assert.equal(await f.account(),200);
+  }finally{await f.close();}
+});
+
+
+test("malformed Host credentials cannot leak through startup or proxy diagnostics", async () => {
+  const f=await fixture(),directory=join(f.data,'secrets');
+  const name=(await readdir(directory)).find(name=>name.startsWith('host-'))!,path=join(directory,name),original=await readFile(path),canary='PRIVATE_HOST_CANARY_42';
+  try {
+    await writeFile(path,canary,{mode:0o600});let error:Error|undefined;try{await f.start();}catch(e){error=e as Error;}
+    assert.ok(error);assert.equal(error.message.includes('PRIVATE_HOST'),false);
+    await writeFile(path,original,{mode:0o600});const first=await f.start();
+    await writeFile(path,canary,{mode:0o600});const response=await f.model();assert.equal(response.status,502);await response.text();
+    assert.equal(first.logs().includes('PRIVATE_HOST'),false);
+    await writeFile(path,original,{mode:0o600});assert.equal((await f.model()).status,200);
+  }finally{await f.close();}
 });

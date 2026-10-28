@@ -34,7 +34,6 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     } });
     // Establish the stable Host token before a possible frozen cold successor.
     accounts.launch();
-    accounts.validateCredentials();
     const runtime = new CodexCoreControlClient(options.appServerEndpoint!, options.authToken);
     control = await startControlServer(options.endpoint, options.authToken, async request => {
       if (request.method === "GET" && request.url === "/owner-handoff") {
