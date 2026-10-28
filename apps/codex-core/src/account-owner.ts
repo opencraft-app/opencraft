@@ -202,6 +202,7 @@ export class AccountCoreOwner {
   }
   private configuration() {
     return digest({ dataDirectory: this.options.dataDirectory, endpoint: this.options.endpoint,
+      executable: this.options.executable,
       appServerEndpoint: this.options.appServerEndpoint, proxyPort: this.options.proxyPort, upstream: this.options.upstreamBaseUrl,
       nativeCodexHomeDirectory: this.options.nativeCodexHomeDirectory, runtimeDirectory: this.options.runtimeDirectory, token: digest(this.options.authToken) });
   }

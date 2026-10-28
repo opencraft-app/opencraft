@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -242,5 +242,23 @@ test("an exact retained list larger than four MiB survives release, cold read an
     assert.equal(cold.handoff.retained.imageAffinities.length,8192);
     await next.adapter.releaseFence(f.input(cold),cold); await f.stop(next.child);
     const restarted = await f.start(); assert.equal((await restarted.adapter.snapshot()).handoff.retained.imageAffinities.length,8192);
+  } finally {await f.close();}
+});
+
+
+test("fixed CLI configuration cannot switch paths through an identical launcher", async () => {
+  const f=await fixture();
+  try {
+    const first=await f.start(); await delay(50);
+    const fence=await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    await first.adapter.releaseWriter({...f.input(fence),proof:fence.proof.identity}); await f.stop(first.child);
+    const path=join(f.root,'core.json'),original=JSON.parse(await readFile(path,'utf8'));
+    const alias=join(f.root,'same-launcher'); await symlink(original.executable,alias);
+    await writeFile(path,JSON.stringify({...original,executable:alias}),{mode:0o600});
+    const candidate=await f.start();
+    await assert.rejects(candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot())));
+    await f.stop(candidate.child); await writeFile(path,JSON.stringify(original),{mode:0o600});
+    const restored=await f.start(),cold=await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
+    await restored.adapter.releaseFence(f.input(cold),cold); assert.equal(await f.account(),200);
   } finally {await f.close();}
 });
