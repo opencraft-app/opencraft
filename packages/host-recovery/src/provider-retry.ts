@@ -81,7 +81,8 @@ export class ProviderTurnRetry {
     if (row && row.state !== "handled") this.put({ ...row, state: "handled" });
   }
   wake(delay = 0): void {
-    if (this.closed || !this.admissionOpen()) return;
+    if (this.closed) return;
+    if (!this.admissionOpen()) delay = Math.max(1000, delay);
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => { this.timer = null; void this.recover(); }, delay);
     this.timer.unref();
@@ -91,9 +92,10 @@ export class ProviderTurnRetry {
     return this.flight ??= this.run().finally(() => { this.flight = null; this.schedule(); });
   }
   private schedule(): void {
-    if (this.closed || !this.admissionOpen()) return;
+    if (this.closed) return;
     const rows = this.pendingThreadIds().map(id => this.snapshot(id)!);
     if (!rows.length) return;
+    if (!this.admissionOpen()) { this.wake(1000); return; }
     // Native completions provide the normal path; polling reconciles a missed terminal receipt.
     const waits = rows;
     if (waits.length) this.wake(Math.max(1000, Math.min(...waits.map(row => row.state === "waiting" ? row.retryAt - this.now() : 30_000))));

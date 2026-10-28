@@ -111,3 +111,22 @@ test("a restart during preparation consumes the durable attempt before any send"
   f.port.continue = async (_row, _current, admit) => admit() ? "after-restart" : null;
   await f.owner.recover(); assert.equal(f.owner.snapshot("t")?.attempts, 2);
 });
+
+test("temporary admission pause retains a wakeup without requiring a browser event", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "provider-retry-admission-"));
+  let open = true, sends = 0;
+  const owner = new ProviderTurnRetry(directory, { serialize: async (_id, work) => work(), inspect: async row => ({ failure: row.failure }),
+    continue: async (_row, _current, admit) => { if (!admit()) return null; sends++; return "continued"; }, changed() {} }, Date.now, () => 0, () => open);
+  t.after(async () => { await owner.close(); await rm(directory, { recursive: true, force: true }); });
+  // This due time reaches the send boundary immediately; admission pauses before it can run.
+  (owner as any).now = () => 1000;
+  owner.failed("t", "initial", { kind: "overloaded" });
+  (owner as any).now = () => 10_000;
+  open = false;
+  await owner.recover();
+  assert.equal(sends, 0);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  open = true;
+  await new Promise(resolve => setTimeout(resolve, 1150));
+  assert.equal(sends, 1, "resume admission must not depend on a new View or native event");
+});
