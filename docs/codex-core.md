@@ -328,7 +328,8 @@ login and refresh. Credential references are checked at their external paths.
 Owner files/directories must belong to the service UID and exclude group/other
 permissions; links and unknown credential records are rejected. Cold readiness
 also validates credentials, the original storage digest, fixed CLI hash, proxy
-port, endpoints, token selector, data/HOME/cwd configuration and retained receipt
+port, endpoints, token selector, fixed launcher path, stable service environment
+(excluding process-specific systemd fields), data/HOME/cwd configuration and retained receipt
 digest. It binds the actual bundle hash, Node version/modules ABI, platform and
 architecture to the successor incarnation. Resume recomputes it; a prior
 process's readiness cannot authorize a replacement. Frozen construction does not

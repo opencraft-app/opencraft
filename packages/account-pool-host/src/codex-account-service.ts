@@ -88,6 +88,7 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
+      if (options.ownerHandoff) service.validateCredentials();
       service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
         admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
       if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
@@ -117,10 +118,14 @@ export class CodexAccountService {
   }
 
   validateCredentials(): void {
-    for (const account of this.store.listAccounts()) {
-      if (account.credentialConfigured) this.store.readCredential(account.id);
-    }
-    this.accountViews();
+    try {
+      const token = this.store.issueHostToken("local-codex");
+      if (this.store.authenticateHostToken(token) !== "local-codex") throw new Error("Invalid account Host identity");
+      for (const account of this.store.listAccounts()) {
+        if (account.credentialConfigured) this.store.readCredential(account.id);
+      }
+      this.accountViews();
+    } catch { throw new Error("Account credential validation failed"); }
   }
 
   launch() {

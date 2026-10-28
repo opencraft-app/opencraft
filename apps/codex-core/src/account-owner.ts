@@ -4,10 +4,18 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from 
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
+import { parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fileDigest = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
+const processEnvironment = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
+const environmentDigest = () => digest(Object.fromEntries(Object.entries(process.env)
+  .filter(([key]) => !processEnvironment.has(key)).sort(([a], [b]) => a.localeCompare(b))));
+function privateJson(text: string) {
+  try { return JSON.parse(text); }
+  catch { throw new Error("Invalid private account JSON"); }
+}
 type Phase = "open" | "fenced" | "released" | "cold-ready";
 interface State {
   schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
@@ -57,14 +65,15 @@ export async function readAccountStorage(directory: string) {
     }
     const bytes = await readFile(path);
     if (relative.startsWith("secrets/")) {
-      const value = JSON.parse(bytes.toString("utf8"));
+      const value = privateJson(bytes.toString("utf8"));
       if (relative.startsWith("secrets/host-")) {
         if (typeof value.hostId !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value.token)) throw new Error("Invalid Host credential");
       } else if (relative.startsWith("secrets/account-") && value.kind === "codex-auth-file") {
-        await privateInfo(value.path);
-        const external = JSON.parse(await readFile(value.path, "utf8"));
+        const reference = parseCodexAuthFileReference(value)!;
+        await privateInfo(reference.path);
+        const external = privateJson(await readFile(reference.path, "utf8"));
         if (typeof external.tokens?.access_token !== "string" || !external.tokens.access_token) throw new Error("Unreadable external credential");
-        files.push({ path: `external:${digest(value.path)}`, sha256: await fileDigest(value.path), mode: (await lstat(value.path)).mode & 0o777, uid: info.uid });
+        files.push({ path: `external:${digest(reference.path)}`, sha256: await fileDigest(reference.path), mode: (await lstat(reference.path)).mode & 0o777, uid: info.uid });
       } else if (!relative.startsWith("secrets/account-") || typeof value.accessToken !== "string" || !value.accessToken) {
         throw new Error("Unknown account credential file");
       }
@@ -99,7 +108,7 @@ export class AccountCoreOwner {
       try {
         const info = await file.stat();
         if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077 || info.size > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Invalid account handoff permissions");
-        const value = JSON.parse(await file.readFile("utf8"));
+        const value = privateJson(await file.readFile("utf8"));
         if (value.schemaVersion !== 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 0
           || !["open", "fenced", "released", "cold-ready"].includes(value.phase) || !Array.isArray(value.uncertain)
           || value.phase !== "open" && ![value.operationId, value.fence, value.sourceOwner].every(v => typeof v === "string" && v.length > 0)
@@ -203,6 +212,7 @@ export class AccountCoreOwner {
   private configuration() {
     return digest({ dataDirectory: this.options.dataDirectory, endpoint: this.options.endpoint,
       executable: this.options.executable,
+      environmentSha256: environmentDigest(),
       appServerEndpoint: this.options.appServerEndpoint, proxyPort: this.options.proxyPort, upstream: this.options.upstreamBaseUrl,
       nativeCodexHomeDirectory: this.options.nativeCodexHomeDirectory, runtimeDirectory: this.options.runtimeDirectory, token: digest(this.options.authToken) });
   }
