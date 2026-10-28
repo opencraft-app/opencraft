@@ -1446,10 +1446,15 @@ export function createReplicaConversationRuntime(
     );
     const waitingTurn = [...turns].reverse().find(t => t.status === "streaming" || t.status === "pending");
     const waitReason = humanInteractionWaitReason(thread.status);
+    const pagination = isRecord(view.turnsPagination) ? view.turnsPagination : {};
+    const indexedCount = thread.historyTurnCount;
+    const historyTurnCount = Number.isSafeInteger(indexedCount) && Number(indexedCount) >= source.length
+      ? Number(indexedCount) : boolean(pagination.hasLoadedOldest) === true ? source.length : undefined;
+    const countedTimeline = { ...projectedTimeline, historyTurnCount };
     const timeline = waitingTurn && waitReason && pendingInteractions.length === 0
-      ? { ...projectedTimeline, interactionWait: { turnId: asTurnId(waitingTurn.id), reason: waitReason as "approval" | "input",
+      ? { ...countedTimeline, interactionWait: { turnId: asTurnId(waitingTurn.id), reason: waitReason as "approval" | "input",
         recovery: view.interactionRecovery === "recovering" ? "recovering" as const : "unavailable" as const } }
-      : projectedTimeline;
+      : countedTimeline;
     const turnsPagination = isRecord(view.turnsPagination)
       ? view.turnsPagination
       : {};

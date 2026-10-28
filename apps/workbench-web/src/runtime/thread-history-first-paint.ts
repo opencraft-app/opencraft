@@ -5,7 +5,8 @@ export interface HistoryPaintDetails {
   readonly lengthBucket: HistoryLengthBucket;
   readonly engine: "codex" | "pi" | "dsh" | "unknown";
 }
-export function historyLengthBucket(turns: number, complete: boolean): HistoryLengthBucket {
+export function historyLengthBucket(turns: number, complete: boolean, totalTurns?: number): HistoryLengthBucket {
+  if (totalTurns !== undefined && Number.isSafeInteger(totalTurns) && totalTurns >= 0) return historyLengthBucket(totalTurns, true);
   if (!complete || !Number.isSafeInteger(turns) || turns < 0) return "unknown";
   return turns < 50 ? "lt50" : turns < 200 ? "50to199" : turns < 500 ? "200to499" : "500plus";
 }

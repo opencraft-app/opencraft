@@ -315,3 +315,12 @@ test("late cached replies are rejected after routing owner replacement", async t
   await assert.rejects(f.cache.page(id, first.initialTurnsPage.nextCursor), /expired/);
   assert.deepEqual((await f.cache.read(id)).initialTurnsPage.data, f.source.slice(-10).reverse());
 });
+
+test("bounded first page carries full history count", async t => {
+  const f = await fixture(t, 601);
+  const first = await f.cache.read(id, 10);
+  assert.equal(first.initialTurnsPage.totalTurnCount, 601);
+  assert.equal(first.thread.historyTurnCount, 601);
+  assert.equal(first.initialTurnsPage.data.length, 10);
+  assert.equal((await f.cache.page(id, first.initialTurnsPage.nextCursor, 10)).totalTurnCount, 601);
+});

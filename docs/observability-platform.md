@@ -136,6 +136,10 @@ Actor 种类与流量来源是正交字段：`actorKind` 区分 human/agent/serv
 
 事件只有低基数 `cache`（保留 View 为 warm，否则 cold）、`lengthBucket`（lt50、50to199、200to499、500plus、unknown）、`engine`（Host 声明的 codex/pi/dsh/unknown）和 `outcome`。长度为完整历史中的不同轮数；分页/持久显示缓存未提供完整总轮数时使用 unknown，不额外拉取历史。会话身份仅在本地隔离迟到绘制回调，不进入事件。
 
+历史索引分页返回可选 `totalTurnCount`，只读首屏的 Thread 元数据携带 `historyTurnCount`；Replica 投影、内存及持久展示缓存保留该总数，与裁剪后的消息窗口独立。完整历史没有索引总数时按原始 Turn 数计数，不按可见帧计数；旧展示缓存或不能提供总数的 Host 仍明确 unknown，不能把最后10轮当作短会话。Codex adapter 显式声明执行引擎，混合 Host 的 provider 声明仍由其装配 owner 持有。
+
+直方图包含 0.05、0.1、0.15、0.25 秒等边界，并显式导出零桶。桶结构升级时服务使用新的内部累计代次，所有桶、count、sum 同时从零开始，指标名和标签不变；旧 Prometheus 历史保留，旧内部累计值不与新桶混算。跨部署窗口应剔除升级边缘，至少等两个 scrape，5分钟图等待完整5分钟。精确达标比例使用部署后窗口 `sum(increase(opencraft_thread_history_first_paint_duration_seconds_bucket{length_bucket="500plus",le="0.15"}[24h])) / sum(increase(opencraft_thread_history_first_paint_duration_seconds_count{length_bucket="500plus"}[24h]))`；首次24小时窗口须从实际部署时刻起算。500plus自然样本为空时不能评估目标；建议每个待评估cache/engine分组积累至少100条再看尾部，同时报告样本量。严格小于150ms在此累计桶上按小于等于150ms近似，原始事件可精确复核。
+
 切走/替换/销毁为 aborted，准备或历史失败为 failed，权威空历史为 empty；只有可见交互的 ok 样本进入 `opencraft_thread_history_first_paint_duration_seconds`。终态另进入 `opencraft_thread_history_first_paint_total`，保留 cache、length_bucket、engine、outcome、origin。原交互指标保持原标签与历史。
 
 `operations.history_paint_p50` 与 `operations.history_paint_p95` 是同一查询注册表生成的中文看板图，按冷/热、长度桶、引擎展示 5 分钟滑窗分位数。部署前没有同口径真实首屏样本，不能从原 thread_open 或新图倒推 Stage 0 的真实用户前后改善；新采样与既有受控验收分别报告。

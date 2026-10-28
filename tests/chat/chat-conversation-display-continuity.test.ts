@@ -606,3 +606,15 @@ test("a committed View rejects late history, cache and submission from another c
   assert.deepEqual(selectConversationDisplay({ key, timeline: old, cached: next, submission: cached }),
     { source: "cache", timeline: next }, "late old history cannot displace the new View's cached body");
 });
+
+test("complete history count survives bounded messages, persistence and metadata-only changes", async () => {
+  const local = storage();
+  const cache = createConversationDisplayContinuity({ namespace: "count", storage: local, now: () => 1000 });
+  await cache.observe({ ...timeline(true), historyTurnCount: 601 });
+  assert.equal(cache.peek("host", "thread")?.historyTurnCount, 601);
+  const restored = createConversationDisplayContinuity({ namespace: "count", storage: local, now: () => 1001 });
+  assert.equal((await restored.load("host", "thread"))?.historyTurnCount, 601);
+  await cache.observe({ ...timeline(true), historyTurnCount: 602 });
+  const updated = createConversationDisplayContinuity({ namespace: "count", storage: local, now: () => 1001 });
+  assert.equal((await updated.load("host", "thread"))?.historyTurnCount, 602);
+});

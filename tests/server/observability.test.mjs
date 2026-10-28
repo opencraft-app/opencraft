@@ -389,6 +389,7 @@ test('history first paint labels and foreground-only histograms reach the export
     service.store.ingest([event({...fields,originClass:'probe'}), event({...fields,visibility:'hidden'})]);
     const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
     assert.match(metrics,/opencraft_thread_history_first_paint_duration_seconds_count\{cache="cold",length_bucket="200to499",engine="pi"\} 1/);
+    assert.match(metrics, /opencraft_thread_history_first_paint_duration_seconds_bucket\{cache="cold",length_bucket="200to499",engine="pi",le="0.15"\} 0/);
     for (const outcome of ['ok','aborted','failed','empty']) assert(metrics.includes(`engine="pi",outcome="${outcome}",origin="interactive"}`));
     assert(!metrics.includes('private-thread'));
     const output = join(directory,'provisioning-source'); await generate(output);
@@ -398,5 +399,19 @@ test('history first paint labels and foreground-only histograms reach the export
       assert(dashboard.panels.some(panel=>panel.title === definition.title && panel.targets.some(target=>target.expr===definition.promql)));
       assert(definition.promql.includes('cache, length_bucket, engine'));
     }
+  } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test('150ms history boundary starts a coherent cohort beside legacy persisted metrics', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-bucket-cohort-'));
+  const service = await startObserve({directory, deploymentId:'test', metricsPort:0});
+  try {
+    // Legacy lifetime counts cannot be mixed with a newly introduced bucket.
+    service.store.db.prepare('INSERT INTO metrics VALUES(?,?,?)').run('history_paint_count', JSON.stringify(['cold','500plus','codex']), 1000);
+    for (const durationMs of [50,150,151]) service.store.ingest([event({operationType:'thread_history_first_paint',cache:'cold',engine:'codex',lengthBucket:'500plus',originClass:'interactive',visibility:'visible',measurementScope:'in_page',durationMs})]);
+    const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+    for (const [le,count] of [['0.05',1],['0.1',1],['0.15',2],['0.25',3],['+Inf',3]])
+      assert(metrics.includes(`opencraft_thread_history_first_paint_duration_seconds_bucket{cache="cold",length_bucket="500plus",engine="codex",le="${le}"} ${count}\n`));
+    assert(metrics.includes('opencraft_thread_history_first_paint_duration_seconds_count{cache="cold",length_bucket="500plus",engine="codex"} 3\n'));
   } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
 });

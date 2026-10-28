@@ -106,10 +106,12 @@ export class ObserveStore {
             const dimensions = [event.cache ?? 'unknown', event.lengthBucket ?? 'unknown', event.engine ?? 'unknown'];
             add('history_paint_outcome', JSON.stringify([...dimensions, event.outcome, event.originClass]), 1);
             if (event.outcome === 'ok' && event.durationMs !== undefined && event.originClass === 'interactive' && event.visibility === 'visible' && event.measurementScope === 'in_page') {
-              for (const le of [.05,.1,.25,.5,1,2,5,10,30,60,Infinity]) if (event.durationMs / 1000 <= le)
-                add('history_paint_bucket', JSON.stringify([...dimensions, le === Infinity ? '+Inf' : le]), 1);
-              add('history_paint_count', JSON.stringify(dimensions), 1);
-              add('history_paint_sum', JSON.stringify(dimensions), event.durationMs / 1000);
+              // Restart this derived histogram as one cohort when changing its buckets.
+              // Mixing new bucket counts with old lifetime counts corrupts quantiles.
+              for (const le of [.05,.1,.15,.25,.5,1,2,5,10,30,60,Infinity])
+                add('history_paint_v2_bucket', JSON.stringify([...dimensions, le === Infinity ? '+Inf' : le]), event.durationMs / 1000 <= le ? 1 : 0);
+              add('history_paint_v2_count', JSON.stringify(dimensions), 1);
+              add('history_paint_v2_sum', JSON.stringify(dimensions), event.durationMs / 1000);
             }
           }
           if(event.kind==='queue'&&event.executionId&&event.engine&&event.count!==undefined){

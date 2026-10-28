@@ -29,6 +29,8 @@ export interface AppServerTurn {
 }
 
 export interface AppServerThread {
+  /** Read-only history index count; absent when the source cannot establish it. */
+  historyTurnCount?: number;
   id: string;
   sessionId?: string;
   name?: string | null;
