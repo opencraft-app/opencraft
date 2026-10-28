@@ -1,3 +1,4 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,6 @@ import { DshOwnerHandoff } from './dsh-owner-handoff.mjs';
 import { readDshColdResources } from './dsh-cold-resources.mjs';
 import { mkdir, rename, rm, writeFile, readFile, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { acquireLocalAgentStorageOwner, startLocalAgentHost } from '../../apps/local-agent-host/src/main.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
@@ -115,7 +115,7 @@ export async function startIndependentDshHost(configuration) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const config = await readPrivateJson(process.env.OPENCRAFT_DSH_HOST_CONFIG ?? '');
   const host = await startIndependentDshHost({
     ...config,

@@ -1,3 +1,4 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -230,7 +231,7 @@ export function patchCursorHotspot(source, version) {
   return original.replace(cursorAnchor, cursorProjection);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const { version } = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
   const file = resolve(packageRoot, "lib/rfb.js");
   const source = readFileSync(file, "utf8");

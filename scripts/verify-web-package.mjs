@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
-import { pathToFileURL } from 'node:url';
 
 export async function verifyWebPackage(packageRoot) {
   const root = resolve(packageRoot);
@@ -56,7 +56,7 @@ export async function verifyWebPackage(packageRoot) {
     await rm(state, { recursive: true, force: true });
   }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   if (process.argv.length !== 3) throw new Error('Usage: verify-web-package.mjs /packaged/website');
   console.log(JSON.stringify(await verifyWebPackage(process.argv[2])));
 }

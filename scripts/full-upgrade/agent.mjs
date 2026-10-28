@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { realpath as realEntryPath } from 'node:fs/promises';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { pageControl, reconcileWebChildren } from './page.mjs';
 import { webChildControl } from './web-child.mjs';
 import { Journal } from './journal.mjs';
@@ -80,6 +79,6 @@ export async function main(args = process.argv.slice(2)) {
   invariant(args.length === 2 && args[0] === '--config', 'expected-fixed-config');
   await startAgent(await readConfig(resolve(args[1])));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(await realEntryPath(resolve(process.argv[1]))).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   main().catch(() => { process.stderr.write('upgrade-agent startup failed\n'); process.exitCode = 1; });
 }

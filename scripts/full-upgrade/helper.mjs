@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { realpath as realEntryPath } from 'node:fs/promises';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { Journal } from './journal.mjs';
 import { serve, request } from './ipc.mjs';
 import { PROTOCOL, readConfig, socketPath, entryIdentity } from './service-config.mjs';
@@ -63,6 +62,6 @@ export async function main(args = process.argv.slice(2)) {
   invariant(args.length === 2 && args[0] === '--config', 'expected-fixed-config');
   await startHelper(await readConfig(resolve(args[1])));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(await realEntryPath(resolve(process.argv[1]))).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   main().catch(() => { process.stderr.write('upgrade-helper startup failed\n'); process.exitCode = 1; });
 }

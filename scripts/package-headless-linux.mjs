@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -9,7 +10,7 @@ import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
@@ -198,7 +199,7 @@ export async function packageHeadlessLinux(composition = {}) {
 }
 
 const isMain = process.argv[1] != null
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
   packageHeadlessLinux().then((path) => process.stdout.write(`${path}\n`)).catch((error) => {
     console.error(error);
