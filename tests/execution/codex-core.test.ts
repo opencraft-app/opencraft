@@ -769,3 +769,39 @@ for (const overlays of [false, true]) test(`Read-only Core observers receive liv
     assert.ok(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
   } finally { await f.close(); }
 });
+
+test("Core reconnect before the first client caches its successful handshake for the first View", async () => {
+  const f = await fixture();
+  let opens = 0;
+  const initialized = new Set<number>(), listeners = new Set<(frame: string) => void>();
+  const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
+      get status() { return native.status; }, connect: signal => native.connect(signal), close: () => native.close(),
+      subscribeMessage: listener => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
+      subscribeStatus: listener => native.subscribeStatus(status => { if (status.state === "open") opens++; listener(status); }),
+      send: async frame => {
+        const message = JSON.parse(frame);
+        if (message.method === "initialize") {
+          if (initialized.has(opens)) {
+            for (const listener of listeners) listener(JSON.stringify({ id: message.id, error: { code: -32080, message: "Routing connection is already initialized" } }));
+            return;
+          }
+          initialized.add(opens);
+        }
+        await native.send(frame);
+      },
+    }) });
+  let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
+  const frames: any[] = []; engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  try {
+    await engine.connect();
+    await f.core.close(); replacement = await startCodexCore(f.options);
+    for (let n = 0; n < 600 && !(opens >= 2 && (engine as any).physicalInitialized && engine.status.state === "open"); n++) await delay(10);
+    assert.ok(opens >= 2);
+    await engine.send(JSON.stringify({ id: "first-view", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "first-view" }));
+    for (let n = 0; n < 100 && !frames.some(frame => frame.id === "first-view"); n++) await delay(10);
+    const reply = frames.find(frame => frame.id === "first-view");
+    assert.ok(reply?.result, "a recovered physical connection must not receive a duplicate initialize from the first View");
+    assert.equal(reply.result.capabilities.extensions["opencraft/read-history"].itemDetails, true);
+  } finally { await engine.close(); await replacement?.close(); await f.close(); }
+});

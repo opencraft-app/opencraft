@@ -378,3 +378,8 @@ cancellation or failure cannot block another. Hook-only Turn updates preserve
 unchanged Item references. A new passive baseline tags retained summaries with a
 client-local read generation, included in the renderer detail token, so an open
 disclosure restarts hydration after reconnect without changing native epochs.
+
+A Host reconnect must populate the same decorated initialization cache before
+publishing readiness, even when no View initialized before the disconnect. The
+first View then consumes that cache; it must not initialize an already initialized
+native routing socket again. The native one-initialize contract remains authoritative.

@@ -2597,14 +2597,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.activeTurns.clear(); this.nativeSubscribedThreads.clear();
         this.physicalInitialized = false;
         const initialized = await this.requestPhysical("initialize", { clientInfo: { name: "opencraft-recovery", version: "0.1.0" }, capabilities: { experimentalApi: true } });
-        await this.writePhysical({ method: "initialized", params: {} });
+        // A reconnect may finish before the first View ever initializes.
+        // Populate the same decorated cache as normal initialization, otherwise
+        // that View sends initialize again on this already-initialized socket.
+        await this.completeInitialize({ clientId: "", clientEpoch: 0, originalId: "core-recovery",
+          method: "initialize", params: {} }, { result: initialized });
         if (this.closeOperation) return;
-        this.physicalInitialized = true;
         this.coreReinitializing = false;
         this.publishStatus({ state: "open" });
-        this.tokenUsage?.initialize(initialized);
-        this.recovery?.wake();
-        void this.discoverActiveGoals().catch(() => undefined);
       })().catch(() => {
         if (this.closeOperation) return;
         this.physicalInitialized = false;
