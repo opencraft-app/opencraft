@@ -19,6 +19,7 @@ export class DshOwnerHandoff {
   attach(host) { this.host = host; }
   async nativeLost() {
     const state = this.authority.snapshot();
+    this.rememberCarried();
     if (state.phase === 'open') await this.authority.fence({expectedOwner:state.owner,expectedEpoch:state.epoch,
       operationId:'native-loss-'+randomUUID(),fence:randomUUID()});
   }
@@ -38,6 +39,20 @@ export class DshOwnerHandoff {
     return receipt && ['epoch','operationId','fence','sourceOwner'].every(key=>receipt[key]===state[key])
       && JSON.stringify(receipt.carriedUnknown)===JSON.stringify(list);
   }
+  rememberCarried() {
+    if (this.authority.snapshot().phase !== 'open') return;
+    this.acceptedCarried=undefined;
+    try {
+      const receipt=this.carriedReceipt();
+      if (receipt && this.receiptMatches(receipt,receipt.carriedUnknown)) this.acceptedCarried=receipt;
+    } catch { /* Corrupt receipt still yields unknown occupancy; never prevent fencing. */ }
+  }
+  retainedByFencedWriter(receipt,list) {
+    const state=this.authority.snapshot();
+    return state.phase === 'fenced' && state.sourceOwner === this.authority.owner && this.acceptedCarried
+      && JSON.stringify(receipt) === JSON.stringify(this.acceptedCarried)
+      && JSON.stringify(this.acceptedCarried.carriedUnknown) === JSON.stringify(list);
+  }
   sealUnknown(list) {
     const state=this.authority.snapshot();
     const receipt={schemaVersion:1,epoch:state.epoch,operationId:state.operationId,fence:state.fence,sourceOwner:state.sourceOwner,carriedUnknown:list};
@@ -55,7 +70,7 @@ export class DshOwnerHandoff {
       const complete = this.authority.snapshot().persistence === 'ready' && native.pid === this.host.engineProcessId && typeof native.owner === 'string'
         && [native,local,os,consumer].every(row=>Number.isSafeInteger(row.activeCount) && row.activeCount >= 0) && consumer.coverage === 'complete' && native.coverage === 'complete' && local.coverage === 'complete' && os.coverage === 'complete';
       const list=this.unknownList(native),receipt=this.carriedReceipt();
-      const carriedUnknown=sealing || this.receiptMatches(receipt,list) ? list : [];
+      const carriedUnknown=sealing || this.receiptMatches(receipt,list) || this.retainedByFencedWriter(receipt,list) ? list : [];
       return {coverage:complete ? 'complete':'unknown',activeCount:complete ? native.activeCount - carriedUnknown.length + local.activeCount + os.activeCount + consumer.activeCount + this.authority.snapshot().activeCalls : null,native,local,os,consumer,carriedUnknown};
     } catch { return {coverage:'unknown',activeCount:null}; }
   }
@@ -69,6 +84,7 @@ export class DshOwnerHandoff {
   control(action,input) {
     const operation = this.operation.catch(()=>{}).then(async()=>{
       if (action === 'fence') {
+        this.rememberCarried();
         await this.authority.fence(input);
         await this.host.nativeOwner('fence');
       } else if (action === 'release') {

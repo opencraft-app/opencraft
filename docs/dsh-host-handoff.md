@@ -85,3 +85,5 @@ Host 队列沿 `ThreadQueueStore` 的终态语义：`deleted` 与 `dispatched` �
 匹配的历史未知从 Host 总 `activeCount` 中扣除，单列 `carriedUnknown`；原生原始 `unknownResults` 及记录继续保留。
 之后每次协议交接重新封存完整责任清单，不把一次迁入的豁免沿用到后继未知。
 首次无协议维护桥接由维护执行器在确认旧 writer 及其整个 cgroup 已退出、只读冷读取后写入同样绑定的回执；不追认旧版原子 fence。
+
+同一已恢复准入的 writer 再次 fence 时，在内存保留先前已接收的精确责任回执；仅当前 writer 的 fenced 阶段且清单、回执文件均未变化时继续单列 carriedUnknown，不因新 fence 代次而误计回占用。release 仍重写绑定新代次的封存回执，继任 cold-ready/resume 仍只接受该新代次，不能复用旧证明。
