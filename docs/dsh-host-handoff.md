@@ -57,8 +57,31 @@ IM消费者custody仅在取得Host准入后创建，确定被fence拒绝的输�
 - owner 进程标记/锁和易变 SQLite WAL/SHM 不是内容 proof；SQLite 当前逻辑内容已经由只读连接完整读取。
 
 仅验证该固定起点和当前实际历史/插件/配置组合。未知版本、任意 ABI、任意自定义插件及反向读写兼容不自动成立。
-未完成输入、未来或暂停 schedule、待审批和长期 unknown 保留并阻止安全 release。
+未完成输入、未来或暂停 schedule、待审批及在途 unknown custody 保留并阻止安全 release。已终结历史未知按下节移交责任。
 空闲 goal（包括 active/paused/blocked）是持久意图，完整读取并纳入历史 proof，但不单独增加执行占用。
 fence 期间不起新 Turn；已有 goal 不续跑。继任保留 goal 原 phase，冷加载保持 disarmed，
 恢复准入后的行为与正常重启相同，不隐式 arm、清除或重放 goal。若 goal 已产生 Turn、inbox 或未确认结果，仍按对应执行事实阻止 release。
 冷 ready 是恢复准入条件，不是回滚数据的授权；不自动回灌旧备份。
+
+## 旧历史的只读恢复视图
+
+冷数据使用原生 `sessionPersistence.inspect` 的确定性逻辑视图，与正常重启及历史 API 一致：中断尾部的结束事件只在内存投影，不写回物理日志。proof 同时绑定逻辑历史和 `storedEvents/storedDigest`，保留原物理事件，不加载 Agent 或重放输入。活着的 Session/Agent 仍观察实际事件，未结束 Turn 继续阻挡交接；原生 custody 中的未知结果也不因逻辑恢复而消失。
+
+Host 队列沿 `ThreadQueueStore` 的终态语义：`deleted` 与 `dispatched` 都是保留记录，不计待执行工作；仍为 `queued` 的记录继续阻挡。观察过程不删除记录、不变更状态。
+
+`TOOL_OUTCOME_UNKNOWN` 是原生工具未确认副作用的明确记录；无论来自只读恢复投影还是已保留的物理历史，均在 `unknownResults` 单独计数并阻止交接。`storedDigest` 只是数据完整性证据，不能代替副作用确认；关闭Turn的逻辑投影、重试成功或没有新custody ledger都不会消除旧未知结果。没有通用强清或自动重试。
+
+
+## 已终结未知结果的责任移交
+
+历史 `TOOL_OUTCOME_UNKNOWN` 继续保持未知，不确认成功、不确认失败、不清空、不重放，不改物理日志。
+原生观察保留 `unknownResults`，并仅对所在逻辑 Turn 已结束、无运行 Agent 和未闭 Turn 的结果给出 `transferableUnknown`。
+每项精确记录 `sessionId/resultSeq/toolCallSeq/storedEvents/storedDigest`，工具调用必须与结果所属 Turn 和 callId 匹配。
+原生 custody、Host 输入、工具进程、jobs、Inbox、审批等独立执行事实照旧阻挡，不能靠历史清单抵消。
+
+旧 owner 封闭全部原生入口，最终观察排空，在停止 writer 后、持久标记 released 前写入私有持久 `carried-unknown.json`。
+回执绑定 epoch、operationId、fence、sourceOwner 和完整有序清单；写入失败不能声明 released。
+新 owner 冷读的清单必须与该回执逐项、逐摘要完全一致；缺失、新增、减少、摘要或代次变化均拒绝 cold-ready/resume。
+匹配的历史未知从 Host 总 `activeCount` 中扣除，单列 `carriedUnknown`；原生原始 `unknownResults` 及记录继续保留。
+之后每次协议交接重新封存完整责任清单，不把一次迁入的豁免沿用到后继未知。
+首次无协议维护桥接由维护执行器在确认旧 writer 及其整个 cgroup 已退出、只读冷读取后写入同样绑定的回执；不追认旧版原子 fence。

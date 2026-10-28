@@ -108,6 +108,9 @@ test('legacy idle active goal cold handoff matches normal restart',async t=>{
  const lines=(compressed?zstdDecompressSync(bytes):bytes).toString().trim().split('\n').map(line=>JSON.parse(line));
  const goal={id:'synthetic-persistent-goal',revision:1,objective:'Keep persistent work',phase:'active',maxGoalRounds:100};
  lines.push({seq:lines.length-1,type:'goal/change',time:1,data:{kind:'goal/change',version:1,operation:'create',goal,roundsStarted:0,createdAt:1,updatedAt:1}});
+ // A pre-existing crash tail uses the native SDK's detached logical recovery, never a store rewrite.
+ lines.push({seq:lines.length-1,type:'turn/start',time:2,data:{turn:1}});
+ lines.push({seq:lines.length-1,type:'step/start',time:2,data:{turn:1,step:1}});
  bytes=Buffer.from(lines.map(line=>JSON.stringify(line)).join('\n')+'\n');
  await writeFile(log,compressed?Buffer.concat([zstdCompressSync(Buffer.from(JSON.stringify(lines[0])+'\n')),zstdCompressSync(Buffer.from(lines.slice(1).map(line=>JSON.stringify(line)).join('\n')+'\n'))]):bytes);
  // Ordinary legacy restart is the reference behavior, including a native load.
@@ -116,7 +119,9 @@ test('legacy idle active goal cold handoff matches normal restart',async t=>{
  const history:any=await client.call('session.history',{sessionId:created.sessionId,maxMessages:Number.MAX_SAFE_INTEGER});
  assert.equal(history.hasMore,false);
  const nativeHistory=history.events.map((entry:any)=>entry.event);
- assert.deepEqual(nativeHistory.at(-1).data.goal,goal);
+ assert.deepEqual(nativeHistory.find((event:any)=>event.type==='goal/change').data.goal,goal);
+ assert.equal(nativeHistory.at(-1).type,'turn/end');
+ assert.deepEqual(await readFile(log),compressed?Buffer.concat([zstdCompressSync(Buffer.from(JSON.stringify(lines[0])+'\n')),zstdCompressSync(Buffer.from(lines.slice(1).map(line=>JSON.stringify(line)).join('\n')+'\n'))]):bytes);
  const legacySocket=new WebSocket(host.websocketUrl);await new Promise<void>(done=>legacySocket.once('open',done));
  const readGoal=async(socket:any,id:number)=>new Promise<any>((done,fail)=>{
  const listener=(raw:any)=>{const frame=JSON.parse(raw.toString());if(frame.id!==id)return;socket.off('message',listener);
@@ -146,4 +151,61 @@ test('legacy idle active goal cold handoff matches normal restart',async t=>{
  const cold:any=await host.handoff.control('cold-ready',expected(host));assert.deepEqual(cold.occupancy.native.records,fenced);
  await host.handoff.control('resume',{...expected(host),identity:cold.handoff.ready.identity});
  assert.equal(host.handoff.open(),true);
+});
+
+test('real legacy started tool without a result stays unknown through cold inspection',async t=>{
+ const {startLocalAgentHost}=await import('../../apps/local-agent-host/src/main.ts');
+ const {zstdCompressSync,zstdDecompressSync}=await import('node:zlib');
+ const root=await mkdtemp('/tmp/dsh-legacy-unknown-');await mkdir(join(root,'skills'));
+ const options={coldDependencyRoots:[resolve('node_modules')],dataDirectory:join(root,'agent'),descriptorPath:join(root,'connection.json'),runtimeDirectory:root,skillsDirectory:join(root,'skills'),
+ dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
+ let host:any;t.after(async()=>{await host?.close();await rm(root,{recursive:true,force:true});});
+ host=await startLocalAgentHost(options);const created:any=await new DshClient(host.dshUrl).call('session.create',{cwd:root});await host.close();
+ const files=await readdir(options.dataDirectory,{recursive:true});const log=join(options.dataDirectory,files.find(p=>/session\.jsonl(?:\.zstd)?$/.test(p))!);
+ const compressed=log.endsWith('.zstd'),initial=await readFile(log);
+ const lines=(compressed?zstdDecompressSync(initial):initial).toString().trim().split('\n').map(line=>JSON.parse(line));
+ const add=(type:string,data:any)=>lines.push({seq:lines.length-1,time:1,type,data,...(type==='assistant/message'?{surfaceOp:'append'}:{})});
+ add('turn/start',{turn:1});add('step/start',{turn:1,step:1});
+ add('assistant/message',{turn:1,step:1,message:{id:'fixture-assistant',role:'assistant',source:{kind:'model',provider:'fixture',model:'fixture'},content:[{type:'tool-call',id:'fixture-call',name:'fixture',arguments:'{}'}]}});
+ add('tool/call',{turn:1,step:1,callId:'fixture-call',name:'fixture',arguments:'{}'});
+ const body=Buffer.from(lines.map(line=>JSON.stringify(line)).join('\n')+'\n');
+ const physical=compressed?Buffer.concat([zstdCompressSync(Buffer.from(JSON.stringify(lines[0])+'\n')),zstdCompressSync(Buffer.from(lines.slice(1).map(line=>JSON.stringify(line)).join('\n')+'\n'))]):body;
+ await writeFile(log,physical);
+ host=await startLocalAgentHost(options);
+ const legacy:any=await new DshClient(host.dshUrl).call('session.history',{sessionId:created.sessionId,maxMessages:Number.MAX_SAFE_INTEGER});
+ assert.ok(legacy.events.some((row:any)=>row.event.data?.error?.code==='TOOL_OUTCOME_UNKNOWN'));
+ await host.close();
+ await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true});
+ await writeFile(join(options.dataDirectory,'owner-handoff/host-handoff.json'),JSON.stringify({schemaVersion:1,epoch:1,phase:'released',sourceOwner:'legacy-fixture',operationId:'test',fence:'test'}),{mode:0o600});
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ const native=await host.nativeOwner('inspect');assert.equal(native.custody.length,0);
+ assert.equal(native.records[0].openTurn,0);assert.equal(native.records[0].unknownResults,1);assert.ok(native.activeCount>0);
+ await assert.rejects(host.handoff.control('cold-ready',expected(host)),/incomplete/);
+ assert.deepEqual(await readFile(log),physical,'inspection cannot persist recovery or clear unknown effects');
+ host.handoff.sealUnknown(native.records.flatMap((row:any)=>row.transferableUnknown));
+ const syntheticReady:any=await host.handoff.control('cold-ready',expected(host));
+ assert.equal(syntheticReady.occupancy.activeCount,0);assert.equal(syntheticReady.occupancy.carriedUnknown.length,1);
+ assert.deepEqual(await readFile(log),physical,'carrying synthetic crash unknown never commits the projection');
+ await host.close();
+ // A normal SDK load may persist the balanced recovery view. Unknown effects still block.
+ const balanced=[lines[0],...legacy.events.map((row:any)=>row.event)];
+ const persisted=compressed?Buffer.concat([zstdCompressSync(Buffer.from(JSON.stringify(balanced[0])+'\n')),zstdCompressSync(Buffer.from(balanced.slice(1).map(line=>JSON.stringify(line)).join('\n')+'\n'))]):Buffer.from(balanced.map(line=>JSON.stringify(line)).join('\n')+'\n');
+ await writeFile(log,persisted);
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ const stored=await host.nativeOwner('inspect');assert.equal(stored.custody.length,0);
+ assert.equal(stored.records[0].events,stored.records[0].storedEvents);assert.equal(stored.records[0].openTurn,0);
+ assert.equal(stored.records[0].unknownResults,1);assert.ok(stored.activeCount>0);
+ await assert.rejects(host.handoff.control('cold-ready',expected(host)),/incomplete/);
+ assert.deepEqual(await readFile(log),persisted,'balanced persisted unknown cannot be cleared by inspection');
+ // Maintenance bridge seals responsibility after the legacy writer has stopped.
+ host.handoff.sealUnknown(stored.records.flatMap((row:any)=>row.transferableUnknown));
+ let ready:any=await host.handoff.control('cold-ready',expected(host));
+ assert.equal(ready.occupancy.activeCount,0);assert.equal(ready.occupancy.carriedUnknown.length,1);
+ await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
+ await host.handoff.control('fence',expected(host));
+ const release:any=await host.handoff.control('release',expected(host));assert.equal(release.carriedUnknown.length,1);await host.close();
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ ready=await host.handoff.control('cold-ready',expected(host));assert.equal(ready.occupancy.carriedUnknown.length,1);
+ await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
+ assert.deepEqual(await readFile(log),persisted,'unknown transfer never rewrites physical history');
 });

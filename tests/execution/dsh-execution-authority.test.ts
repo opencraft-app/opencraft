@@ -304,3 +304,18 @@ test("known missing execution objects preserve inputs, queue, epochs and previou
     } finally { await rm(root, { recursive: true, force: true }); }
   }
 });
+
+
+test("deleted queue records remain retained terminal history during handoff",()=>{
+ const authority=new DshExecutionAuthority(":memory:");
+ try{
+  const first=authority.queueStore.add("t","one","local-user",[{type:"text",text:"fixture"}]).submission;
+  assert.equal(authority.handoffObservation().activeCount,1);
+  assert.equal(authority.queueStore.delete("t",first.id),true);
+  assert.equal(authority.handoffObservation().activeCount,0);
+  assert.equal(authority.queueStore.find("t",first.id)?.state,"deleted");
+  const second=authority.queueStore.add("t","two","local-user",[{type:"text",text:"future work"}]).submission;
+  assert.equal(authority.handoffObservation().activeCount,1);
+  assert.equal(authority.queueStore.find("t",second.id)?.state,"queued");
+ }finally{authority.close();}
+});
