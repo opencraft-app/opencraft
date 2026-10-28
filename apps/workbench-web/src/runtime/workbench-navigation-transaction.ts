@@ -261,7 +261,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     const finish = beginObservedOperation("thread_open", { cache: isWarm ? "warm" : "cold" });
     const paint = existingPaint
       ? historyFirstPaint.bindView(existingPaint, viewId, isWarm ? "warm" : "cold")
-      : location.kind === "thread" ? historyFirstPaint.begin(viewId, isWarm ? "warm" : "cold") : null;
+      : location.kind === "thread" ? historyFirstPaint.begin(viewId, isWarm ? "warm" : "cold", location.key) : null;
     const promise = prepareNavigation(location, mode, viewId, epoch, origin).then(result => {
       finish(result ? "ok" : "aborted");
       if (!result && paint) historyFirstPaint.settle(paint, ownsIntent(epoch, origin) ? "failed" : "aborted");
@@ -285,7 +285,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       const fastFinish = beginObservedOperation("thread_open", { cache: "warm" });
       fastFinish("ok");
       const epoch = beginIntent();
-      if (location.kind === "thread") historyFirstPaint.begin(scope, "warm");
+      if (location.kind === "thread") historyFirstPaint.begin(scope, "warm", location.key);
       commitRoute(() => navigation.push(location, { routeScopeId: scope }),
         () => rememberPresentedView(location, scope));
       // Settings may have canceled bootstrap readiness, while the local View
@@ -328,7 +328,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     if (routerOptions.restoreViewId) {
       const epoch = beginIntent(), origin = navigation.getSnapshot();
       const pendingViewId = createRouteScopeId();
-      const paint = location.kind === "thread" ? historyFirstPaint.begin(pendingViewId, "cold") : undefined;
+      const paint = location.kind === "thread" ? historyFirstPaint.begin(pendingViewId, "cold", location.key) : undefined;
       const promise = Promise.resolve().then(() => routerOptions.restoreViewId!(location)).then(viewId => {
         if (!ownsIntent(epoch, origin)) return false;
         if (viewId !== undefined) {

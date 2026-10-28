@@ -144,6 +144,30 @@ Actor 种类与流量来源是正交字段：`actorKind` 区分 human/agent/serv
 
 `operations.history_paint_p50` 与 `operations.history_paint_p95` 是同一查询注册表生成的中文看板图，按冷/热、长度桶、引擎展示 5 分钟滑窗分位数。部署前没有同口径真实首屏样本，不能从原 thread_open 或新图倒推 Stage 0 的真实用户前后改善；新采样与既有受控验收分别报告。
 
+### 历史读取分阶段诊断
+
+只读 `thread/read` 和 `thread/turns/list` 结果附带可选 `__opencraftHistoryTiming`。
+Host 每次生成随机 `pairId`，Web RPC 保存该 ID、`webSentAt`、`clientQueueMs`，
+以及白名单的 `historyCoreMs`、`historyMetadataMs`、`historyQueueMs`、`historySourceMs`、
+`historyReconcileMs`、`historyScanMs`、`historyPageMs`、`historyProjectionMs`、
+`historyNativeRpcMs` 和 `historyNativeRpcCount`。缺失阶段保持缺失，旧 Host 兼容。
+字段只进入受控明细，不成为指标标签。`operationId` 在请求发出时从本地 Host/Thread
+对应首屏操作捕获；替换打开后旧请求仍关联原操作。Host/Thread 身份不进入事件。
+
+`history-read-stages` 日志按 `pairId` 关联 Web；`history-native-rpc` 按相同 ID
+列出物理 `requestId`，关联 router 的 `history-route-stages`：`routeReadyMs`
+包含路由、代次就绪及接纳前等待，`nativeRpcMs` 为原生往返。metadata 为前置原生
+Thread 元数据；queue 为同会话缓存串行等待；source 为来源解析和验证；reconcile
+包含 rollout 扫描、原生分页和缓存写入；scan 仅计本地 rollout 增量扫描；page 包含
+索引读页、正文恢复和来源复核；projection 为发送者与附件投影。core 从 Host 读入口
+到返回构造，Web RPC 终态包含往返与客户端接收；序列化及返回传输留在 Web 总耗时中。
+阶段可嵌套，不能相加阶段分位数或把 native RPC 再加进 reconcile。
+
+原生 Codex 固定二进制没有导出内部文件读取、投影和分页的单独时间，原生往返仍包含
+其内部排队和处理，不能直接标为纯投影耗时。必须用同请求 router 和 Host 数据判断
+等待边界，必要时在原生源码 owner 增加内部探针。诊断不新增历史、模型或 Resume
+请求，不改变取消、缓存新鲜度、分页或执行所有权。
+
 ### 4.1 用户等待的范围
 
 每项操作都保存 `operationType`、触发点、完成点、`measurementScope`、`evidenceKind`、负载形状及结果。不同起点不共用同名时延。
@@ -344,3 +368,7 @@ CLI's own build/source identity separately from server components.
 ### Named-server deployment paths (2026-10-22)
 
 Browser capabilities, telemetry and dashboard navigation use the selected server context. Operator-owned `grafanaBasePath` in ingress and observation-service configuration must match Grafana root_url for that named-server prefix. The relay preserves already-scoped HTML paths exactly once; ingress maps authorized Grafana requests to the configured Unix-socket path. These URL transformations never establish identity or expand target ACL. Each deployment owns independent storage and deploymentId; missing component capture stays partial.
+
+增量历史核对从十个完整原生 Turn 开始，沿原 cursor 继续到所有脏 Turn 的最老边界；
+完整重建仍读取全部历史。这样小增量不再反复投影一百轮未变的工具输出。此改动不减少
+最终返回的 Item、正文或旧页，不用窗口轮数替代完整轮数；原生大小限制仍按原策略缩页。

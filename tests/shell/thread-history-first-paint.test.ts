@@ -113,3 +113,47 @@ test('full indexed count classifies a partial display without treating its windo
   assert.equal(historyLengthBucket(10, false, -1), 'unknown');
   assert.equal(historyLengthBucket(10, false, NaN), 'unknown');
 });
+
+test('history RPC keeps its opening operation through replacement and exports only bounded timings', async () => {
+  const {createObservabilityExtension, installClientObservation, observeEvent} = await import('../../apps/workbench-web/src/runtime/observability');
+  const originals = new Map(['window','document','fetch','PerformanceObserver'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  const captured: any[] = [], visibility: Array<() => void> = [];
+  const controller = new AbortController();
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{visibilityState:'visible',querySelector:()=>null,
+    addEventListener(name:string, fn:()=>void){if(name==='visibilitychange')visibility.push(fn);},removeEventListener(){}}});
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{pathname:'/',href:'http://localhost/'},addEventListener(){},removeEventListener(){}}});
+  Object.defineProperty(globalThis,'PerformanceObserver',{configurable:true,value:{supportedEntryTypes:[]}});
+  Object.defineProperty(globalThis,'fetch',{configurable:true,value:async (_url:unknown, init?:RequestInit)=>{
+    if(init?.body)captured.push(...JSON.parse(String(init.body)).events);
+    return new Response(JSON.stringify({telemetry:true,available:false}),{status:200});
+  }});
+  let listener!: (event:any)=>void;
+  let dispose: (()=>void)|undefined;
+  try {
+    await (createObservabilityExtension() as any).activate({signal:controller.signal});
+    await new Promise(resolve=>setTimeout(resolve,30));
+    dispose = installClientObservation({connectionGeneration:1,subscribeRequestLifecycle(fn:any){listener=fn;return ()=>{};}} as any);
+    const observer = createThreadHistoryFirstPaintObserver();
+    const first = observer.begin('view-first','cold',{hostId:'local',threadId:'private-thread'});
+    listener({type:'started',hostId:'local',id:'read-1',method:'thread/read',params:{threadId:'private-thread'},startedAtMs:123,queueWaitMs:2});
+    observer.begin('view-second','cold',{hostId:'local',threadId:'private-thread'});
+    listener({type:'completed',hostId:'local',id:'read-1',method:'thread/read',durationMs:100,result:{
+      thread:{id:'private-thread',content:'private-content'},__opencraftHistoryTiming:{pairId:'server-trace',coreMs:90,nativeRpcMs:75,queueMs:3,sourceMs:-1,evil:'private-content'}}});
+    observer.settle(first,'ok'); observer.abort();
+    observeEvent({kind:"operation",operationType:"other",outcome:"failed"});
+    for (const callback of visibility)callback();
+    await new Promise(resolve=>setTimeout(resolve,30));
+    const starts = captured.filter(event=>event.operationType==='thread_history_first_paint'&&event.outcome==='started');
+    const rpc = captured.find(event=>event.kind==='rpc'&&event.pairId==='server-trace');
+    assert.equal(starts.length,2);assert(rpc);
+    assert.equal(rpc.operationId,starts[0].operationId);
+    assert.notEqual(rpc.operationId,starts[1].operationId);
+    assert.equal(rpc.webSentAt,123);assert.equal(rpc.clientQueueMs,2);
+    assert.equal(rpc.historyCoreMs,90);assert.equal(rpc.historyNativeRpcMs,75);
+    assert.equal(rpc.historySourceMs,undefined);
+    assert(!JSON.stringify(captured).includes('private-'));
+  } finally {
+    dispose?.();controller.abort();
+    for(const [key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key];
+  }
+});

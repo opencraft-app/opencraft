@@ -152,6 +152,7 @@ class RoutingSession {
     const route = this.registry.discover(id, matches[0]!); this.router.routesUpdated(); return route;
   }
   private async receive(message: RpcRecord): Promise<void> {
+    const received = performance.now();
     const method = text(message.method), params = rpcRecord(message.params), id = message.id;
     if (method === "initialize") {
       if (id === undefined || this.initializeParams !== null) throw error("Routing connection is already initialized");
@@ -227,7 +228,16 @@ class RoutingSession {
       }
       release = this.router.runtime.admit(ticket);
       if (id === undefined) { peer.notify(message); return; }
-      const result = await peer.call(method, params, () => { sent = true; if (creation) this.registry.markSent(ticket); }, null);
+      const nativeStarted = performance.now();
+      let result: unknown;
+      try { result = await peer.call(method, params, () => { sent = true; if (creation) this.registry.markSent(ticket); }, null); }
+      finally {
+        if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)
+          && typeof id === "string" && /^opencraft:host:\d{1,16}$/u.test(id)) {
+          console.info("[history-route-stages]", JSON.stringify({ requestId: id, method,
+            routeReadyMs: nativeStarted - received, nativeRpcMs: performance.now() - nativeStarted }));
+        }
+      }
       if (executing && command) command.active = false;
       if (spawning && process) process.pending = false;
       if (!this.registry.valid(ticket)) throw error("Stale generation response discarded");

@@ -1569,6 +1569,14 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     const read = () => call("thread/read", { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } });
     const cold = await read(), warm = await read();
     assert.deepEqual(warm.initialTurnsPage, cold.initialTurnsPage);
+    assert.match(cold.__opencraftHistoryTiming.pairId, /^[a-f0-9-]{36}$/);
+    assert.notEqual(cold.__opencraftHistoryTiming.pairId, warm.__opencraftHistoryTiming.pairId);
+    assert(cold.__opencraftHistoryTiming.nativeRpcCount >= 2);
+    assert.equal(warm.__opencraftHistoryTiming.nativeRpcCount, 1);
+    for (const key of ["coreMs", "metadataMs", "queueMs", "sourceMs", "reconcileMs", "pageMs", "projectionMs", "nativeRpcMs"]) {
+      assert(Number.isFinite(cold.__opencraftHistoryTiming[key]), key);
+      assert(cold.__opencraftHistoryTiming[key] >= 0, key);
+    }
     assert.deepEqual(cold.initialTurnsPage.data.map((t:any) => ({...t,itemsView:undefined})), turns.slice(-10).reverse().map(t=>({...t,itemsView:undefined})));
     const counts = await call("test/readMethodCounts", {});
     assert.equal(counts["thread/resume"] ?? 0, 0);

@@ -1,4 +1,5 @@
-import { beginObservedOperation } from "./observability";
+import { createClientId } from "@opencraft/composer-core";
+import { bindHistoryObservation, beginObservedOperation } from "./observability";
 
 export type HistoryLengthBucket = "lt50" | "50to199" | "200to499" | "500plus" | "unknown";
 export interface HistoryPaintDetails {
@@ -23,6 +24,7 @@ export interface HistoryPaintAttempt {
   /** Local fence only: never serialized into telemetry. */
   readonly viewId: string;
   readonly cache: "warm" | "cold";
+  readonly releaseObservation?: () => void;
   readonly finish: ReturnType<typeof beginObservedOperation>;
 }
 /** One user navigation owns the pending measurement, including after route commit. */
@@ -33,6 +35,7 @@ export function createThreadHistoryFirstPaintObserver(begin = beginObservedOpera
   const settle = (attempt: HistoryPaintAttempt, outcome: "ok" | "failed" | "aborted" | "empty", details?: HistoryPaintDetails) => {
     if (pending?.finish !== attempt.finish) return;
     const cache = pending.cache;
+    pending.releaseObservation?.();
     pending = null;
     attempt.finish(outcome, {cache, ...(details ?? {})});
     publish();
@@ -47,9 +50,11 @@ export function createThreadHistoryFirstPaintObserver(begin = beginObservedOpera
       return pending;
     },
     abort() { if (pending) settle(pending, "aborted"); },
-    begin(viewId: string, cache: "warm" | "cold") {
+    begin(viewId: string, cache: "warm" | "cold", scope?: { hostId: string; threadId: string }) {
       if (pending) settle(pending, "aborted");
-      const attempt = { viewId, cache, finish: begin("thread_history_first_paint", { cache, lengthBucket: "unknown", engine: "unknown" }) };
+      const operationId = createClientId();
+      const attempt = { viewId, cache, releaseObservation: scope ? bindHistoryObservation(scope, operationId) : undefined,
+        finish: begin("thread_history_first_paint", { operationId, cache, lengthBucket: "unknown", engine: "unknown" }) };
       pending = attempt;
       publish();
       return attempt;
