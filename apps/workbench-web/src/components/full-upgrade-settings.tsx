@@ -53,12 +53,12 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
         <SettingsRow label={<FormattedMessage id="fullUpgrade.release" defaultMessage="Target release" />} description={plan.channel ?? undefined}>{plan.releaseId ?? '—'}</SettingsRow>
         <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />}>{stateText(plan.status)}</SettingsRow>
       </SettingsGroup>
-      <details><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
-        <p>{plan.sourceRevision}</p>
-        {plan.blockedReasons.map(reason => <p key={reason}>{reason}</p>)}
-        {plan.components.map(c => <SettingsRow key={c.componentId} label={c.role} description={stateText(c.state)}>
+      <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
+        <p className="full-upgrade-revision">{plan.sourceRevision}</p>
+        {plan.blockedReasons.map(reason => <p className="full-upgrade-revision" key={reason}>{reason}</p>)}
+        {plan.components.length > 0 && <SettingsGroup>{plan.components.map(c => <SettingsRow key={c.componentId} label={c.role} description={stateText(c.state)}>
           {c.runningVersion ?? '—'} → {c.targetVersion}
-        </SettingsRow>)}
+        </SettingsRow>)}</SettingsGroup>}
       </details>
     </>}
     <SettingsActions align="start">
@@ -68,9 +68,9 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
     <SettingsNotice id="full-upgrade-blocked"><FormattedMessage id="fullUpgrade.blocked" defaultMessage="Upgrade requirements not met" /></SettingsNotice>
     {data?.jobs.map(job => <SettingsGroup key={job.jobId}>
       <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />} description={job.jobId}>{stateText(job.state)}</SettingsRow>
-      <details><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
-      <p>{job.releaseId ?? job.targetVersion}</p>
-      {job.components.map((c, i) => <SettingsRow key={`${c.componentId}-${i}`} label={c.componentId}>{stateText(c.state)}{c.childJobId && <code>{c.childJobId}</code>}</SettingsRow>)}
+      <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>
+      <p className="full-upgrade-revision">{job.releaseId ?? job.targetVersion}</p>
+      {job.components.length > 0 && <SettingsGroup>{job.components.map((c, i) => <SettingsRow key={`${c.componentId}-${i}`} label={c.componentId}>{stateText(c.state)}{c.childJobId && <code>{c.childJobId}</code>}</SettingsRow>)}</SettingsGroup>}
       </details>
       {job.recoveryCommand && <SettingsNotice tone="error">{job.reason}<code className="full-upgrade-recovery">{job.recoveryCommand}</code></SettingsNotice>}
       {!['blocked', 'completed', 'failed', 'deferred', 'rolled-back', 'recovery-required'].includes(job.state) && <SettingsActions>

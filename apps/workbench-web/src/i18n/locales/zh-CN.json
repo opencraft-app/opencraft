@@ -127,6 +127,9 @@
   "settings.back": "返回应用",
   "settings.sections": "设置分类",
   "settings.archived": "已归档会话",
+  "settings.archived.loading": "正在读取已归档会话…",
+  "settings.archived.empty": "没有已归档的会话。",
+  "settings.archived.refresh": "刷新",
   "settings.plugins": "插件",
   "settings.plugins.description": "查看已安装的插件及其当前状态。",
   "settings.laboratory": "实验室",
@@ -1113,5 +1116,7 @@
   "fullUpgrade.blocked": "升级条件未满足",
   "fullUpgrade.stopping": "正在安全停止",
   "fullUpgrade.cancel": "取消升级",
-  "fullUpgrade.stop": "停止后续升级"
+  "fullUpgrade.stop": "停止后续升级",
+  "chat.archived.restore": "恢复会话",
+  "chat.archived.restoring": "正在恢复…"
 }

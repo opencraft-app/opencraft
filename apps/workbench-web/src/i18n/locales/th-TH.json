@@ -185,6 +185,9 @@
   "settings.title": "การตั้งค่า",
   "settings.appearance": "รูปลักษณ์",
   "settings.archived": "บทสนทนาที่เก็บถาวร",
+  "settings.archived.loading": "กำลังโหลดบทสนทนาที่เก็บถาวร…",
+  "settings.archived.empty": "ไม่มีบทสนทนาที่เก็บถาวร",
+  "settings.archived.refresh": "รีเฟรช",
   "settings.laboratory": "ห้องปฏิบัติการ",
   "settings.appearance.description": "เลือกวิธีที่ OpenCraft จะปรากฏทั่วทั้งโต๊ะทำงาน",
   "settings.interface": "อินเทอร์เฟซ",
@@ -1091,5 +1094,7 @@
   "fullUpgrade.blocked": "ยังไม่ผ่านเงื่อนไขการอัปเกรด",
   "fullUpgrade.stopping": "กำลังหยุดที่จุดปลอดภัย",
   "fullUpgrade.cancel": "ยกเลิกการอัปเกรด",
-  "fullUpgrade.stop": "หยุดหลังขั้นตอนนี้"
+  "fullUpgrade.stop": "หยุดหลังขั้นตอนนี้",
+  "chat.archived.restore": "กู้คืนการสนทนา",
+  "chat.archived.restoring": "กำลังกู้คืน…"
 }

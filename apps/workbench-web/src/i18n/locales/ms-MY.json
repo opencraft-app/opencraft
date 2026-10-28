@@ -184,6 +184,9 @@
   "settings.title": "tetapan",
   "settings.appearance": "Penampilan",
   "settings.archived": "Perbualan yang diarkibkan",
+  "settings.archived.loading": "Memuatkan perbualan yang diarkibkan…",
+  "settings.archived.empty": "Tiada perbualan yang diarkibkan.",
+  "settings.archived.refresh": "Muat semula",
   "settings.laboratory": "Makmal",
   "settings.appearance.description": "Pilih bagaimana OpenCraft kelihatan di seluruh bangku kerja.",
   "settings.interface": "Antara muka",
@@ -1091,5 +1094,7 @@
   "fullUpgrade.blocked": "Syarat naik taraf belum dipenuhi",
   "fullUpgrade.stopping": "Sedang berhenti pada titik selamat",
   "fullUpgrade.cancel": "Batalkan naik taraf",
-  "fullUpgrade.stop": "Berhenti selepas langkah ini"
+  "fullUpgrade.stop": "Berhenti selepas langkah ini",
+  "chat.archived.restore": "Pulihkan perbualan",
+  "chat.archived.restoring": "Memulihkan…"
 }

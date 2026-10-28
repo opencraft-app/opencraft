@@ -1,8 +1,9 @@
 @use "./context-menu-metrics" as menu;
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
 .model-services {
-  display: grid; grid-template-columns: 280px minmax(0, 1fr); width: 100%; height: 100%; min-height: 0;
+  display: grid; grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; min-height: 0;
   background: var(--color-background-surface); color: var(--color-text); container-type: inline-size;
+  > .settings-control-page-header { grid-column: 1 / -1; padding: 20px 28px 8px; }
   &__navigation { min-width: 0; overflow-y: auto; border-right: 1px solid var(--color-border-subtle); padding-bottom: 24px; }
   &__search { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-surface);
     > input { min-width: 0; border: 0; background: transparent; box-shadow: none; }
