@@ -19,9 +19,10 @@ import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch) {
-  if (platform !== "linux" || arch !== "x64") {
-    throw new Error("headless-linux-amd64-tar must be built on native Linux x64");
+export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch, architecture = 'amd64') {
+  const expected = architecture === 'amd64' ? 'x64' : architecture === 'arm64' ? 'arm64' : null;
+  if (platform !== "linux" || !expected || arch !== expected) {
+    throw new Error(`headless-linux-${architecture}-tar must be built on native Linux ${expected ?? architecture}`);
   }
 }
 
@@ -131,7 +132,8 @@ async function inventory(root, directory = root) {
 }
 
 export async function packageHeadlessLinux(composition = {}) {
-  assertHeadlessBuildHost();
+  const architecture = composition.architecture ?? 'amd64';
+  assertHeadlessBuildHost(process.platform, process.arch, architecture);
   const outputOverride = process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT;
   if (outputOverride !== undefined && !isAbsolute(outputOverride)) {
     throw new Error("OPENCRAFT_HEADLESS_PACKAGE_OUTPUT must be absolute");
@@ -151,7 +153,7 @@ export async function packageHeadlessLinux(composition = {}) {
 
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
   const output = outputOverride
-    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-amd64.tar.gz`);
+    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
   const temporary = await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
   const stage = join(temporary, "opencraft-server");
   try {
@@ -180,7 +182,7 @@ export async function packageHeadlessLinux(composition = {}) {
       schemaVersion: 1,
       version,
       platform: "linux",
-      architecture: "amd64",
+      architecture,
       nodeVersion: process.version,
       buildId: versionInfo.buildId,
       files,

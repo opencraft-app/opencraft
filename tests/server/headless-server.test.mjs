@@ -221,6 +221,8 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
 
 test("Linux tar packaging refuses foreign native build hosts before touching outputs", () => {
   assert.doesNotThrow(() => assertHeadlessBuildHost("linux", "x64"));
+  assert.doesNotThrow(() => assertHeadlessBuildHost("linux", "arm64", "arm64"));
+  assert.throws(() => assertHeadlessBuildHost("linux", "x64", "arm64"), /native Linux arm64/u);
   assert.throws(() => assertHeadlessBuildHost("darwin", "arm64"), /native Linux x64/u);
   assert.throws(() => assertHeadlessBuildHost("linux", "arm64"), /native Linux x64/u);
 });
