@@ -1,4 +1,5 @@
 {
+  "turnRecovery.scheduled": "模型暂时不可用，已安排自动重试（最多 {limit} 次）。",
   "chat.continue.failed": "无法确认回复是否已继续，请查看会话后重试。",
   "composer.model.failedTitle": "暂时无法加载模型",
   "composer.model.emptyTitle": "还没有可用模型",

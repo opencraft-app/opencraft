@@ -1,4 +1,5 @@
 {
+  "turnRecovery.scheduled": "The model is temporarily unavailable. Automatic retry is scheduled (up to {limit} retries).",
   "chat.continue.failed": "Could not confirm the continuation. Check the conversation before retrying.",
   "composer.model.failedTitle": "Couldn't load models",
   "composer.model.emptyTitle": "No models available yet",

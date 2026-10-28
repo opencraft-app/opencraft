@@ -9,7 +9,7 @@ import test from "node:test";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
-import { CodexEngineAdapter, capacityRetryDelayMs } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
@@ -190,8 +190,7 @@ test("a read admitted after cache invalidation cannot join the prior cut", async
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test("model capacity failures continue with exponential backoff capped at 120 seconds", async () => {
-  assert.deepEqual([0, 1, 2, 6, 7, 20].map(capacityRetryDelayMs), [1_000, 2_000, 4_000, 64_000, 120_000, 120_000]);
+test("provider failures continue through the durable Host queue without replaying user input", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-capacity-retry-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
@@ -206,23 +205,25 @@ test("model capacity failures continue with exponential backoff capped at 120 se
     const threadId = (await request("capacity:create", "thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
     await request("capacity:initial", "turn/start", { threadId, input: [{ type: "text", text: "Continue this task" }] });
     await request("capacity:fail", "test/completeTurn", { threadId, codexErrorInfo: "serverOverloaded" });
+    (adapter as any).providerRetry.now = () => Date.now() + 240_000;
+    await (adapter as any).providerRetry.recover();
     const retry = await waitFor(frames, frame => frame.method === "turn/started" && (frame.params as any).turn.id === "turn-2");
     assert.equal((retry.params as any).threadId, threadId);
     const accepted = (await request("capacity:inputs", "test/readAcceptedInputs", {})).data;
     assert.deepEqual(accepted.at(-1).params.input, []);
-    assert.match(accepted.at(-1).params.clientUserMessageId, /^capacity-retry:/);
+    assert.match(accepted.at(-1).params.clientUserMessageId, /^provider-retry:/);
     const usageDb=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
     try{
       const fact=usageDb.prepare("SELECT actor_id,actor_kind,source_kind,mode FROM token_usage_submissions WHERE server_id=? AND thread_id=? AND input_id=?").get("local-codex",threadId,accepted.at(-1).params.clientUserMessageId);
       assert.deepEqual({...fact},{actor_id:null,actor_kind:"session",source_kind:"system",mode:"start"});
     }finally{usageDb.close();}
-    await request("capacity:fail-again", "test/completeTurn", { threadId, codexErrorInfo: "serverOverloaded" });
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    await request("capacity:fail-again", "test/completeTurn", { threadId, codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } });
     assert.equal((await request("capacity:before-second-backoff", "test/readAcceptedInputs", {})).data.length, 2);
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    (adapter as any).providerRetry.now = () => Date.now() + 480_000;
+    await (adapter as any).providerRetry.recover();
     assert.equal((await request("capacity:second-retry", "test/readAcceptedInputs", {})).data.length, 3);
     await request("capacity:done", "test/completeTurn", { threadId });
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    await (adapter as any).providerRetry.recover();
     assert.equal((await request("capacity:after-success", "test/readAcceptedInputs", {})).data.length, 3);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
@@ -1683,5 +1684,38 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     }
     await call("thread/archive", { threadId });
     assert.equal(rows(), 0, "successful archive is reported only after derived cleanup");
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("Codex provider retry classifies terminal native failures and respects stop", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-retry-native-policy-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sequence = 0;
+  const rpc = async (method: string, params: Record<string, unknown>) => {
+    const id = `policy-${++sequence}`;
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const response = await waitFor(frames, frame => frame.id === id);
+    assert.equal(response.error, undefined); return response.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    for (const code of ["internalServerError", { responseTooManyFailedAttempts: { httpStatusCode: 502 } }, "unauthorized", "sandboxError", "contextWindowExceeded", "usageLimitExceeded"]) {
+      const threadId = (await rpc("thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
+      const before = (await rpc("test/readAcceptedInputs", {})).data.length;
+      await rpc("turn/start", { threadId, input: [{ type: "text", text: "Original task" }] });
+      await rpc("test/completeTurn", { threadId, codexErrorInfo: code });
+      // Rate-limit discovery runs inside the per-thread lane; wait for that lane to settle.
+      await (adapter as any).withThreadOperation(threadId, async () => {});
+      const result = await rpc("opencraft/turn-recovery/read", { threadId });
+      const expected = code === "internalServerError" || typeof code === "object";
+      assert.equal(result.recovery?.state === "scheduled", expected);
+      if (expected) {
+        await rpc("turn/interrupt", { threadId, turnId: "already-failed" });
+        (adapter as any).providerRetry.now = () => Date.now() + 1_000_000;
+        await (adapter as any).providerRetry.recover();
+        const inputs = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId);
+        assert.equal(inputs.length, before + 1, "stop must revoke the automatic continuation");
+      }
+    }
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

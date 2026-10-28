@@ -465,17 +465,40 @@ backoff retain the existing admission rules. Usage refresh owns later recovery.
 
 ### Codex model capacity retry
 
-The Codex Host continues only a failed Turn whose native error code is
-`serverOverloaded`. It starts an empty continuation after 1, 2, 4, … seconds,
-capped at 120 seconds between attempts. A successful or different failure ends
-the sequence. New user input, an active Turn, or queued input takes precedence;
-the Host checks the latest authoritative Turn before starting a retry and keeps
-the native subscription while a retry is pending. An unconfirmed `turn/start`
-outcome stops automatic retries so the Host cannot duplicate execution.
-An older Host without the `opencraft/capacity-retry` capability is supported by
-the active Conversation runtime using the same delay cap and empty continuation.
-When the Host advertises version 1, the client cancels its fallback timer and
-leaves retry ownership with the Host.
+The Codex Host owns a durable provider retry queue in `@opencraft/host-recovery`.
+Only structured native failures qualify: overload, connection/stream loss and
+HTTP 500/502/503/504 (including native retry exhaustion carrying that status).
+Authorization, budget/context, policy, malformed requests and tool/sandbox
+failures are terminal. Error prose cannot authorize a retry.
+
+A chain permits four automatic continuations after the original attempt.
+Overload waits start at 5 seconds; other transient failures at 60 seconds.
+Exponential delay is capped at 120 seconds before up-to-one-delay jitter.
+Rate-limit failures consult the existing account-pool owner: a ready account
+can route again, held/exhausted accounts require known reset times. Unknown
+or unavailable routing facts decline retry; subscription waits beyond six hours
+are declined. Waiting adds a 15-second buffer and up to 30 seconds of jitter.
+No credit/reset policy is changed. Native global quota notifications cannot
+identify a pooled account and are not used to invent reset times.
+
+The engine writer lease protects `provider-turn-retry.sqlite`. It retains IDs,
+category, due time and spent attempts across restarts, without prompts or
+credentials. Preparation consumes a durable attempt before asynchronous work.
+Duplicate failure events cannot create another queued attempt. Before sending,
+the Host rechecks native thread status, latest failed Turn and pending user work.
+A new message, steer, queue/Goal change, stop, archive or delete revokes pending
+continuation, including during tool preparation. A final admission fence precedes
+the native send. Unknown acceptance is visible and is never blindly replayed.
+
+Codex has already accepted the failed Turn, so continuation starts with empty
+input rather than re-sending the user's task or replaying shell commands.
+Automatic work keeps system provenance and existing native model/thread settings.
+`opencraft/turn-recovery` reports scheduled, exhausted and unconfirmed states;
+reconnecting clients read the same Host projection. The old
+`opencraft/capacity-retry` v1 capability remains advertised to suppress legacy
+client timers. Failed historical Turns are not scanned or retroactively retried.
+DSH/Pi retain their existing native failure behavior and shared process-loss
+recovery; the new provider retry policy is currently wired to Codex only.
 
 ### Native history read fault boundary
 

@@ -156,3 +156,6 @@ export class InterruptedTurnRecovery {
     await this.flight?.catch(() => undefined); this.managed.database.close();
   }
 }
+
+export { ProviderTurnRetry, type ProviderRetry, type ProviderRetryPort } from "./provider-retry.js";
+export { codexProviderFailure, pooledRetryAt, providerRetryDecision, PROVIDER_RETRY_LIMIT, type ProviderFailure } from "./provider-retry-policy.js";
