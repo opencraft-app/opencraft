@@ -284,3 +284,79 @@ use normal draining and retirement, never candidate revocation.
 
 See [generation upgrade transactions](full-upgrade-generations.md) for plan
 acceptance, compatibility and compensation boundaries.
+
+## Split account Core owner handoff
+
+Linux split accounts expose authenticated local `/owner-handoff` with protocol 1.
+The private `scripts/full-upgrade/account-core-owner.mjs` adapter uses the same
+fence/inspect/release/cold-ready/resume lifecycle as other upgrade owners. Its
+fixed private descriptor contains the Unix endpoint, expected PID and control
+token. It is not a complete parent upgrade recipe.
+
+The account authority owns OAuth and maintenance subprocesses, account mutations,
+HTTP request bodies, the upstream concurrency queue, credential refresh, complete
+response streams and affinity writes. Fence closes new proxy requests before body
+reading, and closes new account operations before dispatch. Previously admitted
+operations finish naturally. Source-side OAuth poll/cancel remains available;
+pending logins block release. Periodic maintenance stops admitting work while
+fenced. A disconnected caller does not cancel an accepted account write. A lost
+proxy delivery receipt latches durable uncertainty, including after process
+replacement, and cannot produce an idle proof.
+
+The account writer never opens native history or changes generation routing.
+APP/native, route pins, loaded questions/approvals, goals, schedules, queues,
+rollouts and attachments retain their original owners and processes. Proxy wire
+protocol, Host tokens and account RPCs are unchanged, so old and new APP owners
+can use either provider. A proxy 503 includes Retry-After; native retries have a
+finite budget. A surviving native process is not a promise that its Turn will
+survive a long maintenance window. A stream already admitted is fully drained;
+new model requests can fail when that budget expires.
+
+The source binds the operation, epoch, fence, boot ID and incarnation to a fresh
+15-second proof. Release rechecks zero occupancy, seals image-turn associations,
+completed OAuth receipts and exact reset-credit attempt keys/outcomes, then closes
+the account services and records the current storage digest. Completed unknown
+reset outcomes stay unknown; handoff does not redeem or replay them. Uncertain
+in-flight work blocks release. `abort` reopens only the same source before writer
+release begins, preserving accepted work. The source process must then stop;
+its kernel accounts lock prevents a successor from opening the same data root.
+
+Before startup recovery or expiry pruning, a frozen successor reads every table
+and schema/migration row in `account-pool.sqlite`, runs integrity/foreign-key
+checks, verifies SQLite sidecar permissions, and reads every file under secrets,
+login and refresh. Credential references are checked at their external paths.
+Owner files/directories must belong to the service UID and exclude group/other
+permissions; links and unknown credential records are rejected. Cold readiness
+also validates credentials, the original storage digest, fixed CLI hash, proxy
+port, endpoints, token selector, data/HOME/cwd configuration and retained receipt
+digest. It binds the actual bundle hash, Node version/modules ABI, platform and
+architecture to the successor incarnation. Resume recomputes it; a prior
+process's readiness cannot authorize a replacement. Frozen construction does not
+run login recovery or remove maintenance files. The durable resume decision
+precedes those normal startup effects, and admission waits for their completion.
+Retained records are independent of readiness and survive open-state restarts.
+Protocol 1 shares a 64 MiB durable limit and a 128 MiB response limit; complete
+serialization with successor headroom is checked before the old writer closes.
+A list that cannot fit leaves the source available for abort without truncation.
+
+The supported safe starting point is protocol-1 split accounts with unchanged
+account migrations 1–3, fixed CLI and configuration. A legacy provider or combined
+Core needs an explicit maintenance bridge. Combined shutdown also stops native
+execution; it cannot claim split continuity. Such a bridge records any normal
+question/approval cancellation and actual interruption, without editing logs,
+arming goals or replaying mutations.
+
+After confirmed release, a failed candidate is stopped before restarting a
+compatible previous bundle against current data. The recovered process takes a
+new cold proof before admission opens. It never restores an old database snapshot.
+An unconfirmed release stays fenced for explicit reconciliation. The deployment
+owner retains its existing activation lock throughout switching and compensation.
+Account evidence is not a backup or cold-read proof for native/router/Host stores.
+
+The isolated split drill supports `OPENCRAFT_CORE_HANDOFF_DRILL=1` for real CLI
+long streams, shell continuity, candidate failure, stale-proof rejection and
+native retry exhaustion. `OPENCRAFT_CORE_COMPAT_ONLY=1` runs a short wire test;
+`OPENCRAFT_DRILL_LEGACY_OWNER` plus `OPENCRAFT_DRILL_LEGACY_CORE=1` or
+`OPENCRAFT_DRILL_LEGACY_RUNTIME=1` selects a separately built fixed baseline child.
+Only synthetic credentials and a loopback model are used. Reports retain exact
+Node/CLI/build evidence and measured interruption, not external OAuth/model claims.

@@ -7,10 +7,17 @@ const options = JSON.parse(await readFile(process.argv[3]!, "utf8"));
 let shutdown: ((code: number) => Promise<void>) | undefined;
 const onFailure = () => void shutdown?.(1);
 const service = process.argv[2] === "runtime" ? await startCodexAppServer({ ...options, onFailure })
-  : await startCodexCore({ ...options, onFailure, fetch: (input: string | URL | Request, init?: RequestInit) => {
+  : await startCodexCore({ ...options, onFailure,
+    createMaintenanceClient: options.syntheticMaintenance ? async () => ({
+      request: async (method: string) => method === "account/login/start"
+        ? { type: "chatgptDeviceCode", loginId: "synthetic-login", verificationUrl: "https://example.invalid", userCode: "SYNTHETIC" } : {},
+      subscribeNotification: () => () => {}, close: async () => {},
+    }) as import("@opencraft/account-pool-host").CodexMaintenanceClient : undefined,
+    fetch: (input: string | URL | Request, init?: RequestInit) => {
     const raw = input instanceof Request ? input.url : String(input);
     // Both quota maintenance and inference stay on the local fixture server.
-    const target = raw.includes("/wham/usage") ? `${options.upstreamBaseUrl}/usage` : raw;
+    const target = raw.includes("/wham/usage") ? `${options.upstreamBaseUrl}/usage`
+      : raw.includes("/wham/rate-limit-reset-credits") ? `${options.upstreamBaseUrl}/reset-credits${raw.endsWith("/consume") ? "/consume" : ""}` : raw;
     if (new URL(target).hostname !== "127.0.0.1") throw new Error("Non-local model request in isolated drill");
     return fetch(target, init);
   } });

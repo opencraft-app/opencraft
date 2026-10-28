@@ -112,7 +112,9 @@ export async function startCodexAccountPoolServer(options: {
   readonly proxy: CodexAccountPoolProxy;
   readonly host?: string;
   readonly port?: number;
-}): Promise<{ readonly url: string; close(): Promise<void> }> {
+  readonly admissionOpen?: () => boolean;
+  readonly onUncertain?: (route: string) => void | Promise<void>;
+}): Promise<{ readonly url: string; activeCount(): number; close(): Promise<void> }> {
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "::1") throw new TypeError("Account Pool server must bind to loopback");
   let consecutiveProxyFailures = 0;
@@ -122,6 +124,7 @@ export async function startCodexAccountPoolServer(options: {
     const requestStartedAt = Date.now();
     progress.stage = "read-body";
     let releaseUpstreamSlot: (() => void) | null = null;
+    let dispatched = false;
     const abort = new AbortController();
     const onAborted = () => abort.abort(new Error("Account Pool client disconnected"));
     const onOutgoingClose = () => { if (!outgoing.writableEnded) onAborted(); };
@@ -149,7 +152,7 @@ export async function startCodexAccountPoolServer(options: {
         headers: requestHeaders(incoming),
         ...(body === undefined ? {} : { body: new Uint8Array(body) }),
         signal: abort.signal,
-      }));
+      }), () => { dispatched = true; });
       outgoing.statusCode = response.status;
       outgoing.statusMessage = response.statusText;
       for (const [name, value] of response.headers) outgoing.setHeader(name, value);
@@ -162,6 +165,11 @@ export async function startCodexAccountPoolServer(options: {
       );
       consecutiveProxyFailures = 0;
     } catch (error) {
+      // Once an upstream mutation may have been dispatched, disconnect is not
+      // a delivery receipt. The owner retains uncertainty until reconciliation.
+      if (dispatched && !["GET", "HEAD"].includes(incoming.method ?? "GET")) {
+        await options.onUncertain?.((incoming.url ?? "/").split("?", 1)[0]);
+      }
       if (!abort.signal.aborted && !outgoing.destroyed && !(error instanceof RangeError)) {
         consecutiveProxyFailures += 1;
         console.error("[opencraft account-pool]", JSON.stringify({
@@ -191,6 +199,11 @@ export async function startCodexAccountPoolServer(options: {
     }
   };
   const server = createServer((incoming, outgoing) => {
+    if (options.admissionOpen?.() === false) {
+      outgoing.writeHead(503, { "content-type": "application/json", "retry-after": "1", connection: "close" });
+      outgoing.end(JSON.stringify({ error: { message: "Account Pool maintenance" } }));
+      incoming.resume(); return;
+    }
     const path = (incoming.url ?? "/").split("?", 1)[0];
     const progress = {
       method: ["GET", "POST", "HEAD", "DELETE"].includes(incoming.method ?? "GET") ? incoming.method ?? "GET" : "other",
@@ -216,6 +229,7 @@ export async function startCodexAccountPoolServer(options: {
   let closing: Promise<void> | null = null;
   return {
     url: `http://${displayHost}:${address.port}`,
+    activeCount: () => active.size,
     close: () => closing ??= (async () => {
       // Existing native Turns may need another model request while a different
       // Turn is still streaming. Keep accepting until the proxy is idle; then
