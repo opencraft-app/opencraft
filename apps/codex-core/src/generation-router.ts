@@ -233,7 +233,7 @@ class RoutingSession {
       try { result = await peer.call(method, params, () => { sent = true; if (creation) this.registry.markSent(ticket); }, null); }
       finally {
         if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)
-          && typeof id === "string" && /^opencraft:host:\d{1,16}$/u.test(id)) {
+          && typeof id === "string" && /^opencraft:(?:host:)?\d{1,16}$/u.test(id)) {
           console.info("[history-route-stages]", JSON.stringify({ requestId: id, method,
             routeReadyMs: nativeStarted - received, nativeRpcMs: performance.now() - nativeStarted }));
         }

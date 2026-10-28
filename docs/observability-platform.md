@@ -372,3 +372,8 @@ Browser capabilities, telemetry and dashboard navigation use the selected server
 增量历史核对从十个完整原生 Turn 开始，沿原 cursor 继续到所有脏 Turn 的最老边界；
 完整重建仍读取全部历史。这样小增量不再反复投影一百轮未变的工具输出。此改动不减少
 最终返回的 Item、正文或旧页，不用窗口轮数替代完整轮数；原生大小限制仍按原策略缩页。
+
+直接转发的 metadata-only `thread/read` 和原生 cursor 页同样返回关联计时，覆盖首屏
+窗口因大小限制回退的读取。它们没有缓存串行等待、来源验证或索引读页阶段，这些字段
+缺失而非伪造零；`nativeRpcMs` 包含直通原生往返，`projectionMs` 包含回复处理和投影。
+原生 RPC 自身仍未拆分内部排队与磁盘/投影时间。

@@ -96,6 +96,7 @@ function nativeHistoryTooLarge(error: unknown): boolean {
 type RpcRecord = Record<string, unknown>;
 
 interface PendingRequest {
+  readonly historyTiming?: { readonly pairId: string; readonly started: number; nativeStarted?: number };
   usageAttemptId?: string;
   readonly metadataSender?: import("@opencraft/appserver-protocol").MessageSender | null;
   readonly clientId: string;
@@ -876,6 +877,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
+    const receivedAt = performance.now();
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
@@ -1218,6 +1220,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           this.validateSubmissionContext(context);
         }
         const pending: PendingRequest = { clientId, clientEpoch: requestClientEpoch, originalId: id, method: message.method as string, params,
+          ...(["thread/read", "thread/turns/list"].includes(string(message.method)) ? { historyTiming: { pairId: randomUUID(), started: receivedAt } } : {}),
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
         if (message.method === "turn/start" || message.method === "turn/steer") {
           const inputId = string(params.clientUserMessageId);
@@ -1252,6 +1255,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           const threadId = string(params.threadId);
           this.cancelNativeRelease(threadId);
         }
+        if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
         try{await this.writePhysical({ ...message, id: physicalId });}
         catch(error){if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
       };
@@ -1652,6 +1656,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       const pending = this.pending.get(String(id));
       if (pending !== undefined && typeof message.method !== "string") {
+        const receivedAt = performance.now();
         this.pending.delete(String(id));
         if (pending.timer) clearTimeout(pending.timer);
         this.observeExecutionReply(pending.method, pending.params, message, executionIncarnation);
@@ -1714,6 +1719,16 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
         if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
           this.projectSender, pending.method, pending.params, message.result) };
+        if (pending.historyTiming) {
+          const trace = pending.historyTiming, nativeRpcMs = receivedAt - (trace.nativeStarted ?? trace.started);
+          const timing = { pairId: trace.pairId, coreMs: performance.now() - trace.started,
+            nativeRpcMs, nativeRpcCount: 1, projectionMs: performance.now() - receivedAt,
+            ...(pending.method === "thread/read" ? { metadataMs: nativeRpcMs } : {}) };
+          this.historyDiagnostic({ event: "history-native-rpc", pairId: trace.pairId, requestId: String(id), method: pending.method, nativeRpcMs,
+            ...(typeof pending.params.limit === "number" ? { limit: pending.params.limit } : {}) });
+          this.historyDiagnostic({ event: "history-read-stages", method: pending.method, outcome: "result" in message ? "ok" : "failed", ...timing });
+          if ("result" in message) message = { ...message, result: { ...record(message.result), __opencraftHistoryTiming: timing } };
+        }
         const emitReply = () => { if (this.validClientRequest(pending)) this.emit({
           ...message,
           ...(this.messageAttachments && "result" in message ? {
