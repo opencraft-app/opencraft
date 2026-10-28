@@ -117,6 +117,7 @@ export async function startLocalAgentHost(options: {
   readonly ownerHandoff?: {
     open(): boolean;
     nativeLost(): Promise<void>;
+    recoverNative(restart: () => Promise<void>): Promise<void>;
     beginReceipt(request:unknown): (packet:Record<string,unknown>) => {id:string;receipt:string};
     acknowledgeReceipt(input:unknown): void;
     run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T>;
@@ -429,8 +430,8 @@ export async function startLocalAgentHost(options: {
   const restartBudget = new DshRestartBudget();
   restartBudget.ready();
   let restartOperation: Promise<void> | null = null;
-  const restartEngine = (automatic = false): Promise<void> => {
-    if (options.ownerHandoff) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
+  const restartEngine = (automatic = false, recoveringOwner = false): Promise<void> => {
+    if (options.ownerHandoff && !recoveringOwner) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
     if (closing) return Promise.reject(new Error("Local host is closing"));
     if (options.dshUrl || process.env.OPENCRAFT_DSH_URL?.trim()) return Promise.reject(new Error("Externally managed DSH must be restarted by its owner"));
     if (restartOperation) return restartOperation;
@@ -448,6 +449,10 @@ export async function startLocalAgentHost(options: {
           client.baseUrl = await supervisor.start();
           if (closing) { await supervisor.stop(); throw new Error("Local host is closing"); }
           await client.call("host.describe");
+          if (options.ownerHandoff) {
+            await capabilityLink!.nativeOwner("seal-bootstrap");
+            await capabilityLink!.nativeOwner("resume");
+          }
           if (modelConfiguration) {
             await modelConfiguration.initialize();
             await modelConfiguration.config.synchronize(true);
@@ -493,7 +498,12 @@ export async function startLocalAgentHost(options: {
           adapter.engineRecovered();
           return;
         } catch (error) {
-          if (closing || attempt === 2) { engineStatus = "failed"; throw error; }
+          if (closing || attempt === 2) {
+            // Recovery may fail after native admission was resumed. Do not leave
+            // that writer running when the owner records recovery-required.
+            if (recoveringOwner) await supervisor.stop();
+            engineStatus = "failed"; throw error;
+          }
           await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
         }
       }
@@ -503,7 +513,12 @@ export async function startLocalAgentHost(options: {
   onEngineExit = error => {
     if (closing) return;
     adapter.engineUnavailable(error);
-    if (options.ownerHandoff) { engineStatus = "failed";void options.ownerHandoff.nativeLost().catch(() => {});return; }
+    if (options.ownerHandoff) {
+      engineStatus = "restarting";
+      void options.ownerHandoff.recoverNative(() => restartEngine(true, true))
+        .catch(() => { engineStatus = "failed"; });
+      return;
+    }
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
@@ -904,7 +919,7 @@ export async function startLocalAgentHost(options: {
     get dshUrl() { return client.baseUrl; },
     get engineProcessId() { return supervisor.processId; },
     get engineState() { return engineStatus; },
-    restartEngine,
+    restartEngine: (automatic = false) => restartEngine(automatic),
     async close(): Promise<void> {
       if (closing) return;
       closing = true;

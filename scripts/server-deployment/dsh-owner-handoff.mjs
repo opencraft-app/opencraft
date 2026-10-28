@@ -17,6 +17,16 @@ export class DshOwnerHandoff {
   beginReceipt = request => this.receipts.begin(request);
   acknowledgeReceipt = input => this.receipts.acknowledge(input);
   attach(host) { this.host = host; }
+  recoverNative(restart) {
+    // Share the control queue: a fence that wins the race must never be reopened
+    // by automatic crash recovery. This is the same live owner, not a handoff.
+    const operation = this.operation.catch(()=>{}).then(async()=>{
+      if (!this.open()) throw new Error('DSH owner is fenced; recovery required');
+      try { await restart(); }
+      catch (error) { await this.nativeLost(); throw error; }
+    });
+    this.operation = operation; return operation;
+  }
   async nativeLost() {
     const state = this.authority.snapshot();
     this.rememberCarried();

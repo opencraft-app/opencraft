@@ -87,3 +87,7 @@ Host 队列沿 `ThreadQueueStore` 的终态语义：`deleted` 与 `dispatched` �
 首次无协议维护桥接由维护执行器在确认旧 writer 及其整个 cgroup 已退出、只读冷读取后写入同样绑定的回执；不追认旧版原子 fence。
 
 同一已恢复准入的 writer 再次 fence 时，在内存保留先前已接收的精确责任回执；仅当前 writer 的 fenced 阶段且清单、回执文件均未变化时继续单列 carriedUnknown，不因新 fence 代次而误计回占用。release 仍重写绑定新代次的封存回执，继任 cold-ready/resume 仍只接受该新代次，不能复用旧证明。
+
+## 普通引擎崩溃与交接崩溃
+
+同一存活 Host 的 open/ready owner 遇到 native 引擎意外退出时，沿既有有界重启预算重建引擎、路由代次和流连接，重新完成 bootstrap sealing 与 native admission 后恢复 health。自动恢复与 fence/release 共用控制队列；队列中 fence 先完成时不允许恢复重开写入。已经 fenced、released、cold-ready 或持久化未知时仍保持 recovery-required。恢复失败才将 open owner 持久 fence，不能把正常崩溃直接当成交接释放不明。手动 restartEngine 仍拒绝绕过交接。
