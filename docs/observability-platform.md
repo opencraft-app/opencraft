@@ -377,3 +377,22 @@ Browser capabilities, telemetry and dashboard navigation use the selected server
 窗口因大小限制回退的读取。它们没有缓存串行等待、来源验证或索引读页阶段，这些字段
 缺失而非伪造零；`nativeRpcMs` 包含直通原生往返，`projectionMs` 包含回复处理和投影。
 原生 RPC 自身仍未拆分内部排队与磁盘/投影时间。
+
+## 业务可用性与主动告警
+
+`platform.status`表示真实新连接探测的可用性：按site/hostId/engine分开，任一失败为degraded，
+缺样本或超过90秒为unknown，不再用producer心跳代替。`collection.freshness`独立报告采集；
+`availability.ratio`为5分钟内实际探测成功比例，`availability.last_success`为最近成功。
+Observe `/health`中的`ready`只说明查询服务已启动；`ok/status`反映探测可用性，`collection`
+保存采集覆盖和后端健康。Headless业务health还必须汇总已有Host readiness，unavailable或
+connecting不能返回ok。业务进程的readiness不替代每分钟全新initialize/thread/list。
+
+部署者拥有探针与通知调度，不把私有产品装配放进公共核心。核心接收严格字段白名单的
+availability/lifecycle事件，指标不含事件ID或用户身份。故障按component/engine/errorCode归组；
+仅保留稳定分类或数值RPC码，不导出原始异常。默认总览首屏显示“新连接、成功率、最近成功、
+拨测、故障分类”，采集新鲜度另列。
+
+事件数量超过500时，snapshot的events是明细样本（eventSampleTruncated=true），eventSummary
+和eventCount覆盖选定窗口全部已存事件；长事故的Prometheus测量单列measurementsWindow（最长24小时），
+不缩短完整事件聚合窗口；timeline保留部署、重启与显式owner_handoff。
+truncated=false仅指聚合完整，不代表明细全量；baseline.compare拒绝用抽样明细作可靠比较。

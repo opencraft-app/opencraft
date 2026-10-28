@@ -98,6 +98,7 @@ export function installClientObservation(client: AppServerClient) {
       }
     }
     observeEvent({kind:'rpc',...diagnostic,requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
+      ...(event.type==='failed'&&Number.isSafeInteger((event.error as Error & {code?:number}).code)?{errorCode:`rpc:${(event.error as Error & {code?:number}).code}`}:{ }),
       outcome:event.type==='completed'?'ok':event.type==='timed-out'?'timeout':event.type==='aborted'?'aborted':'failed',
       durationMs:event.durationMs,measurementScope:'rpc'});
   });

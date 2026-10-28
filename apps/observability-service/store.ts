@@ -89,7 +89,7 @@ export class ObserveStore {
           accepted++;
           if(actor&&event.actorKind==='human'&&event.originClass==='interactive')this.db.prepare('INSERT OR IGNORE INTO activity_hours VALUES(?,?)').run(Math.floor(event.at/3600000),actor);
           if(event.kind==='recovery'&&event.recoveryId)this.db.prepare(`INSERT INTO recovery_episodes VALUES(?,?,?,?) ON CONFLICT(recovery_id) DO UPDATE SET first_at=MIN(recovery_episodes.first_at,excluded.first_at),last_at=MAX(recovery_episodes.last_at,excluded.last_at),outcome=CASE WHEN recovery_episodes.outcome='ok' THEN 'ok' ELSE excluded.outcome END`).run(event.recoveryId,event.at,event.at,event.outcome??'unknown');
-          this.db.prepare('INSERT INTO producers VALUES(?,?,?,?) ON CONFLICT(component,producer) DO UPDATE SET received=excluded.received,body=json_patch(producers.body,excluded.body)')
+          if(!['availability','lifecycle'].includes(event.kind))this.db.prepare('INSERT INTO producers VALUES(?,?,?,?) ON CONFLICT(component,producer) DO UPDATE SET received=excluded.received,body=json_patch(producers.body,excluded.body)')
             .run(event.component,event.producerId,now,body);
           const add = (name: string, dimension: string, value: number) => this.db.prepare('INSERT INTO metrics VALUES(?,?,?) ON CONFLICT(name,dimension) DO UPDATE SET value=metrics.value+excluded.value').run(name,dimension,value);
           if (event.kind === 'rpc' && event.method && event.outcome) add('rpc',JSON.stringify([event.method,event.outcome]),1);
@@ -149,9 +149,34 @@ export class ObserveStore {
     this.accepted += accepted; this.rejected += rejected; this.dropped += dropped;
     return {accepted,rejected,duplicates,dropped};
   }
-  events(from: number, to: number, through: number, count = limits.rows) {
-    return this.db.prepare('SELECT body,received FROM events WHERE at>=? AND at<=? AND received<=? ORDER BY at,seq LIMIT ?')
-      .all(from,to,through,count+1).map(row => ({...JSON.parse(row.body as string), receivedAt: row.received}));
+  events(from: number, to: number, through: number, count = limits.rows, incidentRef: string | null = null) {
+    return this.db.prepare("SELECT body,received FROM events WHERE at>=? AND at<=? AND received<=? AND (? IS NULL OR json_extract(body,'$.incidentRef')=?) ORDER BY at,seq LIMIT ?")
+      .all(from,to,through,incidentRef,incidentRef,count+1).map(row => ({...JSON.parse(row.body as string), receivedAt: row.received}));
+  }
+  availability() {
+    return this.db.prepare(`SELECT body,received FROM (
+      SELECT body,received,row_number() OVER (
+        PARTITION BY json_extract(body,'$.site'),json_extract(body,'$.hostId'),json_extract(body,'$.engine')
+        ORDER BY at DESC,seq DESC) AS rank FROM events WHERE kind='availability'
+    ) WHERE rank=1`).all().map(row => ({...JSON.parse(row.body as string),receivedAt: row.received}));
+  }
+  availabilityRatios(from: number, to: number) {
+    return this.db.prepare(`SELECT json_extract(body,'$.site') AS site,json_extract(body,'$.hostId') AS hostId,
+      json_extract(body,'$.engine') AS engine,count(*) AS count,
+      avg(CASE WHEN json_extract(body,'$.outcome')='ok' THEN 1.0 ELSE 0 END) AS ratio
+      FROM events WHERE kind='availability' AND at>=? AND at<=? GROUP BY site,hostId,engine`).all(from,to);
+  }
+  eventSummary(from: number, to: number, through: number, incidentRef: string | null = null) {
+    return this.db.prepare(`SELECT kind,component,json_extract(body,'$.engine') AS engine,
+      json_extract(body,'$.outcome') AS outcome,json_extract(body,'$.errorCode') AS errorCode,
+      json_extract(body,'$.site') AS site,json_extract(body,'$.hostId') AS hostId,
+      count(*) AS count,min(at) AS firstAt,max(at) AS lastAt
+      FROM events WHERE at>=? AND at<=? AND received<=? AND (? IS NULL OR json_extract(body,'$.incidentRef')=?)
+      GROUP BY kind,component,engine,outcome,errorCode,site,hostId`).all(from,to,through,incidentRef,incidentRef);
+  }
+  lifecycle(from: number, to: number) {
+    return this.db.prepare(`SELECT body FROM events WHERE kind='lifecycle' AND at>=? AND at<=? ORDER BY at,seq`).all(from,to)
+      .map(row => JSON.parse(row.body as string));
   }
   producers() {
     const latest=this.db.prepare('SELECT component,producer,received,body FROM producers WHERE component=? ORDER BY received DESC,producer DESC LIMIT 1');
