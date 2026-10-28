@@ -465,7 +465,9 @@ facts independently of open Thread subscriptions. The shared
 `ThreadCatalogPublisher` owns a per-incarnation source and revision; facts contain
 an upsert, name/status patch, removal or legacy invalidation, never Turns, tool
 payloads, credentials or temporary title-helper conversations. The native
-Thread creation receipt is authoritative; Codex allocation is retained until
+Thread creation receipt is authoritative. The Server retains accepted but not
+yet indexed entries in its directory projection until native listing observes
+them; a lagging native index cannot erase an acknowledged creation. Codex allocation is retained until
 its declared first-Turn acceptance boundary. DSH lifecycle commits and Engine
 Host provider receipts (including Pi) use the same event contract.
 

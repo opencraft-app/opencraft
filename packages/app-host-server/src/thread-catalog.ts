@@ -11,16 +11,35 @@ export class ThreadCatalogPublisher {
   private revision = 0;
   private readonly allocations = new Map<string, Thread>();
   private readonly temporary = new Set<string>();
+  private readonly unindexed = new Map<string, Thread>();
   constructor(private readonly notify: (method: string, params: ThreadCatalogChange) => void,
     private readonly firstTurnDurable = false) {}
 
   private publish(change: ThreadCatalogMutation): void {
+    if (change.type === "upsert") this.unindexed.set(change.thread.id, change.thread);
+    else if (change.type === "remove") this.unindexed.delete(change.threadId);
+    else if (change.type === "patch") {
+      const row = this.unindexed.get(change.threadId);
+      if (row) this.unindexed.set(row.id, { ...row, ...(change.name === undefined ? {} : { name: change.name }),
+        ...(change.status === undefined ? {} : { status: change.status }) });
+    }
     const event: ThreadCatalogChange = { version: 1, source: this.source, revision: ++this.revision, change };
     // Directory observers cannot turn a committed native mutation into a failed RPC.
     try { this.notify(THREAD_CATALOG_CHANGED, event); } catch { /* Reconnect reconciles the directory snapshot. */ }
   }
   observeResult(method: string, params: unknown, result: unknown): void {
     const input = object(params), output = object(result), raw = object(output.thread);
+    if (method === "thread/list" && Array.isArray(output.data)) {
+      // Native persistence and its discovery index need not become visible together.
+      // Retire a committed creation only when the native directory observes it.
+      for (const value of output.data) { const id = object(value).id; if (typeof id === "string") this.unindexed.delete(id); }
+      const firstPage = input.cursor == null && input.archived !== true && input.sortDirection !== "asc"
+        && (input.sortKey == null || input.sortKey === "updated_at")
+        && Object.keys(input).every(key => ["cursor", "limit", "archived", "sortKey", "sortDirection", "useStateDbOnly"].includes(key));
+      if (firstPage && this.unindexed.size) output.data = [...this.unindexed.values(), ...output.data]
+        .sort((a, b) => Number(object(b).recencyAt ?? object(b).updatedAt ?? 0) - Number(object(a).recencyAt ?? object(a).updatedAt ?? 0));
+      return;
+    }
     if (method === "thread/unsubscribe" && typeof input.threadId === "string") { this.temporary.delete(input.threadId); }
     if (method === "thread/start" || method === "thread/fork") {
       const key = typeof raw.id === "string" ? raw.id : "";
@@ -67,5 +86,5 @@ export class ThreadCatalogPublisher {
       if (status && !this.allocations.has(key)) this.publish({ type: "patch", threadId: key, status });
     }
   }
-  clear(): void { this.allocations.clear(); this.temporary.clear(); }
+  clear(): void { this.allocations.clear(); this.temporary.clear(); this.unindexed.clear(); }
 }

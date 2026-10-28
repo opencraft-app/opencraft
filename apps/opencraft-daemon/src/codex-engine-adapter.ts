@@ -1017,6 +1017,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const epoch = this.clientEpoch(clientId);
       try {
         const result = await this.durableCatalog.list(record(message.params));
+        this.catalogChanges.observeResult("thread/list", message.params, result);
         if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId, "thread/list");
       } catch {
         if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Conversation catalog is unavailable" } }, clientId);

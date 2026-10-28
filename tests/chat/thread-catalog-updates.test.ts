@@ -90,3 +90,14 @@ test("leaving a View does not erase a pending durable creation; observer failure
   const broken = new ThreadCatalogPublisher(() => { throw new Error("Closed observer"); });
   assert.doesNotThrow(() => broken.observeResult("thread/start", {}, { thread: row("committed") }));
 });
+
+test("Server directory retains committed rows until the native index observes them", () => {
+  const publisher = new ThreadCatalogPublisher(() => {}, true);
+  publisher.observeResult("thread/start", {}, { thread: row("new") });
+  publisher.observeResult("turn/start", { threadId: "new" }, { turn: { id: "committed" } });
+  const first = page(); publisher.observeResult("thread/list", { cursor: null }, first);
+  assert.equal(first.data[0]?.id, "new", "a new read cannot lose a committed but unindexed creation");
+  const indexed = page(row("new")); publisher.observeResult("thread/list", { cursor: null }, indexed);
+  const later = page(); publisher.observeResult("thread/list", { cursor: null }, later);
+  assert.equal(later.data.length, 0, "native observation releases the temporary directory tail");
+});

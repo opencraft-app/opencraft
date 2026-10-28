@@ -193,6 +193,7 @@ export async function startEngineHost(options: {
         if (clientId.length > 4096) { socket.close(1008); return; }
         const state = client(clientId);
         const reply = (result: unknown) => {
+          catalogChanges.observeResult(frame.method, frame.params, result);
           if (!stopped && socket.readyState === WebSocket.OPEN) socket.send(serializeHistoryReply(
             { jsonrpc: "2.0", id: frame.id, result, [LOGICAL_CLIENT_FIELD]: clientId }, frame.method));
         };
@@ -353,7 +354,6 @@ export async function startEngineHost(options: {
             let result;
             try { result = await provider.request(method, params, state.owner); }
             catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
-            catalogChanges.observeResult(method, params, result);
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
             if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
             if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");

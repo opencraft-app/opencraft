@@ -789,7 +789,7 @@ export async function startLocalAgentHost(options: {
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
             dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
-        if (request.method === "thread/delete") catalogChanges.observeResult(request.method, request.params, result);
+        if (request.method === "thread/delete" || request.method === "thread/list") catalogChanges.observeResult(request.method, request.params, result);
         if (request.method === "initialize") {
           state.initialized = true;
           state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];
