@@ -125,7 +125,9 @@ test("duplicate history reads share native work and logical unsubscribe retires 
     const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
     await request("pause", "test/pauseThreadReads", { paused: true });
     const params = { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } };
-    for (const id of ["read-a", "read-b"]) await adapter.send(JSON.stringify({ id, method: "thread/read", params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    for (const id of ["read-a", "read-b"]) await adapter.send(JSON.stringify({ id, method: "thread/read",
+      params: id === "read-a" ? params : { initialTurnsPage: { limit: 10 }, includeTurns: false, watch: true, threadId },
+      [LOGICAL_CLIENT_FIELD]: "reader" }));
     assert.equal((adapter as any).cachedHistoryInFlight, 1, "identical pending reads must use one native operation");
     await adapter.send(JSON.stringify({ id: "detach", method: "thread/unsubscribe", params: { threadId }, [LOGICAL_CLIENT_FIELD]: "reader" }));
     await new Promise(resolve => setImmediate(resolve));

@@ -1290,7 +1290,9 @@ export class CodexEngineAdapter implements DuplexTransport {
     // native cut. Completed reads are never retained, and page shape/watch/
     // checkpoint parameters remain part of the identity.
     const { historyReadId, ...readParams } = historyParams;
-    const key = JSON.stringify([clientId, epoch, method, readParams]);
+    const key = JSON.stringify([clientId, epoch, method, readParams], (_key, value) =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
     if (this.cachedHistoryWaiters >= 64) {
       this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
         data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
