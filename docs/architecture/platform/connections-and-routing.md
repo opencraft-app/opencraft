@@ -456,3 +456,32 @@ remain available. Changing only this presentation setting does not reset the
 physical connection or interrupt executions. If no eligible target exists, the
 client exposes its existing hostless/management surface instead of silently
 selecting a hidden Host. Visibility is not an authorization policy.
+
+
+## Live conversation directory
+
+Server lifecycle adapters publish `opencraft/thread-catalog/changed` metadata
+facts independently of open Thread subscriptions. The shared
+`ThreadCatalogPublisher` owns a per-incarnation source and revision; facts contain
+an upsert, name/status patch, removal or legacy invalidation, never Turns, tool
+payloads, credentials or temporary title-helper conversations. The native
+Thread creation receipt is authoritative; Codex allocation is retained until
+its declared first-Turn acceptance boundary. DSH lifecycle commits and Engine
+Host provider receipts (including Pi) use the same event contract.
+
+Hub routing delivers directory facts to admitted directory clients following
+the same readership as `thread/list`. A client need not open or resume a Thread
+to discover it. Directory visibility does not grant message-send or execution
+authority. Existing admission, account scopes and resource permissions remain
+owned by their respective services.
+
+The Workbench applies a scoped tail of unacknowledged Server facts over its
+existing paged query snapshot. New rows paint even during an initial read or a
+blocked later page. Duplicate publisher revisions are ignored; patches cannot
+invent rows and removal tombstones reject late status updates. Successful reads
+acknowledge facts only through the read's starting boundary. Once an old read
+settles, any remaining facts fold into the same query pages without changing
+page cursors; the tail is then released. Reconnection uses the existing Host
+query-recovery snapshot and a fresh publisher incarnation, not a durable cursor
+invented from a socket generation. Old clients retain the invalidation-only
+notification behavior.

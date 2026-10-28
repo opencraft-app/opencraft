@@ -1,3 +1,5 @@
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
+import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { LocalHostResources } from "./host-resources.js";
 import { randomUUID } from "node:crypto";
@@ -64,6 +66,11 @@ export async function startEngineHost(options: {
     if (closing || url.pathname !== "/rpc" || url.searchParams.get("token") !== token) { socket.destroy(); return; }
     sockets.handleUpgrade(request, socket, head, client => sockets.emit("connection", client));
   });
+  const catalogClients = new Set<ExecutionEngineClient>();
+  const catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    for (const client of catalogClients) client.notify(method, { ...params });
+  });
+  const catalogSubscriptions = options.providers.map(provider => provider.subscribe((method, params) => catalogChanges.observeNotification(method, params)));
   const connectionObservations = new Set<() => number>();
   sockets.on("connection", socket => {
     // A backend read is canceled with its frontend connection. Only logical
@@ -104,7 +111,7 @@ export async function startEngineHost(options: {
     const subscriptions = options.providers.map(provider => provider.subscribe((method, params) => {
       consumerEvent(method, params);
       const threadId = params.threadId ?? params.thread?.id;
-      for (const state of clients.values()) if (method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && (state.opened.has(threadId) || state.reading.has(threadId))) state.owner.notify(method, params);
+      for (const state of clients.values()) if (method === THREAD_CATALOG_CHANGED || method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && (state.opened.has(threadId) || state.reading.has(threadId))) state.owner.notify(method, params);
     }));
     // A frontend connection owns one backend incarnation. Replacing only the
     // backend would lose its connection-scoped Thread attachments while the
@@ -113,6 +120,7 @@ export async function startEngineHost(options: {
     const stop = () => {
       if (stopped) return;
       stopped = true;
+      for (const state of clients.values()) catalogClients.delete(state.owner);
       const connection = backend;
       backend = undefined; backendStarting = undefined;
       subscriptions.forEach(unsubscribe => unsubscribe());
@@ -210,6 +218,7 @@ export async function startEngineHost(options: {
           }
           if (method === "runtime/client/disconnect") {
             for (const provider of options.providers) provider.disconnect(state.owner);
+            catalogClients.delete(state.owner);
             clients.delete(clientId);
             for (const [id, request] of platform) if (request.clientId === clientId) { platform.delete(id); clearTimeout(request.timer); request.reject(new Error("Platform tool owner disconnected")); }
             backend?.send(JSON.stringify(frame)); return;
@@ -231,6 +240,7 @@ export async function startEngineHost(options: {
             const initialized = options.legacy
               ? await singleflight(`initialize:${JSON.stringify(params)}`, () => callLegacy(method, params, clientId))
               : piInitialization;
+            if (!stopped && clients.get(clientId) === state) catalogClients.add(state.owner);
             const access = parseAppServerMethodAccess(initialized.capabilities?.extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
             reply({ ...initialized, capabilities: { ...initialized.capabilities, extensions: { ...initialized.capabilities?.extensions, ...resources?.extensions,
               ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD])] } } : {}),
@@ -343,6 +353,7 @@ export async function startEngineHost(options: {
             let result;
             try { result = await provider.request(method, params, state.owner); }
             catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
+            catalogChanges.observeResult(method, params, result);
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
             if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
             if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");
@@ -393,6 +404,8 @@ export async function startEngineHost(options: {
     get storageOutcomes() { return options.providers.flatMap(provider => [...provider.storageOutcomes ?? []]); },
     async close() {
       closing = true;
+      for (const unsubscribe of catalogSubscriptions) unsubscribe();
+      catalogChanges.clear(); catalogClients.clear();
       for (const socket of sockets.clients) socket.terminate();
       await new Promise<void>(resolve => sockets.close(() => resolve()));
       await new Promise<void>(resolve => server.close(() => resolve()));

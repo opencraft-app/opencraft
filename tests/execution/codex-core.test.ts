@@ -805,3 +805,21 @@ test("Core reconnect before the first client caches its successful handshake for
     assert.equal(reply.result.capabilities.extensions["opencraft/read-history"].itemDetails, true);
   } finally { await engine.close(); await replacement?.close(); await f.close(); }
 });
+
+for (const overlays of [false, true]) test(`directory readers learn a committed creation without opening its Thread (overlays=${overlays})`, async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(overlays);
+    await a.rpc("creator", "initialize"); await a.rpc("directory-reader", "initialize");
+    const before = await a.rpc("directory-reader", "thread/list", {});
+    const { thread } = await a.rpc("creator", "thread/start", { cwd: "/synthetic", ephemeral: false });
+    const events = () => a.frames.filter(frame => frame.method === "opencraft/thread-catalog/changed"
+      && frame[LOGICAL_CLIENT_FIELD] === "directory-reader" && frame.params.change?.type === "upsert"
+      && frame.params.change.thread.id === thread.id);
+    assert.equal(events().length, 0, "allocation is not a durable catalog entry");
+    await a.rpc("creator", "turn/start", { threadId: thread.id, clientUserMessageId: "catalog-creation", input: [] });
+    assert.equal(events().length, 1, "native acceptance publishes independently of Thread subscriptions");
+    assert.deepEqual(events()[0].params.change.thread.turns, []);
+    assert.equal((await a.rpc("directory-reader", "thread/list", {})).data.length, before.data.length + 1);
+  } finally { await f.close(); }
+});

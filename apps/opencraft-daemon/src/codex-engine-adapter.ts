@@ -32,6 +32,7 @@ import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
 import { CodexTokenUsageRuntime } from "./token-usage-runtime.js";
 import { CodexThreadTitles } from "./codex-thread-titles.js";
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { DurableThreadCatalog } from "./durable-thread-catalog.js";
 import { ThreadIdentity, assertSubmissionIdentity, readThreadMessageIds } from "./thread-identity.js";
 import { projectThreadMessageResult, projectThreadMessageNotification } from "./thread-message-projection.js";
@@ -360,6 +361,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   private identity: ThreadIdentity | null = null;
   private get messageSenders() { return this.identity?.senders ?? null; }
   private get threadMetadata() { return this.identity?.metadata ?? null; }
+  private readonly catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    const change = params.change;
+    const topology = change.type === "upsert" ? this.options.collaboration?.topology?.(change.thread.id) : null;
+    const metadata = topology && change.type === "upsert"
+      ? { ...params, change: { ...change, thread: { ...change.thread, ...topology } } } : params;
+    for (const clientId of this.initializedClients) this.emit({ method, params: metadata }, clientId);
+  }, true);
   private durableCatalog: DurableThreadCatalog | null = null;
   private metadataRequests = 0;
   private messageAttachments: OpenCraftMessageAttachments | null = null;
@@ -411,6 +419,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       },
       serialize: (threadId, work) => this.withThreadOperation(threadId, work),
       changed: (threadId, name) => {
+        this.catalogChanges.observeNotification("thread/name/updated", { threadId, threadName: name });
         this.durableCatalog?.observe("thread/name/updated", { threadId, threadName: name });
         // Native name/set notifications are subscription-scoped; every admitted
         // catalog reader must invalidate even when this Thread has no open View.
@@ -1428,6 +1437,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       await this.transcriptCache?.close(); this.transcriptCache = null;
+      this.catalogChanges.clear();
       this.durableCatalog?.close(); this.durableCatalog = null;
       await this.providerRetry?.close(); this.providerRetry = null;
       await this.recovery?.close(); this.recovery = null;
@@ -1839,6 +1849,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
     }
     if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
+    this.catalogChanges.observeNotification(string(message.method), message.params);
     this.durableCatalog?.observe(string(message.method), message.params);
     if (message.method === "thread/archived" || message.method === "thread/deleted") {
       this.schedules?.suspend(threadId);
@@ -2481,6 +2492,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (configuration && threadId) this.sessionMcpConfigurations.set(threadId, structuredClone(configuration));
     }
     this.threadTitles?.observeResult(method, params, result);
+    this.catalogChanges.observeResult(method, params, result);
     this.durableCatalog?.observe(method, params, result);
     try { this.identity?.observeResult(method, params, result, sender); }
     catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
