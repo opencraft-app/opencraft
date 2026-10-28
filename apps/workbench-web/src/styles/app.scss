@@ -3245,33 +3245,42 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
 .settings-control-switch {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  @include controls.density-target(36px, 20px);
   width: 36px;
   height: 20px;
+  flex: 0 0 auto;
   margin-left: auto;
   border: 0;
   border-radius: var(--radius-full);
   outline: none;
-  padding: 2px;
-  background: var(--color-border-default);
+  padding: 0;
+  background: transparent;
   cursor: pointer;
-  transition: background var(--transition-duration-basic) var(--ease-standard);
 
-  // The switch owns its track and touch target even inside a list action slot.
+  // The density floor enlarges the target, never the painted track.
   &::before {
     content: "";
     position: absolute;
-    width: max(36px, var(--size-control-hit-min));
-    height: max(20px, var(--size-control-hit-min));
     left: 50%;
     top: 50%;
+    width: 36px;
+    height: 20px;
     transform: translate(-50%, -50%);
+    border-radius: inherit;
+    background: var(--color-border-default);
+    transition: background var(--transition-duration-basic) var(--ease-standard);
   }
 
   span {
+    position: absolute;
+    left: calc((100% - 36px) / 2 + 2px);
+    top: 50%;
     display: block;
     width: 16px;
     height: 16px;
+    transform: translateY(-50%);
     border-radius: 50%;
     background: var(--color-background-surface);
     box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
@@ -3279,11 +3288,11 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   }
 
   &[aria-checked="true"] {
-    background: var(--color-accent-blue);
-    span { transform: translateX(16px); }
+    &::before { background: var(--color-accent-blue); }
+    span { transform: translate(16px, -50%); }
   }
 
-  &:focus-visible {
+  &:focus-visible::before {
     box-shadow: 0 0 0 2px var(--focus-ring);
   }
 
@@ -3667,6 +3676,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   .settings-control-segmented button,
   .segmented-control[data-appearance="inset"] button::before,
   .settings-control-switch,
+  .settings-control-switch::before,
   .settings-control-switch span,
   .settings-theme-card,
   .settings-control-list-item__actions > button,
