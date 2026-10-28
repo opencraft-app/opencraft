@@ -146,8 +146,10 @@ test('npm preflight rejects unsupported bootstrap before any pack/download', asy
   const root=await mkdtemp(join(tmpdir(),'full-release-preflight-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const record=fixture();record.updater.minBootstrap=2;
   const manifest={name:trust.packageName,version:'1.0.0',dist:{integrity:'sha512-YWJj'},opencraftWeb:{schemaVersion:1,workerProtocol:1,buildId:'fixture'},opencraftFullRelease:signPreflight(record,privateKey,keyId)};
+  // A deployment temp directory may belong to a CommonJS package.
+  await writeFile(join(root,'package.json'),JSON.stringify({type:'commonjs'}));
   await writeFile(join(root,'metadata.json'),JSON.stringify(manifest));
-  const npm=join(root,'npm');await writeInstalledFile(npm,`#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(${JSON.stringify(join(root,'calls'))},process.argv[2]+'\\n');console.log(fs.readFileSync(${JSON.stringify(join(root,'metadata.json'))},'utf8'));`,0o755);
+  const npm=join(root,'npm.mjs');await writeInstalledFile(npm,`#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(${JSON.stringify(join(root,'calls'))},process.argv[2]+'\\n');console.log(fs.readFileSync(${JSON.stringify(join(root,'metadata.json'))},'utf8'));`,0o755);
   const source=new URL('../../scripts/web-deployment/releases.mjs',import.meta.url).href;
   const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',`const {createNpmReleaseSource}=await import(${JSON.stringify(source)});try{await createNpmReleaseSource({registry:${JSON.stringify(trust.registry)},channel:'test',packageName:${JSON.stringify(trust.packageName)}}).latest();process.exitCode=2;}catch(error){console.log(error.message);}`],{env:{...process.env,OPENCRAFT_NPM_EXECUTABLE:npm,OPENCRAFT_NPM_PACKAGE_NAME:trust.packageName,OPENCRAFT_FULL_RELEASE_TRUST_JSON:JSON.stringify(trust)}});
   assert.match(stdout,/requires bootstrap maintenance/);
