@@ -17,10 +17,29 @@ Settings routes use the shared controls in `@opencraft/extension-react`. A page 
 - A list page uses the same header and one card of `SettingsListItem` rows. The primary action is on the section title row; row actions stay quiet.
 - A master-detail page still starts with the same page header. The list and the detail are the section body, not a second visual system.
 
+## Spacing, type, and targets
+
+- Space only on the 4px scale: 0, 4, 8, 12, 16, 20, 24, 32, 40. That is `--spacing` (4px) times 0, 1, 2, 3, 4, 5, 6, 8, or 10.
+- Type uses the existing settings roles: `settingsTitle`, `settings-section-title`, `body`, `metadata`, and `control`.
+- Metadata text uses `--color-text-secondary`, not tertiary, so 12px copy stays above the contrast minimum.
+
 ## Switch targets
 
 Settings switches keep their original 36px by 20px painted track and centered 16px thumb. The shared density preference expands the transparent button target to at least 44px by 44px in touch presentation, independent of viewport width. Enlarging a hit area must not stretch the visible track.
 
+## Names that stay in the active language
+
+These are names, not sentences. A Chinese page may show them as written:
+
+- Product and plugin names: OpenCraft, OpenCraft Theme Pack, OpenCraft Voice Input.
+- Package and channel identifiers, such as `@tencent/opencraft-web · latest`.
+- Names the user or another system stored, such as a conversation title.
+
+Any other visible sentence that is not in the active language is omitted.
+
 ## Narrow width
 
-- At phone width the navigation is the shell's. Page content keeps the same header, section, card, and stacked rows. Buttons wrap instead of sharing a line with a long value.
+- At phone width the navigation is the shell's. Page content keeps the same header, section, card, and stacked rows. Buttons wrap instead of sharing a line with a long value. Do not ellipsize a value that the user needs to read, such as a reset time.
+- A value that no longer fits beside its name moves under that name and aligns to the same left edge. It does not stay stuck to the right.
+- A version, build id, or other identifier uses a monospace face and wraps only after `.` or `-`. A Latin word or digit run is not split across lines.
+- A list row keeps its action on the name line, at the right, with at least a 44px target. The action does not take a line of its own.

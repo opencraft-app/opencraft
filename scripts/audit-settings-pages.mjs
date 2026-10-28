@@ -36,12 +36,29 @@ try {
     };
     await openSettings();
     await page.locator(".settings-page__navigation").waitFor({ timeout: 20000 });
-    const names = await page.locator(".settings-page__navigation .ui-navigation-item").evaluateAll(nodes => nodes.map(node => (node.innerText || "").replace(/\s+/g, " ").trim()).filter(Boolean));
+    const seen = new Set();
+    for (let pass = 0; pass < 8; pass += 1) {
+      const batch = await page.locator(".settings-page__navigation .ui-navigation-item").evaluateAll(nodes => nodes.map(node => (node.innerText || "").replace(/\s+/g, " ").trim()).filter(Boolean));
+      for (const name of batch) seen.add(name);
+      const moved = await page.locator(".settings-page__navigation").evaluate(nav => {
+        const before = nav.scrollTop;
+        nav.scrollTop = Math.min(nav.scrollHeight, before + nav.clientHeight);
+        return nav.scrollTop !== before;
+      });
+      if (!moved) break;
+    }
+    const names = [...seen];
     for (const name of names) {
-      let item = page.locator(".settings-page__navigation .ui-navigation-item", { hasText: name }).first();
-      if (!(await item.count())) { await openSettings(); item = page.locator(".settings-page__navigation .ui-navigation-item", { hasText: name }).first(); }
-      if (!(await item.count())) continue;
-      await item.evaluate(element => element.click());
+      try {
+      if (!(await page.locator(".settings-page__navigation").count())) await openSettings();
+      const clicked = await page.evaluate((label) => {
+        const nav = document.querySelector(".settings-page__navigation");
+        const item = nav && [...nav.querySelectorAll(".ui-navigation-item")].find(element => (element.innerText || "").includes(label));
+        if (!item) return false;
+        item.click();
+        return true;
+      }, name);
+      if (!clicked) { await openSettings(); continue; }
       await page.waitForTimeout(400);
       const measured = await page.evaluate(async ({ width, axeReady }) => {
         const content = document.querySelector(".settings-page__content") ?? document.querySelector(".settings-page__viewport");
@@ -80,6 +97,21 @@ try {
         }
         const overflow = [];
         const english = [];
+        const breaks = [];
+        const textWalker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+        while (textWalker.nextNode()) {
+          const node = textWalker.currentNode;
+          const value = node.textContent || "";
+          const pattern = /[A-Za-z0-9_]{2,}/g;
+          let match;
+          while ((match = pattern.exec(value))) {
+            const range = document.createRange();
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + match[0].length);
+            const tops = new Set([...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0).map(rect => Math.round(rect.top)));
+            if (tops.size > 1) breaks.push(match[0].slice(0, 40));
+          }
+        }
         for (const element of content.querySelectorAll("*")) {
           if (!shown(element)) continue;
           const style = getComputedStyle(element);
@@ -92,7 +124,8 @@ try {
           if (element.childNodes.length && [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())) {
             fonts.set(`${style.fontSize}/${style.fontWeight}`, (fonts.get(`${style.fontSize}/${style.fontWeight}`) ?? 0) + 1);
             const text = element.innerText?.trim() ?? "";
-            if (text.length > 18 && (text.match(/[A-Za-z]/g) ?? []).length > text.length * 0.7 && text.includes(" ")) english.push(text.slice(0, 120));
+            const allowedName = /^(OpenCraft( Theme Pack| Voice Input)?)$/.test(text) || text.includes("@") || text.includes("·") || !/[.,!?]/.test(text);
+            if (!allowedName && text.length > 18 && (text.match(/[A-Za-z]/g) ?? []).length > text.length * 0.7 && text.includes(" ")) english.push(text.slice(0, 120));
           }
           const clamped = style.webkitLineClamp && style.webkitLineClamp !== "none";
           const clipped = element.scrollWidth > element.clientWidth + 1 && style.overflowX !== "visible" && style.textOverflow === "ellipsis";
@@ -113,13 +146,14 @@ try {
         }
         const oddSpacing = [...spacing.keys()].filter(value => Math.abs(value / spacingUnit - Math.round(value / spacingUnit)) > 0.05);
         const oddFonts = [...fonts.keys()].filter(token => !allowedSize.has(token.split("/")[0]));
-        return { alignment, spacing: Object.fromEntries([...spacing].sort((a, b) => a[0] - b[0])), oddSpacing, fonts: Object.fromEntries(fonts), oddFonts, overflow: overflow.slice(0, 20), english: [...new Set(english)].slice(0, 20), unnamed, smallTargets: smallTargets.slice(0, 20), axe };
+        return { alignment, spacing: Object.fromEntries([...spacing].sort((a, b) => a[0] - b[0])), oddSpacing, fonts: Object.fromEntries(fonts), oddFonts, overflow: overflow.slice(0, 20), breaks: [...new Set(breaks)].slice(0, 20), english: [...new Set(english)].slice(0, 20), unnamed, smallTargets: smallTargets.slice(0, 20), axe };
       }, { width, axeReady: Boolean(axePath) });
       report.pages.push({ scheme, width, name, url: page.url(), ...measured });
+      } catch (error) { console.log("skip", scheme, width, name, error.message.slice(0, 120)); }
     }
     await context.close();
   }
 } finally { await browser.close(); }
 await writeFile(out, JSON.stringify(report, null, 2));
-const problems = report.pages.reduce((sum, page) => sum + page.alignment.length + page.oddSpacing.length + page.overflow.length + page.english.length + page.unnamed.length + (page.axe?.length ?? 0), 0);
+const problems = report.pages.reduce((sum, page) => sum + page.alignment.length + page.oddSpacing.length + page.overflow.length + (page.breaks?.length ?? 0) + page.english.length + page.unnamed.length + page.smallTargets.length + (page.axe?.reduce((n, item) => n + item.count, 0) ?? 0), 0);
 console.log(`wrote ${out} pages=${report.pages.length} findings=${problems}`);

@@ -6,6 +6,7 @@ import { FormattedMessage, useIntl } from '@opencraft/i18n/react';
 import { WEB_UPDATE_PATH, parseWebUpdateStatus } from '@opencraft/web-update-protocol';
 import type { WebUpdateStatus } from '@opencraft/web-update-protocol';
 import { SettingsPageHeader, SettingsSection, SettingsGroup, SettingsRow, SettingsActions, SettingsButton, SettingsNotice, SettingsTextInput } from '@opencraft/extension-react';
+import { SettingsIdentifier } from './settings-identifier';
 
 import { FullUpgradeSettings } from './full-upgrade-settings';
 import { browserServerContext } from '../runtime/server-context';
@@ -131,12 +132,12 @@ function ManagedWebUpdatesSettings() {
     {error && <SettingsNotice tone="error">{error}</SettingsNotice>}
     {status && <SettingsSection title={intl.formatMessage({ id: 'webUpdates.version', defaultMessage: 'Website version' })} description={status.execution ? intl.formatMessage({ id: 'webUpdates.executionScope', defaultMessage: 'Includes the execution gateway and daemon. Codex core, CLI and DSH engine are maintained separately.' }) : undefined} action={<SettingsButton aria-busy={pending === 'check' || status.checking} disabled={pending !== null || !!running} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>}>
       <SettingsGroup>
-        <SettingsRow label={<FormattedMessage id="webUpdates.installed" defaultMessage="Installed version" />} description={status.current.buildId}>{status.current.version}</SettingsRow>
-        {status.execution && <SettingsRow label={<FormattedMessage id="webUpdates.executionVersion" defaultMessage="Execution gateway version" />} description={status.execution.buildId ?? undefined}>
-          {status.execution.version ?? '—'}
+        <SettingsRow label={<FormattedMessage id="webUpdates.installed" defaultMessage="Installed version" />} description={status.current.buildId ? <SettingsIdentifier value={status.current.buildId} /> : undefined}><SettingsIdentifier value={status.current.version} /></SettingsRow>
+        {status.execution && <SettingsRow label={<FormattedMessage id="webUpdates.executionVersion" defaultMessage="Execution gateway version" />} description={status.execution.buildId ? <SettingsIdentifier value={status.execution.buildId} /> : undefined}>
+          {status.execution.version ? <SettingsIdentifier value={status.execution.version} /> : '—'}
         </SettingsRow>}
         <SettingsRow label={<FormattedMessage id="webUpdates.latest" defaultMessage="Latest version" />} description={`${status.packageName} · ${status.channel}`}>
-          {status.latest?.version ?? (status.checking
+          {status.latest?.version ? <SettingsIdentifier value={status.latest.version} /> : (status.checking
             ? intl.formatMessage({ id: 'webUpdates.checking', defaultMessage: 'Checking…' })
             : status.checkError ? intl.formatMessage({ id: 'webUpdates.checkFailed', defaultMessage: 'Check failed' })
             : status.checkedAt ? intl.formatMessage({ id: 'webUpdates.notPublished', defaultMessage: 'No published release' })

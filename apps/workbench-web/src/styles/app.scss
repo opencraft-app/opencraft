@@ -2852,7 +2852,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 .settings-control-page-header {
   h2 {
     @include typography.role(settings-title);
-    margin: 0 0 6px;
+    margin: 0 0 8px;
   }
 
   p {
@@ -2882,7 +2882,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 3px;
+    margin: 0 0 4px;
   }
 
   p {
@@ -2932,7 +2932,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   min-height: var(--height-token-settings-row);
   align-items: center;
   justify-content: space-between;
-  gap: 7px 24px;
+  gap: 8px 24px;
   padding: 12px var(--padding-token-settings-row-inline);
 
 }
@@ -2940,7 +2940,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 .settings-control-row--stacked {
   flex-direction: column;
   align-items: start;
-  gap: 14px;
+  gap: 16px;
   padding-block: 16px;
 }
 
@@ -2949,7 +2949,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   flex: 1 1 var(--width-token-settings-copy);
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .settings-control-row__label {
@@ -3095,7 +3095,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 
   button {
     display: inline-flex;
@@ -3154,10 +3154,10 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   max-width: 100%;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
-  gap: 2px;
+  gap: 4px;
   border: 0.5px solid transparent;
   border-radius: 10px;
-  padding: 2px;
+  padding: 4px;
   background: transparent;
 
   // Paint stays compact; the real buttons retain the shared touch-hit floor.
@@ -3324,7 +3324,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   gap: 12px;
   border: 0.5px solid var(--color-border-default);
   border-radius: 14px;
-  padding: 10px;
+  padding: 12px;
   background: var(--color-background-surface);
   color: var(--color-text);
   font: inherit;
@@ -3384,7 +3384,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     height: 9px;
     align-self: end;
     justify-self: center;
-    margin-bottom: 7px;
+    margin-bottom: 8px;
     border-radius: 5px;
     background: var(--color-background-button-primary);
   }
@@ -3394,7 +3394,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 
   strong {
     font: var(--typography-control-compact-font);
@@ -3451,7 +3451,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 
   strong {
     font: var(--typography-body-font);
@@ -3467,7 +3467,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     letter-spacing: var(--typography-metadata-tracking);
   }
   span {
-    color: var(--color-text-tertiary);
+    color: var(--color-text-secondary);
   }
 
   em {
@@ -3576,11 +3576,11 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
 .settings-control-notice {
   display: grid;
-  gap: 3px;
-  margin-top: 10px;
+  gap: 4px;
+  margin-top: 12px;
   border: 0.5px solid var(--color-border-default);
-  border-radius: 10px;
-  padding: 11px 12px;
+  border-radius: 12px;
+  padding: 12px;
   background: var(--color-surface-secondary);
   color: var(--color-text-secondary);
   font: var(--typography-metadata-font);
@@ -3622,6 +3622,8 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 .settings-control-actions--wrap { flex-wrap: wrap; }
 .settings-control-actions--between { justify-content: space-between; }
 .settings-control-actions--end { justify-content: flex-end; }
+.settings-page .ui-button,
+.settings-page .ui-button__label { gap: 8px; }
 
 /* The update row can carry four independently sized actions. Wrap instead of
    shrinking nowrap labels outside their buttons on narrow settings pages. */
@@ -3658,15 +3660,14 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     padding-top: 24px;
   }
   .settings-control-list-item {
-    grid-template-columns: 32px minmax(0, 1fr);
-    &[data-has-icon="false"] {
-      grid-template-columns: minmax(0, 1fr);
-      .settings-control-list-item__actions { grid-column: 1; }
-    }
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto;
+    &[data-has-icon="true"] { grid-template-columns: auto minmax(0, 1fr) auto; }
   }
-  .settings-control-list-item__actions {
-    grid-column: 2;
-    justify-content: flex-start;
+  .settings-page .settings-control-list-item__actions > button:not(.settings-control-switch) {
+    min-width: 44px;
+    min-height: 44px;
+    height: auto;
   }
 }
 
@@ -12113,9 +12114,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 .settings-execution-endpoint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-machine-usage {
-  float: right; display: inline-flex; align-items: center; gap: 6px; @include typography.role(metadata, secondary);
+  float: right; display: inline-flex; align-items: center; gap: 8px; @include typography.role(metadata, secondary);
 }
-.settings-machine-usage__tag { padding: 2px 6px; border: 1px solid var(--color-border-default); border-radius: 4px; }
+.settings-machine-usage__tag { padding: 4px 8px; border: 1px solid var(--color-border-default); border-radius: 4px; }
 .settings-page__viewport[data-layout="master-detail"] > .settings-page__content > .settings-machine-identity {
   padding: 16px 24px; margin: 0;
 }
