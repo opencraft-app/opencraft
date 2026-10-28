@@ -78,3 +78,14 @@ test('private DSH Host input uses real native admission and journal; revocation 
  assert.equal((await attached.inputs.receipt('same','actor-input:revoked')).state,'unknown');
  authorized=true;await attached.inputs.submit('same','actor-input:revoked','never replay',()=>true);assert.equal(sent,1);
 });
+
+test('fenced HTTP input is rejected before a consumer lease is created',async t=>{
+ let leases=0,submissions=0,open=false;
+ const receipts={run:async(run:()=>Promise<void>)=>{if(!open)throw Error('fenced');return run();},beginReceipt:()=>{leases++;return()=>({id:'one',receipt:'exact'});},acknowledgeReceipt:()=>{}};
+ const inputs:any={receipt:async()=>null,submit:async()=>{submissions++;return null;}};
+ const server=createServer((request,response)=>void handleHostInput(request,response,'fixture',inputs,()=>true,receipts));
+ await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
+ const submit=()=>fetch(`http://127.0.0.1:${(server.address() as any).port}/host-inputs`,{method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:JSON.stringify({action:'submit',threadId:'thread',inputId:'actor-input:one',text:'fixture'})});
+ assert.equal((await submit()).status,503);assert.equal(leases,0);assert.equal(submissions,0);
+ open=true;assert.equal((await submit()).status,200);assert.equal(leases,1);assert.equal(submissions,1);
+});

@@ -117,6 +117,9 @@ function bridgeAppServerSocket(client, request, options) {
   const querySession = options.createAppServerQuerySession?.(frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   });
+  const dshPending = new Set();
+  const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
+  const dshKey = packet => JSON.stringify([packet.__opencraftClient ?? "",packet.id]);
   const forward = async (data, isBinary) => {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
@@ -125,7 +128,10 @@ function bridgeAppServerSocket(client, request, options) {
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
       const frame = identitySession ? await identitySession.prepareNative(data.toString("utf8"), options.submissionContext) : data;
-      if (frame !== null) upstream.send(frame, { binary: isBinary });
+      if (frame !== null) {
+        if (!isBinary) { const packet = dshPacket(frame);if (packet && packet.id !== undefined && typeof packet.method === "string") dshPending.add(dshKey(packet));if(dshPending.size>4096)throw new Error("DSH consumer request limit"); }
+        upstream.send(frame, { binary: isBinary });
+      }
     } catch {
       client.close(1011, "Thread identity service unavailable"); upstream.close();
     }
@@ -171,6 +177,14 @@ function bridgeAppServerSocket(client, request, options) {
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
         const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
         if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
+        if (!isBinary) {
+          const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
+          if (proof && dshPending.has(key)) {
+            if (typeof proof.id !== "string" || typeof proof.receipt !== "string") throw new Error("Invalid DSH receipt");
+            upstream.send(JSON.stringify({jsonrpc:"2.0",method:"opencraft/owner/receipt",params:proof}));
+          }
+          if (packet && !packet.method && packet.id !== undefined) dshPending.delete(key);
+        }
       } catch {
         client.close(1011, "Thread identity service unavailable"); upstream.close();
       }

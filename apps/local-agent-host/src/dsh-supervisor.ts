@@ -4,6 +4,7 @@ import type { Readable } from "node:stream";
 import { dirname, join } from "node:path";
 
 export interface DshSupervisorOptions {
+  readonly ownerRequired?: boolean;
   readonly repository?: string;
   readonly executable?: string;
   readonly runtimeDirectory?: string;
@@ -58,6 +59,7 @@ export class DshSupervisor {
       cwd: useSource ? repository : runtimeDirectory,
       env: {
         ...process.env,
+        ...(this.options.ownerRequired ? { OPENCRAFT_DSH_OWNER_REQUIRED: "1" } : {}),
         ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
         ...(this.options.dataDirectory ? { DSH_HOME: this.options.dataDirectory } : {}),
       },

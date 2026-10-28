@@ -71,6 +71,7 @@
       { "from": "../local-agent-host/src/dsh-skill-catalog.mjs", "to": "runtime/dsh/dsh-skill-catalog.mjs" },
       { "from": "../local-agent-host/src/dsh-skill-invocation.mjs", "to": "runtime/dsh/dsh-skill-invocation.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-engine.mjs", "to": "runtime/dsh/dsh-thread-engine.mjs" },
+      { "from": "../local-agent-host/src/dsh-native-owner.mjs", "to": "runtime/dsh/dsh-native-owner.mjs" },
       { "from": "../local-agent-host/src/dsh-background-jobs.mjs", "to": "runtime/dsh/dsh-background-jobs.mjs" },
       { "from": "../local-agent-host/src/dsh-instructions.mjs", "to": "runtime/dsh/dsh-instructions.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-storage.mjs", "to": "runtime/dsh/dsh-thread-storage.mjs" },

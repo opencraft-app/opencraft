@@ -140,6 +140,12 @@ export async function startEngineHost(options: {
         if (typeof message.method === 'string') consumerEvent(message.method, message.params ?? {});
         if (typeof message.method === 'string') nodeObserver('gateway').execution('dsh',message.method,message.params);
         const pending = internal.get(String(message.id));
+        if (message.opencraftDshReceipt) {
+          const proof = message.opencraftDshReceipt;
+          if (typeof proof.id !== "string" || typeof proof.receipt !== "string") { connection.close(1002); return; }
+          if (pending && !message.method) connection.send(JSON.stringify({jsonrpc:"2.0",method:"opencraft/owner/receipt",params:proof}));
+          delete message.opencraftDshReceipt;
+        }
         if (pending && !message.method) {
           internal.delete(String(message.id)); clearTimeout(pending.timer);
           message.error ? pending.reject(new AppServerRpcError(message.error)) : pending.resolve(message.result);

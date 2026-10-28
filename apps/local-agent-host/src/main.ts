@@ -69,6 +69,7 @@ const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
   "skills/action/read",
 ]);
 const replyClient = new AsyncLocalStorage<string>();
+const ownerReply = new AsyncLocalStorage<(packet:Record<string,unknown>) => {id:string;receipt:string}>();
 interface LogicalClient {
   readonly key: string;
   readonly clientId: string;
@@ -100,7 +101,9 @@ function rpcError(error: unknown): { code: number; message: string; data?: unkno
 
 function send(socket: WebSocket, value: unknown, method = ""): void {
   if (socket.readyState !== WebSocket.OPEN) return;
-  const packet = value as Record<string, unknown>, client = replyClient.getStore();
+  let packet = value as Record<string, unknown>;
+  const client = replyClient.getStore(), finish = ownerReply.getStore();
+  if (packet && "id" in packet && !("method" in packet) && finish) packet = {...packet,opencraftDshReceipt:finish(packet)};
   socket.send(serializeHistoryReply(client && packet && "id" in packet && !(LOGICAL_CLIENT_FIELD in packet)
     ? { ...packet, [LOGICAL_CLIENT_FIELD]: client } : packet, method));
 }
@@ -110,6 +113,14 @@ function sendClient(socket: WebSocket, clientId: string, packet: Record<string, 
 
 
 export async function startLocalAgentHost(options: {
+  readonly ownerHandoff?: {
+    open(): boolean;
+    nativeLost(): Promise<void>;
+    beginReceipt(request:unknown): (packet:Record<string,unknown>) => {id:string;receipt:string};
+    acknowledgeReceipt(input:unknown): void;
+    run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T>;
+    control(action: string, input: any): Promise<unknown>;
+  };
   readonly host?: string;
   readonly port?: number;
   readonly token?: string;
@@ -186,7 +197,7 @@ export async function startLocalAgentHost(options: {
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
       { insert: [{ id: "opencraft-capability", name: plugin, config: {
-      token: bridgeToken,
+      token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),
@@ -203,6 +214,7 @@ export async function startLocalAgentHost(options: {
   } : null);
   const profileSkills = new DshProfileSkillsHandler(persistentSkillsRoot, () => skillRefresh.changed());
   const supervisor = new DshSupervisor({
+    ownerRequired: !!options.ownerHandoff,
     executable: options.dshExecutable,
     repository: options.dshRepository,
     runtimeDirectory: options.runtimeDirectory,
@@ -214,7 +226,7 @@ export async function startLocalAgentHost(options: {
   cleanup.push(() => supervisor.stop());
   const dshUrl = options.dshUrl ?? await supervisor.start();
   const routing = storage.routing;
-  const client = new DshRoutedClient(dshUrl, routing);
+  const client = new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
   const lifecycle = new ThreadLifecycle(storage.threads,
     async id => {
@@ -376,17 +388,22 @@ export async function startLocalAgentHost(options: {
   };
   const hostInputOwner: DshExecutionOwner = { connectionId: "opencraft-host-input", identity: { id: "opencraft-host-input", username: "Host input" } };
   capabilities.allowHostExecution(hostInputOwner);
-  const inputs = dshHostInputs(adapter, authority, lifecycle, prepareThreadExecution, hostInputOwner);
+  const rawInputs = dshHostInputs(adapter, authority, lifecycle, prepareThreadExecution, hostInputOwner);
+  const inputs: typeof rawInputs = options.ownerHandoff ? {
+    receipt: (threadId,inputId) => options.ownerHandoff!.run(() => rawInputs.receipt(threadId,inputId),true),
+    submit: (threadId,inputId,text,canAdmit) => options.ownerHandoff!.run(() => rawInputs.submit(threadId,inputId,text,
+      async () => options.ownerHandoff!.open() && await canAdmit())),
+  } : rawInputs;
   const scheduleDirectory = options.dataDirectory ?? await mkdtemp(join(tmpdir(), "opencraft-schedules-"));
   if (!options.dataDirectory) cleanup.push(() => rm(scheduleDirectory, { recursive: true, force: true }));
   const schedules = new ConversationSchedules(scheduleDirectory,
     dshScheduleExecutionPort(adapter, authority, lifecycle, prepareThreadExecution), Date.now, event => console.warn("[opencraft local host]", event.event), () => {
       for (const [socket, clients] of socketClients) for (const state of clients.values())
         sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "opencraft/schedules/changed", params: {} });
-    });
+    }, () => options.ownerHandoff?.open() ?? true);
   const recoveryOwner: DshExecutionOwner = { connectionId: "opencraft-recovery", identity: { id: "opencraft-recovery", username: "System recovery" } };
   capabilities.allowHostExecution(recoveryOwner);
-  const interrupted = dshInterruptedTurns(scheduleDirectory, adapter, authority, lifecycle, prepareThreadExecution, recoveryOwner);
+  const interrupted = dshInterruptedTurns(scheduleDirectory, adapter, authority, lifecycle, prepareThreadExecution, recoveryOwner, () => options.ownerHandoff?.open() ?? true);
   cleanup.push(() => interrupted.close());
   cleanup.push(() => schedules.close());
   const storageSummaries = [...storage.summaries, { name: "interrupted-turn-recovery", status: interrupted.recovery.outcome.status,
@@ -399,6 +416,7 @@ export async function startLocalAgentHost(options: {
   restartBudget.ready();
   let restartOperation: Promise<void> | null = null;
   const restartEngine = (automatic = false): Promise<void> => {
+    if (options.ownerHandoff) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
     if (closing) return Promise.reject(new Error("Local host is closing"));
     if (options.dshUrl || process.env.OPENCRAFT_DSH_URL?.trim()) return Promise.reject(new Error("Externally managed DSH must be restarted by its owner"));
     if (restartOperation) return restartOperation;
@@ -471,6 +489,7 @@ export async function startLocalAgentHost(options: {
   onEngineExit = error => {
     if (closing) return;
     adapter.engineUnavailable(error);
+    if (options.ownerHandoff) { engineStatus = "failed";void options.ownerHandoff.nativeLost().catch(() => {});return; }
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
@@ -488,7 +507,7 @@ export async function startLocalAgentHost(options: {
     response.setHeader("cache-control", "no-store");
     response.setHeader("content-type", "application/json; charset=utf-8");
     if (url.pathname === "/host-inputs") {
-      void handleHostInput(request, response, token, inputs, options.authorizeHostInput); return;
+      void handleHostInput(request, response, token, options.ownerHandoff ? rawInputs : inputs, options.authorizeHostInput, options.ownerHandoff); return;
     }
     if (url.pathname === "/health") {
       response.statusCode = engineStatus === "ready" ? 200 : 503;
@@ -570,7 +589,11 @@ export async function startLocalAgentHost(options: {
       const clientId = typeof request?.[LOGICAL_CLIENT_FIELD] === "string" ? request[LOGICAL_CLIENT_FIELD] as string : "";
       if (clientId.length > 4096) { socket.close(1008, "Invalid logical client"); return; }
       const state = logicalClient(clientId), { owner, offered, openedThreads } = state;
-      await replyClient.run(clientId, async () => {
+      if (request.method === "opencraft/owner/receipt" && options.ownerHandoff) {
+        try { options.ownerHandoff.acknowledgeReceipt(request.params); } catch { socket.close(1008,"DSH receipt rejected"); }
+        return;
+      }
+      const dispatchRequest = async () => {
       if (request.method === "runtime/client/disconnect" && !("id" in request)) { await disconnectClient(state); return; }
       if (request && typeof request === "object" && typeof request.id === "string" && !("method" in request) && ("result" in request || "error" in request)) {
         if (capabilities.respond(owner, request.id, request.result, request.error)) return;
@@ -796,7 +819,14 @@ export async function startLocalAgentHost(options: {
       } catch (error) {
         send(socket, { jsonrpc: "2.0", id: request.id, error: rpcError(error) });
       }
-      });
+      };
+      try {
+        await replyClient.run(clientId, () => options.ownerHandoff
+          ? options.ownerHandoff.run(() => {
+            if (!("id" in request) || !("method" in request)) return dispatchRequest();
+            return ownerReply.run(options.ownerHandoff!.beginReceipt(request), dispatchRequest);
+          }, dshHandoffReconciliation(request)) : dispatchRequest());
+      } catch { sendClient(socket, clientId, {jsonrpc:"2.0",id:request.id,error:{code:-32001,message:"DSH admission fenced"}}); }
     });
     socket.once("close", () => {
       unsubscribeShared();
@@ -817,6 +847,7 @@ export async function startLocalAgentHost(options: {
   if (address === null || typeof address === "string") throw new Error("Local Agent Host did not bind a TCP port");
   if (options.dataDirectory) {
     const taskAgent = await startTasksAgent({
+      admission: options.ownerHandoff,
       directory: join(options.dataDirectory, "task-agent"),
       skillRoots: options.taskSkillDirectories ?? [],
       service: tasks,
@@ -834,12 +865,26 @@ export async function startLocalAgentHost(options: {
     // dirty revision so skills/list and the next send retry when it is ready.
     await skillRefresh.changed().catch(() => undefined);
   }
+  client.sealBootstrap();
+  if (options.ownerHandoff) await capabilityLink!.nativeOwner("seal-bootstrap");
+  if (options.ownerHandoff?.open()) await capabilityLink!.nativeOwner("resume");
   schedules.start();
   interrupted.recovery.wake();
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,
     inputs,
+    nativeOwner: (action: "inspect" | "fence" | "resume" | "seal-release" | "abort-release") => capabilityLink!.nativeOwner(action),
+    async handoffObservation(native: {id:string;turns:[string,string][];rpcInputs:[string,string][]}[] = []) {
+      const schedulesState = schedules.handoffObservation(), recovery = interrupted.recovery.handoffObservation();
+      const executions = authority.handoffObservation(native.flatMap(record => {
+        const logical = routing.logical(record.id);return [{...record,threadId:logical ?? record.id}];
+      }));
+      const coverage = storageSummaries.some(row=>row.movedAside) || modelConfiguration && !await modelConfiguration.config.appliedStateCurrent() ? "unknown" : "complete";
+      return {coverage,activeCount:executions.activeCount + schedulesState.flights + schedulesState.plans + schedulesState.unfinished + recovery.flights + recovery.unfinished,
+        executions,schedules:schedulesState,recovery};
+    },
+    resumeBackground() { schedules.start(); interrupted.recovery.wake(); },
     get storageOutcomes() { return storageSummaries; },
     get dshUrl() { return client.baseUrl; },
     get engineProcessId() { return supervisor.processId; },
@@ -856,4 +901,9 @@ export async function startLocalAgentHost(options: {
     try { await dispose(); } catch { /* Preserve the startup failure after releasing every resource. */ }
     throw error;
   }
+}
+
+function dshHandoffReconciliation(request: JsonRpcMessage): boolean {
+  if (!("method" in request)) return true;
+  return ["runtime/client/disconnect", "turn/interrupt", "thread/queue/remove", "thread/goal/clear", "thread/goal/pause", "opencraft/turn-recovery/read", "opencraft/interactions/read", "opencraft/interactions/respond"].includes(String(request.method));
 }
