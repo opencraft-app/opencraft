@@ -204,7 +204,7 @@ test("provider failures continue through the durable Host queue without replayin
     assert.deepEqual((frames.find(frame => frame.id === "writer:init")?.result as any).capabilities.extensions["opencraft/capacity-retry"], { version: 1 });
     const threadId = (await request("capacity:create", "thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
     await request("capacity:initial", "turn/start", { threadId, input: [{ type: "text", text: "Continue this task" }] });
-    await request("capacity:fail", "test/completeTurn", { threadId, codexErrorInfo: "serverOverloaded" });
+    await request("capacity:fail", "test/completeTurn", { threadId, testSystemError: true, codexErrorInfo: "serverOverloaded" });
     (adapter as any).providerRetry.now = () => Date.now() + 240_000;
     await (adapter as any).providerRetry.recover();
     const retry = await waitFor(frames, frame => frame.method === "turn/started" && (frame.params as any).turn.id === "turn-2");
@@ -217,7 +217,7 @@ test("provider failures continue through the durable Host queue without replayin
       const fact=usageDb.prepare("SELECT actor_id,actor_kind,source_kind,mode FROM token_usage_submissions WHERE server_id=? AND thread_id=? AND input_id=?").get("local-codex",threadId,accepted.at(-1).params.clientUserMessageId);
       assert.deepEqual({...fact},{actor_id:null,actor_kind:"session",source_kind:"system",mode:"start"});
     }finally{usageDb.close();}
-    await request("capacity:fail-again", "test/completeTurn", { threadId, codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } });
+    await request("capacity:fail-again", "test/completeTurn", { threadId, testSystemError: true, codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } });
     assert.equal((await request("capacity:before-second-backoff", "test/readAcceptedInputs", {})).data.length, 2);
     (adapter as any).providerRetry.now = () => Date.now() + 480_000;
     await (adapter as any).providerRetry.recover();

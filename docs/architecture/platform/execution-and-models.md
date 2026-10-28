@@ -488,7 +488,11 @@ Duplicate failure events cannot create another queued attempt. Before sending,
 the Host rechecks native thread status, latest failed Turn and pending user work.
 A new message, steer, queue/Goal change, stop, archive or delete revokes pending
 continuation, including during tool preparation. A final admission fence precedes
-the native send. Unknown acceptance is visible and is never blindly replayed.
+the native send. A native `systemError` thread is eligible only with its matching
+failed Turn; active or unknown state never authorizes continuation. Summary history
+omits error details, so a waiting receipt reuses its exact Turn-bound observed
+classification. A running successor cannot inherit that previous failure fact.
+Unknown acceptance is visible and is never blindly replayed.
 
 Codex has already accepted the failed Turn, so continuation starts with empty
 input rather than re-sending the user's task or replaying shell commands.

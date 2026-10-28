@@ -2680,14 +2680,18 @@ export class CodexEngineAdapter implements DuplexTransport {
     const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
     const thread = record(result.thread);
     if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
-    if (!await this.queueThreadIsIdle(turn.threadId)) return "live";
+    if (!await this.queueThreadIsIdle(turn.threadId, true)) return "live";
     const page = record(await this.requestPhysical("thread/turns/list", { threadId: turn.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
     const latest = record(Array.isArray(page.data) ? page.data[0] : null);
     if (!latest.id) return "unknown";
     if (latest.id !== turn.turnId) return "handled";
     if (latest.status === "completed") return "finished";
     if (latest.status !== "failed") return "unknown";
-    const failure = codexProviderFailure(latest.error);
+    // Summary history deliberately omits error details. The waiting receipt's
+    // classification is bound to this exact failed Turn, not to prose or a scan.
+    // A running successor has no such observed failure fact and cannot reuse it.
+    const failure = Object.hasOwn(latest, "error") ? codexProviderFailure(latest.error)
+      : turn.state === "running" ? { kind: "permanent" as const } : turn.failure;
     if (failure.kind === "permanent") return "handled";
     if (failure.kind === "rate-limit") {
       const accounts = this.poolStore ? this.accountViews(this.poolStore)
@@ -2820,7 +2824,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (thread.canAcceptDirectInput === false) throw new OpenCraftQueueRpcError(-32600, "Thread does not accept direct user input");
   }
 
-  private async queueThreadIsIdle(threadId: string): Promise<boolean> {
+  private async queueThreadIsIdle(threadId: string, allowFailedThread = false): Promise<boolean> {
     let status = await this.threadStatus(threadId);
     if (status === "notLoaded" || this.nativeCore && !this.nativeSubscribedThreads.has(threadId)) {
       // A core-kept active thread is loaded, but this new physical connection
@@ -2828,7 +2832,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       await this.requestPhysical("thread/resume", { threadId, excludeTurns: true });
       status = await this.threadStatus(threadId);
     }
-    return status === "idle";
+    return status === "idle" || allowFailedThread && status === "systemError";
   }
 
   private async historyHasClientMessage(threadId: string, clientId: string, turnId: string | null): Promise<boolean> {
