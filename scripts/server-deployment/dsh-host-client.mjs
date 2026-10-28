@@ -40,6 +40,13 @@ export async function attachDshHost(path, expectedDataDirectory, expectedMachine
     });
     if (!response.ok) throw new Error('DSH input outcome unknown');
     const result = await response.json(), receipt = result?.receipt;
+    if (result?.ownerReceipt) {
+      const confirmed = await fetch(new URL('/host-inputs', url.origin.replace('ws:', 'http:')), {
+        method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({action:'ack',ownerReceipt:result.ownerReceipt}),signal:AbortSignal.timeout(5000),
+      });
+      if (!confirmed.ok || (await confirmed.json()).accepted !== true) throw new Error('DSH consumer acknowledgment unknown');
+    }
     if (receipt !== null && (!receipt || !['delivered','discarded','unknown'].includes(receipt.state)
       || receipt.turnId !== null && typeof receipt.turnId !== 'string')) throw new Error('Invalid DSH input receipt');
     return receipt;

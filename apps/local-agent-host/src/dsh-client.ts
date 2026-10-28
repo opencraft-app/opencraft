@@ -38,7 +38,8 @@ export class DshClientError extends Error {
 }
 
 export class DshClient {
-  constructor(public baseUrl: string, private readonly requestTimeoutMs = 30_000) {}
+  constructor(public baseUrl: string, private readonly requestTimeoutMs = 30_000, private bootstrapToken?: string) {}
+  sealBootstrap() { this.bootstrapToken = undefined; }
 
   async respond(rpcId: string, result: unknown): Promise<{ accepted: boolean; reason?: string }> {
     const response = await fetch(new URL("/api/respond", this.baseUrl), {
@@ -59,7 +60,7 @@ export class DshClient {
     const deadline = AbortSignal.timeout(this.requestTimeoutMs);
     const response = await fetch(new URL(`/api/${method}`, this.baseUrl), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(this.bootstrapToken ? {"x-opencraft-owner-bootstrap":this.bootstrapToken} : {}) },
       body: JSON.stringify({
         type: "client-request",
         rpcId,
@@ -72,6 +73,14 @@ export class DshClient {
       throw new DshClientError("DSH_HTTP_ERROR", `${method} failed with HTTP ${response.status}`, response.status >= 500);
     }
     const envelope = await response.json() as DshResponseEnvelope;
+    const receipt = response.headers.get("x-opencraft-dsh-receipt");
+    if (receipt) {
+      const confirmed = await fetch(new URL("/api/opencraft-owner-receipt", this.baseUrl), {
+        method: "POST", headers: {"content-type":"application/json"},
+        body: JSON.stringify({rpcId,receipt}), signal: AbortSignal.timeout(5000),
+      });
+      if (!confirmed.ok || (await confirmed.json() as {accepted?:boolean}).accepted !== true) throw new DshClientError("DSH_RECEIPT_UNKNOWN", "Native receipt confirmation unknown");
+    }
     if (envelope.result?.ok !== true) {
       const error = envelope.result?.error;
       throw new DshClientError(

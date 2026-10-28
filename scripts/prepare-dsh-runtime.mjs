@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { patchDshThreadEnvironment } from "./patch-dsh-thread-environment.mjs";
 import { patchDshProviderLifecycle } from "./patch-dsh-provider-lifecycle.mjs";
 
+import { patchDshOwnerAdmission } from "./patch-dsh-owner-admission.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function installLockedRuntime(runtime) {
@@ -69,6 +71,7 @@ export async function prepareDshRuntime({ root = repositoryRoot, install = insta
   // Reapply/verify on every build, including an already installed runtime.
   await patchDshProviderLifecycle(runtime);
   await patchDshThreadEnvironment(runtime);
+  await patchDshOwnerAdmission(runtime);
   log(`[opencraft] DSH runtime ${version} verified at ${runtime}`);
   return executable;
 }

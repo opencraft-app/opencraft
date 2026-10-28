@@ -114,6 +114,21 @@ export class DshExecutionAuthority {
     this.recoveredOrphans = this.journal.fencePreviousBoot();
     for (const entry of this.journal.loadEpochs()) this.table.seedEpoch(entry.threadId, entry.epoch);
   }
+  handoffObservation(native: readonly {threadId:string;turns:[string,string][];rpcInputs:[string,string][]}[] = []) {
+    const inputs = this.database.prepare("SELECT * FROM opencraft_queue_inputs WHERE consumed=0").all();
+    const attempts = this.database.prepare("SELECT * FROM hypernode_turn_execution_attempts").all() as any[];
+    const savedInputs = this.database.prepare("SELECT * FROM opencraft_execution_inputs").all() as any[];
+    const pending = attempts.filter(row => {
+      const receipt = native.find(record=>record.threadId === row.thread_id);
+      const input = savedInputs.find(input=>input.execution_id === row.execution_id);
+      const turn = row.native_turn_id ?? receipt?.rpcInputs.find(([rpc])=>rpc === input?.native_rpc_id)?.[1];
+      const confirmed = turn && receipt?.turns.some(([id,state])=>id === String(turn) && state === "closed");
+      return !confirmed && (!row.turn_id || !["completed","failed","interrupted"].includes(row.state));
+    });
+    const queued = this.database.prepare("SELECT * FROM hypernode_thread_queue_submissions WHERE state NOT IN ('dispatched','cancelled','completed','failed')").all();
+    return {activeCount:[...this.table.values()].length + this.editing.size + inputs.length + pending.length + queued.length,
+      queued:queued.length,unknownInputs:inputs.length,unfinishedAttempts:pending.length};
+  }
   claim(threadId: string, owner: DshExecutionOwner, requestId: string | number): DshAdmission {
     this.assertConnected(owner);
     return this.claimExecution(threadId, owner, requestId);

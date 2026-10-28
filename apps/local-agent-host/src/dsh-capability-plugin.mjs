@@ -1,3 +1,4 @@
+import { createDshNativeOwner } from "./dsh-native-owner.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
 import { createBackgroundJobProofs } from "./dsh-background-jobs.mjs";
 import { recoverDshGeneration } from "./dsh-generation-recovery.mjs";
@@ -17,8 +18,11 @@ import { createDshSkillCatalog } from "./dsh-skill-catalog.mjs";
 import { validateSkillInvocations } from "./dsh-skill-invocation.mjs";
 import { createInstructionController, sessionInstructions, hasSessionInstructions, instructionOverrides } from "./dsh-instructions.mjs";
 
-export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments", "goals", "jobs"];
+export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments", "goals", "jobs", "settings"];
 export async function apply(ctx, config) {
+  if (config.ownerRequired && globalThis[Symbol.for("opencraft.dsh.owner.v1")]) throw new Error("Native owner reload requires process restart");
+  const nativeOwner = config.ownerRequired ? createDshNativeOwner(ctx, join(process.env.DSH_HOME, "owner-handoff"), config.token) : null;
+  if (nativeOwner) globalThis[Symbol.for("opencraft.dsh.owner.v1")] = nativeOwner;
   const backgroundJobs = createBackgroundJobProofs(ctx);
   const promptSlots = await import(new URL("../../dsh-system-prompt/lib/index.js", config.toolsModuleUrl).href);
   const instructions = createInstructionController(promptSlots);
@@ -43,6 +47,9 @@ export async function apply(ctx, config) {
   }
   registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId);
   ctx.on("session/event", (session, event) => {
+    if (nativeOwner && event.type === "turn/end") void ctx.sessions.flush(session)
+      .then(() => nativeOwner.commitPrivateTurn(String(session.id ?? session.header.id),event.data.turn))
+      .catch(() => console.error("[opencraft] Native private receipt flush failed"));
     if (!checkpoints || event.type !== "turn/end" || volatileSessions.has(session.id ?? session.header.id)) return;
     const id = String(session.id ?? session.header.id);
     const generation = generations.get(id) ?? { logicalSessionId: id, generation: 0 };
@@ -99,7 +106,9 @@ export async function apply(ctx, config) {
     return name;
   };
   const invoke = (sessionId, capability, args, execution) => new Promise((resolve, reject) => {
-    const id = "engine-capability-" + ++sequence;
+    const id = "engine-capability-" + randomUUID();
+    const nativeTurn = execution.agent?.session.events.findLast(event => event.type === "turn/start")?.data?.turn;
+    const privateEffect = nativeOwner?.beginPrivateEffect({sessionId,turn:nativeTurn,callId:id});
     const clean = () => { clearTimeout(timer); execution.signal.removeEventListener("abort", abort); pending.delete(id); };
     const fail = error => { clean(); calls.push({ type: "capability-cancel", id, sessionId }); reject(error); };
     const abort = () => fail(new Error("Capability call cancelled"));
@@ -108,12 +117,12 @@ export async function apply(ctx, config) {
     execution.signal.addEventListener("abort", abort, { once: true });
     pending.set(id, {
       sessionId,
-      resolve: result => { clean(); resolve(result); },
+      resolve: result => { if(nativeOwner)nativeOwner.privateResult(privateEffect,result,execution.signal.aborted);clean(); resolve(result); },
       reject: fail,
     });
     const events = execution.agent?.session.events ?? [];
-    const nativeTurn = events.findLast(event => event.type === "turn/start")?.data?.turn;
-    calls.push({ type: "capability-request", id, sessionId, nativeTurnId: nativeTurn === undefined ? null : String(nativeTurn), capabilityId: capability.id, arguments: args });
+    const producingTurn = events.findLast(event => event.type === "turn/start")?.data?.turn;
+    calls.push({ type: "capability-request", id, sessionId, nativeTurnId: producingTurn === undefined ? null : String(producingTurn), capabilityId: capability.id, arguments: args });
   });
   const recoverGeneration = async body => {
     const pendingIntent = await checkpoints.readIntent(body.logicalSessionId);
@@ -238,11 +247,30 @@ export async function apply(ctx, config) {
     res.setHeader("content-type", "application/json");
     res.setHeader("cache-control", "no-store");
     if (req.headers.authorization !== "Bearer " + config.token) { res.writeHead(401).end("{}"); return; }
+    let releaseBridge;
     try {
       const chunks = []; let size = 0;
       for await (const chunk of req) { size += chunk.length; if (size > 1024 * 1024) throw new Error("Request too large"); chunks.push(chunk); }
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
       const route = req.url;
+      if (req.method === "POST" && route === "/native-owner" && nativeOwner) {
+        if (body.action === "seal-bootstrap") nativeOwner.sealBootstrap();
+        else if (body.action === "abort-release") {
+          nativeOwner.abortRelease();res.end(JSON.stringify({aborted:true}));return;
+        } else if (body.action === "seal-release") {
+          nativeOwner.sealRelease();
+          try { res.end(JSON.stringify(await nativeOwner.inspect())); }
+          catch (error) { nativeOwner.abortRelease();throw error; }
+          return;
+        }
+        else if (body.action === "fence") nativeOwner.fence();
+        else if (body.action === "resume") nativeOwner.resume();
+        else if (body.action !== "inspect") throw new Error("Invalid native owner action");
+        res.end(JSON.stringify(await nativeOwner.inspect())); return;
+      }
+      if (nativeOwner && route !== "/events") releaseBridge = nativeOwner.bridgeLease();
+      if (nativeOwner && !nativeOwner.open() && !["/native-owner","/events","/respond","/thread/describe","/thread/historySource","/resolve-generation","/background-proof","/model-info"].includes(route)
+        && !(route === "/permissions" && !body.preset && !body.policy)) throw new Error("Native bridge fenced");
       if (req.method === "POST" && route === "/model-info") {
         if (typeof body.provider !== "string" || !body.provider || typeof body.model !== "string" || !body.model)
           throw new Error("Invalid model identity");
@@ -379,7 +407,7 @@ export async function apply(ctx, config) {
           ? "CAPABILITY_INVALID"
           : "ENGINE_OPERATION_FAILED";
       res.writeHead(400).end(JSON.stringify({ code }));
-    }
+    } finally { releaseBridge?.(); }
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const address = server.address();
