@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { zstdDecompressSync, gunzipSync } from "node:zlib";
 import WebSocket from "ws";
 import { AccountPoolStore, CodexCoreControlClient } from "@opencraft/account-pool-host";
+import { accountCoreOwner } from "../../full-upgrade/account-core-owner.mjs";
 import { nativeReady } from "../../../apps/codex-core/src/native-process.js";
 
 // Explicit opt-in real CLI, synthetic accounts, private HOME and local model only.
@@ -19,6 +20,8 @@ const cliVersion = execFileSync(executable, ["--version"], { encoding: "utf8" })
 const token = "synthetic-split-control-".repeat(3);
 const records: any[] = [], children = new Set<ChildProcess>();
 const units = new Map<ChildProcess, string>();
+const compatibilityOnly = process.env.OPENCRAFT_CORE_COMPAT_ONLY === "1";
+const handoff = process.env.OPENCRAFT_CORE_HANDOFF_DRILL === "1";
 const systemd = process.env.OPENCRAFT_CORE_DRILL_SYSTEMD === "1";
 let unitSequence = 0;
 const counts = new Map<string, number>();
@@ -111,7 +114,10 @@ async function owner(kind: "core" | "runtime", options: object) {
   const env = { PATH: process.env.PATH, HOME: join(root, "home"), TMPDIR: root, LANG: "C.UTF-8", XDG_CONFIG_HOME: join(root, "home/config"),
     XDG_DATA_HOME: join(root, "home/data"), RUST_LOG: "error" };
   const cwd = resolve(import.meta.dirname, "../../..");
-  const args = ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", kind, config];
+  const legacy = (kind === "runtime" && process.env.OPENCRAFT_DRILL_LEGACY_RUNTIME === "1")
+    || (kind === "core" && process.env.OPENCRAFT_DRILL_LEGACY_CORE === "1");
+  const args = legacy ? [process.env.OPENCRAFT_DRILL_LEGACY_OWNER!, kind, config]
+    : ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", kind, config];
   const unit = `oc-core-split-drill-${process.pid}-${++unitSequence}-${kind}.service`;
   const child = systemd ? spawn("systemd-run", ["--quiet", "--wait", "--pipe", "--collect", `--unit=${unit}`,
     "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity", `--working-directory=${cwd}`,
@@ -123,7 +129,14 @@ async function owner(kind: "core" | "runtime", options: object) {
   children.add(child); child.once("exit", () => children.delete(child));
   let output = "", errors = ""; child.stdout!.on("data", chunk => { output += chunk; }); child.stderr!.on("data", chunk => { errors += chunk; });
   child.once("exit", () => { void writeFile(join(root, `${kind}-${child.pid}.log`), errors); });
-  await wait(() => { if (child.exitCode !== null) throw new Error(errors); return output.includes("ready\n"); }, `${kind} startup`);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error(`Timed out: ${kind} startup`)), 20000);
+    const onData = () => { if (output.includes("ready\n")) finish(); };
+    const onExit = () => finish(new Error(errors || `${kind} exited during startup`));
+    const finish = (error?: Error) => { clearTimeout(timer); child.stdout!.off("data", onData); child.off("exit", onExit); error ? reject(error) : resolve(); };
+    child.stdout!.on("data", onData); child.once("exit", onExit); onData();
+    if (child.exitCode !== null) onExit();
+  });
   return child;
 }
 async function stop(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM") {
@@ -159,9 +172,10 @@ let core: ChildProcess | undefined, runtime: ChildProcess | undefined, native: A
 const result: any = { root, cliVersion, systemd, scenarios: [] };
 try {
   const runtimeStarting = owner("runtime", runtimeOptions);
-  const bootstrapStart = Date.now(); await delay(12000);
+  const bootstrapDelay = compatibilityOnly ? 100 : 12000;
+  const bootstrapStart = Date.now(); await delay(bootstrapDelay);
   core = await owner("core", coreOptions); runtime = await runtimeStarting;
-  result.scenarios.push({ name: "runtime bootstrap waits for delayed Core", delayedMs: 12000, readyMs: Date.now() - bootstrapStart,
+  result.scenarios.push({ name: "runtime bootstrap waits for delayed Core", delayedMs: bootstrapDelay, readyMs: Date.now() - bootstrapStart,
     ...(systemd ? { systemdRestarts: Number(execFileSync("systemctl", ["show", "-p", "NRestarts", "--value", units.get(runtime)!], { encoding: "utf8" }).trim()) } : {}) });
   await wait(() => control.health(), "split health"); native = await connectNative();
   const original = await control.health(); result.original = { corePid: original.pid, runtimeOwnerPid: (await runtimeControl.health()).pid, nativePid: original.codexPid,
@@ -177,6 +191,70 @@ try {
     const history = await native!.rpc("thread/read", { threadId: ids.threadId, includeTurns: true });
     const turn = history.thread.turns.find((turn: any) => turn.id === ids.turnId); assert.equal(turn.status, "completed"); return turn;
   }
+  if (compatibilityOnly) {
+    const ids = await turn("WIRE-COMPATIBILITY"); await completed(ids);
+    result.scenarios.push({ name: "bidirectional v1 proxy compatibility", ...ids,
+      legacyCore: process.env.OPENCRAFT_DRILL_LEGACY_CORE === "1", legacyRuntime: process.env.OPENCRAFT_DRILL_LEGACY_RUNTIME === "1",
+      models: counts.get("OTHER"), completed: true }); result.result = "passed";
+  } else if (handoff) {
+    async function adapter() {
+      const pid = (await control.health()).pid, path = join(root, "account-owner.json");
+      await writeFile(path, JSON.stringify({ schemaVersion: 1, endpoint, token, pid }), { mode: 0o600 });
+      return accountCoreOwner(path);
+    }
+    const expectation = (state: any) => ({ expectedOwner: state.handoff.owner, expectedEpoch: state.handoff.epoch,
+      operationId: "real-core-handoff", fence: "real-core-fence" });
+    async function finishHandoff(api: any, gapMs = 0, failCandidate = false) {
+      const proof = await api.snapshot();
+      assert.equal(proof.proof.activeCount, 0); assert.equal(proof.proof.coverage, "complete");
+      const start = Date.now();
+      await api.releaseWriter({ ...expectation(proof), proof: proof.proof.identity });
+      await stop(core!); await delay(gapMs); core = await owner("core", coreOptions);
+      let successor = await adapter(), cold = await successor.coldReady(expectation(await successor.snapshot()));
+      let recoveryMs;
+      if (failCandidate) {
+        const recoveryStart = Date.now(); await stop(core!); core = await owner("core", coreOptions);
+        successor = await adapter(); const state = await successor.snapshot();
+        await assert.rejects(successor.releaseFence(expectation(state), cold));
+        cold = await successor.coldReady(expectation(state));
+        await successor.releaseFence(expectation(cold), cold); recoveryMs = Date.now() - recoveryStart;
+      } else await successor.releaseFence(expectation(cold), cold);
+      assert.equal((await control.health()).codexPid, original.codexPid);
+      assert.equal((await runtimeControl.health()).pid, result.original.runtimeOwnerPid);
+      return { maintenanceMs: Date.now() - start, recoveryMs, cold: cold.ready };
+    }
+    const stream = await turn("STREAM-GRACEFUL"); await wait(() => ticks >= 3, "long stream begins");
+    let api = await adapter(), fenced = await api.acquireFence(expectation(await api.snapshot()));
+    assert.ok(fenced.proof.activeCount > 0);
+    await assert.rejects(api.releaseWriter({ ...expectation(fenced), proof: fenced.proof.identity }));
+    const drainStart = Date.now(); await completed(stream);
+    await wait(async () => (await api.snapshot()).proof.activeCount === 0, "full response stream drained");
+    const one = await finishHandoff(api, 0, true);
+    assert.equal(counts.get("STREAM-GRACEFUL"), 1);
+    result.scenarios.push({ name: "protocol long stream / candidate failure / current-data recovery", ...stream,
+      drainMs: Date.now() - drainStart - one.maintenanceMs, ...one, modelRequests: 1, appAndNativeUnchanged: true });
+    const shell = await turn("SHELL"); await wait(() => readFile(marker, "utf8").then(t => t.includes("start"), () => false), "shell running");
+    api = await adapter(); await api.acquireFence(expectation(await api.snapshot()));
+    const two = await finishHandoff(api, 1500); await completed(shell);
+    assert.equal(await readFile(marker, "utf8"), "start\ndone\n");
+    result.scenarios.push({ name: "36s native shell across protocol Core handoff", ...shell, ...two, shellStarts: 1, shellCompletions: 1 });
+    api = await adapter(); await api.acquireFence(expectation(await api.snapshot()));
+    const retry = await turn("RETRY-BUDGET"); await delay(12000);
+    const three = await finishHandoff(api, 0); await completed(retry);
+    const retryEvents = native!.notifications.filter(frame => frame.method === "error" && frame.params?.threadId === retry.threadId);
+    result.scenarios.push({ name: "12s fenced proxy / native retry budget", ...retry, ...three,
+      modelRequests: counts.get("OTHER"), retryEvents, completed: true });
+    api = await adapter(); await api.acquireFence(expectation(await api.snapshot()));
+    const exhaustedStart = Date.now(), exhausted = await turn("RETRY-EXHAUST");
+    await wait(() => native!.notifications.some(frame => frame.method === "turn/completed" && frame.params.turn.id === exhausted.turnId), "native retry exhaustion", 180000);
+    const failed = await native!.rpc("thread/read", { threadId: exhausted.threadId, includeTurns: true });
+    assert.equal(failed.thread.turns.find((row: any) => row.id === exhausted.turnId).status, "failed");
+    const exhaustedMs = Date.now() - exhaustedStart;
+    const four = await finishHandoff(api);
+    result.scenarios.push({ name: "fence held until native retry budget exhaustion", ...exhausted, exhaustedMs, ...four,
+      finalStatus: "failed", retryEvents: native!.notifications.filter(frame => frame.method === "error" && frame.params?.threadId === exhausted.threadId) });
+    result.result = "passed";
+  } else {
   const stream = await turn("STREAM-GRACEFUL"); await wait(() => ticks >= 3, "stream output");
   const parallel = await turn("CONCURRENT-SHELL");
   await wait(() => readFile(parallelMarker, "utf8").then(text => text.includes("start"), () => false), "concurrent shell start");
@@ -266,6 +344,7 @@ try {
   const rollback = await turn("ROLLBACK"); await completed(rollback);
   result.scenarios.push({ name: "rollback to combined Core", ...rollback, currentDataRetained: true });
   result.result = "passed";
+  }
 } catch (error) { result.result = "failed"; result.error = error instanceof Error ? error.message : String(error); throw error; }
 finally {
   native?.socket.terminate();

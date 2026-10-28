@@ -106,7 +106,9 @@ export async function createCodexMaintenanceClient(options: {
       child.stdin.end();
       if (child.exitCode !== null || child.signalCode !== null) return;
       await new Promise<void>(resolve => {
-        const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 2_000);
+        // Signal delivery is not a release receipt. Wait for actual process and
+        // stdio closure, including descendants holding maintenance files open.
+        const timer = setTimeout(() => { child.kill("SIGKILL"); }, 2_000);
         timer.unref();
         child.once("close", () => { clearTimeout(timer); resolve(); });
         child.kill("SIGTERM");

@@ -274,6 +274,8 @@ export class AccountPoolStore {
     readonly switchThreshold?: number;
     readonly affinityIdleTtlMs?: number;
     readonly maxAffinityBindings?: number;
+    /** A fenced successor must inspect the exact source state before any expiry cleanup. */
+    readonly preserveAffinity?: boolean;
   }) {
     mkdirSync(options.secretsDirectory, { recursive: true, mode: 0o700 });
     chmodSync(options.secretsDirectory, 0o700);
@@ -297,7 +299,7 @@ export class AccountPoolStore {
     this.database = managed.database;
     this.outcome = managed.outcome;
     this.database.exec("PRAGMA foreign_keys=ON;");
-    this.pruneAffinity(this.now());
+    if (!options.preserveAffinity) this.pruneAffinity(this.now());
   }
 
   addAccount(input: AccountPoolAccountInput, rawSecret: AccountPoolSecret | CodexAuthFileReference): AccountPoolAccount {
@@ -635,6 +637,10 @@ export class AccountPoolStore {
 
   close(): void {
     this.database.close();
+  }
+
+  affinityCount(): number {
+    return Number(this.database.prepare("SELECT count(*) AS n FROM pool_affinity").get()!.n);
   }
 
   private accountFromRow(row: Record<string, unknown>): AccountPoolAccount {
