@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { realpath as realEntryPath } from 'node:fs/promises';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 // Explicit official-installation adapter. This is not an HTTP installation API.
 import { readFile, mkdir, chmod, chown, cp, lstat, realpath, symlink, rename } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { acceptManifest, parseStrictJson, sha256 } from '../full-release/contract.mjs';
 import { verifyRetainedRelease } from '../full-release/retained.mjs';
 import { rootOwned } from './service-config.mjs';
@@ -129,6 +128,6 @@ export async function main(args = process.argv.slice(2)) {
   const options = JSON.parse(await readFile(resolve(args[1]), 'utf8'));
   process.stdout.write(JSON.stringify(await install(options)) + '\n');
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(await realEntryPath(resolve(process.argv[1]))).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   main().catch(() => { process.stderr.write('upgrade provisioning failed\n'); process.exitCode = 1; });
 }

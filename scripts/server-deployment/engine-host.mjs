@@ -1,3 +1,4 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
@@ -9,7 +10,6 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-engine-provider.ts';
@@ -214,7 +214,7 @@ export async function startIndependentEngineHost(options) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const host = await startIndependentEngineHost(await readPrivateJson(process.env.OPENCRAFT_ENGINE_HOST_CONFIG ?? ''));
   console.log('Independent execution Host ready');
   const stop = () =>

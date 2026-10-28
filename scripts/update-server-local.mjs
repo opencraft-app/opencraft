@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { headlessWebHostDefinitions } from './package-headless-linux.mjs';
@@ -62,7 +63,7 @@ export async function updateLocalServer({ version, archive, buildId,
   }
   throw new Error('Update status timed out; the server operation may still be running');
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
   try { console.log(JSON.stringify(await updateLocalServer({ version: argument('--version') || process.env.OPENCRAFT_RELEASE_VERSION,
     archive: argument('--archive'), buildId: argument('--build-id') }), null, 2)); }

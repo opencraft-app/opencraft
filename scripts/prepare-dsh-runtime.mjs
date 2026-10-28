@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -76,6 +77,6 @@ export async function prepareDshRuntime({ root = repositoryRoot, install = insta
   return executable;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   await prepareDshRuntime();
 }

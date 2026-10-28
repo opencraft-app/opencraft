@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { build } from 'esbuild';
 import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export async function packageRelay({ output = join(root, 'dist/relay'), relayEntry = join(root, 'apps/relay-server/src/main.ts') } = {}) {
@@ -24,6 +25,6 @@ export async function packageRelay({ output = join(root, 'dist/relay'), relayEnt
   console.log(output);
   return { output, revision, buildId };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   await packageRelay({ output: process.argv[2] });
 }
