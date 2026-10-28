@@ -333,7 +333,8 @@ User and assistant message footer clocks are visible at rest for touch input thr
 
 Identical in-flight Host reads share a native cut only within the same logical
 client and epoch, including page shape, watch and checkpoint parameters. JSON
-object key order does not distinguish otherwise identical parameters. A
+object key order does not distinguish otherwise identical parameters. Cache
+invalidation changes admission generation so a new reader cannot join a retired cut. A
 completed result is never retained for later readers. The optional read-history
 cancellation capability carries an opaque read identity through RPC-id routing;
 cancelling one waiter leaves peers active, while the last waiter retires the

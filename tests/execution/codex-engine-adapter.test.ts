@@ -170,6 +170,26 @@ for (const cancelPeer of [false, true]) test(`read cancellation is scoped to a s
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("a read admitted after cache invalidation cannot join the prior cut", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-invalidated-flight-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const send = async (id: string, method: string, params: object) => { await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" })); };
+  const rpc = async (id: string, method: string, params: object) => { await send(id, method, params); return waitFor(frames, f => f.id === id); };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await rpc("pause", "test/pauseThreadReads", { paused: true });
+    const params = { threadId, includeTurns: false, initialTurnsPage: { limit: 10 } };
+    await send("old", "thread/read", params);
+    await (adapter as any).transcriptCache.invalidate(threadId);
+    await send("new", "thread/read", params);
+    assert.equal((adapter as any).cachedHistoryInFlight, 2, "invalidation creates a distinct admission generation");
+    await rpc("unpause", "test/pauseThreadReads", { paused: false });
+    assert.ok((await waitFor(frames, f => f.id === "old")).error);
+    assert.equal((await waitFor(frames, f => f.id === "new")).error, undefined);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("model capacity failures continue with exponential backoff capped at 120 seconds", async () => {
   assert.deepEqual([0, 1, 2, 6, 7, 20].map(capacityRetryDelayMs), [1_000, 2_000, 4_000, 64_000, 120_000, 120_000]);
   const root = await mkdtemp(join(tmpdir(), "opencraft-capacity-retry-")), frames: Array<Record<string, unknown>> = [];

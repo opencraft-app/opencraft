@@ -200,6 +200,8 @@ export class TranscriptReadCache {
     });
     rmSync(paths.turns, { force: true }); rmSync(paths.blobs, { recursive: true, force: true });
   }
+  /** Admission generation for concurrent readers, independent of cursor epochs. */
+  readRevision(threadId: string): number { return this.revisions.get(threadId) ?? 0; }
   invalidate(threadId: string): Promise<void> {
     this.revisions.set(threadId, (this.revisions.get(threadId) ?? 0) + 1);
     return this.serialize(threadId, async () => { this.drop(threadId); });
