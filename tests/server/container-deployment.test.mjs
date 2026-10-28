@@ -44,7 +44,8 @@ test('rendered Compose preserves the external Host path and UID contract', t => 
   assert.equal(service.network_mode, 'host');
   assert.equal(service.pid, 'host');
   assert.equal(service.ports, undefined);
-  assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind.create_host_path]), [
+  // Some Compose versions omit false-valued bind options from JSON output.
+  assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
     ['bind', '/srv/state', '/srv/state', false], ['bind', '/srv/projects', '/srv/projects', false],
   ]);
   const paths = deploymentPaths(service.environment);
