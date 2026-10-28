@@ -25,8 +25,8 @@ const volume = `${name}-data`, projects = `${name}-projects`, fixture = `${name}
 const env = { ...process.env, OPENCRAFT_IMAGE: image, OPENCRAFT_DATA_DIR: data,
   OPENCRAFT_WORKSPACE_DIR: workspace, OPENCRAFT_UID: String(process.getuid()), OPENCRAFT_GID: String(process.getgid()), OPENCRAFT_PLATFORM: platform };
 function docker(args, options = {}) {
-  return execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
-    stdio: ['ignore', 'pipe', 'pipe'], ...options }).trim();
+  return (execFileSync('docker', args, { cwd: root, env, encoding: 'utf8', timeout: 600_000,
+    stdio: ['ignore', 'pipe', 'pipe'], ...options }) ?? '').trim();
 }
 const compose = args => docker(['compose', '-f', join(root, 'docker/compose.yaml'), '-p', name, ...args]);
 let origin;
