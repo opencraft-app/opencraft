@@ -62,3 +62,11 @@ IM消费者custody仅在取得Host准入后创建，确定被fence拒绝的输�
 fence 期间不起新 Turn；已有 goal 不续跑。继任保留 goal 原 phase，冷加载保持 disarmed，
 恢复准入后的行为与正常重启相同，不隐式 arm、清除或重放 goal。若 goal 已产生 Turn、inbox 或未确认结果，仍按对应执行事实阻止 release。
 冷 ready 是恢复准入条件，不是回滚数据的授权；不自动回灌旧备份。
+
+## 旧历史的只读恢复视图
+
+冷数据使用原生 `sessionPersistence.inspect` 的确定性逻辑视图，与正常重启及历史 API 一致：中断尾部的结束事件只在内存投影，不写回物理日志。proof 同时绑定逻辑历史和 `storedEvents/storedDigest`，保留原物理事件，不加载 Agent 或重放输入。活着的 Session/Agent 仍观察实际事件，未结束 Turn 继续阻挡交接；原生 custody 中的未知结果也不因逻辑恢复而消失。
+
+Host 队列沿 `ThreadQueueStore` 的终态语义：`deleted` 与 `dispatched` 都是保留记录，不计待执行工作；仍为 `queued` 的记录继续阻挡。观察过程不删除记录、不变更状态。
+
+`TOOL_OUTCOME_UNKNOWN` 是原生工具未确认副作用的明确记录；无论来自只读恢复投影还是已保留的物理历史，均在 `unknownResults` 单独计数并阻止交接。`storedDigest` 只是数据完整性证据，不能代替副作用确认；关闭Turn的逻辑投影、重试成功或没有新custody ledger都不会消除旧未知结果。没有通用强清或自动重试。

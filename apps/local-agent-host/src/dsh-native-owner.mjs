@@ -76,15 +76,19 @@ export function createDshNativeOwner(ctx, directory, bootstrapToken) {
     for (const id of [...ids].sort()) {
       const agent = ctx.agents.get(id);
       const stored = await ctx.sessionPersistence.readFrom(id,0);
-      const events = agent?.session.events ?? stored.events;
+      // The native detached inspection applies deterministic crash-tail recovery
+      // in memory. It does not commit repairs or hide a live unfinished Turn.
+      const events = agent?.session.events ?? (await ctx.sessionPersistence.inspect(id)).events;
       let lastTurn, goal, currentTurn;
       const turns = new Map(); const rpcInputs = new Map();
       const approvals = new Set();
+      let unknownResults = 0;
       for (const event of events) {
         if (event.type === 'turn/start') {lastTurn = 'open';currentTurn = String(event.data.turn);turns.set(String(event.data.turn),'open');}
         if (event.type === 'turn/end') {lastTurn = 'closed';turns.set(String(event.data.turn),'closed');}
         if (event.type === 'user/message' && typeof event.data?.source?.rpcId === 'string') rpcInputs.set(event.data.source.rpcId,currentTurn);
         if (event.type === 'goal/change') goal = event.data?.goal;
+        if (event.type === 'tool/result' && event.data?.error?.code === 'TOOL_OUTCOME_UNKNOWN') unknownResults++;
         if (event.type === 'approval/asked') approvals.add(event.data?.id);
         if (event.type === 'approval/decided') approvals.delete(event.data?.id);
       }
@@ -92,10 +96,11 @@ export function createDshNativeOwner(ctx, directory, bootstrapToken) {
       const inbox = agent ? agent.inbox.nextTurn.length + agent.inbox.nextStep.length : pendingInbox(events.slice(stored.meta?.seedLength ?? 0));
       const jobs = agent ? ctx.jobs.list(agent).filter(row=>!['completed','failed','killed'].includes(row.status) || !row.reported).length : 0;
       const row = {id,turns:[...turns],rpcInputs:[...rpcInputs],events:events.length,digest:digest(events),running:agent?.status === 'running' ? 1 : 0,
-        openTurn:lastTurn === 'open' ? 1 : 0,inbox,jobs,approvals:approvals.size,goal:liveGoal && liveGoal.phase !== 'complete' ? 1 : 0};
+        openTurn:lastTurn === 'open' ? 1 : 0,inbox,jobs,approvals:approvals.size,goal:liveGoal && liveGoal.phase !== 'complete' ? 1 : 0,
+        storedEvents:stored.events.length,storedDigest:digest(stored.events),unknownResults};
       // Goals are durable intent. The fence gates execution; a cold restart
       // preserves their phase without arming automatic continuation.
-      count += row.running + row.openTurn + inbox + jobs + row.approvals;
+      count += row.running + row.openTurn + inbox + jobs + row.approvals + unknownResults;
       records.push(row);
     }
     return {configuration:digest(ctx.settings.describe()),coverage:failed ? 'unknown':'complete', activeCount:failed ? null:count,owner,pid:process.pid,records,custody:Object.entries(ledger.calls).map(([id,row])=>({id,...row}))};
