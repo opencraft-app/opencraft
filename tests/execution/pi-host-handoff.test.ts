@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createModels } from '@earendil-works/pi-ai';
 import { fauxProvider, fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
+import type { SessionCapabilityPort } from '@opencraft/session-capabilities';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { PiEngine, piModel } from '../../plugins/pi-engine/src/index.js';
 import { AcpHostHandoff } from '../../plugins/acp-engine/src/host-handoff.js';
@@ -14,11 +15,11 @@ function models(responses:any[] = []) {
  const faux=fauxProvider({tokensPerSecond:10000});faux.setResponses(responses);const runtime=createModels();runtime.setProvider(faux.provider);
  return Object.assign(runtime,{getAvailableSnapshot:()=>faux.models}) as unknown as ModelRuntime;
 }
-async function fixture(t:test.TestContext,responses:any[] = []) {
+async function fixture(t:test.TestContext,responses:any[] = [],sessionCapabilities?:SessionCapabilityPort) {
  const root=await mkdtemp(join(tmpdir(),'pi-handoff-'));for(const path of ['pi','models','projects'])await mkdir(join(root,path));
  const authority=new AcpHostHandoff(join(root,'pi'),'old');await authority.load();
  const admission={open:()=>authority.snapshot().phase==='open',run:authority.run.bind(authority)};
- const engine=new PiEngine({directory:join(root,'pi'),dataDirectory:root,cwd:root,models:models(responses),admission});await engine.start();
+ const engine=new PiEngine({directory:join(root,'pi'),dataDirectory:root,cwd:root,models:models(responses),admission,sessionCapabilities});await engine.start();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});return {root,engine,authority};
 }
 const expected=(authority:AcpHostHandoff)=>({expectedOwner:authority.owner,expectedEpoch:authority.snapshot().epoch,operationId:'test',fence:'test'});
@@ -160,4 +161,20 @@ test('platform tool timeout remains unknown after the native request settles',as
  await rpc('thread/start',{});t.mock.timers.enable({apis:['setTimeout']});
  const running=rpc('turn/start',{threadId:'acp_tool'});const rejected=assert.rejects(running,/timed out/);await tool;t.mock.timers.tick(120000);await rejected;t.mock.timers.reset();
  assert.equal(host.consumerObservation().coverage,'unknown');
+});
+
+
+test('private capability transport failure stays unknown after native settlement and cold read',async t=>{
+ const {fauxToolCall}=await import('@earendil-works/pi-ai/providers/faux');let calls=0;
+ const f=await fixture(t,[fauxAssistantMessage(fauxToolCall('opencraft_host_private_effect',{}),{stopReason:'toolUse'}),fauxAssistantMessage('tool failed')],{
+  tools:()=>[{name:'private_effect',description:'isolated transport',inputSchema:{type:'object'}}],
+  call:async()=>{calls++;throw Error('Synthetic private HTTP outcome unknown');},
+ });
+ const {thread}=await f.engine.request('thread/start',{model:piModel('faux','faux-1')},client);
+ await f.engine.request('turn/start',{threadId:thread.id,input:[{type:'text',text:'private effect'}]},client);
+ await until(async()=>calls===1&&(await f.engine.request('thread/read',{threadId:thread.id},client)).thread.status.type==='idle');
+ await f.authority.fence(expected(f.authority));
+ assert.equal((await f.engine.handoffObservation()).coverage,'unknown');
+ await f.engine.close();const cold=new PiEngine({directory:join(f.root,'pi'),dataDirectory:f.root,cwd:f.root,models:models(),admission:{open:()=>false,run:f.authority.run.bind(f.authority)}});t.after(()=>cold.close());await cold.start();
+ assert.equal((await cold.handoffObservation()).coverage,'unknown');await cold.close();assert.equal(calls,1);
 });

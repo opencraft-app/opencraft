@@ -1,3 +1,4 @@
+import { PiPrivateCallsDoc } from "./private-calls.js";
 import { PiShellDoc } from "./shell.js";
 import { PiQueueDoc, type PiQueueState } from "./queue.js";
 import { DatabaseSync, backup } from "node:sqlite";
@@ -93,6 +94,7 @@ export async function readPiSnapshot(file: string, cacheDirectory: string, signa
         agent: await doc(AgentDoc.definition.kind, {}) as PiSnapshot["agent"],
         live: await doc(LiveDoc.definition.kind, {}) as PiSnapshot["live"],
         usage: await doc(UsageDoc.definition.kind, { models: {}, tools: {} }) as PiSnapshot["usage"],
+        privateCalls: await doc(PiPrivateCallsDoc.definition.kind, { calls: {} }) as PiSnapshot["privateCalls"],
         shell: await doc(PiShellDoc.definition.kind, { records: [], paused: false }) as PiSnapshot["shell"],
         inbox: (await doc(InboxDoc.definition.kind, { items: [] }) as { items: Record<string, any>[] }).items,
       };
