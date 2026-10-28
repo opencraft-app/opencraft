@@ -25,6 +25,7 @@ export function SideChatContent({ session, service, runtime }: { session: SideCh
         if (!pending) throw new Error("This request is no longer pending");
         await session.lease.respond(createInteractionResponse(pending, action));
       }}
+      onLoadItemDetails={(ids, signal) => session.lease.loadItemDetails(ids, signal)}
       onLoadOlder={snapshot.history.hasOlder ? () => session.lease.loadOlder() : undefined}
       loadingOlder={snapshot.history.loading}
       footer={<div className="thread-composer-region">

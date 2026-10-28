@@ -129,6 +129,41 @@ function encodeTurn(turn: AppServerTurn) {
   return { buffer, hash: createHash("sha256").update(buffer).digest("hex"), blobs };
 }
 
+/** Only collapsed tool details are deferred. Message content and attachment
+ * identities retain their existing semantics. Unknown Item types stay lossless. */
+function presentationItem(item: import("@opencraft/appserver-protocol").AppServerThreadItem, cursor: string) {
+  if (item.status === "inProgress" || !["commandExecution", "fileChange"].includes(item.type ?? "")) {
+    // Non-tool blobs must still be restored by the full reader.
+    return null;
+  }
+  const preview = { ...item };
+  let deferred = false;
+  for (const key of Object.keys(object(item.outputBlobRef))) {
+    // JSON blob previews are byte prefixes, not valid protocol objects.
+    preview[key] = null;
+    deferred = true;
+  }
+  delete preview.outputBlobRef;
+  if (item.type === "commandExecution") {
+    if (typeof preview.command === "string" && preview.command.length > 256) { preview.command = preview.command.slice(0, 256); deferred = true; }
+    if (Array.isArray(preview.commandActions)) preview.commandActions = preview.commandActions.map(action => {
+      const value = object(action);
+      if (typeof value.command !== "string" || value.command.length <= 256) return action;
+      deferred = true; return { ...value, command: value.command.slice(0, 256) };
+    });
+  }
+  if (item.type === "fileChange" && Array.isArray(preview.changes)) preview.changes = preview.changes.map(change => {
+    const value = object(change), diff = value.diff ?? value.unifiedDiff ?? value.unified_diff;
+    if (typeof diff !== "string" || diff.length <= 1024) return change;
+    deferred = true;
+    const { diff: _diff, unifiedDiff: _unifiedDiff, unified_diff: _unified_diff, ...rest } = value;
+    const lines = diff.split("\n");
+    return { ...rest, additions: lines.filter(line => line.startsWith("+") && !line.startsWith("+++")).length,
+      deletions: lines.filter(line => line.startsWith("-") && !line.startsWith("---")).length };
+  });
+  return deferred ? { ...preview, historyDetail: { cursor } } : preview;
+}
+
 /** Disposable normalized native history. The native reader owns projection
  * semantics; the Stage 5 rollout cursor identifies the dirty suffix. A cache
  * projection hit uses stat + indexed pread, with no history paging, model RPC
@@ -212,7 +247,7 @@ export class TranscriptReadCache {
   }
 
   /** Native metadata stays live; it is never served from this cache. */
-  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" | "presentation" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
     const metadataStarted = performance.now();
@@ -225,7 +260,7 @@ export class TranscriptReadCache {
     const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
-  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<ThreadTurnsListResponse> {
+  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" | "presentation" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver, detailItemId?: string): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
     if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
@@ -274,7 +309,7 @@ export class TranscriptReadCache {
         const pageStarted = performance.now();
         let page: ThreadTurnsListResponse;
         try {
-          page = this.readPage(threadId, cursor, limit, itemsView, sortDirection);
+          page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
         }
         catch (error) {
           if (error instanceof InvalidTranscriptCursor || attempt === 1) throw error;
@@ -288,7 +323,7 @@ export class TranscriptReadCache {
       throw new Error("Transcript rebuild failed");
     }, effectiveSignal);
   }
-  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded", sortDirection: "asc" | "desc"): ThreadTurnsListResponse {
+  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded" | "presentation", sortDirection: "asc" | "desc", detailItemId?: string): ThreadTurnsListResponse {
     const db = this.database(), meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId)! as Row;
     let before = Number.MAX_SAFE_INTEGER;
     let after = -Number.MAX_SAFE_INTEGER;
@@ -302,7 +337,7 @@ export class TranscriptReadCache {
     const rows = (sortDirection === "asc"
       ? db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq>? ORDER BY turn_seq ASC LIMIT ?").all(threadId, after, limit + 1)
       : db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq<? ORDER BY turn_seq DESC LIMIT ?").all(threadId, before, limit + 1)) as Row[];
-    const fd = itemsView === "full" ? openSync(this.paths(threadId).turns, "r") : null;
+    const fd = itemsView !== "notLoaded" ? openSync(this.paths(threadId).turns, "r") : null;
     try {
       const fileSize = fd === null ? 0 : fstatSync(fd).size;
       const data = rows.slice(0, limit).map(row => {
@@ -318,7 +353,11 @@ export class TranscriptReadCache {
         if (turn.id !== row.turn_id || !Array.isArray(turn.items)) throw new Error("Corrupt transcript projection");
         // The wire's existing full-items contract is lossless. Cold bodies are
         // stored separately, then restored only for the requested ten Turns.
-        return { ...turn, items: turn.items.map(item => {
+        return { ...turn, items: turn.items.filter(item => detailItemId === undefined || item.id === detailItemId).map(item => {
+          if (itemsView === "presentation") {
+            const preview = presentationItem(item, `transcript:${meta.epoch}:${row.turn_seq + 1}`);
+            if (preview) return preview;
+          }
           const restored = { ...item };
           for (const [key, ref] of Object.entries(object(item.outputBlobRef))) {
             if (!(OUTPUT_FIELDS as readonly string[]).includes(key)) throw new Error("Invalid transcript blob field");
@@ -329,6 +368,17 @@ export class TranscriptReadCache {
             restored[key] = object(ref).encoding === "json" ? JSON.parse(body.toString("utf8")) : body.toString("utf8");
           }
           delete restored.outputBlobRef;
+          if (itemsView === "presentation" && restored.type === "mcpToolCall" && restored.status !== "inProgress"
+            && !restored.mcpAppUi && !restored.appContext && !restored.mcpAppResourceUri) {
+            const result = object(restored.result);
+            if (Array.isArray(result.content) && Buffer.byteLength(JSON.stringify([result.content, result.structuredContent])) > 1024) {
+              // Keep the tool envelope and all surface metadata (Apps/browser/
+              // computer identity); only the collapsed result body is deferred.
+              const { structuredContent: _structured, ...envelope } = result;
+              restored.result = { ...envelope, content: [] };
+              restored.historyDetail = { cursor: `transcript:${meta.epoch}:${row.turn_seq + 1}` };
+            }
+          }
           return restored;
         }) };
       });

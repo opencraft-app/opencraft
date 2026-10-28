@@ -348,3 +348,33 @@ remain serialized; snapshot-source watermarks are observed inside that lane.
 Native authority, cursor epochs and notification-overlap canonical rereads are
 unchanged. Read provenance, payload bytes, decode and return timings are bounded
 diagnostics, not presentation state or native-internal profiling.
+
+## Deferred history presentation bodies
+
+The optional read-history `itemDetails` capability lets presentation readers request
+`itemsView: presentation`. Old clients keep full history bodies. The initial passive
+read requests one latest Turn; existing viewport backfill obtains older pages only
+when needed. Every returned Item keeps native order and identity. Large settled
+command output/command text, patch diffs and generic MCP result content can carry an
+opaque `historyDetail.cursor`; message content, attachment identities, in-progress
+Items and App/surface metadata retain their existing semantics. Unknown tool shapes
+remain full. Native history and the disposable projection retain complete bodies.
+
+Opening a detail reads one exact Item using its transcript epoch cursor, one Turn
+and `detailItemId`. A stale cursor fails rather than returning another epoch. The
+Session fences generation, source lifetime and the original Item reference; live
+replacements cannot be overwritten by late details. Cancellation and navigation
+retire this read through the existing read cancellation path. The detail replaces
+only that Item, preserving clocks, ordering, disclosure state and reading position.
+MCP Apps remain independent of detail disclosure. No execution Resume is acquired.
+
+AppHost parses a physical publication once and strips its logical target once,
+then routes it only to that admitted connection/lease. Untargeted notifications
+retain fanout; ownerless requests/responses and invalid targets remain undelivered.
+Connection count must not multiply large reply JSON parsing work.
+
+Each detail disclosure has an independent read/cancellation lifetime; one Item's
+cancellation or failure cannot block another. Hook-only Turn updates preserve
+unchanged Item references. A new passive baseline tags retained summaries with a
+client-local read generation, included in the renderer detail token, so an open
+disclosure restarts hydration after reconnect without changing native epochs.

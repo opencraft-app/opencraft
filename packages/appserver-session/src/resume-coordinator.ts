@@ -12,6 +12,13 @@ import type { ThreadExecutionProjection, ThreadStreamRole, ThreadView } from "./
 import { resolveThreadId } from "./notification-buffer";
 import type { ThreadViewFrameScheduler } from "./view-store";
 
+let historyDetailReadGeneration = 0;
+function tagHistoryDetails(turns: readonly import("@opencraft/appserver-protocol").AppServerTurn[], readGeneration: number) {
+  return turns.map(turn => turn.items?.some(item => item.historyDetail) ? { ...turn,
+    items: turn.items.map(item => item.historyDetail ? { ...item, historyDetail: { ...item.historyDetail, readGeneration } } : item),
+  } : turn);
+}
+
 declare module "@deepseek-ai/cordis" {
   interface Context {
     threadResume: ThreadResumeCoordinatorService;
@@ -156,6 +163,7 @@ export class ThreadResumeCoordinatorService extends Service {
   private readonly historyContexts = new Map<string, ResumeHistoryContext>();
   private readonly backgroundHistory = new Map<string, HistoryOperation<void>>();
   private readonly olderPageRequests = new Map<string, HistoryOperation>();
+  private readonly itemDetailRequests = new Map<string, Set<HistoryOperation<void>>>();
   private readonly historyRefreshes = new Map<string, HistoryOperation<boolean>>();
   private disposed = false;
   private previewSequence = 0;
@@ -230,10 +238,11 @@ export class ThreadResumeCoordinatorService extends Service {
       this.readContexts.clear();
       this.rejectedResumes.clear();
       this.historyContexts.clear();
-      for (const operation of [...this.backgroundHistory.values(), ...this.olderPageRequests.values(), ...this.historyRefreshes.values()]) operation.cancel();
+      for (const operation of [...this.backgroundHistory.values(), ...this.olderPageRequests.values(), ...this.historyRefreshes.values(), ...[...this.itemDetailRequests.values()].flatMap(requests => [...requests])]) operation.cancel();
       this.backgroundHistory.clear();
       this.olderPageRequests.clear();
       this.historyRefreshes.clear();
+      this.itemDetailRequests.clear();
       this.previewTokens.clear();
     });
   }
@@ -243,17 +252,18 @@ export class ThreadResumeCoordinatorService extends Service {
   /** End optional presentation waits without releasing the cached baseline or
    * execution stream. Snapshot first: cancellation observers may admit new work. */
   cancelDerivedHistory(threadId: string): void {
-    const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId)];
+    const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId), ...(this.itemDetailRequests.get(threadId) ?? [])];
     for (const operation of retired) operation?.cancel();
   }
 
   private retireHistoryContext(threadId: string): void {
     this.readContexts.delete(threadId);
     this.historyContexts.delete(threadId);
-    const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId)];
+    const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId), ...(this.itemDetailRequests.get(threadId) ?? [])];
     this.backgroundHistory.delete(threadId);
     this.olderPageRequests.delete(threadId);
     this.historyRefreshes.delete(threadId);
+    this.itemDetailRequests.delete(threadId);
     for (const operation of retired) operation?.cancel();
   }
 
@@ -473,7 +483,7 @@ export class ThreadResumeCoordinatorService extends Service {
     const supportsWindow = readCapability?.version === 1 && readCapability.initialTurnsPage !== false;
     const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false,
       ...(readCapability?.version === 1 ? { watch: true } : {}),
-      ...(window ? { initialTurnsPage: { limit: 10, itemsView: "full" as const, sortDirection: "desc" as const } } : {}),
+      ...(window ? { initialTurnsPage: { limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
     }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open" });
     let result;
@@ -499,13 +509,14 @@ export class ThreadResumeCoordinatorService extends Service {
     if (page) turns = await hydrateReadTurnItems(context, turns.map(turn => turn.itemsView === undefined && supportsWindow ? { ...turn, itemsView: "full" as const } : turn));
     operation.assertCurrent();
     if (this.disposed) throw new Error("Thread reader was disposed");
+    const detailGeneration = ++historyDetailReadGeneration;
     this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
     return this.ctx.threadViews.update(threadId, current => ({
       ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
       resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
-      turns: recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
+      turns: tagHistoryDetails(recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
         ? reconcileHistoryTurns(current.turns, turns, "latest", { baselineTurns: initial.turns })
-        : reconcileRecoveryWindow(current.turns, turns, initial.turns, options.unresolvedTurnIds),
+        : reconcileRecoveryWindow(current.turns, turns, initial.turns, options.unresolvedTurnIds), detailGeneration),
       historyMode: mode ?? "legacy",
       ...(recovery ? { historyCheckpoint: recovery.checkpoint } : { historyCheckpoint: undefined }),
       historySource: paginated ? "paginated" : "thread-read-fallback",
@@ -617,6 +628,45 @@ export class ThreadResumeCoordinatorService extends Service {
       operation.assertCurrent();
       return module.refreshDerivedHistory(this.derivedPorts(threadId), threadId, operation);
     }, false, () => false);
+  }
+
+  /** Hydrate just the requested Items, retaining every live replacement and
+   * the history source/epoch that admitted the preview. No execution Resume. */
+  async loadItemDetails(threadId: string, itemIds: readonly string[], signal?: AbortSignal): Promise<void> {
+    // Each disclosure owns its own cancellation. Identical native work may
+    // still coalesce at the Host, which already tracks independent waiters.
+    const slots = new Map<string, HistoryOperation<void>>();
+    const pending = this.startHistoryOperation(slots, threadId, signal, async operation => {
+      const source = this.readContexts.get(threadId) ?? this.historyContexts.get(threadId);
+      const baseline = this.ctx.threadViews.get(threadId);
+      if (!source || !baseline) return;
+      const requested = new Set(itemIds);
+      for (const turn of baseline.turns) for (const item of turn.items ?? []) {
+        if (!requested.has(item.id) || !item.historyDetail) continue;
+        operation.assertCurrent();
+        const page = await this.client.request("thread/turns/list", {
+          threadId, cursor: item.historyDetail.cursor, detailItemId: item.id,
+          limit: 1, itemsView: "full", sortDirection: "desc",
+        }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal });
+        operation.assertCurrent();
+        if ((this.readContexts.get(threadId) ?? this.historyContexts.get(threadId)) !== source) throw historyAborted();
+        const fullTurn = page.data[0], full = fullTurn?.items?.find(candidate => candidate.id === item.id);
+        if (fullTurn?.id !== turn.id || !full || full.historyDetail) throw new Error("History Item detail is unavailable");
+        this.ctx.threadViews.update(threadId, view => ({ ...view, turns: view.turns.map(current => current.id !== turn.id ? current : {
+          ...current, items: current.items?.map(candidate => candidate === item ? { ...full, ...Object.fromEntries(["startedAtMs", "completedAtMs"].flatMap(key => full[key] == null && item[key] != null ? [[key, item[key]]] : [])) } : candidate),
+        }) }));
+      }
+    });
+    const operation = slots.get(threadId);
+    if (operation) {
+      const requests = this.itemDetailRequests.get(threadId) ?? new Set<HistoryOperation<void>>();
+      this.itemDetailRequests.set(threadId, requests); requests.add(operation);
+      void pending.finally(() => {
+        requests.delete(operation);
+        if (!requests.size && this.itemDetailRequests.get(threadId) === requests) this.itemDetailRequests.delete(threadId);
+      }).catch(() => {});
+    }
+    return pending;
   }
 
   loadOlder(threadId: string, signal?: AbortSignal): Promise<ThreadView> {

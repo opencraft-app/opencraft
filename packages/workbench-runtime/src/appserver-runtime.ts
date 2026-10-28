@@ -449,6 +449,7 @@ export interface AppServerThreadRuntimeLease {
   startQueuedSubmission(queuedSubmissionId?: string): Promise<TurnId>;
   steerQueuedSubmission(queuedSubmissionId: string): Promise<TurnId>;
   loadOlder(): Promise<void>;
+  loadItemDetails(itemIds: readonly string[], signal?: AbortSignal): Promise<void>;
   getNavigation(): ConversationNavigationSource;
   release(): void;
 }
@@ -2508,6 +2509,10 @@ export function createAppServerWorkbenchRuntime(
         loadOlder: () => {
           if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
           return binding.runtime.loadOlder();
+        },
+        loadItemDetails: (itemIds, signal) => {
+          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+          return requireSession().resume.loadItemDetails(threadId, itemIds, signal);
         },
         getNavigation: () => binding.navigation,
         release() {

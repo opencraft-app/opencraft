@@ -437,3 +437,46 @@ test("rollout source preparation cannot block a validated same-thread page", asy
     assert.equal(finished, true, "source lookup must not retain the projection lane");
   } finally { release(); await Promise.all([preparing, current]); }
 });
+
+test("presentation tail defers large tool bodies and restores the exact Item through its epoch cursor", async t => {
+  const f = await fixture(t, 601);
+  const output = "完整输出🙂".repeat(40000), diff = "@@ -1 +1 @@\n-old\n+new\n".repeat(5000);
+  f.source[600]!.items = [...f.source[600]!.items!,
+    { id: "command", type: "commandExecution", command: "echo " + "x".repeat(12000), commandActions: [{ type: "unknown", command: "x".repeat(12000) }], aggregatedOutput: output, status: "completed" },
+    { id: "patch", type: "fileChange", changes: [{ path: "file.ts", kind: "update", diff }] },
+  ];
+  const initial = await f.cache.read(id, 1, undefined, "presentation" as any);
+  const preview = initial.initialTurnsPage.data[0]!;
+  assert.equal(initial.thread.historyTurnCount, 601);
+  assert.ok(Buffer.byteLength(JSON.stringify(initial)) < 10000, "first paint must not restore large tool bodies");
+  assert.deepEqual(preview.items!.slice(0, 2), f.source[600]!.items!.slice(0, 2));
+  for (const item of preview.items!.slice(2)) {
+    const detail = item.historyDetail as { cursor: string };
+    assert.ok(detail?.cursor);
+    const full = await f.cache.page(id, detail.cursor, 1, undefined, "full", "desc", undefined, undefined, item.id);
+    assert.deepEqual(full.data[0]!.items, [f.source[600]!.items!.find(x => x.id === item.id)]);
+  }
+  const legacy = await f.cache.read(id, 1);
+  assert.deepEqual(legacy.initialTurnsPage.data[0], f.source[600]);
+  const stale = (preview.items![2]!.historyDetail as { cursor: string }).cursor;
+  await f.cache.invalidate(id);
+  await assert.rejects(f.cache.page(id, stale, 1), /cursor|epoch|expired/i);
+});
+
+test("presentation keeps MCP surface metadata and unknown/native-visible bodies lossless", async t => {
+  const f = await fixture(t, 1), content = [{ type: "text", text: "tool result".repeat(2000) }];
+  const meta = { "codex/toolSurface": { kind: "browserUse", backend: "iab" } };
+  f.source[0]!.items = [...f.source[0]!.items!,
+    { id: "mcp", type: "mcpToolCall", status: "completed", result: { content, structuredContent: { value: "large".repeat(1000) }, _meta: meta } },
+    { id: "app", type: "mcpToolCall", status: "completed", mcpAppResourceUri: "ui://app", result: { content } },
+    { id: "active", type: "commandExecution", status: "inProgress", aggregatedOutput: "stream".repeat(1000) },
+    { id: "custom", type: "customNativeType", output: content },
+  ];
+  const preview = (await f.cache.read(id, 1, undefined, "presentation")).initialTurnsPage.data[0]!;
+  const mcp = preview.items!.find(item => item.id === "mcp")!;
+  assert.deepEqual((mcp.result as any)._meta, meta);
+  assert.deepEqual((mcp.result as any).content, []);
+  const detail = await f.cache.page(id, mcp.historyDetail!.cursor, 1, undefined, "full", "desc", undefined, undefined, mcp.id);
+  assert.deepEqual(detail.data[0]!.items, [f.source[0]!.items![2]]);
+  assert.deepEqual(preview.items!.slice(3), f.source[0]!.items!.slice(3));
+});

@@ -26,6 +26,7 @@ import { ActivityDisclosure, useActivityOpen } from "../activity/activity-disclo
 import {
   SubagentNavigationContext, ToolCallContentRendererContext, ToolCallIconRendererContext,
   useToolActivityPresentation,
+  useHistoryItemDetail,
 } from "../render-contexts";
 
 type Tool = Extract<TimelineBlock, { type: "tool-call" }>;
@@ -193,6 +194,7 @@ export function ToolCallBlock({ block }: { block: Tool }) {
   const hasCustomBody = content !== undefined && content !== null && content !== false;
   const [open, setOpen] = useActivityOpen(block.kind !== "mcp" && presentation.state === "running"
     && (presentation.canExpand || hasCustomBody), false, `tool:${block.id}`);
+  useHistoryItemDetail(block, open);
   const icon = customIcon?.(block, presentation);
   if (block.kind === "image-view") return <ImageViewToolBlock block={block} />;
   if (isCodexAppThreadTool(block) && content === undefined) return <ThreadTool block={block} />;
