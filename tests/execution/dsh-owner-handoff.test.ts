@@ -52,8 +52,13 @@ test('real native direct RPC fence, consumer custody and cold successor',async t
  assert.equal(host.handoff.open(),true);
  assert.ok(await new DshClient(host.dshUrl).call('session.list',{}));
  await assert.rejects(host.restartEngine(),/fenced process handoff/);
- process.kill(host.engineProcessId,'SIGKILL');
- for(let i=0;i<100&&host.handoff.open();i++)await new Promise(r=>setTimeout(r,10));
+ await assert.rejects(host.restartEngine(true,true),/fenced process handoff/);
+ await host.handoff.control('fence',expected(host));
+ const killedPid = host.engineProcessId;
+ process.kill(killedPid,'SIGKILL');
+ for(let i=0;i<100&&host.engineProcessId===killedPid;i++)await new Promise(r=>setTimeout(r,10));
+ await host.handoff.operation.catch(()=>{});
+ assert.equal(host.engineProcessId,null, 'fenced crash must not restart native writer');
  assert.equal(host.handoff.open(),false);
  await host.close();
  await assert.rejects(startIndependentDshHost(options),/unconfirmed/);
@@ -208,4 +213,22 @@ test('real legacy started tool without a result stays unknown through cold inspe
  ready=await host.handoff.control('cold-ready',expected(host));assert.equal(ready.occupancy.carriedUnknown.length,1);
  await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
  assert.deepEqual(await readFile(log),persisted,'unknown transfer never rewrites physical history');
+});
+
+test('automatic recovery and fence share the owner control queue', async t => {
+ const {DshOwnerHandoff}=await import('../../scripts/server-deployment/dsh-owner-handoff.mjs');
+ const root=await mkdtemp('/tmp/dsh-restart-order-');
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'owner-handoff'));
+ const handoff=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));
+ await handoff.load();
+ handoff.attach({nativeOwner:async()=>({}),handoffObservation:async()=>({})});
+ const state=handoff.authority.snapshot();
+ const input={expectedOwner:state.owner,expectedEpoch:state.epoch,operationId:'race',fence:'race'};
+ const fenced=handoff.control('fence',input);
+ let restarted=false;
+ await assert.rejects(handoff.recoverNative(async()=>{restarted=true;}), /fenced/);
+ await fenced;
+ assert.equal(restarted,false);
+ assert.equal(handoff.open(),false);
 });
