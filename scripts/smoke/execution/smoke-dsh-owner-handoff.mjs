@@ -10,12 +10,15 @@ const entry=resolve(process.env.OPENCRAFT_DSH_HOST_ENTRY);
 const {startIndependentDshHost}=await import(pathToFileURL(entry));
 const unknown=process.env.OPENCRAFT_DSH_DRILL_MODE === "unknown";
 const root=await mkdtemp('/tmp/dsh-owner-drill-');
+let releaseFinalModel;
+const finalModelReady=new Promise(resolve=>{releaseFinalModel=resolve;});
 const trace=join(root,'effect');let calls=0,host,consumer,socket,rpcId=0;const eventKinds=[];let effectRequests=0;
 const model=createServer(async(req,res)=>{
  let raw='';for await(const chunk of req)raw+=chunk;
  const body=JSON.parse(raw),agent=Array.isArray(body.tools)&&body.tools.length>0;
  if(agent)calls++;
  const invoke=agent&&calls===1;
+ if(unknown&&agent&&!invoke)await finalModelReady;
  const message=invoke?{role:'assistant',tool_calls:[{index:0,id:'one-effect',type:'function',function:{name:unknown?'fixture_effect':'bash',arguments:unknown?'{}':JSON.stringify({description:'Isolated owner handoff fixture',command:`printf 'start\n' >> '${trace}'; sleep 2; printf 'done\n' >> '${trace}'`})}}]}:{role:'assistant',content:agent?'done':'Fixture'};
  const base={id:'fixture',created:1,model:'fixture'};
  if(!body.stream){res.setHeader('content-type','application/json');res.end(JSON.stringify({...base,choices:[{message,finish_reason:'stop'}]}));return;}
@@ -63,6 +66,7 @@ try {
  await until(async()=>await readFile(trace,'utf8').catch(()=>'')==='start\ndone\n','one effect finished');
  if(unknown){
    await rpc('turn/interrupt',{threadId:thread.id});
+   releaseFinalModel();
    await until(async()=>{const native=await host.nativeOwner('inspect');return native.records.every(row=>!row.running&&!row.openTurn);},'cancel acknowledged and turn ended');
    const retained=await host.handoff.inspect();assert.ok(retained.native.custody.some(row=>row.state==='unknown'));
    assert.equal(effectRequests,1);await assert.rejects(host.handoff.control('release',expected()),/drained/);
@@ -88,4 +92,4 @@ try {
  await host.handoff.control('resume',{...expected(),identity:ready.handoff.ready.identity});
  console.log(JSON.stringify({passed:true,profile:consumer?"aggregate":"direct",consumerLease,calls,effects:1,extraOs,fenced,drained,successor:host.handoff.authority.snapshot(),history}));
 }
-}catch(error){console.error(JSON.stringify({failed:true,error:error.message,eventKinds,consumer:consumer?.handoff.host.consumerObservation(),native:await host?.handoff.inspect()}));throw error;}finally{socket?.close();await consumer?.close();await host?.close();effectServer.closeAllConnections();await new Promise(done=>effectServer.close(done));model.closeAllConnections();await new Promise(done=>model.close(done));await rm(root,{recursive:true,force:true});}
+}catch(error){console.error(JSON.stringify({failed:true,error:error.message,eventKinds,consumer:consumer?.handoff.host.consumerObservation(),native:await host?.handoff.inspect()}));throw error;}finally{releaseFinalModel();socket?.close();await consumer?.close();await host?.close();effectServer.closeAllConnections();await new Promise(done=>effectServer.close(done));model.closeAllConnections();await new Promise(done=>model.close(done));await rm(root,{recursive:true,force:true});}
