@@ -390,6 +390,7 @@ export async function createWorkbenchWebServer({
   appHostServer = null,
   sshServerDescriptors = [],
   sshManagement = null,
+  fileDownloads = null,
   getStorageOutcomes,
   getPluginHealth,
   getExecutionHealth,
@@ -531,6 +532,19 @@ export async function createWorkbenchWebServer({
         const identity = accessService.authenticate(request);
         if (identity) { const unwatch = accessService.watch(identity, () => response.destroy()); response.once('close', unwatch); }
         if (await accessService.handle(request, response)) return;
+      }
+      if (url.pathname === "/__opencraft_files") {
+        if (!fileDownloads) { sendJson(response, 404, { error: "missing" }); return; }
+        await fileDownloads.handle(request, response, hostId => {
+          try {
+            return sameOrigin(request, false)
+              && (!hostId.startsWith("ssh:") || sshManagement?.authorized(request) === true)
+              && (local || (!authService?.invalidSession(request)
+                && (accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204) === 204))
+              && (!actorService || actorService.legacyAdmissionStatus(request) === 204);
+          } catch { return false; }
+        });
+        return;
       }
       if (url.pathname.startsWith("/__opencraft_observe/")) {
         if (observability && await observability.handle(request, response)) return;

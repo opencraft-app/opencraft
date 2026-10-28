@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile} from 'node:fs/promises';
+import {mkdtemp,open,readFile} from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createServer,loadConfigFromFile} from 'vite';
@@ -7,6 +9,9 @@ import react from '@vitejs/plugin-react';
 import {writeFile} from 'node:fs/promises';
 import {unzipSync,zipSync,strFromU8,strToU8} from 'fflate';
 const output=await mkdtemp(join(tmpdir(),'opencraft-files-entry-'));
+const largePath=join(output,'large.pptx'),largeBytes=60*1024*1024,downloadRequests:string[]=[];
+const largeFile=await open(largePath,'w');await largeFile.truncate(largeBytes);await largeFile.close();
+const hashFile=async(path:string)=>{const hash=createHash('sha256');for await(const chunk of createReadStream(path))hash.update(chunk);return hash.digest('hex')};
 const fixtures=Object.fromEntries(await Promise.all(['docx','pptx','xlsx'].map(async ext=>[ext,(await readFile('tests/fixtures/office/sample.'+ext)).toString('base64')])));
 // Extend our synthetic deck to exercise bounded lazy thumbnails and distant jumps.
 const deck=unzipSync(Buffer.from(fixtures.pptx!,'base64'));
@@ -32,7 +37,7 @@ async createFuzzyFileSearchSession(options){return {update:async()=>{options.onU
 }}};
 export const useAppServerRuntime=()=>runtime;
 export const useBlobResources=()=>window.fixtureBlobs;
-export const useAppServerSnapshot=()=>({hostId:'tree-fixture',conversation:{execution:{cwd:'/fixture',runtimeWorkspaceRoots:['/fixture']}}});`;
+export const useAppServerSnapshot=()=>({hostId:'local-codex',conversation:{execution:{cwd:'/fixture',runtimeWorkspaceRoots:['/fixture']}}});`;
 const source=`
 import '/apps/workbench-web/src/runtime/web-crypto-compat.ts';
 import {FilePreviewProvider} from '@opencraft/file-preview-web';
@@ -59,7 +64,13 @@ createIntlTestRoot(document.getElementById('root')).render(<QueryClientProvider 
 // Reuse production dependency ownership, without crawling generated Expo HTML.
 const workbenchConfig=await loadConfigFromFile({command:'serve',mode:'development'},resolve('apps/workbench-web/vite.config.ts'));
 if(!workbenchConfig)throw new Error('Workbench Vite configuration unavailable');
-const vite=await createServer({configFile:false,root:process.cwd(),cacheDir:join(output,'vite-cache'),logLevel:'error',resolve:{dedupe:['react','react-dom','react-intl']},esbuild:{jsx:'automatic'},optimizeDeps:{...workbenchConfig.config.optimizeDeps,entries:[],include:[...workbenchConfig.config.optimizeDeps?.include??[],'@extend-ai/react-xlsx','docx-preview','@aiden0z/pptx-renderer/browser']},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[react(),{name:'file-tree-fixture',enforce:'pre',resolveId(id,importer){if(id.endsWith('/appserver-runtime-context')&&importer?.includes('/panels/'))return '/tree-runtime.ts';return ['/tree-runtime.ts','/tree-fixture.tsx'].includes(id)?id:null},load:id=>id==='/tree-runtime.ts'?runtime:id==='/tree-fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tree-fixture.tsx"></script>')})}}]});
+const vite=await createServer({configFile:false,root:process.cwd(),cacheDir:join(output,'vite-cache'),logLevel:'error',resolve:{dedupe:['react','react-dom','react-intl']},esbuild:{jsx:'automatic'},optimizeDeps:{...workbenchConfig.config.optimizeDeps,entries:[],include:[...workbenchConfig.config.optimizeDeps?.include??[],'@extend-ai/react-xlsx','docx-preview','@aiden0z/pptx-renderer/browser']},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[react(),{name:'file-tree-fixture',enforce:'pre',resolveId(id,importer){if(id.endsWith('/appserver-runtime-context')&&importer?.includes('/panels/'))return '/tree-runtime.ts';return ['/tree-runtime.ts','/tree-fixture.tsx'].includes(id)?id:null},load:id=>id==='/tree-runtime.ts'?runtime:id==='/tree-fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{
+if(req.url?.startsWith('/__opencraft_files?')){
+ const url=new URL(req.url,'http://fixture');if(url.searchParams.get('path')!=='/fixture/large.pptx'){res.statusCode=404;res.end();return}
+ downloadRequests.push(req.method!);res.setHeader('content-length',largeBytes);res.setHeader('content-type','application/octet-stream');res.setHeader('content-disposition','attachment; filename="large.pptx"');
+ if(req.method==='HEAD')res.end();else createReadStream(largePath).pipe(res);return;
+}
+if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tree-fixture.tsx"></script>')})}}]});
 let browser:any;
 try{
 await vite.listen();const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');browser=await chromium.launch({headless:true,args:['--no-sandbox']});
@@ -128,6 +139,20 @@ for(const width of [320,390,1280])for(const theme of ['light','dark']){
  assert.equal(await page.locator('.office-preview--xlsx [contenteditable="true"]').count(),0);
  await page.screenshot({path:join(output,'xlsx-'+theme+'-'+width+'.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'preview must not widen page');
+ // Preview admission must not fetch the 60MiB body, and must leave a real download available.
+ await page.evaluate(()=>{const config=document.createElement('script');config.id='opencraft-deployment-config';config.type='application/json';config.textContent=JSON.stringify({hosts:[],builtinAgents:false,hypernode:false,fileDownloads:true});document.head.append(config)});
+ const getCount=downloadRequests.filter(method=>method==='GET').length;
+ await open('/fixture/large.pptx');await page.getByText('This file is too large to preview (25 MB limit). Download it to view.',{exact:true}).waitFor();
+ assert.equal(downloadRequests.filter(method=>method==='GET').length,getCount,'oversized preview must not fetch original bytes');
+ assert.equal(await page.evaluate(()=>(window as any).fixtureReads.includes('/fixture/large.pptx')),false,'large file must not enter chat RPC');
+ const original=page.getByRole('link',{name:'Download file',exact:true});assert.equal(await original.getAttribute('aria-disabled'),null);assert.match((await original.getAttribute('href'))!,/^\/__opencraft_files\?/u);
+ if(width===320&&theme==='light'||width===1280&&theme==='dark'){
+  const waiting=page.waitForEvent('download');await original.click();const download=await waiting;
+  const saved=join(output,`download-${width}-${theme}.pptx`);await download.saveAs(saved);assert.equal(await download.failure(),null);
+  assert.equal(await hashFile(saved),await hashFile(largePath),'original download bytes must match');
+ }
+ await page.screenshot({path:join(output,'large-'+theme+'-'+width+'.png')});
+ await page.evaluate(()=>document.getElementById('opencraft-deployment-config')!.remove());
  await open('/fixture/broken.docx');await page.locator('[data-file-preview-phase="failed"]').waitFor({timeout:60000});
  await page.getByRole('button',{name:'Try again',exact:true}).waitFor();
  await page.evaluate(()=>{const f=(window as any).fixture;for(const t of f.state.right.tabs)f.panels.close('scope','right',t.id)});
