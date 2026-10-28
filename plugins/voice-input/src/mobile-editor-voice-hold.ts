@@ -1,10 +1,12 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { useTouchContactScope } from "@opencraft/design-system-web/touch-contact";
 
 /** A trusted action owns voice; the editor's native contact owns its hold. */
 export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | null>, callbacks: {
   enabled: boolean; start(): void; finish(): void; cancel(): void;
 }) {
   const latest = useRef(callbacks); latest.current = callbacks;
+  const scope = useTouchContactScope();
   useEffect(() => {
     const surface = action.current?.closest<HTMLElement>(".opencraft-composer-stack");
     if (!surface) return;
@@ -14,6 +16,7 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     const clear = () => { if (timer !== null) clearTimeout(timer); timer = null; };
     const cancel = () => {
       clear(); const previous = held; held = null;
+      if (previous) scope?.cancel(previous.id);
       if (previous?.active) { suppressUntil = performance.now() + 500; latest.current.cancel(); }
     };
     const down = (event: TouchEvent) => {
@@ -25,7 +28,12 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
         || window.getSelection()?.toString()) return;
       const editor = event.target instanceof Element ? event.target.closest<HTMLElement>(".opencraft-composer-editor") : null;
       if (!editor || !surface.contains(editor)) return;
+      // The first contact establishes editor focus. A voice hold starts only
+      // from an already focused editor, so tapping an empty input cannot be
+      // promoted to recording while Safari is opening the keyboard.
+      if (editor.ownerDocument.activeElement !== editor) return;
       const touch = event.touches[0]!;
+      if (scope !== null && !scope.claim(touch.identifier, "editor")) return;
       held = { id: touch.identifier, x: touch.clientX, y: touch.clientY, active: false, editor };
       timer = setTimeout(() => {
         timer = null;
@@ -47,6 +55,7 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     const up = (event: TouchEvent) => {
       if (!held || !Array.from(event.changedTouches).some(touch => touch.identifier === held!.id)) return;
       clear(); const previous = held; held = null;
+      scope?.release(previous.id);
       if (previous.active) {
         suppressUntil = performance.now() + 500;
         if (event.cancelable) event.preventDefault();
@@ -57,6 +66,7 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     const click = (event: Event) => { if (performance.now() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); } };
     const anotherContact = (event: TouchEvent) => { if (held && event.touches.length !== 1) cancel(); };
     const visibility = () => { if (document.visibilityState === "hidden") cancel(); };
+    const focus = () => { if (held?.active !== true) cancel(); };
     surface.addEventListener("touchstart", down, { capture: true, passive: true });
     surface.addEventListener("contextmenu", context, true);
     surface.addEventListener("click", click, true);
@@ -68,13 +78,14 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     window.addEventListener("touchcancel", cancel, true);
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", visibility);
+    surface.addEventListener("focusin", focus, true);
     return () => {
       cancel(); surface.removeEventListener("touchstart", down, true);
       surface.removeEventListener("contextmenu", context, true); surface.removeEventListener("click", click, true);
       window.removeEventListener("touchstart", anotherContact, true);
       window.removeEventListener("touchmove", move, true); window.removeEventListener("touchend", up, true);
       window.removeEventListener("touchcancel", cancel, true); window.removeEventListener("blur", cancel);
-      document.removeEventListener("visibilitychange", visibility);
+      document.removeEventListener("visibilitychange", visibility); surface.removeEventListener("focusin", focus, true);
     };
   }, [action]);
 }

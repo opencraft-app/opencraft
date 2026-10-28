@@ -316,7 +316,7 @@ scrollport negative control. The origin shift is an adversarial coordinate test,
 not a native keyboard simulation; this cannot prove native
 floating-keyboard occlusion when the browser supplies no rectangle.
 
-- DIC-13：触控 Web 的触摸输入框长按450ms复用语音插件和现有瞬时输入事务；短点、触发前移动、已有文字选区、鼠标和能力不可用时不接管。松手完成识别并保留明确发送动作，上滑64px、系统取消、后台和卸载取消并保留原草稿。启动权限尚未完成时的松手只在实际listening后结束该代次。输入框节点和草稿身份保持；由共享交互密度提供至少44px麦克风触摸框；实际 touch 事件才可长按，屏幕宽度不限制入口，覆盖 iPad、折叠屏展开/分屏及混合指针设备。原生接触的 identifier 与 touchend/touchcancel 持有长按生命周期；派生 PointerEvent 的结束缺失不能使已经松开的短触摸留着计时，更不能延迟启动录音。第二触点进入编辑区外也取消当前手势。
+- DIC-13：触控 Web 的触摸输入框长按450ms复用语音插件和现有瞬时输入事务；短点、触发前移动、已有文字选区、鼠标和能力不可用时不接管。首次未聚焦触点只建立编辑器焦点，不进入长按候选；已聚焦编辑器才可开始候选，避免 Safari 键盘/焦点交接把普通空白点击升级为录音。松手完成识别并保留明确发送动作，上滑64px、系统取消、后台和卸载取消并保留原草稿。启动权限尚未完成时的松手只在实际listening后结束该代次。输入框节点和草稿身份保持；由共享交互密度提供至少44px麦克风触摸框；实际 touch 事件才可长按，屏幕宽度不限制入口，覆盖 iPad、折叠屏展开/分屏及混合指针设备。原生接触的 identifier 与touchend/touchcancel持有长按生命周期；派生 PointerEvent 的结束缺失不能使已经松开的短触摸留着计时，更不能延迟启动录音。Composer scoped contact owner 只允许编辑器、菜单或麦克风其中一个触点占用同一物理接触；第二触点进入编辑区外也取消当前手势。
 
 - WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为唯一“触控体验”偏好，SettingsSegmented提供 auto/on/off（自动/开启/关闭），默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 同时投影 shared hit-target/gap token、触控输入框、浮动顶栏与窄屏浏览布局；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。实际鼠标不能触发输入框听写；显式关闭撤销长按入口。
 
