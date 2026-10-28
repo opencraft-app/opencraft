@@ -867,3 +867,29 @@ revision. Revocation cancels in-flight transports; uncertain writes are not
 replayed. Upstream errors are generic and reflected secrets are redacted from
 catalogs and results. These are trusted same-UID Host boundaries, not a sandbox
 against malicious shell access to process memory.
+
+
+### Independent Pi owner handoff
+
+The independent Pi/aggregation Host uses a persistent private owner fence before
+checking native Turns, tasks, tool calls, inbox, queues, shell records, schedules,
+recovery and downstream consumer leases. Paused queue items and future schedules
+remain work. Pi 1.3.0 has no separate goal service and supports approvalPolicy
+never; native task/tool authority still includes waiting operations. Reads that
+cannot establish complete coverage remain unknown.
+
+Linux systemd cgroups provide OS work coverage, including nested groups and
+background children. Known persistent shell worker PIDs are identified by their
+native sessions; their jobs remain in the native ledger and extra child processes
+remain OS work. Other topologies do not certify idle. The sole writer is protected
+by a kernel lock as well as the existing Pi owner lock.
+
+The private owner-handoff endpoint implements fence, inspect, release, cold-ready
+and resume. Release closes stores and consumer connections only after complete
+zero occupancy, then confirms OS release before recording it. A successor cannot
+open admission when the old release is uncertain. Cold readiness reads all stores
+and historical native ledgers without creating execution sessions, validates
+model/project state, and binds the proof to the current owner/runtime/config and
+store digests. Resume recomputes that proof. A crashed successor needs a fresh
+proof, and no backup is automatically restored. Remote providers keep their own
+native writers; replacing Pi does not replace ACP or legacy DSH.

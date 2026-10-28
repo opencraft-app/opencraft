@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -16,23 +16,8 @@ import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/sr
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { readPrivateJson } from './dsh-host-client.mjs';
 
-/** Linux/systemd is the first supported OS-work authority. Unknown topology
- * never certifies idle. Include nested delegated cgroups and all descendants. */
-export function inspectAcpCgroup(nativePids) {
-  try {
-    const relative = readFileSync('/proc/self/cgroup', 'utf8').trim().match(/^0::(\/[^\n]+\.service)$/m)?.[1];
-    if (!relative || relative.split('/').includes('..')) throw new Error('Unsupported cgroup');
-    const pids = new Set();
-    const collect = path => {
-      for (const pid of readFileSync(join(path, 'cgroup.procs'), 'utf8').trim().split(/\s+/).filter(Boolean)) pids.add(Number(pid));
-      for (const entry of readdirSync(path, { withFileTypes: true })) if (entry.isDirectory()) collect(join(path, entry.name));
-    };
-    collect('/sys/fs/cgroup' + relative);
-    if (!pids.has(process.pid)) throw new Error('Cgroup identity changed');
-    pids.delete(process.pid); for (const pid of nativePids) { if (!pids.delete(pid)) throw new Error("Native peer escaped owner cgroup"); }
-    return { coverage: 'complete', activeCount: pids.size };
-  } catch { return { coverage: 'unknown', activeCount: null }; }
-}
+export { inspectOwnerCgroup as inspectAcpCgroup } from './owner-cgroup.mjs';
+import { inspectOwnerCgroup as inspectAcpCgroup } from './owner-cgroup.mjs';
 
 /** Explicit independent ACP/Claude process owner. A gateway only attaches to
  * its descriptor; generation changes are private local control operations. */

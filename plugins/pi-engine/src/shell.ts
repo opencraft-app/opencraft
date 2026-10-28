@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
 
 export type ShellRecord = { id: string; state: "running" | "completed" | "interrupted"; command: string;
-  output: string; detached: boolean; isError?: boolean; rawOutput?: string; truncated?: boolean; exitCode?: number | null; createdAtMs: number; notified?: boolean; turnId?: string; generation: string };
+  output: string; detached: boolean; isError?: boolean; rawOutput?: string; truncated?: boolean; exitCode?: number | null; createdAtMs: number; notified?: boolean; turnId?: string; generation: string; monitorEvents?: { id: number; content: string; createdAtMs: number }[] };
 export const PiShellDoc = defineDoc<{ records: ShellRecord[]; paused: boolean }>({
   kind: "opencraft.piShell", version: 1, scope: "conversation", history: "latest", fork: "initial",
   initial: () => ({ records: [], paused: false }),
@@ -24,6 +24,7 @@ export class PiShellWorker {
   private intentional = false;
   constructor(private readonly options: { cwd: string; directory: string; threadId: string;
     onNotification(message: Record<string, any>): void; onLost(generation: string): void }) {}
+  get pid() { return this.child?.pid; }
   async start(): Promise<{ parameters: Record<string, any> }> {
     return this.starting ??= new Promise((resolve, reject) => {
       this.intentional = false; this.stopping = undefined; this.generation = randomUUID();

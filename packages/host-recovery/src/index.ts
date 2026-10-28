@@ -35,7 +35,7 @@ export class InterruptedTurnRecovery {
   private flight: Promise<void> | null = null;
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
-  constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500) {
+  constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {
     this.managed = openManagedDatabase({ path: join(directory, "interrupted-turn-recovery.sqlite"),
       migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
     this.outcome = this.managed.outcome;
@@ -87,12 +87,17 @@ export class InterruptedTurnRecovery {
   }
   /** Read-only lifecycle proof; no change to execution or recovery policy. */
   pendingThreadIds(): string[] { return [...new Set(this.pending().map(row => row.threadId))]; }
+  handoffObservation() {
+    const rows = this.managed.database.prepare("SELECT value FROM interrupted_turns").all().map(row => JSON.parse(String(row.value)));
+    if (rows.some(row => !row || typeof row.threadId !== "string" || !["running", "interrupted", "preparing", "dispatching", "complete", "handled", "exhausted", "unconfirmed"].includes(row.state))) throw new Error("Invalid recovery custody");
+    return { flights: this.flight ? 1 : 0, unfinished: rows.filter(row => !["complete", "handled"].includes(row.state)).length };
+  }
   private pending(): RecoveryTurn[] {
     return (this.managed.database.prepare("SELECT value FROM interrupted_turns").all() as { value: string }[])
       .map(row => JSON.parse(row.value) as RecoveryTurn).filter(row => ["running", "interrupted", "preparing", "dispatching"].includes(row.state));
   }
   wake(): void {
-    if (this.closed || this.timer) return;
+    if (this.closed || this.timer || !this.admissionOpen()) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.recover().catch(() => this.wake());
@@ -100,7 +105,7 @@ export class InterruptedTurnRecovery {
     this.timer.unref();
   }
   recover(): Promise<void> {
-    if (this.closed) return Promise.resolve();
+    if (this.closed || !this.admissionOpen()) return Promise.resolve();
     return this.flight ??= this.run().finally(() => { this.flight = null; });
   }
   private async run(): Promise<void> {
@@ -122,7 +127,7 @@ export class InterruptedTurnRecovery {
         const dispatch: RecoveryTurn = { ...row, attempts: row.attempts + 1, state: "preparing", inputId: `restart-recovery:${randomUUID()}` };
         this.put(dispatch);
         this.dispatching.add(row.threadId);
-        const canAdmit = () => !this.closed && this.get(row.threadId)?.inputId === dispatch.inputId && this.get(row.threadId)?.state === "preparing";
+        const canAdmit = () => !this.closed && this.admissionOpen() && this.get(row.threadId)?.inputId === dispatch.inputId && this.get(row.threadId)?.state === "preparing";
         const admit = () => {
           if (!canAdmit()) return false;
           this.put({ ...dispatch, state: "dispatching" }); return true;
