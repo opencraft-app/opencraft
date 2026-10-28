@@ -9559,6 +9559,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   container: composer-footer / inline-size;
 }
 
+// Composer action buttons are native tap targets.  Keep browser click
+// classification available while preventing double-tap zoom from becoming a
+// competing gesture on mobile Safari.
+.opencraft-composer-icon-button {
+  touch-action: manipulation;
+}
+
 .opencraft-composer-footer[data-input-mode="dictation"] {
   > .opencraft-composer-footer__attachment,
   > .opencraft-composer-footer__controls,
