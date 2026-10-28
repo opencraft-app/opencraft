@@ -40,6 +40,7 @@ import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
 import { HostProcessService } from "./process-service.js";
 import { ProjectRepository } from "./project-repository.js";
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -228,6 +229,12 @@ export async function startLocalAgentHost(options: {
   const routing = storage.routing;
   const client = new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
+  const catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+    }
+  });
+  cleanup.push(() => catalogChanges.clear());
   const lifecycle = new ThreadLifecycle(storage.threads,
     async id => {
       if (!capabilityLink) return { released: false };
@@ -235,6 +242,7 @@ export async function startLocalAgentHost(options: {
       if (result.released && lifecycle.catalog.get(id)?.ephemeral) client.forgetVolatile(id);
       return result;
     }, (method, params) => {
+      catalogChanges.observeNotification(method, params);
       for (const [socket, clients] of socketClients) for (const state of clients.values()) {
         const id = params.threadId ?? params.thread?.id;
         const global = ["thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed"].includes(method);
@@ -272,6 +280,12 @@ export async function startLocalAgentHost(options: {
     projectlessRoot: projectlessWorkspaceRoot,
   }));
   cleanup.push(() => adapter.close());
+  cleanup.push(adapter.subscribe((method, params) => {
+    const value = params as { threadId?: string };
+    // Creation belongs to the committed lifecycle transaction, including ephemeral policy.
+    if (method !== "thread/started" && value.threadId && lifecycle.catalog.get(value.threadId)?.ephemeral === false)
+      catalogChanges.observeNotification(method, params);
+  }));
   const capabilities = new DshCapabilityBroker(undefined, options.sessionCapabilities);
   cleanup.push(() => capabilities.close());
   cleanup.push(() => capabilityLink?.close());
@@ -775,6 +789,7 @@ export async function startLocalAgentHost(options: {
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
             dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
+        if (request.method === "thread/delete" || request.method === "thread/list") catalogChanges.observeResult(request.method, request.params, result);
         if (request.method === "initialize") {
           state.initialized = true;
           state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];

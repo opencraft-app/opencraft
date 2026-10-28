@@ -924,7 +924,9 @@ export async function createWebWorkbenchApplicationSupervisor(
             { browser: browserToolHost, terminal: terminalToolHost, connectors },
             { hostId: profile.hostId },
           );
-          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient);
+          const catalogScope = clientResources.getSnapshot();
+          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient,
+            () => clientResources.getSnapshot() === catalogScope);
           return () => { stopObservation(); stopDiagnostics(); catalog(); tools(); };
         },
         });
