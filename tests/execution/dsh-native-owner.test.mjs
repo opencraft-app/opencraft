@@ -38,13 +38,13 @@ test('successful tool requires native journal commit before custody retires',asy
  assert.equal((await owner.inspect()).activeCount,0);
 });
 
-test('cold inbox, blocked goal, approvals and unowned jobs remain work',async t=>{
+test('cold goal is retained while inbox, approvals and unowned jobs remain work',async t=>{
  const root=await mkdtemp('/tmp/dsh-future-');t.after(()=>rm(root,{recursive:true,force:true}));
  const events=[{seq:0,type:'agent/inbox/spliced',data:{target:'next-turn',start:0,removedCount:0,inserted:[{id:'future',content:[]}]}},
    {seq:1,type:'goal/change',data:{goal:{id:'goal',phase:'blocked'}}},
    {seq:2,type:'approval/asked',data:{id:'approval'}}];
  const native={...ctx(),jobs:{list:()=>[{status:'running',ownerSession:null}]},sessionPersistence:{list:async()=>[{id:'s'}],readFrom:async()=>({events})}};
- const owner=createDshNativeOwner(native,root);const first=await owner.inspect();assert.equal(first.activeCount,4);
+ const owner=createDshNativeOwner(native,root);const first=await owner.inspect();assert.equal(first.activeCount,3);
  assert.equal(first.records[0].inbox,1);assert.equal(first.records[0].goal,1);assert.equal(first.records[0].approvals,1);
  owner.fence();assert.deepEqual((await owner.inspect()).records,first.records);
 });
@@ -78,4 +78,17 @@ test('cold fork inbox excludes the inherited seed prefix',async t=>{
  assert.equal((await owner.inspect()).activeCount,0);
  events.push({type:'agent/inbox/spliced',data:{target:'next-turn',start:0,removedCount:0,inserted:[{id:'child-owned'}]}});
  assert.equal((await owner.inspect()).activeCount,1);
+});
+
+// A durable objective is not an executing Turn. Cold startup keeps it disarmed.
+test('idle active goal survives fencing and a new owner without occupying execution',async t=>{
+ const {root}=await fixture(t);
+ const events=[{type:'goal/change',data:{goal:{id:'goal',phase:'active',objective:'Persistent work'}}}];
+ const native={...ctx(),sessionPersistence:{list:async()=>[{id:'s'}],readFrom:async()=>({events})}};
+ const owner=createDshNativeOwner(native,root);owner.resume();owner.fence();
+ const before=await owner.inspect();assert.equal(before.activeCount,0);assert.equal(before.records[0].goal,1);
+ const next=createDshNativeOwner(native,root);assert.equal(next.open(),false);
+ assert.deepEqual((await next.inspect()).records,before.records);next.resume();
+ assert.deepEqual((await next.inspect()).records,before.records);
+ events.push({type:'turn/start',data:{turn:0}});assert.equal((await next.inspect()).activeCount,1);
 });

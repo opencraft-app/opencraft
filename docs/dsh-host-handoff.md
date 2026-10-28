@@ -14,7 +14,7 @@ Host 在加载任何 store 前取得独占内核锁；持久协议记录 operati
 fence 同时关闭 Host RPC/IM 输入、内部 schedule/recovery、Tasks 私有端口和原生执行入口。
 已开始的 Turn 自然完成，内部后续输入停放在持久 inbox；不清空 queue/goal 或自动续发。
 直接原生 RPC 和经聚合转发的请求使用同一原生 authority；消费者连接断开不证明输入未接纳。
-原生 bridge 中在途操作、原生 Agent、全部历史未闭 Turn、inbox、goal、审批、job、Host journal、queue、schedule/recovery 及 OS 子进程共同参与计数。
+原生 bridge 中在途操作、原生 Agent、全部历史未闭 Turn、inbox、审批、job、Host journal、queue、schedule/recovery 及 OS 子进程共同参与计数。
 读取失败、超时、未知拓扑或损坏均为 unknown。
 Host→Pi/直连网关的结果另持久登记消费者lease；只有消费方匹配自身请求并完成处理后返回的精确receipt才能退休，迟到或丢失结果不自动确认。IM使用相同的确认边界。
 
@@ -57,5 +57,8 @@ IM消费者custody仅在取得Host准入后创建，确定被fence拒绝的输�
 - owner 进程标记/锁和易变 SQLite WAL/SHM 不是内容 proof；SQLite 当前逻辑内容已经由只读连接完整读取。
 
 仅验证该固定起点和当前实际历史/插件/配置组合。未知版本、任意 ABI、任意自定义插件及反向读写兼容不自动成立。
-未完成输入、未来或暂停 schedule/goal、待审批和长期 unknown 保留并阻止安全 release。
+未完成输入、未来或暂停 schedule、待审批和长期 unknown 保留并阻止安全 release。
+空闲 goal（包括 active/paused/blocked）是持久意图，完整读取并纳入历史 proof，但不单独增加执行占用。
+fence 期间不起新 Turn；已有 goal 不续跑。继任保留 goal 原 phase，冷加载保持 disarmed，
+恢复准入后的行为与正常重启相同，不隐式 arm、清除或重放 goal。若 goal 已产生 Turn、inbox 或未确认结果，仍按对应执行事实阻止 release。
 冷 ready 是恢复准入条件，不是回滚数据的授权；不自动回灌旧备份。
