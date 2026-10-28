@@ -103,3 +103,43 @@ Registry publication fsyncs the file and parent directory; persistence failure
 stops admission instead of continuing from an uncertain in-memory default.
 
 See [generation upgrade transactions](full-upgrade-generations.md).
+
+
+## Host process handoff (protocol 1)
+
+The private authenticated `POST /owner-handoff` endpoint accepts `fence`,
+`inspect`, `release`, `cold-ready` and `resume`. Mutations require exact
+`expectedOwner`, `expectedEpoch`, `operationId` and `fence`; resume additionally
+requires the identity returned by cold readiness. The durable
+`host-handoff.json` authority wraps the complete Host dispatcher, including
+filesystem/project resources, and closes all execution RPCs, private inputs and
+generation management before reporting a fence. Existing native Turns and
+callbacks continue; input receipt queries and orchestration acknowledgements
+may reconcile accepted work while draining. Release seals those remaining lanes.
+
+Occupancy includes Host calls, native admissions, pending creations, preparation
+tickets, uncertain inputs/Turns, native transport requests/callbacks and storage
+failures. A timed out native request remains unknown, even if a late response
+arrives, and a child exit with pending requests persists an uncertainty ledger. Historical bindings are counted separately and retained. This ACP
+adapter has no independent goal, queue or schedule executor; their callers
+cannot bypass its Host admission authority. Read failure is never an empty proof.
+
+Release requires complete zero occupancy, stops all native generation processes
+with Resume support, and flushes registry persistence. The old Host still holds
+its kernel writer lock until fully closed. A successor acquires the same
+`acp-writer.lock` before loading any store, also respecting the legacy owner
+lock during migration. It requires the old durable release, cold reads current
+registry/catalog/receipts and initializes the pinned native peers. It remains
+fenced until its own cold readiness is explicitly consumed. Resume rechecks
+zero occupancy, OS/storage authority, native identity and the exact readiness
+proof; retained bindings require native Resume support. Dormant generations
+with unproven Resume capability remain blocked. Unknown old release,
+persistence failure, changed owner/epoch or dead native readiness fails closed.
+No data snapshot is restored and no native input is replayed by this protocol.
+
+Legacy Hosts without this endpoint require a separately identified bootstrap
+maintenance; they are not protocol-1 starting points. The protocol does not
+install/enable an engine, migrate a schema, authorize a full release recipe or
+provide generic automatic rollback across incompatible data. Native descendant
+processes outside the ACP transport require deployment cgroup supervision and
+an explicit compatible recipe; unsupported peers remain blocked.

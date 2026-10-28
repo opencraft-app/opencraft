@@ -68,6 +68,8 @@ export class AcpEngine implements ExecutionEngineProvider {
   private readonly listeners = new Set<(method: string, params: Value) => void>();
   private loaded: Promise<void> | null = null;
   private persistence: Promise<void> = Promise.resolve();
+  private persistenceFailed = false;
+  private nativeOutcomeUnknown = false;
   private started: Promise<void> | null = null;
   private capabilities: Value = {};
   private toolServer?: Server;
@@ -83,7 +85,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   setOrchestration(port: AcpOrchestrationPort): void { this.orchestration = port; }
   get driverKind(): "acp" | "claude-code" { return this.id === "claude-code" ? "claude-code" : "acp"; }
   get occupancy() {
-    return { activeTurns: [...this.runtime.values()].filter(state => state.active?.status === "inProgress").length,
+    return { nativeOutcomeUnknown: this.nativeOutcomeUnknown ? 1 : 0, storageUnknown: this.persistenceFailed ? 1 : 0, unconfirmedTurns: [...this.sessions.values()].filter(session => { const active = this.runtime.get(session.id)?.active; return active ? active.status === "unconfirmed" : session.lastTurn?.status === "inProgress"; }).length, ...this.transport.occupancy, activeTurns: [...this.runtime.values()].filter(state => state.active?.status === "inProgress").length,
       pendingCallbacks: this.activeCallbacks, pendingCreations: this.creations.size, preparedTickets: this.preparations.size, activeAdmissions: this.activeAdmissions,
       unconfirmedInputs: [...this.sessions.values()].reduce((sum, session) => sum + Object.values(session.receipts).filter(receipt => receipt.state === "unknown").length, 0) };
   }
@@ -140,6 +142,10 @@ export class AcpEngine implements ExecutionEngineProvider {
         const choice = this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
         return { outcome: choice ? { outcome: "selected", optionId: choice.optionId } : { outcome: "cancelled" } };
       },
+      onUnconfirmed: () => {
+        this.nativeOutcomeUnknown = true;
+        void this.persistJson(join(this.options.dataDirectory, "native-uncertainty.json"), { unknown: true }).catch(() => {});
+      },
       onExit: () => {
         for (const [id, state] of this.runtime) if (state.active?.status === "inProgress") {
           state.active.status = "failed";
@@ -167,10 +173,17 @@ export class AcpEngine implements ExecutionEngineProvider {
   private persistJson(path: string, payload: unknown): Promise<void> {
     const serialized = JSON.stringify(payload);
     const operation = this.persistence.catch(() => {}).then(async () => {
+      if (this.persistenceFailed) throw new Error("ACP storage persistence is unavailable");
       const temporary = `${path}.${randomUUID()}.tmp`;
-      await writeFile(temporary, serialized, { mode: 0o600 }); await rename(temporary, path);
+      const { open, unlink } = await import("node:fs/promises");
+      let file;
+      try {
+        file = await open(temporary, "wx", 0o600); await file.writeFile(serialized); await file.sync(); await file.close(); file = undefined;
+        await rename(temporary, path);
+        const directory = await open(this.options.dataDirectory, "r"); try { await directory.sync(); } finally { await directory.close(); }
+      } finally { await file?.close(); await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
     });
-    this.persistence = operation; return operation;
+    this.persistence = operation.catch(error => { this.persistenceFailed = true; throw error; }); return this.persistence;
   }
   private save(session: Session): Promise<void> { return this.persistJson(join(this.options.dataDirectory, `${session.id}.json`), session); }
   private savePreparations(): Promise<void> { return this.persistJson(join(this.options.dataDirectory, "preparations.json"), [...this.preparations]); }
@@ -184,6 +197,8 @@ export class AcpEngine implements ExecutionEngineProvider {
         if (record.schemaVersion !== 1 || !safeId(record.id) || file !== `${record.id}.json` || !isAbsolute(record.cwd) || typeof record.nativeId !== "string" || !Array.isArray(record.tools)) throw new Error("Invalid ACP routing metadata");
         this.sessions.set(record.id, record);
       }
+      try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       try {
         for (const [key, creation] of JSON.parse(await readFile(join(this.options.dataDirectory, "creations.json"), "utf8"))) this.creations.set(key, creation);
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
@@ -209,7 +224,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private turn(runtime: Runtime): Value { return runtime.active ? { id: runtime.active.id, status: runtime.active.status, items: runtime.active.items } : {}; }
   private async admit<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.closed || this.suspending) throw new Error("ACP generation is closing or suspending");
+    if (this.closed || this.suspending || this.persistenceFailed) throw new Error("ACP generation is closing or suspending");
     this.activeAdmissions++;
     try { return await operation(); } finally { this.activeAdmissions--; }
   }
@@ -498,7 +513,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   get supportsResume(): boolean { return !!value(this.capabilities.sessionCapabilities).resume || this.capabilities.loadSession === true; }
   async suspend(): Promise<void> {
-    if (this.closed || this.suspending) throw new Error("ACP generation is closing or suspending");
+    if (this.closed || this.suspending || this.persistenceFailed) throw new Error("ACP generation is closing or suspending");
     this.suspending = true;
     try {
       await this.load();
@@ -515,7 +530,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!this.toolServer) return;
     this.toolServer.closeAllConnections(); await new Promise<void>(resolve => this.toolServer!.close(() => resolve())); this.toolServer = undefined;
   }
-  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await this.transport.close(); await this.closeTools(); await this.persistence.catch(() => {}); await this.options.history?.close?.(); }
+  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await this.transport.close(); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
 }
 
 /** Explicit DSH ACP launch. The previous web generation remains a separate owner. */

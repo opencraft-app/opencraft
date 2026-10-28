@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, open, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { ExecutionEngineClient, ExecutionEngineProvider } from "@opencraft/appserver-client";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
+import { AcpHostHandoff, type HostHandoffExpectation } from "./host-handoff.js";
 import { AcpEngine, type AcpEngineOptions, type AcpOrchestrationPort } from "./index.js";
 
 type Value = Record<string, any>;
@@ -12,6 +13,9 @@ export interface AcpGenerationHostOptions {
   id: "acp" | "dsh-acp" | "claude-code";
   dataDirectory: string;
   initialGeneration: { id: string; configPath: string };
+  /** Deployment authority counts OS work outside the supervised native peers. */
+  inspectOsWork?(nativePids: readonly number[]): { coverage: "complete" | "unknown"; activeCount: number | null };
+  runtimeIdentity?: string;
   /** Reads private configuration; the registry stores a digest, not credentials. */
   readConfig(path: string, generationId: string): Promise<AcpEngineOptions>;
 }
@@ -34,6 +38,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   readonly inputs: HostInputPort;
   readonly ownerIncarnation = randomUUID();
   private readonly preparations = new Map<string, { id: string; current: string; epoch: number; identity: string; expires: number }>();
+  private readonly handoff: AcpHostHandoff;
   private registry!: Registry;
   private readonly providers = new Map<string, AcpEngine>();
   private readonly bindings = new Map<string, string>();
@@ -47,14 +52,15 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   private orchestration?: AcpOrchestrationPort;
   constructor(private readonly options: AcpGenerationHostOptions) {
     if (!isAbsolute(options.dataDirectory)) throw new Error("ACP generation data directory must be absolute");
+    this.handoff = new AcpHostHandoff(options.dataDirectory, this.ownerIncarnation);
     this.id = options.id; this.label = options.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : options.id === "claude-code" ? "Claude Code (ACP)" : "ACP Agent";
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_"; this.modelPrefix = this.id + ":";
     this.inputs = {
-      receipt: async (threadId, inputId) => { await this.start(); return this.owner(threadId).inputs.receipt(threadId, inputId); },
+      receipt: async (threadId, inputId) => { await this.start(); return this.handoff.run(() => this.owner(threadId).inputs.receipt(threadId, inputId), true); },
       submit: async (threadId, inputId, text, canAdmit) => {
         await this.start(); const generation = this.bindings.get(threadId);
         if (!generation) throw new Error("ACP thread generation is unavailable");
-        return this.admit(generation, provider => provider.inputs.submit(threadId, inputId, text, canAdmit));
+        return this.handoff.run(() => this.admit(generation, provider => provider.inputs.submit(threadId, inputId, text, canAdmit)));
       },
     };
   }
@@ -109,6 +115,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     if (this.persistenceFailed) return Promise.reject(new Error("ACP registry persistence is unavailable"));
     return this.starting ??= (async () => {
       await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
+      await this.handoff.load();
       try { this.registry = JSON.parse(await readFile(join(this.options.dataDirectory, "generations.json"), "utf8")); }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -134,6 +141,12 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   }
   async request(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
     await this.start();
+    return this.handoff.run(() => this.handleRequest(method, params, client), method === "opencraft/orchestration/ack");
+  }
+  admitHostRequest<T>(method: string, operation: () => Promise<T>): Promise<T> {
+    return this.handoff.run(operation, method === "opencraft/orchestration/ack");
+  }
+  private async handleRequest(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
     if (method === "opencraft/orchestration/prepare") {
       let generation = params.sourceSettings === undefined && typeof params.threadId === "string"
         ? this.bindings.get(params.threadId) ?? this.registry.current : this.registry.current;
@@ -176,13 +189,15 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   }
   incarnation(threadId: string): string { return this.owner(threadId).incarnation; }
   executionObservation(threadId: string) { return this.owner(threadId).executionObservation(threadId); }
-  snapshot(): Value { return { ownerIncarnation: this.ownerIncarnation, lastActivation: this.registry.lastActivation ?? null, admissionEpoch: this.registry.admissionEpoch ?? 0, current: this.registry.current, generations: this.registry.generations.map(record => ({ ...record, configPath: undefined, pid: this.providers.get(record.id)?.processId ?? null, incarnation: this.providers.get(record.id)?.incarnation ?? null, bindings: [...this.bindings.values()].filter(id => id === record.id).length, occupancy: this.providers.get(record.id)?.occupancy ?? null })) }; }
+  snapshot(): Value { return { handoff: this.handoff.snapshot(), ownerIncarnation: this.ownerIncarnation, lastActivation: this.registry.lastActivation ?? null, admissionEpoch: this.registry.admissionEpoch ?? 0, current: this.registry.current, generations: this.registry.generations.map(record => ({ ...record, configPath: undefined, pid: this.providers.get(record.id)?.processId ?? null, incarnation: this.providers.get(record.id)?.incarnation ?? null, bindings: [...this.bindings.values()].filter(id => id === record.id).length, occupancy: this.providers.get(record.id)?.occupancy ?? null })) }; }
   /** Private local control; suspension preserves bindings and native provenance. */
   manage(action: "add" | "activate" | "suspend" | "retire" | "preparation", input: { id: string; configPath?: string; expectedCurrent?: string; expectedEpoch?: number; expectedOwner?: string; operationId?: string; preparation?: string }): Promise<Value> {
     const operation = this.mutation.catch(() => {}).then(async () => {
       if (input.expectedOwner !== undefined && input.expectedOwner !== this.ownerIncarnation) throw new Error("ACP owner changed");
       if (input.operationId !== undefined && !/^[a-f0-9]{64}$/u.test(input.operationId)) throw new Error("Invalid ACP activation operation");
-      await this.start(); if (!generationId(input.id)) throw new Error("Invalid ACP generation id");
+      await this.start();
+      return this.handoff.run(async () => {
+      if (!generationId(input.id)) throw new Error("Invalid ACP generation id");
       if (input.expectedEpoch !== undefined && input.expectedEpoch !== (this.registry.admissionEpoch ?? 0)) throw new Error("ACP admission epoch changed");
       if (input.expectedCurrent !== undefined && input.expectedCurrent !== this.registry.current) throw new Error("ACP current generation changed");
       if (action === "preparation") {
@@ -227,9 +242,49 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
         } finally { this.transitioning.delete(record.id); }
       }
       return this.snapshot();
+      });
+    });
+    this.mutation = operation; return operation;
+  }
+  /** Complete for this ACP Host: ACP has no independent queue/goal/schedule
+   * executor. Native pending RPCs and callbacks remain owner authority. */
+  occupancy() {
+    const state = this.handoff.snapshot();
+    const generations = [...this.providers].map(([id, provider]) => ({ id, ...provider.occupancy }));
+    const os = this.options.inspectOsWork?.([...this.providers.values()].flatMap(p => p.processId ? [p.processId] : []));
+    const coverage = this.persistenceFailed || state.persistence !== "ready" || os?.coverage !== "complete" || !Number.isSafeInteger(os.activeCount) || os.activeCount! < 0 ? "unknown" : "complete";
+    const activeCount = coverage === "complete" ? state.activeCalls + os!.activeCount! + generations.reduce((sum, row) => sum + Object.entries(row).reduce((n, [key, count]) => key === "id" ? n : n + Number(count), 0), 0) : null;
+    return { coverage, activeCount, osWork: os ?? { coverage: "unknown", activeCount: null }, historicalCount: this.bindings.size, generations };
+  }
+  private coldProof() {
+    const snapshot = this.snapshot(), occupancy = this.occupancy();
+    if (occupancy.coverage !== "complete" || occupancy.activeCount !== 0 || snapshot.generations.some((g: Value) => {
+      if (g.state === "retired") return false;
+      const provider = this.providers.get(g.id)!;
+      return g.state !== "dormant" && !g.pid || g.bindings > 0 && !provider.supportsResume;
+    })) throw new Error("ACP cold native readiness or historical Resume unavailable");
+    return { owner: this.ownerIncarnation, current: snapshot.current, generations: snapshot.generations, capabilities: this.extensions, runtimeIdentity: this.options.runtimeIdentity ?? null };
+  }
+  ownerControl(action: "fence" | "inspect" | "release" | "cold-ready" | "resume", input: HostHandoffExpectation & { identity?: string }): Promise<Value> {
+    const operation = this.mutation.catch(() => {}).then(async () => {
+      await this.start();
+      if (action === "fence") await this.handoff.fence(input);
+      else if (action === "release") await this.handoff.release(input, () => this.occupancy(), async () => {
+        for (const provider of this.providers.values()) await provider.suspend();
+        if ([...this.providers.values()].some(provider => provider.processId !== null)) throw new Error("ACP native writer did not release");
+        await this.persistence;
+        const os = this.options.inspectOsWork?.([]);
+        if (os?.coverage !== "complete" || os.activeCount !== 0) throw new Error("ACP OS writer release is unconfirmed");
+      });
+      else if (action === "cold-ready") {
+        await this.handoff.coldReady(input, this.coldProof());
+      } else if (action === "resume") {
+        await this.handoff.resume(input, input.identity ?? "", this.coldProof());
+      } else if (action !== "inspect") throw new Error("Invalid ACP Host control action");
+      return { ...this.snapshot(), occupancy: this.occupancy() };
     });
     this.mutation = operation; return operation;
   }
   disconnect(client: ExecutionEngineClient): void { for (const provider of this.providers.values()) provider.disconnect(client); }
-  async close(): Promise<void> { await Promise.allSettled([...this.providers.values()].map(provider => provider.close())); await this.persistence.catch(() => {}); }
+  async close(): Promise<void> { await Promise.all([...this.providers.values()].map(provider => provider.close())); await this.persistence; }
 }
