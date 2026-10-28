@@ -506,3 +506,22 @@ Request URLs remain bound to the configured registry; authentication comes from
 the npm toolchain, redirects remain disabled, and caller headers cannot replace
 the configured credentials. Producers can encode large publication attachments
 in bounded chunks instead of allocating one archive-sized Base64 string.
+
+## 受管维护与回退完成钩子
+
+部署可以设置 `OPENCRAFT_RECOVERY_MAINTENANCE_MARKER` 为私有维护标记的绝对路径。
+更新器在开始安装前同步检查标记，标记存在时拒绝新安装/完整升级；读取状态与已有业务连接
+仍可使用。维护控制器先独占创建标记，再读取状态确认没有进行中的更新。
+已认证回退可以携带 `x-opencraft-recovery-id`，其值必须等于标记内容；该能力仅用于持有
+本次维护标识的部署控制器，不能绕过管理员认证、已有更新事务或兼容性检查。
+
+`OPENCRAFT_ROLLBACK_RECOVERY_COMMAND` 是非空参数字符串数组的JSON，用于配置部署拥有的
+回退完成检查，例如重建独立路由进程并发起新连接握手。更新器先应用兼容执行版本，执行
+钩子成功后才提交Web指针；钩子失败沿既有事务恢复当前执行版本，不宣称回退成功。
+命令直接执行、没有shell，120秒超时，输出不进入公开API。钩子运行在现有更新事务内，
+不得重新取得外层部署锁或向同一更新器发起新事务。状态中的 `recovery.maintenanceMarker`
+与 `recovery.rollbackHook` 只声明配置是否存在，不代表本次恢复或外部服务已验证。
+
+完整签名包的sealer直接读取当前npm自带的Arborist/npm-packlist清单并计算文件摘要，写入
+签名后只压缩一次。inspection/dry-run和交付使用同一最终归档，仍执行签名、文件列表、
+权限与预算的完整验证；不能将暂存文件清单当作归档已通过的证据。

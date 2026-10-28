@@ -16,6 +16,7 @@ export function parseWebUpdateStatus(value) {
     || !nullableString(value.checkedAt) || !nullableString(value.checkError)
     || !(value.checkErrorCode == null || ['authentication', 'network', 'unavailable', 'registry'].includes(value.checkErrorCode))
     || !(value.recoveryRequired === undefined || typeof value.recoveryRequired === 'boolean')
+    || !(value.recovery === undefined || object(value.recovery) && typeof value.recovery.maintenanceMarker === 'boolean' && typeof value.recovery.rollbackHook === 'boolean')
     || typeof value.canRollback !== 'boolean' || typeof value.updateAvailable !== 'boolean'
     || !(value.execution == null || (object(value.execution) && value.execution.enabled === true && nullableString(value.execution.version) && nullableString(value.execution.buildId) && typeof value.execution.ready === 'boolean' && observation(value.execution.observation) && (value.execution.profile === undefined || ['daemon', 'headless'].includes(value.execution.profile))))
     || typeof value.packageName !== 'string' || typeof value.channel !== 'string'
@@ -28,6 +29,7 @@ export function parseWebUpdateStatus(value) {
     latest: value.latest === null ? null : { version: value.latest.version, buildId: value.latest.buildId },
     checking: value.checking, checkedAt: value.checkedAt, checkError: value.checkError, checkErrorCode: value.checkErrorCode ?? null,
     canRollback: value.canRollback, ...(value.recoveryRequired === undefined ? {} : { recoveryRequired: value.recoveryRequired }), updateAvailable: value.updateAvailable,
+    ...(value.recovery === undefined ? {} : { recovery: { maintenanceMarker: value.recovery.maintenanceMarker, rollbackHook: value.recovery.rollbackHook } }),
     execution: value.execution == null ? null : { enabled: true, version: value.execution.version, buildId: value.execution.buildId, ready: value.execution.ready, ...(value.execution.observation === undefined ? {} : { observation: { ...value.execution.observation } }), ...(value.execution.profile === undefined ? {} : { profile: value.execution.profile }) },
     packageName: value.packageName, channel: value.channel,
     job: value.job === null ? null : { id: value.job.id, version: value.job.version, phase: value.job.phase, error: value.job.error },

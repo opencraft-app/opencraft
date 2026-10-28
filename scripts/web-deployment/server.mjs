@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { upgradeBridge } from './full-upgrade.mjs';
 import { atomicJson as durableJson } from '../full-upgrade/durable.mjs';
 import { loadUserPlugins, assertUserPluginCompatibility } from './user-plugins.mjs';
@@ -97,7 +98,7 @@ function lease(worker) {
 }
 
 export async function createManagedWebServer({ initialRelease, stateDirectory, registry, channel, userconfig, publicOrigin,
-  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
+  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, rollbackRecovery = null, recoveryMarker = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const relayIngress = createHeadlessBackendProxy(relayIngressTarget);
   if (relayIngress && (!headlessBackend || !Number.isInteger(relayInternalPort) || relayInternalPort < 0 || relayInternalPort > 65535)) throw new Error('Relay ingress requires a protected Headless backend and loopback internal port');
@@ -203,6 +204,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         updateAvailable: latest !== null && isNewerVersion(latest.version, persisted.current.version),
         canRollback: persisted.previous !== null, recoveryRequired: await webRecoveryRequired(),
         execution: executionStatus,
+        recovery: { maintenanceMarker: recoveryMarker !== null, rollbackHook: rollbackRecovery !== null },
         // A terminal job is visible only after its persistence and cleanup finish.
         job: operation && persisted.job && !busy(persisted.job) ? { ...persisted.job, phase: 'starting', error: null } : persisted.job };
     }
@@ -211,10 +213,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       catch (error) { if (!closed) { latest = null; checkError = error.message; checkErrorCode = ['authentication', 'network', 'unavailable', 'registry'].includes(error.code) ? error.code : null; } }
       finally { checkedAt = new Date().toISOString(); checking = null; }
     }
-    async function activate(release, job) {
+    async function activate(release, job, rollback = false) {
       const candidate = await startWorker(release, environment); track(candidate);
       try {
         if (execution) await execution.apply(release);
+        if (rollback && rollbackRecovery) await rollbackRecovery();
         if (closed) throw new Error('Deployment is stopping');
         const next = { schemaVersion: 1, current: release, previous: persisted.current, job: { ...job, phase: 'completed', error: null } };
         await writeDeploymentState(statePath, next);
@@ -297,7 +300,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         }
         job.phase = 'starting'; persisted.job = { ...job };
         await childState('starting');
-        await activate(release, job); activated = true;
+        await activate(release, job, rollback); activated = true;
         try { await childState('completed'); } catch { console.error('[opencraft update] Child receipt requires reconciliation'); }
       } catch (error) {
         persisted = { ...original, job: { ...job, phase: 'failed', error: error.message } };
@@ -369,6 +372,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           }
           if (!authenticated(request)) { json(response, 401, { error: 'Deployment administrator access required' }); return; }
           if (pathname.startsWith(`${WEB_UPDATE_PATH}/full/`)) {
+            if (recoveryMarker && existsSync(recoveryMarker)) { json(response, 409, { error: 'Managed recovery maintenance is active' }); return; }
             if (!upgrade) { json(response, 503, { error: 'Upgrade control unavailable' }); return; }
             const action = pathname.slice((WEB_UPDATE_PATH + '/full/').length);
             if (!['check', 'start', 'stop'].includes(action) || !input || Object.keys(input).some(k => !['planDigest', 'jobId'].includes(k))) {
@@ -406,6 +410,12 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             if (!persisted.previous) { json(response, 409, { error: 'No previous release is available' }); return; }
             selected = { ...persisted.previous }; rollback = true;
           } else { json(response, 404, { error: 'Unknown update action' }); return; }
+          // Synchronous final admission closes the status/marker race: no await
+          // may occur between this check and reserving the update operation.
+          if (recoveryMarker && existsSync(recoveryMarker)
+            && !(rollback && request.headers['x-opencraft-recovery-id'] === readFileSync(recoveryMarker, 'utf8').trim())) {
+            json(response, 409, { error: 'Managed recovery maintenance is active' }); return;
+          }
           operation = install(selected, rollback, releaseSource).catch(() => console.error('[opencraft update] Cannot persist update result; inspect the deployment state')).finally(() => { operation = null; });
           json(response, 202, { ok: true, jobId: persisted.job.id });
         } catch { if (!response.headersSent) json(response, 400, { error: 'Invalid update request' }); }

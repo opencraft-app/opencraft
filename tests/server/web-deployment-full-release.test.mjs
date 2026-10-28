@@ -8,8 +8,8 @@ import { c } from 'tar';
 import { parseStrictJson, parseManifest, fileListDigest, sha256, signBytes, acceptManifest,
   signPreflight, verifyPreflight, HARD_LIMITS, LEGACY_LIMITS } from '../../scripts/full-release/contract.mjs';
 import { acceptReleasePolicy } from '../../scripts/full-upgrade/release-policy.mjs';
-import { sealPackage, npmPack } from '../../scripts/full-release/producer.mjs';
-import { verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
+import { sealPackage, npmPack, stagedInventory } from '../../scripts/full-release/producer.mjs';
+import { scanArchive as verifyInventoryArchive, verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const keyId = 'test-key';
@@ -70,6 +70,21 @@ test('sealing under a restrictive umask produces canonical modes without followi
   await link(outside, join(pkg, 'runtime/hard-link'));
   await assert.rejects(npmPack(pkg, root), /hard links/);
   assert.equal((await stat(outside)).mode & 0o7777, 0o600);
+});
+
+test('uncompressed signing inventory follows npm inclusion and ignore rules', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'inventory-rules-'));
+  t.after(() => rm(root, {recursive:true,force:true}));
+  const pkg=join(root,'pkg'); await mkdir(join(pkg,'runtime'),{recursive:true});
+  await writeFile(join(pkg,'package.json'),JSON.stringify({name:'inventory',version:'1.0.0',files:['runtime'],bin:'runtime/main.mjs'}));
+  await writeFile(join(pkg,'LICENSE'),'license'); await writeFile(join(pkg,'outside'),'not shipped');
+  await writeFile(join(pkg,'runtime/main.mjs'),'export const a=1');
+  await writeFile(join(pkg,'runtime/.npmignore'),'ignored.txt\n');
+  await writeFile(join(pkg,'runtime/ignored.txt'),'not shipped either');
+  const inventory=await stagedInventory(pkg), packed=await npmPack(pkg,root);
+  const scan=await verifyInventoryArchive(join(root,packed.filename));
+  assert.deepEqual(inventory,scan.files);
+  assert.ok(!inventory.some(([name])=>name.includes('ignored')||name==='outside'));
 });
 
 test('strict parser rejects duplicate keys, unsafe numbers, invalid UTF8 and depth', () => {
