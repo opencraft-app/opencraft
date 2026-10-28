@@ -450,7 +450,7 @@ export class ThreadResumeCoordinatorService extends Service {
             new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
           operation.assertCurrent();
           this.ctx.resumeNotificationBuffer.supersedeNotifications(threadId);
-          view = await this.readOnce(threadId, { ...options, historyCheckpoint: null }, operation);
+          view = await this.readOnce(threadId, { ...options, historyCheckpoint: null }, operation, true);
           operation.assertCurrent();
         }
         this.ctx.resumeNotificationBuffer.release(threadId);
@@ -463,7 +463,7 @@ export class ThreadResumeCoordinatorService extends Service {
     }, true);
   }
 
-  private async readOnce(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds">, operation: HistoryOperation): Promise<ThreadView> {
+  private async readOnce(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds">, operation: HistoryOperation, reread = false): Promise<ThreadView> {
     operation.assertCurrent();
     const initial = this.ctx.threadViews.getOrCreate(threadId);
     operation.assertCurrent();
@@ -475,7 +475,7 @@ export class ThreadResumeCoordinatorService extends Service {
       ...(readCapability?.version === 1 ? { watch: true } : {}),
       ...(window ? { initialTurnsPage: { limit: 10, itemsView: "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
-    }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal });
+    }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open" });
     let result;
     try { result = await requestRead(supportsWindow); }
     catch (error) {

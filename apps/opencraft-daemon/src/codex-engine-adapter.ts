@@ -390,7 +390,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   private transcriptCache: TranscriptReadCache | null = null;
   private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number }>();
   private cachedHistoryInFlight = 0;
-  private readonly cachedHistoryReads = new Map<string, Set<AbortController>>();
+  private readonly cachedHistoryReads = new Map<string, Map<AbortController, string>>();
+  private readonly cachedHistoryFlights = new Map<string, { promise: Promise<RpcRecord>; controller: AbortController; readers: Set<object> }>();
+  private cachedHistoryWaiters = 0;
+  private readonly cachedHistoryCancellations = new Map<string, { threadId: string; cancel(): void }>();
   private readonly nativeTransport: DuplexTransport | null;
   private releaseOverlays: (() => void) | null = null;
   private releaseWriter: (() => void) | null = null;
@@ -926,6 +929,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       return;
     }
+    if (id !== null && message.method === "thread/history/cancel") {
+      const params = record(message.params), key = JSON.stringify([clientId, this.clientEpoch(clientId), params.historyReadId]);
+      const reader = this.initializedClients.has(clientId) ? this.cachedHistoryCancellations.get(key) : undefined;
+      const cancelled = !!reader && reader.threadId === params.threadId;
+      if (cancelled) reader!.cancel();
+      this.emit({ id, result: { cancelled } }, clientId);
+      return;
+    }
     const historyParams = record(message.params);
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
     const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
@@ -1274,11 +1285,60 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async serveCachedHistory(clientId: string, id: string | number, method: string, historyParams: RpcRecord, cachedRead: boolean): Promise<void> {
-    if (this.cachedHistoryInFlight >= 64) {
+    const epoch = this.clientEpoch(clientId);
+    // Only identical concurrent reads in the same logical owner/epoch share a
+    // native cut. Completed reads are never retained, and page shape/watch/
+    // checkpoint parameters remain part of the identity.
+    const { historyReadId, ...readParams } = historyParams;
+    const key = JSON.stringify([clientId, epoch, this.transcriptCache!.readRevision(string(readParams.threadId)), method, readParams], (_key, value) =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+    if (this.cachedHistoryWaiters >= 64) {
       this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
         data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
       return;
     }
+    let flight = this.cachedHistoryFlights.get(key);
+    if (!flight) {
+      if (this.cachedHistoryInFlight >= 64) {
+        this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
+          data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+        return;
+      }
+      const controller = new AbortController();
+      flight = { promise: this.readCachedHistory(clientId, method, readParams, cachedRead, controller), controller, readers: new Set() };
+      this.cachedHistoryFlights.set(key, flight);
+      const retire = () => { if (this.cachedHistoryFlights.get(key) === flight) this.cachedHistoryFlights.delete(key); };
+      controller.signal.addEventListener("abort", retire, { once: true });
+      void flight.promise.finally(() => { retire(); controller.signal.removeEventListener("abort", retire); }).catch(() => {});
+    } else this.historyDiagnostic({ event: "history-read-coalesced", method });
+    const reader = {};
+    this.cachedHistoryWaiters++;
+    flight.readers.add(reader);
+    let cancelled = false;
+    const cancellationKey = typeof historyReadId === "string" ? JSON.stringify([clientId, epoch, historyReadId]) : null;
+    const cancel = () => {
+      if (cancelled) return;
+      cancelled = true; this.cachedHistoryWaiters--; flight!.readers.delete(reader);
+      // Settle this RPC through every router now; leaving it unanswered would
+      // retain their translated pending IDs until timeout even with a live peer.
+      if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId)) this.emit({ id,
+        error: { code: -32073, message: "History reader cancelled", data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+      if (flight!.readers.size === 0) flight!.controller.abort(new Error("History reader cancelled"));
+    };
+    const cancellation = { threadId: string(readParams.threadId), cancel };
+    if (cancellationKey) this.cachedHistoryCancellations.set(cancellationKey, cancellation);
+    try {
+      const reply = await flight.promise;
+      if (!cancelled && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId)) this.emit({ id, ...reply }, clientId, method);
+    } finally {
+      if (!cancelled) this.cachedHistoryWaiters--;
+      flight.readers.delete(reader);
+      if (cancellationKey && this.cachedHistoryCancellations.get(cancellationKey) === cancellation) this.cachedHistoryCancellations.delete(cancellationKey);
+    }
+  }
+
+  private async readCachedHistory(clientId: string, method: string, historyParams: RpcRecord, cachedRead: boolean, controller: AbortController): Promise<RpcRecord> {
     this.cachedHistoryInFlight++;
     const started = performance.now(), pairId = randomUUID();
     const trace = { pairId, nativeRpcMs: 0, nativeRpcCount: 0 };
@@ -1286,11 +1346,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     const measured = (phase: string, ms: number) => { phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms; };
     let outcome = "aborted";
     const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
-    const controller = new AbortController();
     this.historyReadTraces.set(controller.signal, trace);
     let reads = this.cachedHistoryReads.get(clientId);
-    if (!reads) { reads = new Set(); this.cachedHistoryReads.set(clientId, reads); }
-    reads.add(controller);
+    if (!reads) { reads = new Map(); this.cachedHistoryReads.set(clientId, reads); }
+    reads.set(controller, threadId);
     const configuredTimeout = this.options.kind === "local" ? this.options.historyReadTimeoutMs : undefined;
     const timeoutMs = Math.max(1_000, Math.min(MAX_HISTORY_READ_TIMEOUT_MS, configuredTimeout ?? DEFAULT_HISTORY_READ_TIMEOUT_MS));
     const timer = setTimeout(() => controller.abort(new Error("History read timed out; retry the read")), timeoutMs);
@@ -1303,18 +1362,17 @@ export class CodexEngineAdapter implements DuplexTransport {
       }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal, measured)
         : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full",
           historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured);
-      if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
+      if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
       const projectionStarted = performance.now();
       const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
       const reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
       measured("projection", performance.now() - projectionStarted);
       outcome = "ok";
-      this.emit({ id, result: { ...record(reply), __opencraftHistoryTiming: { ...phases, ...trace, coreMs: performance.now() - started } } }, clientId, method);
+      return { result: { ...record(reply), __opencraftHistoryTiming: { ...phases, ...trace, coreMs: performance.now() - started } } };
     } catch (error) {
       outcome = controller.signal.aborted ? "aborted" : "failed";
-      if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
-        this.emit({ id, error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+      return { error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } };
     } finally {
       this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome, ...phases, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs: performance.now() - started });
       this.historyReadTraces.delete(controller.signal);
@@ -1336,7 +1394,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.coreBridge) return this.coreBridge.close();
     if (this.closeOperation !== null) return this.closeOperation;
-    for (const reads of this.cachedHistoryReads.values()) for (const read of reads) read.abort(new Error("Codex AppServer closed"));
+    for (const reads of this.cachedHistoryReads.values()) for (const read of reads.keys()) read.abort(new Error("Codex AppServer closed"));
     this.cachedHistoryReads.clear();
     clearInterval(this.generationUsageTimer);
     for (const timer of this.generationReconciling.values()) if (timer) clearTimeout(timer);
@@ -1566,7 +1624,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
-          "opencraft/read-history": { version: 1 },
+          "opencraft/read-history": { version: 1, cancellation: true },
           "opencraft/execution-engines": { version: 1, defaultEngine: "codex", providers: [] },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
@@ -1993,6 +2051,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emit({ id, error: { code: -32602, message: "Unsubscribe requires threadId" } }, clientId);
       return;
     }
+    for (const [read, readingThread] of this.cachedHistoryReads.get(clientId) ?? []) {
+      if (readingThread === threadId) read.abort(new Error("History reader unsubscribed"));
+    }
     const clients = this.threadClients.get(threadId);
     const watchers = this.historyWatchers.get(threadId);
     watchers?.delete(clientId);
@@ -2109,7 +2170,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
-    for (const read of this.cachedHistoryReads.get(clientId) ?? []) read.abort(new Error("History reader disconnected"));
+    for (const read of this.cachedHistoryReads.get(clientId)?.keys() ?? []) read.abort(new Error("History reader disconnected"));
     this.cachedHistoryReads.delete(clientId);
     for (const [threadId, clients] of this.historyWatchers) {
       clients.delete(clientId);
@@ -3158,8 +3219,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   private emit(message: RpcRecord, clientId?: string, method = ""): void {
     if ("result" in message && this.options.collaboration?.topology) message = {...message,
       result:projectThreadTopologyResult(method,message.result,id => this.options.collaboration!.topology!(id))};
+    const started = performance.now();
     const frame = serializeHistoryReply(clientId ? { ...message, [LOGICAL_CLIENT_FIELD]: clientId } : message, method);
+    const serialized = performance.now();
     for (const listener of this.listeners) listener(frame);
+    const timing = record(record(message.result).__opencraftHistoryTiming);
+    if (typeof timing.pairId === "string") this.historyDiagnostic({ event: "history-read-return", pairId: timing.pairId,
+      method, bytes: Buffer.byteLength(frame), serializeMs: serialized - started, publishMs: performance.now() - serialized });
   }
 
   private readonly fail = (error: Error): void => {

@@ -18,6 +18,7 @@ const enums = { kind: kinds, component: components, operationType: operations, o
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
   measurementScope: ['navigation','in_page','rpc','domain','process','client'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
+  historyReadSource: ["open","snapshot-reread","attention","overview","navigation","refresh","task-metadata"],
   lengthBucket: ['lt50','50to199','200to499','500plus','unknown'],
   cache: ['cold','warm','unknown'], visibility: ['visible','hidden','unknown'], engine: ['codex','dsh','pi','none','unknown'] };
 /** Unknown keys are discarded; malformed known keys reject only this record. */
@@ -34,7 +35,7 @@ export function sanitizeEvent(input, now = Date.now()) {
     event[key] = input[key];
   }
   if (!event.eventId || !event.producerId) return null;
-  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs']) if (input[key] !== undefined) {
+  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs']) if (input[key] !== undefined) {
     if (!Number.isFinite(input[key]) || input[key] < 0 || input[key] > Number.MAX_SAFE_INTEGER) return null;
     event[key] = input[key];
   }

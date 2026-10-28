@@ -135,9 +135,9 @@ test('history RPC keeps its opening operation through replacement and exports on
     dispose = installClientObservation({connectionGeneration:1,subscribeRequestLifecycle(fn:any){listener=fn;return ()=>{};}} as any);
     const observer = createThreadHistoryFirstPaintObserver();
     const first = observer.begin('view-first','cold',{hostId:'local',threadId:'private-thread'});
-    listener({type:'started',hostId:'local',id:'read-1',method:'thread/read',params:{threadId:'private-thread'},startedAtMs:123,queueWaitMs:2});
+    listener({type:'started',hostId:'local',id:'read-1',method:'thread/read',params:{threadId:'private-thread'},startedAtMs:123,queueWaitMs:2,historySource:'attention'});
     observer.begin('view-second','cold',{hostId:'local',threadId:'private-thread'});
-    listener({type:'completed',hostId:'local',id:'read-1',method:'thread/read',durationMs:100,result:{
+    listener({type:'completed',hostId:'local',id:'read-1',method:'thread/read',durationMs:100,responseBytes:2048,decodeMs:1.5,result:{
       thread:{id:'private-thread',content:'private-content'},__opencraftHistoryTiming:{pairId:'server-trace',coreMs:90,nativeRpcMs:75,queueMs:3,sourceMs:-1,evil:'private-content'}}});
     observer.settle(first,'ok'); observer.abort();
     observeEvent({kind:"operation",operationType:"other",outcome:"failed"});
@@ -149,6 +149,7 @@ test('history RPC keeps its opening operation through replacement and exports on
     assert.equal(rpc.operationId,starts[0].operationId);
     assert.notEqual(rpc.operationId,starts[1].operationId);
     assert.equal(rpc.webSentAt,123);assert.equal(rpc.clientQueueMs,2);
+    assert.equal(rpc.historyReadSource,'attention');assert.equal(rpc.bytes,2048);assert.equal(rpc.historyDecodeMs,1.5);
     assert.equal(rpc.historyCoreMs,90);assert.equal(rpc.historyNativeRpcMs,75);
     assert.equal(rpc.historySourceMs,undefined);
     assert(!JSON.stringify(captured).includes('private-'));

@@ -187,6 +187,7 @@ export interface ThreadReadParams {
   watch?: boolean;
   /** Optional opencraft/read-history v1 page. Never resumes execution. */
   initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
+  historyReadId?: string;
   historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
 }
 
@@ -433,6 +434,11 @@ export interface AppServerMethodMap extends SharedInteractionMethodMap, TurnReco
   "thread/resume": {
     params: ThreadResumeParams;
     result: ThreadResumeResponse;
+  };
+  /** Cancels one optional Host read subscription, never native execution. */
+  "thread/history/cancel": {
+    params: { threadId: string; historyReadId: string };
+    result: { cancelled: boolean };
   };
   "thread/read": {
     params: ThreadReadParams;

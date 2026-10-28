@@ -327,3 +327,24 @@ AI follow-up cards keep title/decision/state/time/Owner static and selectable. A
 ## Touch message footer clocks
 
 User and assistant message footer clocks are visible at rest for touch input through the shared coarse-pointer/no-hover/current-touch policy. Desktop pointer clocks remain hidden at rest and reveal on existing message hover/focus. Keep time metadata, slot geometry, history cache and action-button availability; elapsed work duration is separate.
+
+
+## Concurrent native history reads
+
+Identical in-flight Host reads share a native cut only within the same logical
+client and epoch, including page shape, watch and checkpoint parameters. JSON
+object key order does not distinguish otherwise identical parameters. Cache
+invalidation changes admission generation so a new reader cannot join a retired cut. A
+completed result is never retained for later readers. The optional read-history
+cancellation capability carries an opaque read identity through RPC-id routing;
+cancelling one waiter leaves peers active, while the last waiter retires the
+operation immediately. Every cancelled RPC settles through intermediate routers.
+Disconnect and logical unsubscribe retire the relevant work; a replacement never
+joins an aborted flight or receives its late result. Execution is independent.
+
+Live metadata and rollout source authorization prepare outside the projection
+lane. Reconciliation, indexed pages, invalidation and final source validation
+remain serialized; snapshot-source watermarks are observed inside that lane.
+Native authority, cursor epochs and notification-overlap canonical rereads are
+unchanged. Read provenance, payload bytes, decode and return timings are bounded
+diagnostics, not presentation state or native-internal profiling.

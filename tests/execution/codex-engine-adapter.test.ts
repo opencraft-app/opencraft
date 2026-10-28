@@ -113,6 +113,83 @@ test("disconnect cancels a held cached history reader while the background Turn 
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("duplicate history reads share native work and logical unsubscribe retires pending history", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-coalesce-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("pause", "test/pauseThreadReads", { paused: true });
+    const params = { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } };
+    for (const id of ["read-a", "read-b"]) await adapter.send(JSON.stringify({ id, method: "thread/read",
+      params: id === "read-a" ? params : { initialTurnsPage: { limit: 10 }, includeTurns: false, watch: true, threadId },
+      [LOGICAL_CLIENT_FIELD]: "reader" }));
+    assert.equal((adapter as any).cachedHistoryInFlight, 1, "identical pending reads must use one native operation");
+    await adapter.send(JSON.stringify({ id: "detach", method: "thread/unsubscribe", params: { threadId }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((adapter as any).cachedHistoryInFlight, 0, "detach retires history without waiting for native metadata");
+    await request("unpause", "test/pauseThreadReads", { paused: false });
+    const fresh = await request("fresh", "thread/read", params);
+    assert.equal(fresh.error, undefined);
+    for (const id of ["read-a", "read-b"]) assert.ok((await waitFor(frames, frame => frame.id === id)).error, "retired readers cannot return late success");
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const cancelPeer of [false, true]) test(`read cancellation is scoped to a subscriber and logical owner (last=${cancelPeer})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-token-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const send = async (id: string, method: string, params: object, clientId = "reader") => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: clientId }));
+  };
+  const rpc = async (id: string, method: string, params: object, clientId = "reader") => { await send(id, method, params, clientId); return waitFor(frames, f => f.id === id); };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader"); await initializeClient(adapter, frames, "other");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await rpc("pause", "test/pauseThreadReads", { paused: true });
+    const params = { threadId, includeTurns: false, initialTurnsPage: { limit: 10 } };
+    await send("a", "thread/read", { ...params, historyReadId: "a" });
+    await send("b", "thread/read", { ...params, historyReadId: "b" });
+    assert.equal((adapter as any).cachedHistoryInFlight, 1);
+    assert.equal(((await rpc("foreign", "thread/history/cancel", { threadId, historyReadId: "a" }, "other")).result as any).cancelled, false);
+    assert.equal(((await rpc("cancel-a", "thread/history/cancel", { threadId, historyReadId: "a" })).result as any).cancelled, true);
+    assert.equal((adapter as any).cachedHistoryInFlight, 1, "peer still owns the native cut");
+    if (cancelPeer) {
+      await send("cancel-b", "thread/history/cancel", { threadId, historyReadId: "b" });
+      // Immediate replacement cannot join an aborted flight, before its cleanup.
+      await send("fresh", "thread/read", { ...params, historyReadId: "fresh" });
+    }
+    await rpc("unpause", "test/pauseThreadReads", { paused: false });
+    const reply = await waitFor(frames, f => f.id === (cancelPeer ? "fresh" : "b"));
+    assert.equal(reply.error, undefined);
+    assert.ok(frames.find(f => f.id === "a")?.error);
+    if (cancelPeer) assert.ok(frames.find(f => f.id === "b")?.error);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("a read admitted after cache invalidation cannot join the prior cut", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-invalidated-flight-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const send = async (id: string, method: string, params: object) => { await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" })); };
+  const rpc = async (id: string, method: string, params: object) => { await send(id, method, params); return waitFor(frames, f => f.id === id); };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await rpc("pause", "test/pauseThreadReads", { paused: true });
+    const params = { threadId, includeTurns: false, initialTurnsPage: { limit: 10 } };
+    await send("old", "thread/read", params);
+    await (adapter as any).transcriptCache.invalidate(threadId);
+    await send("new", "thread/read", params);
+    assert.equal((adapter as any).cachedHistoryInFlight, 2, "invalidation creates a distinct admission generation");
+    await rpc("unpause", "test/pauseThreadReads", { paused: false });
+    assert.ok((await waitFor(frames, f => f.id === "old")).error);
+    assert.equal((await waitFor(frames, f => f.id === "new")).error, undefined);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("model capacity failures continue with exponential backoff capped at 120 seconds", async () => {
   assert.deepEqual([0, 1, 2, 6, 7, 20].map(capacityRetryDelayMs), [1_000, 2_000, 4_000, 64_000, 120_000, 120_000]);
   const root = await mkdtemp(join(tmpdir(), "opencraft-capacity-retry-")), frames: Array<Record<string, unknown>> = [];

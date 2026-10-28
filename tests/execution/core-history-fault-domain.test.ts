@@ -51,10 +51,15 @@ for (const revoked of [false, true]) test(`cached history releases send admissio
   const held = new Promise(resolve => { release = resolve; });
   adapter.initializedClients = new Set(["client"]);
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryWaiters = 0;
   adapter.cachedHistoryReads = new Map();
+  adapter.cachedHistoryFlights = new Map();
+  adapter.cachedHistoryCancellations = new Map();
+  adapter.historyReadTraces = new WeakMap();
+  adapter.historyDiagnostic = () => {};
   adapter.options = { kind: "local" };
   adapter.clientEpoch = () => epoch;
-  adapter.transcriptCache = { page: () => held };
+  adapter.transcriptCache = { readRevision: () => 0, page: () => held };
   adapter.projectSender = (_thread: string, _client: string, value: unknown) => value;
   adapter.emit = (message: unknown) => frames.push(message);
   let admitted = false;
@@ -70,27 +75,33 @@ for (const revoked of [false, true]) test(`cached history releases send admissio
   assert.equal(frames.length, revoked ? 0 : 1);
 });
 
-test("cached history admission is bounded and frees capacity when reads settle", async () => {
+for (const shared of [false, true]) test(`cached history admission is bounded and frees capacity when reads settle (shared=${shared})`, async () => {
   const adapter: any = Object.create(CodexEngineAdapter.prototype), frames: any[] = [];
   let release!: (value: unknown) => void, calls = 0;
   const held = new Promise(resolve => { release = resolve; });
   adapter.cachedHistoryInFlight = 0;
+  adapter.cachedHistoryWaiters = 0;
   adapter.cachedHistoryReads = new Map();
+  adapter.cachedHistoryFlights = new Map();
+  adapter.cachedHistoryCancellations = new Map();
+  adapter.historyReadTraces = new WeakMap();
+  adapter.historyDiagnostic = () => {};
   adapter.options = { kind: "local" };
   adapter.initializedClients = new Set(["client"]);
   adapter.clientEpoch = () => 0;
-  adapter.transcriptCache = { page: () => { calls++; return held; } };
+  adapter.transcriptCache = { readRevision: () => 0, page: () => { calls++; return held; } };
   adapter.projectSender = (_thread: string, _client: string, value: unknown) => value;
   adapter.emit = (message: unknown) => frames.push(message);
   const params = { threadId: "thread", sortDirection: "desc", itemsView: "full" };
-  const reads = Array.from({ length: 64 }, (_, id) => adapter.serveCachedHistory("client", id, "thread/turns/list", params, false));
+  const reads = Array.from({ length: 64 }, (_, id) => adapter.serveCachedHistory("client", id, "thread/turns/list", shared ? params : { ...params, threadId: `thread-${id}` }, false));
   try {
     await adapter.serveCachedHistory("client", "overflow", "thread/turns/list", params, false);
-    assert.equal(calls, 64); assert.equal(frames[0].error.data.retryable, true);
+    assert.equal(calls, shared ? 1 : 64); assert.equal(frames[0].error.data.retryable, true);
   } finally { release({ data: [], nextCursor: null }); await Promise.all(reads); }
   assert.equal(adapter.cachedHistoryInFlight, 0);
+  assert.equal(frames.filter(frame => "result" in frame).length, 64, "all admitted RPCs settle");
   await adapter.serveCachedHistory("client", "next", "thread/turns/list", params, false);
-  assert.equal(calls, 65); assert.equal(frames.at(-1).id, "next");
+  assert.equal(calls, shared ? 2 : 65); assert.equal(frames.at(-1).id, "next");
 });
 async function fixture(run: (f: HistoryFixture) => Promise<void>, options: {
   concurrency?: number; queue?: number; timeoutMs?: number;

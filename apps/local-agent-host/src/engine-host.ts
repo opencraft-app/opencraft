@@ -336,7 +336,7 @@ export async function startEngineHost(options: {
             reply(catalog); return;
           }
           if (provider) {
-            if (params.threadId && !["thread/read", "thread/turns/list", "thread/items/list", "thread/goal/get", "thread/queue/list", "thread/unsubscribe", "thread/resume", "opencraft/thread-pins/set", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
+            if (params.threadId && !["thread/read", "thread/history/cancel", "thread/turns/list", "thread/items/list", "thread/goal/get", "thread/queue/list", "thread/unsubscribe", "thread/resume", "opencraft/thread-pins/set", "thread/name/set", "thread/archive", "thread/unarchive", "thread/delete"].includes(method) && !method.startsWith("opencraft/schedules/") && !state.opened.has(params.threadId)) throw new Error("Open the thread before mutating it");
             const watching = method === "thread/read" && params.watch === true && typeof params.threadId === "string";
             const wasReading = state.reading.has(params.threadId);
             if (watching) state.reading.add(params.threadId);
