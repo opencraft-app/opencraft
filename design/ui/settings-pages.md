@@ -17,6 +17,10 @@ Settings routes use the shared controls in `@opencraft/extension-react`. A page 
 - A list page uses the same header and one card of `SettingsListItem` rows. The primary action is on the section title row; row actions stay quiet.
 - A master-detail page still starts with the same page header. The list and the detail are the section body, not a second visual system.
 
+## Switch targets
+
+Settings switches keep their original 36px by 20px painted track and centered 16px thumb. The shared density preference expands the transparent button target to at least 44px by 44px in touch presentation, independent of viewport width. Enlarging a hit area must not stretch the visible track.
+
 ## Narrow width
 
 - At phone width the navigation is the shell's. Page content keeps the same header, section, card, and stacked rows. Buttons wrap instead of sharing a line with a long value.
