@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, chown, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -304,4 +304,30 @@ test("malformed Host credentials cannot leak through startup or proxy diagnostic
     assert.equal(first.logs().includes('PRIVATE_HOST'),false);
     await writeFile(path,original,{mode:0o600});assert.equal((await f.model()).status,200);
   }finally{await f.close();}
+});
+
+
+test("root cold handoff preserves a private external credential owned by its independent writer", { skip: process.getuid?.() !== 0 }, async () => {
+  const f = await fixture(), external = join(f.root, "external-auth.json"), reference = join(f.data, "secrets/account-a.json");
+  try {
+    await writeFile(external, JSON.stringify({ tokens: { access_token: "synthetic-access", account_id: "a" } }), { mode: 0o700 });
+    await chown(external, 65534, 65534);
+    await writeFile(reference, JSON.stringify({ kind: "codex-auth-file", path: external }), { mode: 0o600 });
+    const first = await f.start(); await delay(50);
+    const fence = await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    await first.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }); await f.stop(first.child);
+    const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    assert.equal(cold.ready.storage.files.find((row: any) => row.path.startsWith("external:")).uid, 65534);
+    await chown(external, 65533, 65533);
+    await assert.rejects(next.adapter.releaseFence(f.input(cold), cold));
+    await chown(external, 65534, 65534); await chmod(external, 0o744);
+    await assert.rejects(next.adapter.coldReady(f.input(await next.adapter.snapshot())));
+    await chmod(external, 0o700);
+    const ready = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    await next.adapter.releaseFence(f.input(ready), ready); assert.equal(await f.account(), 200);
+    const again = await next.adapter.acquireFence(f.input(await next.adapter.snapshot()));
+    await chown(reference, 65534, 65534);
+    await assert.rejects(next.adapter.releaseWriter({ ...f.input(again), proof: again.proof.identity }));
+    await chown(reference, 0, 0); await next.adapter.abortFence(f.input(await next.adapter.snapshot()));
+  } finally { await f.close(); }
 });
