@@ -41,7 +41,7 @@ export function validateGitVaultCredential(value: GitVaultCredential): void {
   const text = (s: unknown, maximum: number) => typeof s === 'string' && s.length > 0 && s.length <= maximum && !/[\0\r\n]/u.test(s);
   if (!value?.identity || !text(value.identity.username, 128) || !text(value.identity.name, 256)
     || !text(value.identity.email, 320) || !/^[^\s@]+@[^\s@]+$/u.test(value.identity.email)
-    || !(text(value.token, 4096) || (value.token === '' && value.sshAuth))) throw new GitVaultError('invalid');
+    || !(text(value.token, 4096) || (value.token === '' && value.sshAuth !== undefined))) throw new GitVaultError('invalid');
   if (value.sshAuth && (!text(value.sshAuth.generation, 128) || !text(value.sshAuth.publicKey, 1024)
     || !text(value.sshAuth.fingerprint, 128) || !value.sshAuth.privateKey.startsWith(PRIVATE_KEY_HEADER)
     || value.sshAuth.privateKey.length > 4096)) throw new GitVaultError('invalid');
