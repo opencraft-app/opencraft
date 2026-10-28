@@ -1094,5 +1094,7 @@
   "fullUpgrade.blocked": "Syarat naik taraf belum dipenuhi",
   "fullUpgrade.stopping": "Sedang berhenti pada titik selamat",
   "fullUpgrade.cancel": "Batalkan naik taraf",
-  "fullUpgrade.stop": "Berhenti selepas langkah ini"
+  "fullUpgrade.stop": "Berhenti selepas langkah ini",
+  "chat.archived.restore": "Pulihkan perbualan",
+  "chat.archived.restoring": "Memulihkan…"
 }

@@ -1092,5 +1092,7 @@
   "fullUpgrade.blocked": "Upgrade requirements not met",
   "fullUpgrade.stopping": "Stopping at a safe point",
   "fullUpgrade.cancel": "Cancel upgrade",
-  "fullUpgrade.stop": "Stop after this step"
+  "fullUpgrade.stop": "Stop after this step",
+  "chat.archived.restore": "Restore conversation",
+  "chat.archived.restoring": "Restoring…"
 }
