@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,writeFile,readFile,readdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {startIndependentDshHost} from '../../scripts/server-deployment/dsh-host.mjs';
 import WebSocket from 'ws';
@@ -87,4 +87,63 @@ test('missing or invalid native history headers cannot certify a cold handoff',a
  assert.equal((await host.handoff.inspect()).coverage,'unknown');await assert.rejects(host.handoff.control('release',expected(host)));
  await verifyReconciliation();
  await rm(corrupt,{recursive:true});assert.equal((await host.handoff.inspect()).coverage,'complete');
+});
+
+
+test('legacy idle active goal cold handoff matches normal restart',async t=>{
+ const {startLocalAgentHost}=await import('../../apps/local-agent-host/src/main.ts');
+ const {zstdCompressSync,zstdDecompressSync}=await import('node:zlib');
+ const root=await mkdtemp('/tmp/dsh-legacy-goal-');await mkdir(join(root,'skills'));
+ const options={coldDependencyRoots:[resolve('node_modules')],dataDirectory:join(root,'agent'),descriptorPath:join(root,'connection.json'),runtimeDirectory:root,skillsDirectory:join(root,'skills'),
+ dshExecutable:resolve('runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'),dshCapabilityPlugin:resolve('apps/local-agent-host/src/dsh-capability-plugin.mjs')};
+ let host:any;
+ t.after(async()=>{await host?.close();await rm(root,{recursive:true,force:true});});
+ // Legacy Host has no owner protocol; fixture uses its real on-disk format.
+ host=await startLocalAgentHost(options);
+ const created:any=await new DshClient(host.dshUrl).call('session.create',{cwd:root});
+ await host.close();
+ const files=await readdir(options.dataDirectory,{recursive:true});
+ const log=join(options.dataDirectory,files.find(p=>/session\.jsonl(?:\.zstd)?$/.test(p))!);
+ let bytes=await readFile(log);const compressed=log.endsWith('.zstd');
+ const lines=(compressed?zstdDecompressSync(bytes):bytes).toString().trim().split('\n').map(line=>JSON.parse(line));
+ const goal={id:'synthetic-persistent-goal',revision:1,objective:'Keep persistent work',phase:'active',maxGoalRounds:100};
+ lines.push({seq:lines.length-1,type:'goal/change',time:1,data:{kind:'goal/change',version:1,operation:'create',goal,roundsStarted:0,createdAt:1,updatedAt:1}});
+ bytes=Buffer.from(lines.map(line=>JSON.stringify(line)).join('\n')+'\n');
+ await writeFile(log,compressed?Buffer.concat([zstdCompressSync(Buffer.from(JSON.stringify(lines[0])+'\n')),zstdCompressSync(Buffer.from(lines.slice(1).map(line=>JSON.stringify(line)).join('\n')+'\n'))]):bytes);
+ // Ordinary legacy restart is the reference behavior, including a native load.
+ host=await startLocalAgentHost(options);
+ const client=new DshClient(host.dshUrl);
+ const history:any=await client.call('session.history',{sessionId:created.sessionId,maxMessages:Number.MAX_SAFE_INTEGER});
+ assert.equal(history.hasMore,false);
+ const nativeHistory=history.events.map((entry:any)=>entry.event);
+ assert.deepEqual(nativeHistory.at(-1).data.goal,goal);
+ const legacySocket=new WebSocket(host.websocketUrl);await new Promise<void>(done=>legacySocket.once('open',done));
+ const readGoal=async(socket:any,id:number)=>new Promise<any>((done,fail)=>{
+ const listener=(raw:any)=>{const frame=JSON.parse(raw.toString());if(frame.id!==id)return;socket.off('message',listener);
+ if(frame.opencraftDshReceipt)socket.send(JSON.stringify({method:'opencraft/owner/receipt',params:frame.opencraftDshReceipt}));
+ frame.error?fail(Error(frame.error.message)):done(frame.result);};socket.on('message',listener);socket.send(JSON.stringify({id,method:'thread/goal/get',params:{threadId:created.sessionId}}));});
+ const normal=await readGoal(legacySocket,1);assert.equal(normal.goal.status,'active');
+ legacySocket.close();await host.close();
+ await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true});
+ await writeFile(join(options.dataDirectory,'owner-handoff/host-handoff.json'),JSON.stringify({schemaVersion:1,epoch:1,phase:'released',sourceOwner:'legacy-fixture',operationId:'test',fence:'test'}),{mode:0o600});
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ assert.equal(host.handoff.open(),false);
+ const before=(await host.nativeOwner('inspect')).records;assert.equal(before[0].goal,1);
+ assert.equal((await host.handoff.inspect()).activeCount,0);
+ await assert.rejects(new DshClient(host.dshUrl).call('session.prompt',{sessionId:created.sessionId,content:[]}),/409/);
+ const ready:any=await host.handoff.control('cold-ready',expected(host));
+ assert.deepEqual(ready.occupancy.native.records,before);
+ await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
+ const socket=new WebSocket(host.websocketUrl);await new Promise<void>(done=>socket.once('open',done));
+ const after=await readGoal(socket,2);assert.deepEqual(after,normal);socket.close();
+ await new Promise(done=>setTimeout(done,100));
+ const post:any=await new DshClient(host.dshUrl).call('session.history',{sessionId:created.sessionId,maxMessages:Number.MAX_SAFE_INTEGER});
+ assert.deepEqual(post.events.map((entry:any)=>entry.event),nativeHistory);
+ await host.handoff.control('fence',expected(host));
+ const fenced=(await host.nativeOwner('inspect')).records;assert.equal((await host.handoff.inspect()).activeCount,0);
+ await host.handoff.control('release',expected(host));await host.close();
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ const cold:any=await host.handoff.control('cold-ready',expected(host));assert.deepEqual(cold.occupancy.native.records,fenced);
+ await host.handoff.control('resume',{...expected(host),identity:cold.handoff.ready.identity});
+ assert.equal(host.handoff.open(),true);
 });

@@ -93,7 +93,9 @@ export function createDshNativeOwner(ctx, directory, bootstrapToken) {
       const jobs = agent ? ctx.jobs.list(agent).filter(row=>!['completed','failed','killed'].includes(row.status) || !row.reported).length : 0;
       const row = {id,turns:[...turns],rpcInputs:[...rpcInputs],events:events.length,digest:digest(events),running:agent?.status === 'running' ? 1 : 0,
         openTurn:lastTurn === 'open' ? 1 : 0,inbox,jobs,approvals:approvals.size,goal:liveGoal && liveGoal.phase !== 'complete' ? 1 : 0};
-      count += row.running + row.openTurn + inbox + jobs + row.approvals + row.goal;
+      // Goals are durable intent. The fence gates execution; a cold restart
+      // preserves their phase without arming automatic continuation.
+      count += row.running + row.openTurn + inbox + jobs + row.approvals;
       records.push(row);
     }
     return {configuration:digest(ctx.settings.describe()),coverage:failed ? 'unknown':'complete', activeCount:failed ? null:count,owner,pid:process.pid,records,custody:Object.entries(ledger.calls).map(([id,row])=>({id,...row}))};
