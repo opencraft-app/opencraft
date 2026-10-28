@@ -52,6 +52,11 @@ uses the public npm registry.
 To build from source and replace an existing server installation directly, follow
 the [local server replacement guide](docs/web-local-deployment.md).
 
+### Docker Compose
+
+For a Linux ARM64 Docker installation with independent data storage and
+execution on the host, use the [Docker Compose deployment guide](docker/README.md).
+
 ### Desktop with the bundled Local Agent
 
 On the target machine (macOS or Linux with a desktop session):

@@ -398,6 +398,13 @@ Host definitions may use root-relative WebSocket paths such as `/appserver` and
 `/codex-appserver`. The browser resolves them against its current HTTP or HTTPS
 origin, so one Web build works behind both authenticated entry points.
 
+### Docker Compose
+
+The Linux ARM64 container entry is maintained in [`docker/`](../docker/README.md).
+It packages the Headless gateway and exports matching native Codex/Pi execution
+owners for the host, with independent bind-mounted data and workspaces. The
+container build is separate from the single-owner archive target below.
+
 ### Headless Linux server archive
 
 `headless-linux-amd64-tar` builds a separate single-owner server artifact from
