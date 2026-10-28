@@ -197,6 +197,8 @@ export interface ThreadReadResponse {
 }
 
 export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
+  /** Complete source count, independent of the returned page. */
+  totalTurnCount?: number;
   backwardsCursor?: string | null;
   itemsPaginationByTurnId?: Readonly<Record<string, unknown>>;
 };

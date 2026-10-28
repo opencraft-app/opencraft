@@ -135,7 +135,7 @@ function projectMessages(snapshot: TimelineSnapshot): readonly DisplayMessage[] 
   return messages.filter(message => retained.has(message));
 }
 
-function parse(value: string | null, hostId: string, threadId: string, now: number): { messages: readonly DisplayMessage[]; savedAt: number } | null {
+function parse(value: string | null, hostId: string, threadId: string, now: number): { messages: readonly DisplayMessage[]; savedAt: number; historyTurnCount?: number } | null {
   if (value === null || value.length > 64 * 1_024) return null;
   try {
     const parsed: unknown = JSON.parse(value);
@@ -160,7 +160,7 @@ function parse(value: string | null, hostId: string, threadId: string, now: numb
         workStatus: message.role === "assistant" ? completedWork(message.workStatus) : null,
         sender: message.role === "user" ? messageSender(message.sender) : null });
     }
-    return { messages, savedAt: candidate.savedAt };
+    return { messages, savedAt: candidate.savedAt, historyTurnCount: Number.isSafeInteger(candidate.historyTurnCount) && Number(candidate.historyTurnCount) >= 0 ? Number(candidate.historyTurnCount) : undefined };
   } catch { return null; }
 }
 
@@ -219,10 +219,10 @@ export function createConversationDisplayContinuity(input: {
   const lastProjection = new Map<string, string>();
   const submissions = new Map<string, TimelineSnapshot>();
   const displays = new Map<string, { savedAt: number; timeline: TimelineSnapshot }>();
-  const remember = (key: string, messages: readonly DisplayMessage[], hostId: string, threadId: string, savedAt = now()) => {
+  const remember = (key: string, messages: readonly DisplayMessage[], hostId: string, threadId: string, savedAt = now(), historyTurnCount?: number) => {
     displays.delete(key);
     if (!messages.length) return null;
-    const timeline = paint(hostId, threadId, messages);
+    const timeline = { ...paint(hostId, threadId, messages), historyTurnCount };
     displays.set(key, { savedAt, timeline });
     if (displays.size > 64) displays.delete(displays.keys().next().value!);
     return timeline;
@@ -267,7 +267,7 @@ export function createConversationDisplayContinuity(input: {
         const stored = parse(await input.storage.load(key), hostId, threadId, now());
         // An authoritative observation during I/O always wins over an old read.
         if (lastProjection.get(key) !== observed) return peek(hostId, threadId);
-        return stored?.messages.length ? remember(key, stored.messages, hostId, threadId, stored.savedAt) : null;
+        return stored?.messages.length ? remember(key, stored.messages, hostId, threadId, stored.savedAt, stored.historyTurnCount) : null;
       } catch { return null; }
     },
     observe(snapshot) {
@@ -278,12 +278,12 @@ export function createConversationDisplayContinuity(input: {
       if (snapshot.frames.some(frame => frame.blocks.some(block => block.type === "user-message"
         && block.messageKind === "user"))) submissions.delete(key);
       const messages = projectMessages(snapshot);
-      const projection = JSON.stringify(messages);
+      const projection = JSON.stringify([messages, snapshot.historyTurnCount]);
       if (lastProjection.get(key) === projection) return pending.get(key) ?? Promise.resolve();
       lastProjection.set(key, projection);
-      remember(key, messages, snapshot.key.hostId, snapshot.key.threadId);
+      remember(key, messages, snapshot.key.hostId, snapshot.key.threadId, now(), snapshot.historyTurnCount);
       const value = JSON.stringify({ version: VERSION, hostId: snapshot.key.hostId,
-        threadId: snapshot.key.threadId, savedAt: now(), messages });
+        threadId: snapshot.key.threadId, savedAt: now(), messages, historyTurnCount: snapshot.historyTurnCount });
       queued.set(key, { value: messages.length ? value : null, projection });
       const writing = pending.get(key);
       if (writing) return writing;

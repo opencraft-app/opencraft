@@ -26,7 +26,8 @@ test("standalone Core records the real native process on execution leases across
   const f = await fixture();
   try {
     const a = await f.adapter(true);
-    await a.rpc("employee", "initialize");
+    const initialized = await a.rpc("employee", "initialize");
+    assert.deepEqual(initialized.capabilities.extensions["opencraft/execution-engines"], { version: 1, defaultEngine: "codex", providers: [] });
     const { thread } = await a.rpc("employee", "thread/start", {});
     await a.rpc("employee", "turn/start", { threadId: thread.id, clientUserMessageId: "standalone-input", input: [{ type: "text", text: "synthetic" }] });
     const native = await observeNativeExecutionProcess((await f.control.health()).codexPid);

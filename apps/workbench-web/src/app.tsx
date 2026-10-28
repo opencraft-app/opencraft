@@ -755,7 +755,7 @@ export function App({
   const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
   const historyPaintTurns = historyPaintOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
   const historyPaintLength = historyLengthBucket(historyPaintTurns,
-    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false);
+    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false, visibleTimeline?.historyTurnCount);
   const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
   const historyPaintReady = historyPaintOwnsView && (visibleTimeline?.frames.length ?? 0) > 0;
   const onHistoryVisibleContentReady = useCallback(() => {

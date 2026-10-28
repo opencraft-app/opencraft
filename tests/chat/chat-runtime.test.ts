@@ -2738,3 +2738,15 @@ test("explicit native human wait without a request replaces Thinking and preserv
     assert.equal(block?.type === "approval" && block.canRespond, false);
   } finally { runtime.dispose(); }
 });
+
+test("history source total reaches a partial timeline without counting display frames", () => {
+  const replica = new FakeReplica(threadView({ thread: { id: "thread-one", turns: [], historyTurnCount: 601 } }));
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+    commands: commands(), history: { async loadOlder() {} } });
+  try {
+    assert.equal(runtime.getSnapshot().timeline.historyTurnCount, 601);
+    assert.equal(runtime.getSnapshot().history.hasOlder, true);
+    replica.setEntity(threadView({ turnsPagination: { hasLoadedOldest: true } }));
+    assert.equal(runtime.getSnapshot().timeline.historyTurnCount, 1);
+  } finally { runtime.dispose(); }
+});

@@ -1546,6 +1546,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
           "opencraft/read-history": { version: 1 },
+          "opencraft/execution-engines": { version: 1, defaultEngine: "codex", providers: [] },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };

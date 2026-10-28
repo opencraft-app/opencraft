@@ -212,7 +212,8 @@ export class TranscriptReadCache {
     if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
     onValidated?.();
-    return { thread, initialTurnsPage: await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal) };
+    const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal);
+    return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
   page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
@@ -299,7 +300,7 @@ export class TranscriptReadCache {
         }) };
       });
       return { data, nextCursor: rows.length > limit ? `${sortDirection === "asc" ? "transcript-asc" : "transcript"}:${meta.epoch}:${rows[limit - 1]!.turn_seq}` : null,
-        itemsPaginationByTurnId: {} };
+        itemsPaginationByTurnId: {}, totalTurnCount: Number(meta.total_turns) };
     } finally { if (fd !== null) closeSync(fd); }
   }
   private storeTurn(threadId: string, turn: AppServerTurn, seq: number, encoded = encodeTurn(turn)): void {

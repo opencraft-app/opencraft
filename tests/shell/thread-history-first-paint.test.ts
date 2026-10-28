@@ -106,3 +106,10 @@ test('durable View lookup is inside the timer, cancellation is fenced, and real 
     for(const [key,descriptor] of originals) { if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key]; }
   }
 });
+
+test('full indexed count classifies a partial display without treating its window as total', () => {
+  assert.equal(historyLengthBucket(10, false, 601), '500plus');
+  assert.equal(historyLengthBucket(10, false, 75), '50to199');
+  assert.equal(historyLengthBucket(10, false, -1), 'unknown');
+  assert.equal(historyLengthBucket(10, false, NaN), 'unknown');
+});

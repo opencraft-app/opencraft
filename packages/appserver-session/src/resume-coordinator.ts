@@ -501,7 +501,7 @@ export class ThreadResumeCoordinatorService extends Service {
     if (this.disposed) throw new Error("Thread reader was disposed");
     this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
     return this.ctx.threadViews.update(threadId, current => ({
-      ...current, thread: metadata, connectionGeneration: generation,
+      ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
       resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
       turns: recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
         ? reconcileHistoryTurns(current.turns, turns, "latest", { baselineTurns: initial.turns })
