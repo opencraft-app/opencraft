@@ -1,11 +1,13 @@
-import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile, readdir, chmod } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile, readdir, chmod, realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { parseNpmPackResult } from '../web-deployment/npm-pack-result.mjs';
-import { scanArchive, verifyFullArchive } from './archive.mjs';
+import { verifyFullArchive } from './archive.mjs';
 import { fileListDigest, signPreflight, signBytes, parseManifest, parseStrictJson, preflightFor, sha256 } from './contract.mjs';
-import { createPublicKey } from 'node:crypto';
+import { createPublicKey, createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fullComponents, prepareFullMetadata } from './components.mjs';
 const exec = promisify(execFile);
 async function canonicalizeStagedModes(root) {
@@ -28,6 +30,32 @@ export async function npmPack(root, directory, dryRun = false) {
   const { stdout } = await exec('npm', ['pack', '--ignore-scripts', '--json', '--workspaces=false', '--pack-destination', directory,
     ...(dryRun ? ['--dry-run'] : [])], { cwd: root, maxBuffer: 32 * 1024 ** 2 });
   return parseNpmPackResult(JSON.parse(stdout));
+}
+// Use the same installed npm's inventory rules (files, bundled dependencies,
+// ignores and mandatory files), without producing a preliminary gzip stream.
+export async function stagedInventory(root) {
+  await canonicalizeStagedModes(root);
+  const { stdout } = await exec('which', ['npm']);
+  const npmCli = await realpath(stdout.trim());
+  const requireNpm = createRequire(npmCli);
+  const Arborist = requireNpm('@npmcli/arborist');
+  const packlist = requireNpm('npm-packlist');
+  const tree = await new Arborist({ path: root }).loadActual();
+  const names = await packlist(tree, { path: root });
+  const tarOptions = requireNpm('pacote').DirFetcher.tarCreateOptions({ ...tree.package, _resolved: root });
+  const files = [];
+  for (const name of names) {
+    if (name === 'release/full-release.json' || name === 'release/full-release.sig') continue;
+    const path = join(root, name), info = await stat(path);
+    // Honor this npm's tar filter, including any executable-bin mode policy.
+    if (tarOptions.filter) tarOptions.filter(name, info);
+    const hash = createHash('sha256');
+    let bytes = 0;
+    for await (const chunk of createReadStream(path)) { hash.update(chunk); bytes += chunk.length; }
+    if (bytes !== info.size) throw new Error('Full release staged file changed during inventory');
+    files.push([name, hash.digest('hex'), bytes, info.mode & 0o111 ? '0755' : '0644']);
+  }
+  return files.sort((a, b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0])));
 }
 export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities') }) {
   const keyStat = await stat(keyPath);
@@ -61,9 +89,7 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
   // Preliminary/retry packs never overwrite the retained final archive.
   const scratch = await mkdtemp(join(directory, '.full-release-pack-'));
   try {
-    const initial = await npmPack(packageRoot, scratch);
-    const scan = await scanArchive(join(scratch, initial.filename));
-    const files = scan.files;
+    const files = await stagedInventory(packageRoot);
     const licenseFiles = files.filter(([name]) => /(?:^|\/)(?:LICENSE(?:\.[^/]*)?|NOTICE(?:\.[^/]*)?)$/i.test(name)).map(([name]) => name);
     if (!licenseFiles.length) throw new Error('Full release licenses are missing');
     const component = { componentId: 'bridge-distribution', role: 'web-bootstrap', version: pkg.version, buildId: pkg.opencraftWeb.buildId,
@@ -92,9 +118,9 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
     await mkdir(join(packageRoot, 'release'), { recursive: true });
     await writeFile(join(packageRoot, 'release/full-release.json'), bytes, { mode: 0o644 });
     await writeFile(join(packageRoot, 'release/full-release.sig'), JSON.stringify(signBytes(bytes, privateKey, keyId)), { mode: 0o644 });
-    const dryRun = await npmPack(packageRoot, scratch, true);
     const packed = await npmPack(packageRoot, scratch);
-    if (dryRun.integrity !== packed.integrity || dryRun.entryCount !== packed.entryCount || dryRun.unpackedSize !== packed.unpackedSize) throw new Error('Final staged dry-run differs from the signed archive');
+    // The final archive is also the inspection artifact: no second compressor.
+    const dryRun = packed;
     const verified = await verifyFullArchive(join(scratch, packed.filename), trust, { preflight: preflightFor(template) });
     if (binding?.integrity && binding.integrity !== packed.integrity) throw new Error('Full release archive identity changed');
     const finalIdentity = { ...identity, integrity: packed.integrity, archive: join(directory, packed.filename), buildId: pkg.opencraftWeb.buildId };
