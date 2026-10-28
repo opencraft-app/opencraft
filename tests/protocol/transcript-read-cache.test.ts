@@ -324,3 +324,70 @@ test("bounded first page carries full history count", async t => {
   assert.equal(first.initialTurnsPage.data.length, 10);
   assert.equal((await f.cache.page(id, first.initialTurnsPage.nextCursor, 10)).totalTurnCount, 601);
 });
+
+test("read diagnostics separate a held metadata read from the cache and isolate queued callers", async t => {
+  const f = await fixture(t, 12);
+  await f.cache.read(id);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const original = f.port.readThread;
+  f.port.readThread = async threadId => { await held; return original(threadId); };
+  const phases: Array<[string, number]> = [];
+  const reading = f.cache.read(id, 10, undefined, "full", undefined, (phase, ms) => { phases.push([phase, ms]); });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.deepEqual(phases, [], "unsettled native metadata is not mislabeled as a cache hit");
+  release();
+  await reading;
+  const values = Object.fromEntries(phases);
+  assert(values.metadata >= 25);
+  assert(values.queue >= 0 && values.reconcile >= 0 && values.page >= 0);
+  assert.equal(f.calls.filter(call => call === "thread/turns/list").length, 1, "diagnostics add no native history reads");
+  // A failed observer cannot change the lossless result or leave the read blocked.
+  const result = await f.cache.read(id, 10, undefined, "full", undefined, () => { throw new Error("observer failure"); });
+  assert.deepEqual(result.initialTurnsPage.data, f.source.slice(-10).reverse());
+});
+
+test("a concurrent open attributes predecessor hydration to queue time", async t => {
+  const f = await fixture(t, 12);
+  await f.cache.read(id);
+  f.source.push(turn(12)); await appendFile(f.path, line("turn-12"));
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const original = f.port.listTurns;
+  f.port.listTurns = async (...args) => { entered(); await held; return original(...args); };
+  const first = f.cache.read(id); await started;
+  const phases: Array<[string, number]> = [];
+  const second = f.cache.read(id, 10, undefined, "full", undefined, (phase, ms) => { phases.push([phase, ms]); });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(phases.some(([phase]) => phase === "metadata"));
+  assert(!phases.some(([phase]) => phase === "queue"));
+  release(); await first;
+  const result = await second;
+  assert(Object.fromEntries(phases).queue >= 25);
+  assert.equal(result.initialTurnsPage.data[0]!.id, "turn-12");
+  assert.equal(f.calls.filter(call => call === "thread/turns/list").length, 2, "the queued open reuses the validated cache");
+});
+
+for (const count of [35, 95]) test(`a small append does not hydrate unchanged native Turns (${count} Turns); old dirty boundaries remain lossless`, async t => {
+  const f = await fixture(t, count);
+  let hydrated = 0;
+  const original = f.port.listTurns;
+  f.port.listTurns = async (...args) => { const page = await original(...args); hydrated += page.data.length; return page; };
+  const first = await f.cache.read(id, 5), olderCursor = first.initialTurnsPage.nextCursor;
+  hydrated = 0;
+  f.source.push(turn(count)); await appendFile(f.path, line(`turn-${count}`));
+  const updated = await f.cache.read(id, 5);
+  assert.equal(updated.initialTurnsPage.data[0]!.id, `turn-${count}`);
+  assert(hydrated <= 10, `small append rehydrated ${hydrated} Turns for a five-Turn display`);
+  assert.deepEqual((await f.cache.page(id, olderCursor, 5)).data, f.source.slice(count - 10, count - 5).reverse());
+  hydrated = 0;
+  f.source[5]!.items.push({ id: "late-old-item", type: "agentMessage", text: "Late durable change" });
+  await appendFile(f.path, line("turn-5"));
+  await f.cache.read(id, 5);
+  assert(hydrated > 10, "a dirty older Turn must continue beyond the first native page");
+  const all: AppServerTurn[] = [];
+  let cursor: string | null = null;
+  do { const page = await f.cache.page(id, cursor, 10); all.push(...page.data); cursor = page.nextCursor; } while (cursor !== null);
+  assert.deepEqual(all, f.source.slice().reverse(), "smaller native pages preserve old changed and unchanged Turns");
+});

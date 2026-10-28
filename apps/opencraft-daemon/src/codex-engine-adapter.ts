@@ -387,6 +387,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
   private transcriptCache: TranscriptReadCache | null = null;
+  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number }>();
   private cachedHistoryInFlight = 0;
   private readonly cachedHistoryReads = new Map<string, Set<AbortController>>();
   private readonly nativeTransport: DuplexTransport | null;
@@ -479,6 +480,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private get desktopService(): LocalDesktopService | undefined {
     return this.options.kind === "remote" ? undefined : this.options.desktop;
+  }
+
+  private historyDiagnostic(event: Record<string, unknown>): void {
+    try { this.diagnostic(event); } catch { /* Read settlement is independent of diagnostics. */ }
   }
 
   private diagnostic(event: Record<string, unknown>): void {
@@ -1271,8 +1276,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     this.cachedHistoryInFlight++;
+    const started = performance.now(), pairId = randomUUID();
+    const trace = { pairId, nativeRpcMs: 0, nativeRpcCount: 0 };
+    const phases: Record<string, number> = {};
+    const measured = (phase: string, ms: number) => { phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms; };
+    let outcome = "aborted";
     const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
     const controller = new AbortController();
+    this.historyReadTraces.set(controller.signal, trace);
     let reads = this.cachedHistoryReads.get(clientId);
     if (!reads) { reads = new Set(); this.cachedHistoryReads.set(clientId, reads); }
     reads.add(controller);
@@ -1285,18 +1296,24 @@ export class CodexEngineAdapter implements DuplexTransport {
       const result = cachedRead ? await this.transcriptCache!.read(threadId, typeof limit === "number" ? limit : 10, () => {
         if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
           this.watchHistory(threadId, clientId);
-      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal)
+      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal, measured)
         : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full",
-          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal);
+          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured);
       if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
+      const projectionStarted = performance.now();
       const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
-      this.emit({ id, result: this.messageAttachments
-        ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected }, clientId, method);
+      const reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
+      measured("projection", performance.now() - projectionStarted);
+      outcome = "ok";
+      this.emit({ id, result: { ...record(reply), __opencraftHistoryTiming: { ...phases, ...trace, coreMs: performance.now() - started } } }, clientId, method);
     } catch (error) {
+      outcome = controller.signal.aborted ? "aborted" : "failed";
       if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
         this.emit({ id, error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
     } finally {
+      this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome, ...phases, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs: performance.now() - started });
+      this.historyReadTraces.delete(controller.signal);
       clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);
       if (reads.size === 0 && this.cachedHistoryReads.get(clientId) === reads) this.cachedHistoryReads.delete(clientId);
     }
@@ -2290,7 +2307,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       throw new RecoveryNotSubmitted("Codex request retired before native submission");
     }
     const unknown=()=>{if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"unknown");};
-    return new Promise((resolve, reject) => {
+    const trace = signal ? this.historyReadTraces.get(signal) : undefined;
+    const started = performance.now();
+    const operation = new Promise((resolve, reject) => {
       const cleanup = () => signal?.removeEventListener("abort", cancel);
       const cancel = () => {
         this.internalRequests.delete(id); clearTimeout(timer); cleanup();
@@ -2317,6 +2336,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         unknown();reject(error);
       }
     });
+    if (!trace) return operation;
+    try { return await operation; }
+    finally {
+      const nativeRpcMs = performance.now() - started;
+      trace.nativeRpcMs += nativeRpcMs; trace.nativeRpcCount++;
+      this.historyDiagnostic({ event: "history-native-rpc", pairId: trace.pairId, requestId: id, method, nativeRpcMs,
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {}) });
+    }
   }
 
   private rejectInternalRequests(error: Error): void {

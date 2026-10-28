@@ -34,7 +34,7 @@ export function sanitizeEvent(input, now = Date.now()) {
     event[key] = input[key];
   }
   if (!event.eventId || !event.producerId) return null;
-  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs']) if (input[key] !== undefined) {
+  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs']) if (input[key] !== undefined) {
     if (!Number.isFinite(input[key]) || input[key] < 0 || input[key] > Number.MAX_SAFE_INTEGER) return null;
     event[key] = input[key];
   }

@@ -6,6 +6,12 @@ import { serverFetch, serverUrl } from './server-context';
 type Event = Record<string, string | number | null>;
 let enabled = false;
 const recoveryContexts = new Map<string,{recoveryId:string;attemptId?:string;generation?:number}>();
+const historyOperations = new Map<string, string>();
+export function bindHistoryObservation(scope: { hostId: string; threadId: string }, operationId: string): () => void {
+  const key = JSON.stringify([scope.hostId, scope.threadId]);
+  historyOperations.set(key, operationId);
+  return () => { if (historyOperations.get(key) === operationId) historyOperations.delete(key); };
+}
 const enabledListeners = new Set<() => void>();
 export function subscribeObservationEnabled(listener: () => void) {
   enabledListeners.add(listener);if(enabled)listener();
@@ -60,13 +66,37 @@ export function beginObservedOperation(operationType: string, fields: Event = {}
 }
 export function installClientObservation(client: AppServerClient) {
   const clientId=createClientId();
-  return client.subscribeRequestLifecycle(event => {
+  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; operationId?: string }>();
+  const unsubscribe = client.subscribeRequestLifecycle(event => {
+    if (event.type === 'started' && ['thread/read','thread/turns/list'].includes(event.method)) {
+      const params = event.params as { threadId?: unknown } | null;
+      historyRequests.set(event.id, { webSentAt: event.startedAtMs, clientQueueMs: event.queueWaitMs,
+        operationId: typeof params?.threadId === 'string' ? historyOperations.get(JSON.stringify([event.hostId, params.threadId])) : undefined });
+      return;
+    }
     if (!['completed','failed','timed-out','aborted'].includes(event.type)) return;
     if (!('durationMs' in event)) return;
-    observeEvent({kind:'rpc',requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
+    const history = historyRequests.get(event.id);
+    historyRequests.delete(event.id);
+    const diagnostic: Event = {};
+    if (history) {
+      diagnostic.webSentAt = history.webSentAt; diagnostic.clientQueueMs = history.clientQueueMs;
+      if (history.operationId) diagnostic.operationId = history.operationId;
+      const timing = event.type === 'completed' ? (event.result as { __opencraftHistoryTiming?: Record<string, unknown> } | null)?.__opencraftHistoryTiming : undefined;
+      if (timing && typeof timing.pairId === 'string' && /^[a-zA-Z0-9_.:-]{1,128}$/u.test(timing.pairId)) {
+        diagnostic.pairId = timing.pairId;
+        for (const key of ['coreMs','metadataMs','queueMs','sourceMs','reconcileMs','pageMs','projectionMs','scanMs','nativeRpcMs','nativeRpcCount']) {
+          const value = timing[key];
+          if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER)
+            diagnostic['history' + key[0].toUpperCase() + key.slice(1)] = value;
+        }
+      }
+    }
+    observeEvent({kind:'rpc',...diagnostic,requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
       outcome:event.type==='completed'?'ok':event.type==='timed-out'?'timeout':event.type==='aborted'?'aborted':'failed',
       durationMs:event.durationMs,measurementScope:'rpc'});
   });
+  return () => { unsubscribe(); historyRequests.clear(); };
 }
 export function observeRecovery(event: Readonly<Record<string,string|number>>) {
   const nativeStage = String(event.stage);

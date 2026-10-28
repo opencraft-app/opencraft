@@ -61,6 +61,12 @@ export async function observeNativeTranscriptFiles(nativeHome: string, paths: re
     },
   };
 }
+export type HistoryReadPhase = "metadata" | "queue" | "source" | "reconcile" | "page" | "scan";
+export type HistoryReadObserver = (phase: HistoryReadPhase, ms: number) => void;
+function observe(observer: HistoryReadObserver | undefined, phase: HistoryReadPhase, started: number): void {
+  try { observer?.(phase, Math.max(0, performance.now() - started)); } catch { /* Diagnostics never own read settlement. */ }
+}
+
 export interface NativeTranscriptPort {
   nativeHome?: string;
   resolveSource?(threadId: string, path: string): Promise<NativeRolloutSource>;
@@ -204,28 +210,35 @@ export class TranscriptReadCache {
   }
 
   /** Native metadata stays live; it is never served from this cache. */
-  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full", signal?: AbortSignal): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
+    const metadataStarted = performance.now();
     const thread = await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
+    observe(observer, "metadata", metadataStarted);
     throwIfAborted(effectiveSignal);
     if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
     onValidated?.();
-    const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal);
+    const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
-  page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal): Promise<ThreadTurnsListResponse> {
+  page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
     if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
     const ensureCurrent = () => { throwIfAborted(effectiveSignal); if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated"); };
+    const queued = performance.now();
     return this.serialize(threadId, async () => {
+      observe(observer, "queue", queued);
       ensureCurrent();
+      const metadataStarted = performance.now();
       const thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
+      if (!metadata) observe(observer, "metadata", metadataStarted);
       ensureCurrent();
       if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
+      const sourceStarted = performance.now();
       const snapshotSource = await awaitWithAbort(Promise.resolve(this.port.observeSnapshotSource?.(threadId)), effectiveSignal);
       ensureCurrent();
       if (!snapshotSource && (typeof thread.path !== "string" || !existsSync(thread.path))) {
@@ -237,9 +250,12 @@ export class TranscriptReadCache {
       // Cache hits must obey the same path boundary as incremental reads.
       const path = snapshotSource?.path ?? await awaitWithAbort(canonicalRolloutPath(thread.path!, source!.nativeHome), effectiveSignal);
       ensureCurrent();
+      observe(observer, "source", sourceStarted);
       for (let attempt = 0; attempt < 2; attempt++) {
-        const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal);
+        const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal, observer);
+        observe(observer, "reconcile", started);
         ensureCurrent();
+        const pageStarted = performance.now();
         let page: ThreadTurnsListResponse;
         try {
           page = this.readPage(threadId, cursor, limit, itemsView, sortDirection);
@@ -249,6 +265,7 @@ export class TranscriptReadCache {
           this.drop(threadId); continue;
         }
         await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
+        observe(observer, "page", pageStarted);
         this.measured?.({ ...observed, ms: performance.now() - started });
         return page;
       }
@@ -324,8 +341,8 @@ export class TranscriptReadCache {
     for (const blob of old) if (!db.prepare("SELECT 1 FROM opencraft_cache_blobs WHERE thread_id=? AND blob_sha256=? LIMIT 1").get(threadId, blob.blob_sha256))
       rmSync(join(paths.blobs, `${blob.blob_sha256}.blob`), { force: true });
   }
-  private async nativePage(threadId: string, cursor: string | null, signal?: AbortSignal): Promise<NativePage> {
-    for (let limit = 100; ; limit = Math.max(1, Math.floor(limit / 2))) {
+  private async nativePage(threadId: string, cursor: string | null, signal?: AbortSignal, initialLimit = 100): Promise<NativePage> {
+    for (let limit = initialLimit; ; limit = Math.max(1, Math.floor(limit / 2))) {
       try {
         const page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, signal, "desc"), signal);
         if (!Array.isArray(page.data)) throw new Error("Invalid native transcript page");
@@ -381,7 +398,7 @@ export class TranscriptReadCache {
     if (!existsSync(this.paths(threadId).turns)) writeFileSync(this.paths(threadId).turns, "", { mode: 0o600 });
     return { kind: rebuild ? "rebuild" : "increment", nativeBytes: 0 };
   }
-  private async reconcile(threadId: string, path: string, source: NativeRolloutSource | undefined, snapshotSource?: NativeTranscriptSnapshotSource, signal?: AbortSignal): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
+  private async reconcile(threadId: string, path: string, source: NativeRolloutSource | undefined, snapshotSource?: NativeTranscriptSnapshotSource, signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ kind: "hit" | "rebuild" | "increment"; nativeBytes: number }> {
     throwIfAborted(signal);
     const db = this.database(), native = snapshotSource ? { ...snapshotSource } : stamp(path);
     native.watermark = JSON.stringify([(snapshotSource ?? source)!.key, native.watermark]);
@@ -403,6 +420,7 @@ export class TranscriptReadCache {
     const dirty = new Set<string>(); let bytes = 0;
     while (!snapshotSource && cursor < native.position) {
       throwIfAborted(signal);
+      const scanStarted = performance.now();
       const read = await readRolloutIncrement({ path, nativeHome: source!.nativeHome, source, cursor, identity,
         select: head => /"type"\s*:\s*"(?:event_msg|turn_context|compacted)"/.test(head),
         retain: (row: any) => {
@@ -411,6 +429,7 @@ export class TranscriptReadCache {
           return typeof p.turn_id === "string" ? p.turn_id : null;
         }, oversized: () => false,
       });
+      observe(observer, "scan", scanStarted);
       bytes += read.bytes; identity = read.identity;
       for (const id of read.events) dirty.add(id);
       if (read.missing) rebuild = true;
@@ -435,7 +454,10 @@ export class TranscriptReadCache {
     do {
       if (seen.has(nativeCursor)) throw new Error("Native transcript repeated cursor");
       seen.add(nativeCursor);
-      const page = await this.nativePage(threadId, nativeCursor, signal);
+      // Incremental validation usually needs only the live tail and its boundary.
+      // A full hundred-Turn page can rehydrate megabytes of unchanged tool output.
+      // Continue paging until the same dirty boundary; rebuilds still read all Turns.
+      const page = await this.nativePage(threadId, nativeCursor, signal, rebuild ? 100 : 10);
       transaction(db, () => { for (const turn of page.data) {
         if (rebuild) this.storeTurn(threadId, turn, -descendingSeq++);
         else {
@@ -450,7 +472,7 @@ export class TranscriptReadCache {
     if (!rebuild) {
       // A missing boundary implies a native rewrite. Start fresh next read and
       // never publish this suffix against stale older rows.
-      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path, source, snapshotSource, signal); }
+      if (max.seq !== null && !reachedBoundary) { this.drop(threadId); return this.reconcile(threadId, path, source, snapshotSource, signal, observer); }
       let next = Number(max.seq ?? -1) + 1;
       transaction(db, () => { for (const turn of fresh.reverse()) {
         const row = db.prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId, turn.id) as Row | undefined;
