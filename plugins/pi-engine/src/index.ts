@@ -22,6 +22,8 @@ import type { ExecutionEngineClient as EngineClient, AgentOrchestrationPort } fr
 export { piModel } from "./contract.js";
 
 type Value = Record<string, any>;
+/** Stop and receipt acknowledgement cannot create new execution. */
+export const piHandoffReconciliation = (method: string) => ["turn/interrupt", "opencraft/orchestration/ack"].includes(method);
 export interface PiModelConfiguration {
   synchronize(): Promise<void>;
   defaults(): {model: string | null; effort?: string};
@@ -98,6 +100,11 @@ export class PiEngine {
   private readonly listeners = new Set<(method: string, params: Value) => void>();
   private loading?: Promise<void>;
   private closed = false;
+  private catalogUnknown = false;
+  private readonly admissionOpen = () => !this.closed && (this.options.admission?.open() ?? true);
+  private admit<T>(operation: () => Promise<T>, reconciliation = false): Promise<T> {
+    return this.options.admission ? this.options.admission.run(operation, reconciliation) : operation();
+  }
   private readonly writes = new Map<string, Promise<void>>();
   private latestPinAt = 0;
   private readonly queueDrains = new Set<string>();
@@ -107,7 +114,7 @@ export class PiEngine {
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
-  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string }) {
+  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -139,6 +146,7 @@ export class PiEngine {
           this.sessions.set(record.id, record);
           record.needsResume = record.pendingRecovery === true;
         } catch {
+          this.catalogUnknown = true;
           // Retain corrupt metadata and its ledger for repair; one record cannot disable all Pi sessions.
           this.notify("warning", { message: `Pi session index could not be loaded: ${file}` });
         }
@@ -171,12 +179,13 @@ export class PiEngine {
           if (session?.native) { await session.native.abort(); await this.refresh(session); }
         },
         changed: (threadId, recovery) => this.notify("opencraft/turn-recovery/updated", { threadId, recovery }),
-      });
+      }, 500, this.admissionOpen);
     })();
   }
   async start() {
     await this.load(); await this.modelsRuntime; await this.options.configuration?.synchronize();
     this.schedules();
+    if (!this.admissionOpen()) return;
     for (const session of this.sessions.values()) {
       if (!session.pendingRecovery || session.archived) continue;
       try { await this.refresh(session); if (!session.active) { session.needsResume = false; this.scheduleQueue(session); } }
@@ -196,6 +205,7 @@ export class PiEngine {
       try {
         await writeFile(temporary, JSON.stringify(next), { mode: 0o600 }); await rename(temporary, file);
       } catch (error) {
+        this.catalogUnknown = true;
         await rm(temporary, { force: true }).catch(() => {});
         throw error;
       }
@@ -235,10 +245,11 @@ export class PiEngine {
   private async native(session: Session): Promise<PiDurableSession> {
     if (this.closed) throw new Error("Pi engine is closed");
     if (session.native) return session.native;
+    if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
-        ephemeral: session.ephemeral, inherited: session.inherited,
+        ephemeral: session.ephemeral, inherited: session.inherited, admissionOpen: this.admissionOpen, admitBackground: operation => this.admit(operation),
         agentDirectory: this.options.modelDirectory ?? this.options.directory, models: await this.modelsRuntime, tools: [...session.tools, ...this.hostTools(session)],
         prepareRecovery: async snapshot => {
           const active = [...projectPiSnapshot(session, snapshot)].reverse().find(turn => turn.status === "inProgress");
@@ -284,7 +295,7 @@ export class PiEngine {
         const snapshot = await native.snapshot();
         // Old indexes predate AgentDoc configuration. Bootstrap once; afterwards the native document wins.
         if (!snapshot.agent.model) await native.configure({ model: selection(session.model), cwd: session.cwd });
-        if (this.closed) throw new Error("Pi engine is closed");
+        if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
         session.native = native; session.inherited = undefined; session.failed = false;
         this.accept(session, await native.snapshot()); return native;
       } catch (error) { await native.close(); throw error; }
@@ -356,7 +367,7 @@ export class PiEngine {
     }
   }
   private scheduleQueue(session: Session) {
-    if (this.closed || session.archived || session.needsResume || session.active || this.queueDrains.has(session.id)
+    if (!this.admissionOpen() || session.archived || session.needsResume || session.active || this.queueDrains.has(session.id)
       || session.snapshot?.queue?.paused || !session.snapshot?.queue?.items.length) return;
     this.queueDrains.add(session.id);
     void this.serialize(session.id, () => this.dispatchQueue(session)).catch(() => {
@@ -365,6 +376,7 @@ export class PiEngine {
   }
   private async dispatchQueue(session: Session, id?: string, explicit = false) {
     const native = await this.native(session);
+    if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
     const item = await native.claimQueue(id, explicit);
     if (!item) {
       if (!explicit) { await this.refresh(session); return null; }
@@ -383,6 +395,7 @@ export class PiEngine {
       // Bind platform tools before the scheduler can run. This is private
       // admission state; only a committed native snapshot announces the Turn.
       session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
+      if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
       await native.submit(item.content, { turnId: item.id, clientId: item.clientId, input: item.input,
         additionalContext: item.additionalContext, createdAtMs: item.createdAtMs,
         ...(item.executionAdmission ? {executionAdmission:item.executionAdmission} : {}) }, item.id);
@@ -493,24 +506,25 @@ export class PiEngine {
   }
   /** In-process Host admission; native submission identity is the receipt. */
   readonly inputs: HostInputPort = {
-    receipt: async (threadId, inputId) => {
+    receipt: (threadId, inputId) => this.admit(async () => {
       const session = await this.session(threadId), turnId = `${threadId}:turn:client:${inputId}`;
-      return await (await this.native(session)).execution(turnId) ? { state: "delivered", turnId } : null;
-    },
-    submit: (threadId, inputId, text, canAdmit) => this.serialize(threadId, async () => {
+      const snapshot = session.native ? await session.native.snapshot() : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.directory, "handoff-cache"));
+      return snapshot.submissions.some(row => row.requestId === turnId) ? { state: "delivered" as const, turnId } : null;
+    }, true),
+    submit: (threadId, inputId, text, canAdmit) => this.admit(() => this.serialize(threadId, async () => {
       const prior = await this.inputs.receipt(threadId, inputId); if (prior) return prior;
       const session = await this.session(threadId);
       if (session.archived || session.ephemeral) return { state: "discarded", turnId: null };
-      if (session.active || !await canAdmit()) return null;
+      if (!this.admissionOpen() || session.active || !await canAdmit()) return null;
       const owner: EngineClient = { notify() {}, request: async () => { throw new Error("No browser tool owner"); } };
       try {
-        await this.handle("turn/start", { threadId, clientUserMessageId: inputId, input: [{ type: "text", text }] }, owner, canAdmit);
+        await this.handle("turn/start", { threadId, clientUserMessageId: inputId, input: [{ type: "text", text }] }, owner, () => this.admissionOpen() && canAdmit());
         return await this.inputs.receipt(threadId, inputId) ?? { state: "unknown", turnId: null };
       } catch (error) {
         if (error instanceof ScheduleAdmissionDeferred) return null;
         return await this.inputs.receipt(threadId, inputId) ?? { state: "unknown", turnId: null };
       }
-    }),
+    })),
   };
   private schedules(): ConversationSchedules {
     if (!this.scheduleService) {
@@ -537,10 +551,10 @@ export class PiEngine {
           if (prior) return { state: prior, turnId: turnId(run) };
           try { await validate(run.threadId); assertPiFields({ permissions: run.permissions }); }
           catch { return { state: "failed" }; }
-          if (session.active || !canAdmit()) return { state: "waiting" };
+          if (!this.admissionOpen() || session.active || !canAdmit()) return { state: "waiting" };
           try {
             const result = await this.handle("turn/start", { threadId: run.threadId, clientUserMessageId: run.id,
-              permissions: run.permissions, input: [{ type: "text", text: `[Scheduled task]\n${prompt}` }] }, owner, canAdmit);
+              permissions: run.permissions, input: [{ type: "text", text: `[Scheduled task]\n${prompt}` }] }, owner, () => this.admissionOpen() && canAdmit());
             const state = await native.execution(result.turn.id);
             return { state: state ?? "unknown", turnId: result.turn.id };
           } catch (error) {
@@ -552,7 +566,7 @@ export class PiEngine {
         }),
       };
       this.scheduleService = new ConversationSchedules(this.options.directory, port, Date.now, undefined,
-        () => this.notify("opencraft/schedules/changed", {}));
+        () => this.notify("opencraft/schedules/changed", {}), this.admissionOpen);
       this.scheduleService.start();
     }
     return this.scheduleService;
@@ -679,6 +693,9 @@ export class PiEngine {
       summary: String([...turn.items].reverse().find(item => item.type === "agentMessage")?.text ?? "").slice(-4096) };
   }
   request(method: string, params: Value, client: EngineClient): Promise<any> {
+    return this.admit(() => this.acceptRequest(method, params, client), piHandoffReconciliation(method));
+  }
+  private acceptRequest(method: string, params: Value, client: EngineClient): Promise<any> {
     if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)) {
       // Display hydration never owns the execution mutation lane. A slow
       // SQLite snapshot must not delay Stop or another accepted input.
@@ -932,12 +949,13 @@ export class PiEngine {
       const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "complete", status: "inProgress", error: null,
         startedAt: Math.floor(createdAtMs / 1000), completedAt: null, durationMs: null };
       if (canAdmit && !await canAdmit()) throw new ScheduleAdmissionDeferred();
+      if (!this.admissionOpen()) throw new ScheduleAdmissionDeferred();
       session.active = turn; session.pendingRecovery = true;
       const previousPreview = session.preview, previousUpdated = session.updatedAt;
       session.preview ||= textOf(content).slice(0, 200); session.updatedAt = seconds();
       try {
         await this.save(session);
-        if (canAdmit && !await canAdmit()) {
+        if (!this.admissionOpen() || canAdmit && !await canAdmit()) {
           session.active = undefined; session.pendingRecovery = false;
           session.preview = previousPreview; session.updatedAt = previousUpdated;
           await this.save(session); throw new ScheduleAdmissionDeferred();
@@ -977,6 +995,52 @@ export class PiEngine {
     }
     throw new Error(`Pi does not support ${method}`);
   }
+  /** No execution owners are opened by inspection. Every durable ledger,
+   * including archived sessions, contributes to the authority result. */
+  async handoffObservation() {
+    await this.load();
+    let activeCount = this.operations.size + this.writes.size + this.queueDrains.size;
+    let unknown = this.catalogUnknown;
+    const workers: number[] = [], records: unknown[] = [];
+    try {
+      const files = await readdir(this.options.directory);
+      for (const file of files) if (/^pi_.*\.sqlite$/u.test(file) && !this.sessions.has(file.slice(0, -7))) unknown = true;
+      for (const session of this.sessions.values()) {
+        if (session.starting || session.failed) unknown = true;
+        const snapshot = session.ephemeral ? await session.native?.snapshot()
+          : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.directory, "handoff-cache"));
+        if (!snapshot) { unknown = true; continue; }
+        if (session.native?.idleWorkerPid) workers.push(session.native.idleWorkerPid);
+        if (!snapshot.live || typeof snapshot.live !== "object" || Array.isArray(snapshot.live) || !snapshot.agent || typeof snapshot.agent !== "object" || Array.isArray(snapshot.agent)
+          || !Array.isArray(snapshot.inbox) || snapshot.queue && !Array.isArray(snapshot.queue.items) || snapshot.shell && !Array.isArray(snapshot.shell.records)) throw new Error("Invalid Pi native documents");
+        const active = (session.native?.backgroundWork ?? 0) + Number(!!snapshot.live.run) + Number(!!snapshot.live.generation)
+          + (snapshot.live.tools?.length ?? 0) + (snapshot.live.nestedTools?.length ?? 0)
+          + (snapshot.live.compactions?.length ?? 0) + snapshot.inbox.length
+          + (snapshot.queue?.items.length ?? 0)
+          + [...snapshot.tasks.values()].filter(task => task.state.status !== "terminal").length
+          + snapshot.submissions.filter(row => ["queued", "placed"].includes(row.status)).length
+          + (snapshot.shell?.records.filter(row => row.state === "running" || row.detached && !row.notified || !!row.monitorEvents?.length).length ?? 0)
+          + Number(!!session.active);
+        activeCount += active;
+        // Summaries are bound to native state without exposing history content.
+        records.push({ id: session.id, active, entries: snapshot.entries.length, submissions: snapshot.submissions.length,
+          history: createHash("sha256").update(JSON.stringify(projectPiSnapshot(session, snapshot))).digest("hex") });
+      }
+      const schedules = this.scheduleService?.handoffObservation();
+      if (!schedules) unknown = true;
+      else activeCount += schedules.flights + schedules.plans + schedules.unfinished;
+      const recovery = this.recovery?.handoffObservation();
+      if (!recovery) unknown = true;
+      else activeCount += recovery.flights + recovery.unfinished;
+    } catch { unknown = true; }
+    return { coverage: unknown ? "unknown" : "complete", activeCount: unknown ? null : activeCount, workers, records,
+      capabilities: { goals: "unsupported-pi-1.3.0", approvals: "never", privateTools: "native-task-and-run", im: "host-input-admission" } };
+  }
+  async resumeBackground() {
+    if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
+    this.schedules().start(); this.recovery?.wake();
+    for (const session of this.sessions.values()) { this.scheduleQueue(session); await session.native?.resumeBackground(); }
+  }
   private detach(session: Session) { session.lease?.abort(); session.lease = undefined; session.owner = undefined; }
   disconnect(client: EngineClient) {
     for (const reader of this.historyReaders.get(client) ?? []) reader.abort(new Error("Pi history reader disconnected"));
@@ -990,11 +1054,11 @@ export class PiEngine {
     this.historyReaders.clear();
     await this.recovery?.close();
     await this.scheduleService?.close();
-    await Promise.allSettled(this.operations.values());
-    await Promise.allSettled([...this.sessions.values()].map(async session => {
+    await Promise.all(this.operations.values());
+    await Promise.all([...this.sessions.values()].map(async session => {
       this.detach(session); const native = session.native ?? await session.starting?.catch(() => undefined); await native?.close(); session.active = undefined;
     }));
-    await Promise.allSettled(this.writes.values()); this.listeners.clear();
+    await Promise.all(this.writes.values()); this.listeners.clear();
     await this.transcriptCache.close();
   }
 }

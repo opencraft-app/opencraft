@@ -37,6 +37,25 @@ export async function startEngineHost(options: {
     if (!options.legacy) throw new Error("DSH is disabled; this operation requires an enabled provider");
     return legacy ??= options.legacy.start().catch(error => { legacy = undefined; throw error; });
   };
+  let unknownConsumer = false, callbacks = 0;
+  const consumerTurns = new Map<string, string>();
+  const completedConsumerTurns = new Map<string, Set<string>>();
+  const pendingConsumerAdmissions = new Map<string, number>();
+  const consumerEvent = (method: string, params: Value) => {
+    const id = params?.threadId, turn = params?.turn;
+    if (!id) return;
+    if (method === "turn/started" && typeof turn?.id === "string" && !completedConsumerTurns.get(id)?.has(turn.id)) consumerTurns.set(id, turn.id);
+    if (method === "turn/completed") {
+      if (["completed", "failed", "interrupted"].includes(turn?.status) && typeof turn?.id === "string") {
+        if (pendingConsumerAdmissions.has(id)) {
+          const completed = completedConsumerTurns.get(id) ?? new Set<string>();
+          completed.add(turn.id); completedConsumerTurns.set(id, completed);
+        }
+        if (consumerTurns.get(id) === turn.id || consumerTurns.get(id) === "unknown") consumerTurns.delete(id);
+      }
+      else unknownConsumer = true;
+    }
+  };
   const token = randomUUID();
   const server = createServer((_request, response) => { response.writeHead(404); response.end(); });
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
@@ -45,6 +64,7 @@ export async function startEngineHost(options: {
     if (closing || url.pathname !== "/rpc" || url.searchParams.get("token") !== token) { socket.destroy(); return; }
     sockets.handleUpgrade(request, socket, head, client => sockets.emit("connection", client));
   });
+  const connectionObservations = new Set<() => number>();
   sockets.on("connection", socket => {
     // A backend read is canceled with its frontend connection. Only logical
     // clients sharing that lifetime may share an in-flight request.
@@ -61,18 +81,20 @@ export async function startEngineHost(options: {
     let stopped = false, backend: WebSocket | undefined, backendStarting: Promise<WebSocket> | undefined;
     const internal = new Map<string, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
     const platform = new Map<string, { clientId: string; resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
+    const observation = () => internal.size + platform.size;
+    connectionObservations.add(observation);
     const clients = new Map<string, { owner: ExecutionEngineClient; opened: Set<string>; reading: Set<string> }>();
     const send = (value: Value) => { if (!stopped && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
     const client = (clientId: string) => {
       let state = clients.get(clientId); if (state) return state;
       const opened = new Set<string>();
       const owner: ExecutionEngineClient = {
-        notify(method, params) { send({ jsonrpc: "2.0", method, params, [LOGICAL_CLIENT_FIELD]: clientId }); },
+        notify(method, params) { consumerEvent(method, params); send({ jsonrpc: "2.0", method, params, [LOGICAL_CLIENT_FIELD]: clientId }); },
         request(method, params) {
           if (stopped || !opened.has(String(params.threadId))) return Promise.reject(new Error("Platform tool owner expired"));
           const id = `engine-tool:${randomUUID()}`;
           return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { platform.delete(id); reject(new Error("Platform tool timed out")); }, 120_000);
+            const timer = setTimeout(() => { unknownConsumer = true; platform.delete(id); reject(new Error("Platform tool timed out")); }, 120_000);
             platform.set(id, { clientId, resolve, reject, timer }); send({ jsonrpc: "2.0", id, method, params, [LOGICAL_CLIENT_FIELD]: clientId });
           });
         },
@@ -80,6 +102,7 @@ export async function startEngineHost(options: {
       state = { owner, opened, reading: new Set() }; clients.set(clientId, state); return state;
     };
     const subscriptions = options.providers.map(provider => provider.subscribe((method, params) => {
+      consumerEvent(method, params);
       const threadId = params.threadId ?? params.thread?.id;
       for (const state of clients.values()) if (method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && (state.opened.has(threadId) || state.reading.has(threadId))) state.owner.notify(method, params);
     }));
@@ -94,7 +117,8 @@ export async function startEngineHost(options: {
       backend = undefined; backendStarting = undefined;
       subscriptions.forEach(unsubscribe => unsubscribe());
       for (const state of clients.values()) for (const provider of options.providers) provider.disconnect(state.owner);
-      clients.clear();
+      clients.clear(); connectionObservations.delete(observation);
+      if (internal.size || platform.size) unknownConsumer = true;
       for (const call of internal.values()) { clearTimeout(call.timer); call.reject(new Error("Host connection closed")); } internal.clear();
       for (const call of platform.values()) { clearTimeout(call.timer); call.reject(new Error("Platform tool owner disconnected")); } platform.clear();
       if (connection?.readyState === WebSocket.CONNECTING) connection.terminate();
@@ -113,6 +137,7 @@ export async function startEngineHost(options: {
       connection.on("message", data => {
         if (stopped || backend !== connection) return;
         let message: Value; try { message = JSON.parse(data.toString()); } catch { connection.close(); return; }
+        if (typeof message.method === 'string') consumerEvent(message.method, message.params ?? {});
         if (typeof message.method === 'string') nodeObserver('gateway').execution('dsh',message.method,message.params);
         const pending = internal.get(String(message.id));
         if (pending && !message.method) {
@@ -131,7 +156,7 @@ export async function startEngineHost(options: {
       const connection = await connectBackend(), id = `engine-host:${randomUUID()}`;
       if (stopped || backend !== connection || connection.readyState !== WebSocket.OPEN) throw new Error("Host connection closed");
       return new Promise<any>((resolve, reject) => {
-        const timer = setTimeout(() => { internal.delete(id); reject(new Error(`DSH ${method} timed out`)); }, 30_000);
+        const timer = setTimeout(() => { unknownConsumer = true; internal.delete(id); reject(new Error(`DSH ${method} timed out`)); }, 30_000);
         internal.set(id, { resolve, reject, timer }); connection.send(JSON.stringify({ jsonrpc: "2.0", id, method, params, [LOGICAL_CLIENT_FIELD]: clientId }));
       });
     };
@@ -167,7 +192,7 @@ export async function startEngineHost(options: {
             }
             if (backend?.readyState === WebSocket.OPEN) backend.send(JSON.stringify(frame)); return;
           }
-          const dispatch = async () => {
+          const dispatchInner = async () => {
           const method = frame.method, params = frame.params ?? {};
           if (typeof method === "string" && method.startsWith("opencraft/orchestration/")) {
             const driver = params.driver ?? params.settings?.driver;
@@ -314,6 +339,7 @@ export async function startEngineHost(options: {
             catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
             if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
+            if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");
             reply(result); return;
           }
           if (params.threadId && options.providers.some(provider => provider.ownsModel(params.model ?? ""))) throw new Error("Create a new conversation to change execution engines");
@@ -322,7 +348,24 @@ export async function startEngineHost(options: {
             if (!stopped && backend === connection && connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify(frame));
             return;
           }
-          reply(await callLegacy(method, params, clientId));
+          const result = await callLegacy(method, params, clientId);
+          if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");
+          if (method === "turn/start" && result.turn?.status === "inProgress" && params.threadId) consumerEvent("turn/started", { threadId: params.threadId, turn: result.turn });
+          reply(result);
+          };
+          const dispatch = async () => {
+            callbacks++;
+            const threadId = typeof frame.params?.threadId === "string" && ["turn/start", "thread/resume"].includes(frame.method) ? frame.params.threadId : undefined;
+            if (threadId) pendingConsumerAdmissions.set(threadId, (pendingConsumerAdmissions.get(threadId) ?? 0) + 1);
+            try { return await dispatchInner(); }
+            finally {
+              callbacks--;
+              if (threadId) {
+                const remaining = pendingConsumerAdmissions.get(threadId)! - 1;
+                if (remaining) pendingConsumerAdmissions.set(threadId, remaining);
+                else { pendingConsumerAdmissions.delete(threadId); completedConsumerTurns.delete(threadId); }
+              }
+            }
           };
           await (options.admitRequest ? options.admitRequest(frame.method, dispatch) : dispatch());
         } catch (error) {
@@ -338,6 +381,8 @@ export async function startEngineHost(options: {
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   return {
     websocketUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/rpc?token=${token}`,
+    async coldReadResources() { await resources?.request("project/list", {}); },
+    consumerObservation() { return { coverage: unknownConsumer ? "unknown" : "complete", activeCount: callbacks + consumerTurns.size + [...connectionObservations].reduce((n, read) => n + read(), 0) }; },
     get ready() { return [...readiness.values()].every(state => state === "ready"); },
     get storageOutcomes() { return options.providers.flatMap(provider => [...provider.storageOutcomes ?? []]); },
     async close() {

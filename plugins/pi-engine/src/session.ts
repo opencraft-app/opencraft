@@ -24,6 +24,7 @@ export interface PiSnapshot {
   usage: UsageState;
   inbox: readonly Value[];
   queue?: PiQueueState;
+  shell?: { records: import("./shell.js").ShellRecord[]; paused: boolean };
 }
 export const createPiModels = (directory: string) => ModelRuntime.create({ allowModelNetwork: false, authPath: `${directory}/auth.json`, modelsPath: `${directory}/models.json` });
 export interface PiForkContext {
@@ -58,11 +59,14 @@ export class PiDurableSession {
   private shellSchema!: Value;
   private shellEvents: Promise<unknown> = Promise.resolve();
   private shellLaunches = 0;
+  private shellNotifications = 0;
   private readonly shellWaiters = new Map<string, () => void>();
   private readonly earlyShellNotifications = new Map<string, Value[]>();
   private replaceTools!: (tools: Value[]) => void;
   private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
     ephemeral?: boolean; inherited?: PiForkContext;
+    admissionOpen?(): boolean;
+    admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
     prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
     onSnapshot(snapshot: PiSnapshot): Promise<void> | void; onTool(request: Value, signal: AbortSignal): Promise<unknown>; onExit(error: Error): void }) {}
   static async open(options: PiDurableSession["options"]) {
@@ -74,7 +78,7 @@ export class PiDurableSession {
     if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
       retries: { retries: 12, minTimeout: 1000, maxTimeout: 1000 } });
     this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
-      onNotification: event => { this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }); },
+      onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
       onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
     });
     this.shellSchema = (await this.shell.start()).parameters;
@@ -269,10 +273,9 @@ export class PiDurableSession {
         if (doc.paused || !Number.isSafeInteger(message.details.eventId)) return true;
         const requestId = `pi-shell:${record.generation}:${id}:event:${message.details.eventId}`;
         if (!await tx.submissionByRequest(this.root.id, requestId)) {
-          const { admitSubmission } = await nativeAdmissions();
-          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: message.content.slice(-16384),
-            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
-            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+          record.monitorEvents ??= [];
+          if (!record.monitorEvents.some(event => event.id === message.details.eventId))
+            record.monitorEvents.push({ id: message.details.eventId, content: message.content.slice(-16384), createdAtMs: Date.now() });
         }
         return true;
       }
@@ -308,24 +311,39 @@ export class PiDurableSession {
     if (notify) await this.deliverShellNotifications();
   }
   private async deliverShellNotifications() {
-    if (this.closed) return;
-    const records = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records
-      .filter(record => record.state !== "running" && !record.notified && record.detached).map(record => record.id), context);
-    for (const id of records) {
-      if (this.closed) break;
+    if (this.closed || this.options.admissionOpen?.() === false) return;
+    // Import before entering the admission boundary. The entire commit stays
+    // counted, and its final native mutation checks the fence again.
+    const { admitSubmission } = await nativeAdmissions();
+    let entered = false, admitted = false;
+    const deliver = async () => {
+      entered = true;
       await this.root.commit(async tx => {
         const doc = await tx.doc(PiShellDoc, this.root.id);
-        const record = doc.records.find(record => record.id === id);
-        if (doc.paused || !record || record.notified) return;
-        const requestId = `pi-shell:${record.generation}:${record.id}`;
-        const { admitSubmission } = await nativeAdmissions();
-        await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
-          entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
-          { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
-        record.notified = true;
+        if (doc.paused) return;
+        for (const record of doc.records) {
+          while (record.monitorEvents?.length) {
+            const event = record.monitorEvents[0]!;
+            if (this.closed || this.options.admissionOpen?.() === false) return;
+            const requestId = `pi-shell:${record.generation}:${record.id}:event:${event.id}`;
+            await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: event.content,
+              entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: event.createdAtMs } } }, Date.now(),
+              { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+            record.monitorEvents.shift(); admitted = true;
+          }
+          if (record.state === "running" || record.notified || !record.detached) continue;
+          if (this.closed || this.options.admissionOpen?.() === false) return;
+          const requestId = `pi-shell:${record.generation}:${record.id}`;
+          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
+            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
+            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+          record.notified = true; admitted = true;
+        }
       }, context);
-    }
-    if (records.length) this.harness.resume();
+    };
+    try { await (this.options.admitBackground ? this.options.admitBackground(deliver) : deliver()); }
+    catch (error) { if (entered || this.options.admissionOpen?.() !== false) throw error; }
+    if (admitted && this.options.admissionOpen?.() !== false) this.harness.resume();
   }
   private async pages<T>(read: (cursor: any) => Promise<{ items: readonly T[]; next?: any }>): Promise<T[]> {
     const values: T[] = []; let cursor: any;
@@ -367,7 +385,8 @@ export class PiDurableSession {
         const task = await tx.task(id as any); if (!task) continue;
         tasks.set(id, task); if (task.owner !== undefined && !tasks.has(task.owner)) ids.add(task.owner);
       }
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue };
+      const shell = JSON.parse(JSON.stringify(await tx.doc(PiShellDoc, this.root.id))) as PiSnapshot["shell"];
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);
@@ -532,14 +551,17 @@ export class PiDurableSession {
       else queue.items.splice(index, 1);
     }, context);
   }
-  resume() { this.harness.resume(); }
+  get backgroundWork() { return this.shellLaunches + this.shellNotifications + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
+  get idleWorkerPid() { return this.shell?.pid; }
+  resumeBackground() { return this.deliverShellNotifications(); }
+  resume() { if (this.options.admissionOpen?.() !== false) this.harness.resume(); }
   /** Host-only provenance; no model message and no human sender is fabricated. */
   async recordRecovery(turnId: string, inputId: string) {
     await this.root.commit(tx => tx.appendEntry(this.root.id, { kind: "opencraft.systemRecovery",
       data: { turnId, inputId, sourceKind: "system", createdAtMs: Date.now() } }), context);
   }
   async abort() {
-    await this.root.commit(async tx => { const doc = await tx.doc(PiShellDoc, this.root.id); doc.paused = true; }, context);
+    await this.root.commit(async tx => { const doc = await tx.doc(PiShellDoc, this.root.id); doc.paused = true; for (const record of doc.records) record.monitorEvents = []; }, context);
     await this.root.abort(context);
     await this.shell?.stop();
     await this.interruptShells("Stopped by the user; the command was not replayed.", false);
