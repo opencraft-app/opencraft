@@ -79,7 +79,7 @@ test("persistence failure keeps fence; malformed disk never reopens", async t =>
   const gate = new AcpHostHandoff(join(root, "missing"), "owner"); await gate.load();
   await assert.rejects(gate.fence({ expectedOwner: "owner", expectedEpoch: 0, operationId: "one", fence: "one" }));
   await assert.rejects(gate.run(async () => true), /fenced/);
-  await writeFile(join(root, "host-handoff.json"), '{}');
+  await writeFile(join(root, "host-handoff.json"), '{}', { mode: 0o600 });
   await assert.rejects(new AcpHostHandoff(root, "other").load(), /Invalid/);
 });
 test("native timeout stays unknown occupancy", async t => {
