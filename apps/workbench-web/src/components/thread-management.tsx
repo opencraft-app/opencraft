@@ -15,7 +15,6 @@ import {
   SettingsListItem,
   SettingsNotice,
   SettingsPageHeader,
-  SettingsSection,
 } from "@opencraft/extension-react";
 import { ConfirmationModalSurface } from "./modal/confirmation-modal-surface";
 import { ConversationRenameDialog } from "./conversation-rename-dialog";
@@ -201,38 +200,36 @@ export function ArchivedThreadsSettings({ hostId, load, restore }: ArchivedThrea
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const empty = !query.isPending && query.error == null && query.data?.length === 0;
+  const title = intl.formatMessage({ id: "settings.archived", defaultMessage: "Archived conversations" });
   return <>
-    <SettingsPageHeader
-      title="Archived conversations"
-      description="Review conversations removed from the main sidebar and restore them when needed."
-    />
-    <SettingsSection title="Archive" description="Restoring a conversation returns it to its original execution host.">
-      {query.isPending ? <SettingsNotice role="status">Loading archived conversations…</SettingsNotice> : null}
-      {query.error ? <SettingsNotice role="alert" tone="error">{query.error.message}</SettingsNotice> : null}
-      {empty ? <div className="settings-empty-state">No archived conversations.</div> : null}
-      {query.data?.length ? <SettingsGroup aria-label="Archived conversations">
-        {query.data.map(thread => <SettingsListItem
-          key={thread.id}
-          label={thread.name ?? thread.preview ?? "New chat"}
-          description={thread.name != null && thread.preview && thread.preview !== thread.name ? thread.preview : undefined}
-          actions={<SettingsButton
-            disabled={busy !== null}
-            aria-busy={busy === thread.id}
-            onClick={() => {
-              setBusy(thread.id);
-              void restore(hostId, thread.id)
-                .catch(() => {
-                  if (mounted.current) notices.error({ key: `restore:${hostId}:${thread.id}`, detail: thread.name ?? thread.preview,
-                    message: intl.formatMessage({ id: "tasks.relation.saveError", defaultMessage: "Could not confirm the change. Review the current selection and retry." }) });
-                })
-                .finally(() => { if (mounted.current) setBusy(null); });
-            }}
-          >{busy === thread.id ? "Restoring…" : "Restore"}</SettingsButton>}
-        />)}
-      </SettingsGroup> : null}
-      {empty || query.error ? <SettingsActions>
-        <SettingsButton type="button" onClick={() => { void query.refetch(); }}>Refresh</SettingsButton>
-      </SettingsActions> : null}
-    </SettingsSection>
+    <SettingsPageHeader title={title} />
+    {query.isPending ? <SettingsNotice role="status">{intl.formatMessage({ id: "settings.archived.loading", defaultMessage: "Loading archived conversations…" })}</SettingsNotice> : null}
+    {query.error ? <SettingsNotice role="alert" tone="error">{query.error.message}</SettingsNotice> : null}
+    {empty ? <SettingsNotice>{intl.formatMessage({ id: "settings.archived.empty", defaultMessage: "No archived conversations." })}</SettingsNotice> : null}
+    {query.data?.length ? <SettingsGroup aria-label={title}>
+      {query.data.map(thread => <SettingsListItem
+        key={thread.id}
+        label={thread.name ?? thread.preview ?? intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}
+        description={thread.name != null && thread.preview && thread.preview !== thread.name ? thread.preview : undefined}
+        actions={<SettingsButton
+          disabled={busy !== null}
+          aria-busy={busy === thread.id}
+          onClick={() => {
+            setBusy(thread.id);
+            void restore(hostId, thread.id)
+              .catch(() => {
+                if (mounted.current) notices.error({ key: `restore:${hostId}:${thread.id}`, detail: thread.name ?? thread.preview,
+                  message: intl.formatMessage({ id: "tasks.relation.saveError", defaultMessage: "Could not confirm the change. Review the current selection and retry." }) });
+              })
+              .finally(() => { if (mounted.current) setBusy(null); });
+          }}
+        >{busy === thread.id
+          ? intl.formatMessage({ id: "chat.archived.restoring", defaultMessage: "Restoring…" })
+          : intl.formatMessage({ id: "chat.archived.restore", defaultMessage: "Restore conversation" })}</SettingsButton>}
+      />)}
+    </SettingsGroup> : null}
+    {empty || query.error ? <SettingsActions>
+      <SettingsButton type="button" onClick={() => { void query.refetch(); }}>{intl.formatMessage({ id: "settings.archived.refresh", defaultMessage: "Refresh" })}</SettingsButton>
+    </SettingsActions> : null}
   </>;
 }

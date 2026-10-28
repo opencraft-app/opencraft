@@ -1,7 +1,6 @@
 @use "../../../../../packages/design-system/src/typography-mixins.web" as typography;
 
 .extension-library {
-  padding: calc(var(--spacing) * 4);
   display: grid;
   gap: calc(var(--spacing) * 4);
   min-width: 0;

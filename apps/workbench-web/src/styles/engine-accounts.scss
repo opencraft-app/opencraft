@@ -5,6 +5,7 @@
   width: min(760px, 100%);
   margin-inline: auto;
   padding-block: 28px 40px;
+  container: engine-accounts / inline-size;
 
   > .settings-control-notice { margin-bottom: 18px; }
 }
@@ -336,7 +337,7 @@
   letter-spacing: var(--typography-metadata-tracking)
 }
 
-@container settings-panel (max-width: 560px) {
+@container engine-accounts (max-width: 760px) {
   .engine-accounts-page { padding-block: 20px 28px; }
   .engine-account__disclosure { grid-template-columns: auto minmax(0, 1fr) auto; }
   .engine-account__quotas {
@@ -346,7 +347,7 @@
     justify-self: stretch;
     margin-left: 17px;
   }
-  .engine-account__quota { min-width: 0; }
+  .engine-account__quota { min-width: 0; justify-items: start; }
   .engine-account__quota .engine-account__reset { overflow: hidden; max-width: 100%; text-overflow: ellipsis; }
   .engine-account__chevron { grid-column: 3; grid-row: 1; }
   .engine-account__details dl { grid-template-columns: 1fr; }

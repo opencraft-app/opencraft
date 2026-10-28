@@ -2675,6 +2675,11 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   letter-spacing: var(--typography-label-tracking);
 }
 
+.settings-page__navigation .ui-navigation-group > .settings-page__navigation-heading,
+.settings-page__navigation .ui-navigation-group > div > .settings-page__navigation-heading {
+  padding-top: 18px;
+}
+
 .settings-page__viewport {
   width: 100%;
   height: 100%;
@@ -3388,12 +3393,8 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   }
 
   small {
-    display: -webkit-box;
-    overflow: hidden;
     color: var(--color-text-secondary);
     font: var(--typography-metadata-font);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
     letter-spacing: var(--typography-metadata-tracking);
   }
 }

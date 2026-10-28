@@ -5,3 +5,55 @@
 .full-upgrade-recovery { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .full-upgrade-settings { min-width: 0; overflow-wrap: anywhere; }
+
+.full-upgrade-details {
+  display: grid;
+  gap: calc(var(--spacing) * 3);
+  min-width: 0;
+}
+
+.full-upgrade-details > summary {
+  width: fit-content;
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  cursor: pointer;
+}
+
+.full-upgrade-revision {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  overflow-wrap: anywhere;
+}
+
+.web-updates-settings { display: contents; }
+
+.web-updates-settings .settings-control-group .settings-control-row:not(.settings-control-row--stacked) .settings-control-row__value {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.web-updates-settings .settings-control-row--stacked .settings-control-row__value {
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: none;
+  margin-inline-start: 0;
+  text-align: start;
+}
+
+.web-updates-settings .settings-control-row--stacked .settings-control-row__value > form {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(var(--spacing) * 3);
+}
+
+.web-updates-settings .settings-control-row--stacked .settings-control-actions { margin-top: 0; }

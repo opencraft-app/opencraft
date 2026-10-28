@@ -124,13 +124,12 @@ function ManagedWebUpdatesSettings() {
   }
   const currentBuild = document.querySelector('meta[name="opencraft-build-id"]')?.getAttribute('content');
   const needsRefresh = status && currentBuild !== status.current.buildId;
-  return <>
+  return <div className="web-updates-settings">
     <SettingsPageHeader title={intl.formatMessage({ id: 'webUpdates.title', defaultMessage: 'Website updates' })} description={status?.execution ? intl.formatMessage({ id: 'webUpdates.serverDescription', defaultMessage: 'Update the website and execution gateway. Codex tasks continue in the independent core; OpenCraft tasks may be interrupted.' }) : intl.formatMessage({ id: 'webUpdates.description', defaultMessage: 'Update this website from the npm registry. Your execution service keeps running.' })} />
     <FullUpgradeSettings authenticated={status?.authenticated ?? false} />
     {query.error && <SettingsNotice tone="error">{query.error.message}</SettingsNotice>}
     {error && <SettingsNotice tone="error">{error}</SettingsNotice>}
-    {status && <SettingsSection title={intl.formatMessage({ id: 'webUpdates.version', defaultMessage: 'Website version' })}>
-      {status.execution && <SettingsNotice><FormattedMessage id="webUpdates.executionScope" defaultMessage="Includes the execution gateway and daemon. Codex core, CLI and DSH engine are maintained separately." /></SettingsNotice>}
+    {status && <SettingsSection title={intl.formatMessage({ id: 'webUpdates.version', defaultMessage: 'Website version' })} description={status.execution ? intl.formatMessage({ id: 'webUpdates.executionScope', defaultMessage: 'Includes the execution gateway and daemon. Codex core, CLI and DSH engine are maintained separately.' }) : undefined} action={<SettingsButton aria-busy={pending === 'check' || status.checking} disabled={pending !== null || !!running} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>}>
       <SettingsGroup>
         <SettingsRow label={<FormattedMessage id="webUpdates.installed" defaultMessage="Installed version" />} description={status.current.buildId}>{status.current.version}</SettingsRow>
         {status.execution && <SettingsRow label={<FormattedMessage id="webUpdates.executionVersion" defaultMessage="Execution gateway version" />} description={status.execution.buildId ?? undefined}>
@@ -150,22 +149,18 @@ function ManagedWebUpdatesSettings() {
       {status.recoveryRequired && <SettingsNotice tone="error"><FormattedMessage id="fullUpgrade.recovery" defaultMessage="Local recovery required" /></SettingsNotice>}
       {status.job?.phase === 'failed' && <SettingsNotice tone="error">{status.job.error === 'upgrade-cancelled-at-safe-point' ? <FormattedMessage id="fullUpgrade.deferred" defaultMessage="Stopped at a safe point" /> : status.job.error}</SettingsNotice>}
       {updating && <SettingsNotice role="status"><FormattedMessage id="webUpdates.running" defaultMessage="Updating… You can leave this page; the server will finish the update." /></SettingsNotice>}
-      {status.job?.phase === 'completed' && <SettingsNotice tone="success" role="status">{status.execution ? <FormattedMessage id="webUpdates.serverCompleted" defaultMessage="Website and execution gateway updated. Reconnecting resumes your Codex tasks." /> : <FormattedMessage id="webUpdates.completed" defaultMessage="Website version switched successfully. Existing connections keep running." />}</SettingsNotice>}
       {needsRefresh && <SettingsNotice><FormattedMessage id="webUpdates.refreshHint" defaultMessage="This page is still displaying the previous build. Refresh when you are ready." /> <SettingsButton onClick={() => location.reload()}><FormattedMessage id="webUpdates.refresh" defaultMessage="Refresh page" /></SettingsButton></SettingsNotice>}
-      <SettingsActions align="start" className="web-updates-actions">
-        <SettingsButton aria-busy={pending === 'check' || status.checking} disabled={pending !== null || !!running} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>
-        {status.authenticated && <>
+      {status.authenticated && <SettingsActions align="start" className="web-updates-actions">
         <SettingsButton variant="primary" aria-busy={pending === 'install'} disabled={pending !== null || !!running || !!status.recoveryRequired || !status.updateAvailable} onClick={() => void action('install', { version: status.latest?.version })}>{status.execution ? <FormattedMessage id="webUpdates.installServer" defaultMessage="Update website and execution service" /> : <FormattedMessage id="webUpdates.install" defaultMessage="Update website" />}</SettingsButton>
         {status.canRollback && <SettingsButton disabled={pending !== null || !!running || !!status.recoveryRequired} onClick={() => void action('rollback')}><FormattedMessage id="webUpdates.rollback" defaultMessage="Roll back previous version" /></SettingsButton>}
         <SettingsButton variant="quiet" disabled={pending !== null} onClick={() => void action('logout')}><FormattedMessage id="webUpdates.logout" defaultMessage="End administrator session" /></SettingsButton>
-        </>}
-      </SettingsActions>
-      {!status.authenticated && <SettingsGroup><SettingsRow layout="stacked" label={<FormattedMessage id="webUpdates.admin" defaultMessage="Deployment administrator" />} description={<FormattedMessage id="webUpdates.adminHint" defaultMessage="Enter the admin-key from the website state directory to install updates or roll back." />}>
+      </SettingsActions>}
+      {!status.authenticated && <SettingsGroup><SettingsRow layout="stacked" htmlFor="web-updates-admin-key" label={<FormattedMessage id="webUpdates.admin" defaultMessage="Deployment administrator" />} description={<FormattedMessage id="webUpdates.adminHint" defaultMessage="Enter the admin-key from the website state directory to install updates or roll back." />}>
         <form onSubmit={event => { event.preventDefault(); void action('login', { key }); }}>
-          <SettingsTextInput aria-label={intl.formatMessage({ id: 'webUpdates.key', defaultMessage: 'Deployment administrator key' })} type="password" autoComplete="off" value={key} onChange={event => setKey(event.currentTarget.value)} disabled={pending === 'login'} />
+          <SettingsTextInput id="web-updates-admin-key" aria-label={intl.formatMessage({ id: 'webUpdates.key', defaultMessage: 'Deployment administrator key' })} type="password" autoComplete="off" value={key} onChange={event => setKey(event.currentTarget.value)} disabled={pending === 'login'} />
           <SettingsActions><SettingsButton type="submit" disabled={pending !== null || !key.trim()}><FormattedMessage id="webUpdates.authorize" defaultMessage="Authorize management" /></SettingsButton></SettingsActions>
         </form>
       </SettingsRow></SettingsGroup>}
     </SettingsSection>}
-  </>;
+  </div>;
 }
