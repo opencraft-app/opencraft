@@ -380,13 +380,39 @@ export function connectWebSocketAppHost(
   let recoveryDetached = false;
   const transports = new Set<RenewableAppHostTransport>();
   const events = options.recoveryEvents ?? browserRecoveryEvents;
-  const unsubscribeRecovery = events.subscribe(() => {
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let recoveryTicket = 0;
+  const stopRecoveryTimer = () => {
+    ++recoveryTicket;
+    if (recoveryTimer !== null) globalThis.clearTimeout(recoveryTimer);
+    recoveryTimer = null;
+  };
+  const scheduleRecoveryCheck = () => {
+    if (disposed || recoveryTimer !== null || transports.size === 0 || !events.isVisible()) return;
+    // Mobile routes can recover without an online/visibility event. This is a
+    // shared physical-route observation, never a second Host retry scheduler.
+    const ticket = ++recoveryTicket;
+    recoveryTimer = globalThis.setTimeout(() => {
+      if (ticket !== recoveryTicket) return;
+      recoveryTimer = null;
+      checkRecovery();
+    }, 5_000);
+  };
+  const checkRecovery = () => {
     if (disposed) return;
     // A backgrounded page cannot spend its foreground probe deadline.
-    if (!events.isVisible()) { current?.port.cancelProbe(); return; }
+    if (!events.isVisible()) { stopRecoveryTimer(); current?.port.cancelProbe(); return; }
+    if (transports.size === 0) return;
     current?.port.probeReachability();
-    for (const transport of transports) transport.notifyRecoveryHint();
-  });
+    // Arm before notifying consumers: synchronous disposal must cancel this
+    // owner's timer, and a subscriber cannot create duplicate periodic work.
+    scheduleRecoveryCheck();
+    for (const transport of [...transports]) {
+      if (disposed) break;
+      if (transports.has(transport)) transport.notifyRecoveryHint();
+    }
+  };
+  const unsubscribeRecovery = events.subscribe(checkRecovery);
   const retireCurrent = (): boolean => {
     const owner = current;
     if (owner === null) return true;
@@ -434,12 +460,17 @@ export function connectWebSocketAppHost(
             return () => leaseOwner.port.removeEventListener("message", ready);
           },
         };
-      }, () => transports.delete(transport), options.beforeConnect);
+      }, () => {
+        transports.delete(transport);
+        if (transports.size === 0) stopRecoveryTimer();
+      }, options.beforeConnect);
       transports.add(transport);
+      scheduleRecoveryCheck();
       return transport;
     },
     close() {
       disposed = true;
+      stopRecoveryTimer();
       if (closing) return;
       closing = true;
       try {

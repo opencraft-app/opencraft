@@ -17,7 +17,13 @@ class FakeSocket {
     listeners.add(listener);
   }
 
-  send(frame: string): void { this.sent.push(frame); }
+  constructor(private readonly replyToProbes = false) {}
+  send(frame: string): void {
+    this.sent.push(frame);
+    const message = JSON.parse(frame);
+    if (this.replyToProbes && message.type === "connection/probe")
+      this.receive({ type: "response", requestId: message.requestId, ok: true, result: null });
+  }
   close(code = 1000): void { this.readyState = 3; this.emit("close", { code }); }
   open(): void { this.readyState = FakeSocket.OPEN; this.emit("open"); }
   receive(message: unknown): void { this.emit("message", { data: JSON.stringify(message) }); }
@@ -35,6 +41,122 @@ class RecoveryEvents implements AppHostRecoveryEvents {
   fire(visible = true) { this.visible = visible; for (const listener of this.listeners) listener(); }
 }
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("a visible mobile route is probed without browser wake events, once per shared socket", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const events = new RecoveryEvents(), socket = new FakeSocket();
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { recoveryEvents: events, reportFailure: () => undefined });
+  const accept = async (initial: boolean) => {
+    await flush();
+    if (initial) {
+      socket.open();
+      socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"], capabilities: { connectionProbe: true } });
+      await flush();
+    }
+    const request = socket.sent.map(frame => JSON.parse(frame)).findLast(message => message.type === "host/connect")!;
+    socket.receive({ type: "response", requestId: request.requestId, ok: true, result: { hostId: request.hostId, generation: 1 } });
+  };
+  try {
+    const a = client.createTransport("a"), b = client.createTransport("b");
+    const ca = a.connect(); await accept(true); await ca;
+    const cb = b.connect(); await accept(false); await cb;
+    let hints = 0; a.subscribeRecoveryHint?.(() => { hints++; });
+    context.mock.timers.tick(5_000);
+    const probes = socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === "connection/probe");
+    assert.equal(probes.length, 1, "two Host leases share one physical reachability probe");
+    assert.equal(hints, 1);
+    assert.equal(a.status.state, "open");
+    context.mock.timers.tick(5_000);
+    assert.equal(a.status.state, "failed", "a silent mobile socket must retire without close/online/pageshow events");
+    assert.equal(b.status.state, "failed");
+    client.close();
+    const oldHints = hints, oldFrames = socket.sent.length;
+    context.mock.timers.tick(60_000);
+    events.fire();
+    assert.equal(hints, oldHints); assert.equal(socket.sent.length, oldFrames);
+    assert.equal(events.listeners.size, 0);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("visible route checks wake the existing Workbench retry owner before a long backoff", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const events = new RecoveryEvents(), sockets: FakeSocket[] = [];
+  const client = connectWebSocketAppHost(() => { const socket = new FakeSocket(); sockets.push(socket); return socket as unknown as WebSocket; }, {
+    recoveryEvents: events, reportFailure: () => undefined,
+  });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "mobile", autoReconnect: true, reconnectDelaysMs: [60_000],
+    createTransport: () => client.createTransport("mobile"),
+    clock: { now: () => Date.now(), setTimeout: (run, delay) => setTimeout(run, delay), clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>) },
+  });
+  try {
+    const failed = assert.rejects(runtime.connect(), /App Host connection failed/);
+    await flush(); sockets[0]!.fail(); await failed;
+    assert.equal(runtime.getSnapshot().phase, "reconnecting");
+    assert.equal(sockets.length, 1);
+    context.mock.timers.tick(5_000); await flush(); await flush();
+    assert.equal(sockets.length, 2, "the same Host owner validates again after5s rather than waiting60s");
+    events.fire(); events.fire(); await flush();
+    assert.equal(sockets.length, 2, "periodic and browser hints join the current attempt");
+    sockets[1]!.open();
+    sockets[1]!.receive({ type: "fatal", error: { code: "APP_HOST_PROTOCOL_MISMATCH", message: "Client and server versions are incompatible", retryable: false } });
+    await flush(); await flush();
+    assert.equal(runtime.getSnapshot().phase, "error");
+    context.mock.timers.tick(60_000); await flush();
+    assert.equal(sockets.length, 2, "periodic hints cannot bypass manual recovery");
+  } finally {
+    await runtime.dispose(); client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("periodic recovery checks stop while hidden and when the last Host releases its transport", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const events = new RecoveryEvents();
+  const client = connectWebSocketAppHost(() => { throw new Error("a recovery observation cannot allocate a socket"); }, {
+    recoveryEvents: events, reportFailure: () => undefined,
+  });
+  try {
+    const a = client.createTransport("a"), b = client.createTransport("b");
+    let hints = 0;
+    a.subscribeRecoveryHint?.(() => { hints++; }); b.subscribeRecoveryHint?.(() => { hints++; });
+    context.mock.timers.tick(5_000); assert.equal(hints, 2);
+    events.fire(false); context.mock.timers.tick(60_000); assert.equal(hints, 2);
+    events.fire(); assert.equal(hints, 4);
+    await a.close();
+    context.mock.timers.tick(5_000); assert.equal(hints, 5);
+    await b.close();
+    context.mock.timers.tick(60_000); assert.equal(hints, 5);
+  } finally { client.close(); }
+});
+
+test("a retired observation timer cannot take ownership from the resumed timer", context => {
+  const callbacks: (() => void)[] = [], active = new Set<number>();
+  context.mock.method(globalThis, "setTimeout", (run: () => void) => {
+    callbacks.push(run); active.add(callbacks.length);
+    return callbacks.length as unknown as ReturnType<typeof setTimeout>;
+  });
+  context.mock.method(globalThis, "clearTimeout", (id: unknown) => { active.delete(id as number); });
+  const events = new RecoveryEvents();
+  const client = connectWebSocketAppHost(undefined, { recoveryEvents: events });
+  try {
+    const transport = client.createTransport("mobile"); let hints = 0;
+    transport.subscribeRecoveryHint?.(() => { hints++; });
+    const retired = callbacks[0]!;
+    events.fire(false); events.fire();
+    assert.equal(hints, 1); assert.equal(callbacks.length, 2); assert.equal(active.size, 1);
+    retired();
+    assert.equal(hints, 1); assert.equal(callbacks.length, 2); assert.equal(active.size, 1);
+    client.close(); callbacks[1]!();
+    assert.equal(hints, 1); assert.equal(active.size, 0);
+  } finally { client.close(); }
+});
 
 test("foreground probes share the socket, pause in background, and cannot affect a successor", async context => {
   context.mock.timers.enable({ apis: ["setTimeout"] });
@@ -405,7 +527,7 @@ test("expired claim saturation renews the shared browser socket and lets its pee
   context.mock.timers.enable({ apis: ["setTimeout"] });
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/chat" } } });
-  const first = new FakeSocket(), successor = new FakeSocket(), sockets = [first, successor];
+  const first = new FakeSocket(true), successor = new FakeSocket(true), sockets = [first, successor];
   const events = new RecoveryEvents(); let created = 0;
   const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { recoveryEvents: events, reportFailure: () => undefined });
   const slow = client.createTransport("slow"), peer = client.createTransport("healthy");
@@ -553,7 +675,7 @@ test("expired claim saturation renews the shared browser socket and lets its pee
   context.mock.timers.enable({ apis: ["setTimeout"] });
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/chat" } } });
-  const first = new FakeSocket(), successor = new FakeSocket(), sockets = [first, successor];
+  const first = new FakeSocket(true), successor = new FakeSocket(true), sockets = [first, successor];
   const events = new RecoveryEvents(); let created = 0;
   const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { recoveryEvents: events, reportFailure: () => undefined });
   const slow = client.createTransport("slow"), peer = client.createTransport("healthy");

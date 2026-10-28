@@ -164,6 +164,20 @@ and before initialization readiness is cached. Retired Web admission waits
 settle locally without releasing physical barriers; late results are fenced.
 Production budgets and executable cases are in the [recovery contract](connection-recovery-contract.md). Explicit
 user retry remains immediate and manual failures remain blocked.
+
+While a page remains visible and has logical transports, the Web AppHost factory
+owns one five-second observation timer shared by its Host leases. It probes the
+current physical route through the existing negotiated `connection/probe`
+capability and reports recovery hints to the existing Host connection owners.
+This covers mobile network stalls and recovery without browser online or
+visibility events. A pending probe keeps its original five-second deadline;
+ticks do not extend it or allocate sockets. The Host owner retains retry
+escalation, validation admission, active-attempt coalescing and manual blocks.
+Only the factory/port may retire its physical socket; probe success grants no
+Host or Thread authority. Hiding the page cancels the timer and probe; the last
+transport release or factory disposal stops observation. Browser wake events
+resume it without adding another timer. This is a bounded scheduling policy,
+not a guarantee of recovery time on an unavailable or suspended mobile route.
 Protocol incompatibility is a permanent failure for the loaded client. The Web
 bridge sends the existing `fatal` envelope with `APP_HOST_PROTOCOL_MISMATCH` and
 `retryable: false` before closing a rejected hello; no Host or lease is admitted.
