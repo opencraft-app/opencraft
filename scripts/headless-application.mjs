@@ -38,6 +38,7 @@ import { WebSocket } from 'ws';
 import { readDaemonMachineIdentity } from "../apps/opencraft-daemon/src/machine-identity.ts";
 import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "../apps/opencraft-daemon/src/ssh-codex-connections.ts";
 import { SshManagement } from "../apps/opencraft-daemon/src/ssh-management.ts";
+import { HostFileDownloads } from "../apps/opencraft-daemon/src/host-file-downloads.ts";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { startEngineHost } from "../apps/local-agent-host/src/engine-host.ts";
 import { createPiModelConfiguration } from "../apps/local-agent-host/src/model-config/pi-adapter.ts";
@@ -264,6 +265,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let web;
   let appHostServer;
   let sshManagement;
+  let fileDownloads;
   let desktop;
   let identity;
   let agentIdentity;
@@ -308,6 +310,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       relay?.close();
       hubController?.close();
       remoteBrowser?.close();
+      fileDownloads?.close();
       desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
       await turnPush?.close();
       // Retire admitted ingress clients before their Host provider.
@@ -674,6 +677,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     } catch {
       process.stderr.write('Observability configuration unavailable; workbench continues without observation ingress.\n');
     }
+    fileDownloads = new HostFileDownloads(hostId => {
+      if (hostId === "opencraft-server" || hostId === "local-codex") return "local";
+      const binding = remoteServers.get(hostId) ?? (hostId.startsWith("ssh:") ? sshManagement?.store.binding(hostId) : null);
+      if (!binding) throw new Error("Unknown file Host");
+      return binding.connection;
+    });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,
@@ -692,6 +701,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       appHostServer,
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
+      fileDownloads,
       getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
       getStorageOutcomes: () => [
         ...(capabilityBindings ? [{name:'session-capabilities',status:capabilityBindings.outcome.status,appliedVersion:capabilityBindings.outcome.appliedVersion,movedAside:capabilityBindings.outcome.movedAsidePaths.length>0}] : []),

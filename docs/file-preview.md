@@ -75,6 +75,18 @@ logical cancellation (DOCX parsing); it must still dispose its detached work on
 completion. The pool aborts an opening attempt after 45 seconds. Failure occupies
 the existing viewer area, leaves download available, and offers explicit retry.
 
+Headless websites expose original files through an authenticated, same-origin
+HTTP byte stream. Local files use a file stream; SSH files use a separate
+installation-owned SSH read channel with backpressure and cancellation. These
+bytes never travel as a whole-file Base64 response on the chat connection.
+Before loading a registered document preview, the resource panel requests its
+size with HEAD and applies the same 25 MiB admission limit. An oversized file
+keeps the original download link enabled, without loading its bytes or starting
+an Office engine. Downloads stream directly to the browser and are independent
+of preview admission or parser failure. Unknown Hosts, invalid paths and expired
+instance/Actor/SSH access are rejected; disconnect and shutdown release readers.
+Static websites and desktop adapters retain their existing Host byte port.
+
 The initial global pool admits three engine instances and 64 MiB of source
 bytes, with an individual file limit of 25 MiB. Only idle instances may be evicted,
 in LRU order; active views reject excess admission rather than disappear. These

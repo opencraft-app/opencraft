@@ -1,7 +1,7 @@
 import { IconButton } from "@opencraft/design-system-web/button";
 import { ZoomableImage } from "@opencraft/chat-render-web";
 import { FolderIcon as Folder, FolderOpenIcon as FolderOpen, LoadingRingIcon as LoaderCircle, EditIcon as Pencil, ResetIcon as RotateCcw, SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
-import { FilePreviewView, useFilePreviewAvailable } from "@opencraft/file-preview-web";
+import { FilePreviewView, MAX_FILE_PREVIEW_BYTES, useFilePreviewAvailable } from "@opencraft/file-preview-web";
 import { preparePreviewResources } from "./prepare-preview-resources";
 import { WebChatDocument } from "@opencraft/chat-render-web";
 import { useAppearanceTheme } from "../appearance-theme";
@@ -29,7 +29,7 @@ import {
   useAppServerSnapshot,
   useBlobResources,
 } from "../runtime/appserver-runtime-context";
-import { acquireFileBlob, fileBlobResource, fileBlobUrls } from "../runtime/blob-files";
+import { acquireFileBlob, fileBlobResource, fileBlobUrls, fileDownloadSize, fileDownloadUrl } from "../runtime/blob-files";
 import {
   MAX_EDITABLE_FILE_BYTES,
   decodeWorkspaceText,
@@ -57,6 +57,7 @@ const WorkspaceCodeEditor = lazy(() => import("./workspace-code-editor").then((m
 import { WorkspacePdfPreviewLoader as WorkspacePdfPreview } from "./workspace-pdf-preview-loader";
 
 interface LoadedWorkspaceResource {
+  readonly previewTooLarge?: boolean;
   readonly blob: Blob | null;
   readonly isDirectory: boolean;
   readonly isFile: boolean;
@@ -199,6 +200,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
   const queryClient = useQueryClient();
   const [selectedPath, setSelectedPath] = useState(initialLocation.path);
   const hasFilePreview = useFilePreviewAvailable(selectedPath);
+  const downloadUrl = fileDownloadUrl(snapshot.hostId, selectedPath);
   const [sourceView, setSourceView] = useState<string | null>(null);
   const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
   const showSource = sourceView === documentId;
@@ -243,7 +245,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
   }, []);
 
   const resource = useQuery<LoadedWorkspaceResource>({
-    queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope],
+    queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope, hasFilePreview, downloadUrl],
     queryFn: async ({ signal }) => {
       const metadata = await runtime.resources.fileSystem.getMetadata(selectedPath, signal);
       if (!metadata.isFile) {
@@ -254,6 +256,13 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
           modifiedAtMs: metadata.modifiedAtMs,
           size: 0,
           text: null,
+        };
+      }
+      if (hasFilePreview && downloadUrl) {
+        const size = await fileDownloadSize(downloadUrl, signal);
+        if (size > MAX_FILE_PREVIEW_BYTES) return {
+          blob: null, isDirectory: false, isFile: true, modifiedAtMs: metadata.modifiedAtMs,
+          size, text: null, previewTooLarge: true,
         };
       }
       const lease = acquireFileBlob(blobs, runtime, snapshot.hostId, selectedPath, { signal, priority: 2 });
@@ -295,11 +304,11 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
     setFileSource({ blob, url: handle.source, documentId });
     return handle.release;
   }, [resource.data?.blob, selectedPath, documentId]);
-  const canDownload =
+  const canDownload = (downloadUrl !== null && resource.data?.isDirectory !== true) || (
     !resource.isError &&
     resource.data?.isFile === true &&
     fileSource?.documentId === documentId &&
-    fileSource.blob === resource.data.blob;
+    fileSource.blob === resource.data.blob);
 
   const fileKey = workspaceDraftKey(snapshot.hostId, selectedPath);
   const fileDraft = drafts[fileKey];
@@ -447,7 +456,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
               title={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
               aria-disabled={!canDownload || undefined}
               tabIndex={canDownload ? undefined : -1}
-              href={canDownload ? fileSource.url : undefined}
+              href={canDownload ? downloadUrl ?? fileSource?.url : undefined}
               download={workspaceResourceBasename(selectedPath)}
             ><Download size={14} aria-hidden="true" /></a>
           </div> : null}
@@ -463,6 +472,10 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
           <div className="workspace-file-viewer__state"><FolderOpen size={20} />{intl.formatMessage(previewOnly ? { id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." } : { id: "panel.selectFile", defaultMessage: "Select a file from this directory." })}</div>
+        ) : resource.data?.previewTooLarge ? (
+          <div className="workspace-file-viewer__state" role="status">
+            {intl.formatMessage({ id: "preview.tooLarge", defaultMessage: "This file is too large to preview (25 MB limit). Download it to view." })}
+          </div>
         ) : imageMime !== null && resource.data?.blob && fileSource?.blob === resource.data.blob && fileSource.documentId === documentId ? (
           <div className="workspace-file-viewer__image">
             <ZoomableImage fitToContainer key={documentId} alt={workspaceResourceBasename(selectedPath)} src={fileSource.url} />
