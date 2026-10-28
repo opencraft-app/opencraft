@@ -4,6 +4,7 @@ import { useIntl } from "@opencraft/i18n/react";
 import type { ThreadRecoveryResource } from "@opencraft/workbench-runtime";
 
 const messages = defineMessages({
+  scheduled: { id: "turnRecovery.scheduled", defaultMessage: "The model is temporarily unavailable. Automatic retry is scheduled (up to {limit} retries)." },
   exhausted: { id: "turnRecovery.exhausted", defaultMessage: "Automatic continuation stopped after {limit} attempts. Send a message to continue." },
   unconfirmed: { id: "turnRecovery.unconfirmed", defaultMessage: "Automatic continuation could not be confirmed. Check this conversation before continuing." },
 });

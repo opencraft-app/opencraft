@@ -5,7 +5,9 @@ export interface TurnRecoveryNotice {
   readonly turnId: string;
   readonly attempts: number;
   readonly limit: number;
-  readonly state: "continued" | "exhausted" | "unconfirmed";
+  readonly state: "continued" | "exhausted" | "unconfirmed" | "scheduled";
+  readonly reason?: "provider-failure";
+  readonly retryAt?: number;
   readonly sourceKind: "system";
 }
 export const TURN_RECOVERY_EXTENSION = "opencraft/turn-recovery";
@@ -18,7 +20,9 @@ export function parseTurnRecoveryNotice(value: unknown): TurnRecoveryNotice | nu
   if (![row.threadId, row.rootTurnId, row.turnId].every(id => typeof id === "string" && id.length > 0)
     || !Number.isSafeInteger(row.attempts) || !Number.isSafeInteger(row.limit)
     || (row.attempts as number) < 1 || (row.attempts as number) > (row.limit as number)
-    || row.sourceKind !== "system" || !["continued", "exhausted", "unconfirmed"].includes(String(row.state))) return null;
+    || row.sourceKind !== "system" || !["continued", "exhausted", "unconfirmed", "scheduled"].includes(String(row.state))) return null;
+  if (row.reason !== undefined && row.reason !== "provider-failure") return null;
+  if (row.retryAt !== undefined && (!Number.isSafeInteger(row.retryAt) || (row.retryAt as number) < 0)) return null;
   return { threadId: row.threadId as string, rootTurnId: row.rootTurnId as string, turnId: row.turnId as string,
-    attempts: row.attempts as number, limit: row.limit as number, state: row.state as TurnRecoveryNotice["state"], sourceKind: "system" };
+    attempts: row.attempts as number, limit: row.limit as number, state: row.state as TurnRecoveryNotice["state"], sourceKind: "system", ...(row.reason === "provider-failure" ? { reason: row.reason } : {}), ...(typeof row.retryAt === "number" ? { retryAt: row.retryAt } : {}) };
 }

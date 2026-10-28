@@ -1,5 +1,6 @@
 const legacyItems = new Set();
 const smallHistoryBudgets = new Set();
+const systemErrorThreads = new Set();
 import readline from "node:readline";
 
 const input = readline.createInterface({ input: process.stdin });
@@ -28,7 +29,7 @@ const heldThreadReads = [];
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 function readThread(message) {
   const active = turns.get(message.params.threadId);
-  const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
+  const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : systemErrorThreads.has(message.params.threadId) ? "systemError" : "idle";
   send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
 }
 input.on("line", line => {
@@ -110,7 +111,7 @@ input.on("line", line => {
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
     if (message.params.sortDirection !== "asc") rows.reverse();
     const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...turn, items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
+    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
@@ -131,6 +132,7 @@ input.on("line", line => {
       return;
     }
     const turnId = `turn-${nextTurnId++}`;
+    systemErrorThreads.delete(threadId);
     turns.set(threadId, turnId);
     threadTurns.set(threadId, [...(threadTurns.get(threadId) ?? []), { id: turnId, status: "inProgress", items: [] }]);
     subscribedThreads.add(threadId);
@@ -178,6 +180,7 @@ input.on("line", line => {
     const threadId = message.params.threadId;
     const turnId = turns.get(threadId);
     turns.delete(threadId);
+    if (message.params.testSystemError) systemErrorThreads.add(threadId);
     const completed = { id: turnId, status: message.params.codexErrorInfo ? "failed" : "completed", items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
     threadTurns.set(threadId, (threadTurns.get(threadId) ?? []).map(turn => turn.id === turnId ? completed : turn));
     const deferred = deferredSteerHistory.get(threadId) ?? [];

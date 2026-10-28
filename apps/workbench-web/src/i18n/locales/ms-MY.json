@@ -1,4 +1,5 @@
 {
+  "turnRecovery.scheduled": "Model tidak tersedia buat sementara waktu. Percubaan semula automatik dijadualkan (sehingga {limit} kali).",
   "chat.continue.failed": "Sambungan respons tidak dapat disahkan. Semak perbualan sebelum mencuba lagi.",
   "composer.model.failedTitle": "Model tidak dapat dimuatkan",
   "composer.model.emptyTitle": "Belum ada model tersedia",

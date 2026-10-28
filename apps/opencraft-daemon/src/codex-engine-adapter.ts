@@ -8,7 +8,7 @@ import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraf
 import { TranscriptReadCache } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
-import { InterruptedTurnRecovery, RecoveryNotSubmitted, type RecoveryTurn } from "@opencraft/host-recovery";
+import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { labelUsagePeople } from "./token-usage-people.js";
@@ -115,22 +115,8 @@ interface PendingServerRequest {
 }
 
 const MAX_PENDING_SERVER_REQUESTS = 256;
-const CAPACITY_RETRY_BASE_MS = 1_000;
-const CAPACITY_RETRY_MAX_MS = 120_000;
 const DEFAULT_HISTORY_READ_TIMEOUT_MS = 30_000;
 const MAX_HISTORY_READ_TIMEOUT_MS = 120_000;
-
-export function capacityRetryDelayMs(attempt: number): number {
-  return Math.min(CAPACITY_RETRY_BASE_MS * 2 ** Math.min(attempt, 7), CAPACITY_RETRY_MAX_MS);
-}
-
-interface CapacityRetry {
-  attempt: number;
-  failedTurnId: string;
-  timer: ReturnType<typeof setTimeout> | null;
-  inFlight: boolean;
-  autoTurnId: string | null;
-}
 
 interface SharedCodexRoutingOptions {
   /** Trusted Host composition. Never accepted from renderer requests. */
@@ -299,7 +285,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly activeTurns = new Map<string, string>();
   private readonly activeGoalThreads = new Set<string>();
   private readonly goalContinuationTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly capacityRetries = new Map<string, CapacityRetry>();
+  private providerRetry: ProviderTurnRetry | null = null;
   private recovery: InterruptedTurnRecovery | null = null;
   private coreReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private coreReinitializing = false;
@@ -533,6 +519,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       ...(this.tokenUsageState ? [{ name: "token-usage", outcome: this.tokenUsageState.outcome }] : []),
       ...(this.schedules ? [{ name: "conversation-schedules", outcome: this.schedules.outcome }] : []),
       ...(this.recovery ? [{ name: "interrupted-turn-recovery", outcome: this.recovery.outcome }] : []),
+      ...(this.providerRetry ? [{ name: "provider-turn-retry", outcome: this.providerRetry.outcome }] : []),
       ...(this.messageAttachments ? [{ name: "opencraft-message-attachments", outcome: this.messageAttachments.outcome }] : []),
       ...(this.tasks?.outcome ? [{ name: "tasks", outcome: this.tasks.outcome }] : []),
       ...(this.poolStore ? [{ name: "account-pool", outcome: this.poolStore.outcome }] : []),
@@ -686,6 +673,31 @@ export class CodexEngineAdapter implements DuplexTransport {
         for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
       },
     });
+    this.providerRetry = new ProviderTurnRetry(dataRoot, {
+      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
+      inspect: turn => this.inspectProviderRetry(turn),
+      continue: async (turn, current, admit) => {
+        await this.prepareSessionMcp(turn.threadId);
+        if (!current()) return null;
+        const inputId = turn.inputId!;
+        this.options.collaboration?.continuing?.(turn.threadId, turn.turnId, inputId);
+        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
+        this.tokenUsage?.submission(identity);
+        const result = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit));
+        const turnId = string(record(result.turn).id);
+        if (turnId) this.options.collaboration?.continued?.(turn.threadId, turn.turnId, turnId);
+        return turnId || null;
+      },
+      changed: threadId => {
+        const recovery = this.providerRetry?.notice(threadId) ?? null;
+        if (recovery && ["scheduled", "exhausted", "unconfirmed"].includes(recovery.state)) this.options.collaboration?.orchestration?.observed({
+          threadId, turnId: recovery.turnId, rootTurnId: recovery.rootTurnId,
+          state: recovery.state === "scheduled" ? "recovering" : recovery.state === "exhausted" ? "exhausted" : "unconfirmed",
+        });
+        this.diagnostic({ event: "provider-retry-updated", threadId, state: recovery?.state ?? "cleared", attempts: recovery?.attempts, retryAt: recovery?.retryAt });
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
+      },
+    }, Date.now, Math.random, () => !this.closeOperation && this.physicalInitialized && this.physicalAvailable && !this.admissionPaused());
     this.schedules = new ConversationSchedules(dataRoot, this.scheduleExecutionPort(), Date.now, event => this.diagnostic(event), () => {
       for (const clientId of this.initializedClients) this.emit({ method: "opencraft/schedules/changed", params: {} }, clientId);
     });
@@ -823,7 +835,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
       queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
       pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + this.humanInteractions.size + (this.coreBridge?.pendingApprovals ?? 0),
-      capacityRetries: this.capacityRetries.size };
+      capacityRetries: this.providerRetry?.pendingThreadIds().length ?? 0 };
   }
 
   private applyGenerationFences(state: import("@opencraft/account-pool-host").CodexGenerationFenceState): void {
@@ -849,7 +861,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private generationUsageSnapshot(): { routingEpoch: string; blockedThreadIds: string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number } {
-    const blocked = new Set<string>([...this.activeTurns.keys(), ...(this.queue?.pendingThreads() ?? []), ...this.activeGoalThreads, ...this.capacityRetries.keys(), ...(this.recovery?.pendingThreadIds() ?? []), ...this.generationReconciling.keys(), ...(this.threadTitles?.pendingThreadIds() ?? []), ...this.generationAdmissionsInFlight.values()]);
+    const blocked = new Set<string>([...this.activeTurns.keys(), ...(this.queue?.pendingThreads() ?? []), ...this.activeGoalThreads, ...(this.providerRetry?.pendingThreadIds() ?? []), ...(this.recovery?.pendingThreadIds() ?? []), ...this.generationReconciling.keys(), ...(this.threadTitles?.pendingThreadIds() ?? []), ...this.generationAdmissionsInFlight.values()]);
     for (const schedule of this.schedules?.list().schedules ?? []) if (schedule.status === "active" || schedule.needsReview) blocked.add(schedule.threadId);
     let unscopedBusy = false;
     for (const request of [...this.pending.values(), ...this.internalRequests.values()]) {
@@ -1057,11 +1069,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       if (message.method === "opencraft/turn-recovery/read") {
         const threadId = string(record(message.params).threadId);
-        this.emit({ id, result: { recovery: this.recovery?.notice(threadId) ?? null } }, clientId);
+        this.emit({ id, result: { recovery: this.providerRetry?.notice(threadId) ?? this.recovery?.notice(threadId) ?? null } }, clientId);
         return;
       }
-      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
-        if (!context.collaborationRequestId) this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
+      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/settings/update", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
+        if (!context.collaborationRequestId) {
+          this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
+          this.providerRetry?.handled(string(record(message.params).threadId));
+        }
       }
       if (this.options.kind === "remote" && this.pending.size >= 1024) {
         this.emit({ id, error: { code: -32000, message: "Remote request limit exceeded" } }, clientId);
@@ -1179,7 +1194,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         threadId: string(params.threadId), turnId: string(params.turnId), pid: this.child?.pid ?? null,
       });
       if (typeof message.method === "string" && ["turn/start", "thread/delete", "thread/archive"].includes(message.method)) {
-        this.clearCapacityRetry(string(params.threadId));
+        this.providerRetry?.handled(string(params.threadId));
       }
       if (message.method === "thread/resume") this.diagnostic({
         event: "thread-resume-start", clientId, requestId: physicalId,
@@ -1414,6 +1429,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.closeOperation = (async () => {
       await this.transcriptCache?.close(); this.transcriptCache = null;
       this.durableCatalog?.close(); this.durableCatalog = null;
+      await this.providerRetry?.close(); this.providerRetry = null;
       await this.recovery?.close(); this.recovery = null;
       await this.schedules?.close(); this.schedules = null;
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
@@ -1481,7 +1497,6 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.activeTurns.clear();
       for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
       this.goalContinuationTimers.clear();
-      this.clearAllCapacityRetries();
       this.activeGoalThreads.clear();
       this.threadOperations.clear();
       this.publishStatus({ state: "closed" });
@@ -1654,7 +1669,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     // initialize slot. Retire that socket; only reconnect may initialize again.
     if ("error" in message) this.nativeCore?.resetConnection();
     if ("result" in message) {
-      this.recovery?.wake();
+      this.recovery?.wake(); this.providerRetry?.wake();
       this.schedules?.start();
       for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
       if (this.options.kind !== "remote") void this.discoverActiveGoals()
@@ -1689,7 +1704,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.executionLeases?.suspend(id);
         this.recovery?.lost(id); this.activeTurns.delete(id); this.nativeSubscribedThreads.delete(id); this.reconcileGenerationThread(id);
       }
-      this.recovery?.wake(); return;
+      this.recovery?.wake(); this.providerRetry?.wake(); return;
     }
     const id = responseId(message.id);
     if (id !== null) {
@@ -1835,8 +1850,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (turnId) this.activeTurns.set(threadId, turnId);
       if (!this.ephemeralThreads.has(threadId) && !this.threadTitles?.owns(threadId)) this.recovery?.started(threadId, turnId);
       if (turnId) this.options.collaboration?.orchestration?.observed({threadId,turnId,rootTurnId:this.recovery?.snapshot(threadId)?.rootTurnId??turnId,state:"active"});
-      const retry = this.capacityRetries.get(threadId);
-      if (retry && !retry.inFlight && retry.autoTurnId !== turnId) this.clearCapacityRetry(threadId);
+      this.providerRetry?.started(threadId, turnId);
     }
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
@@ -1853,9 +1867,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (["completed", "failed", "interrupted"].includes(string(turn.status))) for (const listener of this.scheduleObservers) listener({
         threadId, turnId: string(turn.id), state: turn.status === "completed" && !turn.error ? "completed" : "failed",
       });
-      if (turn.status === "failed" && record(turn.error).codexErrorInfo === "serverOverloaded") {
-        this.scheduleCapacityRetry(threadId, string(turn.id));
-      } else this.clearCapacityRetry(threadId);
+      if (turn.status === "failed") void this.scheduleProviderFailure(threadId, string(turn.id), turn.error);
+      else this.providerRetry?.finished(threadId, string(turn.id));
       this.scheduleQueueMaintenance(threadId);
       if (!record(record(message.params).turn).error) this.scheduleGoalContinuation(threadId);
       this.scheduleNativeRelease(threadId);
@@ -1865,7 +1878,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.scheduleQueueMaintenance(threadId);
       this.scheduleNativeRelease(threadId);
     }
-    if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.clearCapacityRetry(threadId);
+    if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.providerRetry?.handled(threadId);
     if (message.method === "serverRequest/resolved") {
       const rawId = responseId(record(message.params).requestId);
       if (rawId !== null) this.humanInteractions.resolveNative(rawId, threadId);
@@ -2099,7 +2112,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private hasHostThreadDemand(threadId: string): boolean {
     if (this.activeGoalThreads.has(threadId)) return true;
-    if (this.capacityRetries.has(threadId)) return true;
+    if (this.providerRetry?.pendingThreadIds().includes(threadId)) return true;
     if (this.activeTurns.has(threadId) || this.queue?.firstUnsettled(threadId) != null) return true;
     if (this.humanInteractions.hasThread(threadId) || [...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
     if ([...this.pending.values()].some(request => request.params.threadId === threadId
@@ -2560,7 +2573,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const goal = record(await this.requestPhysical("thread/goal/get", { threadId }));
         this.noteGoal(threadId, goal.goal);
         this.receivePhysicalLine(JSON.stringify({ method: "thread/status/changed", params: { threadId, status: record(result.thread).status } }));
-        this.generationReconciling.delete(threadId); this.recovery?.wake(); this.scheduleQueueMaintenance(threadId);
+        this.generationReconciling.delete(threadId); this.recovery?.wake(); this.providerRetry?.wake(); this.scheduleQueueMaintenance(threadId);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
       }).catch(() => {
         if (this.closeOperation) { this.generationReconciling.delete(threadId); return; }
@@ -2640,61 +2653,53 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.goalContinuationTimers.set(threadId, timer);
   }
 
-  private clearCapacityRetry(threadId: string): void {
-    const retry = this.capacityRetries.get(threadId);
-    if (retry?.timer) clearTimeout(retry.timer);
-    this.capacityRetries.delete(threadId);
-    if (retry) this.scheduleNativeRelease(threadId);
+  private async scheduleProviderFailure(threadId: string, turnId: string, error: unknown): Promise<void> {
+    const intent = JSON.stringify(this.recovery?.snapshot(threadId));
+    if (this.recovery?.snapshot(threadId)?.state === "handled") return;
+    const failure = codexProviderFailure(error);
+    if (failure.kind !== "rate-limit") { this.providerRetry?.failed(threadId, turnId, failure); return; }
+    const owner = this.providerRetry;
+    if (!owner) return;
+    await this.withThreadOperation(threadId, async () => {
+      try {
+        const accounts = this.poolStore ? this.accountViews(this.poolStore)
+          : record(await this.requestPhysical("opencraft/codex/accounts/list", {}, 5_000)).accounts;
+        if (this.closeOperation || this.providerRetry !== owner || JSON.stringify(this.recovery?.snapshot(threadId)) !== intent) return;
+        // Pool routing owns readiness; native global quotas can belong to another account.
+        failure.retryAt = pooledRetryAt(accounts, Date.now());
+        const page = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+        const latest = record(Array.isArray(page.data) ? page.data[0] : null);
+        if (latest.id === turnId && latest.status === "failed") owner.failed(threadId, turnId, failure);
+      } catch { this.diagnostic({ event: "provider-retry-skipped", threadId, reason: "pool-unavailable" }); }
+    }).catch(() => undefined);
   }
 
-  private clearAllCapacityRetries(): void {
-    for (const threadId of this.capacityRetries.keys()) this.clearCapacityRetry(threadId);
-  }
-
-  private scheduleCapacityRetry(threadId: string, failedTurnId: string): void {
-    if (!threadId || !failedTurnId) return;
-    const previous = this.capacityRetries.get(threadId);
-    if (previous?.failedTurnId === failedTurnId) return;
-    if (previous?.timer) clearTimeout(previous.timer);
-    const attempt = previous ? previous.attempt + 1 : 0;
-    const retry: CapacityRetry = { attempt, failedTurnId, timer: null, inFlight: false, autoTurnId: null };
-    const delayMs = capacityRetryDelayMs(attempt);
-    retry.timer = setTimeout(() => {
-      retry.timer = null;
-      void this.withThreadOperation(threadId, async () => {
-        if (this.capacityRetries.get(threadId) !== retry) return;
-        if (this.activeTurns.has(threadId) || this.queue?.firstAwaitingAdmission(threadId)
-          || !(await this.queueThreadIsIdle(threadId))) {
-          this.clearCapacityRetry(threadId);
-          return;
-        }
-        const response = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
-        const latest = Array.isArray(response.data) ? record(response.data[0]) : {};
-        if (latest.id !== failedTurnId || latest.status !== "failed"
-          || record(latest.error).codexErrorInfo !== "serverOverloaded") {
-          this.clearCapacityRetry(threadId);
-          return;
-        }
-        retry.inFlight = true;
-        const retryInputId=`capacity-retry:${randomUUID()}`;
-        // This owned continuation has no new human input. Record its origin at
-        // creation; a textual prefix in native history never grants this status.
-        this.tokenUsage?.submission({threadId,inputId:retryInputId,actorId:null,actorKind:"session",mode:"start",sourceKind:"system",submittedAt:Date.now()});
-        const started = record(await this.requestPhysical("turn/start", {
-          threadId, input: [], clientUserMessageId: retryInputId,
-        }));
-        retry.autoTurnId = string(record(started.turn).id);
-        if (retry.autoTurnId) this.options.collaboration?.continued?.(threadId, failedTurnId, retry.autoTurnId);
-        retry.inFlight = false;
-        if (!retry.autoTurnId) throw new Error("Codex returned an invalid capacity retry acknowledgement");
-      }).catch(error => {
-        if (this.capacityRetries.get(threadId) === retry) this.clearCapacityRetry(threadId);
-        this.diagnostic({ event: "capacity-retry-failed", threadId, reason: errorMessage(error) });
-      });
-    }, delayMs);
-    retry.timer.unref();
-    this.capacityRetries.set(threadId, retry);
-    this.diagnostic({ event: "capacity-retry-scheduled", threadId, attempt: attempt + 1, delayMs });
+  private async inspectProviderRetry(turn: Readonly<ProviderRetry>): Promise<"live" | "finished" | "handled" | "unknown" | { failure: ProviderFailure }> {
+    if (!this.physicalInitialized || !this.physicalAvailable || this.admissionPaused()) return "unknown";
+    if (this.queue?.firstUnsettled(turn.threadId)) return "handled";
+    const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
+    const thread = record(result.thread);
+    if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
+    if (!await this.queueThreadIsIdle(turn.threadId, true)) return "live";
+    const page = record(await this.requestPhysical("thread/turns/list", { threadId: turn.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+    const latest = record(Array.isArray(page.data) ? page.data[0] : null);
+    if (!latest.id) return "unknown";
+    if (latest.id !== turn.turnId) return "handled";
+    if (latest.status === "completed") return "finished";
+    if (latest.status !== "failed") return "unknown";
+    // Summary history deliberately omits error details. The waiting receipt's
+    // classification is bound to this exact failed Turn, not to prose or a scan.
+    // A running successor has no such observed failure fact and cannot reuse it.
+    const failure = Object.hasOwn(latest, "error") ? codexProviderFailure(latest.error)
+      : turn.state === "running" ? { kind: "permanent" as const } : turn.failure;
+    if (failure.kind === "permanent") return "handled";
+    if (failure.kind === "rate-limit") {
+      const accounts = this.poolStore ? this.accountViews(this.poolStore)
+        : record(await this.requestPhysical("opencraft/codex/accounts/list", {}, 5_000)).accounts;
+      failure.retryAt = pooledRetryAt(accounts, Date.now());
+      if (failure.retryAt === undefined) return "handled";
+    }
+    return { failure };
   }
 
   /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
@@ -2819,7 +2824,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (thread.canAcceptDirectInput === false) throw new OpenCraftQueueRpcError(-32600, "Thread does not accept direct user input");
   }
 
-  private async queueThreadIsIdle(threadId: string): Promise<boolean> {
+  private async queueThreadIsIdle(threadId: string, allowFailedThread = false): Promise<boolean> {
     let status = await this.threadStatus(threadId);
     if (status === "notLoaded" || this.nativeCore && !this.nativeSubscribedThreads.has(threadId)) {
       // A core-kept active thread is loaded, but this new physical connection
@@ -2827,7 +2832,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       await this.requestPhysical("thread/resume", { threadId, excludeTurns: true });
       status = await this.threadStatus(threadId);
     }
-    return status === "idle";
+    return status === "idle" || allowFailedThread && status === "systemError";
   }
 
   private async historyHasClientMessage(threadId: string, clientId: string, turnId: string | null): Promise<boolean> {
@@ -2878,7 +2883,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const first = queue.firstAwaitingAdmission(threadId);
     if (!first || first.state !== "queued") return;
     const recovery=this.recovery?.snapshot(threadId);
-    if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake();return;}
+    if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake(); this.providerRetry?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
       if (this.options.collaborationInput?.available() === false) return;
       const mode = this.options.collaborationInput?.mode(first.clientUserMessageId);
@@ -3239,7 +3244,6 @@ export class CodexEngineAdapter implements DuplexTransport {
     for(const request of this.pending.values())if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
     for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
     this.goalContinuationTimers.clear();
-    this.clearAllCapacityRetries();
     this.publishStatus({ state: "failed", reason: error.message, failure: { code: "codex-appserver-exited", recovery: "automatic" } });
   };
 
