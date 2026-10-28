@@ -142,6 +142,7 @@ try {
     const health = await response.json();
     return response.ok && health.dsh?.enginePid !== enginePid;
   }, 'health recovers after automatic engine restart');
+  assert.equal((await host.handoffObservation([])).coverage, "complete", "restarted engine applied model configuration");
   assert.equal(host.handoff.open(), true);
   assert.equal(host.handoff.authority.snapshot().epoch, ownerBeforeCrash.epoch, 'ordinary crash does not create a handoff fence');
   const previousUrl = host.websocketUrl;

@@ -449,13 +449,13 @@ export async function startLocalAgentHost(options: {
           client.baseUrl = await supervisor.start();
           if (closing) { await supervisor.stop(); throw new Error("Local host is closing"); }
           await client.call("host.describe");
-          if (modelConfiguration) {
-            await modelConfiguration.initialize();
-            await modelConfiguration.config.synchronize(true);
-          }
           if (options.ownerHandoff) {
             await capabilityLink!.nativeOwner("seal-bootstrap");
             await capabilityLink!.nativeOwner("resume");
+          }
+          if (modelConfiguration) {
+            await modelConfiguration.initialize();
+            await modelConfiguration.config.synchronize(true);
           }
           if (capabilityLink) {
             const catalog = await client.call<{items: Array<{sessionId:string;cwd?:string}>}>("session.list");
