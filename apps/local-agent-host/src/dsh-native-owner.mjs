@@ -83,12 +83,14 @@ export function createDshNativeOwner(ctx, directory, bootstrapToken) {
       const turns = new Map(); const rpcInputs = new Map();
       const approvals = new Set();
       let unknownResults = 0;
+      const unknownEvents = [], calls = new Map();
       for (const event of events) {
         if (event.type === 'turn/start') {lastTurn = 'open';currentTurn = String(event.data.turn);turns.set(String(event.data.turn),'open');}
         if (event.type === 'turn/end') {lastTurn = 'closed';turns.set(String(event.data.turn),'closed');}
         if (event.type === 'user/message' && typeof event.data?.source?.rpcId === 'string') rpcInputs.set(event.data.source.rpcId,currentTurn);
         if (event.type === 'goal/change') goal = event.data?.goal;
-        if (event.type === 'tool/result' && event.data?.error?.code === 'TOOL_OUTCOME_UNKNOWN') unknownResults++;
+        if (event.type === 'tool/call') calls.set(JSON.stringify([event.data?.turn,event.data?.callId]),event);
+        if (event.type === 'tool/result' && event.data?.error?.code === 'TOOL_OUTCOME_UNKNOWN') { unknownResults++; unknownEvents.push(event); }
         if (event.type === 'approval/asked') approvals.add(event.data?.id);
         if (event.type === 'approval/decided') approvals.delete(event.data?.id);
       }
@@ -98,6 +100,14 @@ export function createDshNativeOwner(ctx, directory, bootstrapToken) {
       const row = {id,turns:[...turns],rpcInputs:[...rpcInputs],events:events.length,digest:digest(events),running:agent?.status === 'running' ? 1 : 0,
         openTurn:lastTurn === 'open' ? 1 : 0,inbox,jobs,approvals:approvals.size,goal:liveGoal && liveGoal.phase !== 'complete' ? 1 : 0,
         storedEvents:stored.events.length,storedDigest:digest(stored.events),unknownResults};
+      // An ended logical crash tail can transfer its unresolved responsibility;
+      // live Turns and custody are independent and continue to block release.
+      row.transferableUnknown = unknownEvents.flatMap(event => {
+        const call = calls.get(JSON.stringify([event.data?.turn,event.data?.message?.source?.callId]));
+        if (agent || row.openTurn || turns.get(String(event.data?.turn)) !== 'closed'
+          || !call || call.data?.turn !== event.data?.turn || !Number.isSafeInteger(call.seq) || !Number.isSafeInteger(event.seq) || call.seq >= event.seq) return [];
+        return [{sessionId:id,resultSeq:event.seq,toolCallSeq:call.seq,storedEvents:row.storedEvents,storedDigest:row.storedDigest}];
+      });
       // Goals are durable intent. The fence gates execution; a cold restart
       // preserves their phase without arming automatic continuation.
       count += row.running + row.openTurn + inbox + jobs + row.approvals + unknownResults;

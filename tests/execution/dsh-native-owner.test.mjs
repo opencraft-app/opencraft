@@ -120,3 +120,20 @@ test('legacy unknown tool results block cold handoff even without a custody ledg
  const committed=await owner.inspect();assert.equal(committed.records[0].events,committed.records[0].storedEvents);
  assert.equal(committed.records[0].openTurn,0);assert.equal(committed.records[0].unknownResults,1);assert.equal(committed.activeCount,1);
 });
+
+test('only ended unknown results expose exact transferable coordinates; live work remains occupied',async t=>{
+ const {root}=await fixture(t);
+ const events=[{seq:0,type:'turn/start',data:{turn:1}},
+  {seq:1,type:'tool/call',data:{turn:1,callId:'x'}},
+  {seq:2,type:'tool/result',data:{turn:1,message:{source:{callId:'x'}},error:{code:'TOOL_OUTCOME_UNKNOWN'}}},
+  {seq:3,type:'turn/end',data:{turn:1}}];
+ let live=false;
+ const agent={id:'s',status:'running',session:{events},inbox:{nextTurn:[],nextStep:[]}};
+ const native={...ctx(),goals:{get:()=>null},agents:{list:()=>live?[agent]:[],get:()=>live?agent:null},sessionPersistence:{list:async()=>[{id:'s'}],readFrom:async()=>({events}),inspect:async()=>({events})}};
+ const owner=createDshNativeOwner(native,root);
+ const row=(await owner.inspect()).records[0];assert.deepEqual(row.transferableUnknown,[{sessionId:'s',resultSeq:2,toolCallSeq:1,storedEvents:4,storedDigest:row.storedDigest}]);
+ assert.equal((await owner.inspect()).activeCount,1,'native unknown remains unresolved until Host receipt matches');
+ live=true;assert.deepEqual((await owner.inspect()).records[0].transferableUnknown,[]);
+ agent.status='idle';assert.deepEqual((await owner.inspect()).records[0].transferableUnknown,[],'a registered idle Agent is still live');
+ live=false;events.pop();assert.deepEqual((await owner.inspect()).records[0].transferableUnknown,[]);
+});

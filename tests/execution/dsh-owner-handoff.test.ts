@@ -182,6 +182,10 @@ test('real legacy started tool without a result stays unknown through cold inspe
  assert.equal(native.records[0].openTurn,0);assert.equal(native.records[0].unknownResults,1);assert.ok(native.activeCount>0);
  await assert.rejects(host.handoff.control('cold-ready',expected(host)),/incomplete/);
  assert.deepEqual(await readFile(log),physical,'inspection cannot persist recovery or clear unknown effects');
+ host.handoff.sealUnknown(native.records.flatMap((row:any)=>row.transferableUnknown));
+ const syntheticReady:any=await host.handoff.control('cold-ready',expected(host));
+ assert.equal(syntheticReady.occupancy.activeCount,0);assert.equal(syntheticReady.occupancy.carriedUnknown.length,1);
+ assert.deepEqual(await readFile(log),physical,'carrying synthetic crash unknown never commits the projection');
  await host.close();
  // A normal SDK load may persist the balanced recovery view. Unknown effects still block.
  const balanced=[lines[0],...legacy.events.map((row:any)=>row.event)];
@@ -193,4 +197,15 @@ test('real legacy started tool without a result stays unknown through cold inspe
  assert.equal(stored.records[0].unknownResults,1);assert.ok(stored.activeCount>0);
  await assert.rejects(host.handoff.control('cold-ready',expected(host)),/incomplete/);
  assert.deepEqual(await readFile(log),persisted,'balanced persisted unknown cannot be cleared by inspection');
+ // Maintenance bridge seals responsibility after the legacy writer has stopped.
+ host.handoff.sealUnknown(stored.records.flatMap((row:any)=>row.transferableUnknown));
+ let ready:any=await host.handoff.control('cold-ready',expected(host));
+ assert.equal(ready.occupancy.activeCount,0);assert.equal(ready.occupancy.carriedUnknown.length,1);
+ await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
+ await host.handoff.control('fence',expected(host));
+ const release:any=await host.handoff.control('release',expected(host));assert.equal(release.carriedUnknown.length,1);await host.close();
+ host=await startIndependentDshHost(options);host.handoff.inspectOsWork=()=>({coverage:'complete',activeCount:0});
+ ready=await host.handoff.control('cold-ready',expected(host));assert.equal(ready.occupancy.carriedUnknown.length,1);
+ await host.handoff.control('resume',{...expected(host),identity:ready.handoff.ready.identity});
+ assert.deepEqual(await readFile(log),persisted,'unknown transfer never rewrites physical history');
 });
