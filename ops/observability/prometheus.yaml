@@ -1,9 +1,15 @@
 global:
   scrape_interval: 15s
   scrape_timeout: 4s
+rule_files:
+  - /etc/prometheus/availability-rules.yaml
 scrape_configs:
   - job_name: opencraft
     sample_limit: 10000
     label_limit: 8
     static_configs:
       - targets: [127.0.0.1:23305]
+  - job_name: availability
+    sample_limit: 1000
+    static_configs:
+      - targets: [127.0.0.1:23309]

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { startAvailabilityNotification } from './availability-notification.mjs';
 import { HeadlessConnectors } from "../packages/connector-host/src/headless.ts";
 import { CapabilityBindings } from "../packages/session-capabilities/src/bindings.ts";
 import { SessionCapabilities } from "../packages/session-capabilities/src/index.ts";
@@ -281,7 +282,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let actorCollaborationApi;
   let actorAccess;
   let humanAccounts;
-  let imPlugins;
+  let imPlugins, availabilityNotification;
   let connectorService;
   const capabilities = new SessionCapabilities();
   let capabilityMcp;
@@ -314,7 +315,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
       await turnPush?.close();
       // Retire admitted ingress clients before their Host provider.
-      const entryResults = await Promise.allSettled([ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
+      await availabilityNotification?.close();
+      const entryResults = await Promise.allSettled([ ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
       threadOrchestration?.stop();
       await appHostServer?.close();
       await threadOrchestration?.close();
@@ -762,6 +764,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     hubController.node?.start(hubTargetPort ?? address.port);
     if (options.codexCoreEndpoint) codexReadiness = maintainHeadlessCodexHost(appHostServer);
     imPlugins = await startImPlugins(imConfiguration,{dataDirectory,capabilities,prepareCapabilities: tools => capabilityMcp.prepare(tools),actors:actorStore,collaboration:actorCollaboration,actorAccess,getAppHost:() => appHostServer,admittedActor:actorId => !instanceAccess || instanceAccess.admitsActor(actorId)});
+    try { availabilityNotification = await startAvailabilityNotification(process.env.OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG, () => imPlugins); }
+    catch { console.warn('[availability-notification] startup-unavailable'); }
     capabilitiesReadyResolve();
     return { url: `http://127.0.0.1:${address.port}`, listenHost, listenPort: address.port, close };
   } catch (error) {

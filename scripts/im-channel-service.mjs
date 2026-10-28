@@ -579,6 +579,15 @@ export class ImChannelService {
     }
     throw Error("invalid_operation");
   }
+  prepareOperatorNotification(channelId, senderId, actorId) {
+    const channel = this.store.channels().find(row => row.id === channelId && row.provider === 'wecom' && row.enabled);
+    if (!channel || this.store.senderLinks(channelId)[senderId] !== actorId) throw Error('notification_binding_denied');
+    const actor = this.dependencies.actors.get(actorId);
+    if (!actor?.enabled || actor.kind !== 'human' || this.dependencies.admittedActor?.(actorId) === false) throw Error('notification_actor_denied');
+    const adapter = this.adapters.get(channelId)?.adapter;
+    if (!adapter?.sendDirect || adapter.state !== 'ready') throw Error('notification_unavailable');
+    return (content,requestId) => adapter.sendDirect(senderId, content, requestId);
+  }
   async handle(request, response, sameOrigin) {
     const path = new URL(request.url ?? "/", "http://im.invalid").pathname;
     if (!path.startsWith("/__opencraft_im")) return false;

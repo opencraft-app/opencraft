@@ -185,7 +185,9 @@ test('unknown component identity clears prior identity; unresponsive snapshot sh
     assert.equal(identity.sourceRevision,undefined);assert.equal(identity.buildId,undefined);assert.equal(identity.observedBy,'gateway');
     const started=performance.now();const snapshot=await service.snapshot();
     assert(performance.now()-started<4500);assert.equal(snapshot.coverage,'partial');
-    assert(Object.values(snapshot.measurements).every(value=>value.availability==='backend_unreachable'));
+    assert(Object.entries(snapshot.measurements).filter(([name])=>name!=='platform.status').every(([,value])=>value.availability==='backend_unreachable'));
+    assert.equal(snapshot.measurements['platform.status'].status,'unknown');
+    assert.deepEqual(snapshot.measurements['platform.status'].targets,[]);
   }finally{stalled.closeAllConnections();await new Promise(resolve=>stalled.close(resolve));await service.close();await rm(directory,{recursive:true,force:true});}
 });
 

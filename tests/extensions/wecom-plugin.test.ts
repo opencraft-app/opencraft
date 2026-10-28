@@ -164,3 +164,22 @@ test('channel callback admission still propagates a denied sender without fallba
   assert.equal(f.messages[0].source.senderId, 'external');
   assert.equal(f.frames.filter(frame => frame.cmd === 'aibot_respond_msg').length, 0);
 });
+
+
+test('proactive direct alert shares the subscription and returns its official ACK',async t=>{
+ const f=await fixture(t);
+ const receipt=await f.plugin.sendDirect('target-only','连接失败 · local','incident:alert');
+ assert.deepEqual(receipt,{delivered:true,receiptId:'incident:alert'});
+ const frames=f.frames.filter(row=>row.cmd==='aibot_send_msg');assert.equal(frames.length,1);
+ assert.deepEqual(frames[0].body,{chatid:'target-only',chat_type:1,msgtype:'markdown',markdown:{content:'连接失败 · local'}});
+ assert.equal(f.frames.filter(row=>row.cmd==='aibot_subscribe').length,1);
+});
+
+test('an explicit negative proactive ACK is a known rejection, not an unknown delivery',async t=>{
+ const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+ server.on('connection',ws=>ws.on('message',raw=>{const frame=JSON.parse(String(raw));ws.send(JSON.stringify({headers:frame.headers,errcode:frame.cmd==='aibot_send_msg'?40014:0}));}));
+ const plugin=new WeComPlugin({botId:'fixture',secret:'fixture-secret',receive:async()=>{}},()=>new WebSocket(`ws://127.0.0.1:${(server.address() as {port:number}).port}`));
+ t.after(async()=>{plugin.close();for(const ws of server.clients)ws.terminate();await new Promise<void>(r=>server.close(()=>r()));});plugin.start();
+ for(let n=0;n<100&&plugin.state!=='ready';n++)await delay(10);
+ await assert.rejects(plugin.sendDirect('target','连接失败','known:alert'),(error:any)=>error.deliveryState==='rejected');
+});
