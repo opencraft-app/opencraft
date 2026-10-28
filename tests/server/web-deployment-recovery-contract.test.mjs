@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -19,7 +19,7 @@ test('failed rollback recovery keeps current Web authoritative until a verified 
   t.after(async()=>{await app.close();await fixture.close();await rm(root,{recursive:true,force:true});});
   const base='http://127.0.0.1:'+(await app.listen({port:0})).port;
   let cookie='';
-  const post=(action,data={})=>fetch(base+'/__opencraft_updates/'+action,{method:'POST',headers:{origin:base,cookie,'content-type':'application/json'},body:JSON.stringify(data)});
+  const post=(action,data={},extra={})=>fetch(base+'/__opencraft_updates/'+action,{method:'POST',headers:{origin:base,cookie,'content-type':'application/json',...extra},body:JSON.stringify(data)});
   const status=async()=>parseWebUpdateStatus(await (await fetch(base+'/__opencraft_updates')).json());
   const wait=async phase=>{const end=Date.now()+15000;while(Date.now()<end){const value=await status();if(value.job?.phase===phase)return value;await delay(20);}throw Error('transaction timeout');};
   const login=await post('login',{key:(await readFile(app.adminKeyPath,'utf8')).trim()});cookie=login.headers.get('set-cookie').split(';')[0];
@@ -32,6 +32,12 @@ test('failed rollback recovery keeps current Web authoritative until a verified 
   assert.equal((await wait('failed')).current.version,'1.1.0');
   assert.match(await (await fetch(base+'/')).text(),/1\.1\.0/);
   allowed=true;
-  assert.equal((await post('rollback')).status,202);
+  await writeFile(join(root,'maintenance'),'owned-recovery\n');
+  assert.equal((await post('rollback')).status,409);
+  assert.equal((await post('rollback',{}, {'x-opencraft-recovery-id':'wrong'})).status,409);
+  fixture.select('1.2.0');await post('check');
+  for(let n=0;n<200&&(await status()).checking;n++)await delay(10);
+  assert.equal((await post('install',{version:'1.2.0'}, {'x-opencraft-recovery-id':'owned-recovery'})).status,409);
+  assert.equal((await post('rollback',{}, {'x-opencraft-recovery-id':'owned-recovery'})).status,202);
   assert.equal((await wait('completed')).current.version,'1.0.0');assert.equal(calls,2);
 });
