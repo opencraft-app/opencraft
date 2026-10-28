@@ -361,3 +361,9 @@ native retry exhaustion. `OPENCRAFT_CORE_COMPAT_ONLY=1` runs a short wire test;
 `OPENCRAFT_DRILL_LEGACY_RUNTIME=1` selects a separately built fixed baseline child.
 Only synthetic credentials and a loopback model are used. Reports retain exact
 Node/CLI/build evidence and measured interruption, not external OAuth/model claims.
+
+
+Core-owned stores and reference files require the service UID. A root service may cold-read an
+explicitly configured private regular external auth file owned by its independent credential writer.
+The proof binds the external file's actual UID, mode and content digest; any change invalidates
+readiness. Core never takes ownership of or writes this external file.

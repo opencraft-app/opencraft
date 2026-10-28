@@ -27,10 +27,10 @@ interface State {
 }
 export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string }
 
-async function privateInfo(path: string, directory = false) {
+async function privateInfo(path: string, directory = false, readOnlyExternal = false) {
   const info = await lstat(path);
   if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())
-    || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new Error("Private account owner file required");
+    || (info.uid !== process.getuid?.() && !(readOnlyExternal && process.getuid?.() === 0)) || (info.mode & 0o077)) throw new Error("Private account owner file required");
   return info;
 }
 
@@ -70,10 +70,11 @@ export async function readAccountStorage(directory: string) {
         if (typeof value.hostId !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value.token)) throw new Error("Invalid Host credential");
       } else if (relative.startsWith("secrets/account-") && value.kind === "codex-auth-file") {
         const reference = parseCodexAuthFileReference(value)!;
-        await privateInfo(reference.path);
+        // A configured reference grants a root reader access; its independent writer keeps ownership.
+        const externalInfo = await privateInfo(reference.path, false, true);
         const external = privateJson(await readFile(reference.path, "utf8"));
         if (typeof external.tokens?.access_token !== "string" || !external.tokens.access_token) throw new Error("Unreadable external credential");
-        files.push({ path: `external:${digest(reference.path)}`, sha256: await fileDigest(reference.path), mode: (await lstat(reference.path)).mode & 0o777, uid: info.uid });
+        files.push({ path: `external:${digest(reference.path)}`, sha256: await fileDigest(reference.path), mode: externalInfo.mode & 0o777, uid: externalInfo.uid });
       } else if (!relative.startsWith("secrets/account-") || typeof value.accessToken !== "string" || !value.accessToken) {
         throw new Error("Unknown account credential file");
       }
