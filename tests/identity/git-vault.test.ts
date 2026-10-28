@@ -120,3 +120,14 @@ test('authentication agent scopes signatures to Git userauth and revokes immedia
   allowed = false; assert.equal(await request(payload('git')), 5);
   for (const name of await readdir(root, { recursive: true })) assert.equal((await stat(join(root, name))).isFile(), false);
 });
+
+
+test('an explicit SSH identity draft preserves metadata without retaining a retired token', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'git-draft-test-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new EmployeeGitVaultStore(root); t.after(() => store.close());
+  const draft = { ...credential(), token: '', sshAuth: null };
+  store.write('employee:1', 'git.example.test', 0, draft);
+  assert.deepEqual(store.read('employee:1', 'git.example.test').credential, draft);
+  assert.equal(store.status('employee:1', 'git.example.test').tokenConfigured, false);
+  assert.throws(() => store.write('employee:2', 'github.com', 0, { ...credential(), token: '' }));
+});

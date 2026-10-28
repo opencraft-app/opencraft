@@ -129,3 +129,6 @@ disables interactive authentication and forwarding, and never falls back after
 failure. Only a public key has a temporary filesystem projection. Unconfigured
 employees retain the original environment. The trusted shared-UID boundary above
 still applies to authentication sockets and encrypted storage.
+
+
+Deployments can restrict bearer-token delivery with `httpsCredentialHosts`. Hosts outside that allowlist never receive an HTTPS credential, including while an old token is being retired. An explicit `sshAuth: null` record can retain identity metadata before an SSH key is generated; it does not contain an authentication token or generate a key.

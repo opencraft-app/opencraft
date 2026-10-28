@@ -10,6 +10,7 @@ export interface GitBrokerOptions {
   store: EmployeeGitVaultStore; hosts: readonly string[]; runtimeDirectory: string;
   resolve(peer: GitPeer, threadId: string): Promise<GitExecutionIdentity>;
   ttlMs?: number;
+  httpsCredentialHosts?: readonly string[];
 }
 interface Session {
   peer: GitPeer; startTicks: string; account: string; host: string; revision: number;
@@ -81,7 +82,7 @@ export class GitIdentityBroker {
       if (request.op === 'close') { await this.remove(request.sessionId); return { status: 'closed' }; }
       if (request.op !== 'credential') return { status: 'unavailable' };
       // Exact final Git credential protocol/host, not URL hints or substring matches.
-      if (session.credential.sshAuth || !session.credential.token || request.protocol !== 'https' || request.host !== session.host || !this.options.hosts.includes(String(request.host))) return { status: 'denied' };
+      if ((this.options.httpsCredentialHosts && !this.options.httpsCredentialHosts.includes(session.host)) || session.credential.sshAuth || !session.credential.token || request.protocol !== 'https' || request.host !== session.host || !this.options.hosts.includes(String(request.host))) return { status: 'denied' };
       const current = await this.options.resolve(session.peer, session.threadId);
       if (current.status === 'unknown') return { status: 'unavailable' };
       if (current.status !== 'active' || current.executionId !== session.executionId || current.account !== session.account) return { status: 'expired' };

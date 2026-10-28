@@ -21,10 +21,10 @@ import { generateGitSigningKey } from '../../scripts/git-identity-signer';
 // SO_PEERCRED and /proc are the supported local Linux execution boundary.
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
-async function fixture(t: any) {
+async function fixture(t: any, httpsCredentialHosts?: readonly string[]) {
   const root = await mkdtemp(join(tmpdir(), 'git-broker-test-'));
   const store = new EmployeeGitVaultStore(root); let identity: GitExecutionIdentity = { status: 'active', account: 'synthetic:1', executionId: 'turn1' };
-  const broker = new GitIdentityBroker({ store, hosts: ['github.com', 'git.example.test', 'unconfigured.example.test'], runtimeDirectory: root, resolve: async () => identity });
+  const broker = new GitIdentityBroker({ store, httpsCredentialHosts, hosts: ['github.com', 'git.example.test', 'unconfigured.example.test'], runtimeDirectory: root, resolve: async () => identity });
   const opens: string[] = []; let credentials = 0;
   const request = broker.request.bind(broker);
   broker.request = async (peer, value) => {
@@ -471,5 +471,18 @@ const r=spawnSync('/usr/bin/git',process.argv.slice(2),{env,stdio:'inherit'});pr
     const path = join(f.root, name); if (!(await stat(path)).isFile()) continue;
     const bytes = await readFile(path);
     for (const privateKey of [sshAuth.privateKey, otherKey.privateKey]) assert.equal(bytes.includes(Buffer.from(privateKey)), false);
+  }
+});
+
+
+test('HTTPS credential allowlist denies a retired token without changing other hosts', async t => {
+  const f = await fixture(t, ['github.com']);
+  for (const host of ['git.example.test', 'github.com']) {
+    f.store.write('synthetic:1', host, 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-retired-token', signing: null });
+    const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host });
+    assert.equal(session.status, 'configured');
+    const answer = await queryGitIdentityBroker(f.socket, { op: 'credential', sessionId: session.sessionId, host, protocol: 'https' });
+    assert.equal(answer.status, host === 'github.com' ? 'configured' : 'denied');
+    if (host !== 'github.com') assert.equal(JSON.stringify(answer).includes('synthetic-retired-token'), false);
   }
 });
