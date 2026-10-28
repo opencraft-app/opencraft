@@ -41,4 +41,14 @@ test('sealed unknown responsibility survives a successor; exact mismatch and new
  list=[one];active=1;ready=await owner.control('cold-ready',exp(owner));
  await owner.control('resume',{...exp(owner),identity:ready.handoff.ready.identity});
  assert.equal(owner.open(),true);assert.deepEqual((await owner.inspect()).carriedUnknown,[one]);
+ // The received responsibility remains carried when this same writer fences
+ // for the next generation. A changed list still becomes occupied.
+ const fenced=await owner.control('fence',exp(owner));
+ assert.equal(fenced.occupancy.activeCount,0);assert.deepEqual(fenced.occupancy.carriedUnknown,[one]);
+ list=[{...one,storedDigest:'changed-after-fence'}];assert.equal((await owner.inspect()).activeCount,1);
+ list=[one];assert.equal((await owner.inspect()).activeCount,0);
+ const again=await owner.control('release',exp(owner));assert.deepEqual(again.carriedUnknown,[one]);
+ owner=await make();ready=await owner.control('cold-ready',exp(owner));
+ await owner.control('resume',{...exp(owner),identity:ready.handoff.ready.identity});
+ assert.deepEqual((await owner.inspect()).carriedUnknown,[one]);
 });
