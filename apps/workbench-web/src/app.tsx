@@ -1233,6 +1233,7 @@ export function App({
     },
     [openBrowserTab, panelRuntime.panels, panelOwnerId],
   );
+  const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(
     () => activeThreadLease?.loadOlder() ?? Promise.resolve(),
   );
@@ -2193,6 +2194,7 @@ export function App({
                         restoreSnapshot,
                       );
                   }}
+                  onLoadItemDetails={loadItemDetails}
                   onLoadOlder={
                     !showingDisplayCache && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation

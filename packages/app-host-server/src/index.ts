@@ -1,7 +1,6 @@
 import {
   APP_HOST_PROTOCOL_VERSION,
   stampLogicalClientFrame,
-  routeLogicalClientFrame,
   LOGICAL_CLIENT_FIELD,
   type AppHostErrorPayload,
   type AppHostToRendererMessage,
@@ -644,21 +643,23 @@ export class AppHostServer {
   }
 
   private publish(hostId: string, generation: number, message: AppHostToRendererMessage): void {
+    if (this.options.logicalClientRouting && message.type === "host/frame") {
+      const payload = JSON.parse(message.frame) as Record<string, unknown>;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Invalid logical RPC frame");
+      const target = payload[LOGICAL_CLIENT_FIELD];
+      if (target !== undefined) {
+        if (typeof target !== "string") return;
+        const claim = this.slots.get(hostId)?.claims.get(target);
+        if (!claim || !this.connections.has(claim.connection) || claim.generation !== generation || !claim.connection.ownsHost(hostId, generation)) return;
+        const { [LOGICAL_CLIENT_FIELD]: _target, ...body } = payload;
+        claim.connection.post({ ...message, frame: JSON.stringify(body), leaseId: claim.leaseId });
+        return;
+      }
+      // Only ownerless notifications may fan out to admitted connections.
+      if (payload.id !== undefined && payload.id !== null) return;
+    }
     for (const connection of this.connections) {
-      if (!connection.ownsHost(hostId, generation)) continue;
-      if (this.options.logicalClientRouting && message.type === "host/frame") {
-        const slot = this.slots.get(hostId);
-        const claims = [...slot?.claims ?? []].filter(([, claim]) => claim.connection === connection && claim.generation === generation);
-        const ids = claims.map(([id]) => id);
-        const frame = routeLogicalClientFrame(message.frame, ids);
-        const payload = JSON.parse(message.frame) as Record<string, unknown>;
-        const target = payload[LOGICAL_CLIENT_FIELD];
-        // Requests and responses require an owner. Only untargeted
-        // notifications may fan out across admitted leases.
-        if (target === undefined && payload.id !== undefined && payload.id !== null) continue;
-        const leaseId = target === undefined ? undefined : claims.find(([id]) => id === target)?.[1].leaseId;
-        if (frame !== null) connection.post({ ...message, frame, ...(leaseId === undefined ? {} : { leaseId }) });
-      } else connection.post(message);
+      if (connection.ownsHost(hostId, generation)) connection.post(message);
     }
   }
 

@@ -940,7 +940,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const historyParams = record(message.params);
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
     const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
-      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
+      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded" || historyParams.itemsView === "presentation") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
     if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       // Cache hydration has its own reply; it must not retain the frame send lane.
@@ -1359,9 +1359,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       const result = cachedRead ? await this.transcriptCache!.read(threadId, typeof limit === "number" ? limit : 10, () => {
         if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
           this.watchHistory(threadId, clientId);
-      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal, measured)
-        : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full",
-          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured);
+      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : record(historyParams.initialTurnsPage).itemsView === "presentation" ? "presentation" : "full", controller.signal, measured)
+        : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : historyParams.itemsView === "presentation" ? "presentation" : "full",
+          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured, typeof historyParams.detailItemId === "string" ? historyParams.detailItemId : undefined);
       if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
       const projectionStarted = performance.now();
@@ -1624,7 +1624,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
-          "opencraft/read-history": { version: 1, cancellation: true },
+          "opencraft/read-history": { version: 1, cancellation: true, itemDetails: true },
           "opencraft/execution-engines": { version: 1, defaultEngine: "codex", providers: [] },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),

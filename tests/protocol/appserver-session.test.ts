@@ -29,6 +29,7 @@ interface WireRequest {
 
 interface HarnessOptions {
   readHistory?: boolean;
+  itemDetails?: boolean;
   frameScheduler?: ThreadViewFrameScheduler;
   historyMode?: "legacy" | "paginated";
   historyRecovery?: import("@opencraft/appserver-protocol").ThreadHistoryRecovery;
@@ -128,7 +129,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
       const params = message.params as Record<string, unknown>;
       requests.push({ method: message.method, params });
       if (message.method === "initialize") {
-        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, ...(options.readHistory ? { capabilities: { extensions: { "opencraft/read-history": { version: 1, initialTurnsPage: true } } } } : options.historyRecovery ? { capabilities: { extensions: { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } } } } : {}) } }));
+        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, ...(options.readHistory ? { capabilities: { extensions: { "opencraft/read-history": { version: 1, initialTurnsPage: true, ...(options.itemDetails ? { itemDetails: true } : {}) } } } } : options.historyRecovery ? { capabilities: { extensions: { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } } } } : {}) } }));
         return;
       }
       if (message.method === "thread/read") {
@@ -2047,4 +2048,112 @@ for (const [method, type, field, extra] of [
     assert.deepEqual(resolutions, [{ threadId: "thread-one", requestId: "approval-one" }]);
     assert.equal(h.requests.filter(r => r.method === "thread/resume").length, 0);
   } finally { unsubscribe(); await h.close(); }
+});
+
+
+test("presentation read negotiates one Turn and hydrates the exact Item only on demand", async () => {
+  const preview = { id: "cmd", type: "commandExecution", command: "echo", aggregatedOutput: "preview", historyDetail: { cursor: "detail-epoch" } };
+  const full = { id: "cmd", type: "commandExecution", command: "echo", aggregatedOutput: "complete output" };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, itemDetails: true, turnsPages: {
+    null: { data: [{ id: "tail", itemsView: "full", items: [preview] }], nextCursor: "older" },
+    "detail-epoch": { data: [{ id: "tail", itemsView: "full", items: [full] }], nextCursor: null },
+  } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    assert.deepEqual(h.requests.find(r => r.method === "thread/read")?.params.initialTurnsPage,
+      { limit: 1, itemsView: "presentation", sortDirection: "desc" });
+    assert.equal(h.requests.some(r => r.params.detailItemId), false);
+    await h.runtime.resume.loadItemDetails("thread-one", ["cmd"]);
+    assert.deepEqual(h.runtime.views.get("thread-one")?.turns[0]?.items, [full]);
+    const count = h.requests.length;
+    await h.runtime.resume.loadItemDetails("thread-one", ["cmd"]);
+    assert.equal(h.requests.length, count);
+    assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
+  } finally { await h.close(); }
+});
+
+test("late Item details cannot overwrite a live replacement or survive history cancellation", async () => {
+  let release: (() => void) | undefined, pages = 0;
+  const preview = { id: "cmd", type: "commandExecution", status: "completed", aggregatedOutput: "preview", historyDetail: { cursor: "detail" } };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, itemDetails: true,
+    holdTurnsResponse: respond => { if (++pages === 1) respond(); else release = respond; }, turnsPages: {
+    null: { data: [{ id: "tail", itemsView: "full", status: "completed", items: [preview] }], nextCursor: null },
+    detail: { data: [{ id: "tail", items: [{ id: "cmd", type: "commandExecution", aggregatedOutput: "stale" }] }], nextCursor: null },
+  } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const pending = h.runtime.resume.loadItemDetails("thread-one", ["cmd"]);
+    for (let n = 0; n < 50 && !release; n++) await new Promise(r => setImmediate(r));
+    assert.ok(release);
+    h.runtime.views.update("thread-one", view => ({ ...view, turns: view.turns.map(turn => ({ ...turn,
+      items: [{ ...preview, aggregatedOutput: "live replacement", historyDetail: undefined }],
+    })) }));
+    release(); await pending;
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items[0]?.aggregatedOutput, "live replacement");
+    h.runtime.views.update("thread-one", view => ({ ...view, turns: view.turns.map(turn => ({ ...turn, items: [preview] })) }));
+    release = undefined;
+    const cancelled = h.runtime.resume.loadItemDetails("thread-one", ["cmd"]);
+    const rejection = assert.rejects(cancelled, error => error instanceof AppServerClientError && error.code === "ABORTED");
+    for (let n = 0; n < 50 && !release; n++) await new Promise(r => setImmediate(r));
+    h.runtime.resume.cancelDerivedHistory("thread-one");
+    await rejection; release?.(); await new Promise(r => setImmediate(r));
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items[0]?.aggregatedOutput, "preview");
+  } finally { await h.close(); }
+});
+
+test("cancelling one expanded Item cannot cancel another expanded Item", async () => {
+  let pages = 0, release: (() => void) | undefined;
+  const previews = ["a", "b"].map(id => ({ id, type: "commandExecution", aggregatedOutput: null, historyDetail: { cursor: "detail" } }));
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, itemDetails: true,
+    holdTurnsResponse: respond => { if (++pages === 2) release = respond; else respond(); }, turnsPages: {
+    null: { data: [{ id: "tail", itemsView: "full", items: previews }], nextCursor: null },
+    detail: { data: [{ id: "tail", items: previews.map(({historyDetail, ...item}) => ({...item, aggregatedOutput: "complete " + item.id})) }], nextCursor: null },
+  } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const controller = new AbortController();
+    const first = h.runtime.resume.loadItemDetails("thread-one", ["a"], controller.signal);
+    const rejection = assert.rejects(first, error => error instanceof AppServerClientError && error.code === "ABORTED");
+    for (let n = 0; n < 50 && !release; n++) await new Promise(r => setImmediate(r));
+    const second = h.runtime.resume.loadItemDetails("thread-one", ["b"]);
+    void second.catch(() => {});
+    controller.abort(); await rejection; await second;
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items.find(i => i.id === "b")?.aggregatedOutput, "complete b");
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items.find(i => i.id === "a")?.aggregatedOutput, null);
+  } finally { release?.(); await h.close(); }
+});
+
+test("hook notifications during a detail read retain complete requested output", async () => {
+  let pages = 0, release: (() => void) | undefined;
+  const preview = { id: "cmd", type: "commandExecution", status: "completed", aggregatedOutput: null, historyDetail: { cursor: "detail" } };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, itemDetails: true,
+    holdTurnsResponse: respond => { if (++pages === 2) release = respond; else respond(); }, turnsPages: {
+    null: { data: [{ id: "tail", itemsView: "full", items: [preview] }], nextCursor: null },
+    detail: { data: [{ id: "tail", items: [{ id: "cmd", type: "commandExecution", status: "completed", aggregatedOutput: "complete output" }] }], nextCursor: null },
+  } });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const pending = h.runtime.resume.loadItemDetails("thread-one", ["cmd"]);
+    for (let n = 0; n < 50 && !release; n++) await new Promise(r => setImmediate(r));
+    await h.emit("hook/started", { threadId: "thread-one", turnId: "tail", run: { id: "hook", eventName: "stop", source: "plugin", status: "running" } });
+    await h.emit("hook/completed", { threadId: "thread-one", turnId: "tail", run: { id: "hook", eventName: "stop", source: "plugin", status: "completed" } });
+    release!(); await pending;
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items[0]?.aggregatedOutput, "complete output");
+    assert.equal(h.runtime.views.get("thread-one")?.turns[0]?.items[0]?.historyDetail, undefined);
+  } finally { release?.(); await h.close(); }
+});
+
+test("a new passive baseline refreshes the detail source even with the same native cursor", async () => {
+  const preview = { id: "cmd", type: "commandExecution", aggregatedOutput: null, historyDetail: { cursor: "same-epoch" } };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, itemDetails: true, turnsPages: {
+    null: { data: [{ id: "tail", itemsView: "full", items: [preview] }], nextCursor: null },
+  } });
+  try {
+    const first = await h.runtime.resume.read("thread-one");
+    const generation = first.turns[0]!.items[0]!.historyDetail!.readGeneration;
+    const next = await h.runtime.resume.read("thread-one");
+    assert.equal(next.turns[0]!.items[0]!.historyDetail!.cursor, "same-epoch");
+    assert.notEqual(next.turns[0]!.items[0]!.historyDetail!.readGeneration, generation);
+    assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
+  } finally { await h.close(); }
 });

@@ -440,7 +440,9 @@ function simpleProjector(
     name,
     itemTypes,
     project(item, context) {
-      const source = record(item.payload), projected = project(item, source, context);
+      const source = record(item.payload);
+      let projected = project(item, source, context);
+      if (projected.block && source.historyDetail) projected = { ...projected, block: { ...projected.block, historyDetail: JSON.stringify(source.historyDetail) } };
       if (projected.block && "requestId" in projected.block) {
         return { ...projected, block: { ...projected.block,
           ...(typeof source.canRespond === "boolean" ? { canRespond: source.canRespond } : {}),

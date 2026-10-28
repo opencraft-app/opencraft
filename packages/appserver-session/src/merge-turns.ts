@@ -7,7 +7,13 @@ function mergeItems(
   const incomingById = new Map(incoming.map((item) => [item.id, item]));
   const existingIds = new Set(existing.map((item) => item.id));
   return [
-    ...existing.map((item) => incomingById.has(item.id) ? { ...item, ...incomingById.get(item.id) } : item),
+    ...existing.map((item) => {
+      const incoming = incomingById.get(item.id);
+      if (!incoming || incoming === item) return item;
+      const merged = { ...item, ...incoming };
+      if (!incoming.historyDetail && (incoming.status === "completed" || incoming.status === "failed" || incoming.status === "interrupted" || incoming.completed === true)) delete merged.historyDetail;
+      return merged;
+    }),
     ...incoming.filter((item) => !existingIds.has(item.id)),
   ];
 }

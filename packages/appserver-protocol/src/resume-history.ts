@@ -1,5 +1,5 @@
 import type { MessageSender } from "./message-sender";
-export type ThreadHistoryItemsView = "full" | "notLoaded";
+export type ThreadHistoryItemsView = "full" | "notLoaded" | "presentation";
 export type ThreadHistorySortDirection = "asc" | "desc";
 
 export interface ThreadTurnsPageRequest {
@@ -16,6 +16,12 @@ export interface ThreadHistoryCursors {
 export interface AppServerThreadItem {
   /** Host-owned user-message provenance; absent on native/legacy items. */
   readonly sender?: MessageSender | null;
+  /** Deferred read-only body; cursor is fenced by the native projection epoch. */
+  readonly historyDetail?: {
+    readonly cursor: string;
+    /** Client-local source admission, never sent to native. */
+    readonly readGeneration?: number;
+  };
   id: string;
   type?: string;
   [field: string]: unknown;
@@ -44,6 +50,8 @@ export interface AppServerThread {
 
 export interface ThreadTurnsListRequest {
   threadId: string;
+  /** Only with read-history itemDetails; never forwarded to native. */
+  detailItemId?: string;
   cursor: string | null;
   limit: number | null;
   itemsView: ThreadHistoryItemsView | "summary";
