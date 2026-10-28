@@ -893,3 +893,11 @@ model/project state, and binds the proof to the current owner/runtime/config and
 store digests. Resume recomputes that proof. A crashed successor needs a fresh
 proof, and no backup is automatically restored. Remote providers keep their own
 native writers; replacing Pi does not replace ACP or legacy DSH.
+
+
+Private MCP, orchestration and browser tools also keep call custody in the
+native `opencraft.privateCalls` document before dispatch. A confirmed response
+retires that custody. Transport failure or cancellation after dispatch retains
+unknown custody even after the native Turn has settled; cold reads see the same
+fact and refuse a zero-occupancy proof. Arguments and credentials are not copied.
+The generic handoff API cannot invent a domain receipt to clear an unknown call.

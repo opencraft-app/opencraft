@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
 import { join } from "node:path";
 import { PiShellWorker, PiShellDoc, shellText, shellDescription } from "./shell.js";
 import { isDeepStrictEqual } from "node:util";
@@ -24,6 +26,7 @@ export interface PiSnapshot {
   usage: UsageState;
   inbox: readonly Value[];
   queue?: PiQueueState;
+  privateCalls?: PiPrivateCalls;
   shell?: { records: import("./shell.js").ShellRecord[]; paused: boolean };
 }
 export const createPiModels = (directory: string) => ModelRuntime.create({ allowModelNetwork: false, authPath: `${directory}/auth.json`, modelsPath: `${directory}/models.json` });
@@ -117,22 +120,35 @@ export class PiDurableSession {
       // The native intent is unsafe to replay: reconnect never repeats an external effect.
       execute: async (args: unknown, api: Value, ctx: Context) => {
         if (this.closed || ctx.abortSignal?.aborted) throw new Error("Platform tool cancelled");
-        let cancel: (() => void) | undefined;
-        const cancelled = new Promise<never>((_resolve, reject) => {
-          cancel = () => reject(new Error("Platform tool cancelled"));
-          ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
-        });
+        const callKey = createHash("sha256").update(JSON.stringify([api.taskId, api.callId])).digest("hex");
         const origin = await this.root.commit(async tx => {
           const live = await tx.doc(LiveDoc, this.root.id);
           const owns = [...live.tools ?? [], ...live.nestedTools ?? []].some(slot => slot.taskId === api.taskId);
           if (!owns || live.run?.inputs[0] === undefined) throw new Error("Tool execution has expired");
           const input = await this.storage.submission(live.run.inputs[0], ctx);
           if (!input?.requestId) throw new Error("Tool execution has no native submission");
+          const calls = await tx.doc(PiPrivateCallsDoc, this.root.id);
+          if (calls.calls[callKey]) throw new Error("Private tool outcome requires reconciliation");
+          calls.calls[callKey] = { state: "pending" };
           return input.requestId;
         }, ctx);
-        let result: Value;
-        try { result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args, turnId: origin }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value; }
-        finally { if (cancel) ctx.abortSignal?.removeEventListener("abort", cancel); }
+        let cancel: (() => void) | undefined;
+        const cancelled = new Promise<never>((_resolve, reject) => {
+          cancel = () => reject(new Error("Platform tool cancelled"));
+          ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
+        });
+        let result: Value, entered = false;
+        try {
+          if (ctx.abortSignal?.aborted) throw new Error("Platform tool cancelled");
+          entered = true;
+          result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args, turnId: origin }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value;
+          await this.root.commit(async tx => { delete (await tx.doc(PiPrivateCallsDoc, this.root.id)).calls[callKey]; }, context);
+        } catch (error) {
+          // Cancellation/timeout is not evidence that the external operation
+          // ended. Never erase custody merely because the native task settled.
+          await this.root.commit(async tx => { const calls = await tx.doc(PiPrivateCallsDoc, this.root.id); if (entered) calls.calls[callKey] = { state: "unknown" }; else delete calls.calls[callKey]; }, context);
+          throw error;
+        } finally { if (cancel) ctx.abortSignal?.removeEventListener("abort", cancel); }
         const output = (result?.contentItems ?? []).map((item: Value) => {
           if (item.type === "inputText" && typeof item.text === "string") return { type: "text" as const, text: item.text };
           if (item.type === "inputImage") return decodeImage(item.imageUrl);
@@ -386,7 +402,8 @@ export class PiDurableSession {
         tasks.set(id, task); if (task.owner !== undefined && !tasks.has(task.owner)) ids.add(task.owner);
       }
       const shell = JSON.parse(JSON.stringify(await tx.doc(PiShellDoc, this.root.id))) as PiSnapshot["shell"];
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell };
+      const privateCalls = JSON.parse(JSON.stringify(await tx.doc(PiPrivateCallsDoc, this.root.id))) as PiPrivateCalls;
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell, privateCalls };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);

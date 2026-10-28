@@ -1013,7 +1013,12 @@ export class PiEngine {
         if (session.native?.idleWorkerPid) workers.push(session.native.idleWorkerPid);
         if (!snapshot.live || typeof snapshot.live !== "object" || Array.isArray(snapshot.live) || !snapshot.agent || typeof snapshot.agent !== "object" || Array.isArray(snapshot.agent)
           || !Array.isArray(snapshot.inbox) || snapshot.queue && !Array.isArray(snapshot.queue.items) || snapshot.shell && !Array.isArray(snapshot.shell.records)) throw new Error("Invalid Pi native documents");
-        const active = (session.native?.backgroundWork ?? 0) + Number(!!snapshot.live.run) + Number(!!snapshot.live.generation)
+        if (!snapshot.privateCalls || typeof snapshot.privateCalls !== "object" || !snapshot.privateCalls.calls) throw new Error("Invalid Pi private call document");
+        const privateCalls = snapshot.privateCalls.calls;
+        if (!privateCalls || typeof privateCalls !== "object" || Array.isArray(privateCalls)) throw new Error("Invalid Pi private call custody");
+        const callStates = Object.values(privateCalls);
+        if (callStates.some(row => !row || !["pending", "unknown"].includes(row.state) || row.state === "unknown") || callStates.length > 0 && !session.native) unknown = true;
+        const active = callStates.length + (session.native?.backgroundWork ?? 0) + Number(!!snapshot.live.run) + Number(!!snapshot.live.generation)
           + (snapshot.live.tools?.length ?? 0) + (snapshot.live.nestedTools?.length ?? 0)
           + (snapshot.live.compactions?.length ?? 0) + snapshot.inbox.length
           + (snapshot.queue?.items.length ?? 0)
@@ -1034,7 +1039,7 @@ export class PiEngine {
       else activeCount += recovery.flights + recovery.unfinished;
     } catch { unknown = true; }
     return { coverage: unknown ? "unknown" : "complete", activeCount: unknown ? null : activeCount, workers, records,
-      capabilities: { goals: "unsupported-pi-1.3.0", approvals: "never", privateTools: "native-task-and-run", im: "host-input-admission" } };
+      capabilities: { goals: "unsupported-pi-1.3.0", approvals: "never", privateTools: "native-task-run-and-durable-call-custody", im: "host-input-admission" } };
   }
   async resumeBackground() {
     if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
