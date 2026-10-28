@@ -232,3 +232,19 @@ test('automatic recovery and fence share the owner control queue', async t => {
  assert.equal(restarted,false);
  assert.equal(handoff.open(),false);
 });
+
+test('failed automatic recovery durably fences the open owner', async t => {
+ const {DshOwnerHandoff}=await import('../../scripts/server-deployment/dsh-owner-handoff.mjs');
+ const root=await mkdtemp('/tmp/dsh-restart-failed-');
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'owner-handoff'));
+ const handoff=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));
+ await handoff.load();
+ const before=handoff.authority.snapshot();
+ await assert.rejects(handoff.recoverNative(async()=>{throw new Error('restart failed');}), /restart failed/);
+ assert.equal(handoff.open(),false);
+ assert.equal(handoff.authority.snapshot().phase,'fenced');
+ assert.equal(handoff.authority.snapshot().epoch,before.epoch+1);
+ const successor=new DshOwnerHandoff(root,{},()=>({coverage:'complete',activeCount:0}));
+ await assert.rejects(successor.load(), /unconfirmed/);
+});
