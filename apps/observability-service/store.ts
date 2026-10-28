@@ -21,6 +21,8 @@ CREATE INDEX execution_progress_active ON execution_progress(terminal,received);
 CREATE TABLE queue_samples(domain_key TEXT PRIMARY KEY, engine TEXT NOT NULL, count INTEGER NOT NULL, observed_at INTEGER NOT NULL, received INTEGER NOT NULL) STRICT;
 `;
 export const observationSchemaV4 = `CREATE INDEX producers_freshness ON producers(component,received DESC,producer DESC);`;
+// Probe reads run on every health/metrics request; unrelated event history must not be scanned.
+export const observationSchemaV5 = `CREATE INDEX events_availability ON events(at,seq) WHERE kind='availability';`;
 const backfill = `
 INSERT OR IGNORE INTO activity_hours SELECT CAST(at/3600000 AS INTEGER),actor FROM events WHERE actor IS NOT NULL AND json_extract(body,'$.actorKind')='human' AND json_extract(body,'$.originClass')='interactive';
 INSERT OR IGNORE INTO recovery_episodes SELECT json_extract(body,'$.recoveryId'),min(at),max(at),'unknown' FROM events WHERE kind='recovery' AND json_extract(body,'$.recoveryId') IS NOT NULL GROUP BY json_extract(body,'$.recoveryId');
@@ -46,7 +48,7 @@ export class ObserveStore {
     if (databaseBytes !== undefined && (!Number.isSafeInteger(databaseBytes) || databaseBytes < 4096)) throw new TypeError('Invalid Observe database capacity');
     this.now = now;
     const managed = openManagedDatabase({ path, legacyPolicy: 'reject', backup: {keep: 1},
-      validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4}] });
+      validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4+observationSchemaV5), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4},{version:5,name:'availability-event-index',sql:observationSchemaV5}] });
     this.db = managed.database; this.outcome = managed.outcome;
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=50; PRAGMA journal_size_limit=33554432;');
     const pageSize = Number(this.db.prepare('PRAGMA page_size').get().page_size);

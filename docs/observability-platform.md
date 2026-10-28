@@ -396,3 +396,6 @@ availability/lifecycle事件，指标不含事件ID或用户身份。故障按co
 和eventCount覆盖选定窗口全部已存事件；长事故的Prometheus测量单列measurementsWindow（最长24小时），
 不缩短完整事件聚合窗口；timeline保留部署、重启与显式owner_handoff。
 truncated=false仅指聚合完整，不代表明细全量；baseline.compare拒绝用抽样明细作可靠比较。
+
+拨测状态与成功率的查询只读取 `kind=availability` 的事件，使用受管 v5 部分索引。
+既有观测库通过增量迁移保留事件及 v1–v4 迁移回执；健康、指标和看板刷新不得随其他类型历史事件量线性扫描。

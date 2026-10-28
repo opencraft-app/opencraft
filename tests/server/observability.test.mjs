@@ -199,7 +199,7 @@ test('v1 evidence upgrades without rewriting migration history and rejects check
     db.prepare('INSERT INTO schema_migrations VALUES(1,?,?,?)').run('bounded-derived-observations',createHash('sha256').update(observationSchemaV1).digest('hex'),now);
     const original=event({actorKind:'human',originClass:'interactive',recoveryId:'existing',kind:'recovery'});
     db.prepare('INSERT INTO events(event_id,at,received,kind,component,actor,body) VALUES(?,?,?,?,?,?,?)').run(original.eventId,now,now,'recovery','web','verified',JSON.stringify(original));db.close();
-    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,4);
+    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,5);
     assert.equal(store.events(now-1000,now+1000,Date.now()).find(row=>row.eventId===original.eventId).recoveryId,'existing');
     assert.equal(store.activity(now-1000,now+1000).humans,1);assert.equal(store.recoveries(now-1000,now+1000).value,1);
     store.db.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=1").run();store.close();
@@ -416,4 +416,40 @@ test('150ms history boundary starts a coherent cohort beside legacy persisted me
       assert(metrics.includes(`opencraft_thread_history_first_paint_duration_seconds_bucket{cache="cold",length_bucket="500plus",engine="codex",le="${le}"} ${count}\n`));
     assert(metrics.includes('opencraft_thread_history_first_paint_duration_seconds_count{cache="cold",length_bucket="500plus",engine="codex"} 3\n'));
   } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test('availability migration preserves v4 history and avoids scanning unrelated events', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'opencraft-availability-index-'));
+  const path = join(directory, 'observe.sqlite');
+  let store;
+  try {
+    store = new ObserveStore(path, () => now);
+    const samples = [
+      event({kind:'availability',site:'test',hostId:'local-codex',engine:'codex',outcome:'failed',at:now-1000}),
+      event({kind:'availability',site:'test',hostId:'local-codex',engine:'codex',outcome:'ok'}),
+      event({kind:'availability',site:'test',hostId:'opencraft-server',engine:'pi',outcome:'ok'}),
+    ];
+    assert.equal(store.ingest(samples).accepted, 3);
+    const insert = store.db.prepare('INSERT INTO events(event_id,at,received,kind,component,body) VALUES(?,?,?,?,?,?)');
+    store.db.exec('BEGIN');
+    for (let i=0;i<10000;i++) insert.run('history-'+i,now,now,'resource','gateway',JSON.stringify({kind:'resource',at:now}));
+    store.db.exec('COMMIT');
+    store.db.exec('DROP INDEX IF EXISTS events_availability; DELETE FROM schema_migrations WHERE version=5');
+    const history = store.db.prepare('SELECT version,name,checksum,applied_at FROM schema_migrations ORDER BY version').all();
+    store.close(); store = new ObserveStore(path, () => now);
+    const queries = [], prepare = store.db.prepare.bind(store.db);
+    store.db.prepare = sql => {queries.push(sql);return prepare(sql);};
+    assert.equal(store.availability().length, 2);
+    const ratios = store.availabilityRatios(now-2000,now+1);
+    assert.equal(ratios.find(row => row.engine==='codex').ratio, .5);
+    assert.equal(ratios.find(row => row.engine==='pi').ratio, 1);
+    store.db.prepare = prepare;
+    for (const sql of queries) {
+      const plan = prepare('EXPLAIN QUERY PLAN '+sql).all(...Array((sql.match(/\?/g)??[]).length).fill(0));
+      assert.ok(plan.some(row=>/USING INDEX events_availability/.test(row.detail)), 'availability reads must use the partial index: '+JSON.stringify(plan));
+    }
+    assert.equal(store.outcome.appliedVersion, 5);
+    assert.equal(prepare('SELECT count(*) AS n FROM events').get().n, 10003);
+    assert.deepEqual(prepare('SELECT version,name,checksum,applied_at FROM schema_migrations WHERE version<=4 ORDER BY version').all(), history);
+  } finally {store?.close();await rm(directory,{recursive:true,force:true});}
 });
