@@ -422,7 +422,7 @@ export async function createWebWorkbenchApplicationSupervisor(
             signal?.throwIfAborted();
             const runtime = await agentRuntimes.ensureReady(hostId);
             signal?.throwIfAborted();
-            const { thread } = await runtime.resources.protocol.request("thread/read", { threadId, includeTurns: false }, { signal, priority: "background" });
+            const { thread } = await runtime.resources.protocol.request("thread/read", { threadId, includeTurns: false }, { signal, priority: "background", historySource: "task-metadata" });
             const status = thread.status;
             const type = status && typeof status === "object" && "type" in status ? status.type : null;
             const flags = status && typeof status === "object" && "activeFlags" in status ? status.activeFlags : null;

@@ -32,7 +32,7 @@ export async function refreshDerivedHistory(ports: DerivedHistoryPorts, threadId
   if (!source || !("response" in source) || !initial || initial.resumeState !== "resumed" || initial.historySource !== "message-window") return false;
   assertSource(ports, operation, source);
   const { thread } = await ports.client.request("thread/read", { threadId, includeTurns: false }, {
-    timeoutMs: ports.requestTimeoutMs, priority: "background", signal: operation.signal,
+    timeoutMs: ports.requestTimeoutMs, priority: "background", signal: operation.signal, historySource: "refresh",
   });
   assertSource(ports, operation, source);
   if (!thread || thread.id !== threadId || !Array.isArray(thread.turns)) throw new Error("History refresh returned an invalid Thread");

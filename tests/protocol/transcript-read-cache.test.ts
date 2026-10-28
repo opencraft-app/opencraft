@@ -391,3 +391,49 @@ for (const count of [35, 95]) test(`a small append does not hydrate unchanged na
   do { const page = await f.cache.page(id, cursor, 10); all.push(...page.data); cursor = page.nextCursor; } while (cursor !== null);
   assert.deepEqual(all, f.source.slice().reverse(), "smaller native pages preserve old changed and unchanged Turns");
 });
+
+
+test("native metadata preparation does not hold the same-thread projection lane", async t => {
+  const f = await fixture(t, 20);
+  const baseline = await f.cache.read(id);
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const read = f.port.readThread;
+  f.port.readThread = async threadId => { entered(); await held; return read(threadId); };
+  const preparing = f.cache.page(id, baseline.initialTurnsPage.nextCursor);
+  await ready;
+  let finished = false;
+  const current = f.cache.page(id, null, 10, baseline.thread).then(page => { finished = true; return page; });
+  try {
+    let timeout!: ReturnType<typeof setTimeout>;
+    await Promise.race([current, new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("validated read blocked behind metadata")), 2_000);
+    })]).finally(() => clearTimeout(timeout));
+    assert.equal(finished, true, "already validated current read must not queue behind unrelated metadata RPC");
+  } finally { release(); await Promise.all([preparing, current]); }
+});
+
+
+test("rollout source preparation cannot block a validated same-thread page", async t => {
+  const f = await fixture(t, 20);
+  await f.cache.read(id);
+  let release!: () => void, entered!: () => void, calls = 0;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  (f.port as NativeTranscriptPort).resolveSource = async () => {
+    if (++calls === 1) { entered(); await held; }
+    return { nativeHome: f.home, key: JSON.stringify(["single", f.home]), validate: async () => {} };
+  };
+  const preparing = f.cache.read(id);
+  await ready;
+  let finished = false;
+  const current = f.cache.read(id).then(page => { finished = true; return page; });
+  try {
+    let timeout!: ReturnType<typeof setTimeout>;
+    await Promise.race([current, new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("validated read blocked behind source lookup")), 2_000);
+    })]).finally(() => clearTimeout(timeout));
+    assert.equal(finished, true, "source lookup must not retain the projection lane");
+  } finally { release(); await Promise.all([preparing, current]); }
+});

@@ -223,21 +223,35 @@ export class TranscriptReadCache {
     const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
-  page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<ThreadTurnsListResponse> {
+  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
     if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
     const ensureCurrent = () => { throwIfAborted(effectiveSignal); if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated"); };
+    const metadataStarted = performance.now();
+    const thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
+    if (!metadata) observe(observer, "metadata", metadataStarted);
+    ensureCurrent();
+    if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
+    const prepareRollout = async () => {
+      const started = performance.now();
+      const source = this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId, thread.path!), effectiveSignal)
+        : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
+      const path = await awaitWithAbort(canonicalRolloutPath(thread.path!, source.nativeHome), effectiveSignal);
+      ensureCurrent(); observe(observer, "source", started);
+      return { source, path };
+    };
+    // Metadata and rollout path authorization cannot mutate the projection.
+    // Snapshot-source observation stays inside the lane: its watermark must
+    // describe the snapshot reconciled under the same invalidation boundary.
+    const prepared = !this.port.observeSnapshotSource && typeof thread.path === "string" && existsSync(thread.path)
+      ? await prepareRollout() : null;
+    ensureCurrent();
     const queued = performance.now();
     return this.serialize(threadId, async () => {
       observe(observer, "queue", queued);
       ensureCurrent();
-      const metadataStarted = performance.now();
-      const thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
-      if (!metadata) observe(observer, "metadata", metadataStarted);
-      ensureCurrent();
-      if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
       const sourceStarted = performance.now();
       const snapshotSource = await awaitWithAbort(Promise.resolve(this.port.observeSnapshotSource?.(threadId)), effectiveSignal);
       ensureCurrent();
@@ -245,12 +259,12 @@ export class TranscriptReadCache {
         if (cursor?.startsWith("transcript:") || cursor?.startsWith("transcript-asc:")) throw new InvalidTranscriptCursor();
         return awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
       }
-      const source = snapshotSource ? undefined : this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId, thread.path!), effectiveSignal)
-        : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
-      // Cache hits must obey the same path boundary as incremental reads.
-      const path = snapshotSource?.path ?? await awaitWithAbort(canonicalRolloutPath(thread.path!, source!.nativeHome), effectiveSignal);
+      const rollout = snapshotSource ? null : prepared ?? await prepareRollout();
+      const source = rollout?.source, path = snapshotSource?.path ?? rollout!.path;
       ensureCurrent();
-      observe(observer, "source", sourceStarted);
+      // Rollout preparation already reported source time; snapshot observation
+      // is measured here, inside its required serialization boundary.
+      if (snapshotSource) observe(observer, "source", sourceStarted);
       for (let attempt = 0; attempt < 2; attempt++) {
         const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal, observer);
         observe(observer, "reconcile", started);

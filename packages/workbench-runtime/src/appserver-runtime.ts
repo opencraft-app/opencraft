@@ -1157,7 +1157,7 @@ export function createAppServerWorkbenchRuntime(
               currentSession.views.subscribeThread(threadId, listener),
             listTurns: (params) =>
               currentClient.request("thread/turns/list", params, {
-                priority: "background",
+                priority: "background", historySource: "navigation",
               }),
             projectionBarrier,
             commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn) => {

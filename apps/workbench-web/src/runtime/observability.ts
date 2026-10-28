@@ -66,11 +66,12 @@ export function beginObservedOperation(operationType: string, fields: Event = {}
 }
 export function installClientObservation(client: AppServerClient) {
   const clientId=createClientId();
-  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; operationId?: string }>();
+  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; historySource?: string; operationId?: string }>();
   const unsubscribe = client.subscribeRequestLifecycle(event => {
     if (event.type === 'started' && ['thread/read','thread/turns/list'].includes(event.method)) {
       const params = event.params as { threadId?: unknown } | null;
       historyRequests.set(event.id, { webSentAt: event.startedAtMs, clientQueueMs: event.queueWaitMs,
+        historySource: event.historySource,
         operationId: typeof params?.threadId === 'string' ? historyOperations.get(JSON.stringify([event.hostId, params.threadId])) : undefined });
       return;
     }
@@ -80,6 +81,10 @@ export function installClientObservation(client: AppServerClient) {
     historyRequests.delete(event.id);
     const diagnostic: Event = {};
     if (history) {
+      if (history.historySource) diagnostic.historyReadSource = history.historySource;
+      const responseBytes = "responseBytes" in event ? event.responseBytes : undefined;
+      if (responseBytes !== undefined) diagnostic.bytes = responseBytes;
+      if ("decodeMs" in event && event.decodeMs !== undefined) diagnostic.historyDecodeMs = event.decodeMs;
       diagnostic.webSentAt = history.webSentAt; diagnostic.clientQueueMs = history.clientQueueMs;
       if (history.operationId) diagnostic.operationId = history.operationId;
       const timing = event.type === 'completed' ? (event.result as { __opencraftHistoryTiming?: Record<string, unknown> } | null)?.__opencraftHistoryTiming : undefined;

@@ -21,6 +21,7 @@ import {
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 
+import { executionEngineExtension } from "./execution-engine";
 import { elapsedNow } from "./clock";
 import { AppServerClientError, AppServerRpcError } from "./errors";
 import { ClientObserverList } from "./observer-list";
@@ -99,6 +100,7 @@ export type AppServerServerRequestInterceptor = (
 
 interface PendingRequest {
   controller: AbortController;
+  historyCancellation?: { threadId: string; historyReadId: string };
   id: JsonRpcId;
   method: string;
   priority: AppServerRequestOptions["priority"];
@@ -180,6 +182,7 @@ export type AppServerRequestLifecycleEvent =
       startedAtMs: number;
       queueWaitMs: number;
       params: unknown;
+      historySource?: AppServerClientRequestOptions["historySource"];
       timeoutMs: number;
     })
   | (RequestLifecycleBase & {
@@ -189,6 +192,7 @@ export type AppServerRequestLifecycleEvent =
       result: unknown;
       /** UTF-8 response size, computed only when an observer requests it. */
       readonly responseBytes?: number;
+      readonly decodeMs?: number;
     })
   | (RequestLifecycleBase & {
       type: "failed" | "timed-out" | "aborted";
@@ -196,6 +200,7 @@ export type AppServerRequestLifecycleEvent =
       durationMs: number;
       error: Error;
       readonly responseBytes?: number;
+      readonly decodeMs?: number;
     })
   | { type: "late-response"; hostId: string; id: JsonRpcId; receivedAtMs: number };
 
@@ -399,7 +404,15 @@ export class JsonRpcAppServerClient implements AppServerClient {
         `AppServer request id ${String(id)} is already pending`,
       ));
     }
-    const request: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
+    const historyParams = params as { threadId?: string; initialTurnsPage?: unknown; itemsView?: string; cursor?: string | null };
+    const cancellable = method === "thread/read" && historyParams?.initialTurnsPage !== undefined
+      || method === "thread/turns/list" && ["full", "notLoaded"].includes(historyParams?.itemsView ?? "")
+        && (historyParams?.cursor == null || /^transcript(?:-asc)?:/.test(historyParams.cursor));
+    const historyCancellation = cancellable && typeof historyParams?.threadId === "string"
+      && executionEngineExtension(this.initializeResult?.capabilities?.extensions, historyParams.threadId, "opencraft/read-history")?.cancellation === true
+      ? { threadId: historyParams.threadId, historyReadId: `${this.connectionGeneration}:${++this.historyReadSequence}` } : undefined;
+    const request: JsonRpcRequest = { jsonrpc: "2.0", id, method,
+      params: historyCancellation ? { ...params as object, historyReadId: historyCancellation.historyReadId } : params };
     const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
     const queuedAtMs = this.clock.now();
     const queuedElapsedAtMs = this.elapsedTime();
@@ -416,6 +429,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
 
       const pending: PendingRequest = {
         controller: new AbortController(),
+        historyCancellation,
         id,
         method,
         priority: options.priority,
@@ -454,6 +468,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         startedAtMs: pending.startedAtMs,
         queueWaitMs: Math.max(0, pending.startedElapsedAtMs - pending.queuedElapsedAtMs),
         params,
+        historySource: options.historySource,
         timeoutMs,
       });
       if (this.pending.get(id) !== pending) return;
@@ -551,7 +566,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
     await this.transport.close();
   }
 
+  private historyReadSequence = 0;
+
   private receive(frame: string): void {
+    const decodeStarted = this.elapsedTime();
     let message;
     try {
       message = parseJsonRpcMessage(frame);
@@ -560,6 +578,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       return;
     }
 
+    const decodeMs = Math.max(0, this.elapsedTime() - decodeStarted);
     if (isJsonRpcRequest(message)) {
       void this.answerServerRequest(message);
       return;
@@ -613,6 +632,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         error,
         get responseBytes() { return utf8ResponseBytes(frame); },
+        decodeMs,
       });
     } else if (isJsonRpcSuccess(message)) {
       pending.resolve(message.result);
@@ -623,6 +643,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         result: message.result,
         get responseBytes() { return utf8ResponseBytes(frame); },
+        decodeMs,
       });
     }
   }
@@ -845,6 +866,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
     // type surface still declares abort() without the optional DOM reason.
     // The request promise and lifecycle event already carry the exact error.
     pending.controller.abort();
+    // The opaque read identity survives router RPC-id translation. Cancellation
+    // is capability-gated and scoped to this logical owner, never a Turn stop.
+    if (pending.historyCancellation && (type === "aborted" || type === "timed-out") && this.transport.status.state === "open" && !this.closed)
+      void this.request("thread/history/cancel", pending.historyCancellation, { timeoutMs: 5_000, priority: "user-visible" }).catch(() => {});
     pending.reject(error);
     const endedAtMs = this.clock.now();
     this.emitRequestLifecycle({

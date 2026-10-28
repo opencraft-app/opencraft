@@ -170,3 +170,28 @@ for (const older of [false, true]) test(`fresh Read retires an old Resume ${olde
     release?.({ ...oldHistory, turns: [] }); releaseDrain?.([]); await h.close();
   }
 });
+
+
+test("client transmits cancellation only for advertised Host history with an opaque read identity", async () => {
+  const frames: any[] = [];
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    frames.push(request);
+    if (request.method === "initialize") peer.send(encodeJsonRpcMessage({ id: request.id, result: {
+      capabilities: { extensions: { "opencraft/read-history": { version: 1, cancellation: true } } },
+    } }));
+    if (request.method === "thread/history/cancel") peer.send(encodeJsonRpcMessage({ id: request.id, result: { cancelled: true } }));
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "cancel-wire", transport });
+  try {
+    await client.connect({ clientInfo: { name: "test", version: "1" } });
+    const controller = new AbortController();
+    const reading = client.request("thread/read", { threadId: "thread", includeTurns: false, initialTurnsPage: { limit: 10 } }, { signal: controller.signal });
+    const rejected = assert.rejects(reading, aborted);
+    await flush(); controller.abort(); await rejected; await flush();
+    const read = frames.find(f => f.method === "thread/read"), cancel = frames.find(f => f.method === "thread/history/cancel");
+    assert.ok(typeof read.params.historyReadId === "string");
+    assert.deepEqual(cancel.params, { threadId: "thread", historyReadId: read.params.historyReadId });
+    assert.equal(frames.some(f => f.method === "turn/interrupt" || f.method === "thread/unsubscribe"), false);
+  } finally { await client.close(); }
+});
