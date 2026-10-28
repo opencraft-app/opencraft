@@ -12158,6 +12158,9 @@ html[data-window-host="browser"] body {
 }
 .app-shell-root.has-browser-safe-layout .app-shell-header { top: var(--shell-mobile-safe-top); }
 .app-shell-root.has-mobile-sidebar-gestures {
+  // Floating touch controls share the page plane; a recessed desktop lip
+  // would leave a horizontal shadow beneath the transparent header.
+  .app-shell-header__content-edge { display: none; }
   // Paint remains full-bleed. Only the row content consumes the top inset.
   // The drawer portal sits behind the translated page. This root must remain
   // untransformed and transparent so its physical viewport stays authoritative.
