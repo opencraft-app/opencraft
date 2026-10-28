@@ -1650,6 +1650,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.diagnostic({ event: "client-initialize", clientId: waiter.clientId, source: "physical-waiter",
         outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
     }
+    // A rejected handshake may already have consumed the router's one-shot
+    // initialize slot. Retire that socket; only reconnect may initialize again.
+    if ("error" in message) this.nativeCore?.resetConnection();
     if ("result" in message) {
       this.recovery?.wake();
       this.schedules?.start();
@@ -1730,6 +1733,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             }
             this.diagnostic({ event: "client-initialize-failed", reason: errorMessage(error) });
             this.publishStatus({ state: "failed", reason: "Codex initialization failed" });
+            this.nativeCore?.resetConnection();
           });
           return;
         }
