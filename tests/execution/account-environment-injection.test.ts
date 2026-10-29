@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -120,6 +120,7 @@ test('ACP sessions own separate native processes and keep injected values out of
     for (const value of ['alice-a', 'bob-global', 'alice-global']) assert.equal(JSON.stringify([snapshot, engine.occupancy, created]).includes(value), false);
   }
   assert.equal(new Set(engine.processIds).size, 4);
+  assert.deepEqual(f.runtime.redact({ error: 'child failed: alice-a', nested: ['bob-global'] }), { error: 'child failed: [REDACTED]', nested: ['[REDACTED]'] });
   f.leases.finished(lastThread, 'turn-input');
   await engine.suspend();
   assert.equal(f.runtime.execution('opencraft-server', lastThread).account, null);
@@ -130,7 +131,6 @@ test('ACP sessions own separate native processes and keep injected values out of
   assert.ok(JSON.stringify(engine.snapshot(lastThread)).includes(hash('alice-global')));
   const snapshot = f.runtime.snapshot(scope());
   assert.equal(JSON.stringify(snapshot).includes('alice-a'), false); assert.equal(inspect(snapshot).includes('alice-a'), false);
-  assert.deepEqual(f.runtime.redact({ error: 'child failed: alice-a', nested: ['bob-global'] }), { error: 'child failed: [REDACTED]', nested: ['[REDACTED]'] });
   for (const file of await readdir(join(f.root, 'acp'))) {
     const bytes = await readFile(join(f.root, 'acp', file));
     assert.equal(bytes.includes(Buffer.from('alice-a')), false);
@@ -212,4 +212,53 @@ test('Pi durable tools follow the admitted input across employees and register e
       f.leases.finished('pi-durable-environment', 'turn-' + inputId);
     }
   } finally { await native.close(); }
+});
+
+test('a gateway preserves ordinary turns on a legacy Codex router and refuses configured variables before owner handoff', async t => {
+  const f = await fixture(t);
+  const { createServer } = await import('node:http'); const { WebSocketServer } = await import('ws');
+  const { startControlServer } = await import('../../apps/codex-core/src/control-server.js');
+  const { CodexEngineAdapter } = await import('../../apps/opencraft-daemon/src/codex-engine-adapter.js');
+  const { LOGICAL_CLIENT_FIELD } = await import('@opencraft/app-host-protocol');
+  const nativeSocket = join(f.root, 'legacy-native.sock'), endpoint = join(f.root, 'legacy-control.sock');
+  const server = createServer(), sockets = new WebSocketServer({ noServer: true }), methods: string[] = [];
+  server.on('upgrade', (request, socket, head) => sockets.handleUpgrade(request, socket, head, client => sockets.emit('connection', client)));
+  let turn = 0;
+  sockets.on('connection', socket => socket.on('message', bytes => {
+    const frame = JSON.parse(String(bytes)), params = frame.params ?? {}; methods.push(frame.method);
+    const emit = (value: unknown) => socket.send(JSON.stringify(value));
+    let result: unknown = {};
+    if (frame.method === 'initialize') result = { userAgent: 'legacy-fixture', platformFamily: 'unix', capabilities: { extensions: {} } };
+    if (frame.method === 'thread/start') result = { thread: { id: 'legacy-thread', cwd: f.root, turns: [], status: { type: 'idle' } } };
+    if (frame.method === 'thread/list') result = { data: [], nextCursor: null };
+    if (frame.method === 'turn/start') { result = { turn: { id: 'turn-' + ++turn, status: 'inProgress', items: [] } }; emit({ method: 'turn/started', params: { threadId: params.threadId, ...(result as object) } }); }
+    if (frame.method === 'fixture/complete') emit({ method: 'turn/completed', params: { threadId: 'legacy-thread', turn: { id: 'turn-' + turn, status: 'completed', items: [] } } });
+    if (frame.id !== undefined) emit({ id: frame.id, result });
+  }));
+  await new Promise<void>(resolve => server.listen(nativeSocket, resolve));
+  const token = 'synthetic-' + randomUUID();
+  const control = await startControlServer(endpoint, token, async request => ({ status: 200, value: request.url === '/health'
+    ? { protocolVersion: 1, pid: process.pid, codexPid: process.pid, nativeSocket, dataDirectory: join(f.root, 'codex'), proxyBaseUrl: 'http://127.0.0.1:9', routingEpoch: 'legacy' }
+    : { lease: 'legacy-lease', routingEpoch: 'legacy', fenceEpoch: 0, fencedGenerationIds: [], routes: [] } }));
+  const adapter = new CodexEngineAdapter({ executable: process.execPath, runtimeDirectory: f.root, dataDirectory: join(f.root, 'codex'), coreEndpoint: endpoint, coreAuthToken: token, coreHostOverlays: true, executionEnvironment: f.runtime, logDiagnostic() {} });
+  const frames: any[] = []; adapter.subscribeMessage(frame => frames.push(JSON.parse(frame))); let sequence = 0;
+  const call = async (method: string, params: object, account = 'charlie') => {
+    const id = ++sequence;
+    await adapter.sendWithContext(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'legacy-client' }), { sender: { kind: 'employee', loginName: account }, executionPrincipal: { provider: 'employee', subject: account }, validUntil: Date.now() + 60_000 });
+    await until(() => frames.some(frame => frame.id === id)); const response = frames.find(frame => frame.id === id);
+    if (response.error) throw new Error(response.error.message); return response.result;
+  };
+  try {
+    await adapter.connect(); await call('initialize', {});
+    const created = await call('thread/start', {});
+    await call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'one', input: [{ type: 'text', text: 'first' }] });
+    await call('fixture/complete', {});
+    await call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'two', input: [{ type: 'text', text: 'next' }] });
+    assert.equal(methods.filter(method => method === 'turn/start').length, 2);
+    assert.equal(methods.includes('opencraft/environment/capability'), false, 'an old router must not receive an unsupported capability request');
+    await assert.rejects(call('thread/start', {}, 'alice'), /owner handoff/);
+  } finally {
+    await adapter.close(); await control.close(); for (const socket of sockets.clients) socket.terminate(); sockets.close();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
 });

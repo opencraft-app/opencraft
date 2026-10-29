@@ -15,6 +15,7 @@ export interface CodexCoreHealth {
   readonly generationId?: string;
   readonly admissionEpoch?: number;
   readonly environmentVariablesVersion?: 1;
+  readonly environmentRoutingVersion?: 1;
   readonly callbackProtocolVersion?: 1;
   readonly orchestrationRoutingVersion?: 1;
   readonly callbackIncarnation?: string;

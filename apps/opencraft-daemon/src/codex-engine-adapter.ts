@@ -3137,8 +3137,12 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly initialEnvironmentThreads = new Set<string>();
   private async canInjectEnvironment(threadId?: string): Promise<boolean> {
     if (!this.nativeCore) return true;
-    const health = await this.nativeCore.control.health();
-    return health.routingEpoch ? record(await this.requestPhysical("opencraft/environment/capability", { threadId })).supported === true : health.environmentVariablesVersion === 1;
+    try {
+      const health = await this.nativeCore.control.health();
+      if (!health.routingEpoch) return health.environmentVariablesVersion === 1;
+      if (health.environmentRoutingVersion !== 1) return false;
+      return record(await this.requestPhysical("opencraft/environment/capability", { threadId })).supported === true;
+    } catch { return false; }
   }
   private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
   private sessionMcpGeneration = 0;

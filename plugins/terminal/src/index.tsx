@@ -398,7 +398,7 @@ export function createTerminalWorkbenchPanelPlugin(
         creationLabel: "Terminal",
         run: (context) => {
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
-            resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });
+            threadId: context.threadId, projectId: context.projectId, resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });
           observePanelOwner(context.ownerId);
         },
