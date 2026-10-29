@@ -81,3 +81,5 @@ export * from "./host-composer-commands";
 export * from "./connectors/headless-port";
 
 export { ThreadOrchestrationResource } from "./thread-orchestration-resource";
+export type { EnvironmentVariableView, EnvironmentScope, EnvironmentView, EnvironmentDocument } from './account-environment';
+export { parseEnvironmentDocument } from './account-environment';

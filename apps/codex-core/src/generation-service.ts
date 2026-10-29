@@ -63,7 +63,7 @@ export async function startCodexGenerationService(options: {
   let closing: Promise<void> | undefined;
   const state = () => ({ preparationOwner: runtime.preparationOwner(), lastActivation: runtime.registry.metadata("last-activation"), routingEpoch: runtime.registry.ownerEpoch, admissionEpoch: runtime.registry.epoch(),
     generations: runtime.registry.list().map(generation => ({ ...generation,
-      runtime: runtime.registry.metadata(`runtime:${generation.id}`), drain: runtime.registry.metadata(`drain:${generation.id}`),
+      runtime: runtime.registry.metadata(`runtime:${generation.id}`), appPayload: runtime.registry.metadata(`app-payload:${generation.id}`), coldReplacement: runtime.registry.metadata(`cold-replacement:${generation.id}`), drain: runtime.registry.metadata(`drain:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
     fences: runtime.fences(true), storage: runtime.registry.outcome });
   const close = () => closing ??= (async () => { await control?.close(); await socket?.close(); await runtime.close(); })();
@@ -118,7 +118,7 @@ export async function startCodexGenerationService(options: {
         const current = runtime.registry.current(), execution = await runtime.ensure(current.generation.id);
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
           appServerPid: execution.pid, codexPid: execution.codexPid, nativeSocket, dataDirectory, proxyBaseUrl,
-          orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,
+          environmentRoutingVersion: 1, orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,
           ...(execution.callbackProtocolVersion === 1 ? { callbackProtocolVersion: 1 as const, pendingCallbacks: execution.pendingCallbacks, pendingOrchestrationMutations: execution.pendingOrchestrationMutations } : {}) } satisfies CodexAppServerHealth };
       }
       if (request.method === "GET" && request.url === "/generations") return { status: 200, value: state() };
@@ -129,6 +129,7 @@ export async function startCodexGenerationService(options: {
         if (value.operation === "claim") return { status: 200, value: runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
         if (value.operation === "state") return { status: 200, value: runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
       } else {
+        if (value.operation === "app-payload") return { status: 200, value: await runtime.selectAppPayload(params) };
         if (value.operation === "prepare") return { status: 200, value: await runtime.prepare(params.definition as unknown as GenerationDefinition, params.legacy === true, params.expectedOwner as string | undefined, params.expectedHost as string | undefined) };
         if (value.operation === "preparation") return { status: 200, value: { preparation: await runtime.preparation(String(params.id ?? ""), params.expectedOwner as string | undefined, params.expectedHost as string | undefined) } };
         if (value.operation === "revoke") return { status: 200, value: await runtime.revoke(String(params.id ?? ""), Number(params.expectedEpoch), String(params.preparation ?? "")) };

@@ -164,3 +164,11 @@ The carried list remains durable and unknown after resume, with its digest bound
 to both release and cold readiness. This also applies when bridging a Core from a
 direct APP endpoint to a router; endpoint changes are recorded as topology
 maintenance, separately from a compatible protocol handoff.
+
+### Explicit APP-only payload
+
+The private generation control operation `app-payload` accepts exactly `id`, `bundle`, `bundleSha256`, `expectedIncarnation`, `expectedEpoch`, `expectedOwner` and `expectedHost`. It applies only to a non-default ready, draining or retired generation. Select before retirement: the durable choice takes precedence over automatic adoption of the default generation's payload, including after routing-owner replacement. The CLI executable/version/digest, Node, packaged launcher, HOME, CWD and execution identity stay fixed; selecting another CLI is not supported by this operation.
+
+A ready target becomes draining. Normal P2c Host/Native retirement must finish before cold validation can copy the HOME and launch the selected APP. The original HOME stays in place; an isolated copy is mounted at its original absolute path for read-only Native validation. Receipts expose `timings.copyMs` and `timings.validationMs`, with individual copy, ownership, integrity and Native validation durations. The new APP must report callback protocol 1 and zero pending callbacks/mutations before admission.
+
+A failed explicit candidate can be reselected only after its never-admitted owned unit is confirmed stopped. Selecting the exact original APP bundle and digest restores that source's compatibility level while preserving current HOME data and the fixed CLI. This recovery does not confer callback capability on a legacy APP: router handoff still rejects missing admission observations. No database rollback or default-payload fallback is performed.

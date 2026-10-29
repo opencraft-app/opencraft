@@ -73,7 +73,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     control = await startControlServer(options.endpoint, options.authToken, async request => ({
       status: request.method === "GET" && request.url === "/health" && !failed && ready ? 200 : 503,
       value: request.method === "GET" && request.url === "/health" && !failed && ready
-        ? { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
+        ? { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: "Codex AppServer unavailable" },
@@ -88,7 +88,8 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     child = options.spawnAppServer?.({ args, cwd: options.runtimeDirectory, env })
       ?? spawn(options.executable, args, { cwd: options.runtimeDirectory, env, stdio: ["pipe", "pipe", "pipe"] });
     ownsNative = true;
-    child.stdout.resume(); child.stderr.on("data", chunk => process.stderr.write(chunk));
+    child.stdout.resume(); // Native stderr may contain tool output or private environment values.
+    child.stderr.resume();
     const failure = (error: Error) => { failed = true; if (!closing) options.onFailure?.(error); };
     child.once("error", failure);
     child.once("close", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));

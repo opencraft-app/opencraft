@@ -3,6 +3,7 @@ import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
 import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { startAvailabilityNotification } from './availability-notification.mjs';
+import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { HeadlessConnectors } from "../packages/connector-host/src/headless.ts";
 import { CapabilityBindings } from "../packages/session-capabilities/src/bindings.ts";
 import { SessionCapabilities } from "../packages/session-capabilities/src/index.ts";
@@ -334,7 +335,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       executionDatabase?.close();
       // Settle every provider/store before releasing the directory lock, even
       // when one disposer throws synchronously or returns a rejected promise.
-      for (const dispose of [() => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.close?.(),
+      for (const dispose of [() => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
         () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close(), () => releaseLock()]) {
         results.push(...await Promise.allSettled([Promise.resolve().then(dispose)]));
@@ -499,6 +500,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       modelStorageDirectory: join(dataDirectory, "models"),
       speechModelManagement: true,
       projectStorageDirectory: join(dataDirectory, "projects"),
+      environmentDataDirectory: identity?.executionEnvironment ? dataDirectory : undefined,
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
       taskSkillDirectories: [join(dataDirectory, "codex/runtime/skills")],
@@ -516,7 +518,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     } else if (engines.includes("pi")) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
-      piEngine = new PiEngine({ modelPolicyPath, ...piModels, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      piEngine = new PiEngine({ modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       // The in-process standalone mode has the same trusted port. Shared-server
       // deployments attach the independent owner through its descriptor instead.
       piEngine.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS, call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
@@ -605,6 +607,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => options.createCodexTransport?.() ?? new CodexEngineAdapter({
+          createSessionMcp: async () => {
+            await capabilitiesReady;
+            const reservation = capabilityMcp.prepareExecution();
+            return { configuration: reservation.configuration,
+              bind: (threadId, inputId, executionId) => reservation.bind({ serverId: actorCollaboration.execution.serverId,
+                threadId, execution: { inputId, executionId } }),
+              cancel: () => reservation.cancel() };
+          },
           sessionMcp: async (threadId, inputId, executionId) => {
             await capabilitiesReady;
             const session = {serverId:actorCollaboration.execution.serverId, threadId, ...(inputId ? {execution:{inputId, ...(executionId ? {executionId} : {})}} : {})};
@@ -612,6 +622,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             return capabilityMcp.config(session);
           },
           createThreadMetadata,
+          executionEnvironment: identity?.executionEnvironment,
           tokenUsage: {
             queryWorkerEntry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url)))
               ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
@@ -654,10 +665,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           desktop,
         })), mcpApps);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
-        return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(transport, value => {
+        const scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
+          ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
+        return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
           if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
           turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId);
-        }) : transport;
+        }) : scopedTransport;
       },
     });
     turnPush = new TurnPushService(new PushStore(join(dataDirectory, 'web-push.sqlite')), {

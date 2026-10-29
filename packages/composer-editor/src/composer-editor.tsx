@@ -91,11 +91,14 @@ interface Suggestion {
   detail: string;
   uri?: string | null;
   metadata?: Readonly<Record<string, unknown>>;
+  submitOnSelect?: boolean;
 }
 
 export interface ComposerShortcutCommand {
   readonly name: string;
   readonly description: string;
+  /** Selecting a standalone local action is its explicit execution gesture. */
+  readonly submitOnSelect?: boolean;
 }
 
 interface SuggestionQuery {
@@ -1119,6 +1122,7 @@ export const OpenCraftComposer = forwardRef<
     kind: "command",
     label: command.name,
     detail: command.description,
+    submitOnSelect: command.submitOnSelect,
   })) ?? localCommandSuggestions;
   const filteredSuggestions =
     suggestionQuery == null
@@ -1549,7 +1553,15 @@ export const OpenCraftComposer = forwardRef<
     );
     view.dispatch(transaction.scrollIntoView());
     view.focus();
-  }, []);
+    const draft = controller.getSnapshot().draft;
+    const document = proseMirrorToComposerDocument(view.state.doc);
+    if (suggestion.kind === "command" && suggestion.submitOnSelect
+      && document.blocks.length === 1 && document.blocks[0]?.type === "paragraph"
+      && composerDocumentToPlainText(document).trim() === `/${suggestion.label}`
+      && draft.attachments.length === 0 && draft.context.length === 0) {
+      void submitActionRef.current();
+    }
+  }, [controller]);
 
   const moveSuggestion = useCallback((delta: number) => {
     if (suggestionQueryRef.current === null || editorViewRef.current?.composing) return false;

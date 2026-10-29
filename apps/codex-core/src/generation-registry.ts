@@ -1,3 +1,4 @@
+import type { AppPayloadChoice } from "./generation-app-payload.js";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep, dirname, basename } from "node:path";
@@ -228,6 +229,26 @@ export class CodexGenerationRegistry {
     if (![next.executable, next.bundle, next.node, ...(next.nativeLauncher ? [next.nativeLauncher.entrypoint, next.nativeLauncher.executable] : [])].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
     this.database.prepare("UPDATE generations SET definition=?,state='candidate' WHERE id=?").run(JSON.stringify(next), id);
     return this.get(id)!;
+  }
+  selectAppPayload(id: string, incarnation: number, epoch: number, choice: AppPayloadChoice, recovering = false): void {
+    this.transaction(() => {
+      const g = this.get(id);
+      if (!g || g.incarnation !== incarnation || this.epoch() !== epoch || this.current().generation.id === id
+        || !(recovering ? g.state === "candidate" && !!(this.metadata(`app-payload:${id}`) as AppPayloadChoice | null)?.applied
+          : ["ready", "draining", "retired"].includes(g.state)) || this.unresolvedCreations(id)) throw new Error("APP payload selection identity changed");
+      this.setMetadata(`app-payload:${id}`, choice);
+      if (recovering) this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
+      else if (g.state === "ready") this.database.prepare("UPDATE generations SET state='draining' WHERE id=?").run(id);
+    });
+  }
+  applyAppPayload(id: string, choice: AppPayloadChoice): GenerationRecord {
+    return this.transaction(() => {
+      const g = this.get(id);
+      if (!g || g.state !== "retired" || JSON.stringify(this.metadata(`app-payload:${id}`)) !== JSON.stringify(choice)) throw new Error("APP payload choice changed before cold open");
+      const next = this.replaceRetired(id, { executable: g.executable, node: g.node, nativeLauncher: g.nativeLauncher, bundle: choice.bundle });
+      this.setMetadata(`app-payload:${id}`, { ...choice, applied: true });
+      return next;
+    });
   }
   assertRevocable(id: string, incarnation: number, expectedEpoch: number): void {
     const generation = this.get(id);

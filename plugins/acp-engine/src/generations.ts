@@ -252,7 +252,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   occupancy() {
     const state = this.handoff.snapshot();
     const generations = [...this.providers].map(([id, provider]) => ({ id, ...provider.occupancy }));
-    const os = this.options.inspectOsWork?.([...this.providers.values()].flatMap(p => p.processId ? [p.processId] : []));
+    const os = this.options.inspectOsWork?.([...this.providers.values()].flatMap(p => p.processIds));
     const coverage = this.persistenceFailed || state.persistence !== "ready" || os?.coverage !== "complete" || !Number.isSafeInteger(os.activeCount) || os.activeCount! < 0 ? "unknown" : "complete";
     const activeCount = coverage === "complete" ? state.activeCalls + os!.activeCount! + generations.reduce((sum, row) => sum + Object.entries(row).reduce((n, [key, count]) => key === "id" ? n : n + Number(count), 0), 0) : null;
     return { coverage, activeCount, osWork: os ?? { coverage: "unknown", activeCount: null }, historicalCount: this.bindings.size, generations };
@@ -272,7 +272,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
       if (action === "fence") await this.handoff.fence(input);
       else if (action === "release") await this.handoff.release(input, () => this.occupancy(), async () => {
         for (const provider of this.providers.values()) await provider.suspend();
-        if ([...this.providers.values()].some(provider => provider.processId !== null)) throw new Error("ACP native writer did not release");
+        if ([...this.providers.values()].some(provider => provider.processIds.length > 0)) throw new Error("ACP native writer did not release");
         await this.persistence;
         const os = this.options.inspectOsWork?.([]);
         if (os?.coverage !== "complete" || os.activeCount !== 0) throw new Error("ACP OS writer release is unconfirmed");

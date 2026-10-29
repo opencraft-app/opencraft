@@ -271,7 +271,7 @@ export async function createWebWorkbenchApplication(
           () => import("@opencraft/plugin-terminal"), signal,
         );
         signal?.throwIfAborted();
-        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions));
+        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions, ownerId => ({ threadId: conversationBindings.resolve(ownerId as Parameters<typeof conversationBindings.resolve>[0])?.conversationKey?.threadId ?? null })));
       };
       if (optionalFeatures === null) await installTerminal();
       else optionalFeatures.add("terminal-presentation", installTerminal);

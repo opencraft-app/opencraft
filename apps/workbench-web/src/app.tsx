@@ -691,6 +691,8 @@ export function App({
       creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
     } : action);
   const panelToolbarContext: PanelToolbarActionContext = {
+    threadId: draft ? null : activeThreadId,
+    projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
     ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
     cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
       ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
@@ -698,7 +700,7 @@ export function App({
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
   const threadShortcutCommands = activeThreadLease !== null && sideChatAction
     && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label },
+    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
       ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
     : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   JsonRpcAppServerClient,
   AppServerClientError,
+  AppServerRpcError,
   type AppServerClient,
   type DuplexTransport,
   type ServerRequestHandler,
@@ -1596,6 +1597,22 @@ test("only an uncreated submission inherits a rejected RPC's no-dispatch proof",
       await assert.rejects(commandPort(h).submit(submission), error => failAt === "thread/start"
         ? error instanceof SubmissionNotDispatchedError : error instanceof SubmissionOutcomeUnknownError);
       assert.equal(h.requests.filter(message => message.method === "thread/start").length, failAt === "turn/start" ? 1 : 0);
+    } finally { await h.close(); }
+  }
+});
+
+
+test("routed mutation uncertainty survives RPC wrapping while preflight rejection remains retryable by the user", async () => {
+  for (const outcome of ["unknown", "rejected"] as const) {
+    const h = await harness();
+    const cause = new AppServerRpcError({ code: -32000, message: "Synthetic routed timeout", data: {
+      method: outcome === "unknown" ? "turn/start" : "thread/resume", submissionOutcome: outcome,
+    } });
+    h.client.request = (async () => { throw cause; }) as typeof h.client.request;
+    try {
+      await assert.rejects(commandPort(h).submit(intent({ type: "existing-thread", key: existingKey })),
+        error => outcome === "unknown" ? error instanceof SubmissionOutcomeUnknownError : error === cause);
+      assert.equal(h.requests.length, 0);
     } finally { await h.close(); }
   }
 });

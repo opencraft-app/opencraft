@@ -1694,6 +1694,7 @@ test("shutdown diagnostics describe a waiting stream without exposing request se
 
 for (const [name, terminal, expectedUnknown] of [
   ["completed event", 'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp-fixture","status":"completed"}}\n\n', false],
+  ["CRLF delimiter missing final LF", 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\r\n\r', true],
   ["unterminated event", 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\n', true],
   ["malformed JSON", 'event: response.completed\ndata: {"type":"response.completed" broken}\n\n', true],
   ["completion text in output", 'data: {"type":"response.output_text.delta","delta":"response.completed"}\n\n', true],
@@ -1758,7 +1759,7 @@ for (const [name, chunks] of [
         onUncertain: route => { uncertain.push(route); } });
       const response = await fetch(`${server.url}/v1/responses`, { method: "POST",
         headers: { "x-opencraft-account-pool-token": token }, body: "{}" });
-      assert.equal((await within(response.text(), "HTTP did not finish at completion")).trimEnd(), chunks.join("").trimEnd());
+      assert.equal(await within(response.text(), "HTTP did not finish at completion"), chunks.join(""));
       await server.close();
       assert.equal(cancelled, true);
       assert.deepEqual(uncertain, []);

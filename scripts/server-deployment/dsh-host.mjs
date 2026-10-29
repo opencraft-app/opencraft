@@ -23,6 +23,15 @@ export async function startIndependentDshHost(configuration) {
     throw new Error('Independent DSH Host requires absolute descriptor and data paths');
   if (process.env.OPENCRAFT_DSH_URL?.trim() || options.dshUrl)
     throw new Error('Independent DSH Host must own its engine');
+  // Validate configured Core credentials before acquiring any native writer.
+  let taskCoreToken;
+  if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {
+    if (!isAbsolute(taskCodexCoreEndpoint ?? '') || !isAbsolute(taskCodexCoreTokenFile ?? '')) throw new Error('Task Core catalog requires explicit absolute connection paths');
+    const info = await stat(taskCodexCoreTokenFile);
+    if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error('Task Core catalog requires an owned private token file');
+    taskCoreToken = (await readFile(taskCodexCoreTokenFile, 'utf8')).trim();
+    if (!taskCoreToken) throw new Error('Task Core catalog token is empty');
+  }
   if (!options.dshExecutable || !options.dshCapabilityPlugin) throw new Error("DSH handoff requires pinned executable and plugin paths");
   await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
   await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true,mode:0o700});
@@ -48,6 +57,7 @@ export async function startIndependentDshHost(configuration) {
     options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
     new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
+    options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
@@ -55,14 +65,9 @@ export async function startIndependentDshHost(configuration) {
     options.taskServerId ??= "opencraft-server";
     options.taskSkillDirectories ??= [resolve(options.dataDirectory, "../codex/runtime/skills")];
     if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {
-      if (!isAbsolute(taskCodexCoreEndpoint ?? '') || !isAbsolute(taskCodexCoreTokenFile ?? '')) throw new Error('Task Core catalog requires explicit absolute connection paths');
-      const info = await stat(taskCodexCoreTokenFile);
-      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o077) !== 0) throw new Error('Task Core catalog requires an owned private token file');
-      const token = (await readFile(taskCodexCoreTokenFile, 'utf8')).trim();
-      if (!token) throw new Error('Task Core catalog token is empty');
       options.taskConversationCatalog ??= (serverId, search, limit, cursor) => {
         if (serverId !== 'local-codex') throw new Error('Unknown task conversation server');
-        return readTaskCoreConversations(taskCodexCoreEndpoint, token, search, limit, cursor);
+        return readTaskCoreConversations(taskCodexCoreEndpoint, taskCoreToken, search, limit, cursor);
       };
     }
     await handoff.load();

@@ -19,6 +19,16 @@ export interface WorkbenchRequestIdentity {
   handle(request: IncomingMessage, response: ServerResponse): boolean | Promise<boolean>;
 }
 
+function isIndependentCatalogFrame(frame: unknown): boolean {
+  if (typeof frame !== "string") return false;
+  try {
+    const request = JSON.parse(frame);
+    return request !== null && typeof request === "object"
+      && (typeof request.id === "string" || typeof request.id === "number")
+      && (request.method === "model/list" || request.method === "thread/list");
+  } catch { return false; }
+}
+
 export interface AppHostServerPort {
   postMessage(message: AppHostToRendererMessage): void;
   subscribe(listener: (message: unknown) => void): () => void;
@@ -833,6 +843,13 @@ export class AppHostServerConnection {
       ? message.hostId : "";
     if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
       this.admitForwarding(this, message as RendererToAppHostMessage);
+      // Catalog RPCs are independent reads. A provider's send can await Turn
+      // preparation or another RPC, so awaiting it in the writable queue must
+      // not hold model/thread discovery behind that unrelated work.
+      if (isIndependentCatalogFrame((message as { frame?: unknown }).frame)) {
+        void this.receive(message);
+        return;
+      }
     }
     const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
       () => this.receive(message),

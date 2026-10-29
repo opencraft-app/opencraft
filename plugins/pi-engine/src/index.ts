@@ -1,9 +1,10 @@
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
+import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
-import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
+import { TURN_RECOVERY_EXTENSION, SHARED_INTERACTIONS_READ } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort } from "@opencraft/host-schedules";
@@ -115,8 +116,7 @@ export class PiEngine {
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
-  constructor(private readonly options: {
-    modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  constructor(private readonly options: { modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -251,6 +251,7 @@ export class PiEngine {
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
+        executionEnvironment: this.options.executionEnvironment, projectId: session.projectId ?? null,
         ephemeral: session.ephemeral, inherited: session.inherited, admissionOpen: this.admissionOpen, onPolicyDenied: error => this.notify("warning",{threadId:session.id,message:error.message}),
         modelPolicyPath: this.options.modelPolicyPath, policyCatalog: () => this.models(), admitBackground: operation => this.admit(async () => {
           assertModelPolicy(this.options.modelPolicyPath, "pi", session.model, session.effort, await this.models());
@@ -789,6 +790,11 @@ export class PiEngine {
     }
     if (method === "thread/unsubscribe" && !this.sessions.has(params.threadId)) return { status: "notLoaded" };
     const session = await this.session(params.threadId);
+    if (method === SHARED_INTERACTIONS_READ) {
+      // Older mixed-Host clients inherited the default engine's approval
+      // capability. Pi owns no shared approvals; this read grants no reply port.
+      return { threadId: session.id, epoch: "pi:no-shared-approvals", revision: 0, requests: [], canRespond: false };
+    }
     if (method === "thread/fork") {
       assertPiFields(params);
       if (params.ephemeral !== true || params.excludeTurns !== true || params.path != null || params.lastTurnId != null)
@@ -1025,7 +1031,7 @@ export class PiEngine {
         const snapshot = session.ephemeral ? await session.native?.snapshot()
           : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.directory, "handoff-cache"));
         if (!snapshot) { unknown = true; continue; }
-        if (session.native?.idleWorkerPid) workers.push(session.native.idleWorkerPid);
+        if (session.native) workers.push(...session.native.workerProcessIds);
         if (!snapshot.live || typeof snapshot.live !== "object" || Array.isArray(snapshot.live) || !snapshot.agent || typeof snapshot.agent !== "object" || Array.isArray(snapshot.agent)
           || !Array.isArray(snapshot.inbox) || snapshot.queue && !Array.isArray(snapshot.queue.items) || snapshot.shell && !Array.isArray(snapshot.shell.records)) throw new Error("Invalid Pi native documents");
         if (!snapshot.privateCalls || typeof snapshot.privateCalls !== "object" || !snapshot.privateCalls.calls) throw new Error("Invalid Pi private call document");

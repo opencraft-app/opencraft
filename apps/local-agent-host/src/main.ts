@@ -137,6 +137,7 @@ export async function startLocalAgentHost(options: {
   readonly dshCapabilityPlugin?: string;
   readonly modelPolicyPath?: string;
   readonly dataDirectory?: string;
+  readonly environmentDataDirectory?: string;
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;
@@ -195,13 +196,21 @@ export async function startLocalAgentHost(options: {
     }
     bridgeDirectory = await mkdtemp(join(tmpdir(), "opencraft-engine-plugin-"));
     const patch = join(bridgeDirectory, "patch.json");
+    let nativePlugin = plugin;
+    // Source previews run DSH without the parent's TS loader. Packaged plugins
+    // are already bundled; only source composition needs this build step.
+    try {
+      await access(resolve(dirname(plugin), '../../../scripts/execution-environment.ts'));
+      const { build } = await import('esbuild');
+      nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
+      await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent' });
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     const engineModule = (name: string) => pathToFileURL(resolve(dirname(executable), `../../${name}/lib/index.js`)).href;
     await writeFile(patch, JSON.stringify([
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
-      { insert: [{ id: "opencraft-capability", name: plugin, config: {
-      modelPolicyPath: options.modelPolicyPath,
-      token: bridgeToken, ownerRequired: !!options.ownerHandoff,
+      { insert: [{ id: "opencraft-capability", name: nativePlugin, config: {
+      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),

@@ -531,9 +531,12 @@ with `type: "response.completed"` and a response identity. The loopback bridge
 forwards that record, finishes downstream HTTP and cancels the remaining provider
 body; native consumers already stop reading at this protocol boundary. Waiting
 for provider HTTP EOF can turn an ordinary native close into an uncertain write.
-SSE framing is incremental across UTF-8/chunk/line boundaries. Completion-looking
+SSE framing is incremental across UTF-8/chunk/line boundaries. A terminal CR
+waits for the following byte so a split CRLF delimiter is forwarded intact, as
+required by native streaming parsers. Completion-looking
 model text, incomplete records and malformed JSON do not end the stream. The
-observer retains at most 1 MiB per record; larger records pass through without
+observer limits recognition to 1,048,576 UTF-16 code units per record; larger
+records pass through without
 completion recognition and retain conservative transport-failure handling.
 
 A client disconnect before completion or a failed upstream transport after
@@ -549,3 +552,15 @@ Capability lookup reuses recent successful pages from the same runtime Host (pre
 ## Administrator model usage policy
 
 Deployment restrictions belong to the server, independently of personal model defaults. The managed policy database commits revision changes and actor-attributed audit records atomically. Only current server administrators may read management settings or mutate them; provider identities remain supplied by product composition. The gateway filters catalogs and rejects execution against restricted models or reasoning levels. Native Pi queue dispatch, DSH resolved request admission, ACP prompt admission and Codex internal recovery/goal admission also check policy. An already admitted Turn continues; the next Turn reads current rules. A denied persisted selection remains selected until the user chooses another option. See [policy design](../../../design/model-usage-policy.md).
+
+### Creation-time execution tools
+
+The Host installs a single-use execution-bound MCP reservation when it creates
+an empty Thread. Before the first native Turn, its attested execution binds the
+reservation without attempting to resume missing rollout history. Preparation
+failures are classified separately from a physical native send: only positive
+not-submitted evidence permits a new attempt. Unknown outcomes retain their
+input identity and require reconciliation. Failed or disconnected preparation
+retires only its own reservation; an accepted native execution is never replayed
+because a View failed to activate. Terminal system-error contexts retire once
+before a subsequent tool configuration is applied.
