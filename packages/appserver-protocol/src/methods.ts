@@ -221,6 +221,8 @@ export type ModelListParams = GeneratedModelListParams & {
 /** OpenCraft can explicitly represent a model without configurable reasoning. */
 export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "defaultReasoningEffort"> & {
   defaultReasoningEffort: GeneratedModelListResponse["data"][number]["defaultReasoningEffort"] | null;
+  policyRestricted?: boolean;
+  policyRestrictedEfforts?: string[];
   /** Optional OpenCraft-owned model metadata supplied by the Host. */
   contextWindow?: number;
   maxTokens?: number;

@@ -1878,7 +1878,7 @@ export function createAppServerWorkbenchRuntime(
                 serviceTiers: (model.serviceTiers?.length ? model.serviceTiers.map(tier => tier.id) : model.additionalSpeedTiers) ?? [],
                 ...(!modelId ? { model: model.model } : {}),
                 reasoning: reasoningCapability(
-                  model.supportedReasoningEfforts.map(e => e.reasoningEffort),
+                  [...model.supportedReasoningEfforts.map(e => e.reasoningEffort), ...(model.policyRestrictedEfforts ?? [])],
                   model.defaultReasoningEffort,
                 ),
               };

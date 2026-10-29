@@ -1174,11 +1174,9 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     .app-shell-header__window-controls-rail,
     .app-shell-header__end-actions {
 
-      .right-panel-toggle-icon,
-      .right-panel-toggle-icon__glyph > svg {
-        width: var(--size-shell-header-icon-mobile);
-        height: var(--size-shell-header-icon-mobile);
-      }
+      // Both panel entrances consume the same chrome geometry, regardless of
+      // direct SVG, cross-fade wrapper or current input density.
+      --size-chrome-icon: var(--size-shell-header-icon-mobile);
     }
 
     .thread-header-copy strong {
@@ -1242,11 +1240,15 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 // aria-pressed exposes visibility without turning the right entrance into a
 // selected navigation item.
 
+.right-panel-toggle-icon,
+svg[data-sidebar-toggle-icon-state] {
+  width: var(--size-chrome-icon);
+  height: var(--size-chrome-icon);
+}
+
 .right-panel-toggle-icon {
   position: relative;
   display: block;
-  width: var(--size-chrome-icon);
-  height: var(--size-chrome-icon);
   pointer-events: none;
 }
 
@@ -12395,9 +12397,6 @@ html[data-window-host="browser"] body {
   }
 }
 :root[data-ui-density="touch"] {
-  .app-shell-touch-sidebar-toggle .ui-button__label > svg {
-    width: var(--size-shell-header-icon-mobile); height: var(--size-shell-header-icon-mobile);
-  }
   .app-shell-root.has-mobile-sidebar-gestures .app-shell-header {
     // The rails own edge clearance, including safe areas, without a second inset.
     padding-inline: 0;

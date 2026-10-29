@@ -497,6 +497,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional("opencraft.headless-model-services", async () => {
         const { createHeadlessModelServicesExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessModelServicesExtension({
+          fetcher: serverFetch,
           hostId: "opencraft-server",
           requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
         });

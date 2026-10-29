@@ -1119,5 +1119,11 @@
   "fullUpgrade.cancel": "取消升级",
   "fullUpgrade.stop": "停止后续升级",
   "chat.archived.restore": "恢复会话",
-  "chat.archived.restoring": "正在恢复…"
+  "chat.archived.restoring": "正在恢复…",
+  "modelPolicy.title": "模型使用限制",
+  "modelPolicy.models": "禁用模型",
+  "modelPolicy.efforts": "禁用思考深度",
+  "modelPolicy.save": "保存",
+  "modelPolicy.error": "无法保存限制，请重新加载后重试。",
+  "modelPolicy.hint": "部分选项已被管理员禁用。"
 }

@@ -12,7 +12,7 @@ export type PiQueuedInput = {
   createdAtMs: number;
   state: "queued" | "dispatching";
 }
-export type PiQueueState = { items: PiQueuedInput[]; paused: boolean; pauseReason?: "user-stopped" | "delivery-failed" };
+export type PiQueueState = { items: PiQueuedInput[]; paused: boolean; pauseReason?: "user-stopped" | "delivery-failed" | "model-restricted" };
 export const PiQueueDoc = defineDoc<PiQueueState>({
   kind: "opencraft.queue", version: 1, scope: "conversation", history: "latest", fork: "initial",
   initial: () => ({ items: [], paused: false }),

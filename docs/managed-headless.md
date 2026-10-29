@@ -4,7 +4,7 @@
 
 `storageWriterProtocol: 2` 使用 `server.lock` 的 SQLite EXCLUSIVE 内核锁保护整个数据根；Hub 状态使用同一机制。锁是永久普通文件，禁止删除或替换。获得内核锁后核验上任 PID、Linux boot ID 与进程 start ticks，区别 PID 复用；暂停的活进程不会因心跳过期失去独占。正常退出先撤销入口与浏览器连接，等待所有消费者和 writer 关闭、刷盘，最后记录释放并关闭内核锁。任何 disposer 失败仍执行剩余收尾，但不签发根锁释放；受管进程非零退出后由内核回收。SIGKILL 无法执行用户态 flush，只能保证进程死亡后独占释放，数据库由自身事务恢复。
 
-首次从旧心跳目录锁迁入，必须由旧 owner 正常关闭并移除自己的锁目录；无身份的残留目录即使很旧也拒绝转换，不凭 mtime 接管。新协议不能回退至旧锁实现；更新器在移动发行指针前拒绝不声明 protocol 2 的回退包。失败后保留当前数据，走兼容发行的前向恢复，不恢复旧数据库或删锁。普通 kernel-lock→kernel-lock 交接无需固定等待或清理锁文件。
+首次从旧心跳目录锁迁入，优先由旧 owner 正常关闭并释放自己的目录锁；无法正常关闭时，由部署所有者另行完成候选与旧 owner 的精确证明和受控协议交接。内核锁库不会自动转换旧目录；无身份的残留目录即使很旧也拒绝接管，年龄不能证明所有者已退出。新协议不能回退至旧锁实现；更新器在移动发行指针前拒绝不声明 protocol 2 的回退包。失败后保留当前数据，走兼容发行的前向恢复，不恢复旧数据库或删锁。普通 kernel-lock→kernel-lock 交接无需固定等待或清理锁文件。
 
 回归入口：`tests/server/headless-lifecycle.test.mjs` 驱动真实 Headless 子进程的慢 flush、SIGTERM 与 SIGKILL；`tests/storage/process-writer-lock.test.ts` 验证暂停、PID 复用、legacy 拒绝及锁 inode 保留。
 

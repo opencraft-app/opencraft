@@ -129,6 +129,8 @@ export interface ComposerModelOption {
   readonly maxTokens?: number | null;
   readonly source?: "builtin" | "custom" | null;
   readonly defaultEffort: string | null;
+  readonly policyRestricted?: boolean;
+  readonly policyRestrictedEfforts?: readonly string[];
   readonly efforts: readonly ComposerReasoningEffortOption[];
   readonly serviceTiers?: readonly { readonly id: string; readonly name: string; readonly description: string }[];
 }
@@ -1069,8 +1071,8 @@ export const OpenCraftComposer = forwardRef<
     ? effectiveSelections?.effort : undefined;
   const requestedEffort = composerSnapshot.draft.selections.effort ?? effectiveEffort;
   const displayEffortValue = existingConversation ? requestedEffort ?? null : undefined;
-  const selectedEffortValue = existingConversation && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
-    reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),
+  const selectedEffortValue = selectedModel?.policyRestrictedEfforts?.includes(requestedEffort ?? selectedModel.defaultEffort ?? "") ? requestedEffort ?? selectedModel.defaultEffort : existingConversation && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
+    reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.efforts.some(e=>e.value===selectedModel.defaultEffort) ? selectedModel.defaultEffort : null),
     requestedEffort,
   ) ?? null : null;
   const requestedServiceTier = composerSnapshot.draft.selections.serviceTier !== undefined
@@ -1365,7 +1367,7 @@ export const OpenCraftComposer = forwardRef<
             // of silently resolving the Host default model.
             model: selectedModel?.value ?? selectedModelValue,
             ...(modelSelectionPolicy === "user" && requestedServiceTier !== undefined ? { serviceTier: selectedModel ? selectedServiceTier : requestedServiceTier } : {}),
-            ...(selectedModel && (!existingConversation || requestedEffort != null) ? { effort: resolveReasoningEffort(reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),intent.selections.effort ?? effectiveEffort) } : {}),
+            ...(selectedModel && (!existingConversation || requestedEffort != null) ? { effort: selectedModel.policyRestrictedEfforts?.includes(intent.selections.effort ?? effectiveEffort ?? selectedModel.defaultEffort ?? "") ? intent.selections.effort ?? effectiveEffort ?? selectedModel.defaultEffort ?? undefined : resolveReasoningEffort(reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.efforts.some(e=>e.value===selectedModel.defaultEffort) ? selectedModel.defaultEffort : null),intent.selections.effort ?? effectiveEffort) } : {}),
           } };
         }
       } catch {
@@ -2000,7 +2002,7 @@ export const OpenCraftComposer = forwardRef<
     const effort = resolveReasoningEffort(
       reasoningCapability(
         model.efforts.map((candidate) => candidate.value),
-        model.defaultEffort,
+        model.efforts.some(e=>e.value===model.defaultEffort) ? model.defaultEffort : null,
       ),
       supportsCurrentEffort ? selectedEffortValue : undefined,
     );
@@ -2513,6 +2515,7 @@ export const OpenCraftComposer = forwardRef<
                 onOpenChange={changePicker("intelligence")} onSelect={selectModel} portalContainer={portalContainer}
                 focus={intelligenceFocus} /> : null}
               {!modelDisplayOnly && modelSelectionPolicy === "user" ? <ComposerModelPicker
+                policyRestricted={catalogModels.some(m=>m.policyRestricted)}
                 hasSelectedModel={selectedModel !== null}
                 label={compactSelectedModelLabel} modelLabel={modelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}

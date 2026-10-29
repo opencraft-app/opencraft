@@ -1097,5 +1097,11 @@
   "fullUpgrade.cancel": "Batalkan naik taraf",
   "fullUpgrade.stop": "Berhenti selepas langkah ini",
   "chat.archived.restore": "Pulihkan perbualan",
-  "chat.archived.restoring": "Memulihkan…"
+  "chat.archived.restoring": "Memulihkan…",
+  "modelPolicy.title": "Model usage restrictions",
+  "modelPolicy.models": "Blocked models",
+  "modelPolicy.efforts": "Blocked thinking levels",
+  "modelPolicy.save": "Save",
+  "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
+  "modelPolicy.hint": "Some options are disabled by your administrator."
 }

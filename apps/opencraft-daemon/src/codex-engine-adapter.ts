@@ -1,3 +1,4 @@
+import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
@@ -185,6 +186,7 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly writerOwnership?: boolean;
   readonly executable: string;
   readonly runtimeDirectory: string;
+  readonly modelPolicyPath?: string;
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
@@ -924,6 +926,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
+    try { await this.checkModelPolicy(message.method, record(message.params)); }
+    catch (cause) {
+      const error=cause as Error & {code?:number;data?:unknown};
+      this.emit({id:message.id,error:{code:error.code ?? -32043,message:error.message,data:error.data}},clientId);return;
+    }
+
     if (message.method === "runtime/client/disconnect") {
       this.diagnostic({ event: "client-disconnect", clientId, pid: this.child?.pid ?? null });
       this.disconnectClient(clientId);
@@ -2491,11 +2499,21 @@ export class CodexEngineAdapter implements DuplexTransport {
     throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
   }
 
+  private async checkModelPolicy(method: unknown, params: RpcRecord): Promise<void> {
+    if (!(method === "turn/start" || method === "thread/goal/set" && params.status !== "paused" && params.status !== "complete" && params.status !== "blocked") || this.options.kind === "remote" || !this.options.modelPolicyPath || !readPolicy(this.options.modelPolicyPath).rules.some(r=>r.engine==="codex")) return;
+      const thread = record(record(await this.requestPhysical("thread/read", {threadId: params.threadId, includeTurns:false})).thread);
+      const catalog = record(await this.requestPhysical("model/list", {})).data;
+      const models = Array.isArray(catalog) ? catalog : [];
+      const {model,effort}=resolvePolicySelection("codex",params,thread,models);
+      assertModelPolicy(this.options.modelPolicyPath, "codex", model, effort, models);
+  }
+
   private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
+    await this.checkModelPolicy(method, params);
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
     const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
@@ -2582,7 +2600,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (method === "thread/start" && record(record(result).thread).ephemeral !== true) {
       const threadId = string(record(record(result).thread).id);
-      if (threadId) this.provisionalThreads?.created(threadId, record(result));
+      if (threadId) this.provisionalThreads?.created(threadId, record(result), this.executionEnvironments.get(threadId)?.owner);
     }
     if (method === "turn/start") this.provisionalThreads?.accepted(string(params.threadId), string(params.clientUserMessageId), string(record(record(result).turn).id));
     if (method === "thread/list" && Array.isArray(record(result).data))
@@ -2994,7 +3012,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
     const first = queue.firstAwaitingAdmission(threadId);
-    if (!first || first.state !== "queued") return;
+    if (!first || first.state !== "queued" || first.pausedReason === "model-restricted") return;
     const recovery=this.recovery?.snapshot(threadId);
     if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake(); this.providerRetry?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
@@ -3055,7 +3073,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emitQueueChanged(threadId);
       return response;
     } catch (error) {
-      queue.settle(threadId, id, "unknown", "steer-delivery-unconfirmed");
+      queue.settle(threadId, id, error instanceof ModelPolicyError ? "queued" : "unknown", error instanceof ModelPolicyError ? "model-restricted" : "steer-delivery-unconfirmed");
       this.emitQueueChanged(threadId);
       throw error;
     }
@@ -3227,7 +3245,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly sessionMcpInitial = new Map<string, { reservation: SessionMcpCreation; inputId?: string }>();
   private readonly sessionMcpRetirements = new Map<string, RpcRecord>();
   private readonly sessionMcpConfigurations = new Map<string, unknown>();
-  private readonly executionEnvironments = new Map<string, ExecutionEnvironmentSnapshot>();
+  // A recovered creation attests its owner, but not a freshly applied configuration key.
+  private readonly executionEnvironments = new Map<string, { readonly owner: string; readonly key?: string }>();
   private readonly environmentCreations = new Map<string, ExecutionEnvironmentSnapshot>();
   private readonly initialEnvironmentThreads = new Set<string>();
   private async canInjectEnvironment(threadId?: string): Promise<boolean> {
@@ -3279,18 +3298,28 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private async prepareSessionMcp(threadId: string, inputId?: string, executionId?: string): Promise<void> {
     if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment || this.ephemeralThreads.has(threadId)) return;
-    const keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
-    if (keepInitialEnvironment) {
-      const runtime = this.options.executionEnvironment!;
-      const current = runtime.snapshot(runtime.execution('local-codex', threadId, inputId));
-      if (current.owner !== this.executionEnvironments.get(threadId)?.owner) throw new Error("Environment belongs to another account or project; start a new session");
-    }
+    let keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
     let initial = this.sessionMcpInitial.get(threadId);
-    if (!initial && this.provisionalThreads?.get(threadId)?.phase === "created") {
+    const creation = this.provisionalThreads?.get(threadId);
+    if (!initial && creation?.phase === "created") {
       const generation = this.sessionMcpGeneration;
       const reservation = await this.options.restoreSessionMcp?.(threadId);
       if (generation !== this.sessionMcpGeneration) throw new Error("Thread creation belongs to an expired connection");
       if (reservation) { initial = { reservation }; this.sessionMcpInitial.set(threadId, initial); }
+    }
+    if (!keepInitialEnvironment && this.options.executionEnvironment && inputId
+      && creation?.phase === "created" && (initial || !this.options.sessionMcp)) {
+      if (!creation.environmentOwner) throw new Error("Environment belongs to another account or project; start a new session");
+      // Native still owns the creation-time environment. Preserve it without
+      // claiming that the current vault configuration has already been applied.
+      this.executionEnvironments.set(threadId, { owner: creation.environmentOwner });
+      this.initialEnvironmentThreads.add(threadId);
+      keepInitialEnvironment = true;
+    }
+    if (keepInitialEnvironment) {
+      const runtime = this.options.executionEnvironment!;
+      const current = runtime.snapshot(runtime.execution('local-codex', threadId, inputId));
+      if (current.owner !== this.executionEnvironments.get(threadId)?.owner) throw new Error("Environment belongs to another account or project; start a new session");
     }
     if (initial && !this.sessionMcpRetirements.has(threadId) && (!inputId || !initial.inputId || initial.inputId === inputId)) {
       if (inputId) {

@@ -43,6 +43,7 @@ export interface HeadlessServerExtensionOptions {
 }
 
 export function createHeadlessModelServicesExtension(options: {
+  readonly fetcher?: typeof fetch;
   readonly requestHost: HostProtocolRequest;
   readonly hostId: string;
 }): TrustedExtensionDefinition {
@@ -58,7 +59,16 @@ export function createHeadlessModelServicesExtension(options: {
       platforms: ["web"],
       activationEvents: ["onStartupFinished"],
     },
-    activate(api) {
+    async activate(api) {
+      let active=true;
+      api.subscriptions.add(()=>{active=false;});
+      await import('./model-policy-view').then(async module=>{
+        const document=await module.readModelPolicy(options.fetcher);
+        if(!active || !document.canManage)return;
+        api.views.register({id:'opencraft.headless-model-services.policy.view',title:'Model usage restrictions',viewType:'opencraft.headless-model-services.policy',platforms:['web']});
+        api.settings.registerPage({id:'opencraft.headless-model-services.policy',title:'Model usage restrictions',titleMessage:{id:'modelPolicy.title',defaultMessage:'Model usage restrictions'},viewId:'opencraft.headless-model-services.policy.view',group:'Server',groupMessage:{id:'settings.groups.server',defaultMessage:'Server'},icon:'brain',platforms:['web']});
+        api.internal.register('platformViewRenderer',{viewType:'opencraft.headless-model-services.policy',Component:module.createModelPolicyView(options.requestHost,options.hostId,options.fetcher)});
+      }).catch(()=>{});
       const service = new LocalAgentSettingsService(options.requestHost, options.hostId);
       const controller = new ModelServicesController(service);
       api.views.register({ id: "opencraft.headless-model-services.view", title: "模型服务", viewType: "opencraft.headless-model-services", platforms: ["web"] });
