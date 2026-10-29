@@ -56,6 +56,9 @@ async function copyPayload(from, to) {
 export async function cachedRuntime({ repositoryRoot, name, destination, build,
   cacheRoot = process.env.OPENCRAFT_PACKAGE_CACHE_DIR, log = line => console.error(line) }) {
   const started = performance.now();
+  // This component exclusively owns its staging directory. Stale files from a
+  // retry must neither contaminate a new cache entry nor cause false misses.
+  await rm(destination, { recursive: true, force: true });
   if (!cacheRoot) return build(destination);
   const key = await runtimeCacheKey(repositoryRoot, name);
   const parent = join(cacheRoot, name), entry = join(parent, key);

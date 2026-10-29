@@ -59,3 +59,12 @@ test('failed builds never publish; unusable cache falls back to fresh payload', 
   await cachedRuntime({ ...f.options, cacheRoot: blocked, destination: join(f.root, 'fresh') });
   assert.equal(await readFile(join(f.root, 'fresh/cli'), 'utf8'), 'locked payload');
 });
+
+test('reusing a staging destination clears prior release files without rebuilding a valid cache', async t => {
+  const f = await fixture(t), destination = join(f.root, 'reused');
+  await cachedRuntime({ ...f.options, destination });
+  await writeFile(join(destination, 'old-release-data'), 'stale');
+  await cachedRuntime({ ...f.options, destination });
+  assert.equal(f.builds(), 1);
+  assert.deepEqual((await readdir(destination)).sort(), ['cli', 'node_modules']);
+});
