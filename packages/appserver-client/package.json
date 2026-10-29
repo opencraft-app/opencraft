@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./transport": "./src/transport.ts",
     "./utf8": "./src/utf8.ts",
-    "./clock": "./src/clock.ts"
+    "./clock": "./src/clock.ts",
+    "./collaboration": "./src/collaboration.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

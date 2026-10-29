@@ -122,7 +122,8 @@ input.on("line", line => {
     if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
-    const items = (seededHistory.has(message.params.threadId) ? threadTurns.get(message.params.threadId).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    if (message.params.sortDirection === 'desc') items.reverse();
     const offset = message.params.cursor ? Number(message.params.cursor) : 0;
     const limit = message.params.limit ?? 100;
     send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });

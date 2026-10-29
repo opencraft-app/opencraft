@@ -23,6 +23,7 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
+import { buildConversationCli } from './build-conversation-cli.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false }) {
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
@@ -59,6 +60,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const html = await readFile(indexPath, 'utf8');
   await writeFile(indexPath, html.replace('</head>', `<meta name="opencraft-web-updates" content="/__opencraft_updates">${resources ? `<meta name="opencraft-web-resources" content="${web.buildId}">` : ''}</head>`));
   manifest.version = version;
+  await buildConversationCli(join(packageRoot, 'runtime/opencraft-cli.mjs'));
   manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));

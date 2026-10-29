@@ -1,0 +1,8 @@
+{
+  "name": "@opencraft/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": { "@opencraft/appserver-client": "0.1.0", "@opencraft/appserver-protocol": "0.1.0", "ws": "^8.18.3" }
+}

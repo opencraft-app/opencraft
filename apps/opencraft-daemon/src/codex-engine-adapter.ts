@@ -1,6 +1,7 @@
 import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { ExecutionLeaseStore, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
@@ -237,7 +238,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
-        ...(collaboration ? {"opencraft/collaboration": {version:1,read:true,queue:true,steer:true}} : {}),
+        ...(collaboration ? {"opencraft/collaboration": COLLABORATION_CAPABILITIES} : {}),
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -1183,12 +1184,20 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (message.method === COLLABORATION_METHOD) {
         try {
           this.validateSubmissionContext(context);
-          if (!this.options.collaboration || !context.actorContext) throw new Error("Authenticated conversation access required");
+          if (!this.options.collaboration) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+          if (!context.actorContext) throw Object.assign(new Error('actor_authentication_required'), {status:401,code:'actor_authentication_required'});
           context.resourceOwner?.assertCurrent();
           const result = await this.options.collaboration.command(context.actorContext, record(message.params));
           context.resourceOwner?.assertCurrent();
           if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
-        } catch { this.emit({id,error:{code:-32070,message:"Conversation operation could not be confirmed. Review its receipt before retrying."}},clientId); }
+        } catch (error) {
+          const fault = error as { status?: number; code?: unknown };
+          const code = fault?.code === -32601 ? 'unsupported_capability' : fault?.code;
+          const status = fault?.code === -32601 ? 409 : fault?.status;
+          const known = typeof code === 'string' && /^[a-z_]{1,80}$/u.test(code) && [400,401,403,404,409,503].includes(status ?? 0);
+          this.emit({id,error:{code:-32070,message:"Conversation operation could not be confirmed. Review its receipt before retrying.",
+            ...(known ? {data:{code,status}} : {})}},clientId);
+        }
         return;
       }
       if (message.method.startsWith("opencraft/schedules/")) {
