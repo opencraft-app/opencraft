@@ -1,8 +1,11 @@
 import { fault } from '../observability-contract/index.mjs';
-export const queryDefinitionRevision = 'observe-v1.2.0';
+export const queryDefinitionRevision = 'observe-v1.3.0';
 const latency = 'histogram_quantile(0.95, sum by (le, operation, cache, engine) (rate(opencraft_interactive_operation_duration_seconds_bucket[5m])))';
 /** This is the only expression registry, shared by Observe and generated provisioning. */
 export const definitions = Object.freeze({
+  'connection.update_disconnections': { title: '每次发布断开的连接', kind: 'exact_domain_aggregation', promql: 'opencraft_gateway_update_disconnections', unit: 'connections', windowSemantics: 'captured_updates_7d' },
+  'connection.person_downtime': { title: '每人每日断开时长（UTC日）', kind: 'exact_domain_aggregation', promql: 'opencraft_person_connection_downtime_seconds', unit: 'seconds', windowSemantics: 'observed_interval_union_per_person_utc_day' },
+  'connection.unfinished': { title: '尚未观察到恢复完成', kind: 'exact_domain_aggregation', promql: 'opencraft_person_connection_unfinished', unit: 'episodes', windowSemantics: 'captured_outages_without_terminal' },
   'platform.status': { title: '新连接', kind: 'resource_sample', promql: 'opencraft_availability_success', unit: 'boolean' },
   'collection.freshness': { title: '采集', kind: 'resource_sample', promql: 'opencraft_producer_age_seconds', unit: 'seconds' },
   'availability.ratio': { title: '成功率', kind: 'exact_domain_aggregation', promql: 'opencraft_availability_ratio', unit: 'ratio' },

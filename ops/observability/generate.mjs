@@ -121,6 +121,9 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
     {
       title: 'RPC 依赖与网关通信',
       panels: [
+        { key: 'connection.update_disconnections', legendFormat: '{{build}} / {{update}}', description: '停止前实际仍打开的AppHost/AppServer连接数，绑定本次发布。缺失回执为未知。' },
+        { key: 'connection.person_downtime', legendFormat: '{{actor}} / {{day}}', description: '经认证真人的连接丢失至完整恢复时长；同人多页区间取并集，跨UTC日拆分。未完成周期仅累计已观察区间。' },
+        { key: 'connection.unfinished', legendFormat: '{{actor}} / {{day}}', description: '尚未捕获完整恢复终态，不能将缺失样本解释为零中断。' },
         {
           key: 'dependencies.summary',
           legendFormat: '{{method}} [{{outcome}}]',

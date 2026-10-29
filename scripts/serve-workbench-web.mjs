@@ -462,7 +462,17 @@ export async function createWorkbenchWebServer({
     catch { /* Observability must not affect the connection. */ }
   };
 
-  const server = createServer(async (request, response) => {
+  let closing = false;
+  const pendingRequests = new Set();
+  const trackRequest = handler => (...args) => {
+    const operation = Promise.resolve().then(() => handler(...args));
+    pendingRequests.add(operation);
+    void operation.then(() => pendingRequests.delete(operation), () => {
+      pendingRequests.delete(operation); args[1]?.destroy?.();
+    });
+  };
+  const server = createServer(trackRequest(async (request, response) => {
+    if (closing) { response.writeHead(503, {connection:'close'}); response.end('{}'); return; }
     // Capture bounded error codes only, including admission failures before the
     // IM handler. Never retain request bodies, headers, identities or credentials.
     if ((request.url ?? "").split("?")[0] === "/__opencraft_im") {
@@ -734,7 +744,7 @@ export async function createWorkbenchWebServer({
       if (!response.headersSent) sendJson(response, 500, { ok: false, error: "Internal server error" });
       else response.destroy(error);
     }
-  });
+  }));
 
   // A supported 32 MiB attachment expands to ~43 MiB in Base64, then travels
   // inside JSON-RPC and (for Codex) an AppHost envelope. Keep a bounded 48 MiB
@@ -758,7 +768,8 @@ export async function createWorkbenchWebServer({
     }
   }, webSocketHeartbeatIntervalMs) : null;
   heartbeat?.unref();
-  server.on("upgrade", async (request, socket, head) => {
+  server.on("upgrade", trackRequest(async (request, socket, head) => {
+    if (closing) { socket.destroy(); return; }
     if (hubService?.node?.handleUpgrade(request, socket, head)) return;
     let url;
     try {
@@ -806,6 +817,7 @@ export async function createWorkbenchWebServer({
     } catch {
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n"); return;
     }
+    if (closing) { socket.destroy(); return; }
     if (admissionStatus !== 204) {
       logAppHost("upgrade-rejected", { reason: "identity-admission", code: admissionStatus });
       socket.end(`HTTP/1.1 ${admissionStatus} ${admissionStatus === 401 ? "Unauthorized" : "Forbidden"}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n`); return;
@@ -918,7 +930,7 @@ export async function createWorkbenchWebServer({
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
       return;
     }
-    if (socket.destroyed) return;
+    if (closing || socket.destroyed) { socket.destroy(); return; }
     if (!actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
@@ -934,7 +946,7 @@ export async function createWorkbenchWebServer({
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
       });
     });
-  });
+  }));
 
   return {
     server,
@@ -950,18 +962,34 @@ export async function createWorkbenchWebServer({
         });
       });
     },
-    close() {
+    close(update = null, retireIngress = () => undefined) {
+      closing = true;
       speechService?.close();
       remoteBrowserService?.close();
       unsubscribeRevocation?.();
       if (heartbeat !== null) clearInterval(heartbeat);
-      for (const client of websocketServer.clients) client.terminate();
+      const disconnected = [...websocketServer.clients].filter(client => client.readyState === WebSocket.OPEN).length;
+      const receipt = observability?.gatewayShutdown?.(disconnected, update)?.catch(() => {});
+      const clients = [...websocketServer.clients];
+      const clientClosures = clients.map(client => new Promise(done => {
+        if (client.readyState === WebSocket.CLOSED) { done(); return; }
+        client.once('close',done);
+        if (update && client.readyState === WebSocket.OPEN) client.close(1012);
+        else client.terminate();
+      }));
+      let deadline;
+      const closeClients = Promise.race([Promise.allSettled(clientClosures),new Promise(done => {deadline=setTimeout(done,250);})])
+        .finally(()=>{clearTimeout(deadline);for(const client of clients)if(client.readyState!==WebSocket.CLOSED)client.terminate();});
+      // Carrier sockets must outlive the restart close frame. Conversely,
+      // externally owned Hub upgrades must retire before HTTP close can finish.
+      const ingressClosed = closeClients.then(retireIngress);
+      const requestsClosed = ingressClosed.then(() => Promise.allSettled([...pendingRequests]));
       for (const client of desktopWebSockets.clients) client.terminate();
       websocketServer.close();
       desktopWebSockets.close();
-      return new Promise((resolvePromise, reject) => {
+      return Promise.all([receipt, requestsClosed, new Promise((resolvePromise, reject) => {
         server.close((error) => error ? reject(error) : resolvePromise());
-      });
+      })]).then(() => undefined);
     },
   };
 }

@@ -23,6 +23,21 @@ function fixture(changed = () => {}) {
   return { owner, timers, runs, backoffs, fire, get invalidations() { return invalidations; } };
 }
 
+test('planned gateway updates cap retry gaps for thirty seconds, then restore normal backoff', async () => {
+  const f = fixture();
+  const initial = f.owner.connect(); await tick(); f.runs[0]!.resolve({}); await initial;
+  f.owner.lost(new Error('planned restart'), false, true);
+  let elapsed = 0;
+  while (elapsed < 30_000) {
+    const delay = f.backoffs.at(-1)!;
+    assert.ok(delay <= 2_000, 'the next attempt is at most two seconds away during the update window');
+    await f.fire(delay); elapsed += delay;
+    f.owner.lost(new Error('not ready yet'));
+  }
+  assert.ok(f.backoffs.at(-1)! > 2_000, 'a prolonged outage returns to normal backoff');
+  f.owner.dispose();
+});
+
 test("revoked cold initialization cannot commit ready or cancel its retry", async () => {
   const f = fixture();
   const first = f.owner.connect(); await tick();

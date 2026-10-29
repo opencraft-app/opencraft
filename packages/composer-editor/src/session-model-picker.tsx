@@ -97,7 +97,7 @@ export function SessionModelPicker({ catalog, label, selected, disabled, open, o
           {catalog?.onConfigureModels ? <div className="opencraft-composer-model-configure-footer"><DropdownMenu.Separator className="opencraft-composer-selection-menu__separator" />
             <DropdownMenu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureModels}><Pencil size={16} aria-hidden="true" /><FormattedMessage id="composer.model.configure" defaultMessage="Add more models" /></DropdownMenu.Item>
           </div> : null}
-        {models.some(m=>m.policyRestricted) ? <div className="opencraft-composer-model-status__hint"><FormattedMessage id="modelPolicy.hint" defaultMessage="Some options are disabled by your administrator." /></div> : null}
+        {catalog?.policyRestricted || models.some(m=>m.policyRestricted) ? <div className="opencraft-composer-model-status__hint"><FormattedMessage id="modelPolicy.hint" defaultMessage="Some options are disabled by your administrator." /></div> : null}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </div>

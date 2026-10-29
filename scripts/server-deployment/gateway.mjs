@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { MessagePortAppHostClient } from "../../packages/app-host-client/src/index.ts";
 import { OpenCraftDaemonClientManager } from "../../apps/workbench-electron/src/daemon-client.ts";
+import { readGatewayUpdateIntent } from './gateway-update-intent.mjs';
 
 const releaseRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 function required(name) {
@@ -173,24 +174,30 @@ sockets.on("connection", (socket, hostId) => {
 server.listen(port, "127.0.0.1", () => {
   console.log(`[appserver-gateway] ws://127.0.0.1:${port}/rpc`);
 });
-const shutdown = async () => {
-  if (stopping) return;
+let shutdownOperation;
+const shutdown = (update = null) => {
+  if (shutdownOperation) return shutdownOperation;
   stopping = true;
-  readiness?.close();
-  readiness = undefined;
-  const serverClosed = new Promise((done) => server.close(done));
-  const daemonClosed = daemon.shutdown();
-  for (const close of [...activeClosers]) close();
-  let closeDeadline;
-  await Promise.race([
-    Promise.allSettled([...pendingClosures]),
-    new Promise((resolveDone) => { closeDeadline = setTimeout(resolveDone, 2_000); }),
-  ]);
-  clearTimeout(closeDeadline);
-  for (const socket of sockets.clients) socket.terminate();
-  sockets.close();
-  server.closeAllConnections();
-  await Promise.all([serverClosed, daemonClosed]);
+  shutdownOperation = Promise.resolve().then(async () => {
+    if (update) for (const socket of sockets.clients) if (socket.readyState === WebSocket.OPEN) socket.close(1012);
+    readiness?.close();
+    readiness = undefined;
+    const serverClosed = new Promise((done) => server.close(done));
+    const daemonClosed = daemon.shutdown();
+    for (const close of [...activeClosers]) close();
+    let closeDeadline;
+    await Promise.race([
+      Promise.allSettled([...pendingClosures]),
+      new Promise((resolveDone) => { closeDeadline = setTimeout(resolveDone, 2_000); }),
+    ]);
+    clearTimeout(closeDeadline);
+    for (const socket of sockets.clients) socket.terminate();
+    sockets.close();
+    server.closeAllConnections();
+    await Promise.all([serverClosed, daemonClosed]);
+  });
+  return shutdownOperation;
 };
-process.once("SIGINT", () => void shutdown().then(() => process.exit(0)));
-process.once("SIGTERM", () => void shutdown().then(() => process.exit(0)));
+const stop = () => void readGatewayUpdateIntent().then(update => shutdown(update)).then(() => process.exit(0), error => {console.error(error);process.exit(1);});
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);

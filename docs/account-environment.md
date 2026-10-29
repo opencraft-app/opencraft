@@ -49,6 +49,16 @@ execution lease, never the most recent viewer or a working directory.
 | ACP | Each session owns a native transport, with values supplied only to spawn's env. Saved routing/session JSON has no values. An existing session keeps its environment until reopened; switching employee or project requires a new session. Handoff occupancy includes every native PID and pending call. |
 | Workbench terminal | The trusted gateway supplies HostProcessService with an authenticated account/project scope. All attach/control/list requests use the terminal's original thread scope; another employee or project cannot retrieve/control it. Scope-specific notifications retain logical-client identity and admission lifetime. |
 
+Before the first accepted Turn, the creation record persists only the account,
+Host and Project owner fingerprint, alongside the provisional routing evidence.
+After a Host replacement, the same admitted owner can bind the restored MCP
+reservation and use the native creation environment without resuming nonexistent
+history. A changed or unknown owner refuses input before any credential binding
+or native dispatch. The stored fingerprint contains no variable values or applied
+configuration key; later idle executions still refresh the current environment.
+Version 1 creation records migrate with unknown ownership rather than inferring
+it from the current viewer.
+
 Values never enter argv, browser configuration, shared process.env or diagnostic
 payloads. Native stderr is consumed privately rather than forwarded into platform
 logs; adapter diagnostics redact live snapshots and native ACP errors omit private
