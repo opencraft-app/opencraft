@@ -114,6 +114,7 @@ import {
 import {
   createReplicaConversationRuntime,
   createConversationOutbox,
+  SubmissionNotDispatchedError,
   type ConversationOutbox,
   type ConversationCommandPort,
   type ConversationRuntime,
@@ -122,6 +123,7 @@ import {
   type TurnInterruptProvenance,
 } from "@opencraft/chat-runtime";
 import {
+  SubmitCompileError,
   AppServerFuzzyFileSearchController,
   AppServerInteractionBroker,
   AppServerInteractionLedger,
@@ -449,6 +451,7 @@ export interface AppServerThreadRuntimeLease {
   startQueuedSubmission(queuedSubmissionId?: string): Promise<TurnId>;
   steerQueuedSubmission(queuedSubmissionId: string): Promise<TurnId>;
   loadOlder(): Promise<void>;
+  loadItemDetails(itemIds: readonly string[], signal?: AbortSignal): Promise<void>;
   getNavigation(): ConversationNavigationSource;
   release(): void;
 }
@@ -779,8 +782,19 @@ export function createAppServerWorkbenchRuntime(
     return client;
   };
 
+  // One runtime belongs to one Host/account. Keep the latest successful pages
+  // as advisory capability hints, without authorizing a model selection.
+  const recentModelPages = new Map<string, ModelListResponse>();
+  const modelPageKey = (scope: string | null | undefined, cursor: string | null | undefined) => JSON.stringify([scope ?? null, cursor ?? null]);
+  const rememberModelPage = (params: ModelListParams, page: ModelListResponse) => {
+    const key = modelPageKey(params.threadId, params.cursor);
+    recentModelPages.delete(key);
+    recentModelPages.set(key, page);
+    if (recentModelPages.size > 100) recentModelPages.delete(recentModelPages.keys().next().value!);
+    return page;
+  };
   const listSelectableModels = async (params: ModelListParams): Promise<ModelListResponse> => {
-    const page = await requireClient().request("model/list", params);
+    const page = rememberModelPage(params, await requireClient().request("model/list", params));
     if (!config.readSelectableModels) return page;
     const choices = new Map((await config.readSelectableModels(page.data) ?? []).map((choice) => [choice.id, choice]));
     return { ...page, data: page.data.flatMap((model) => {
@@ -1216,7 +1230,7 @@ export function createAppServerWorkbenchRuntime(
         const status = view.thread?.status;
         const waiting = humanInteractionWaitReason(status) !== null;
         if (!waiting || view.pendingInteractions.length > 0) interactionRecoveryKey = null;
-        else if (currentClient.initializeResult?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION]) {
+        else if (executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, SHARED_INTERACTIONS_EXTENSION)?.version === 1) {
           const key = `${view.connectionGeneration}:${view.turns.at(-1)?.id ?? "thread"}`;
           if (interactionRecoveryKey !== key) {
             interactionRecoveryKey = key;
@@ -1767,7 +1781,7 @@ export function createAppServerWorkbenchRuntime(
         if (status.state !== "closed" && status.state !== "failed") return;
         if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
         connection.lost(status.reason === undefined ? new Error("Host connection lost") : new Error(status.reason),
-          status.failure?.recovery === "manual");
+          status.failure?.recovery === "manual", status.failure?.diagnostic?.closeCode === 1012 || status.failure?.code === 'APP_SERVER_RESTARTING');
       });
       removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(() => {
         if (disposed || config.autoReconnect === false || !connection.admitRecoveryHint()) return;
@@ -1840,7 +1854,10 @@ export function createAppServerWorkbenchRuntime(
           let cursor: string | null = null;
           const seen = new Set<string>();
           do {
-            const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
+            const params = {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})};
+            const page: ModelListResponse = recentModelPages.get(modelPageKey(scope, cursor))
+              ?? recentModelPages.get(modelPageKey(null, cursor))
+              ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
             if (model) {
               const inputModalities = modelInputModalities(model.inputModalities);
@@ -1852,15 +1869,16 @@ export function createAppServerWorkbenchRuntime(
                 } catch {
                   // Model Settings is advisory when its remote read is unavailable; the Host still validates the model.
                 }
-                if (choices && !choices.some((choice) => choice.id === model.id)) throw new Error("所选模型已不可用，请重新选择");
+                if (choices && !choices.some((choice) => choice.id === model.id)) throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", "所选模型已不可用，请重新选择");
               }
               // The Host owns reasoning settings in embedded mode as well.
-              if (useHostDefault) return { inputModalities, model: model.model };
+              if (useHostDefault) return { inputModalities, model: model.model, serviceTiers: (model.serviceTiers?.length ? model.serviceTiers.map(tier => tier.id) : model.additionalSpeedTiers) ?? [] };
               return {
                 inputModalities,
+                serviceTiers: (model.serviceTiers?.length ? model.serviceTiers.map(tier => tier.id) : model.additionalSpeedTiers) ?? [],
                 ...(!modelId ? { model: model.model } : {}),
                 reasoning: reasoningCapability(
-                  model.supportedReasoningEfforts.map(e => e.reasoningEffort),
+                  [...model.supportedReasoningEfforts.map(e => e.reasoningEffort), ...(model.policyRestrictedEfforts ?? [])],
                   model.defaultReasoningEffort,
                 ),
               };
@@ -1868,7 +1886,7 @@ export function createAppServerWorkbenchRuntime(
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          throw new Error(useHostDefault ? "当前 Bot 未配置可用的默认模型，请在模型设置中检查" : modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
+          return {}; // An incomplete catalog must not block submission.
         },
         dynamicTools: declaredDynamicTools(),
         onInterrupt: (event) => console.info("[turn-interrupt] client request", event),
@@ -2509,6 +2527,10 @@ export function createAppServerWorkbenchRuntime(
           if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
           return binding.runtime.loadOlder();
         },
+        loadItemDetails: (itemIds, signal) => {
+          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+          return requireSession().resume.loadItemDetails(threadId, itemIds, signal);
+        },
         getNavigation: () => binding.navigation,
         release() {
           if (released) return;
@@ -2533,15 +2555,24 @@ export function createAppServerWorkbenchRuntime(
         throw new Error("This New chat Draft targets a different Host");
       }
       await runtime.connect();
-      if (commandPort === null)
-        throw new Error("AppServer command port is unavailable");
-      const durability = client?.initializeResult?.capabilities?.extensions?.[
-        OPENCRAFT_THREAD_START_DURABILITY_EXTENSION
-      ] as { version?: unknown; durableAfter?: unknown } | undefined;
-      return durability?.version === 1
-        && durability.durableAfter === "first-turn-accepted"
-        ? commandPort.submit(intent)
-        : commandPort.createThread(intent);
+      const create = () => {
+        if (disposed || commandPort === null)
+          throw new Error("AppServer command port is unavailable");
+        const durability = client?.initializeResult?.capabilities?.extensions?.[
+          OPENCRAFT_THREAD_START_DURABILITY_EXTENSION
+        ] as { version?: unknown; durableAfter?: unknown } | undefined;
+        return durability?.version === 1 && durability.durableAfter === "first-turn-accepted"
+          ? commandPort.submit(intent) : commandPort.createThread(intent);
+      };
+      try { return await create(); }
+      catch (cause) {
+        if (!(cause instanceof SubmissionNotDispatchedError)
+          && !(cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED")) throw cause;
+        // Join the Host's recovery owner; only an explicitly unsent creation
+        // can cross this boundary, and it gets at most one fresh attempt.
+        await runtime.connect();
+        return create();
+      }
     },
     async submit(intent) {
       if (intent.target.type === "new-thread") return runtime.createThread(intent);

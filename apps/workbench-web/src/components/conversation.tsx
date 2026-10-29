@@ -104,6 +104,8 @@ import {
   ConversationInteractionContext,
   AsyncQuestionContext,
   ConversationDetailContext,
+  HistoryItemDetailContext,
+  useHistoryItemDetail,
   DEFAULT_TOOL_ACTIVITY_PRESENTERS,
   SubagentNavigationContext,
   ToolActivityPresenterContext,
@@ -176,6 +178,7 @@ function FileChangeActivity({
   const hasDiff = change.unifiedDiff !== null && change.unifiedDiff.trim().length > 0;
   const restoreKey = `patch:${JSON.stringify([block.id, change.path, change.movePath])}`;
   const [open, setOpen] = useActivityOpen(presentation.state === "running", false, restoreKey);
+  useHistoryItemDetail(block, open);
   const target = change.movePath ?? change.path;
   const openFile = useCallback(() => {
     const decision = resolveStandardChatResource(target, {
@@ -207,7 +210,7 @@ function FileChangeActivity({
         ? <><b className="is-added">+{change.additions ?? 0}</b><i className="is-deleted">−{change.deletions ?? 0}</i></>
         : null}
     >
-      {hasDiff ? <UnifiedDiffPreview diff={change.unifiedDiff!} restoreKey={restoreKey} /> : null}
+      {hasDiff || block.historyDetail ? <UnifiedDiffPreview diff={change.unifiedDiff ?? ""} restoreKey={restoreKey} /> : null}
     </ActivityDisclosure>
   );
 }
@@ -655,6 +658,7 @@ export interface ConversationProps {
   readonly documentContext?: ConversationDocumentContextValue;
   readonly initialRestoreSnapshot?: ConversationRestoreSnapshot | null;
   readonly onRestoreSnapshotChange?: (snapshot: ConversationRestoreSnapshot) => void;
+  readonly onLoadItemDetails?: (ids: readonly string[], signal: AbortSignal) => Promise<void>;
   readonly onLoadOlder?: () => void | "stop" | Promise<void | "stop">;
   readonly loadingOlder?: boolean;
   readonly onContinueTurn?: (turnId: TurnId) => void;
@@ -732,6 +736,7 @@ export function Conversation({
   initialRestoreSnapshot = null,
   onRestoreSnapshotChange,
   onLoadOlder,
+  onLoadItemDetails,
   loadingOlder = false,
   onOpenSubagent,
   onContinueTurn,
@@ -1025,6 +1030,7 @@ export function Conversation({
     <ConversationEntryMotionContext.Provider value={allowEntryMotion}>
     <VisibleTurnReceiptContext.Provider value={onTerminalResultVisible}>
     <DisclosureReflowContext.Provider value={viewportOwner.beginReflowAnchor}>
+    <HistoryItemDetailContext.Provider value={onLoadItemDetails ?? null}>
     <ConversationDetailContext.Provider value={threadDetailLevel}>
     <ToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
       <ToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
@@ -1118,6 +1124,7 @@ export function Conversation({
       </ToolCallIconRendererContext.Provider>
     </ToolActivityPresenterContext.Provider>
     </ConversationDetailContext.Provider>
+    </HistoryItemDetailContext.Provider>
     </DisclosureReflowContext.Provider>
     </VisibleTurnReceiptContext.Provider>
     </ConversationEntryMotionContext.Provider>

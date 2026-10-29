@@ -1,4 +1,5 @@
 {
+  "turnRecovery.scheduled": "模型暂时不可用，已安排自动重试（最多 {limit} 次）。",
   "chat.continue.failed": "无法确认回复是否已继续，请查看会话后重试。",
   "composer.model.failedTitle": "暂时无法加载模型",
   "composer.model.emptyTitle": "还没有可用模型",
@@ -127,6 +128,9 @@
   "settings.back": "返回应用",
   "settings.sections": "设置分类",
   "settings.archived": "已归档会话",
+  "settings.archived.loading": "正在读取已归档会话…",
+  "settings.archived.empty": "没有已归档的会话。",
+  "settings.archived.refresh": "刷新",
   "settings.plugins": "插件",
   "settings.plugins.description": "查看已安装的插件及其当前状态。",
   "settings.laboratory": "实验室",
@@ -1113,5 +1117,13 @@
   "fullUpgrade.blocked": "升级条件未满足",
   "fullUpgrade.stopping": "正在安全停止",
   "fullUpgrade.cancel": "取消升级",
-  "fullUpgrade.stop": "停止后续升级"
+  "fullUpgrade.stop": "停止后续升级",
+  "chat.archived.restore": "恢复会话",
+  "chat.archived.restoring": "正在恢复…",
+  "modelPolicy.title": "模型使用限制",
+  "modelPolicy.models": "禁用模型",
+  "modelPolicy.efforts": "禁用思考深度",
+  "modelPolicy.save": "保存",
+  "modelPolicy.error": "无法保存限制，请重新加载后重试。",
+  "modelPolicy.hint": "部分选项已被管理员禁用。"
 }

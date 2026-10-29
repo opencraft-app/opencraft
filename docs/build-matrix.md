@@ -750,3 +750,44 @@ The startup-resource policy rejects this module in the required bootstrap graph;
 initial Thread baseline and cancellation admission remain in the Session core.
 Both ordinary hidden-map builds and release builds retain their existing asset
 naming, minification, startup byte limits and separate browser compatibility checks.
+
+## Full-runtime packaging cache
+
+On Linux x64, `OPENCRAFT_PACKAGE_CACHE_DIR` optionally reuses assembled Codex/DSH
+runtime dependency closures. Keys include pinned manifests/locks, transformation
+and patch sources, Node/ABI, platform, architecture and libc. Cached payloads
+are copied to independent files and their complete inventory, SHA256 and modes
+are verified before use; a missing or invalid entry rebuilds normally. The
+cache is trusted build infrastructure and must only be writable by the build
+owner. Remove its directory while idle to force a cold build.
+
+Core and release identities, provenance, signing, final compression and archive
+verification are generated for every release. `OPENCRAFT_PACKAGE_TIMINGS=1`
+emits inventory, npm-pack and archive-verification durations to stderr; runtime
+cache messages report hit/miss duration. The JSON packaging result is unchanged.
+
+### Single-selection streamed full-release archives
+
+Signed full releases reserve their two signature metadata paths before running
+npm's installed `npm-packlist` rules once. The manifest and signature replace
+those placeholders in that same staging transaction; the selected names and
+npm's original tar options/order then drive a streaming archive writer. Default
+gzip level 9 produces the same bytes as `npm pack`, including bin modes and
+bundled dependencies, without a second selection or a whole-archive buffer.
+
+`OPENCRAFT_PACKAGE_GZIP_LEVEL` accepts integers 1–9, default 9. A lower level
+trades larger transfers for less compression CPU. Signing, exclusive release
+identity, archive budgets and the final independent archive verification still
+apply. Changing compression for an already completed release cannot overwrite
+its bound integrity. Signed content inventories are always rebuilt per release.
+
+When `OPENCRAFT_PACKAGE_CACHE_DIR` is set, npm selection can reuse unchanged
+top-level directories. The key covers their names/types/link targets, every
+package/ignore/lock policy file in the staging tree, and npm/Node/toolchain identity.
+Only the root package version, `opencraftWeb.buildId` and `opencraftFullRelease`
+identity are normalized; ordinary file contents are still hashed on every build.
+Changed directories use the original npm walker; root manifests and ignore files
+are always processed. External or broken links disable reuse, and a damaged cache
+causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
+`[package-selection]` reports reuse and elapsed time. Removing the cache restores
+cold selection; this cache never replaces signing or independent archive checks.

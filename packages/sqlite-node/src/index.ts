@@ -2,3 +2,4 @@ export { openManagedDatabase, createMissingLegacyObjects, createSchemaValidator,
 export { type Migration, schemaFingerprint, transaction as sqliteTransaction } from "./migrations.js";
 export { SqliteLifecycleError, type SqliteLifecycleErrorKind } from "./errors.js";
 export { durableJson, assertRecoveryState } from "./recovery.js";
+export { acquireProcessWriter } from './writer-lock.js';

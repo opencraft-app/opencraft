@@ -56,26 +56,36 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
       return {component,availability:!latest?'missing':now()-latest.received>limits.freshnessMs?component==='web'?'no_recent_capture':'stale':'available',dataThrough:latest?new Date(latest.received).toISOString():null};});
     return {status:producers.every(p=>p.availability==='available')&&Object.values(backendHealth).every(v=>v==='available')?'ok':'unknown',coverage:producers.every(p=>p.availability==='available')&&Object.values(backendHealth).every(v=>v==='available')?'complete':'partial',producers,backends:{...backendHealth}};
   }
+  function availabilityStatus() {
+    const rows=store.availability();
+    return {status:!rows.length?'unknown':rows.some(row=>row.outcome!=='ok'&&now()-row.at<=limits.freshnessMs)?'degraded':rows.some(row=>now()-row.at>limits.freshnessMs)?'unknown':'ok',
+      targets:rows.map(row=>({...row,availability:now()-row.at>limits.freshnessMs?'stale':row.outcome==='ok'?'available':'unavailable'}))};
+  }
   function envelope(window) { return {schemaVersion,snapshotId:randomUUID(),deploymentId,queryDefinitionRevision,metricSchemaVersion:schemaVersion,
     window:{from:new Date(window.from).toISOString(),to:new Date(window.to).toISOString(),capturedAt:new Date(now()).toISOString(),dataThrough:new Date(now()).toISOString()},
-    ...coverage(),componentIdentityScope:'latest_observed_producer_per_component',components:store.producers().map(p=>({component:p.component,producerId:p.producer,availability:now()-p.received>limits.freshnessMs?'stale':'available',sourceRevision:p.identity.sourceRevision??null,buildId:p.identity.buildId??null,observedBy:p.identity.observedBy??'self',identitySource:p.identity.identitySource??'unknown',producerMode:p.identity.producerMode??'unknown',version:p.identity.version??null,observedAt:new Date(p.received).toISOString()})),
+    ...coverage(),collection:coverage(),...availabilityStatus(),componentIdentityScope:'latest_observed_producer_per_component',components:store.producers().map(p=>({component:p.component,producerId:p.producer,availability:now()-p.received>limits.freshnessMs?'stale':'available',sourceRevision:p.identity.sourceRevision??null,buildId:p.identity.buildId??null,observedBy:p.identity.observedBy??'self',identitySource:p.identity.identitySource??'unknown',producerMode:p.identity.producerMode??'unknown',version:p.identity.version??null,observedAt:new Date(p.received).toISOString()})),
     sampling:{operation:1,diagnostic:1},loss:{accepted:store.accepted,rejected:store.rejected,dropped:store.dropped,exportDropped,unobservableLoss:'unknown'},
     correlationGaps:[],evidenceExpiresAt:new Date(window.from+limits.retentionMs).toISOString() }; }
   async function query(name,input={},deadline=Date.now()+4200) {
     const definition=requireQuery(name), window=windowFor(input,now(),name==='usage.activity'?limits.retentionMs:limits.maxWindowMs);
     const result={...envelope(window),query:name,measurementKind:definition.kind,unit:definition.unit,windowSemantics:definition.windowSemantics??'selected_window'};
+    if(name==='platform.status')return {...result,values:result.targets.map(row=>({metric:{site:row.site,host:row.hostId,engine:row.engine},value:[window.to/1000,row.availability==='available'?'1':row.availability==='stale'?'-1':'0']}))};
         if(definition.promql) {
       const url=new URL('/api/v1/query',prometheus);url.searchParams.set('query',definition.promql);url.searchParams.set('time',String(window.to/1000));
       try {const response=await fetch(url,{signal:AbortSignal.timeout(Math.max(1,Math.min(4000,deadline-Date.now())))});if(!response.ok)throw Error();const value=await response.json();
-        if(value.status!=='success')throw Error();return {...result,evaluationAt:new Date(window.to).toISOString(),stepSeconds:15,expression:definition.promql,values:value.data.result};
+        if(value.status!=='success')throw Error();return {...result,...(name==='collection.freshness'?{status:coverage().status}:{}),evaluationAt:new Date(window.to).toISOString(),stepSeconds:15,expression:definition.promql,values:value.data.result};
       }catch{return {...result,status:'degraded',coverage:'partial',availability:'backend_unreachable',values:[]};}
     }
     return result;
   }
   async function snapshot(input={}) {
-    const window=windowFor(input,now()); const result=envelope(window);
-    const rows=store.events(window.from,window.to,now());
-    result.truncated=rows.length>limits.rows; result.events=rows.slice(0,limits.rows);
+    const window=windowFor(input,now(),input.ref?limits.retentionMs:limits.maxWindowMs); const result=envelope(window);
+    const rows=store.events(window.from,window.to,now(),limits.rows,input.ref??null);
+    result.eventSampleTruncated=rows.length>limits.rows; result.events=rows.slice(0,limits.rows);
+    result.eventSummary=store.eventSummary(window.from,window.to,now(),input.ref??null);
+    result.eventCount=result.eventSummary.reduce((sum,row)=>sum+Number(row.count),0);
+    result.timeline=store.lifecycle(window.from,window.to);
+    result.truncated=false; // Event details are sampled; the grouped counts cover every stored event.
     result.captureStatus=result.events.length?'captured':'no_capture';
     const operations=new Map();
     for(const event of result.events)if(event.kind==='operation'&&event.operationId){
@@ -90,8 +100,10 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
     const names=Object.keys(definitions).filter(name=>!['incident.read','baseline.compare'].includes(name));
     // One absolute deadline includes queued work; an unavailable backend never multiplies the CLI wait.
     const deadline=Date.now()+4000;let cursor=0;
+    const measurementsFrom=new Date(Math.max(window.from,window.to-limits.maxWindowMs)).toISOString();
+    result.measurementsWindow={from:measurementsFrom,to:result.window.to};
     await Promise.all(Array.from({length:Math.min(5,names.length)},async()=>{
-      while(cursor<names.length){const name=names[cursor++];result.measurements[name]=await query(name,{from:result.window.from,to:result.window.to},deadline);}
+      while(cursor<names.length){const name=names[cursor++];result.measurements[name]=await query(name,{from:measurementsFrom,to:result.window.to},deadline);}
     }));
     if(Object.values(result.measurements).some(value=>value.coverage!=='complete'))result.coverage='partial';
     result.findings=issues(result);return result;
@@ -106,6 +118,21 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
         if(p.identity.heapBytes!==undefined)lines.push(`opencraft_process_heap_bytes{component="${component}"} ${p.identity.heapBytes}`);
         if(p.identity.rssBytes!==undefined)lines.push(`opencraft_process_rss_bytes{component="${component}"} ${p.identity.rssBytes}`);}
     }
+    const labels=row=>`site="${row.site}",host="${row.hostId}",engine="${row.engine}"`;
+    for(const row of store.availability()) {
+      const age=Math.max(0,nowMs-row.at)/1000;
+      lines.push(`opencraft_availability_sample_age_seconds{${labels(row)}} ${age}`,
+        `opencraft_availability_success{${labels(row)}} ${age<=limits.freshnessMs/1000?(row.outcome==='ok'?1:0):-1}`,
+        `opencraft_availability_consecutive_failures{${labels(row)}} ${row.consecutiveFailures??0}`,
+        `opencraft_availability_last_success_timestamp_seconds{${labels(row)}} ${(row.lastSuccessAt??0)/1000}`);
+    }
+    for(const row of store.availabilityRatios(nowMs-300000,nowMs))lines.push(`opencraft_availability_ratio{${labels(row)}} ${row.ratio}`);
+    const errors=new Map();
+    for(const row of store.eventSummary(nowMs-300000,nowMs,nowMs).filter(row=>['failed','timeout'].includes(row.outcome))) {
+      const labels=`component="${row.component}",engine="${row.engine??'unknown'}",code="${row.errorCode??'unknown'}"`;
+      errors.set(labels,(errors.get(labels)??0)+Number(row.count));
+    }
+    for(const [labels,count] of errors)lines.push(`opencraft_observed_errors{${labels}} ${count}`);
     for(const row of store.progress()){lines.push(`opencraft_active_executions{engine="${row.engine}",stage="${row.stage}"} ${row.count}`,`opencraft_execution_last_progress_age_seconds{engine="${row.engine}",stage="${row.stage}"} ${Math.max(0,nowMs-Number(row.oldestProgressAt))/1000}`);}
     for(const row of store.queues())lines.push(`opencraft_queued_submissions{engine="${row.engine}"} ${row.count}`);
     lines.push(`opencraft_active_humans_24h ${store.activity(nowMs-86400000,nowMs).humans}`);
@@ -113,6 +140,16 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
     for(const row of store.executions(nowMs-86400000,nowMs))lines.push(`opencraft_executions{outcome="${row.outcome}"} ${row.count}`);
     const recoveries=store.recoveries(nowMs-86400000,nowMs);
     lines.push(`opencraft_recovery_episodes ${recoveries.value}`);
+    for (const row of store.gatewayDisconnections(nowMs-limits.retentionMs,nowMs)) {
+      if (!/^[a-zA-Z0-9_.:+-]{1,128}$/u.test(row.buildId ?? '') || !/^[a-zA-Z0-9_.:-]{1,128}$/u.test(row.updateId ?? '')) continue;
+      lines.push(`opencraft_gateway_update_disconnections{update="${row.updateId}",build="${row.buildId}"} ${row.count}`);
+    }
+    for (const row of store.connectionDowntime(nowMs-limits.retentionMs,nowMs)) {
+      if (!/^[a-f0-9]{64}$/u.test(row.actor)) continue;
+      const dimension = `actor="${row.actor}",day="${row.day}"`;
+      lines.push(`opencraft_person_connection_downtime_seconds{${dimension}} ${row.seconds}`,
+        `opencraft_person_connection_unfinished{${dimension}} ${row.unfinished}`);
+    }
     // Finite dimensions only. Counts persist across service restarts in the derived store.
     for(const row of store.db.prepare('SELECT name,dimension,value FROM metrics').all()) {
       if(row.name==='foreground_operation_bucket'){const [operation,cache,engine,le]=JSON.parse(row.dimension);lines.push(`opencraft_interactive_operation_duration_seconds_bucket{operation="${operation}",cache="${cache}",engine="${engine}",le="${le}"} ${row.value}`);}
@@ -144,10 +181,10 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
       if(url.pathname==='/snapshot'){json(res,200,await snapshot(input));return;}
       if(url.pathname==='/incident'){
         if(typeof input.ref!=='string'||!/^[a-zA-Z0-9_.:-]{1,128}$/u.test(input.ref))throw fault('invalid_reference');
-        const row=store.db.prepare("SELECT at FROM events WHERE json_extract(body,'$.incidentRef')=? ORDER BY at LIMIT 1").get(input.ref);
-        if(!row){json(res,200,{schemaVersion,captureStatus:'no_capture',ref:input.ref,events:[]});return;}
-        const window={from:new Date(Number(row.at)-300000).toISOString(),to:new Date(Math.min(now(),Number(row.at)+300000)).toISOString()};
-        const result=await snapshot(window);result.events=result.events.filter(e=>e.incidentRef===input.ref);json(res,200,result);return;
+        const row=store.db.prepare("SELECT min(at) AS at,max(at) AS lastAt FROM events WHERE json_extract(body,'$.incidentRef')=?").get(input.ref);
+        if(!row?.at){json(res,200,{schemaVersion,captureStatus:'no_capture',ref:input.ref,events:[]});return;}
+        const window={from:new Date(Math.max(now()-limits.retentionMs,Number(row.at)-300000)).toISOString(),to:new Date(Math.min(now(),Number(row.lastAt)+300000)).toISOString()};
+        const result=await snapshot({...window,ref:input.ref});json(res,200,result);return;
       }
       throw fault('missing',404);
     }catch(error){json(res,error.status??503,{error:{code:error.code??'storage_unavailable'}});}finally{active--;}
@@ -155,7 +192,7 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
   const socketPath=resolve(directory,'observe.sock');
   try{const info=await lstat(socketPath);if(!info.isSocket())throw fault('socket_path_exists');await unlink(socketPath);}catch(error){if(error.code!=='ENOENT')throw error;}
   await new Promise((yes,no)=>{api.once('error',no);api.listen(socketPath,yes);});await chmod(socketPath,0o600);
-  const exporter=createServer((req,res)=>{if(req.method!=='GET'||!['/metrics','/health'].includes(req.url)){json(res,404,{error:{code:'missing'}});return;}if(req.url==='/health'){json(res,200,{ok:true,...coverage(),sourceRevision,buildId});return;}try{res.writeHead(200,{'content-type':'text/plain; version=0.0.4'});res.end(metrics());}catch{json(res,503,{error:{code:'storage_unavailable'}});}});
+  const exporter=createServer((req,res)=>{if(req.method!=='GET'||!['/metrics','/health'].includes(req.url)){json(res,404,{error:{code:'missing'}});return;}if(req.url==='/health'){json(res,200,{ready:true,ok:availabilityStatus().status==='ok',...coverage(),collection:coverage(),...availabilityStatus(),sourceRevision,buildId});return;}try{res.writeHead(200,{'content-type':'text/plain; version=0.0.4'});res.end(metrics());}catch{json(res,503,{error:{code:'storage_unavailable'}});}});
   await new Promise((yes,no)=>{exporter.once('error',no);exporter.listen(metricsPort,metricsHost,yes);});
   function heartbeat(){store.ingest([{schemaVersion,kind:'resource',component:'observe',producerId,eventId:randomUUID(),at:now(),rssBytes:process.memoryUsage().rss,cpuSeconds:(process.cpuUsage().user+process.cpuUsage().system)/1e6,sourceRevision,buildId,observedBy:'self',identitySource:'self',producerMode:'native',originClass:'operator'}]);}
   heartbeat();void checkBackends();const timer=setInterval(()=>{void checkBackends();try{heartbeat();store.prune();}catch{store.dropped++;}},30000);timer.unref();

@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  type AccountPoolUncertainDiagnostic,
   AccountPoolStore,
   CodexSubscriptionService,
   AccountCredentialRefreshManager,
@@ -447,13 +448,14 @@ test("compressed upstream MCP and Responses bodies remain readable through the H
       "content-encoding": encoding, "content-length": compressed.length });
     response.end(compressed);
   }));
+  const uncertain: string[] = [];
   let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
   try {
     pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
       { accessToken: "fixture-oauth", refreshToken: null, expiresAt: null });
     const token = pool.issueHostToken("local-codex");
     const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: `${upstream.url}/backend-api/codex` });
-    server = await startCodexAccountPoolServer({ proxy });
+    server = await startCodexAccountPoolServer({ proxy, onUncertain: route => { uncertain.push(route); } });
     const launch = createCodexAccountPoolLaunch({ baseUrl: server.url, hostToken: token });
     for (encoding of ["br", "gzip"]) {
       for (const route of ["/api/codex/ps/mcp", "/v1/responses"]) {
@@ -467,6 +469,8 @@ test("compressed upstream MCP and Responses bodies remain readable through the H
         assert.equal(response.headers.get("content-encoding"), null);
       }
     }
+    await server.close();
+    assert.deepEqual(uncertain, []);
   } finally { await server?.close(); await upstream.close(); pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
@@ -899,6 +903,7 @@ test("a client disconnect aborts an in-flight upstream stream without crashing t
       if (!outgoing.writableEnded) upstreamClosed.resolve();
     });
   }));
+  const uncertain: string[] = [];
   const processErrors = captureUnhandledProcessErrors();
   let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
   let pool: AccountPoolStore | undefined;
@@ -910,6 +915,7 @@ test("a client disconnect aborts an in-flight upstream stream without crashing t
     const token = pool.issueHostToken("local");
     server = await startCodexAccountPoolServer({
       proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: `${upstream.url}/backend-api/codex` }),
+      onUncertain: route => { uncertain.push(route); },
     });
     const response = await fetch(`${server.url}/v1/responses`, {
       method: "POST",
@@ -928,6 +934,7 @@ test("a client disconnect aborts an in-flight upstream stream without crashing t
     const followUp = await fetch(`${server.url}/v1/models`, { headers: { "x-opencraft-account-pool-token": token } });
     assert.equal(followUp.status, 200);
     assert.deepEqual(await followUp.json(), { data: [{ id: "gpt-test" }] });
+    assert.deepEqual(uncertain, ["/v1/responses"]);
     processErrors.assertNone();
   } finally {
     controller.abort();
@@ -954,6 +961,8 @@ test("an upstream stream failure interrupts the client connection without crashi
     outgoing.write("data: first\n\n");
     void failUpstream.promise.then(() => outgoing.destroy());
   }));
+  const uncertain: string[] = [];
+  const diagnostics: AccountPoolUncertainDiagnostic[] = [];
   const processErrors = captureUnhandledProcessErrors();
   let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
   let pool: AccountPoolStore | undefined;
@@ -964,6 +973,7 @@ test("an upstream stream failure interrupts the client connection without crashi
     const token = pool.issueHostToken("local");
     server = await startCodexAccountPoolServer({
       proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: `${upstream.url}/backend-api/codex` }),
+      onUncertain: (route, d) => { uncertain.push(route); diagnostics.push(d); },
     });
     const response = await fetch(`${server.url}/v1/responses`, {
       method: "POST",
@@ -980,6 +990,11 @@ test("an upstream stream failure interrupts the client connection without crashi
     assert.equal(followUp.status, 200);
     assert.deepEqual(await followUp.json(), { data: [{ id: "gpt-test" }] });
     assert.equal(responseCount, 1);
+    assert.deepEqual(uncertain, ["/v1/responses"]);
+    assert.equal(diagnostics[0].reason, "upstream-failed");
+    assert.equal(diagnostics[0].upstreamReadFailed, true);
+    assert.equal(diagnostics[0].completionObserved, false);
+    assert.equal(diagnostics[0].responseStatus, 200);
     processErrors.assertNone();
   } finally {
     failUpstream.resolve();
@@ -1676,3 +1691,138 @@ test("shutdown diagnostics describe a waiting stream without exposing request se
     await closing; await server.close(); pool.close(); await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const [name, terminal, expectedUnknown] of [
+  ["completed event", 'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp-fixture","status":"completed"}}\n\n', false],
+  ["CRLF delimiter missing final LF", 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\r\n\r', true],
+  ["unterminated event", 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\n', true],
+  ["malformed JSON", 'event: response.completed\ndata: {"type":"response.completed" broken}\n\n', true],
+  ["completion text in output", 'data: {"type":"response.output_text.delta","delta":"response.completed"}\n\n', true],
+  ["missing response identity", 'data: {"type":"response.completed"}\n\n', true],
+] as const) {
+ test(`Responses client disconnect classification: ${name}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-completed-disconnect-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const upstreamClosed = deferred<void>();
+  const upstream = await startLocalServer(createServer((incoming, outgoing) => {
+    incoming.resume();
+    outgoing.writeHead(200, { "content-type": "text/event-stream" });
+    // Native clients finish at response.completed, without waiting for HTTP EOF.
+    outgoing.write(terminal);
+    outgoing.once("close", () => upstreamClosed.resolve());
+  }));
+  const uncertain: string[] = [];
+  const diagnostics: AccountPoolUncertainDiagnostic[] = [];
+  let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  const abort = new AbortController();
+  try {
+    pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+      { accessToken: "fixture", refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local");
+    server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: upstream.url }),
+      onUncertain: (route, diagnostic) => { uncertain.push(route); diagnostics.push(diagnostic); } });
+    const response = await fetch(`${server.url}/v1/responses`, { method: "POST", signal: abort.signal,
+      headers: { "content-type": "application/json", "x-opencraft-account-pool-token": token,
+        "thread-id": "11111111-1111-4111-8111-111111111111",
+        "x-codex-turn-metadata": JSON.stringify({ turn_id: "22222222-2222-4222-8222-222222222222", private: "metadata-secret" }),
+      }, body: '{"input":"prompt-secret"}'  });
+    const reader = response.body!.getReader();
+    assert.equal(new TextDecoder().decode((await reader.read()).value), terminal);
+    abort.abort();
+    await within(upstreamClosed.promise, "upstream not closed");
+    await server.close();
+    assert.deepEqual(uncertain, expectedUnknown ? ["/v1/responses"] : []);
+    assert.equal(diagnostics.length, expectedUnknown ? 1 : 0);
+    if (expectedUnknown) {
+      const d = diagnostics[0];
+      assert.equal(d.reason, "client-disconnected"); assert.equal(d.stage, "response-stream");
+      assert.equal(d.method, "POST"); assert.equal(d.completionObserved, false);
+      assert.equal(d.threadId, "11111111-1111-4111-8111-111111111111");
+      assert.equal(d.turnId, "22222222-2222-4222-8222-222222222222");
+      assert.equal(d.correlationSource, "thread-id+x-codex-turn-metadata");
+      assert.ok(d.acceptedAt <= d.sentAt! && d.sentAt! <= d.firstAt);
+      assert.equal(d.firstAt, d.lastAt); assert.equal(d.count, 1);
+      assert.match(d.requestId, /^[a-f0-9-]{36}$/u);
+      for (const secret of [token, "prompt-secret", "metadata-secret"]) assert.equal(JSON.stringify(d).includes(secret), false);
+    }
+  } finally {
+    abort.abort(); await server?.close(); await upstream.close(); pool.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+}
+
+for (const [name, chunks] of [
+  ["fragmented UTF-8 and CRLF", ['data: {"type":"response.completed","response":{"id":"resp-', '完成', '"}}\r', '\n\r', '\n']],
+  ["multiple SSE data lines", ['data: {"type":"response.completed",\ndata: "response":{"id":"resp-fixture"}}\n\n']],
+  ["unrelated output containing a completion string", ['data: {"type":"response.output_text.delta","delta":"response.completed"}\n\n', 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\n\n']],
+] as const) {
+  test(`Responses completion finishes HTTP without waiting for upstream EOF: ${name}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "oc-completion-eof-"));
+    const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+    const uncertain: string[] = [];
+    let cancelled = false;
+    let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+    try {
+      pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+        { accessToken: "fixture", refreshToken: null, expiresAt: null });
+      const token = pool.issueHostToken("local");
+      server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://fixture.example.test", fetch: async () =>
+        new Response(new ReadableStream<Uint8Array>({ start(controller) {
+          // Byte-sized chunks exercise UTF-8 splits as well as SSE delimiters.
+          for (const chunk of chunks) for (const byte of new TextEncoder().encode(chunk)) controller.enqueue(new Uint8Array([byte]));
+        }, cancel() { cancelled = true; } }), { headers: { "content-type": "text/event-stream; charset=utf-8" } }) }),
+        onUncertain: route => { uncertain.push(route); } });
+      const response = await fetch(`${server.url}/v1/responses`, { method: "POST",
+        headers: { "x-opencraft-account-pool-token": token }, body: "{}" });
+      assert.equal(await within(response.text(), "HTTP did not finish at completion"), chunks.join(""));
+      await server.close();
+      assert.equal(cancelled, true);
+      assert.deepEqual(uncertain, []);
+    } finally { await server?.close(); pool.close(); await rm(root, { recursive: true, force: true }); }
+  });
+}
+
+for (const client of ["await HTTP EOF", "close after terminal record"] as const) {
+test(`Responses completion with pending upstream cancellation: ${client}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-completion-cancel-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const cancellationStarted = deferred<void>(), finishCancellation = deferred<void>();
+  const uncertain: string[] = [];
+  const terminal = 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\n\n';
+  let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  let body: Promise<string> | undefined;
+  const abort = new AbortController();
+  try {
+    pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+      { accessToken: "fixture", refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local");
+    server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool,
+      upstreamBaseUrl: "https://fixture.example.test", fetch: async () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode(terminal)); },
+        async cancel() { cancellationStarted.resolve(); await finishCancellation.promise; },
+      }), { headers: { "content-type": "text/event-stream" } }) }),
+      onUncertain: route => { uncertain.push(route); } });
+    const response = await fetch(`${server.url}/v1/responses`, { method: "POST", signal: abort.signal,
+      headers: { "x-opencraft-account-pool-token": token }, body: "{}" });
+    if (client === "await HTTP EOF") {
+      body = response.text();
+      await within(cancellationStarted.promise, "upstream cancellation was not requested");
+      assert.equal(await within(body, "HTTP completion waited for upstream cancellation"), terminal);
+    } else {
+      const reader = response.body!.getReader();
+      assert.equal(new TextDecoder().decode((await reader.read()).value), terminal);
+      abort.abort();
+      await within((async () => {
+        while (server!.activeCount() !== 0) await new Promise(resolve => setTimeout(resolve, 1));
+      })(), "completed client disconnect remained active");
+    }
+    assert.deepEqual(uncertain, []);
+  } finally {
+    abort.abort(); finishCancellation.resolve(); await body?.catch(() => undefined); await server?.close(); pool.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+}

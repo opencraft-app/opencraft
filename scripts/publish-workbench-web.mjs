@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -12,7 +13,7 @@ import {
   stat,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -267,7 +268,7 @@ function parseArguments(arguments_) {
 }
 
 const isMain = process.argv[1] != null
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
   publishWorkbenchWeb(parseArguments(process.argv.slice(2)))
     .then((result) => {

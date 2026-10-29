@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, readlink, stat, readdir } from "node:fs/promises";
+import { readFile, readlink, stat, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { CodexCoreControlClient, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import { generationDirectory } from "./generation-files.js";
@@ -15,8 +15,11 @@ export interface GenerationProcessIdentity {
   readonly cliSha256: string;
   readonly cliVersion: string;
   readonly unit: string;
+  readonly launcher?: { readonly nodeSha256: string; readonly entrypointSha256: string; readonly wrapperSha256: string;
+    readonly childPid: number; readonly childStart: string; readonly childExecutable: string };
 }
 export interface GenerationSupervisor {
+  inspect?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
   start(generation: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth>;
   discardUnready(generation: GenerationRecord): Promise<void>;
   identify(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity>;
@@ -44,6 +47,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   private async disableBoot(unit: string, fileState: string): Promise<void> {
     if (["enabled", "enabled-runtime"].includes(fileState)) await execute("systemctl", [...this.scope(), "disable", "--", unit]);
   }
+  async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
   private async health(g: GenerationRecord): Promise<CodexAppServerHealth> {
     return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
   }
@@ -97,6 +101,30 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       if (owner.uid !== (g.executionUid ?? process.getuid!()) || owner.gid !== (g.executionGid ?? process.getgid!())) throw new Error("Generation execution identity differs from its fixed UID/GID");
     }
     const ownerStart = await start(pid), nativeStart = await start(h.codexPid);
+    if (g.nativeLauncher) {
+      const digest = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
+      const args = (await readFile(`/proc/${h.codexPid}/cmdline`, "utf8")).split("\0");
+      const ownerArgs = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0"), selector = ownerArgs.indexOf("--codex-executable");
+      if (selector < 0 || await realpath(ownerArgs[selector + 1]!) !== await realpath(g.executable)
+        || !args[1] || await realpath(args[1]) !== await realpath(g.nativeLauncher.entrypoint)
+        || args[2] !== "app-server") throw new Error("Generation CLI launcher command differs from its fixed definition");
+      const nodeSha256 = await digest(g.node);
+      if (await digest(`/proc/${h.codexPid}/exe`) !== nodeSha256) throw new Error("Generation CLI launcher Node differs from its fixed executable");
+      const children = new Set<string>();
+      for (const task of await readdir(`/proc/${h.codexPid}/task`)) {
+        for (const child of (await readFile(`/proc/${h.codexPid}/task/${task}/children`, "utf8")).trim().split(/\s+/u).filter(Boolean)) children.add(child);
+      }
+      if (children.size !== 1) throw new Error("Generation CLI launcher child is missing or ambiguous");
+      const childPid = Number([...children][0]), childStart = await start(childPid), childOwner = await stat(`/proc/${childPid}`);
+      if (childOwner.uid !== (g.executionUid ?? process.getuid!()) || childOwner.gid !== (g.executionGid ?? process.getgid!())) throw new Error("Generation CLI child execution identity differs");
+      const childExecutable = await realpath(g.nativeLauncher.executable), cliSha256 = await digest(childExecutable);
+      if (await realpath(`/proc/${childPid}/exe`) !== childExecutable || await digest(`/proc/${childPid}/exe`) !== cliSha256) throw new Error("Generation CLI child differs from its fixed executable");
+      const cliVersion = (await execute(childExecutable, ["--version"], { uid: childOwner.uid, gid: childOwner.gid, cwd: g.cwd,
+        env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
+      if (await start(pid) !== ownerStart || await start(h.codexPid) !== nativeStart || await start(childPid) !== childStart) throw new Error("Generation CLI launcher changed during observation");
+      return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g),
+        launcher: { nodeSha256, entrypointSha256: await digest(g.nativeLauncher.entrypoint), wrapperSha256: await digest(g.executable), childPid, childStart, childExecutable } };
+    }
     const file = await stat(g.executable, { bigint: true });
     const stamp = JSON.stringify([pid, ownerStart, h.codexPid, nativeStart, g.executable, String(file.ino), String(file.size), String(file.mtimeNs), String(file.ctimeNs)]);
     const cached = this.identities.get(g.id);
@@ -114,10 +142,12 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     const unit = this.unit(g);
     const state = await this.unitState(unit);
     if (state.pid === 0) {
-      let oldNativeAlive = false;
-      try { const value = await readFile(`/proc/${identity.nativePid}/stat`, "utf8"); oldNativeAlive = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] === identity.nativeStart; }
-      catch (reason) { if (!["ENOENT", "ESRCH"].includes((reason as NodeJS.ErrnoException).code ?? "")) throw reason; }
-      if (oldNativeAlive) throw new Error("Generation native process outlived its unit");
+      for (const [nativePid, nativeStart] of [[identity.nativePid, identity.nativeStart], ...(identity.launcher ? [[identity.launcher.childPid, identity.launcher.childStart]] : [])]) {
+        let oldNativeAlive = false;
+        try { const value = await readFile(`/proc/${nativePid}/stat`, "utf8"); oldNativeAlive = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] === nativeStart; }
+        catch (reason) { if (!["ENOENT", "ESRCH"].includes((reason as NodeJS.ErrnoException).code ?? "")) throw reason; }
+        if (oldNativeAlive) throw new Error("Generation native process outlived its unit");
+      }
       if (g.externalUnit) await this.disableBoot(unit, state.file);
       return;
     }
@@ -130,6 +160,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   }
   async processesQuiet(identity: GenerationProcessIdentity): Promise<boolean> {
     const pending = [identity.nativePid];
+    let launcherSeen = !identity.launcher;
     const nativeDirectory = (await readlink(`/proc/${identity.nativePid}/exe`)).replace(/\/[^/]+$/u, "");
     while (pending.length) {
       const parent = pending.pop()!;
@@ -143,10 +174,17 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         try { args = (await readFile(`/proc/${child}/cmdline`, "utf8")).split("\0"); executable = await readlink(`/proc/${child}/exe`); }
         catch (reason) { if (["ENOENT", "ESRCH"].includes((reason as NodeJS.ErrnoException).code ?? "")) continue; throw reason; }
         const moduleIndex = args.indexOf("-m");
-        if (!(moduleIndex >= 0 && args[moduleIndex + 1] === "agent.transports.hermes_tools_mcp_server") && executable !== `${nativeDirectory}/codex-code-mode-host`) return false;
+        let launcherChild = false;
+        if (identity.launcher && Number(child) === identity.launcher.childPid && executable === identity.launcher.childExecutable) {
+          const value = await readFile(`/proc/${child}/stat`, "utf8"), started = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19];
+          launcherChild = started === identity.launcher.childStart && createHash("sha256").update(await readFile(`/proc/${child}/exe`)).digest("hex") === identity.cliSha256;
+          if (launcherChild) launcherSeen = true;
+        }
+        const codeModeDirectory = identity.launcher ? identity.launcher.childExecutable.replace(/\/[^/]+$/u, "") : nativeDirectory;
+        if (!launcherChild && !(moduleIndex >= 0 && args[moduleIndex + 1] === "agent.transports.hermes_tools_mcp_server") && executable !== `${codeModeDirectory}/codex-code-mode-host`) return false;
         pending.push(Number(child));
       }
     }
-    return true;
+    return launcherSeen;
   }
 }

@@ -1,3 +1,4 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -192,4 +193,4 @@ async function main() {
   console.log(`Hover policy: ${paths.length} source files, ${issues.length} violations`);
   if (issues.length) process.exitCode = 1;
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) await main();

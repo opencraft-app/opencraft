@@ -10,13 +10,20 @@ const mutations={insertText:text=>controller.insertText(text),beginTransientText
 function App(){return <UiPreferencesProvider runtime={preferences}><div style={{padding:16}}><OpenCraftComposer controller={controller} endActions={<Voice mutations={mutations} disabled={false} platform='web'/>} placeholder='Write' onSubmit={()=>{fixture.sent++;return false}} onCancel={()=>{}}/><TouchDensitySetting/><SettingsSelect aria-label='Density select'><option>One</option></SettingsSelect><SettingsSegmented label='Density segmented' value='one' options={[{value:'one',label:'One'},{value:'two',label:'Two'}]} onValueChange={()=>{}}/><button className='settings-control-button'>Shared action</button></div></UiPreferencesProvider>};createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom']},cacheDir:'node_modules/.vite-editor-voice-hold',esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0},plugins:[{name:'fixture',resolveId:id=>id==='/voice.tsx'?id:null,load:id=>id==='/voice.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/voice.tsx"></script>')})}}]});await mkdir('.local/editor-voice-hold',{recursive:true});await vite.listen();const browser=await chromium.launch({executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});const evidence=[];
 const contactOnly=process.argv.includes('--contact-only');
-try{for(const [width,touchCapable] of (contactOnly?[[390,true]]:[[390,true],[768,true],[820,true],[1024,true],[1280,true],[1280,false]]) as readonly (readonly [number,boolean])[]){const context=await browser.newContext({viewport:{width,height:844},hasTouch:touchCapable,isMobile:width===390});const page=await context.newPage();await page.addInitScript(()=>{const state={blockPointerRelease:false,blockClick:false,pointerUps:0,touchEnds:0};(window as any).releaseProbe=state;window.addEventListener('pointerup',event=>{if(state.blockPointerRelease){state.pointerUps++;event.stopImmediatePropagation();}},true);window.addEventListener('touchend',()=>{state.touchEnds++;},true);window.addEventListener('click',event=>{if(state.blockClick){event.preventDefault();event.stopImmediatePropagation();}},true);});await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);const editor=page.locator('.opencraft-composer-editor');await editor.waitFor();await editor.fill('Keep draft');const initial=await editor.innerText();await editor.evaluate(e=>(window as any).keptEditor=e);const box=(await editor.boundingBox())!;const x=box.x+100,y=box.y+20;const cdp=await context.newCDPSession(page);
+try{for(const [width,touchCapable] of (contactOnly?[[390,true]]:[[390,true],[768,true],[820,true],[1024,true],[1280,true],[1280,false]]) as readonly (readonly [number,boolean])[]){const context=await browser.newContext({viewport:{width,height:844},hasTouch:touchCapable,isMobile:width===390});const page=await context.newPage();await page.addInitScript(()=>{const state={blockPointerRelease:false,blockTouchRelease:false,blockClick:false,pointerUps:0,touchEnds:0};(window as any).releaseProbe=state;window.addEventListener('pointerup',event=>{if(state.blockPointerRelease){state.pointerUps++;event.stopImmediatePropagation();}},true);window.addEventListener('touchend',event=>{state.touchEnds++;if(state.blockTouchRelease)event.stopImmediatePropagation();},true);window.addEventListener('click',event=>{if(state.blockClick){event.preventDefault();event.stopImmediatePropagation();}},true);});await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);const editor=page.locator('.opencraft-composer-editor');await editor.waitFor();await editor.fill('Keep draft');const initial=await editor.innerText();await editor.evaluate(e=>(window as any).keptEditor=e);const box=(await editor.boundingBox())!;const x=box.x+100,y=box.y+20;const cdp=await context.newCDPSession(page);
 const touch=(type:string,tx=x,ty=y)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'||type==='touchCancel'?[]:[{id:1,x:tx,y:ty}]});
 const count=()=>page.evaluate(()=>(window as any).fixture.starts);
 if(!touchCapable){const toggle=page.getByRole('radiogroup',{name:'Touch experience'});assert.equal(await toggle.getByRole('radio',{name:'Automatic',exact:true}).getAttribute('aria-checked'),'true','Mouse-only defaults automatic');await toggle.getByRole('radio',{name:'On',exact:true}).click();await page.waitForFunction(()=>document.documentElement.dataset.uiDensity==='touch');assert.ok((await page.locator('.opencraft-voice-input-action').boundingBox())!.height>=44,'Manual on works without touch hardware');await page.mouse.move(x,y);await page.mouse.down();await page.waitForTimeout(550);await page.mouse.up();assert.equal(await count(),0,'Friendly density does not reinterpret mouse');await toggle.getByRole('radio',{name:'Automatic',exact:true}).click();await page.waitForFunction(()=>document.documentElement.dataset.uiDensity==='compact');evidence.push({width,touchCapable,autoCompact:true,manualOn:true,mouseExcluded:true});await context.close();continue;}
 
 await touch('touchStart');await page.waitForTimeout(100);await touch('touchEnd');await page.waitForTimeout(500);assert.equal(await count(),0,'Tap stays text input');
 if(width===390){
+ // A focused editor must also retire from pointerup if touchend is withheld.
+ await page.evaluate(()=>(window as any).releaseProbe.blockTouchRelease=true);
+ await touch('touchStart');await page.waitForTimeout(75);await touch('touchEnd');await page.waitForTimeout(550);
+ assert.equal(await count(),0,'focused editor tap cannot become voice when touchend is withheld');
+ assert.equal(await editor.evaluate(e=>e===document.activeElement),true,'retap retains text focus');
+ assert.equal(await editor.innerText(),initial,'retap retains draft');
+ await page.evaluate(()=>(window as any).releaseProbe.blockTouchRelease=false);
  // Native contact end is authoritative even if its derived PointerEvent is lost.
  await page.evaluate(()=>(window as any).releaseProbe.blockPointerRelease=true);
  await touch('touchStart');await page.waitForTimeout(100);await touch('touchEnd');await page.waitForTimeout(550);
@@ -36,7 +43,18 @@ if(width===390){
  await page.waitForTimeout(550);await touch('touchEnd');
  assert.equal(await count(),0,'a second native contact outside the editor cancels the pending hold');
 }
-if(contactOnly){evidence.push({width,nativeShortContactRetired:true,editorAndMic:true});await context.close();continue;}
+if(contactOnly){
+ await editor.fill(initial);await editor.focus();
+ await page.evaluate(()=>getSelection()?.collapseToEnd());
+ const beforeHold=await count();await touch('touchStart');await page.waitForTimeout(550);
+ await page.locator('.opencraft-composer-voice-footer[data-voice-phase=listening]').waitFor();
+ assert.equal(await count(),beforeHold+1,'focused editor still supports intentional hold');
+ await touch('touchEnd');await page.locator('.opencraft-composer-voice-footer').waitFor({state:'hidden'});
+ assert.ok((await editor.innerText()).includes(initial),'hold preserves existing draft');
+ assert.equal(await page.evaluate(()=>(window as any).fixture.sent),0,'hold release never submits');
+ assert.equal(await editor.evaluate(e=>e===(window as any).keptEditor),true,'hold keeps editor identity');
+ evidence.push({width,nativeShortContactRetired:true,editorAndMic:true,intentionalHold:true});await context.close();continue;
+}
 await touch('touchStart');await touch('touchMove',x+30,y+20);await page.waitForTimeout(550);await touch('touchEnd');assert.equal(await count(),0,'Scroll/movement cancels hold');
 await touch('touchStart');await page.waitForTimeout(550);
 // A touch-capable laptop still retains normal mouse long-press behavior.

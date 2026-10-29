@@ -114,6 +114,35 @@ export class EmployeeGitVaultStore {
     if (record.credential !== null && (typeof record.credential !== 'string' || !record.credential || record.credential.length > 4096 || /[\r\n\0]/u.test(record.credential))) throw new GitVaultError('unavailable', 503);
     return { revision: record.revision, secret: record.credential as string | null };
   }
+  /** Internal encrypted document port. Consumers own their schema and namespace;
+   * this port is never exposed as an HTTP read operation. */
+  readDocument(account: string, namespace: string): { revision: number; document: unknown } {
+    if (!namespace.startsWith('document-')) throw new GitVaultError('invalid');
+    const record = this.readValue(account, namespace);
+    return { revision: record.revision, document: record.credential };
+  }
+  /** Authenticated private execution metadata, using the same key and AAD owner.
+   * The envelope carries identity/scope only, never environment values. */
+  sealExecutionContext(document: unknown): string {
+    return this.encrypt('platform', 'document-execution-context', document).toString('base64url');
+  }
+  openExecutionContext(envelope: string): unknown {
+    if (typeof envelope !== 'string' || envelope.length > 8192 || !/^[A-Za-z0-9_-]+$/u.test(envelope)) throw new GitVaultError('invalid');
+    const data = Buffer.from(envelope, 'base64url');
+    if (data.toString('base64url') !== envelope) throw new GitVaultError('invalid');
+    let clear: Buffer | undefined;
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(0, 12));
+      decipher.setAAD(this.aad('platform', 'document-execution-context')); decipher.setAuthTag(data.subarray(-16));
+      clear = Buffer.concat([decipher.update(data.subarray(12, -16)), decipher.final()]);
+      return JSON.parse(clear.toString('utf8'));
+    } catch { throw new GitVaultError('invalid'); }
+    finally { clear?.fill(0); }
+  }
+  writeDocument(account: string, namespace: string, revision: number, document: unknown): void {
+    if (!namespace.startsWith('document-')) throw new GitVaultError('invalid');
+    this.writeValue(account, namespace, revision, document);
+  }
   writeSecret(account: string, service: string, revision: number, secret: string | null): { revision: number; configured: boolean } {
     if (secret !== null && (typeof secret !== 'string' || !secret || secret.length > 4096 || /[\r\n\0]/u.test(secret))) throw new GitVaultError('invalid');
     this.writeValue(account, service, revision, secret);

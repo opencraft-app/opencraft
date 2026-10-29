@@ -1,3 +1,4 @@
+import type { AppPayloadChoice } from "./generation-app-payload.js";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep, dirname, basename } from "node:path";
@@ -12,6 +13,8 @@ export interface GenerationDefinition {
   readonly executable: string;
   readonly bundle: string;
   readonly node: string;
+  /** Fixed Node CLI entrypoint and its native child, for packaged launchers. */
+  readonly nativeLauncher?: { readonly entrypoint: string; readonly executable: string };
   readonly cwd: string;
   readonly executionUid?: number;
   readonly executionGid?: number;
@@ -75,7 +78,8 @@ export class CodexGenerationRegistry {
   }
   register(definition: GenerationDefinition): GenerationRecord {
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(definition.id)
-      || ![definition.endpoint, definition.runtimeDataDirectory, definition.executable, definition.bundle, definition.node, definition.cwd].every(isAbsolute)) {
+      || ![definition.endpoint, definition.runtimeDataDirectory, definition.executable, definition.bundle, definition.node, definition.cwd].every(isAbsolute)
+      || definition.nativeLauncher !== undefined && (!definition.nativeLauncher || ![definition.nativeLauncher.entrypoint, definition.nativeLauncher.executable].every(path => typeof path === "string" && isAbsolute(path)))) {
       throw new Error("Invalid generation definition");
     }
     const executionUid = definition.executionUid ?? process.getuid!(), executionGid = definition.executionGid ?? process.getgid!();
@@ -217,14 +221,34 @@ export class CodexGenerationRegistry {
     if (!generation || !["draining", "retiring"].includes(generation.state) || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new Error("Generation is not drained");
     this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
   }
-  replaceRetired(id: string, replacement: Pick<GenerationDefinition, "executable" | "bundle" | "node">): GenerationRecord {
+  replaceRetired(id: string, replacement: Pick<GenerationDefinition, "executable" | "bundle" | "node" | "nativeLauncher">): GenerationRecord {
     const generation = this.get(id);
     if (!generation || generation.state !== "retired") throw new Error("Only a retired HOME can change runtime payload");
     const { state: _state, incarnation: _incarnation, externalUnit: _unit, ...definition } = generation;
     const next = { ...definition, ...replacement };
-    if (![next.executable, next.bundle, next.node].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
+    if (![next.executable, next.bundle, next.node, ...(next.nativeLauncher ? [next.nativeLauncher.entrypoint, next.nativeLauncher.executable] : [])].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
     this.database.prepare("UPDATE generations SET definition=?,state='candidate' WHERE id=?").run(JSON.stringify(next), id);
     return this.get(id)!;
+  }
+  selectAppPayload(id: string, incarnation: number, epoch: number, choice: AppPayloadChoice, recovering = false): void {
+    this.transaction(() => {
+      const g = this.get(id);
+      if (!g || g.incarnation !== incarnation || this.epoch() !== epoch || this.current().generation.id === id
+        || !(recovering ? g.state === "candidate" && !!(this.metadata(`app-payload:${id}`) as AppPayloadChoice | null)?.applied
+          : ["ready", "draining", "retired"].includes(g.state)) || this.unresolvedCreations(id)) throw new Error("APP payload selection identity changed");
+      this.setMetadata(`app-payload:${id}`, choice);
+      if (recovering) this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
+      else if (g.state === "ready") this.database.prepare("UPDATE generations SET state='draining' WHERE id=?").run(id);
+    });
+  }
+  applyAppPayload(id: string, choice: AppPayloadChoice): GenerationRecord {
+    return this.transaction(() => {
+      const g = this.get(id);
+      if (!g || g.state !== "retired" || JSON.stringify(this.metadata(`app-payload:${id}`)) !== JSON.stringify(choice)) throw new Error("APP payload choice changed before cold open");
+      const next = this.replaceRetired(id, { executable: g.executable, node: g.node, nativeLauncher: g.nativeLauncher, bundle: choice.bundle });
+      this.setMetadata(`app-payload:${id}`, { ...choice, applied: true });
+      return next;
+    });
   }
   assertRevocable(id: string, incarnation: number, expectedEpoch: number): void {
     const generation = this.get(id);
@@ -257,6 +281,13 @@ export class CodexGenerationRegistry {
   setMetadata(key: string, value: unknown): void {
     this.database.prepare("INSERT INTO routing_metadata VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
   }
+  /** One writer transaction couples responsibility evidence to its admission state. */
+  updateMetadata(values: Readonly<Record<string, unknown>>, remove: readonly string[] = []): void {
+    this.transaction(() => {
+      for (const key of remove) this.database.prepare("DELETE FROM routing_metadata WHERE key=?").run(key);
+      for (const [key, value] of Object.entries(values)) this.setMetadata(key, value);
+    });
+  }
   routes(): { threadId: string; generationId: string }[] {
     return this.database.prepare("SELECT thread_id,generation_id FROM thread_routes ORDER BY thread_id").all().map(row => ({ threadId: String(row.thread_id), generationId: String(row.generation_id) }));
   }
@@ -271,6 +302,17 @@ export class CodexGenerationRegistry {
     if (!row || !["ready", "active", "draining"].includes(row.state)) throw new Error("Generation has no live incarnation");
     this.database.prepare("UPDATE generations SET incarnation=incarnation+1 WHERE id=?").run(id);
     return this.get(id)!;
+  }
+  /** Full logical cold read under the registry writer lock; handoff metadata is self-referential. */
+  coldSnapshot(): unknown {
+    if (this.database.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
+      || this.database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Registry integrity failed");
+    const schema = this.database.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
+    const tables = this.database.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => {
+      const name = String(row.name);
+      return { name, rows: this.database.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ${name === "routing_metadata" ? "WHERE key != 'router-handoff'" : ""} ORDER BY rowid`).all() };
+    });
+    return { schema, tables };
   }
   close(): void { if (!this.closed) { this.closed = true; this.database.close(); this.lock.close(); } }
 }

@@ -1,5 +1,6 @@
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
+import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
 import { configureDesktopServer } from './runtime/configure-desktop-server';
 import { desktopServerPort } from './runtime/desktop-server-connections';
 import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
@@ -691,6 +692,8 @@ export function App({
       creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
     } : action);
   const panelToolbarContext: PanelToolbarActionContext = {
+    threadId: draft ? null : activeThreadId,
+    projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
     ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
     cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
       ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
@@ -698,7 +701,7 @@ export function App({
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
   const threadShortcutCommands = activeThreadLease !== null && sideChatAction
     && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label },
+    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
       ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
     : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly
@@ -1010,24 +1013,10 @@ export function App({
         throw error;
       }
 
-      if (localQueueAdmission) {
-        return submission.then(() => true, error => {
-          clearLatestTurnPlacement(submittedPlacement);
-          throw error;
-        });
-      }
       if (intent.target.type !== "new-thread") {
-        // The active Conversation Runtime synchronously publishes an optimistic
-        // item before its transport command begins. At that point it owns the
-        // immutable submission and the Composer draft has been consumed. Do
-        // not retain the same text in the EditorView while a remote Host (for
-        // example Hermes over enterprise service) is still acknowledging the command.
-        void submission.catch(() => {
-          clearLatestTurnPlacement(submittedPlacement);
-          // Failure presentation belongs to the Conversation Runtime's
-          // optimistic item. A later Composer draft must remain untouched.
-        });
-        return true;
+        return completeConversationComposerSubmission(submittedIntent, submission,
+          activeThreadLease?.getSnapshot() ?? null,
+          () => clearLatestTurnPlacement(submittedPlacement));
       }
 
       // The Conversation Scope synchronously owns the immutable first Turn,
@@ -1233,6 +1222,7 @@ export function App({
     },
     [openBrowserTab, panelRuntime.panels, panelOwnerId],
   );
+  const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(
     () => activeThreadLease?.loadOlder() ?? Promise.resolve(),
   );
@@ -1297,6 +1287,7 @@ export function App({
   );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
       models: projectComposerModelChoices(composerCatalog.models),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
@@ -2193,6 +2184,7 @@ export function App({
                         restoreSnapshot,
                       );
                   }}
+                  onLoadItemDetails={loadItemDetails}
                   onLoadOlder={
                     !showingDisplayCache && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation

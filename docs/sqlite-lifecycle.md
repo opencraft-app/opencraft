@@ -1,6 +1,8 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-28 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
+状态：2026-10-30 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
+
+Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管理命令与服务器互斥；正常退出先关闭全部消费者和数据库，再释放锁。新增执行凭据绑定表通过核心迁移 v2 接入，导入同时识别旧 `session-capabilities.sqlite` 的 v1/v2 并保留执行绑定，历史 SQL/checksum 不变。
 
 ## 1. 设计结论
 
@@ -817,4 +819,22 @@ An in-flight read with an older revision cannot publish its result. Successful
 archive/delete replies wait for cleanup; native archived/deleted notifications
 also invalidate the derived files, including changes made by another client.
 Native paginators that return `notLoaded` despite a full request are hydrated
-through read-only Item pages before any Turn enters this cache.
+through read-only Item pages before a full Turn is returned.
+
+Codex header-capable readers build the complete Turn index with `notLoaded`
+pages, storing explicit lazy placeholders. Only the requested visible Turns
+materialize their canonical read-only Item pages; presentation and detail views
+share those lossless bodies. Rebuilds skip decoding rollout bodies only when the
+observed file ends in a complete newline; partial records keep the conservative
+scan cursor. Incremental dirty-suffix detection is unchanged. Projection schema
+2 distinguishes lazy records from schema 1: either upgrade or downgrade drops
+and reconstructs this disposable cache, never the native ledger. Item hydration
+checks cancellation and the per-Thread revision before writing or publishing;
+full Turn counts and older cursors still describe the complete index. A native
+protocol may support Turn headers without Item pagination. An explicit
+unsupported-Item response disables lazy indexing and reconstructs full native
+Turns through the existing reader; transient failures are propagated unchanged.
+
+When full native Turn pages exceed the transport byte budget and Item paging is
+unsupported, preserve the original size error so the existing reader can reduce
+the Turn page size. An unsupported Item RPC must not erase that size boundary.

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   JsonRpcAppServerClient,
+  AppServerClientError,
+  AppServerRpcError,
   type AppServerClient,
   type DuplexTransport,
   type ServerRequestHandler,
@@ -31,6 +33,7 @@ import {
 } from "@opencraft/appserver-protocol";
 import { asHostId, asTurnId, createConversationKey } from "@opencraft/chat-core";
 import type { PendingInteraction, TurnInterruptProvenance } from "@opencraft/chat-runtime";
+import { SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type { ComposerDocument, SubmitIntent } from "@opencraft/composer-core";
 
 const hostId = asHostId("ssh:9988");
@@ -1577,4 +1580,39 @@ test("outbox ownership is rechecked after asynchronous compilation before the re
   await new Promise(resolve => setTimeout(resolve, 0)); current = false; release();
   await assert.rejects(pending, /current connection/); assert.equal(h.requests.length, 0);
   await h.client.close();
+});
+
+
+test("only an uncreated submission inherits a rejected RPC's no-dispatch proof", async () => {
+  for (const failAt of ["thread/start", "turn/start"]) {
+    const h = await harness();
+    const request = h.client.request.bind(h.client);
+    h.client.request = (async (method: string, params: unknown, options: unknown) => {
+      if (method === failAt) throw new AppServerClientError("NOT_DISPATCHED", "old Host claim rejected before forwarding");
+      return request(method as any, params as any, options as any);
+    }) as typeof h.client.request;
+    const submission = intent({ type: "new-thread", draftId: "admission-proof",
+      execution: { hostId, workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } });
+    try {
+      await assert.rejects(commandPort(h).submit(submission), error => failAt === "thread/start"
+        ? error instanceof SubmissionNotDispatchedError : error instanceof SubmissionOutcomeUnknownError);
+      assert.equal(h.requests.filter(message => message.method === "thread/start").length, failAt === "turn/start" ? 1 : 0);
+    } finally { await h.close(); }
+  }
+});
+
+
+test("routed mutation uncertainty survives RPC wrapping while preflight rejection remains retryable by the user", async () => {
+  for (const outcome of ["unknown", "rejected"] as const) {
+    const h = await harness();
+    const cause = new AppServerRpcError({ code: -32000, message: "Synthetic routed timeout", data: {
+      method: outcome === "unknown" ? "turn/start" : "thread/resume", submissionOutcome: outcome,
+    } });
+    h.client.request = (async () => { throw cause; }) as typeof h.client.request;
+    try {
+      await assert.rejects(commandPort(h).submit(intent({ type: "existing-thread", key: existingKey })),
+        error => outcome === "unknown" ? error instanceof SubmissionOutcomeUnknownError : error === cause);
+      assert.equal(h.requests.length, 0);
+    } finally { await h.close(); }
+  }
 });

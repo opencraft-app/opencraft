@@ -5,10 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import {startOrchestrationCallbackRelay} from '../../apps/codex-core/src/orchestration-callback-lane';
+import { CodexRouterOwner } from "../../apps/codex-core/src/router-owner.js";
 import { CodexGenerationRegistry, type GenerationTicket } from "../../apps/codex-core/src/generation-registry.js";
 import { CodexGenerationRouter, startGenerationSocket, type GenerationRuntimeDirectory } from "../../apps/codex-core/src/generation-router.js";
 
-async function fixture(callbacks:Record<string,boolean>={},replay=false) {
+async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=false) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-router-")), registry = new CodexGenerationRegistry(root);
   const servers: WebSocketServer[] = [], sockets: WebSocket[] = [];
   const relays=new Map<string,Awaited<ReturnType<typeof startOrchestrationCallbackRelay>>>(),fenced=new Set<string>();
@@ -21,9 +22,9 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false) {
     const http = (await import("node:http")).createServer(); http.on("upgrade", (r, s, h) => server.handleUpgrade(r, s, h, ws => server.emit("connection", ws)));
     await new Promise<void>(resolve => http.listen(nativeSocket, resolve)); servers.push(server);
     const table = new Map<string, any>(); threads.set(id, table);
-    server.on("connection", ws => { sockets.push(ws); ws.on("message", async raw => {
+    server.on("connection", ws => { sockets.push(ws); let dynamicReply: any; ws.on("message", async raw => {
       const m = JSON.parse(String(raw));
-      if (!m.method && m.id !== undefined) { replies.push({ generation: id, id: m.id, result: m.result }); return; }
+      if (!m.method && m.id !== undefined) { replies.push({ generation: id, id: m.id, result: m.result }); if (handoff) ws.send(JSON.stringify(dynamicReply ? { method: "item/completed", params: { threadId: dynamicReply.threadId, turnId: dynamicReply.turnId, item: { type: "dynamicToolCall", id: dynamicReply.callId, status: "completed", success: true } } } : { method: "serverRequest/resolved", params: { requestId: m.id } })); return; }
       if (m.id === undefined) return;
       const params = m.params ?? {}; calls.push({ generation: id, method: m.method, params });
       const gate = holds.get(id);
@@ -41,6 +42,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false) {
         const all = [...table.values()].sort((a, b) => b.updatedAt - a.updatedAt), offset = Number(params.cursor ?? 0), size = params.limit ?? 100;
         result = { data: all.slice(offset, offset + size), nextCursor: offset + size < all.length ? String(offset + size) : null };
       } else if (m.method === "thread/loaded/list") result = { data: [...table.keys()] };
+      else if (m.method === "fixture/dynamic") { dynamicReply = { threadId: params.threadId, turnId: "native-turn", callId: "native-call" }; ws.send(JSON.stringify({ id: 7, method: "item/tool/call", params: { ...dynamicReply, namespace: null, tool: "fixture_dynamic", arguments: {} } })); }
       else if (m.method === "fixture/approval") { ws.send(JSON.stringify({ id: 7, method: "item/commandExecution/requestApproval", params: { threadId: params.threadId, turnId: "turn" } })); }
       else if (m.method === "fixture/resolveApproval") { ws.send(JSON.stringify({ method: "serverRequest/resolved", params: { threadId: params.threadId, requestId: 7 } })); }
       else if (m.method === "model/list") result = { data: [id] };
@@ -52,7 +54,8 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false) {
     registry.register({ id, endpoint: join(directory, "control.sock"), runtimeDataDirectory: join(directory, "data"), executable: join(directory, "codex"), bundle: join(directory, "app-server.cjs"), node: process.execPath, cwd: root }); registry.ready(id);
   }
   registry.activate("old", 0);
-  const runtime: GenerationRuntimeDirectory = { registry,
+  const owner = handoff ? new CodexRouterOwner(registry) : undefined;
+  const runtime: GenerationRuntimeDirectory = { registry, owner,
     async ensure(id) { return { protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
     admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true);if(fenced.has(ticket.generationId))throw Error('Generation retirement fenced');return () => {}; }, observe() {}, };
   const router = new CodexGenerationRouter(runtime), listener = await startGenerationSocket(join(root, "router.sock"), router);
@@ -65,8 +68,9 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false) {
     throw new Error("fixture RPC timeout");
   }
   await rpc("initialize", { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } });
-  return { registry, get client(){return client;}, messages, calls, replies, threads, rpc, relays,fence(id:string){fenced.add(id);},
+  return { registry, owner, router, get client(){return client;}, messages, calls, replies, threads, rpc, relays,fence(id:string){fenced.add(id);},
     async reconnect(){client.terminate();await new Promise<void>(resolve=>client.once('close',()=>resolve()));client=new WebSocket(`ws+unix://${join(root,'router.sock')}:/?opencraftLane=fixture-gateway`);client.on('message',raw=>messages.push(JSON.parse(String(raw))));await new Promise<void>(resolve=>client.once('open',resolve));await rpc('initialize',{clientInfo:{name:'test',version:'1'},capabilities:{experimentalApi:true}});},
+    notifyNative(id: string, message: unknown) { for (const socket of servers[id === "old" ? 0 : 1]!.clients) socket.send(JSON.stringify(message)); },
     crash(id: string) { for (const ws of servers[id === "old" ? 0 : 1]!.clients) ws.terminate(); },
     hold(id: string, method: string) {
       let enteredResolve!: () => void, finish!: () => void;
@@ -210,14 +214,17 @@ test("path fork follows the actual source HOME and rejects a conflicting Thread 
 
 
 test("incarnation replacement expires old command/terminal/approval leases and observes loss without closing the front", async () => {
-  const f = await fixture();
+  const f = await fixture({}, false, true);
   try {
     const thread = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.thread.id });
     const request = f.messages.find(m => m.method === "item/commandExecution/requestApproval");
     await f.rpc("process/spawn", { processHandle: "terminal", command: ["synthetic"] });
     const held = f.hold("old", "command/exec"), running = f.rpc("command/exec", { processId: "command", command: ["synthetic"] });
     const rejected = assert.rejects(running, /unconfirmed/); await held.entered;
+    const originalIncarnation = f.registry.get("old")!.incarnation;
     f.registry.runtimeChanged("old"); await f.rpc("thread/read", { threadId: thread.thread.id }); await rejected; held.release();
+    const replaced = responsibilityRows(f.registry).filter(row => row.uncertainty?.["generation-replaced"]);
+    assert.ok(replaced.length >= 3); assert.ok(replaced.every(row => row.generationId === "old" && row.incarnation === originalIncarnation));
     assert.ok(f.messages.some(m => m.method === "serverRequest/resolved" && m.params.requestId === request.id));
     assert.ok(f.messages.some(m => m.method === "opencraft/codex/generation/lost" && m.__opencraftGeneration.incarnation === 2));
     await f.rpc("process/spawn", { processHandle: "terminal", command: ["synthetic"] });
@@ -283,4 +290,139 @@ test("an active native replay keeps its public request identity and resolved ID 
   for(let n=0;n<100&&!f.replies.length;n++)await new Promise(resolve=>setTimeout(resolve,5));
   assert.deepEqual(f.replies.map(r=>[r.id,(r.result as any).decision]),[[7,'decline']]);
  } finally {await f.close();}
+});
+
+test("router handoff counts all native server requests and preserves uncertainty when their consumer disappears", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start");
+    await f.rpc("fixture/approval", { threadId: thread.id });
+    assert.equal(f.router.handoffCounts().connectionTools, 1, "native server requests must count even without an APP callback counter");
+    f.client.terminate(); await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.owner!.snapshot().uncertain, true, "disconnect cannot turn an unresolved native callback into idle");
+    assert.throws(() => new CodexRouterOwner(f.registry), /unconfirmed/);
+  } finally { await f.close(); }
+});
+
+test("fenced router accepts only the original callback reply and drains its durable native lease", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
+    assert.ok(f.owner!.snapshot().pending!.length, "callback dispatch must survive a router crash as unconfirmed admission");
+    assert.throws(() => new CodexRouterOwner(f.registry), /unconfirmed/);
+    const input = () => ({ expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "callback", fence: "fence" });
+    f.owner!.fence(input()); await assert.rejects(f.rpc("thread/start"), /fenced/);
+    const callback = f.messages.find(m => m.method === "item/commandExecution/requestApproval");
+    f.client.send(JSON.stringify({ id: callback.id, result: { decision: "accept" } }));
+    for (let n = 0; n < 100 && f.router.handoffCounts().connectionTools; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(f.replies.length, 1); assert.equal(f.router.handoffCounts().connectionTools, 0);
+    assert.deepEqual(f.owner!.snapshot().pending, []); assert.equal(f.owner!.snapshot().phase, "fenced");
+    f.client.terminate(); await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.owner!.snapshot().uncertain, false);
+    const counts = f.router.handoffCounts(); const observation = { coverage: "complete" as const, counts, activeCount: Object.values(counts).reduce((a,b) => a+b,0), historicalCount: 1 };
+    const proof = f.owner!.inspect(input(), observation); assert.equal(proof.activeCount, 0);
+    f.owner!.release({ ...input(), proof: proof.identity }, observation, "configuration");
+    assert.equal(f.owner!.snapshot().phase, "released");
+  } finally { await f.close(); }
+});
+
+test("native callback cancellation cannot erase a possibly dispatched Host operation", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
+    await f.rpc("fixture/resolveApproval", { threadId: thread.id });
+    assert.equal(f.owner!.snapshot().uncertain, true);
+    assert.ok(responsibilityRows(f.registry).some(row => row.threadId === thread.id && row.turnId === "turn" && row.uncertainty?.["native-resolved-before-reply"]));
+    const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "cancelled", fence: "fence" };
+    f.owner!.fence(input);
+    const counts = f.router.handoffCounts();
+    const proof = f.owner!.inspect({ ...input, expectedEpoch: input.expectedEpoch + 1 }, { coverage: "complete", counts, activeCount: Object.values(counts).reduce((a,b)=>a+b,0), historicalCount: 1 });
+    assert.equal(proof.coverage, "unknown"); assert.equal(proof.activeCount, null);
+  } finally { await f.close(); }
+});
+
+test("native dynamic-tool item completion is an exact callback receipt scoped to its thread and turn", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/dynamic", { threadId: thread.id });
+    const callback = f.messages.find(m => m.method === "item/tool/call");
+    f.notifyNative("old", { method: "item/completed", params: { threadId: thread.id, turnId: "other-turn", item: { type: "dynamicToolCall", id: "native-call", status: "completed" } } });
+    await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(f.router.handoffCounts().connectionTools, 1);
+    const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "dynamic", fence: "fence" };
+    f.owner!.fence(input); f.client.send(JSON.stringify({ id: callback.id, result: { success: true, contentItems: [] } }));
+    for (let n=0;n<100&&(f.router.handoffCounts().connectionTools || !f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));n++) await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(f.replies.length,1); assert.equal(f.router.handoffCounts().connectionTools,0);
+    assert.deepEqual(f.owner!.snapshot().pending,[]); assert.equal(f.owner!.snapshot().uncertain,false);
+    assert.ok(f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));
+  } finally { await f.close(); }
+});
+
+function responsibilityRows(registry: CodexGenerationRegistry): any[] {
+  const snapshot = registry.coldSnapshot() as any;
+  return snapshot.tables.find((t: any) => t.name === "routing_metadata").rows
+    .filter((row: any) => row.key.startsWith("router-lease:")).map((row: any) => JSON.parse(row.value));
+}
+test("consumer loss durably identifies the exact native callback without recording its arguments", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
+    const before = responsibilityRows(f.registry).find(row => row.kind === "native-callback");
+    assert.equal(before.method, "item/commandExecution/requestApproval"); assert.equal(before.generationId, "old");
+    assert.equal(before.threadId, thread.id); assert.equal(before.turnId, "turn"); assert.equal(before.nativeRequestId, "7");
+    assert.ok(before.connectionId && before.rpcId.startsWith("ocg:"));
+    f.client.terminate();
+    for (let i = 0; i < 100 && !f.owner!.snapshot().uncertain; i++) await new Promise(r => setTimeout(r, 5));
+    const after = f.registry.metadata(`router-lease:${before.id}`) as any;
+    assert.ok(after.uncertainty["consumer-disconnected"].firstAt); assert.equal(after.threadId, thread.id);
+    assert.ok(f.owner!.snapshot().pending?.includes(before.id));
+  } finally { await f.close(); }
+});
+test("native loss attributes both RPC and process leases with protocol IDs and preserves unknown after late replies", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    await f.rpc("process/spawn", { processHandle: "terminal-1", command: ["PRIVATE_SCRIPT"], env: { KEY: "PRIVATE_ENV" } });
+    const gate = f.hold("old", "command/exec"), running = f.rpc("command/exec", { processId: "command-1", command: ["PRIVATE_COMMAND"] }).catch(() => undefined);
+    await gate.entered; f.crash("old"); await running; gate.release();
+    const unknown = responsibilityRows(f.registry).filter(row => row.uncertainty);
+    const process = unknown.find(row => row.kind === "connection-tool" && row.processHandle === "terminal-1");
+    const command = unknown.find(row => row.kind === "connection-tool" && row.processId === "command-1");
+    assert.ok(process?.uncertainty["native-disconnected"]); assert.ok(command?.uncertainty["native-disconnected"]);
+    assert.equal(process.method, "process/spawn"); assert.equal(command.method, "command/exec");
+    assert.equal(command.generationId, "old"); assert.ok(command.parentLeaseId);
+    const rpc = unknown.find(row => row.id === command.parentLeaseId); assert.equal(rpc.method, "command/exec");
+    assert.ok(rpc.uncertainty["native-result-unknown"]); assert.equal(rpc.connectionId, command.connectionId);
+    assert.ok(rpc.nativeRequestId); assert.equal(rpc.nativeRequestId, command.nativeRequestId); assert.ok(command.sentAt);
+    assert.doesNotMatch(JSON.stringify(unknown), /PRIVATE_|arguments|command":|env":/u);
+    assert.ok(f.owner!.snapshot().uncertain);
+  } finally { await f.close(); }
+});
+test("ambiguous native terminal events preserve evidence for every matching call instead of choosing a successful one", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start");
+    for (const id of [41, 42]) f.notifyNative("old", { id, method: "item/tool/call", params: { threadId: thread.id, turnId: "turn-ambiguous", callId: "shared-call", arguments: { key: "PRIVATE_ARGUMENT" } } });
+    for (let i = 0; i < 100 && f.router.handoffCounts().connectionTools < 2; i++) await new Promise(r => setTimeout(r, 5));
+    f.notifyNative("old", { method: "item/completed", params: { threadId: thread.id, turnId: "turn-ambiguous", item: { type: "dynamicToolCall", id: "shared-call", status: "completed" } } });
+    for (let i = 0; i < 100 && !f.owner!.snapshot().uncertain; i++) await new Promise(r => setTimeout(r, 5));
+    const records = responsibilityRows(f.registry).filter(row => row.uncertainty?.["ambiguous-native-completion"]);
+    assert.equal(records.length, 2); assert.deepEqual(records.map(row => row.nativeRequestId).sort(), ["41", "42"]);
+    assert.ok(records.every(row => row.threadId === thread.id && row.turnId === "turn-ambiguous" && row.callId === "shared-call"));
+    assert.doesNotMatch(JSON.stringify(records), /PRIVATE_ARGUMENT|arguments/u);
+    assert.equal(f.router.handoffCounts().connectionTools, 2);
+  } finally { await f.close(); }
+});
+test("evidence write failure at the native send boundary prevents the mutation from reaching native", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start");
+    const write = f.registry.setMetadata.bind(f.registry);
+    f.registry.setMetadata = (key, value) => {
+      const record = value as any;
+      if (key.startsWith("router-lease:") && record.method === "turn/start" && record.phase === "sent") throw Error("fixture send-evidence failure");
+      write(key, value);
+    };
+    await assert.rejects(f.rpc("turn/start", { threadId: thread.id }), /unconfirmed/);
+    assert.equal(f.calls.filter(row => row.method === "turn/start").length, 0);
+    assert.equal(f.owner!.isOpen(), false); assert.equal(f.owner!.snapshot().persistence, "unknown");
+  } finally { await f.close(); }
 });

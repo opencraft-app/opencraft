@@ -1,6 +1,6 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, relative, extname } from "node:path";
-import { pathToFileURL } from "node:url";
 import scss from "postcss-scss";
 import ts from "typescript";
 
@@ -121,7 +121,7 @@ export function checkActivityRepository() {
     return [];
   });
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const errors = checkActivityRepository();
   errors.forEach(error => console.error(error));
   if (errors.length) { console.error("Read design/ui/activity-icons.md; preserve glyph identity and shared summary typography."); process.exitCode = 1; }

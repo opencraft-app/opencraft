@@ -1,4 +1,5 @@
 {
+  "turnRecovery.scheduled": "Model tidak tersedia buat sementara waktu. Percubaan semula automatik dijadualkan (sehingga {limit} kali).",
   "chat.continue.failed": "Sambungan respons tidak dapat disahkan. Semak perbualan sebelum mencuba lagi.",
   "composer.model.failedTitle": "Model tidak dapat dimuatkan",
   "composer.model.emptyTitle": "Belum ada model tersedia",
@@ -184,6 +185,9 @@
   "settings.title": "tetapan",
   "settings.appearance": "Penampilan",
   "settings.archived": "Perbualan yang diarkibkan",
+  "settings.archived.loading": "Memuatkan perbualan yang diarkibkan…",
+  "settings.archived.empty": "Tiada perbualan yang diarkibkan.",
+  "settings.archived.refresh": "Muat semula",
   "settings.laboratory": "Makmal",
   "settings.appearance.description": "Pilih bagaimana OpenCraft kelihatan di seluruh bangku kerja.",
   "settings.interface": "Antara muka",
@@ -1091,5 +1095,13 @@
   "fullUpgrade.blocked": "Syarat naik taraf belum dipenuhi",
   "fullUpgrade.stopping": "Sedang berhenti pada titik selamat",
   "fullUpgrade.cancel": "Batalkan naik taraf",
-  "fullUpgrade.stop": "Berhenti selepas langkah ini"
+  "fullUpgrade.stop": "Berhenti selepas langkah ini",
+  "chat.archived.restore": "Pulihkan perbualan",
+  "chat.archived.restoring": "Memulihkan…",
+  "modelPolicy.title": "Model usage restrictions",
+  "modelPolicy.models": "Blocked models",
+  "modelPolicy.efforts": "Blocked thinking levels",
+  "modelPolicy.save": "Save",
+  "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
+  "modelPolicy.hint": "Some options are disabled by your administrator."
 }

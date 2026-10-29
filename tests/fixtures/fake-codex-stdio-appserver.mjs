@@ -1,5 +1,8 @@
+const seededHistory = new Set();
+const unsupportedItemHistory = new Set();
 const legacyItems = new Set();
 const smallHistoryBudgets = new Set();
+const systemErrorThreads = new Set();
 import readline from "node:readline";
 
 const input = readline.createInterface({ input: process.stdin });
@@ -21,18 +24,34 @@ const loadedThreads = new Set();
 const subscribedThreads = new Set();
 const archivedThreads = new Set();
 const threadNames = new Map();
+const threadMetadata = new Map();
 const titleThreads = new Set();
 let nextTitleThread = 0;
 let threadReadsPaused = false;
 const heldThreadReads = [];
+const delayedThreadReads = new Set();
+const delayedReadWaiters = [];
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 function readThread(message) {
   const active = turns.get(message.params.threadId);
-  const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
-  send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : systemErrorThreads.has(message.params.threadId) ? "systemError" : "idle";
+  const metadata = threadMetadata.get(message.params.threadId) ?? {};
+  const reply = () => send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  if (metadata.readDelayMs) {
+    const timer = setTimeout(() => {
+      reply(); delayedThreadReads.delete(timer);
+      if (!delayedThreadReads.size) for (const id of delayedReadWaiters.splice(0)) send({id,result:{}});
+    }, metadata.readDelayMs);
+    delayedThreadReads.add(timer);
+  } else reply();
 }
 input.on("line", line => {
   const message = JSON.parse(line);
+  if (message.method === 'test/waitForDelayedReads') {
+    if (delayedThreadReads.size) delayedReadWaiters.push(message.id); else send({id:message.id,result:{}});
+    return;
+  }
+  if (message.method === 'test/setMetadata') { threadMetadata.set(message.params.threadId, message.params.metadata); send({id: message.id, result: {}}); return; }
   if (typeof message.params?.permissions === "string") permissionRequests.push({ method: message.method, params: message.params });
   if (message.method === "test/readPermissionRequests") { send({ id: message.id, result: { data: permissionRequests } }); return; }
   if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
@@ -46,7 +65,7 @@ input.on("line", line => {
     if (!threadReadsPaused) for (const read of heldThreadReads.splice(0)) readThread(read);
     send({ id: message.id, result: {} }); return;
   }
-  if (message.method === "test/setHistory") {threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
+  if (message.method === "test/setHistory") {seededHistory.add(message.params.threadId);if(message.params.unsupportedItems)unsupportedItemHistory.add(message.params.threadId);threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
   if (message.method === "test/emitTool") {
     const id=nextServerRequestId++;testTools.set(String(id),message.params);send({id,method:"item/tool/call",params:{...message.params,callId:String(id)}});send({id:message.id,result:{requestId:id}});return;
   }
@@ -84,9 +103,11 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/list") {
-    const thread = { id: "fixture-thread-1", name: threadNames.get("fixture-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
+    const thread = { ...(threadMetadata.get('fixture-thread-1') ?? {}), id: "fixture-thread-1", name: threadNames.get("fixture-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
     const matchesArchiveFilter = message.params?.archived === true ? archivedThreads.has(thread.id) : !archivedThreads.has(thread.id);
-    send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter ? [thread] : [], nextCursor: null } });
+    const matchesFilters = (message.params.projectId === undefined || message.params.projectId === thread.projectId)
+      && (message.params.cwd === undefined || (Array.isArray(message.params.cwd) ? message.params.cwd.includes(thread.cwd) : message.params.cwd === thread.cwd));
+    send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter && matchesFilters ? [thread] : [], nextCursor: null } });
     return;
   }
   if (message.method === "permissionProfile/list") {
@@ -104,20 +125,23 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/turns/list") {
-    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full") {
+    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full"
+      && (!unsupportedItemHistory.has(message.params.threadId) || message.params.limit > 2)) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
     if (message.params.sortDirection !== "asc") rows.reverse();
     const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...turn, items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
+    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
+    if (unsupportedItemHistory.has(message.params.threadId)) {send({id:message.id,error:{code:-32601,message:"Item pagination unsupported"}});return;}
     if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
-    const items = (legacyItems.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    if (message.params.sortDirection === 'desc') items.reverse();
     const offset = message.params.cursor ? Number(message.params.cursor) : 0;
     const limit = message.params.limit ?? 100;
     send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });
@@ -131,6 +155,7 @@ input.on("line", line => {
       return;
     }
     const turnId = `turn-${nextTurnId++}`;
+    systemErrorThreads.delete(threadId);
     turns.set(threadId, turnId);
     threadTurns.set(threadId, [...(threadTurns.get(threadId) ?? []), { id: turnId, status: "inProgress", items: [] }]);
     subscribedThreads.add(threadId);
@@ -178,6 +203,7 @@ input.on("line", line => {
     const threadId = message.params.threadId;
     const turnId = turns.get(threadId);
     turns.delete(threadId);
+    if (message.params.testSystemError) systemErrorThreads.add(threadId);
     const completed = { id: turnId, status: message.params.codexErrorInfo ? "failed" : "completed", items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
     threadTurns.set(threadId, (threadTurns.get(threadId) ?? []).map(turn => turn.id === turnId ? completed : turn));
     const deferred = deferredSteerHistory.get(threadId) ?? [];

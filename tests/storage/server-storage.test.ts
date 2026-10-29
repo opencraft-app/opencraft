@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, utimesSync, copyFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawnSync } from "node:child_process";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
 import { openServerDatabase, SERVER_DATA_CONTRACT, SERVER_MIGRATIONS } from "@opencraft/storage-node/server";
+import { importServerData } from "../../packages/storage-node/src/server/import.js";
 import { openServerRepository } from "@opencraft/storage-node/server-repository";
 import { SERVER_LEGACY_MIGRATIONS } from "@opencraft/storage-node/server-legacy";
 import * as schema from "../../packages/storage-node/src/server/schema.js";
@@ -41,13 +42,16 @@ async function seed(root: string) {
   await collaboration.bind(session.id, "native-thread", 0, () => {});
   const bindings = new CapabilityBindings(join(root, "session-capabilities.sqlite"));
   bindings.bind("capability-1", { serverId: "test-host", threadId: "native-thread" });
+  const executionSession = { serverId: "test-host", threadId: "native-thread", execution: { inputId: "input-1", executionId: "execution-1" } };
+  bindings.prepareExecution("execution-capability-1", { serverId: "test-host", threadId: "native-thread" });
+  bindings.bindExecution("execution-capability-1", executionSession);
   const authority = actors.authority;
   await collaboration.close(); bindings.close(); management.close(); accounts.close(); members.close(); actors.close();
-  return { context, session, login, authority, subject: principal.subject };
+  return { context, session, login, authority, executionSession, subject: principal.subject };
 }
 
 test("Drizzle schema and recorded snapshot have no ungenerated structural changes", async () => {
-  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0000_snapshot.json", import.meta.url), "utf8"));
+  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0001_snapshot.json", import.meta.url), "utf8"));
   const next = await generateSQLiteDrizzleJson(schema, previous.id);
   assert.deepEqual(await generateSQLiteMigration(previous, next), []);
   const empty = await generateSQLiteDrizzleJson({});
@@ -84,6 +88,7 @@ test("six populated stores consolidate without changing authority, sessions, cre
     assert.equal(management.status().state, "complete");
     assert.equal(collaboration.binding(before.session.id)?.threadId, "native-thread");
     assert.deepEqual(bindings.get("capability-1"), { serverId: "test-host", threadId: "native-thread" });
+    assert.deepEqual(bindings.execution("execution-capability-1"), { scope: { serverId: "test-host", threadId: "native-thread" }, session: before.executionSession });
     assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, 6);
     assert.equal(storage.database.prepare("SELECT contract_hash FROM opencraft_server_installation").get()?.contract_hash, SERVER_DATA_CONTRACT.hash);
     for (const receipt of storage.database.prepare("SELECT backup_path FROM opencraft_server_imports").all()) assert.ok(existsSync(String(receipt.backup_path)));
@@ -176,7 +181,7 @@ test("unknown history, source drift and orphaned recovery files refuse activatio
 });
 
 test("newer consolidated histories and missing business tables cannot open", async t => {
-  for (const sql of ["INSERT INTO schema_migrations VALUES(2,'future','hash',1)", "DROP TABLE actors"]) {
+  for (const sql of ["INSERT INTO schema_migrations VALUES(999,'future','hash',1)", "UPDATE schema_migrations SET checksum='modified' WHERE version=1", "DROP TABLE actors"]) {
     const root = fixture(t), storage = await openServerDatabase(root); await storage.close();
     const db = new DatabaseSync(join(root, "opencraft-server.sqlite")); db.exec(sql); db.close();
     await assert.rejects(openServerDatabase(root));
@@ -192,8 +197,6 @@ test("process termination during import rolls back; termination after commit res
     const root = fixture(t); await seed(root);
     const child = spawnSync(process.execPath, ["--import", "tsx", new URL("../fixtures/server-storage-crash.ts", import.meta.url).pathname, root, stage], { encoding: "utf8", timeout: 30_000 });
     assert.equal(child.signal, "SIGKILL", child.stderr);
-    // The child is confirmed dead. Expire only its synthetic proper-lockfile fence.
-    utimesSync(join(root, "server.lock"), new Date(0), new Date(0));
     const storage = await openServerDatabase(root);
     try {
       assert.equal(storage.database.prepare("SELECT count(*) AS n FROM actors").get()?.n, 2);
@@ -224,4 +227,40 @@ test("official account and access commands use the consolidated authority", asyn
     assert.equal((await provider.verify("owner", nextPassword))?.subject, before.subject);
     accounts.close(); members.close(); actors.close();
   } finally { await storage.close(); }
+});
+
+
+test("the previous consolidated contract upgrades while preserving actors and ledger checksums", async t => {
+  const root = fixture(t);
+  const previous = openManagedDatabase({ path: join(root, "opencraft-server.sqlite"), migrations: SERVER_MIGRATIONS.slice(0, 1) });
+  importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
+  const actors = new ActorStore(previous), session = actors.createSession("Retained actor", "fixture");
+  const authority = actors.authority;
+  const history = previous.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get();
+  actors.close(); previous.database.close();
+  const current = await openServerDatabase(root);
+  try {
+    assert.equal(current.outcome.status, "migrated");
+    assert.deepEqual(current.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), history);
+    const restored = new ActorStore(current), bindings = new CapabilityBindings(current);
+    assert.equal(restored.authority, authority); assert.deepEqual(restored.get(session.id), session);
+    bindings.prepareExecution("new-execution", { serverId: "test", threadId: "thread" });
+    assert.equal(bindings.executionId({ serverId: "test", threadId: "thread" }), "new-execution");
+    bindings.close(); restored.close();
+  } finally { await current.close(); }
+});
+
+test("the published capability v1 upgrades only its working copy", async t => {
+  const root = fixture(t), path = join(root, "session-capabilities.sqlite");
+  const previous = openManagedDatabase({ path, migrations: SERVER_LEGACY_MIGRATIONS["session-capabilities"].slice(0, 1) });
+  previous.database.exec("INSERT INTO capability_bindings VALUES('retained','server','thread',42)");
+  previous.database.close(); const bytes = readFileSync(path);
+  const current = await openServerDatabase(root);
+  try {
+    const bindings = new CapabilityBindings(current);
+    assert.deepEqual(bindings.get("retained"), { serverId: "server", threadId: "thread" });
+    bindings.prepareExecution("new", { serverId: "server", threadId: "thread" });
+    assert.equal(bindings.executionId({ serverId: "server", threadId: "thread" }), "new");
+    bindings.close(); assert.deepEqual(readFileSync(path), bytes);
+  } finally { await current.close(); }
 });

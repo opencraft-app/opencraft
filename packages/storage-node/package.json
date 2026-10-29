@@ -11,12 +11,10 @@
   },
   "dependencies": {
     "@opencraft/sqlite-node": "0.1.0",
-    "drizzle-orm": "0.45.4",
-    "proper-lockfile": "4.1.2"
+    "drizzle-orm": "0.45.4"
   },
   "devDependencies": {
-    "drizzle-kit": "0.31.11",
-    "@types/proper-lockfile": "4.1.4"
+    "drizzle-kit": "0.31.11"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

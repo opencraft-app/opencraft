@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/model-usage-policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./native": "./src/native.mjs",
+    "./http": "./src/http.ts",
+    "./transport": "./src/transport.ts"
+  },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

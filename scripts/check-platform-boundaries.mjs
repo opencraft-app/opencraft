@@ -18,8 +18,8 @@ function collectFiles(directory) {
 
 const violations = [];
 
-// Menu input is a shared contract. Focus policy must never opt out of outside
-// isolation; business code cannot import Radix menus behind the adapter.
+// Menu activation and focus are a shared contract; business code cannot import
+// Radix menus behind the adapter.
 for (const directory of ["apps/workbench-web/src", "packages", "plugins"]) {
   for (const path of collectFiles(resolve(repositoryRoot, directory))) {
     const location = relative(repositoryRoot, path);

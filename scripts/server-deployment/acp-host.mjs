@@ -1,9 +1,12 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
+import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
@@ -35,13 +38,17 @@ export async function startIndependentAcpHost(options) {
     node: process.version, nodeAbi: process.versions.modules };
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`, token = randomUUID();
   let provider, host, server, closed;
+  const environmentRuntimes = new Set();
   try {
+    new ModelPolicyStore(join(dirname(dataDirectory), "model-usage-policy.sqlite")).close();
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
     const capabilities = new RemoteSessionCapabilities(options.sessionCapabilitiesDirectory ?? identityDirectory, `server:${machine.machineId}:${id}`);
-    provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
+    provider = new AcpGenerationHost({ modelPolicyPath: join(dirname(dataDirectory), "model-usage-policy.sqlite"), id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
+      config.executionEnvironment = ExecutionEnvironmentRuntime.open(identityDirectory);
+      if (config.executionEnvironment) environmentRuntimes.add(config.executionEnvironment);
       // The runtime that supplies the ACP profile is explicit and versioned by
       // the operator. Never replace or restart the previous DSH web owner.
       if (id === 'dsh-acp') {
@@ -113,17 +120,19 @@ export async function startIndependentAcpHost(options) {
       return closed ??= (async () => {
         try { server.closeAllConnections(); await new Promise(accept => server.close(accept)); await host.close(); }
         finally { await rm(descriptorPath, { force: true }); }
-        await release(); await releaseKernel();
+        for (const environment of environmentRuntimes) environment.close();
+        environmentRuntimes.clear(); await release(); await releaseKernel();
       })();
     } };
   } catch (error) {
     server?.closeAllConnections(); if (server?.listening) await new Promise(accept => server.close(accept));
     if (host) await host.close(); else await provider?.close();
-    await rm(temporary, { force: true }); await release(); await releaseKernel(); throw error;
+    await rm(temporary, { force: true }); for (const environment of environmentRuntimes) environment.close();
+        environmentRuntimes.clear(); await release(); await releaseKernel(); throw error;
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const host = await startIndependentAcpHost(await readPrivateJson(process.env.OPENCRAFT_ACP_HOST_CONFIG ?? ''));
   console.log('Independent ACP Host ready');
   const stop = () => void host.close().then(() => process.exit(0), () => process.exit(1));

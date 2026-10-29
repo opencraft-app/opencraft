@@ -91,13 +91,13 @@ try {
       // No grace period: a contact after blur still closes in the same task.
       await page.evaluate(() => {
         window.dispatchEvent(new Event("blur"));
-        const surface = document.querySelector("[data-menu-dismiss-surface]")!;
+        const surface = document.querySelector('[aria-label="Outside input"]')!;
         surface.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 31, isPrimary: true, button: 0 }));
         surface.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
       });
       await menu.waitFor({ state: "hidden" });
       // Touch opens on release; retain Radix's existing eager mouse behavior
-      // after its old exit surface has gone away.
+      // after its old exiting menu has gone away.
       for (const delay of test.touch ? [0, 50, 80, 100, 120, 250] : [150]) {
         await open();
         const chooser = page.waitForEvent("filechooser");

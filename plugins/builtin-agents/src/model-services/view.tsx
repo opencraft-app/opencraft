@@ -4,7 +4,8 @@ import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { EyeIcon as Eye, EyeOffIcon as EyeOff } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
+import { useIntl } from "@opencraft/i18n/react";
+import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsPageHeader, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { RuntimeProviderView, RuntimeModelView } from "@opencraft/appserver-protocol";
 import { modelBaseUrlError } from "@opencraft/appserver-protocol";
 import { ModelServicesController } from "./controller";
@@ -236,6 +237,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
 
 export function createModelServicesView(controller: ModelServicesController) {
   return function ModelServicesView(_props: ExtensionSettingsViewProps) {
+    const intl = useIntl();
     const snapshot = useSyncExternalStore(controller.service.subscribe, controller.service.getSnapshot, controller.service.getSnapshot);
     useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
     useEffect(() => { void controller.service.refresh(); }, []);
@@ -246,6 +248,7 @@ export function createModelServicesView(controller: ModelServicesController) {
     const pick = (id: string | null) => controller.select(id);
     const providerRow = (provider: RuntimeProviderView) => <ProviderRow key={provider.provider} provider={provider} controller={controller} />;
     return <div className="model-services">
+      <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />
           <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />

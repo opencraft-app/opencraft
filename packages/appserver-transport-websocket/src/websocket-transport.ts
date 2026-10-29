@@ -170,7 +170,8 @@ export class WebSocketTransport implements DuplexTransport {
       const reason = event.code === 1000 ? undefined : event.reason || `WebSocket closed with code ${event.code}`;
       // Settle the old attempt before status observers can start its successor.
       failConnect(new Error(reason ?? "WebSocket closed before opening"));
-      this.setStatus(reason === undefined ? { state: "closed" } : { state: "closed", reason });
+      this.setStatus({ state: "closed", ...(reason === undefined ? {} : {reason}),
+        ...(event.code === 1012 ? {failure:{code:'APP_SERVER_RESTARTING',recovery:'automatic' as const}} : {}) });
     });
     return connectionPromise;
   }

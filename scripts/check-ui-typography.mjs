@@ -1,6 +1,6 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, relative, extname } from "node:path";
-import { pathToFileURL } from "node:url";
 import scss from "postcss-scss";
 import ts from "typescript";
 
@@ -104,7 +104,7 @@ export function classify(findings, exceptions) {
   const stale = exceptions.filter((_, i) => !used.has(i));
   return { errors, stale };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const findings = scanRepository();
   if (process.argv.includes("--inventory")) { console.log(JSON.stringify(findings, null, 2)); }
   else {

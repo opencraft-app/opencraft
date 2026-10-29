@@ -454,3 +454,10 @@ export const opencraftWaitTickets = sqliteTable("opencraft_wait_tickets", {
   check("opencraft_wait_tickets_check_1", sql.raw("wait_for IN ('all_settled','any_settled')")),
   check("opencraft_wait_tickets_check_2", sql.raw("state IN ('active','satisfied','expired','cancelled')")),
 ]);
+
+export const executionCapabilityBindings = sqliteTable("execution_capability_bindings", {
+  id: text("id").notNull().primaryKey(),
+  serverId: text("server_id").notNull(),
+  threadId: text("thread_id").notNull(),
+  sessionJson: text("session_json"),
+}, table => [uniqueIndex("execution_capability_bindings_server_id_thread_id_unique").on(table.serverId, table.threadId)]);

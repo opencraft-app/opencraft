@@ -135,6 +135,11 @@ CREATE TABLE opencraft_input_origins (
 ) STRICT;
 `;
 
+const EXECUTION_CAPABILITIES_SCHEMA = `CREATE TABLE execution_capability_bindings (
+ id TEXT PRIMARY KEY, server_id TEXT NOT NULL, thread_id TEXT NOT NULL,
+ session_json TEXT, UNIQUE(server_id,thread_id)
+) STRICT;`;
+
 export const SERVER_LEGACY_MIGRATIONS = {
 
   "actors": [
@@ -164,6 +169,7 @@ export const SERVER_LEGACY_MIGRATIONS = {
 
   "session-capabilities": [
     { version: 1, name: "session-capability-bindings", sql: SESSION_CAPABILITIES_SCHEMA },
+    { version: 2, name: "execution-capability-bindings", sql: EXECUTION_CAPABILITIES_SCHEMA },
   ],
 
 } as const satisfies Record<string, readonly Migration[]>;

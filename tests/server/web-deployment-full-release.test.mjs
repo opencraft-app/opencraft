@@ -8,8 +8,9 @@ import { c } from 'tar';
 import { parseStrictJson, parseManifest, fileListDigest, sha256, signBytes, acceptManifest,
   signPreflight, verifyPreflight, HARD_LIMITS, LEGACY_LIMITS } from '../../scripts/full-release/contract.mjs';
 import { acceptReleasePolicy } from '../../scripts/full-upgrade/release-policy.mjs';
-import { sealPackage, npmPack } from '../../scripts/full-release/producer.mjs';
-import { verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
+import { sealPackage, npmPack, stagedInventory, archivePreparedPackage } from '../../scripts/full-release/producer.mjs';
+import { copyPreparedTree } from '../../scripts/full-release/prepared-tree.mjs';
+import { scanArchive as verifyInventoryArchive, verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const keyId = 'test-key';
@@ -70,6 +71,21 @@ test('sealing under a restrictive umask produces canonical modes without followi
   await link(outside, join(pkg, 'runtime/hard-link'));
   await assert.rejects(npmPack(pkg, root), /hard links/);
   assert.equal((await stat(outside)).mode & 0o7777, 0o600);
+});
+
+test('uncompressed signing inventory follows npm inclusion and ignore rules', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'inventory-rules-'));
+  t.after(() => rm(root, {recursive:true,force:true}));
+  const pkg=join(root,'pkg'); await mkdir(join(pkg,'runtime'),{recursive:true});
+  await writeFile(join(pkg,'package.json'),JSON.stringify({name:'inventory',version:'1.0.0',files:['runtime'],bin:'runtime/main.mjs'}));
+  await writeFile(join(pkg,'LICENSE'),'license'); await writeFile(join(pkg,'outside'),'not shipped');
+  await writeFile(join(pkg,'runtime/main.mjs'),'export const a=1');
+  await writeFile(join(pkg,'runtime/.npmignore'),'ignored.txt\n');
+  await writeFile(join(pkg,'runtime/ignored.txt'),'not shipped either');
+  const inventory=await stagedInventory(pkg), packed=await npmPack(pkg,root);
+  const scan=await verifyInventoryArchive(join(root,packed.filename));
+  assert.deepEqual(inventory,scan.files);
+  assert.ok(!inventory.some(([name])=>name.includes('ignored')||name==='outside'));
 });
 
 test('strict parser rejects duplicate keys, unsafe numbers, invalid UTF8 and depth', () => {
@@ -282,7 +298,7 @@ server.listen(0,'127.0.0.1',()=>process.send({protocol:1,version:pkg.version,bui
     await writeFile(join(pkg,'web/index.html'),`<meta content="${buildId}">`);await writeFile(join(pkg,'web/version.json'),JSON.stringify({buildId,sourceRevision:source}));
     await writeFile(join(pkg,'runtime/worker.mjs'),worker);await writeFile(join(pkg,'LICENSE'),'license');
     const record=fixture();record.release.releaseSequence=n;record.release.releaseId=`test-release-${n}`;record.transport.exactVersion=version;
-    const packed=await sealPackage({packageRoot:pkg,directory,template:record,keyPath:key,keyId});packages[version]={version,buildId,archive:join(directory,packed.filename),packageRoot:pkg,integrity:packed.integrity};
+    const packed=await sealPackage({packageRoot:pkg,directory,template:record,keyPath:key,keyId});packages[version]={version,buildId,archive:join(directory,packed.filename),packageRoot:pkg,integrity:packed.integrity,manifestSha256:packed.fullRelease.manifestSha256};
   }
   await writeFile(join(root,'packages.json'),JSON.stringify(packages));
   const serverUrl=new URL('../../scripts/web-deployment/server.mjs',import.meta.url).href;
@@ -290,7 +306,7 @@ server.listen(0,'127.0.0.1',()=>process.send({protocol:1,version:pkg.version,bui
   const scenario=`import assert from 'node:assert/strict';import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';import {join} from 'node:path';
 import {createManagedWebServer} from ${JSON.stringify(serverUrl)};import {readReplayState} from ${JSON.stringify(stateUrl)};
 const root=process.argv[2],packages=JSON.parse(await readFile(join(root,'packages.json'),'utf8'));
-async function run(name,rollback) {
+async function run(name,rollback,tree=false) {
  const stateDirectory=join(root,name);let selected='1.3.0',app,base,cookie='';
  const source={channel:'test',latest:async()=>packages[selected],download:async(release,directory)=>{await mkdir(directory,{recursive:true});const path=join(directory,'release.tgz');await copyFile(packages[release.version].archive,path);return path;}};
  const execution={status:async()=>null,apply:async()=>{},inspect:async(release)=>{if(!rollback&&release.version==='1.3.0')throw new Error('Synthetic preparation failure');},referencedRoots:async()=>[]};
@@ -298,7 +314,7 @@ async function run(name,rollback) {
  const status=async()=>await(await fetch(base+'/__opencraft_updates',{headers:{cookie}})).json();
  async function until(predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await status();if(predicate(value))return value;await new Promise(r=>setTimeout(r,20));}throw new Error('Managed test timed out');}
  async function open(){cookie='';app=await createManagedWebServer({initialRelease:packages['1.1.0'].packageRoot,stateDirectory,source,execution});base='http://127.0.0.1:'+(await app.listen({port:0})).port;const key=(await readFile(app.adminKeyPath,'utf8')).trim();const login=await post('login',{key});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];}
- async function install(version,phase){selected=version;if(!rollback){assert.equal((await post('install-local',packages[version])).status,202);}else{assert.equal((await post('check')).status,202);await until(s=>!s.checking&&s.latest?.version===version);assert.equal((await post('install',{version})).status,202);}return until(s=>s.job?.phase===phase);}
+ async function install(version,phase){selected=version;if(tree){assert.equal((await status()).localTreeInstall,1);assert.equal((await post('install-local-tree',{...packages[version],tree:packages[version].packageRoot})).status,202);}else if(!rollback){assert.equal((await post('install-local',packages[version])).status,202);}else{assert.equal((await post('check')).status,202);await until(s=>!s.checking&&s.latest?.version===version);assert.equal((await post('install',{version})).status,202);}return until(s=>s.job?.phase===phase);}
  try {
   await open();const initial=JSON.parse(await readFile(join(stateDirectory,'deployment.json'),'utf8')).current.fullRelease;
   assert.ok(initial.manifestSha256);
@@ -313,10 +329,10 @@ async function run(name,rollback) {
   return {current:(await status()).current.version,highest:high};
  } finally {if(app)await app.close();}
 }
-console.log(JSON.stringify({preparationFailure:await run('prepare',false),rollbackThenWorkerFailure:await run('rollback',true)}));`;
+console.log(JSON.stringify({preparationFailure:await run('prepare',false),rollbackThenWorkerFailure:await run('rollback',true),treePreparationFailure:await run('tree-prepare',false,true),treeRollback:await run('tree-rollback',true,true)}));`;
   const path=join(root,'scenario.mjs');await writeFile(path,scenario);
   const {stdout}=await promisify(execFile)(process.execPath,[path,root],{timeout:45000,maxBuffer:1024*1024,env:{...process.env,OPENCRAFT_FULL_RELEASE_TRUST_JSON:JSON.stringify(trust),OPENCRAFT_NPM_PACKAGE_NAME:trust.packageName}});
-  assert.deepEqual(JSON.parse(stdout.trim()),{preparationFailure:{current:'1.1.0',highest:3},rollbackThenWorkerFailure:{current:'1.1.0',highest:3}});
+  assert.deepEqual(JSON.parse(stdout.trim()),{preparationFailure:{current:'1.1.0',highest:3},rollbackThenWorkerFailure:{current:'1.1.0',highest:3},treePreparationFailure:{current:'1.1.0',highest:3},treeRollback:{current:'1.1.0',highest:3}});
 });
 
 test('complete tree components remain consumable by the fixed bridge contract and match final dry-run',async t=>{
@@ -352,4 +368,91 @@ test('signed npm consumer streams the pinned URL and rejects oversized bytes bef
   const options={env:{...process.env,OPENCRAFT_NPM_PACKAGE_NAME:trust.packageName,OPENCRAFT_FULL_RELEASE_TRUST_JSON:JSON.stringify(localTrust)},timeout:30000,maxBuffer:65536};
   const positive=await promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'download')],options);assert.match(positive.stdout,/download verified/);assert.equal(paths.filter(p=>p==='/npm/app.tgz').length,1);
   oversize=true;await assert.rejects(promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'oversize')],options),error=>error.stdout.includes('Signed release stream download failed'));await assert.rejects(readFile(join(root,'oversize/release.tgz')),{code:'ENOENT'});
+});
+
+
+test('streamed sealing with default compression is byte-identical to npm pack', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'seal-npm-equivalence-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const previousCache = process.env.OPENCRAFT_PACKAGE_CACHE_DIR;
+  process.env.OPENCRAFT_PACKAGE_CACHE_DIR = join(root, 'selection-cache');
+  t.after(() => { if (previousCache === undefined) delete process.env.OPENCRAFT_PACKAGE_CACHE_DIR; else process.env.OPENCRAFT_PACKAGE_CACHE_DIR = previousCache; });
+  const pkg = join(root, 'pkg'); await mkdir(join(pkg, 'runtime'), { recursive: true });
+  await mkdir(join(pkg, 'web')); await mkdir(join(root, 'npm'));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['runtime', 'web'], dependencies: { 'equivalence-dep': '1.0.0' }, bundleDependencies: ['equivalence-dep'], bin: 'runtime/main.mjs', opencraftWeb: { buildId: 'fixture' } }));
+  await mkdir(join(pkg, 'node_modules/equivalence-dep'), { recursive: true });
+  await writeFile(join(pkg, 'node_modules/equivalence-dep/package.json'), JSON.stringify({ name: 'equivalence-dep', version: '1.0.0', main: 'index.js' }));
+  await writeFile(join(pkg, 'node_modules/equivalence-dep/index.js'), 'module.exports=1');
+  await writeFile(join(pkg, 'runtime/main.mjs'), 'console.log(1)');
+  await writeFile(join(pkg, 'runtime/.npmignore'), 'hidden.txt\n');
+  await writeFile(join(pkg, 'runtime/hidden.txt'), 'must not ship');
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }));
+  await writeFile(join(pkg, 'LICENSE'), 'license');
+  const key = join(root, 'key.pem'); await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  const args = { packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId };
+  const sealed = await sealPackage({ ...args, gzipLevel: 9 });
+  const npm = await npmPack(pkg, join(root, 'npm'));
+  assert.equal(sealed.integrity, npm.integrity);
+  assert.deepEqual(await readFile(join(root, sealed.filename)), await readFile(join(root, 'npm', npm.filename)));
+  assert.deepEqual(sealed.files, npm.files);
+  assert.deepEqual(sealed.bundled, npm.bundled);
+  assert.equal(sealed.entryCount, npm.entryCount);
+  assert.equal(sealed.unpackedSize, npm.unpackedSize);
+  const retry = await sealPackage({ ...args, gzipLevel: 9 });
+  assert.equal(retry.integrity, sealed.integrity);
+  await assert.rejects(sealPackage({ ...args, gzipLevel: 3 }), /archive identity changed/);
+});
+
+test('signed metadata excluded by npm rules is rejected before sealing', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'seal-metadata-ignore-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pkg = join(root, 'pkg'); await mkdir(join(pkg, 'web'), { recursive: true });
+  await mkdir(join(pkg, 'release'));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['web', 'release'], opencraftWeb: { buildId: 'fixture' } }));
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }));
+  await writeFile(join(pkg, 'LICENSE'), 'license');
+  await writeFile(join(pkg, 'release/.npmignore'), 'full-release.*\n');
+  const key = join(root, 'key.pem'); await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  await assert.rejects(sealPackage({ packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId }), /exclude signed release metadata/);
+});
+
+test('package compression level rejects invalid configuration', async () => {
+  const { packageGzipLevel } = await import('../../scripts/full-release/npm-archive.mjs');
+  for (const value of ['', '0', '10', '3.5', 'fast', true]) assert.throws(() => packageGzipLevel(value));
+  for (const value of ['1', 3, '9']) assert.equal(packageGzipLevel(value), Number(value));
+});
+
+
+test('prepared trees copy only signed payload, reject corruption and links, and defer an identical archive', async t => {
+  const { symlink, stat, readdir } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'prepared-tree-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pkg = join(root, 'package'), key = join(root, 'key.pem');
+  await mkdir(join(pkg, 'web'), { recursive: true });
+  await mkdir(join(pkg, 'runtime'));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['web', 'runtime'], opencraftWeb: { schemaVersion: 1, workerProtocol: 1, buildId: 'fixture' } }));
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }));
+  await writeFile(join(pkg, 'runtime/main.mjs'), 'original');
+  await writeFile(join(pkg, 'LICENSE'), 'license');
+  await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  const prepared = await sealPackage({ packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId, prepareOnly: true });
+  assert.equal(prepared.integrity, undefined);
+  assert.ok(!(await readdir(root)).some(name => name.endsWith('.tgz')));
+  const options = { expectedManifestSha256: prepared.preparedTree.manifestSha256 };
+  await writeFile(join(pkg, 'not-shipped'), 'ignored by npm');
+  const accepted = await copyPreparedTree(pkg, join(root, 'installed'), trust, options);
+  await assert.rejects(stat(join(root, 'installed/not-shipped')), { code: 'ENOENT' });
+  assert.notEqual((await stat(join(pkg, 'runtime/main.mjs'))).ino, (await stat(join(root, 'installed/runtime/main.mjs'))).ino);
+  await assert.rejects(copyPreparedTree(pkg, join(root, 'wrong-digest'), trust, { expectedManifestSha256: '0'.repeat(64) }), /manifest identity/);
+  await assert.rejects(copyPreparedTree(pkg, join(root, 'replayed'), trust, { state: { ...accepted.state, highestSequence: 2 } }), /replay|sequence/i);
+  const archiveArgs = { packageRoot: pkg, directory: root, trust, ...options, identityDirectory: prepared.preparedTree.identityDirectory };
+  const packed = await archivePreparedPackage(archiveArgs);
+  assert.equal((await verifyFullArchive(join(root, packed.filename), trust)).state.manifestSha256, options.expectedManifestSha256);
+  assert.equal((await archivePreparedPackage(archiveArgs)).integrity, packed.integrity);
+  await writeFile(join(pkg, 'runtime/main.mjs'), 'tampered');
+  await assert.rejects(copyPreparedTree(pkg, join(root, 'corrupt'), trust, options), /digest mismatch/);
+  await assert.rejects(archivePreparedPackage(archiveArgs), /mismatch|changed/);
+  await rm(join(pkg, 'runtime/main.mjs'));
+  await symlink(join(root, 'installed/runtime/main.mjs'), join(pkg, 'runtime/main.mjs'));
+  await assert.rejects(copyPreparedTree(pkg, join(root, 'linked'), trust, options), /links/);
 });

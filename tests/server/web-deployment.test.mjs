@@ -24,12 +24,15 @@ test('npm package installs, switches without disconnecting existing execution so
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
   let backendConnections = 0;
   backend.on('connection', socket => { backendConnections++; socket.on('message', data => socket.send(data)); });
-  let fixture; let app; let socket; let base; let cookie = ''; let failWrite = false; let failRecovery = false; let candidateCommitted = false;
+  let fixture; let app; let socket; let base; let cookie = ''; let failWrite = false; let failRecovery = false; let candidateCommitted = false; let rollbackRecoveries = 0;
   const stateDirectory = join(directory, 'state');
+  const recoveryMarker = join(directory, 'recovery-marker');
   const status = async () => parseWebUpdateStatus(await (await fetch(`${base}/__opencraft_updates`, { headers: { cookie } })).json());
   const post = (action, input = {}, overrides = {}) => fetch(`${base}/__opencraft_updates/${action}`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json', cookie, ...overrides }, body: JSON.stringify(input) });
   const open = async () => {
     app = await createManagedWebServer({ initialRelease: fixture.releases.get('1.0.0').packageRoot, stateDirectory,
+      recoveryMarker,
+      rollbackRecovery: async () => { rollbackRecoveries++; },
       stateWriter: async (path, value) => {
         if (failWrite && value.job?.phase === 'downloading') { failWrite = false; throw new Error('Synthetic disk full'); }
         if (failRecovery && candidateCommitted && value.current.version !== '1.3.0') throw new Error('Synthetic sustained disk full');
@@ -86,6 +89,9 @@ test('npm package installs, switches without disconnecting existing execution so
     assert.equal((await post('check')).status, 202);
     const checked = await until(status, result => !result.checking && result.latest !== null);
     assert.equal(checked.latest.version, '1.1.0'); assert.equal(checked.updateAvailable, true);
+    await writeFile(recoveryMarker, 'managed-incident');
+    assert.equal((await post('install', { version: '1.1.0' })).status, 409);
+    await rm(recoveryMarker);
     let releaseDownload; fixture.holdDownload(new Promise(resolve => { releaseDownload = resolve; }));
     const accepted = await post('install', { version: '1.1.0' });
     assert.equal(accepted.status, 202);
@@ -100,11 +106,13 @@ test('npm package installs, switches without disconnecting existing execution so
     assert.match(await (await fetch(`${base}/assets/lazy-100abcdef.js`)).text(), /1.0.0/);
     await assertPlugin();
     await echo('after-update'); assert.equal(closed, false); assert.equal(backendConnections, 1);
+    assert.equal(rollbackRecoveries, 0);
     assert.equal((await post('rollback')).status, 202);
     await until(status, result => result.current.version === '1.0.0' && result.job.phase === 'completed');
     await assert.rejects(readFile(join(fixture.releases.get('1.0.0').packageRoot, 'web/assets/lazy-110abcdef.js')), { code: 'ENOENT' });
     assert.ok(JSON.parse(await readFile(join(stateDirectory, 'deployment.json'), 'utf8')).current.releaseRoot.startsWith(stateDirectory));
     await assertPlugin();
+    assert.equal(rollbackRecoveries, 1);
     await echo('after-rollback'); assert.equal(closed, false); assert.equal(backendConnections, 1);
     const expectedIntegrity = fixture.releases.get('1.1.0').manifest.dist.integrity;
     fixture.releases.get('1.1.0').manifest.dist.integrity = 'sha512-' + Buffer.alloc(64, 7).toString('base64');

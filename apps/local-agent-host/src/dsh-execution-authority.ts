@@ -125,7 +125,7 @@ export class DshExecutionAuthority {
       const confirmed = turn && receipt?.turns.some(([id,state])=>id === String(turn) && state === "closed");
       return !confirmed && (!row.turn_id || !["completed","failed","interrupted"].includes(row.state));
     });
-    const queued = this.database.prepare("SELECT * FROM hypernode_thread_queue_submissions WHERE state NOT IN ('dispatched','cancelled','completed','failed')").all();
+    const queued = this.database.prepare("SELECT * FROM hypernode_thread_queue_submissions WHERE state NOT IN ('dispatched','deleted','cancelled','completed','failed')").all();
     return {activeCount:[...this.table.values()].length + this.editing.size + inputs.length + pending.length + queued.length,
       queued:queued.length,unknownInputs:inputs.length,unfinishedAttempts:pending.length};
   }

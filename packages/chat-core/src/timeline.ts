@@ -20,6 +20,7 @@ export interface TimelineBlockBase<TType extends string> {
   readonly type: TType;
   readonly id: string;
   readonly sourceItemIds: readonly ItemId[];
+  readonly historyDetail?: string;
 }
 
 export interface TextTimelineBlock extends TimelineBlockBase<"text"> {

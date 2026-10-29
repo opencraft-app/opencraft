@@ -6,7 +6,8 @@ import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from
 import type { AppServerThread, AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
 import { canonicalRolloutPath, readRolloutIncrement, type NativeRolloutSource } from "./codex-rollout-reader.js";
 
-export const TRANSCRIPT_PROJECTION_SCHEMA = 1;
+export const TRANSCRIPT_PROJECTION_SCHEMA = 2;
+export class NativeItemPaginationUnsupported extends Error {}
 const DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS = 30_000;
 const OUTPUT_FIELDS = ["aggregatedOutput", "output", "result", "structuredResult", "contentItems", "results"] as const;
 const SQL = `
@@ -73,6 +74,10 @@ export interface NativeTranscriptPort {
   observeSnapshotSource?(threadId: string): Promise<NativeTranscriptSnapshotSource | null>;
   readThread(threadId: string, signal?: AbortSignal): Promise<AppServerThread>;
   listTurns(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection?: "asc" | "desc"): Promise<NativePage>;
+  /** Optional paired native ports: index every Turn without projecting hidden
+   * Item bodies, then materialize only the Turns a caller actually requests. */
+  listTurnHeaders?(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal): Promise<NativePage>;
+  listTurnItems?(threadId: string, turnId: string, signal?: AbortSignal): Promise<AppServerTurn["items"]>;
 }
 function object(value: unknown): Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -129,6 +134,41 @@ function encodeTurn(turn: AppServerTurn) {
   return { buffer, hash: createHash("sha256").update(buffer).digest("hex"), blobs };
 }
 
+/** Only collapsed tool details are deferred. Message content and attachment
+ * identities retain their existing semantics. Unknown Item types stay lossless. */
+function presentationItem(item: import("@opencraft/appserver-protocol").AppServerThreadItem, cursor: string) {
+  if (item.status === "inProgress" || !["commandExecution", "fileChange"].includes(item.type ?? "")) {
+    // Non-tool blobs must still be restored by the full reader.
+    return null;
+  }
+  const preview = { ...item };
+  let deferred = false;
+  for (const key of Object.keys(object(item.outputBlobRef))) {
+    // JSON blob previews are byte prefixes, not valid protocol objects.
+    preview[key] = null;
+    deferred = true;
+  }
+  delete preview.outputBlobRef;
+  if (item.type === "commandExecution") {
+    if (typeof preview.command === "string" && preview.command.length > 256) { preview.command = preview.command.slice(0, 256); deferred = true; }
+    if (Array.isArray(preview.commandActions)) preview.commandActions = preview.commandActions.map(action => {
+      const value = object(action);
+      if (typeof value.command !== "string" || value.command.length <= 256) return action;
+      deferred = true; return { ...value, command: value.command.slice(0, 256) };
+    });
+  }
+  if (item.type === "fileChange" && Array.isArray(preview.changes)) preview.changes = preview.changes.map(change => {
+    const value = object(change), diff = value.diff ?? value.unifiedDiff ?? value.unified_diff;
+    if (typeof diff !== "string" || diff.length <= 1024) return change;
+    deferred = true;
+    const { diff: _diff, unifiedDiff: _unifiedDiff, unified_diff: _unified_diff, ...rest } = value;
+    const lines = diff.split("\n");
+    return { ...rest, additions: lines.filter(line => line.startsWith("+") && !line.startsWith("+++")).length,
+      deletions: lines.filter(line => line.startsWith("-") && !line.startsWith("---")).length };
+  });
+  return deferred ? { ...preview, historyDetail: { cursor } } : preview;
+}
+
 /** Disposable normalized native history. The native reader owns projection
  * semantics; the Stage 5 rollout cursor identifies the dirty suffix. A cache
  * projection hit uses stat + indexed pread, with no history paging, model RPC
@@ -140,6 +180,7 @@ export class TranscriptReadCache {
   private readonly jobs = new Map<string, Promise<unknown>>();
   private readonly revisions = new Map<string, number>();
   private closed = false;
+  private headerPagesSupported = true;
   readonly directory: string;
   private readonly databasePath: string;
   private readonly schema: number;
@@ -212,7 +253,7 @@ export class TranscriptReadCache {
   }
 
   /** Native metadata stays live; it is never served from this cache. */
-  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
+  async read(threadId: string, limit = 10, onValidated?: () => void, itemsView: "full" | "notLoaded" | "presentation" = "full", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<{ thread: AppServerThread; initialTurnsPage: ThreadTurnsListResponse }> {
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
     const metadataStarted = performance.now();
@@ -225,7 +266,7 @@ export class TranscriptReadCache {
     const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
   }
-  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver): Promise<ThreadTurnsListResponse> {
+  async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" | "presentation" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver, detailItemId?: string): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
     if (sortDirection !== "asc" && sortDirection !== "desc") return Promise.reject(new Error("Invalid transcript sort direction"));
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
@@ -267,18 +308,39 @@ export class TranscriptReadCache {
       // Rollout preparation already reported source time; snapshot observation
       // is measured here, inside its required serialization boundary.
       if (snapshotSource) observe(observer, "source", sourceStarted);
-      for (let attempt = 0; attempt < 2; attempt++) {
+      readAttempts: for (let attempt = 0; attempt < 2; attempt++) {
         const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal, observer);
         observe(observer, "reconcile", started);
         ensureCurrent();
         const pageStarted = performance.now();
         let page: ThreadTurnsListResponse;
         try {
-          page = this.readPage(threadId, cursor, limit, itemsView, sortDirection);
+          page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
         }
         catch (error) {
           if (error instanceof InvalidTranscriptCursor || attempt === 1) throw error;
           this.drop(threadId); continue;
+        }
+        if (itemsView !== "notLoaded" && this.port.listTurnItems) {
+          let hydrated = false;
+          for (const turn of page.data) if (turn.itemsView === "notLoaded") {
+            let items: AppServerTurn["items"];
+            try { items = await awaitWithAbort(this.port.listTurnItems(threadId, turn.id, effectiveSignal), effectiveSignal); }
+            catch (error) {
+              if (!(error instanceof NativeItemPaginationUnsupported)) throw error;
+              ensureCurrent();
+              // Some native protocols have Turn headers but no Item paginator.
+              // Reconstruct full native Turns instead of publishing empty bodies.
+              this.headerPagesSupported = false; this.drop(threadId);
+              attempt--; continue readAttempts;
+            }
+            ensureCurrent();
+            const row = this.database().prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId, turn.id) as Row | undefined;
+            if (!row) throw new Error("Transcript Turn disappeared during hydration");
+            transaction(this.database(), () => this.storeTurn(threadId, { ...turn, items, itemsView: "full" }, Number(row.turn_seq)));
+            hydrated = true;
+          }
+          if (hydrated) page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
         }
         await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
         observe(observer, "page", pageStarted);
@@ -288,7 +350,7 @@ export class TranscriptReadCache {
       throw new Error("Transcript rebuild failed");
     }, effectiveSignal);
   }
-  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded", sortDirection: "asc" | "desc"): ThreadTurnsListResponse {
+  private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded" | "presentation", sortDirection: "asc" | "desc", detailItemId?: string): ThreadTurnsListResponse {
     const db = this.database(), meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId)! as Row;
     let before = Number.MAX_SAFE_INTEGER;
     let after = -Number.MAX_SAFE_INTEGER;
@@ -302,7 +364,7 @@ export class TranscriptReadCache {
     const rows = (sortDirection === "asc"
       ? db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq>? ORDER BY turn_seq ASC LIMIT ?").all(threadId, after, limit + 1)
       : db.prepare("SELECT * FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_seq<? ORDER BY turn_seq DESC LIMIT ?").all(threadId, before, limit + 1)) as Row[];
-    const fd = itemsView === "full" ? openSync(this.paths(threadId).turns, "r") : null;
+    const fd = itemsView !== "notLoaded" ? openSync(this.paths(threadId).turns, "r") : null;
     try {
       const fileSize = fd === null ? 0 : fstatSync(fd).size;
       const data = rows.slice(0, limit).map(row => {
@@ -318,7 +380,11 @@ export class TranscriptReadCache {
         if (turn.id !== row.turn_id || !Array.isArray(turn.items)) throw new Error("Corrupt transcript projection");
         // The wire's existing full-items contract is lossless. Cold bodies are
         // stored separately, then restored only for the requested ten Turns.
-        return { ...turn, items: turn.items.map(item => {
+        return { ...turn, items: turn.items.filter(item => detailItemId === undefined || item.id === detailItemId).map(item => {
+          if (itemsView === "presentation") {
+            const preview = presentationItem(item, `transcript:${meta.epoch}:${row.turn_seq + 1}`);
+            if (preview) return preview;
+          }
           const restored = { ...item };
           for (const [key, ref] of Object.entries(object(item.outputBlobRef))) {
             if (!(OUTPUT_FIELDS as readonly string[]).includes(key)) throw new Error("Invalid transcript blob field");
@@ -329,6 +395,17 @@ export class TranscriptReadCache {
             restored[key] = object(ref).encoding === "json" ? JSON.parse(body.toString("utf8")) : body.toString("utf8");
           }
           delete restored.outputBlobRef;
+          if (itemsView === "presentation" && restored.type === "mcpToolCall" && restored.status !== "inProgress"
+            && !restored.mcpAppUi && !restored.appContext && !restored.mcpAppResourceUri) {
+            const result = object(restored.result);
+            if (Array.isArray(result.content) && Buffer.byteLength(JSON.stringify([result.content, result.structuredContent])) > 1024) {
+              // Keep the tool envelope and all surface metadata (Apps/browser/
+              // computer identity); only the collapsed result body is deferred.
+              const { structuredContent: _structured, ...envelope } = result;
+              restored.result = { ...envelope, content: [] };
+              restored.historyDetail = { cursor: `transcript:${meta.epoch}:${row.turn_seq + 1}` };
+            }
+          }
           return restored;
         }) };
       });
@@ -369,6 +446,13 @@ export class TranscriptReadCache {
         if (!sizeError || limit === 1) throw error;
       }
     }
+  }
+  private async indexPage(threadId: string, cursor: string | null, signal?: AbortSignal, initialLimit = 100): Promise<NativePage> {
+    if (!this.headerPagesSupported || !this.port.listTurnHeaders || !this.port.listTurnItems) return this.nativePage(threadId, cursor, signal, initialLimit);
+    const page = await awaitWithAbort(this.port.listTurnHeaders(threadId, cursor, initialLimit, signal), signal);
+    if (!Array.isArray(page.data) || !(page.nextCursor === null || typeof page.nextCursor === "string")) throw new Error("Invalid native Turn header page");
+    return { ...page, data: page.data.map(turn => turn.itemsView === "notLoaded"
+      ? { ...turn, items: [], itemsView: "notLoaded" as const } : turn) };
   }
   /** SQLite and native snapshot readers may need to read their full logical
    * snapshot. Only changed/new projection records are written. A stable prefix
@@ -434,6 +518,17 @@ export class TranscriptReadCache {
     if (meta && meta.source_cursor === native.position && meta.native_watermark !== native.watermark) rebuild = true;
     let cursor = rebuild ? 0 : Number(meta!.source_cursor), identity: string | null = rebuild ? null : meta!.source_identity;
     const dirty = new Set<string>(); let bytes = 0;
+    if (rebuild && this.headerPagesSupported && this.port.listTurnHeaders && this.port.listTurnItems && native.position > 0) {
+      // Native headers reconstruct the entire authoritative index. There is no
+      // dirty suffix to discover on a rebuild, so do not decode every tool body
+      // just to find Turn IDs. A partial last record keeps the conservative scan.
+      const fd = openSync(path, "r"), last = Buffer.alloc(1);
+      try {
+        if (readSync(fd, last, 0, 1, native.position - 1) === 1 && last[0] === 10) {
+          cursor = native.position; identity = native.identity;
+        }
+      } finally { closeSync(fd); }
+    }
     while (!snapshotSource && cursor < native.position) {
       throwIfAborted(signal);
       const scanStarted = performance.now();
@@ -473,7 +568,7 @@ export class TranscriptReadCache {
       // Incremental validation usually needs only the live tail and its boundary.
       // A full hundred-Turn page can rehydrate megabytes of unchanged tool output.
       // Continue paging until the same dirty boundary; rebuilds still read all Turns.
-      const page = await this.nativePage(threadId, nativeCursor, signal, rebuild ? 100 : 10);
+      const page = await this.indexPage(threadId, nativeCursor, signal, rebuild ? 100 : 10);
       transaction(db, () => { for (const turn of page.data) {
         if (rebuild) this.storeTurn(threadId, turn, -descendingSeq++);
         else {

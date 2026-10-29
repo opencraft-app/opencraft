@@ -5,6 +5,7 @@ import { startHeadlessServer, parseHeadlessArguments } from '../headless-applica
 import { coreHealth } from './execution.mjs';
 import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readDshHostIdentity } from './dsh-host-client.mjs';
+import { readGatewayUpdateIntent } from './gateway-update-intent.mjs';
 
 /** Read dependencies concurrently and retain release identity even when one is
  * unavailable. A live gateway and a ready execution service are different facts. */
@@ -78,14 +79,14 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
         ...(dshDescriptor ? { dsh: () => readDshHostIdentity(dshDescriptor) } : {}),
         ...(engineHostDescriptor ? {engineHost:() => readEngineHostIdentity(engineHostDescriptor)} : {}),
       });
-      return { ...observed, runtimeReleaseRoot: releaseRoot };
+      return { ...observed, runtimeReleaseRoot: releaseRoot, storageWriterProtocol: 2 };
     },
   });
   console.log(`[opencraft headless] ${app.url}`);
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return; stopping = true;
-    try { await app.close(); process.exit(0); }
+    try { await app.close(await readGatewayUpdateIntent()); process.exit(0); }
     catch (error) { console.error(error); process.exit(1); }
   };
   process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);

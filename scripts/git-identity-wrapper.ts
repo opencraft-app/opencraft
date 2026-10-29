@@ -1,8 +1,8 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn, execFile } from 'node:child_process';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { queryGitIdentityBroker } from './git-identity-ipc.js';
 
@@ -298,6 +298,6 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     for (const session of sessions) await queryGitIdentityBroker(socket, { op: 'close', sessionId: session.reply.sessionId }).catch(() => undefined);
   }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   runManagedGit().then(code => { process.exitCode = code; }).catch(error => { process.stderr.write(`${error instanceof Error ? error.message : 'Git identity unavailable'}\n`); process.exitCode = 128; });
 }

@@ -64,6 +64,11 @@
       "version": 1,
       "name": "session-capability-bindings",
       "checksum": "5254761de2d3b098cf7de8e9da88b7d0a1bdc25a2c2b8b082e44bfcdc7bc7d6d"
+    },
+    {
+      "version": 2,
+      "name": "execution-capability-bindings",
+      "checksum": "aaeca16d0761d654cd82a01ecb33d154fc0edf843548d174e66cf24710397f8f"
     }
   ]
 }

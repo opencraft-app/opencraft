@@ -465,17 +465,44 @@ backoff retain the existing admission rules. Usage refresh owns later recovery.
 
 ### Codex model capacity retry
 
-The Codex Host continues only a failed Turn whose native error code is
-`serverOverloaded`. It starts an empty continuation after 1, 2, 4, … seconds,
-capped at 120 seconds between attempts. A successful or different failure ends
-the sequence. New user input, an active Turn, or queued input takes precedence;
-the Host checks the latest authoritative Turn before starting a retry and keeps
-the native subscription while a retry is pending. An unconfirmed `turn/start`
-outcome stops automatic retries so the Host cannot duplicate execution.
-An older Host without the `opencraft/capacity-retry` capability is supported by
-the active Conversation runtime using the same delay cap and empty continuation.
-When the Host advertises version 1, the client cancels its fallback timer and
-leaves retry ownership with the Host.
+The Codex Host owns a durable provider retry queue in `@opencraft/host-recovery`.
+Only structured native failures qualify: overload, connection/stream loss and
+HTTP 500/502/503/504 (including native retry exhaustion carrying that status).
+Authorization, budget/context, policy, malformed requests and tool/sandbox
+failures are terminal. Error prose cannot authorize a retry.
+
+A chain permits four automatic continuations after the original attempt.
+Overload waits start at 5 seconds; other transient failures at 60 seconds.
+Exponential delay is capped at 120 seconds before up-to-one-delay jitter.
+Rate-limit failures consult the existing account-pool owner: a ready account
+can route again, held/exhausted accounts require known reset times. Unknown
+or unavailable routing facts decline retry; subscription waits beyond six hours
+are declined. Waiting adds a 15-second buffer and up to 30 seconds of jitter.
+No credit/reset policy is changed. Native global quota notifications cannot
+identify a pooled account and are not used to invent reset times.
+
+The engine writer lease protects `provider-turn-retry.sqlite`. It retains IDs,
+category, due time and spent attempts across restarts, without prompts or
+credentials. Preparation consumes a durable attempt before asynchronous work.
+Duplicate failure events cannot create another queued attempt. Before sending,
+the Host rechecks native thread status, latest failed Turn and pending user work.
+A new message, steer, queue/Goal change, stop, archive or delete revokes pending
+continuation, including during tool preparation. A final admission fence precedes
+the native send. A native `systemError` thread is eligible only with its matching
+failed Turn; active or unknown state never authorizes continuation. Summary history
+omits error details, so a waiting receipt reuses its exact Turn-bound observed
+classification. A running successor cannot inherit that previous failure fact.
+Unknown acceptance is visible and is never blindly replayed.
+
+Codex has already accepted the failed Turn, so continuation starts with empty
+input rather than re-sending the user's task or replaying shell commands.
+Automatic work keeps system provenance and existing native model/thread settings.
+`opencraft/turn-recovery` reports scheduled, exhausted and unconfirmed states;
+reconnecting clients read the same Host projection. The old
+`opencraft/capacity-retry` v1 capability remains advertised to suppress legacy
+client timers. Failed historical Turns are not scanned or retroactively retried.
+DSH/Pi retain their existing native failure behavior and shared process-loss
+recovery; the new provider retry policy is currently wired to Codex only.
 
 ### Native history read fault boundary
 
@@ -496,3 +523,86 @@ and [session capabilities](../../session-capabilities.md).
 ### Connector HTTP recovery and consumers
 
 Headless connector reads use the selected browser server context. Polling owns state and pending approvals; a successful read only invalidates managed configuration when supported definitions or instances change. Management views retain and release their Host subscription independently of background connection/approval synchronization. List reads coalesce while in flight and support cancellation; a configuration invalidation during a read schedules at most one subsequent read. Authentication failure revokes earlier requests across Hosts and backs off recovery; stale rejections cannot invalidate a newer successful response. Origin/protocol or resource denial clears only the affected Host and waits for an explicit retry. Mutations are never automatically replayed.
+
+### Responses stream completion and account-owner handoff
+
+A successful `/v1/responses` SSE stream ends at a complete JSON data record
+with `type: "response.completed"` and a response identity. The loopback bridge
+forwards that record, finishes downstream HTTP and cancels the remaining provider
+body without waiting for asynchronous provider cancellation to settle; socket
+cleanup must not delay downstream HTTP completion. Native consumers already stop
+reading at this protocol boundary. Waiting
+for provider HTTP EOF can turn an ordinary native close into an uncertain write.
+SSE framing is incremental across UTF-8/chunk/line boundaries. A terminal CR
+waits for the following byte so a split CRLF delimiter is forwarded intact, as
+required by native streaming parsers. Completion-looking
+model text, incomplete records and malformed JSON do not end the stream. The
+observer limits recognition to 1,048,576 UTF-16 code units per record; larger
+records pass through without
+completion recognition and retain conservative transport-failure handling.
+
+A client disconnect before completion or a failed upstream transport after
+dispatch still calls the owner uncertainty hook. No POST is replayed by this
+bridge, no historical uncertainty is removed, and installing a Web package does
+not replace an independently running account Core. Owner handoff must separately
+preserve its exact historical uncertainty list.
+
+## Advisory service tier capability
+
+Capability lookup reuses recent successful pages from the same runtime Host (preferring the Thread scope), with a two-second total pre-send budget. An uncached catalog request has a 1.8-second timeout. Submission includes a selected service tier only when the resolved model catalog declares it. Catalog failures or missing models omit the tier and leave model and reasoning validation to the Host. An explicit model-selection policy rejection and cancelled dispatch still block submission. Unsupported tiers are omitted silently without changing the saved preference.
+
+## Administrator model usage policy
+
+Deployment restrictions belong to the server, independently of personal model defaults. The managed policy database commits revision changes and actor-attributed audit records atomically. Only current server administrators may read management settings or mutate them; provider identities remain supplied by product composition. The gateway filters catalogs and rejects execution against restricted models or reasoning levels. Native Pi queue dispatch, DSH resolved request admission, ACP prompt admission and Codex internal recovery/goal admission also check policy. An already admitted Turn continues; the next Turn reads current rules. A denied persisted selection remains selected until the user chooses another option. See [policy design](../../../design/model-usage-policy.md).
+
+### Creation-time execution tools
+
+The Host installs a single-use execution-bound MCP reservation when it creates
+an empty Thread. Before the first native Turn, its attested execution binds the
+reservation without attempting to resume missing rollout history. Preparation
+failures are classified separately from a physical native send: only positive
+not-submitted evidence permits a new attempt. Unknown outcomes retain their
+input identity and require reconciliation. Failed or disconnected preparation
+retires only its own reservation; an accepted native execution is never replayed
+because a View failed to activate. Terminal system-error contexts retire once
+before a subsequent tool configuration is applied.
+
+
+### History admission and cold reconstruction
+
+Authenticated `thread/read`, `thread/turns/list`, `thread/items/list` and
+`thread/history/cancel` use the independent AppHost read path alongside catalog
+reads. A pending `turn/start` tool preparation must not hold these requests in
+the Host mutation FIFO. Session authorization, logical-client fencing and the
+existing write FIFO still apply; cancelling a history operation can reach its
+owner while another request is pending.
+
+Codex cold history indexes every canonical Turn through header-only pages and
+materializes Item bodies only for the requested page. This keeps the complete
+count and stable cursor ordering without transferring hidden tool output before
+first paint. The paired header/Item port is optional; older native protocols and
+other engines retain their full-page path. Disposable projection schema 2 fences
+old readers from lazy placeholders; see [SQLite lifecycle](../../sqlite-lifecycle.md).
+The isolated native regression is documented in
+[history cold reproduction](../../../scripts/performance/README.md).
+
+### Account proxy uncertain diagnostics
+
+Each newly persisted HTTP uncertainty retains a local random `requestId`, method,
+handler stage, first observed failure reason (`client-disconnected`,
+`upstream-failed`, or `response-stream-failed`), acceptance/dispatch/observation
+times, HTTP status and header state, and whether a complete Responses terminal
+record, upstream EOF, or upstream read failure was observed. Completion observation
+is not a client delivery acknowledgement. The owner adds its owner/boot/incarnation,
+PID and admission epoch. One record represents one failed local HTTP request; it
+does not count native retries or prove how many upstream executions occurred.
+
+Only UUID thread/turn coordinates explicitly present in `thread-id` or
+`x-codex-turn-metadata` are retained with their header source. Conflicting thread
+coordinates suppress the metadata turn association. Session/affinity/cache keys
+are not inferred thread IDs. No call ID is inferred when absent, and HTTP request
+IDs are not router leases or RPC IDs. Diagnostics do not retain input, arbitrary
+metadata, credentials, response content or raw error strings. Old id/route-only
+records remain unchanged; cold handoff preserves each entire record, including
+optional evidence, in its exact historical manifest. These additions do not
+change admission, replay, cancellation or uncertainty classification.

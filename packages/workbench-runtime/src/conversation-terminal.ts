@@ -9,6 +9,8 @@ const DEFAULT_TERMINAL_COMMAND = Object.freeze(["/bin/bash", "--noprofile", "--n
 export const CONVERSATION_TERMINAL_BUFFER_LIMIT = 16_000;
 
 export interface ConversationTerminalOpenOptions {
+  readonly threadId?: string | null;
+  readonly projectId?: string | null;
   readonly resourceOwnerId?: string;
   readonly hostId: string;
   readonly cwd: string | null;
@@ -112,7 +114,7 @@ export class ConversationTerminalSessionRegistry {
     this.ensureOpen();
     const runtime = this.resolveRuntime(options.hostId);
     const session = runtime.resources.terminal.open({
-      command: DEFAULT_TERMINAL_COMMAND,
+      command: DEFAULT_TERMINAL_COMMAND, threadId: options.threadId, projectId: options.projectId,
       cwd: options.cwd,
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,

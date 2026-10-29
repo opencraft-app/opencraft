@@ -1093,8 +1093,15 @@ Direct trusted handle calls retain their ordinary writable-claim checks.
 These are different retirement outcomes: a forwarding operation already issued
 to the provider has an unknown remote result; an obsolete queued intent must not
 newly cross that provider boundary. Neither outcome automatically replays work.
-While its native owner and claim remain live, a queued frame retains normal FIFO
-ordering. Service-owned Host lifetime, Actor identity and execution ownership are
+While its native owner and claim remain live, a queued writable frame retains
+normal FIFO ordering. Independent `model/list` and `thread/list` requests bypass
+this writable queue: a provider send may await asynchronous Turn/tool preparation,
+which must not hold catalog discovery until that unrelated operation completes.
+Catalog forwarding still captures and revalidates the same claim/native admission,
+passes the same submission context and signal, and returns only its own ACK/error.
+This is concurrent execution of independent reads, with no cached response, retry
+or mutation reordering. Callers requiring read-after-write await the write RPC
+response before requesting its catalog. Service-owned Host lifetime, Actor identity and execution ownership are
 unchanged. Remote claim reclamation and Host state projection remain independent
 obligations, not consequences of ending this local forwarding wait.
 
@@ -1398,3 +1405,23 @@ reentry, successful-disposer counts and local connect/send outcomes. The provide
 diary freezes the first accepted call count so repeated success cannot overwrite
 its own baseline. Synthetic observation controls and immutable old/new factory
 comparisons are separate; no SUT private state, prototypes or source are patched.
+
+
+## Rejected send admission and stale Host recovery
+
+A reachable Hub does not prove that a logical Host lease is still writable.
+When `host/send` fails its captured admission or current claim check, the Server
+returns `APP_HOST_SEND_NOT_ADMITTED` before native forwarding. Errors during or
+after forwarding cannot use this code. The Client retires only the captured
+current lease and publishes failure to the existing Host recovery owner.
+
+The local failure carries the rejected frame's RPC id. Only that pending RPC
+receives `NOT_DISPATCHED`; other in-flight requests retain uncertain transport
+failure. A late old rejection cannot retire a successor. Legacy servers without
+explicit admission proof remain conservative. This does not replay native frames
+or introduce another connection owner.
+
+Shared native `host/status` publishes only the protocol's failure code and
+recovery disposition. A native-local no-dispatch RPC id must never cross this
+boundary: another logical claim may have reused that numeric id for a write that
+was already admitted. Only the matching `host/send` rejection grants local proof.

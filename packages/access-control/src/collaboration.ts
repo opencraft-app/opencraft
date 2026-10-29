@@ -1,5 +1,5 @@
 import { sqliteTransaction } from "@opencraft/sqlite-node";
-import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef } from '@opencraft/appserver-protocol/collaboration';
+import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { randomUUID, createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
@@ -22,7 +22,11 @@ export interface ConversationExecutionPort {
   hostForServer?(serverId: string): string;
   serverForThread?(threadId: string): string;
   discover?(search: string, cursor: string | null): Promise<unknown>;
+  directory?(): { instanceId: string; servers: ConversationServer[] };
+  metadata?(ref: ConversationRef): Promise<ConversationMetadata>;
+  discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
+  readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
@@ -180,10 +184,33 @@ export class Collaboration {
     const ref = this.#conversation(context, { serverId: this.execution.serverForThread?.(threadId) ?? this.execution.serverId, threadId: text(threadId) }, 'conversation.discover');
     return {ref, reference: encodeConversationRef(ref)};
   }
-  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null) {
+  servers(context: ActorContext) {
+    if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId)) throw new CollaborationError(401, 'actor_authentication_required');
+    const actor = this.actors.get(context.actorId);
+    if (actor?.kind !== 'human') throw new CollaborationError(403, 'conversation_action_denied');
+    if (!this.execution.directory) throw new CollaborationError(409, 'unsupported_capability');
+    return { ...this.execution.directory(), actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
+  }
+  async metadata(context: ActorContext, value: unknown) {
     const ref = this.#conversation(context, value, 'conversation.read');
-    if (!this.execution.read) throw new CollaborationError(409, 'conversation_read_unsupported');
-    const result = await this.execution.read(ref, cursor);
+    if (!this.execution.metadata) throw new CollaborationError(409, 'unsupported_capability');
+    const result = await this.execution.metadata(ref);
+    this.#conversation(context, ref, 'conversation.read');
+    return result;
+  }
+  async discoverMetadata(context: ActorContext, options: ConversationDiscovery) {
+    this.servers(context);
+    if (!this.#owns(options.serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+    if (!this.execution.discoverMetadata) throw new CollaborationError(409, 'unsupported_capability');
+    const result = await this.execution.discoverMetadata(options);
+    this.servers(context);
+    return { ...result, conversations: result.conversations.filter(row => this.conversationAllowed(context, row.ref, 'conversation.discover')) };
+  }
+  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false) {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    const read = bounded ? this.execution.readBounded : this.execution.read;
+    if (!read) throw new CollaborationError(409, 'unsupported_capability');
+    const result = await read.call(this.execution, ref, cursor);
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
   }
@@ -431,11 +458,30 @@ export class Collaboration {
   }
   async command(context: ActorContext, body: Record<string, unknown>) {
     const {action,...args} = body;
+    if (action === 'servers') { fields(args, []); return this.servers(context); }
+    if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
+    if (action === 'discover' && args.metadataOnly === true) {
+      fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly', 'projectId', 'cwd']);
+      if (args.includeTitle !== undefined && typeof args.includeTitle !== 'boolean') throw new CollaborationError(400, 'invalid_field');
+      if (args.cwd !== undefined && (typeof args.cwd !== 'string' || !args.cwd.startsWith('/') || /[\x00-\x1f]/u.test(args.cwd))) throw new CollaborationError(400, 'absolute_cwd_required');
+      return this.discoverMetadata(context, { serverId: text(args.serverId),
+        cursor: args.cursor == null ? null : text(args.cursor, 4096), includeTitle: args.includeTitle === true,
+        ...(args.projectId === undefined ? {} : { projectId: text(args.projectId) }), ...(args.cwd === undefined ? {} : { cwd: text(args.cwd, 4096) }) });
+    }
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }
-    if (action === 'read') { fields(args,['reference','cursor']); return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,2048)); }
+    if (action === 'read') {
+      fields(args,['reference','cursor','bounded']);
+      if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
+      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true);
+    }
     if (action === 'discover') { fields(args,['search','cursor']); return this.discover(context,args.search === undefined ? '' : String(args.search),args.cursor === undefined ? null : text(args.cursor,2048)); }
     if (action === 'send') { const result = this.sendConversation(context,args); void this.pump().catch(()=>{}); return result; }
+    if (action === 'lookup') { fields(args, ['reference', 'idempotencyKey']); return this.lookupConversation(context, args.reference, text(args.idempotencyKey, 128)); }
+    if (action === 'delivery' && args.metadataOnly === true) {
+      fields(args, ['reference', 'requestId', 'metadataOnly']);
+      return this.conversationDelivery(context, args.reference, text(args.requestId));
+    }
     if (action === 'delivery') { fields(args,['requestId']); return this.getRequest(context,text(args.requestId)); }
     if (action === 'cancel') { fields(args,['requestId']); await this.cancel(context,text(args.requestId),()=>{if(!this.actors.isCurrent(context)) throw new CollaborationError(401,'actor_authentication_required');}); return {cancelled:true}; }
     throw new CollaborationError(400,'unknown_collaboration_action');
@@ -482,6 +528,24 @@ export class Collaboration {
     const row = this.#request(id);
     if (!this.actors.isCurrent(context) || !row || (row.requester_id !== context.actorId && row.target_id !== context.actorId)) throw new CollaborationError(404, 'missing');
     return { ...row, messageIds: this.database.prepare('SELECT message_id FROM actor_execution_inputs WHERE request_id=? ORDER BY position').all(id).map(r => r.message_id) };
+  }
+  conversationDelivery(context: ActorContext, value: unknown, requestId: string): ConversationReceipt {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    const row = this.getRequest(context, requestId);
+    if (row.requester_id !== context.actorId || row.target_kind !== 'conversation' || row.server_id !== ref.serverId || row.thread_id !== ref.threadId) throw new CollaborationError(404, 'missing');
+    const key = this.database.prepare('SELECT idempotency_key,message_id FROM actor_send_keys WHERE actor_id=? AND request_id=?').get(context.actorId, requestId);
+    if (!key?.message_id) throw new CollaborationError(404, 'missing');
+    return { ref, operationKey: String(key.idempotency_key), messageId: String(key.message_id), requestId,
+      mode: row.mode as ConversationReceipt['mode'], deliveryState: row.state as ConversationReceipt['deliveryState'],
+      targetTurnId: row.turn_id == null ? null : String(row.turn_id), observedAt: this.now(), taskOutcome: 'unknown' };
+  }
+  /** A missing key does not establish that an in-flight send cannot commit later. */
+  lookupConversation(context: ActorContext, value: unknown, operationKey: string): ConversationLookup {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    const key = text(operationKey, 128);
+    const prior = this.database.prepare('SELECT request_id FROM actor_send_keys WHERE actor_id=? AND idempotency_key=?').get(context.actorId, key);
+    if (!prior?.request_id) return { found: false, ref, operationKey: key, deliveryState: 'unknown', observedAt: this.now(), taskOutcome: 'unknown' };
+    return { found: true, receipt: this.conversationDelivery(context, ref, String(prior.request_id)) };
   }
   #allowed(row: Row): boolean {
     if (row.target_kind === 'conversation') return !this.#closed && !['rejected','cancelled'].includes(String(row.state)) && this.conversationAllowed({actorId: String(row.requester_id), generation: Number(row.requester_generation), credentialId: row.credential_id as string | null, expiresAt: Number(row.expires_at)}, {serverId: String(row.server_id), threadId: String(row.thread_id)}, 'execution.' + row.mode);

@@ -1,9 +1,17 @@
 import { fault } from '../observability-contract/index.mjs';
-export const queryDefinitionRevision = 'observe-v1.1.5';
+export const queryDefinitionRevision = 'observe-v1.3.0';
 const latency = 'histogram_quantile(0.95, sum by (le, operation, cache, engine) (rate(opencraft_interactive_operation_duration_seconds_bucket[5m])))';
 /** This is the only expression registry, shared by Observe and generated provisioning. */
 export const definitions = Object.freeze({
-  'platform.status': { title: '平台与采集状态', kind: 'resource_sample', promql: 'opencraft_producer_age_seconds', unit: 'seconds' },
+  'connection.update_disconnections': { title: '每次发布断开的连接', kind: 'exact_domain_aggregation', promql: 'opencraft_gateway_update_disconnections', unit: 'connections', windowSemantics: 'captured_updates_7d' },
+  'connection.person_downtime': { title: '每人每日断开时长（UTC日）', kind: 'exact_domain_aggregation', promql: 'opencraft_person_connection_downtime_seconds', unit: 'seconds', windowSemantics: 'observed_interval_union_per_person_utc_day' },
+  'connection.unfinished': { title: '尚未观察到恢复完成', kind: 'exact_domain_aggregation', promql: 'opencraft_person_connection_unfinished', unit: 'episodes', windowSemantics: 'captured_outages_without_terminal' },
+  'platform.status': { title: '新连接', kind: 'resource_sample', promql: 'opencraft_availability_success', unit: 'boolean' },
+  'collection.freshness': { title: '采集', kind: 'resource_sample', promql: 'opencraft_producer_age_seconds', unit: 'seconds' },
+  'availability.ratio': { title: '成功率', kind: 'exact_domain_aggregation', promql: 'opencraft_availability_ratio', unit: 'ratio' },
+  'availability.last_success': { title: '最近成功', kind: 'resource_sample', promql: '(opencraft_availability_last_success_timestamp_seconds > 0) * 1000', unit: 'timestamp' },
+  'availability.freshness': { title: '拨测', kind: 'resource_sample', promql: 'opencraft_availability_sample_age_seconds', unit: 'seconds' },
+  'errors.summary': { title: '故障分类', kind: 'exact_domain_aggregation', promql: 'opencraft_observed_errors', unit: 'events' },
   'operations.latency': { title: '前台交互耗时（P95 估算，5分钟窗口）', kind: 'histogram_approximation', promql: latency, unit: 'seconds' },
   'operations.history_paint_p50': { title: '历史首屏显示耗时（P50，5分钟窗口）', kind: 'histogram_approximation', promql: 'histogram_quantile(0.50, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))', unit: 'seconds' },
   'operations.history_paint_p95': { title: '历史首屏显示耗时（P95，5分钟窗口）', kind: 'histogram_approximation', promql: 'histogram_quantile(0.95, sum by (le, cache, length_bucket, engine) (rate(opencraft_thread_history_first_paint_duration_seconds_bucket[5m])))', unit: 'seconds' },
@@ -27,7 +35,8 @@ export function issues(snapshot) {
   const result = [];
   if (snapshot.coverage !== 'complete') result.push({ id: 'collection-incomplete', severity: 'warning', evidenceKind: 'observed', hypothesis: 'Inspect missing/stale producers before interpreting absence of failures.' });
   const failures = snapshot.events?.filter(e => ['failed','timeout'].includes(e.outcome)) ?? [];
-  if (failures.length) result.push({ id: 'observed-failures', severity: 'warning', evidenceKind: 'observed', count: failures.length, hypothesis: 'Inspect the recorded operation and dependency stages; association does not establish cause.' });
+  const failureCount=snapshot.eventSummary?.filter(row=>['failed','timeout'].includes(row.outcome)).reduce((sum,row)=>sum+Number(row.count),0)??failures.length;
+  if (failureCount) result.push({ id: 'observed-failures', severity: 'warning', evidenceKind: 'observed', count: failureCount, hypothesis: 'Inspect the recorded operation and dependency stages; association does not establish cause.' });
   return result;
 }
 export function compare(before, after, dimensions = {}) {
@@ -36,6 +45,7 @@ export function compare(before, after, dimensions = {}) {
   const matches=e=>Object.entries(dimensions).every(([key,value])=>e[key]===value);
   const reasons = [];
   for (const key of ['deploymentId','queryDefinitionRevision','metricSchemaVersion']) if (before[key] !== after[key]) reasons.push(`different_${key}`);
+  if (before.eventSampleTruncated || after.eventSampleTruncated) reasons.push('sampled_events');
   if (before.coverage !== 'complete' || after.coverage !== 'complete' || before.loss?.dropped || after.loss?.dropped) reasons.push('incomplete_capture');
   const select = s => (s.events ?? []).filter(e => e.kind === 'operation' && matches(e) && e.outcome === 'ok' && Number.isFinite(e.durationMs));
   let left = select(before), right = select(after);

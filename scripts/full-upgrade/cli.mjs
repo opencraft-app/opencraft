@@ -1,7 +1,7 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { inspect } from './inspect.mjs';
 export { inspect } from './inspect.mjs';
 import { parseStrictJson, HARD_LIMITS } from '../full-release/contract.mjs';
@@ -17,6 +17,6 @@ export async function main(args = process.argv.slice(2)) {
   const report = await inspect({ profile, targetRoot: options['--target'] ? resolve(options['--target']) : null });
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   main().catch(() => { process.stderr.write('Upgrade inspection failed; no upgrade was executed\n'); process.exitCode = 1; });
 }

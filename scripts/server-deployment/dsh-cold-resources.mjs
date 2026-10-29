@@ -8,13 +8,21 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
  * authority; filesystem hashing alone is never that compatibility proof. */
 export async function readDshColdResources({dependencyRoots = [], ...roots}) {
   const files = [];
-  const allowed = await Promise.all([...dependencyRoots,...Object.values(roots)].filter(Boolean).map(path=>realpath(path)));
+  // Declarations authorize link targets; they are not resources to cold-read.
+  // A retired, unused declaration must not block restoring the previous owner.
+  // Resolve on demand so a missing live link still fails closed below.
+  const allowed = await Promise.all(Object.values(roots).filter(Boolean).map(path=>realpath(path)));
+  let dependencies;
+  const dependencyTargets = () => dependencies ??= Promise.all(dependencyRoots.map(async path => {
+    try { return await realpath(path); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }));
   const visiting = new Set(), directories = new Map(), contents = new Map();
   const visit = async (path,name) => {
     const info = await lstat(path);
     if (info.isSymbolicLink()) {
       const target = await realpath(path);
-      if (!allowed.some(root=>target === root || target.startsWith(root+sep)) || visiting.has(target)) throw new Error('Unbound DSH resource link: '+name);
+      if (![...allowed,...await dependencyTargets()].some(root=>root && (target === root || target.startsWith(root+sep))) || visiting.has(target)) throw new Error('Unbound DSH resource link: '+name);
       files.push({name,digest:hash(await readlink(path)),link:true});
       visiting.add(target);try {await visit(target,name+'/target');}finally{visiting.delete(target);}return;
     }

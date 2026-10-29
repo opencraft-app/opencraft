@@ -46,7 +46,10 @@ export function PendingConversationPage({
                   <strong>Could not start this task</strong>
                   <p>{conversation.error?.message ?? "The execution host rejected the request."}</p>
                 </div>
-                <button type="button" onClick={() => void onRetry(submission)}>
+                <button type="button" onClick={async () => {
+                  // The Draft owner publishes the failure into conversation.error.
+                  try { await onRetry(submission); } catch { /* Already presented above. */ }
+                }}>
                   Try again
                 </button>
               </section>

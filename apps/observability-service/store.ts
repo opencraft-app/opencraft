@@ -21,6 +21,13 @@ CREATE INDEX execution_progress_active ON execution_progress(terminal,received);
 CREATE TABLE queue_samples(domain_key TEXT PRIMARY KEY, engine TEXT NOT NULL, count INTEGER NOT NULL, observed_at INTEGER NOT NULL, received INTEGER NOT NULL) STRICT;
 `;
 export const observationSchemaV4 = `CREATE INDEX producers_freshness ON producers(component,received DESC,producer DESC);`;
+// Probe reads run on every health/metrics request; unrelated event history must not be scanned.
+export const observationSchemaV5 = `CREATE INDEX events_availability ON events(at,seq) WHERE kind='availability';`;
+export const observationSchemaV6 = `
+CREATE TABLE connection_outages(recovery_id TEXT PRIMARY KEY, actor TEXT NOT NULL, started INTEGER NOT NULL, observed INTEGER NOT NULL, completed INTEGER NOT NULL) STRICT;
+CREATE INDEX connection_outage_window ON connection_outages(observed,started);
+CREATE INDEX gateway_lifecycle_window ON events(at,seq) WHERE kind='lifecycle' AND component='gateway';
+`;
 const backfill = `
 INSERT OR IGNORE INTO activity_hours SELECT CAST(at/3600000 AS INTEGER),actor FROM events WHERE actor IS NOT NULL AND json_extract(body,'$.actorKind')='human' AND json_extract(body,'$.originClass')='interactive';
 INSERT OR IGNORE INTO recovery_episodes SELECT json_extract(body,'$.recoveryId'),min(at),max(at),'unknown' FROM events WHERE kind='recovery' AND json_extract(body,'$.recoveryId') IS NOT NULL GROUP BY json_extract(body,'$.recoveryId');
@@ -46,7 +53,7 @@ export class ObserveStore {
     if (databaseBytes !== undefined && (!Number.isSafeInteger(databaseBytes) || databaseBytes < 4096)) throw new TypeError('Invalid Observe database capacity');
     this.now = now;
     const managed = openManagedDatabase({ path, legacyPolicy: 'reject', backup: {keep: 1},
-      validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4}] });
+      validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4+observationSchemaV5+observationSchemaV6), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4},{version:5,name:'availability-event-index',sql:observationSchemaV5},{version:6,name:'connection-outage-rollup',sql:observationSchemaV6}] });
     this.db = managed.database; this.outcome = managed.outcome;
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=50; PRAGMA journal_size_limit=33554432;');
     const pageSize = Number(this.db.prepare('PRAGMA page_size').get().page_size);
@@ -87,9 +94,16 @@ export class ObserveStore {
             .run(event.eventId, event.at, now, event.kind, event.component, actor, body);
           if (!result.changes) { duplicates++; continue; }
           accepted++;
+          if (actor && event.actorKind === 'human' && event.originClass === 'interactive' && event.kind === 'recovery'
+            && event.measurementScope === 'connection' && event.recoveryId && Number.isFinite(event.durationMs) && event.durationMs <= limits.retentionMs) {
+            this.db.prepare(`INSERT INTO connection_outages VALUES(?,?,?,?,?) ON CONFLICT(recovery_id) DO UPDATE SET
+              started=MIN(connection_outages.started,excluded.started), observed=MAX(connection_outages.observed,excluded.observed),
+              completed=MAX(connection_outages.completed,excluded.completed) WHERE connection_outages.actor=excluded.actor`)
+              .run(event.recoveryId, actor, Math.round(event.at-event.durationMs), Math.round(event.at), event.outcome === 'ok' ? 1 : 0);
+          }
           if(actor&&event.actorKind==='human'&&event.originClass==='interactive')this.db.prepare('INSERT OR IGNORE INTO activity_hours VALUES(?,?)').run(Math.floor(event.at/3600000),actor);
           if(event.kind==='recovery'&&event.recoveryId)this.db.prepare(`INSERT INTO recovery_episodes VALUES(?,?,?,?) ON CONFLICT(recovery_id) DO UPDATE SET first_at=MIN(recovery_episodes.first_at,excluded.first_at),last_at=MAX(recovery_episodes.last_at,excluded.last_at),outcome=CASE WHEN recovery_episodes.outcome='ok' THEN 'ok' ELSE excluded.outcome END`).run(event.recoveryId,event.at,event.at,event.outcome??'unknown');
-          this.db.prepare('INSERT INTO producers VALUES(?,?,?,?) ON CONFLICT(component,producer) DO UPDATE SET received=excluded.received,body=json_patch(producers.body,excluded.body)')
+          if(!['availability','lifecycle'].includes(event.kind))this.db.prepare('INSERT INTO producers VALUES(?,?,?,?) ON CONFLICT(component,producer) DO UPDATE SET received=excluded.received,body=json_patch(producers.body,excluded.body)')
             .run(event.component,event.producerId,now,body);
           const add = (name: string, dimension: string, value: number) => this.db.prepare('INSERT INTO metrics VALUES(?,?,?) ON CONFLICT(name,dimension) DO UPDATE SET value=metrics.value+excluded.value').run(name,dimension,value);
           if (event.kind === 'rpc' && event.method && event.outcome) add('rpc',JSON.stringify([event.method,event.outcome]),1);
@@ -149,9 +163,34 @@ export class ObserveStore {
     this.accepted += accepted; this.rejected += rejected; this.dropped += dropped;
     return {accepted,rejected,duplicates,dropped};
   }
-  events(from: number, to: number, through: number, count = limits.rows) {
-    return this.db.prepare('SELECT body,received FROM events WHERE at>=? AND at<=? AND received<=? ORDER BY at,seq LIMIT ?')
-      .all(from,to,through,count+1).map(row => ({...JSON.parse(row.body as string), receivedAt: row.received}));
+  events(from: number, to: number, through: number, count = limits.rows, incidentRef: string | null = null) {
+    return this.db.prepare("SELECT body,received FROM events WHERE at>=? AND at<=? AND received<=? AND (? IS NULL OR json_extract(body,'$.incidentRef')=?) ORDER BY at,seq LIMIT ?")
+      .all(from,to,through,incidentRef,incidentRef,count+1).map(row => ({...JSON.parse(row.body as string), receivedAt: row.received}));
+  }
+  availability() {
+    return this.db.prepare(`SELECT body,received FROM (
+      SELECT body,received,row_number() OVER (
+        PARTITION BY json_extract(body,'$.site'),json_extract(body,'$.hostId'),json_extract(body,'$.engine')
+        ORDER BY at DESC,seq DESC) AS rank FROM events WHERE kind='availability'
+    ) WHERE rank=1`).all().map(row => ({...JSON.parse(row.body as string),receivedAt: row.received}));
+  }
+  availabilityRatios(from: number, to: number) {
+    return this.db.prepare(`SELECT json_extract(body,'$.site') AS site,json_extract(body,'$.hostId') AS hostId,
+      json_extract(body,'$.engine') AS engine,count(*) AS count,
+      avg(CASE WHEN json_extract(body,'$.outcome')='ok' THEN 1.0 ELSE 0 END) AS ratio
+      FROM events WHERE kind='availability' AND at>=? AND at<=? GROUP BY site,hostId,engine`).all(from,to);
+  }
+  eventSummary(from: number, to: number, through: number, incidentRef: string | null = null) {
+    return this.db.prepare(`SELECT kind,component,json_extract(body,'$.engine') AS engine,
+      json_extract(body,'$.outcome') AS outcome,json_extract(body,'$.errorCode') AS errorCode,
+      json_extract(body,'$.site') AS site,json_extract(body,'$.hostId') AS hostId,
+      count(*) AS count,min(at) AS firstAt,max(at) AS lastAt
+      FROM events WHERE at>=? AND at<=? AND received<=? AND (? IS NULL OR json_extract(body,'$.incidentRef')=?)
+      GROUP BY kind,component,engine,outcome,errorCode,site,hostId`).all(from,to,through,incidentRef,incidentRef);
+  }
+  lifecycle(from: number, to: number) {
+    return this.db.prepare(`SELECT body FROM events WHERE kind='lifecycle' AND at>=? AND at<=? ORDER BY at,seq`).all(from,to)
+      .map(row => JSON.parse(row.body as string));
   }
   producers() {
     const latest=this.db.prepare('SELECT component,producer,received,body FROM producers WHERE component=? ORDER BY received DESC,producer DESC LIMIT 1');
@@ -166,6 +205,33 @@ export class ObserveStore {
   }
   recoveries(from: number, to: number) {
     return this.db.prepare('SELECT count(*) AS value FROM recovery_episodes WHERE first_at<=? AND last_at>=?').get(to,from);
+  }
+  gatewayDisconnections(from: number, to: number) {
+    return this.db.prepare(`SELECT json_extract(body,'$.operationId') AS updateId, json_extract(body,'$.buildId') AS buildId,
+      MAX(json_extract(body,'$.count')) AS count FROM events WHERE kind='lifecycle' AND component='gateway' AND at>=? AND at<=?
+      AND json_extract(body,'$.lifecycle')='deployment' AND json_extract(body,'$.operationId') IS NOT NULL
+      AND json_extract(body,'$.count') IS NOT NULL GROUP BY updateId,buildId`).all(from,to);
+  }
+  connectionDowntime(from: number, to: number) {
+    const rows = this.db.prepare('SELECT actor,started,observed,completed FROM connection_outages WHERE observed>=? AND started<=? ORDER BY actor,started').all(from,to);
+    const days = new Map<string, { actor: string; day: string; intervals: number[][]; unfinished: number }>();
+    for (const row of rows) {
+      const start = Math.max(from,Number(row.started)), end = Math.min(to,Number(row.observed));
+      for (let day = Math.floor(start/86400000); day <= Math.floor(end/86400000); day++) {
+        const date = new Date(day*86400000).toISOString().slice(0,10), key = JSON.stringify([row.actor,date]);
+        const value = days.get(key) ?? { actor: String(row.actor), day: date, intervals: [], unfinished: 0 };
+        value.intervals.push([Math.max(start,day*86400000),Math.min(end,(day+1)*86400000)]);
+        if (!row.completed) value.unfinished++;
+        days.set(key,value);
+      }
+    }
+    return [...days.values()].map(value => {
+      let durationMs = 0, end = -Infinity;
+      for (const interval of value.intervals.sort((a,b) => a[0]!-b[0]!)) {
+        durationMs += Math.max(0,interval[1]!-Math.max(end,interval[0]!)); end = Math.max(end,interval[1]!);
+      }
+      return { actor: value.actor, day: value.day, seconds: durationMs/1000, unfinished: value.unfinished };
+    });
   }
   executions(from: number, to: number) {
     return this.db.prepare('SELECT outcome,count(*) AS count FROM executions WHERE started<=? AND COALESCE(ended,?)>=? GROUP BY outcome').all(to,to,from);
@@ -186,6 +252,7 @@ export class ObserveStore {
     this.db.prepare('DELETE FROM producers WHERE received<?').run(cutoff);
     this.db.prepare('DELETE FROM activity_hours WHERE hour<?').run(Math.floor(cutoff/3600000));
     this.db.prepare('DELETE FROM recovery_episodes WHERE last_at<?').run(cutoff);
+    this.db.prepare('DELETE FROM connection_outages WHERE observed<?').run(cutoff);
     this.db.exec('PRAGMA wal_checkpoint(PASSIVE)');
   }
   close() { this.db.close(); }

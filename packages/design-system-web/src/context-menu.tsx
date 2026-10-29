@@ -1,7 +1,6 @@
 import * as Primitive from "@radix-ui/react-context-menu";
-import { useComposedRefs } from "@radix-ui/react-compose-refs";
-import { forwardRef, useContext, useRef, useState, type ComponentPropsWithoutRef } from "react";
-import { MenuInteraction, MenuDismissSurface } from "./menu-interaction";
+import { forwardRef, useContext, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
+import { MenuInteraction } from "./menu-interaction";
 
 export * from "@radix-ui/react-context-menu";
 
@@ -14,7 +13,7 @@ export function Root({ open: controlled, onOpenChange, children, ...props }: Con
     if (controlled === undefined) setLocal(next);
     onOpenChange?.(next);
   };
-  // Same contact contract as DropdownMenu; no independent document lock.
+  // Native outside dismissal, matching DropdownMenu without a page-wide blocker.
   return <Primitive.Root {...props} modal={false} open={open} onOpenChange={change}>
     <MenuInteraction.Provider value={{ open, change }}>{children}</MenuInteraction.Provider>
   </Primitive.Root>;
@@ -24,31 +23,42 @@ export function Root({ open: controlled, onOpenChange, children, ...props }: Con
  * Consume its compatibility click centrally, rather than relying on every row
  * to recognize PointerEvent vs MouseEvent or to suppress navigation itself. */
 export const Trigger = forwardRef<HTMLSpanElement, ComponentPropsWithoutRef<typeof Primitive.Trigger>>(function Trigger(
-  { onPointerDown, onClickCapture, ...props }, ref,
+  { onPointerDown, onPointerUp, onPointerCancel, onMouseDown, onClickCapture, ...props }, ref,
 ) {
   const menu = useContext(MenuInteraction);
-  const touch = useRef(false);
+  const touching = useRef(false);
+  const openingClick = useRef(false);
+  useLayoutEffect(() => {
+    if (menu?.open && touching.current) openingClick.current = true;
+  }, [menu?.open]);
   return <Primitive.Trigger {...props} ref={ref}
     onPointerDown={event => {
-      touch.current = event.pointerType === "touch" || event.pointerType === "pen";
+      openingClick.current = false;
+      touching.current = event.pointerType === "touch" || event.pointerType === "pen";
       onPointerDown?.(event);
+    }}
+    onPointerUp={event => { touching.current = false; onPointerUp?.(event); }}
+    onPointerCancel={event => {
+      touching.current = false;
+      openingClick.current = false;
+      onPointerCancel?.(event);
+    }}
+    onMouseDown={event => {
+      onMouseDown?.(event);
+      // The compatibility mousedown of the opening hold must not focus its row
+      // and dismiss the freshly opened menu before the corresponding click.
+      if (openingClick.current) event.preventDefault();
     }}
     onClickCapture={event => {
       onClickCapture?.(event);
-      if (menu?.open && touch.current) {
+      if (openingClick.current) {
+        openingClick.current = false;
         event.preventDefault(); event.stopPropagation();
       }
     }}
   />;
 });
 
-export const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Primitive.Content>>(function Content(props, ref) {
-  const [content, setContent] = useState<HTMLDivElement | null>(null);
-  const composedRef = useComposedRefs(ref, setContent);
-  return <>
-    <MenuDismissSurface content={content} />
-    <Primitive.Content {...props} ref={composedRef} />
-  </>;
-});
+export const Content = Primitive.Content;
 
 export { Root as ContextMenu, Trigger as ContextMenuTrigger, Content as ContextMenuContent };

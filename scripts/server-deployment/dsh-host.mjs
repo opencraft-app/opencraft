@@ -1,3 +1,5 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -8,7 +10,6 @@ import { DshOwnerHandoff } from './dsh-owner-handoff.mjs';
 import { readDshColdResources } from './dsh-cold-resources.mjs';
 import { mkdir, rename, rm, writeFile, readFile, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { acquireLocalAgentStorageOwner, startLocalAgentHost } from '../../apps/local-agent-host/src/main.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
@@ -22,6 +23,15 @@ export async function startIndependentDshHost(configuration) {
     throw new Error('Independent DSH Host requires absolute descriptor and data paths');
   if (process.env.OPENCRAFT_DSH_URL?.trim() || options.dshUrl)
     throw new Error('Independent DSH Host must own its engine');
+  // Validate configured Core credentials before acquiring any native writer.
+  let taskCoreToken;
+  if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {
+    if (!isAbsolute(taskCodexCoreEndpoint ?? '') || !isAbsolute(taskCodexCoreTokenFile ?? '')) throw new Error('Task Core catalog requires explicit absolute connection paths');
+    const info = await stat(taskCodexCoreTokenFile);
+    if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error('Task Core catalog requires an owned private token file');
+    taskCoreToken = (await readFile(taskCodexCoreTokenFile, 'utf8')).trim();
+    if (!taskCoreToken) throw new Error('Task Core catalog token is empty');
+  }
   if (!options.dshExecutable || !options.dshCapabilityPlugin) throw new Error("DSH handoff requires pinned executable and plugin paths");
   await verifyDshOwnerAdmission(resolve(dirname(options.dshExecutable),"../../../.."));
   await mkdir(join(options.dataDirectory,'owner-handoff'),{recursive:true,mode:0o700});
@@ -44,7 +54,10 @@ export async function startIndependentDshHost(configuration) {
   const handoff = new DshOwnerHandoff(options.dataDirectory,runtime,inspectOwnerCgroup);
     const machineIdentity = options.machineIdentity ?? await readDaemonMachineIdentity(
       machineIdentityDirectory ?? dirname(options.dataDirectory), machineName);
+    options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
+    new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
+    options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
@@ -52,14 +65,9 @@ export async function startIndependentDshHost(configuration) {
     options.taskServerId ??= "opencraft-server";
     options.taskSkillDirectories ??= [resolve(options.dataDirectory, "../codex/runtime/skills")];
     if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {
-      if (!isAbsolute(taskCodexCoreEndpoint ?? '') || !isAbsolute(taskCodexCoreTokenFile ?? '')) throw new Error('Task Core catalog requires explicit absolute connection paths');
-      const info = await stat(taskCodexCoreTokenFile);
-      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o077) !== 0) throw new Error('Task Core catalog requires an owned private token file');
-      const token = (await readFile(taskCodexCoreTokenFile, 'utf8')).trim();
-      if (!token) throw new Error('Task Core catalog token is empty');
       options.taskConversationCatalog ??= (serverId, search, limit, cursor) => {
         if (serverId !== 'local-codex') throw new Error('Unknown task conversation server');
-        return readTaskCoreConversations(taskCodexCoreEndpoint, token, search, limit, cursor);
+        return readTaskCoreConversations(taskCodexCoreEndpoint, taskCoreToken, search, limit, cursor);
       };
     }
     await handoff.load();
@@ -115,7 +123,7 @@ export async function startIndependentDshHost(configuration) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const config = await readPrivateJson(process.env.OPENCRAFT_DSH_HOST_CONFIG ?? '');
   const host = await startIndependentDshHost({
     ...config,

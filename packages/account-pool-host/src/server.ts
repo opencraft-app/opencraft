@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+
+import { completedResponsesBody } from "./responses-stream.js";
 
 import type { CodexAccountPoolProxy } from "./codex-proxy.js";
 import { ACCOUNT_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
@@ -108,11 +111,56 @@ function createConcurrencyLimiter(maximum: number): { acquire(signal?: AbortSign
   };
 }
 
+/** Local HTTP evidence, never a router lease or proof of client delivery. */
+export interface AccountPoolUncertainDiagnostic {
+  requestId: string;
+  method: string;
+  stage: string;
+  reason: "client-disconnected" | "upstream-failed" | "response-stream-failed";
+  acceptedAt: number;
+  sentAt?: number;
+  firstAt: number;
+  lastAt: number;
+  count: 1;
+  responseStatus?: number;
+  responseHeadersSent: boolean;
+  completionObserved: boolean;
+  upstreamEof: boolean;
+  upstreamReadFailed: boolean;
+  threadId?: string;
+  turnId?: string;
+  correlationSource?: "thread-id" | "x-codex-turn-metadata" | "thread-id+x-codex-turn-metadata";
+}
+
+function requestCorrelation(request: IncomingMessage): Pick<AccountPoolUncertainDiagnostic, "threadId" | "turnId" | "correlationSource"> {
+  // Only explicit UUID coordinates from existing native protocol headers.
+  // Session/cache/affinity keys are not thread IDs; arbitrary metadata is private.
+  const uuid = (v: unknown): string | undefined => typeof v === "string"
+    && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(v) ? v : undefined;
+  let metadata: { thread_id?: unknown; turn_id?: unknown } | null = null;
+  const raw = request.headers["x-codex-turn-metadata"];
+  if (typeof raw === "string" && raw.length <= 4096) {
+    try { const parsed: unknown = JSON.parse(raw);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) metadata = parsed;
+    } catch { /* Missing/invalid coordinates remain absent. */ }
+  }
+  const headerThread = uuid(request.headers["thread-id"]), metadataThread = uuid(metadata?.thread_id);
+  const threadId = headerThread ?? metadataThread;
+  // Conflicting thread metadata cannot establish a turn-to-thread association.
+  const turnId = !headerThread || !metadataThread || headerThread === metadataThread ? uuid(metadata?.turn_id) : undefined;
+  return { ...(threadId ? { threadId } : {}), ...(turnId ? { turnId } : {}),
+    ...(threadId || turnId ? { correlationSource: headerThread
+      ? turnId ? "thread-id+x-codex-turn-metadata" as const : "thread-id" as const
+      : "x-codex-turn-metadata" as const } : {}) };
+}
+
 export async function startCodexAccountPoolServer(options: {
   readonly proxy: CodexAccountPoolProxy;
   readonly host?: string;
   readonly port?: number;
-}): Promise<{ readonly url: string; close(): Promise<void> }> {
+  readonly admissionOpen?: () => boolean;
+  readonly onUncertain?: (route: string, diagnostic: AccountPoolUncertainDiagnostic) => void | Promise<void>;
+}): Promise<{ readonly url: string; activeCount(): number; close(): Promise<void> }> {
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "::1") throw new TypeError("Account Pool server must bind to loopback");
   let consecutiveProxyFailures = 0;
@@ -120,10 +168,17 @@ export async function startCodexAccountPoolServer(options: {
   const active = new Map<Promise<void>, { method: string; route: string; startedAt: number; stage: string }>();
   const handle = async (incoming: IncomingMessage, outgoing: ServerResponse, progress: { stage: string }): Promise<void> => {
     const requestStartedAt = Date.now();
+    const requestId = randomUUID();
+    const correlation = requestCorrelation(incoming);
+    const streamEvidence = { completionObserved: false, upstreamEof: false, upstreamReadFailed: false };
+    let sentAt: number | undefined;
+    let responseStatus: number | undefined;
+    let firstFailure: AccountPoolUncertainDiagnostic["reason"] | undefined;
     progress.stage = "read-body";
     let releaseUpstreamSlot: (() => void) | null = null;
+    let dispatched = false;
     const abort = new AbortController();
-    const onAborted = () => abort.abort(new Error("Account Pool client disconnected"));
+    const onAborted = () => { firstFailure ??= "client-disconnected"; abort.abort(new Error("Account Pool client disconnected")); };
     const onOutgoingClose = () => { if (!outgoing.writableEnded) onAborted(); };
     incoming.once("aborted", onAborted);
     outgoing.once("close", onOutgoingClose);
@@ -149,19 +204,40 @@ export async function startCodexAccountPoolServer(options: {
         headers: requestHeaders(incoming),
         ...(body === undefined ? {} : { body: new Uint8Array(body) }),
         signal: abort.signal,
-      }));
+      }), () => { dispatched = true; sentAt ??= Date.now(); });
+      responseStatus = response.status;
       outgoing.statusCode = response.status;
       outgoing.statusMessage = response.statusText;
       for (const [name, value] of response.headers) outgoing.setHeader(name, value);
       progress.stage = "response-stream";
       if (response.body === null) outgoing.end();
       else await pipeline(
-        Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
+        (incoming.url ?? "/").split("?", 1)[0] === "/v1/responses"
+          && response.ok && response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "text/event-stream"
+          ? Readable.from(completedResponsesBody(response.body, event => {
+            if (event === "completion") streamEvidence.completionObserved = true;
+            else if (event === "eof") streamEvidence.upstreamEof = true;
+            else { streamEvidence.upstreamReadFailed = true; firstFailure ??= "upstream-failed"; }
+          }))
+          : Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
         outgoing,
         { signal: abort.signal },
       );
       consecutiveProxyFailures = 0;
     } catch (error) {
+      // Once an upstream mutation may have been dispatched, disconnect is not
+      // a delivery receipt. The owner retains uncertainty until reconciliation.
+      if (dispatched && !["GET", "HEAD"].includes(incoming.method ?? "GET")) {
+        const now = Date.now();
+        await options.onUncertain?.((incoming.url ?? "/").split("?", 1)[0], {
+          requestId, method: ["POST", "DELETE", "PUT", "PATCH"].includes(incoming.method ?? "") ? incoming.method! : "other",
+          stage: progress.stage,
+          reason: firstFailure ?? (progress.stage === "response-stream" ? "response-stream-failed" : "upstream-failed"),
+          acceptedAt: requestStartedAt, ...(sentAt === undefined ? {} : { sentAt }), firstAt: now, lastAt: now, count: 1,
+          ...(responseStatus === undefined ? {} : { responseStatus }), responseHeadersSent: outgoing.headersSent,
+          ...streamEvidence, ...correlation,
+        });
+      }
       if (!abort.signal.aborted && !outgoing.destroyed && !(error instanceof RangeError)) {
         consecutiveProxyFailures += 1;
         console.error("[opencraft account-pool]", JSON.stringify({
@@ -191,6 +267,11 @@ export async function startCodexAccountPoolServer(options: {
     }
   };
   const server = createServer((incoming, outgoing) => {
+    if (options.admissionOpen?.() === false) {
+      outgoing.writeHead(503, { "content-type": "application/json", "retry-after": "1", connection: "close" });
+      outgoing.end(JSON.stringify({ error: { message: "Account Pool maintenance" } }));
+      incoming.resume(); return;
+    }
     const path = (incoming.url ?? "/").split("?", 1)[0];
     const progress = {
       method: ["GET", "POST", "HEAD", "DELETE"].includes(incoming.method ?? "GET") ? incoming.method ?? "GET" : "other",
@@ -216,6 +297,7 @@ export async function startCodexAccountPoolServer(options: {
   let closing: Promise<void> | null = null;
   return {
     url: `http://${displayHost}:${address.port}`,
+    activeCount: () => active.size,
     close: () => closing ??= (async () => {
       // Existing native Turns may need another model request while a different
       // Turn is still streaming. Keep accepting until the proxy is idle; then

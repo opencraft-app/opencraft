@@ -123,6 +123,20 @@ async function writeCodexCredential(codexHome: string, account: AccountPoolAccou
 }
 
 export class CodexDeviceLoginService {
+  activeCount(): number { return this.operations.size + this.sessions.size; }
+  historicalCount(): number { return this.receipts.size; }
+  handoffReceipts() {
+    if (this.activeCount() !== 0) throw new Error("OAuth login is still active");
+    return structuredClone([...this.receipts].sort(([a], [b]) => a.localeCompare(b)));
+  }
+  restoreReceipts(rows: ReturnType<CodexDeviceLoginService["handoffReceipts"]>) {
+    if (!Array.isArray(rows) || rows.length > MAX_LOGIN_RECEIPTS) throw new Error("Invalid OAuth receipts");
+    for (const [id, row] of rows) {
+      if (typeof id !== "string" || !Number.isSafeInteger(row?.expiresAt) || !["error", "complete"].includes(row?.result?.status)
+        || this.receipts.has(id)) throw new Error("Invalid OAuth receipt");
+      this.receipts.set(id, structuredClone(row));
+    }
+  }
   private readonly sessions = new Map<string, LoginSession>();
   private readonly receipts = new Map<string, { result: CodexDeviceLoginPoll; expiresAt: number }>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -132,7 +146,7 @@ export class CodexDeviceLoginService {
   private readonly loginRoot: string;
   private readonly createClient: CodexMaintenanceClientFactory;
   private readonly now: () => number;
-  private readonly initializeOperation: Promise<void>;
+  private initializeOperation: Promise<void> | undefined;
 
   constructor(options: {
     readonly store: AccountPoolStore;
@@ -140,16 +154,18 @@ export class CodexDeviceLoginService {
     readonly createClient: CodexMaintenanceClientFactory;
     readonly now?: () => number;
     readonly onAccountImported?: (account: AccountPoolAccountSummary) => void;
+    readonly deferRecovery?: boolean;
   }) {
     this.store = options.store;
     this.loginRoot = options.loginRoot;
     this.createClient = options.createClient;
     this.now = options.now ?? Date.now;
     this.onAccountImported = options.onAccountImported;
-    this.initializeOperation = this.initialize();
+    if (!options.deferRecovery) this.initializeOperation = this.initialize();
   }
 
-  ready(): Promise<void> { return this.initializeOperation; }
+  ready(): Promise<void> { return this.initializeOperation ?? Promise.resolve(); }
+  activate(): Promise<void> { return this.initializeOperation ??= this.initialize(); }
 
   private async initialize(): Promise<void> {
     await mkdir(this.loginRoot, { recursive: true, mode: 0o700 });
@@ -271,7 +287,7 @@ export class CodexDeviceLoginService {
 
   async dispose(): Promise<void> {
     this.closing = true;
-    await this.initializeOperation.catch(() => undefined);
+    await this.initializeOperation?.catch(() => undefined);
     await Promise.allSettled(this.operations);
     await Promise.all([...this.sessions.values()].map(session => this.finish(session)));
     this.receipts.clear();
@@ -348,15 +364,18 @@ export class CodexDeviceLoginService {
 export function createManagedCodexRefresh(options: {
   readonly refreshRoot: string;
   readonly createClient: CodexMaintenanceClientFactory;
-}): (
+  readonly deferRecovery?: boolean;
+}): ((
   account: AccountPoolAccount,
   secret: AccountPoolSecret,
   reason: AccountCredentialRefreshReason,
-) => Promise<AccountPoolSecret> {
-  const initializeOperation = rm(options.refreshRoot, { recursive: true, force: true })
-    .then(() => mkdir(options.refreshRoot, { recursive: true, mode: 0o700 }));
-  return async (account, secret) => {
-    await initializeOperation;
+) => Promise<AccountPoolSecret>) & { ready(): Promise<void> } {
+  let initializeOperation: Promise<void> | undefined;
+  const ready = () => initializeOperation ??= rm(options.refreshRoot, { recursive: true, force: true })
+    .then(() => mkdir(options.refreshRoot, { recursive: true, mode: 0o700 })).then(() => undefined);
+  if (!options.deferRecovery) void ready();
+  const refresh = async (account: AccountPoolAccount, secret: AccountPoolSecret) => {
+    await ready();
     const codexHome = await mkdtemp(join(options.refreshRoot, "flight-"));
     let client: CodexMaintenanceClient | null = null;
     try {
@@ -372,4 +391,5 @@ export function createManagedCodexRefresh(options: {
       await rm(codexHome, { recursive: true, force: true });
     }
   };
+  return Object.assign(refresh, { ready });
 }

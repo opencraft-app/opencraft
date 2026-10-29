@@ -114,15 +114,14 @@
     }
   }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
-    --size-application-navigation-icon: 16px;
+    --size-application-navigation-icon: calc(var(--spacing) * 6);
     --radius-application-navigation-control: var(--radius-md);
   }
-  .shell-sidebar__navigation {
-    --size-application-navigation-icon: 20px;
+  .shell-sidebar__navigation, .shell-sidebar__rail-footer {
     --size-icon-navigation: var(--size-application-navigation-icon);
   }
   .shell-sidebar__rail-footer .shell-navigation__entrance {
-    .sidebar-account__avatar { width: 18px; height: 18px; flex-basis: 18px; }
+    .sidebar-account__avatar { width: 28px; height: 28px; flex-basis: 28px; }
   }
 }
 
@@ -261,11 +260,11 @@
 
 }
 .shell-navigation__entrance {
+  @include controls.application-navigation-glyph;
   position: relative;
   justify-content: flex-start;
   min-width: 0;
   &[data-surface="applications"] {
-    @include controls.application-navigation-glyph;
     justify-content: center;
   }
   &[data-surface="account"] { width: 100%; }

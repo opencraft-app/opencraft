@@ -15,6 +15,14 @@ Storage denial, capacity errors and unsupported attachment/context handles retai
 the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
 
+A ready connection alone does not consume a draft. The Web submit boundary
+checks that the same command and client message identity is already published
+in the target conversation's pending or queued submissions; otherwise it awaits
+admission, retaining the draft if identity restoration, hydration or persistence
+fails. Already owned online submissions release the editor before remote ACK.
+An unchanged failed retry keeps its delivery identity even when EditorView
+serializes an equivalent document again, while settlement uses the current draft.
+
 The original immutable message and client identity survive reload. Once the
 existing recovery owner has restored an authoritative live baseline, one drain
 moves never-attempted inputs FIFO into the existing Host next-turn queue. A
@@ -860,4 +868,74 @@ ancestor scroll does not independently reject a click the browser accepted;
 pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
-leave a timer that starts recording over the editor later.
+leave a timer that starts recording over the editor later. An already-focused
+editor retires its pending voice hold on touch pointer release/cancellation as
+well as native touch end/cancellation. Pointer release must disarm the candidate
+even when touchend delivery is interrupted. An active recording still finishes
+on native touchend so pointer cancellation caused by the intentional editor blur
+does not cancel a valid recording.
+
+
+## New Draft creation after rejected Host admission
+
+A New chat creation may join its existing Host connection owner and retry once
+when the Server explicitly rejected the request before native forwarding. The
+same immutable intent, Draft and attachments survive this recovery. Capability
+lookup preserves this typed rejection so a stale lease cannot leave the Draft
+stuck behind a generic model-capability error.
+
+The command port distinguishes a rejected first creation from a later rejected
+Turn after `thread/start` or `thread/fork` already returned. The latter keeps
+`SubmissionOutcomeUnknownError` and cannot restart creation automatically. Other
+pending writes, timeouts, lost acknowledgements and legacy untyped failures never
+inherit no-dispatch proof. Retry failures are presented by the Draft owner rather
+than escaping the button handler as unhandled Promise rejections.
+
+### Engine-scoped recovery prerequisites
+
+A mixed Host advertises default-engine extensions and a complete extension set
+for each alternate engine. Approval baseline reads and native wait reattachment
+must resolve the original Thread's engine before using shared interactions.
+An engine without shared interactions skips that read; it must not inherit the
+default engine's capability and repeatedly fail history recovery. Engines that
+advertise shared interactions still restore their pending approvals before the
+Replica grants sending authority. Transport recovery, watched history, and exact
+outbox acknowledgement remain owned by their existing services. For already
+loaded older mixed-Host clients, Pi accepts a read-only empty shared-approval
+baseline with no response authority; this does not advertise shared approvals
+or add an approval response method.
+
+### First-input creation recovery
+
+A created Thread, an attempted first input, a native acceptance receipt and a
+persisted transcript are distinct facts. The local Codex Host records positive
+creation evidence before returning its acknowledgement. A replacement Host may
+restore that exact empty creation only while no first input was attempted, the
+native process still lists the same loaded identity, and no rollout exists.
+Legacy or missing evidence, an uncertain send and accepted/persisted history do
+not qualify for an empty-history fallback. The existing generation route remains
+bound to the original native identity. Recovery also requires the original
+native subscription or an attested retained callback lane. A routing protocol
+version alone does not attest that capability. A combined Core without that
+lane rejects empty-Thread resume rather than claiming that events are restored.
+Once native acceptance is known, normal demand-based subscription release
+applies; only created/attempted input protects the provisional context.
+
+Creation-time MCP credentials retain their original endpoint and persistent
+Thread binding across a managed listener replacement. They bind once to the
+first attested execution; listing or recovering a creation never authorizes a
+tool call. A first-Turn dispatch retires empty-history eligibility before the
+native write. The Composer keeps its Draft until native acceptance; unknown
+outcomes still require positive message acknowledgement rather than replay.
+
+A later input composed while the accepted first Turn is still promoting has a
+different command/message identity. It waits for promotion and then enters the
+original conversation's next-Turn queue with its own receipt. It cannot reuse
+the first input's receipt to clear unsent content.
+
+If promotion fails after acceptance, an unchanged Composer retry retains its
+original command/message identity, recorded when the Controller creates the
+intent so the Web editor's direct failure transition and projected model
+selections retain it too. Editing content, submission settings, or execution
+placement creates a new identity. Retry state belongs to the owning Draft and is retired
+when acceptance settles, the Draft clears, or its controller is disposed.

@@ -25,6 +25,9 @@ sockets.on("connection", socket => {
       threads.set(thread.id, thread); subscribed.add(thread.id);
       send({ id, result: { thread } }); return;
     }
+    if (method === "thread/resume" && process.env.FAKE_REQUIRE_DURABLE_RESUME && !threads.get(params.threadId)?.turns.length) {
+      send({ id, error: { code: -32600, message: "history_missing: no rollout exists before first Turn" } }); return;
+    }
     if (method === "fixture/readPending") { send({ id, result: { count: pendingReads } }); return; }
     if (method === "fixture/holdNextRead") { holdNextRead = params.untilRelease ? -1 : params.delay; send({ id, result: {} }); return; }
     if (method === "fixture/holdNextTurn") { holdNextTurn = true; send({ id, result: {} }); return; }
@@ -32,7 +35,7 @@ sockets.on("connection", socket => {
     if (method === "fixture/releaseTurns") { for (const reply of heldTurns.splice(0)) reply(); send({ id, result: {} }); return; }
     if (method === "thread/read") { const wait = holdNextRead; holdNextRead = 0; const reply = () => { if (wait) pendingReads--; send({ id, result: { thread: threads.get(params.threadId) } }); }; if (wait === -1) { pendingReads++; heldReads.push(reply); } else if (wait) { pendingReads++; setTimeout(reply, wait); } else reply(); return; }
     if (method === "thread/items/list") { send({ id, result: { data: (threads.get(params.threadId)?.turns ?? []).flatMap(turn => turn.items.map(item => ({ item }))), nextCursor: null } }); return; }
-    if (method === "thread/list") { send({ id, result: { data: [...threads.values()], nextCursor: null } }); return; }
+    if (method === "thread/list") { send({ id, result: { data: [...threads.values()].filter(t => !process.env.FAKE_REQUIRE_DURABLE_RESUME || t.turns.length), nextCursor: null } }); return; }
     if (method === "thread/loaded/list") { send({ id, result: { data: [...threads.keys()] } }); return; }
     if (method === "thread/goal/get") { send({ id, result: { goal: threads.get(params.threadId)?.goal ?? null } }); return; }
     if (method === "thread/goal/set") {
@@ -62,12 +65,15 @@ sockets.on("connection", socket => {
       }
       if (!threads.has(params.threadId)) { send({ id, error: { code: -1, message: "Missing thread" } }); return; }
       subscribed.add(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE) threads.get(params.threadId).status = { type: "idle" };
       const reply = () => send({ id, result: { thread: threads.get(params.threadId) } });
       if (params.fixtureDelay) setTimeout(reply, 100); else reply();
       return;
     }
     if (method === "thread/unsubscribe") {
-      send({ id, result: { status: subscribed.delete(params.threadId) ? "unsubscribed" : "notSubscribed" } }); return;
+      const removed = subscribed.delete(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE && ![...subscriptions.values()].some(ids => ids.has(params.threadId))) threads.get(params.threadId).status = { type: "notLoaded" };
+      send({ id, result: { status: removed ? "unsubscribed" : "notSubscribed" } }); return;
     }
     if (method === "fixture/publish") {
       for (const [client, ids] of subscriptions) if (ids.has(params.threadId)) {

@@ -40,6 +40,7 @@ import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
 import { HostProcessService } from "./process-service.js";
 import { ProjectRepository } from "./project-repository.js";
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -116,6 +117,7 @@ export async function startLocalAgentHost(options: {
   readonly ownerHandoff?: {
     open(): boolean;
     nativeLost(): Promise<void>;
+    recoverNative(restart: () => Promise<void>): Promise<void>;
     beginReceipt(request:unknown): (packet:Record<string,unknown>) => {id:string;receipt:string};
     acknowledgeReceipt(input:unknown): void;
     run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T>;
@@ -133,7 +135,9 @@ export async function startLocalAgentHost(options: {
   readonly runtimeDirectory?: string;
   /** Explicit development/package path; the Agent Host never infers Electron's cwd. */
   readonly dshCapabilityPlugin?: string;
+  readonly modelPolicyPath?: string;
   readonly dataDirectory?: string;
+  readonly environmentDataDirectory?: string;
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;
@@ -192,12 +196,21 @@ export async function startLocalAgentHost(options: {
     }
     bridgeDirectory = await mkdtemp(join(tmpdir(), "opencraft-engine-plugin-"));
     const patch = join(bridgeDirectory, "patch.json");
+    let nativePlugin = plugin;
+    // Source previews run DSH without the parent's TS loader. Packaged plugins
+    // are already bundled; only source composition needs this build step.
+    try {
+      await access(resolve(dirname(plugin), '../../../scripts/execution-environment.ts'));
+      const { build } = await import('esbuild');
+      nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
+      await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent' });
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     const engineModule = (name: string) => pathToFileURL(resolve(dirname(executable), `../../${name}/lib/index.js`)).href;
     await writeFile(patch, JSON.stringify([
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
-      { insert: [{ id: "opencraft-capability", name: plugin, config: {
-      token: bridgeToken, ownerRequired: !!options.ownerHandoff,
+      { insert: [{ id: "opencraft-capability", name: nativePlugin, config: {
+      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),
@@ -228,6 +241,12 @@ export async function startLocalAgentHost(options: {
   const routing = storage.routing;
   const client = new DshRoutedClient(dshUrl, routing, options.ownerHandoff ? bridgeToken : undefined);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
+  const catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+    }
+  });
+  cleanup.push(() => catalogChanges.clear());
   const lifecycle = new ThreadLifecycle(storage.threads,
     async id => {
       if (!capabilityLink) return { released: false };
@@ -235,6 +254,7 @@ export async function startLocalAgentHost(options: {
       if (result.released && lifecycle.catalog.get(id)?.ephemeral) client.forgetVolatile(id);
       return result;
     }, (method, params) => {
+      catalogChanges.observeNotification(method, params);
       for (const [socket, clients] of socketClients) for (const state of clients.values()) {
         const id = params.threadId ?? params.thread?.id;
         const global = ["thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed"].includes(method);
@@ -272,6 +292,12 @@ export async function startLocalAgentHost(options: {
     projectlessRoot: projectlessWorkspaceRoot,
   }));
   cleanup.push(() => adapter.close());
+  cleanup.push(adapter.subscribe((method, params) => {
+    const value = params as { threadId?: string };
+    // Creation belongs to the committed lifecycle transaction, including ephemeral policy.
+    if (method !== "thread/started" && value.threadId && lifecycle.catalog.get(value.threadId)?.ephemeral === false)
+      catalogChanges.observeNotification(method, params);
+  }));
   const capabilities = new DshCapabilityBroker(undefined, options.sessionCapabilities);
   cleanup.push(() => capabilities.close());
   cleanup.push(() => capabilityLink?.close());
@@ -415,8 +441,8 @@ export async function startLocalAgentHost(options: {
   const restartBudget = new DshRestartBudget();
   restartBudget.ready();
   let restartOperation: Promise<void> | null = null;
-  const restartEngine = (automatic = false): Promise<void> => {
-    if (options.ownerHandoff) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
+  const restartEngine = (automatic = false, recoveringOwner = false): Promise<void> => {
+    if (options.ownerHandoff && !recoveringOwner) return Promise.reject(new Error("Protocol-owned DSH requires fenced process handoff"));
     if (closing) return Promise.reject(new Error("Local host is closing"));
     if (options.dshUrl || process.env.OPENCRAFT_DSH_URL?.trim()) return Promise.reject(new Error("Externally managed DSH must be restarted by its owner"));
     if (restartOperation) return restartOperation;
@@ -434,6 +460,10 @@ export async function startLocalAgentHost(options: {
           client.baseUrl = await supervisor.start();
           if (closing) { await supervisor.stop(); throw new Error("Local host is closing"); }
           await client.call("host.describe");
+          if (options.ownerHandoff) {
+            await capabilityLink!.nativeOwner("seal-bootstrap");
+            await capabilityLink!.nativeOwner("resume");
+          }
           if (modelConfiguration) {
             await modelConfiguration.initialize();
             await modelConfiguration.config.synchronize(true);
@@ -479,7 +509,12 @@ export async function startLocalAgentHost(options: {
           adapter.engineRecovered();
           return;
         } catch (error) {
-          if (closing || attempt === 2) { engineStatus = "failed"; throw error; }
+          if (closing || attempt === 2) {
+            // Recovery may fail after native admission was resumed. Do not leave
+            // that writer running when the owner records recovery-required.
+            if (recoveringOwner) await supervisor.stop();
+            engineStatus = "failed"; throw error;
+          }
           await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
         }
       }
@@ -489,7 +524,12 @@ export async function startLocalAgentHost(options: {
   onEngineExit = error => {
     if (closing) return;
     adapter.engineUnavailable(error);
-    if (options.ownerHandoff) { engineStatus = "failed";void options.ownerHandoff.nativeLost().catch(() => {});return; }
+    if (options.ownerHandoff) {
+      engineStatus = "restarting";
+      void options.ownerHandoff.recoverNative(() => restartEngine(true, true))
+        .catch(() => { engineStatus = "failed"; });
+      return;
+    }
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
@@ -775,6 +815,7 @@ export async function startLocalAgentHost(options: {
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
             dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
+        if (request.method === "thread/delete" || request.method === "thread/list") catalogChanges.observeResult(request.method, request.params, result);
         if (request.method === "initialize") {
           state.initialized = true;
           state.sharedInteractions = !!(request.params as { capabilities?: { extensions?: Record<string, unknown> } } | undefined)?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION];
@@ -889,7 +930,7 @@ export async function startLocalAgentHost(options: {
     get dshUrl() { return client.baseUrl; },
     get engineProcessId() { return supervisor.processId; },
     get engineState() { return engineStatus; },
-    restartEngine,
+    restartEngine: (automatic = false) => restartEngine(automatic),
     async close(): Promise<void> {
       if (closing) return;
       closing = true;

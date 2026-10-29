@@ -752,7 +752,8 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
       if (health.hosts['local-codex'].state === 'unavailable') break;
       await new Promise(done => setTimeout(done, 10));
     }
-    assert.equal(health.ok, true);
+    assert.equal(health.ok, false);
+    assert.equal((await fetch(app.url + '/__opencraft_health')).status, 503);
     assert.equal(health.hosts['local-codex'].state, 'unavailable');
     assert.equal(health.hosts['local-codex'].code, 'codex-host-unavailable');
     assert.ok(!health.storage.some(row => row.name === 'account-pool'), 'gateway must not become a second account writer');

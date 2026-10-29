@@ -3,11 +3,17 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
 import { parseNpmPackResult } from '../web-deployment/npm-pack-result.mjs';
-import { scanArchive, verifyFullArchive } from './archive.mjs';
+import { verifyFullArchive } from './archive.mjs';
+import { readPreparedTree } from './prepared-tree.mjs';
 import { fileListDigest, signPreflight, signBytes, parseManifest, parseStrictJson, preflightFor, sha256 } from './contract.mjs';
-import { createPublicKey } from 'node:crypto';
+import { createPublicKey, createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { selectNpmFiles, packSelectedArchive, packageGzipLevel } from './npm-archive.mjs';
 import { fullComponents, prepareFullMetadata } from './components.mjs';
 const exec = promisify(execFile);
+function timing(name, started) {
+  if (process.env.OPENCRAFT_PACKAGE_TIMINGS === '1') console.error(`[package-timing] ${name} ${(performance.now() - started).toFixed(0)}ms`);
+}
 async function canonicalizeStagedModes(root) {
   // The staging tree is public payload. npm preserves restrictive modes rather
   // than repairing them, including release files created under umask 0077.
@@ -24,12 +30,40 @@ async function canonicalizeStagedModes(root) {
   }
 }
 export async function npmPack(root, directory, dryRun = false) {
+  const started = performance.now();
   await canonicalizeStagedModes(root);
   const { stdout } = await exec('npm', ['pack', '--ignore-scripts', '--json', '--workspaces=false', '--pack-destination', directory,
     ...(dryRun ? ['--dry-run'] : [])], { cwd: root, maxBuffer: 32 * 1024 ** 2 });
+  timing(dryRun ? 'npm-pack-dry-run' : 'npm-pack', started);
   return parseNpmPackResult(JSON.parse(stdout));
 }
-export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities') }) {
+// Use the same installed npm's inventory rules (files, bundled dependencies,
+// ignores and mandatory files), without producing a preliminary gzip stream.
+export async function stagedInventory(root) {
+  return (await inventorySnapshot(root)).files;
+}
+async function inventorySnapshot(root) {
+  const started = performance.now();
+  await canonicalizeStagedModes(root);
+  const selection = await selectNpmFiles(root);
+  const names = selection.names, tarOptions = selection.options;
+  const files = [];
+  for (const name of names) {
+    if (name === 'release/full-release.json' || name === 'release/full-release.sig') continue;
+    const path = join(root, name), info = await stat(path);
+    // Honor this npm's tar filter, including any executable-bin mode policy.
+    if (tarOptions.filter) tarOptions.filter(name, info);
+    const hash = createHash('sha256');
+    let bytes = 0;
+    for await (const chunk of createReadStream(path)) { hash.update(chunk); bytes += chunk.length; }
+    if (bytes !== info.size) throw new Error('Full release staged file changed during inventory');
+    files.push([name, hash.digest('hex'), bytes, info.mode & 0o111 ? '0755' : '0644']);
+  }
+  timing('staged-inventory', started);
+  return { selection, files: files.sort((a, b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0]))) };
+}
+export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities'), gzipLevel = packageGzipLevel(), prepareOnly = false }) {
+  gzipLevel = packageGzipLevel(gzipLevel);
   const keyStat = await stat(keyPath);
   if (!keyStat.isFile() || (keyStat.mode & 0o777) !== 0o600) throw new Error('Full release signing key must have mode 0600');
   const privateKey = await readFile(keyPath);
@@ -61,9 +95,13 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
   // Preliminary/retry packs never overwrite the retained final archive.
   const scratch = await mkdtemp(join(directory, '.full-release-pack-'));
   try {
-    const initial = await npmPack(packageRoot, scratch);
-    const scan = await scanArchive(join(scratch, initial.filename));
-    const files = scan.files;
+    // npm selection depends on names, package manifests and ignore rules, not
+    // these two metadata files' contents. Reserve them before the sole scan so
+    // their final signed bytes can replace the placeholders in the same list.
+    await writeFile(join(packageRoot, 'release/full-release.json'), '{}');
+    await writeFile(join(packageRoot, 'release/full-release.sig'), '{}');
+    const { files, selection } = await inventorySnapshot(packageRoot);
+    if (!['release/full-release.json', 'release/full-release.sig'].every(name => selection.names.includes(name))) throw new Error('npm rules exclude signed release metadata');
     const licenseFiles = files.filter(([name]) => /(?:^|\/)(?:LICENSE(?:\.[^/]*)?|NOTICE(?:\.[^/]*)?)$/i.test(name)).map(([name]) => name);
     if (!licenseFiles.length) throw new Error('Full release licenses are missing');
     const component = { componentId: 'bridge-distribution', role: 'web-bootstrap', version: pkg.version, buildId: pkg.opencraftWeb.buildId,
@@ -92,26 +130,57 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
     await mkdir(join(packageRoot, 'release'), { recursive: true });
     await writeFile(join(packageRoot, 'release/full-release.json'), bytes, { mode: 0o644 });
     await writeFile(join(packageRoot, 'release/full-release.sig'), JSON.stringify(signBytes(bytes, privateKey, keyId)), { mode: 0o644 });
-    const dryRun = await npmPack(packageRoot, scratch, true);
-    const packed = await npmPack(packageRoot, scratch);
-    if (dryRun.integrity !== packed.integrity || dryRun.entryCount !== packed.entryCount || dryRun.unpackedSize !== packed.unpackedSize) throw new Error('Final staged dry-run differs from the signed archive');
-    const verified = await verifyFullArchive(join(scratch, packed.filename), trust, { preflight: preflightFor(template) });
-    if (binding?.integrity && binding.integrity !== packed.integrity) throw new Error('Full release archive identity changed');
-    const finalIdentity = { ...identity, integrity: packed.integrity, archive: join(directory, packed.filename), buildId: pkg.opencraftWeb.buildId };
-    const handle = await open(identityPath + '.tmp', 'w', 0o600);
-    try { await handle.writeFile(JSON.stringify(finalIdentity)); await handle.sync(); } finally { await handle.close(); }
-    await rename(identityPath + '.tmp', identityPath); await syncParent(identityPath);
-    await copyFile(join(scratch, packed.filename), join(directory, packed.filename + '.tmp'));
-    const archiveHandle = await open(join(directory, packed.filename + '.tmp'), 'r');
-    try { await archiveHandle.sync(); } finally { await archiveHandle.close(); }
-    await rename(join(directory, packed.filename + '.tmp'), join(directory, packed.filename));
-    await syncParent(join(directory, packed.filename));
-    return { ...packed, fullRelease: { releaseId: record.release.releaseId, releaseSequence: record.release.releaseSequence,
-      manifestSha256: verified.state.manifestSha256, keyId, compressedBytes: verified.compressedBytes, unpackedBytes: verified.unpackedBytes, entries: verified.entries, dryRun: { integrity: dryRun.integrity, entries: dryRun.entryCount, unpackedBytes: dryRun.unpackedSize },
-      components: record.components.map(c => ({ componentId: c.componentId, root: c.content.root, entries: c.content.entries, unpackedBytes: c.content.unpackedBytes })) } };
+    await canonicalizeStagedModes(packageRoot);
+    if (prepareOnly) return { preparedTree: { manifestSha256: identity.manifestSha256, identityDirectory },
+      fullRelease: { releaseId: record.release.releaseId, releaseSequence: record.release.releaseSequence,
+        manifestSha256: identity.manifestSha256, keyId,
+        components: record.components.map(c => ({ componentId: c.componentId, root: c.content.root, entries: c.content.entries, unpackedBytes: c.content.unpackedBytes })) } };
+    return await finishArchive({ packageRoot, directory, scratch, selection, files, gzipLevel, trust, record, identity, identityPath, binding, keyId, pkg });
   } finally { await rm(scratch, { recursive: true, force: true }); }
 }
 async function syncParent(path) {
   const handle = await open(dirname(path), 'r');
   try { await handle.sync(); } finally { await handle.close(); }
+}
+
+async function finishArchive({ packageRoot, directory, scratch, selection, files, gzipLevel, trust, record, identity, identityPath, binding, keyId, pkg }) {
+  const packingStarted = performance.now();
+  const packed = await packSelectedArchive(selection, scratch, files, gzipLevel);
+  timing(`archive-stream-gzip${gzipLevel}`, packingStarted);
+  // The final archive is also the inspection artifact: no second compressor.
+  const dryRun = packed;
+  const verificationStarted = performance.now();
+  const verified = await verifyFullArchive(join(scratch, packed.filename), trust, { preflight: preflightFor(record) });
+  timing('verify-full-archive', verificationStarted);
+  if (binding?.integrity && binding.integrity !== packed.integrity) throw new Error('Full release archive identity changed');
+  const finalIdentity = { ...identity, integrity: packed.integrity, archive: join(directory, packed.filename), buildId: pkg.opencraftWeb.buildId };
+  const handle = await open(identityPath + '.tmp', 'w', 0o600);
+  try { await handle.writeFile(JSON.stringify(finalIdentity)); await handle.sync(); } finally { await handle.close(); }
+  await rename(identityPath + '.tmp', identityPath); await syncParent(identityPath);
+  await copyFile(join(scratch, packed.filename), join(directory, packed.filename + '.tmp'));
+  const archiveHandle = await open(join(directory, packed.filename + '.tmp'), 'r');
+  try { await archiveHandle.sync(); } finally { await archiveHandle.close(); }
+  await rename(join(directory, packed.filename + '.tmp'), join(directory, packed.filename));
+  await syncParent(join(directory, packed.filename));
+  return { ...packed, fullRelease: { releaseId: record.release.releaseId, releaseSequence: record.release.releaseSequence,
+    manifestSha256: verified.state.manifestSha256, keyId, compressedBytes: verified.compressedBytes, unpackedBytes: verified.unpackedBytes, entries: verified.entries, dryRun: { integrity: dryRun.integrity, entries: dryRun.entryCount, unpackedBytes: dryRun.unpackedSize },
+    components: record.components.map(c => ({ componentId: c.componentId, root: c.content.root, entries: c.content.entries, unpackedBytes: c.content.unpackedBytes })) } };
+}
+export async function archivePreparedPackage({ packageRoot, directory, trust, identityDirectory, expectedManifestSha256, gzipLevel = packageGzipLevel() }) {
+  gzipLevel = packageGzipLevel(gzipLevel);
+  const accepted = await readPreparedTree(packageRoot, trust, { expectedManifestSha256 });
+  const record = accepted.record;
+  const pkg = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+  const slot = sha256(Buffer.from(JSON.stringify([record.release.product, record.release.channel, pkg.name, pkg.version])));
+  const identityPath = join(identityDirectory, slot + '.json');
+  const binding = JSON.parse(await readFile(identityPath, 'utf8'));
+  const identity = { releaseId: record.release.releaseId, releaseSequence: record.release.releaseSequence,
+    manifestSha256: accepted.state.manifestSha256, sourceRevision: record.release.source.revision, exactVersion: pkg.version };
+  if (Object.keys(identity).some(key => binding[key] !== identity[key])) throw new Error('Prepared release identity mismatch');
+  const selection = await selectNpmFiles(packageRoot);
+  const files = record.components.flatMap(c => c.fileList).sort((a,b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0])));
+  const keyId = accepted.envelope.keyId;
+  const scratch = await mkdtemp(join(directory, '.full-release-pack-'));
+  try { return await finishArchive({ packageRoot, directory, scratch, selection, files, gzipLevel, trust, record, identity, identityPath, binding, keyId, pkg }); }
+  finally { await rm(scratch, { recursive: true, force: true }); }
 }

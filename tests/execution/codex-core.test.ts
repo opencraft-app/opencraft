@@ -15,6 +15,8 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
+import { ExecutionEnvironmentRuntime } from "../../scripts/execution-environment.js";
+import { EmployeeGitVaultStore } from "../../scripts/employee-git-vault-store.js";
 import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/native-execution-origin.js";
 
 // macOS Unix-domain sockets have a small pathname limit. Keep fixture paths
@@ -385,23 +387,32 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
       { cwd, env, stdio: ["pipe", "pipe", "pipe"] }),
   };
   if (configure) options = await configure(options);
+  if (options.appServerEndpoint && !options.proxyPort) {
+    const reservation = createTcpServer();
+    await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    const port = (reservation.address() as import("node:net").AddressInfo).port;
+    await new Promise<void>(resolve => reservation.close(() => resolve()));
+    options = { ...options, proxyPort: port };
+  }
   const core = await startCodexCore(options);
+  const runtime = options.appServerEndpoint ? await startCodexAppServer({ ...options, endpoint: options.appServerEndpoint, coreEndpoint: options.endpoint }) : undefined;
   const control = new CodexCoreControlClient(core.endpoint, token);
   const adapters: CodexEngineAdapter[] = [];
-  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined) {
+  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined, overrides: Partial<ConstructorParameters<typeof CodexEngineAdapter>[0]> = {}) {
     const engine = new CodexEngineAdapter({ ...options, coreEndpoint: core.endpoint, coreAuthToken: token,
       // Remote mode must not touch any local account store or spawn a child.
       dataDirectory: overlays ? options.dataDirectory : join(root, "forbidden"),
-      coreHostOverlays: overlays, logDiagnostic,
+      coreHostOverlays: overlays, logDiagnostic, ...overrides,
       spawnAppServer: () => { throw new Error("Remote mode spawned a writer"); } });
     adapters.push(engine);
     const frames: any[] = [];
     engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
     await engine.connect();
     let sequence = 0;
-    async function rpc(client: string, method: string, params: object = {}) {
+    async function rpc(client: string, method: string, params: object = {}, context?: Parameters<CodexEngineAdapter["sendWithContext"]>[1]) {
       const id = ++sequence;
-      await engine.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+      const frame = JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client });
+      if (context) await engine.sendWithContext(frame, context); else await engine.send(frame);
       for (let i = 0; i < 300; i++) {
         const frame = frames.find(value => value.id === id && !value.method && value[LOGICAL_CLIENT_FIELD] === client);
         if (frame) { if (frame.error) throw new Error(frame.error.message); return frame.result; }
@@ -413,7 +424,7 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
   }
   return { root, options, core, control, adapter, async close() {
     await Promise.all(adapters.map(engine => engine.close()));
-    await core.close(); await rm(root, { recursive: true, force: true });
+    await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true });
   } };
 }
 
@@ -768,4 +779,231 @@ for (const overlays of [false, true]) test(`Read-only Core observers receive liv
     assert.equal(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"), false);
     assert.ok(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
   } finally { await f.close(); }
+});
+
+test("Core reconnect before the first client caches its successful handshake for the first View", async () => {
+  const f = await fixture();
+  let opens = 0;
+  const initialized = new Set<number>(), listeners = new Set<(frame: string) => void>();
+  const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
+      get status() { return native.status; }, connect: signal => native.connect(signal), close: () => native.close(),
+      subscribeMessage: listener => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
+      subscribeStatus: listener => native.subscribeStatus(status => { if (status.state === "open") opens++; listener(status); }),
+      send: async frame => {
+        const message = JSON.parse(frame);
+        if (message.method === "initialize") {
+          if (initialized.has(opens)) {
+            for (const listener of listeners) listener(JSON.stringify({ id: message.id, error: { code: -32080, message: "Routing connection is already initialized" } }));
+            return;
+          }
+          initialized.add(opens);
+        }
+        await native.send(frame);
+      },
+    }) });
+  let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
+  const frames: any[] = []; engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  try {
+    await engine.connect();
+    await f.core.close(); replacement = await startCodexCore(f.options);
+    for (let n = 0; n < 600 && !(opens >= 2 && (engine as any).physicalInitialized && engine.status.state === "open"); n++) await delay(10);
+    assert.ok(opens >= 2);
+    await engine.send(JSON.stringify({ id: "first-view", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "first-view" }));
+    for (let n = 0; n < 100 && !frames.some(frame => frame.id === "first-view"); n++) await delay(10);
+    const reply = frames.find(frame => frame.id === "first-view");
+    assert.ok(reply?.result, "a recovered physical connection must not receive a duplicate initialize from the first View");
+    assert.equal(reply.result.capabilities.extensions["opencraft/read-history"].itemDetails, true);
+  } finally { await engine.close(); await replacement?.close(); await f.close(); }
+});
+
+for (const overlays of [false, true]) test(`directory readers learn a committed creation without opening its Thread (overlays=${overlays})`, async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(overlays);
+    await a.rpc("creator", "initialize"); await a.rpc("directory-reader", "initialize");
+    const before = await a.rpc("directory-reader", "thread/list", {});
+    const { thread } = await a.rpc("creator", "thread/start", { cwd: "/synthetic", ephemeral: false });
+    const events = () => a.frames.filter(frame => frame.method === "opencraft/thread-catalog/changed"
+      && frame[LOGICAL_CLIENT_FIELD] === "directory-reader" && frame.params.change?.type === "upsert"
+      && frame.params.change.thread.id === thread.id);
+    assert.equal(events().length, 0, "allocation is not a durable catalog entry");
+    await a.rpc("creator", "turn/start", { threadId: thread.id, clientUserMessageId: "catalog-creation", input: [] });
+    assert.equal(events().length, 1, "native acceptance publishes independently of Thread subscriptions");
+    assert.deepEqual(events()[0].params.change.thread.turns, []);
+    assert.equal((await a.rpc("directory-reader", "thread/list", {})).data.length, before.data.length + 1);
+  } finally { await f.close(); }
+});
+
+test("a never-dispatched creation keeps its native route and events through Host replacement without a history resume", async () => {
+  const f = await fixture(async options => ({ ...options,
+    appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start", {});
+    const pid = (await f.control.health()).codexPid;
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true });
+    assert.equal(restored.thread.id, thread.id);
+    assert.equal(restored.thread.creationPhase, "created");
+    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, watch: true, initialTurnsPage: { limit: 10 } });
+    assert.deepEqual(read.initialTurnsPage.data, []);
+    const receipt = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "first-input", input: [{ type: "text", text: "synthetic-first" }] });
+    assert.ok(receipt.turn.id);
+    assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 1);
+    await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "recovered-progress" });
+    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "recovered-progress"));
+    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === receipt.turn.id));
+    const history = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.equal(history.thread.turns.length, 1);
+    assert.equal(history.thread.turns[0].items[0].clientId, "first-input");
+    assert.equal(history.thread.creationPhase, undefined, "accepted input cannot be represented by the empty creation snapshot");
+    assert.equal((await f.control.health()).codexPid, pid);
+    await b.engine.close();
+    const facts = new ProvisionalThreads(f.options.dataDirectory);
+    try { assert.equal(facts.get(thread.id)?.phase, "accepted"); assert.equal(facts.get(thread.id)?.turnId, receipt.turn.id); }
+    finally { facts.close(); }
+  } finally { await f.close(); }
+});
+
+for (const routingOnly of [false, true]) test(`Core refuses empty creation recovery without callbacks (routing-only=${routingOnly})`, async () => {
+  const f = await fixture(async options => ({ ...options,
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start");
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    if (routingOnly) {
+      // Real transport distinguishes routing advertisement from callbackReady.
+      // A router may still point at a legacy APP with no retained lane.
+      const native = (b.engine as any).nativeCore;
+      assert.equal(native.supportsOrchestration, false);
+      native.routed = true;
+      assert.equal(native.supportsOrchestrationRouting, true);
+    }
+    await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /当前连接无法恢复空会话/);
+    assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
+    assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);
+  } finally { await f.close(); }
+});
+
+test("a lost first-Turn acknowledgement never turns attempted input into an empty conversation", async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start", {});
+    await a.rpc("browser", "fixture/holdNextTurn");
+    const pending = a.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "uncertain-first", input: [{ type: "text", text: "synthetic" }] }).catch(() => undefined);
+    for (let i = 0; i < 100; i++) {
+      const read = await a.rpc("reader", "initialize").then(() => a.rpc("reader", "thread/read", { threadId: thread.id, includeTurns: true }));
+      if (read.thread.turns.length) break;
+      await delay(5);
+    }
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.equal(read.thread.creationPhase, undefined);
+    assert.equal(read.thread.turns.length, 1);
+    assert.equal(read.thread.turns[0].items[0].clientId, "uncertain-first");
+    await assert.rejects(b.rpc("browser", "thread/read", { threadId: "no-creation-evidence", initialTurnsPage: { limit: 10 } }),
+      "an unknown missing history cannot acquire a synthetic empty snapshot");
+    await pending;
+  } finally { await f.close(); }
+});
+
+
+for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as const) test(`an empty environment provider restores MCP without a history resume (scope=${scopeChange})`, async () => {
+  const f = await fixture(async options => ({ ...options, appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  const vault = new EmployeeGitVaultStore(f.root), runtime = new ExecutionEnvironmentRuntime(f.root, vault);
+  const methods: string[] = []; let restored = 0; const bound = new Set<string>(), hosts: CodexEngineAdapter[] = [];
+  const reservation = () => ({ configuration: { url: "http://127.0.0.1:1/mcp" }, bindThread() {}, bind(threadId: string, inputId: string, executionId: string) { bound.add(JSON.stringify([threadId, inputId, executionId])); }, cancel() {} });
+  const options = { dataDirectory: join(f.root, "codex"), executionEnvironment: runtime,
+    ...(scopeChange === "no-mcp" ? {} : { sessionMcp: () => ({ url: "http://127.0.0.1:1/mcp" }), createSessionMcp: reservation,
+    restoreSessionMcp: () => { restored++; return reservation(); } }),
+    decorateNativeTransport(transport: import("../../apps/opencraft-daemon/src/codex-native-core-transport.js").CodexNativeCoreTransport) {
+      const send = transport.send.bind(transport); transport.send = frame => { methods.push(JSON.parse(frame).method); return send(frame); }; return transport;
+    },
+  };
+  const context = { sender: { kind: "employee" as const, loginName: "alice" }, executionPrincipal: { provider: "employee", subject: "alice" }, validUntil: Date.now() + 60_000 };
+  try {
+    const a = await f.adapter(true, () => {}, options); hosts.push(a.engine); await a.rpc("browser", "initialize", {}, context);
+    const { thread } = await a.rpc("browser", "thread/start", {}, context);
+    await a.engine.close();
+    const b = await f.adapter(true, () => {}, options); hosts.push(b.engine); await b.rpc("browser", "initialize", {}, context);
+    await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true }, context);
+    methods.length = 0;
+    if (scopeChange !== "none" && scopeChange !== "no-mcp") {
+      if (scopeChange === "project") runtime.bind("local-codex", thread.id, "another-project");
+      if (scopeChange === "unknown") {
+        const db = new DatabaseSync(join(options.dataDirectory, "thread-creations.sqlite"));
+        try { db.prepare("UPDATE thread_creations SET environment_owner=NULL WHERE thread_id=?").run(thread.id); } finally { db.close(); }
+      }
+      const changedContext = scopeChange === "account" ? { ...context,
+        sender: { kind: "employee" as const, loginName: "bob" }, executionPrincipal: { provider: "employee", subject: "bob" } } : context;
+      await assert.rejects(b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "changed-scope", input: [{ type: "text", text: "must not reach native" }] }, changedContext), /input was not sent/);
+      assert.equal(bound.size, 0, "unverified environment ownership cannot bind the credential");
+      assert.equal(methods.includes("turn/start"), false);
+      assert.equal(methods.includes("thread/resume"), false);
+      if (scopeChange === "unknown") return;
+      if (scopeChange === "project") runtime.bind("local-codex", thread.id, null);
+    }
+    const ack = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "env-restored-first", input: [{ type: "text", text: "one synthetic input" }] }, context);
+    assert.ok(ack.turn.id);
+    assert.equal(restored, scopeChange === "no-mcp" ? 0 : 1); assert.equal(bound.size, scopeChange === "no-mcp" ? 0 : 1);
+    assert.equal(methods.includes("thread/resume"), false, "the first input cannot require nonexistent native history");
+    assert.equal(methods.filter(method => method === "turn/start").length, 1);
+    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
+    assert.equal(read.thread.turns.length, 1);
+    await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "restored-with-environment" });
+    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "restored-with-environment"));
+    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === ack.turn.id));
+    methods.length = 0;
+    const second = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "env-next", input: [{ type: "text", text: "next synthetic input" }] }, context);
+    assert.notEqual(second.turn.id, ack.turn.id);
+    assert.ok(methods.includes("thread/resume"), "a later execution refreshes the native environment after the preserved first snapshot");
+    assert.equal(methods.filter(method => method === "turn/start").length, 1);
+    const final = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
+    assert.deepEqual(final.thread.turns.map((turn: any) => turn.items[0].clientId), ["env-restored-first", "env-next"]);
+    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+  } finally { await Promise.all(hosts.map(host => host.close())); runtime.close(); vault.close(); await f.close(); }
+});
+
+
+test("creation storage upgrades v1 without inventing an environment owner", async () => {
+  const root = await mkdtemp(join(temporaryDirectory, "oc-creation-v1-"));
+  const { openManagedDatabase, createSchemaValidator } = await import("@opencraft/sqlite-node");
+  const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
+  const v1 = `CREATE TABLE thread_creations (
+  thread_id TEXT PRIMARY KEY, result_json TEXT NOT NULL,
+  phase TEXT NOT NULL CHECK(phase IN ('created','attempted','accepted','persisted')),
+  input_id TEXT, turn_id TEXT
+) STRICT;`;
+  try {
+    const old = openManagedDatabase({ path: join(root, "thread-creations.sqlite"), legacyPolicy: "reject",
+      migrations: [{ version: 1, name: "thread-creation-lifecycle", sql: v1 }], validateSchema: createSchemaValidator(v1) });
+    old.database.prepare("INSERT INTO thread_creations VALUES(?,?,'created',NULL,NULL)").run("legacy", JSON.stringify({ thread: { id: "legacy", turns: [] } })); old.database.close();
+    let current = new ProvisionalThreads(root);
+    assert.equal(current.get("legacy")?.phase, "created"); assert.equal(current.get("legacy")?.environmentOwner, null);
+    current.created("new", { thread: { id: "new", turns: [] } }, "synthetic-owner-fingerprint"); current.close();
+    current = new ProvisionalThreads(root);
+    try { assert.equal(current.get("new")?.environmentOwner, "synthetic-owner-fingerprint");
+      assert.deepEqual(current.get("new")?.result, { thread: { id: "new", turns: [] } }); }
+    finally { current.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

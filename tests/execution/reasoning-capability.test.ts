@@ -34,9 +34,30 @@ test('invalid defaults are rejected instead of silently selecting another global
  const from=reasoningCapability(['high'],'high'),to=reasoningCapability([],null);
  assert.equal(resolveReasoningEffort(to,resolveReasoningEffort(from,'high')),undefined);
 });
-test('capability read failure is a pre-send error, not an unknown submission outcome',async()=>{
- let writes=0;
- const port=createAppServerConversationCommandPort({hostId:'local',client:{hostId:'local',request:async()=>{writes++;return {} as any}},interactions:{respond:async()=>{}},resolveCompilerOptions:async()=>{throw new AppServerClientError('TIMEOUT','catalog timeout')}});
- await assert.rejects(port.submit(intent('none')),error=>error instanceof SubmitCompileError&&error.code==='CAPABILITY_UNAVAILABLE');
- assert.equal(writes,0);
-});
+for (const scenario of ['catalog timeout', 'stalled catalog', 'unsupported Fast', 'supported Fast', 'unavailable model', 'cancelled']) {
+ test(`${scenario} preserves submission semantics`, async () => {
+  const writes: any[] = [];
+  const port = createAppServerConversationCommandPort({hostId:'local',client:{hostId:'local',request:async(method, params)=>{writes.push({method, params});return {turn:{id:'turn'}} as any}},interactions:{respond:async()=>{}},resolveCompilerOptions:async()=>{
+   if (scenario === 'stalled catalog') return new Promise(() => {});
+   if (scenario === 'catalog timeout') throw new AppServerClientError('TIMEOUT','catalog timeout');
+   if (scenario === 'cancelled') throw new AppServerClientError('NOT_DISPATCHED','cancelled');
+   if (scenario === 'unavailable model') throw new SubmitCompileError('CAPABILITY_UNAVAILABLE','所选模型已不可用，请重新选择');
+   return {serviceTiers: scenario === 'supported Fast' ? ['fast'] : []};
+  }});
+  const submission = intent('high');
+  const started = Date.now();
+  const result = port.submit({...submission,selections:{...submission.selections,serviceTier:'fast'}});
+  if (scenario === 'unavailable model' || scenario === 'cancelled') {
+   await assert.rejects(result);
+   assert.equal(writes.length,0);
+  } else {
+   await result;
+   assert.ok(Date.now() - started < 3000);
+   assert.equal(writes.length,1);
+   assert.equal(writes[0].method,'turn/start');
+   assert.equal(writes[0].params.model,'model-test');
+   assert.equal(writes[0].params.effort,'high');
+   assert.equal(Object.hasOwn(writes[0].params,'serviceTier'),scenario === 'supported Fast');
+  }
+ });
+}

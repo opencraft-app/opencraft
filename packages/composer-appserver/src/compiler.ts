@@ -34,6 +34,7 @@ export interface CompiledSubmitIntent {
 }
 
 export interface SubmitCompilerOptions {
+  readonly serviceTiers?: readonly string[];
   /** Concrete default resolved from the catalog for this immutable submission. */
   readonly model?: string;
   readonly historyMode?: ThreadStartParams["historyMode"];

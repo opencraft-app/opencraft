@@ -146,7 +146,7 @@ npm run smoke:server-updates
 npm run smoke:server-updates:systemd
 ```
 
-`test:server-updates` 通过 `tsx` 加载真实 TypeScript headless composition 依赖，覆盖安装/回退、执行启动失败、持久化失败、网站启动失败、进程中断恢复及 systemd 生命周期配置。独立 DSH 兼容边界测试仍构建完整 execution 归档，仅查询指定 service 成员以限制子进程输出；其三分钟预算覆盖完整打包，不削弱指针、服务身份或拒绝旧包的断言。smoke 使用隔离 HOME、合成账户和本地 Responses 端点，运行真实 Codex CLI、归档内 gateway/daemon、生产 SPA 和真实 npm；浏览器点安装时 shell 已在运行，断线后原 turn 完成，shell 开始/结束各一次、core/CLI/运行中子进程 PID 不变，再从页面回退。默认 smoke 的 systemd 边界由隔离进程重启替代；`:systemd` 入口在 `/run/systemd/system` 创建随机命名的临时 core/执行 unit，通过实际 `systemctl restart` 验证同一链路并在结束时删除自己的 unit。两种入口都不修改线上 unit、不使用真实账户或付费推理；生产服务器仍需核对权限与首次迁移。普通安装场景由隔离夹具保持原生 shell 至进程身份检查后才释放，避免固定 sleep 自然结束造成 PID 误判；合成 Responses 端点按请求声明解码 zstd，并拒绝不含 JSON 的探测请求。
+`test:server-updates` 通过 `tsx` 加载真实 TypeScript headless composition 依赖，覆盖安装/回退、执行启动失败、持久化失败、网站启动失败、进程中断恢复及 systemd 生命周期配置。独立 DSH 兼容边界测试仍构建完整 execution 归档，仅查询指定 service 成员以限制子进程输出；其六分钟预算覆盖完整原生运行时打包，不削弱指针、服务身份或拒绝旧包的断言。smoke 使用隔离 HOME、合成账户和本地 Responses 端点，运行真实 Codex CLI、归档内 gateway/daemon、生产 SPA 和真实 npm；浏览器点安装时 shell 已在运行，断线后原 turn 完成，shell 开始/结束各一次、core/CLI/运行中子进程 PID 不变，再从页面回退。默认 smoke 的 systemd 边界由隔离进程重启替代；`:systemd` 入口在 `/run/systemd/system` 创建随机命名的临时 core/执行 unit，通过实际 `systemctl restart` 验证同一链路并在结束时删除自己的 unit。两种入口都不修改线上 unit、不使用真实账户或付费推理；生产服务器仍需核对权限与首次迁移。普通安装场景由隔离夹具保持原生 shell 至进程身份检查后才释放，避免固定 sleep 自然结束造成 PID 误判；合成 Responses 端点按请求声明解码 zstd，并拒绝不含 JSON 的探测请求。
 
 ## 本地源码与 npm 复用更新事务
 
@@ -506,3 +506,42 @@ Request URLs remain bound to the configured registry; authentication comes from
 the npm toolchain, redirects remain disabled, and caller headers cannot replace
 the configured credentials. Producers can encode large publication attachments
 in bounded chunks instead of allocating one archive-sized Base64 string.
+
+## 受管维护与回退完成钩子
+
+部署可以设置 `OPENCRAFT_RECOVERY_MAINTENANCE_MARKER` 为私有维护标记的绝对路径。
+更新器在开始安装前同步检查标记，标记存在时拒绝新安装/完整升级；读取状态与已有业务连接
+仍可使用。维护控制器先独占创建标记，再读取状态确认没有进行中的更新。
+已认证回退可以携带 `x-opencraft-recovery-id`，其值必须等于标记内容；该能力仅用于持有
+本次维护标识的部署控制器，不能绕过管理员认证、已有更新事务或兼容性检查。
+
+`OPENCRAFT_ROLLBACK_RECOVERY_COMMAND` 是非空参数字符串数组的JSON，用于配置部署拥有的
+回退完成检查，例如重建独立路由进程并发起新连接握手。更新器先应用兼容执行版本，执行
+钩子成功后才提交Web指针；钩子失败沿既有事务恢复当前执行版本，不宣称回退成功。
+命令直接执行、没有shell，120秒超时，输出不进入公开API。钩子运行在现有更新事务内，
+不得重新取得外层部署锁或向同一更新器发起新事务。状态中的 `recovery.maintenanceMarker`
+与 `recovery.rollbackHook` 只声明配置是否存在，不代表本次恢复或外部服务已验证。
+
+完整签名包的sealer直接读取当前npm自带的Arborist/npm-packlist清单并计算文件摘要，写入
+签名后只压缩一次。inspection/dry-run和交付使用同一最终归档，仍执行签名、文件列表、
+权限与预算的完整验证；不能将暂存文件清单当作归档已通过的证据。
+
+### Same-host signed directory installation
+
+A pinned bootstrap configured with a full-release trust root advertises
+`localTreeInstall: 1`. The authenticated local updater can accept
+`--tree <absolute-staging-root> --manifest-sha256 <digest>` with an exact version
+and build ID. It copies only signed files into a fresh installation directory,
+checks all target hashes, sizes, modes, paths, budgets, signatures and replay
+state, then uses the ordinary managed activation and rollback transaction.
+Links are rejected; the staging tree is never executed in place.
+
+`sealPackage({prepareOnly:true,...})` reserves the immutable release identity and
+writes signed metadata without creating an archive or claiming archive SRI.
+After activation and health checks, `archivePreparedPackage` can serialize that
+same tree, independently verify the complete archive and finalize its SRI.
+Archive retries preserve the original manifest and identity; changed contents
+require a new release identity. A failed archive build must not reinstall or
+roll back a healthy running version. Consumers without this capability retain
+the existing archive installation path. Deployments must promote the pinned
+bootstrap once using a verified complete package before selecting this path.

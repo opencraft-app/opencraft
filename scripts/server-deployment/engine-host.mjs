@@ -1,3 +1,6 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
+import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, bootIdentity } from '../full-upgrade/durable.mjs';
@@ -9,7 +12,6 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { startEngineHost } from '../../apps/local-agent-host/src/engine-host.ts';
 import { RemoteEngineProvider } from '../../apps/local-agent-host/src/remote-engine-provider.ts';
@@ -50,18 +52,20 @@ export async function startIndependentEngineHost(options) {
   const runtime = { entrySha256: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), node: process.version, nodeAbi: process.versions.modules, sourceRevision:process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION ?? null, buildId:process.env.OPENCRAFT_OBSERVE_BUILD_ID ?? null, configSha256:createHash('sha256').update(JSON.stringify(options)).digest('hex') };
   const bootId = await bootIdentity();
   const handoff = new PiOwnerHandoff(dataDirectory, runtime, inspectOwnerCgroup);
-  let host, pi, server, closed;
+  let host, pi, server, closed, executionEnvironment;
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`,
     token = randomUUID();
   try {
     await Promise.all(['pi','projects','models'].map(name => mkdir(join(dataDirectory,name), { recursive:true, mode:0o700 })));
+    new ModelPolicyStore(join(dataDirectory, "model-usage-policy.sqlite")).close();
     await handoff.load();
     const machine = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     const scope = `server:${machine.machineId}:pi`;
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     pi = new PiEngine({
       ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
-      admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
+      modelPolicyPath: join(dataDirectory, "model-usage-policy.sqlite"),
+      executionEnvironment: executionEnvironment = ExecutionEnvironmentRuntime.open(dataDirectory), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
@@ -199,7 +203,7 @@ export async function startIndependentEngineHost(options) {
           await new Promise((accept) => server.close(accept));
           if (!handoff.released) await host.close();
           await rm(descriptorPath, { force: true });
-          await release(); await releaseKernel();
+          executionEnvironment?.close(); await release(); await releaseKernel();
         })());
       },
     };
@@ -209,12 +213,12 @@ export async function startIndependentEngineHost(options) {
     if (host) await host.close();
     else await pi?.close();
     await rm(temporary, { force: true });
-    await release(); await releaseKernel();
+    executionEnvironment?.close(); await release(); await releaseKernel();
     throw error;
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const host = await startIndependentEngineHost(await readPrivateJson(process.env.OPENCRAFT_ENGINE_HOST_CONFIG ?? ''));
   console.log('Independent execution Host ready');
   const stop = () =>

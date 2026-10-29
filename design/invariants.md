@@ -292,9 +292,13 @@ hints. See [Shell layout](invariants/shell-and-layout.md) and
 [appearance](invariants/appearance-and-controls.md). Native status pixels still
 require device acceptance.
 
+## Settings pages
+
+The composition contract for settings routes is [Settings pages](ui/settings-pages.md). Shared controls own the header, section, card, row, notice, and action placement.
+
 ## Settings action and stacked-row layout
 
-SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment.
+SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment. A value longer than the shared control column uses the remaining row width and may wrap anywhere, rather than breaking inside that fixed column. Settings navigation group labels keep space above the previous item. On a narrow credential card, the key field takes the full row and its actions wrap below it.
 
 ### Settings card content inset
 

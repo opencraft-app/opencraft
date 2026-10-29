@@ -8,7 +8,7 @@ import { CodexSubscriptionService } from "./codex-usage.js";
 import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
-import { startCodexAccountPoolServer } from "./server.js";
+import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from "./server.js";
 
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
 
@@ -21,6 +21,17 @@ export interface CodexAccountServiceOptions {
   readonly proxyPort?: number;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
+  readonly ownerHandoff?: {
+    admissionOpen(): boolean;
+    onUncertain(route: string, diagnostic: AccountPoolUncertainDiagnostic): void | Promise<void>;
+    retained?: CodexAccountRetainedState;
+  };
+}
+
+export interface CodexAccountRetainedState {
+  imageAffinities: ReturnType<CodexAccountPoolProxy["handoffAffinities"]>;
+  resetReceipts: ReturnType<CodexResetCreditService["handoffReceipts"]>;
+  loginReceipts: ReturnType<CodexDeviceLoginService["handoffReceipts"]>;
 }
 
 /** One owner for inference credentials, login and background account maintenance. */
@@ -32,29 +43,44 @@ export class CodexAccountService {
   private server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
   private readonly requests = new Set<Promise<unknown>>();
   private closing: Promise<void> | null = null;
+  private readonly refresh: AccountCredentialRefreshManager;
+  private readonly maintenanceReady: () => Promise<void>;
+  private activation?: Promise<void>;
 
   private constructor(private readonly options: CodexAccountServiceOptions) {
     const store = new AccountPoolStore({
       databasePath: join(options.dataDirectory, "account-pool.sqlite"),
       secretsDirectory: join(options.dataDirectory, "secrets"),
+      preserveAffinity: options.ownerHandoff?.admissionOpen() === false,
     });
     this.store = store;
     const createClient = options.createMaintenanceClient
       ?? (codexHome => createCodexMaintenanceClient({ executable: options.executable, codexHome }));
-    const refresh = new AccountCredentialRefreshManager({ store, refresh: createManagedCodexRefresh({
+    const managedRefresh = createManagedCodexRefresh({
       refreshRoot: join(options.dataDirectory, "refresh"), createClient,
-    }) });
+      deferRecovery: options.ownerHandoff?.admissionOpen() === false,
+    });
+    this.maintenanceReady = managedRefresh.ready;
+    const refresh = new AccountCredentialRefreshManager({ store, refresh: managedRefresh });
+    this.refresh = refresh;
     this.subscriptions = new CodexSubscriptionService({ store, fetch: options.fetch,
+      admissionOpen: options.ownerHandoff?.admissionOpen,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
     this.resetCreditService = new CodexResetCreditService({ store, fetch: options.fetch,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
       refreshUsage: accountId => this.subscriptions.refreshAccount(accountId) });
     this.login = new CodexDeviceLoginService({ store, loginRoot: join(options.dataDirectory, "login"), createClient,
+      deferRecovery: options.ownerHandoff?.admissionOpen() === false,
       onAccountImported: account => { void this.subscriptions.refreshAccount(account.id).catch(() => undefined); },
     });
     this.proxy = new CodexAccountPoolProxy({ store,
       upstreamBaseUrl: options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
       fetch: options.fetch, resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
+    if (options.ownerHandoff?.retained) {
+      this.proxy.restoreAffinities(options.ownerHandoff.retained.imageAffinities);
+      this.resetCreditService.restoreReceipts(options.ownerHandoff.retained.resetReceipts);
+      this.login.restoreReceipts(options.ownerHandoff.retained.loginReceipts);
+    }
   }
   private readonly proxy: CodexAccountPoolProxy;
 
@@ -62,10 +88,44 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort });
-      service.subscriptions.start();
+      if (options.ownerHandoff) service.validateCredentials();
+      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
+        admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
+      if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
       return service;
     } catch (error) { await service.close(); throw error; }
+  }
+
+  activate(): Promise<void> {
+    return this.activation ??= (async () => {
+      await this.login.activate(); await this.maintenanceReady(); this.subscriptions.start();
+    })();
+  }
+
+  handoffObservation() {
+    const counts = { requests: this.requests.size, proxy: this.server?.activeCount() ?? 0,
+      oauth: this.login.activeCount(), refresh: this.refresh.activeCount(),
+      subscriptions: this.subscriptions.activeCount(), resetCredits: this.resetCreditService.activeCount() };
+    return { counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0),
+      historicalCount: this.store.affinityCount() + this.proxy.handoffAffinities().length
+        + this.login.historicalCount() + this.resetCreditService.historicalCount() };
+  }
+
+  retainedState(): CodexAccountRetainedState {
+    if (this.handoffObservation().activeCount !== 0) throw new Error("Account service is not drained");
+    return { imageAffinities: this.proxy.handoffAffinities(), resetReceipts: this.resetCreditService.handoffReceipts(),
+      loginReceipts: this.login.handoffReceipts() };
+  }
+
+  validateCredentials(): void {
+    try {
+      const token = this.store.issueHostToken("local-codex");
+      if (this.store.authenticateHostToken(token) !== "local-codex") throw new Error("Invalid account Host identity");
+      for (const account of this.store.listAccounts()) {
+        if (account.credentialConfigured) this.store.readCredential(account.id);
+      }
+      this.accountViews();
+    } catch { throw new Error("Account credential validation failed"); }
   }
 
   launch() {

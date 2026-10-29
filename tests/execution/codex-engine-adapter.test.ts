@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { spawn } from "node:child_process";
@@ -9,7 +10,7 @@ import test from "node:test";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
-import { CodexEngineAdapter, capacityRetryDelayMs } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
@@ -31,7 +32,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -45,6 +46,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     nativeSubscriptionGraceMs,
     tokenUsage,
     sessionMcp,
+    createSessionMcp,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
@@ -190,8 +192,7 @@ test("a read admitted after cache invalidation cannot join the prior cut", async
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test("model capacity failures continue with exponential backoff capped at 120 seconds", async () => {
-  assert.deepEqual([0, 1, 2, 6, 7, 20].map(capacityRetryDelayMs), [1_000, 2_000, 4_000, 64_000, 120_000, 120_000]);
+test("provider failures continue through the durable Host queue without replaying user input", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-capacity-retry-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
@@ -205,24 +206,26 @@ test("model capacity failures continue with exponential backoff capped at 120 se
     assert.deepEqual((frames.find(frame => frame.id === "writer:init")?.result as any).capabilities.extensions["opencraft/capacity-retry"], { version: 1 });
     const threadId = (await request("capacity:create", "thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
     await request("capacity:initial", "turn/start", { threadId, input: [{ type: "text", text: "Continue this task" }] });
-    await request("capacity:fail", "test/completeTurn", { threadId, codexErrorInfo: "serverOverloaded" });
+    await request("capacity:fail", "test/completeTurn", { threadId, testSystemError: true, codexErrorInfo: "serverOverloaded" });
+    (adapter as any).providerRetry.now = () => Date.now() + 240_000;
+    await (adapter as any).providerRetry.recover();
     const retry = await waitFor(frames, frame => frame.method === "turn/started" && (frame.params as any).turn.id === "turn-2");
     assert.equal((retry.params as any).threadId, threadId);
     const accepted = (await request("capacity:inputs", "test/readAcceptedInputs", {})).data;
     assert.deepEqual(accepted.at(-1).params.input, []);
-    assert.match(accepted.at(-1).params.clientUserMessageId, /^capacity-retry:/);
+    assert.match(accepted.at(-1).params.clientUserMessageId, /^provider-retry:/);
     const usageDb=new DatabaseSync(join(root,"data","token-usage.sqlite"),{readOnly:true});
     try{
       const fact=usageDb.prepare("SELECT actor_id,actor_kind,source_kind,mode FROM token_usage_submissions WHERE server_id=? AND thread_id=? AND input_id=?").get("local-codex",threadId,accepted.at(-1).params.clientUserMessageId);
       assert.deepEqual({...fact},{actor_id:null,actor_kind:"session",source_kind:"system",mode:"start"});
     }finally{usageDb.close();}
-    await request("capacity:fail-again", "test/completeTurn", { threadId, codexErrorInfo: "serverOverloaded" });
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    await request("capacity:fail-again", "test/completeTurn", { threadId, testSystemError: true, codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } });
     assert.equal((await request("capacity:before-second-backoff", "test/readAcceptedInputs", {})).data.length, 2);
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    (adapter as any).providerRetry.now = () => Date.now() + 480_000;
+    await (adapter as any).providerRetry.recover();
     assert.equal((await request("capacity:second-retry", "test/readAcceptedInputs", {})).data.length, 3);
     await request("capacity:done", "test/completeTurn", { threadId });
-    await new Promise(resolve => setTimeout(resolve, 1_100));
+    await (adapter as any).providerRetry.recover();
     assert.equal((await request("capacity:after-success", "test/readAcceptedInputs", {})).data.length, 3);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
@@ -675,7 +678,7 @@ test("a reused logical Client ID cannot inherit the previous connection's late r
   }
 });
 
-test("late thread/start success after disconnect releases the otherwise orphaned native subscription", async () => {
+test("late empty thread/start retains its native subscription until the first Turn can be submitted", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-late-start-"));
   const frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames, 0, undefined, 10);
@@ -689,20 +692,9 @@ test("late thread/start success after disconnect releases the otherwise orphaned
     await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "test/delayedResponseSent");
     assert.equal(frames.some(frame => frame.id === "a:start"), false);
-    let released = false;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      const id = `b:probe:${attempt}`;
-      await send("client-b", id, "test/emitThreadNotification", { threadId: "fixture-thread-1" });
-      const probe = await waitFor(frames, frame => frame.id === id);
-      if ((probe.result as any).nativeSubscribed === false) {
-        released = true;
-        break;
-      }
-    }
-    assert.equal(released, true);
-    await send("client-b", "b:duplicate-unsubscribe", "thread/unsubscribe", { threadId: "fixture-thread-1" });
-    assert.deepEqual((await waitFor(frames, frame => frame.id === "b:duplicate-unsubscribe")).result, { status: "notSubscribed" });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await send("client-b", "b:probe", "test/emitThreadNotification", { threadId: "fixture-thread-1" });
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "b:probe")).result, { nativeSubscribed: true });
     await send("client-b", "b:resume", "thread/resume", { threadId: "fixture-thread-1" });
     await waitFor(frames, frame => frame.id === "b:resume");
     await send("client-b", "b:probe-after-resume", "test/emitThreadNotification", { threadId: "fixture-thread-1" });
@@ -1086,6 +1078,8 @@ test("a closed client releases its thread subscriptions and native Codex context
     await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "serverRequest/resolved");
     assert.deepEqual((await request("client-a", "test/emitThreadNotification", { threadId })).result, { nativeSubscribed: true });
+    await request("client-a", "turn/start", { threadId, input: [{ type: "text", text: "accepted" }], clientUserMessageId: "disconnect-input" });
+    await request("client-a", "test/completeTurn", { threadId });
     await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
     let released = false;
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -1625,7 +1619,7 @@ test("scheduled Codex completion is observed from native events without a histor
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], [true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget})`, async () => {
+for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false, false], [true, false, false], [true, true, false], [false, false, true], [false, true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget}, unsupported Items=${unsupportedItems})`, async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-read-cache-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   let sequence = 0;
@@ -1642,7 +1636,7 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     await mkdir(nativeHome, { recursive: true });
     const turns = Array.from({ length: 12 }, (_, n) => ({ id: `cached-turn-${n}`, status: "completed", items: [{ id: `answer-${n}`, type: "agentMessage", text: `Historical reply ${n}` }] }));
     await writeFile(path, turns.map(turn => JSON.stringify({ type: "turn_context", payload: { turn_id: turn.id } }) + "\n").join(""));
-    await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget });
+    await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget, unsupportedItems });
     const read = () => call("thread/read", { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } });
     const cold = await read(), warm = await read();
     const metadata = await call("thread/read", { threadId, includeTurns: false });
@@ -1666,7 +1660,8 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     const counts = await call("test/readMethodCounts", {});
     assert.equal(counts["thread/resume"] ?? 0, 0);
     assert.equal(counts["model/list"] ?? 0, 0);
-    assert.equal(counts["thread/turns/list"], smallHistoryBudget ? 2 : 1);
+    if (unsupportedItems && smallHistoryBudget) assert.ok(counts["thread/turns/list"] > 2, "legacy full pages shrink to their supported byte budget");
+    else assert.equal(counts["thread/turns/list"], unsupportedItems ? 2 : 1, "unsupported Items rebuild through full Turns; supported Items avoid the oversized full page");
     assert.deepEqual((await call("test/emitThreadNotification", { threadId })).nativeSubscribed, false);
     await call("thread/resume", { threadId, excludeTurns: true });
     assert.equal((await call("test/readMethodCounts", {}))["thread/resume"], 1);
@@ -1684,4 +1679,101 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     await call("thread/archive", { threadId });
     assert.equal(rows(), 0, "successful archive is reported only after derived cleanup");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("Codex provider retry classifies terminal native failures and respects stop", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-retry-native-policy-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sequence = 0;
+  const rpc = async (method: string, params: Record<string, unknown>) => {
+    const id = `policy-${++sequence}`;
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const response = await waitFor(frames, frame => frame.id === id);
+    assert.equal(response.error, undefined); return response.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    for (const code of ["internalServerError", { responseTooManyFailedAttempts: { httpStatusCode: 502 } }, "unauthorized", "sandboxError", "contextWindowExceeded", "usageLimitExceeded"]) {
+      const threadId = (await rpc("thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
+      const before = (await rpc("test/readAcceptedInputs", {})).data.length;
+      await rpc("turn/start", { threadId, input: [{ type: "text", text: "Original task" }] });
+      await rpc("test/completeTurn", { threadId, codexErrorInfo: code });
+      // Rate-limit discovery runs inside the per-thread lane; wait for that lane to settle.
+      await (adapter as any).withThreadOperation(threadId, async () => {});
+      const result = await rpc("opencraft/turn-recovery/read", { threadId });
+      const expected = code === "internalServerError" || typeof code === "object";
+      assert.equal(result.recovery?.state === "scheduled", expected);
+      if (expected) {
+        await rpc("turn/interrupt", { threadId, turnId: "already-failed" });
+        (adapter as any).providerRetry.now = () => Date.now() + 1_000_000;
+        await (adapter as any).providerRetry.recover();
+        const inputs = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId);
+        assert.equal(inputs.length, before + 1, "stop must revoke the automatic continuation");
+      }
+    }
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("Codex gateway RPC and owner-internal goal/recovery admission both enforce the latest policy", async () => {
+ const root=await mkdtemp(join(tmpdir(),"codex-model-policy-"));
+ const path=join(root,"policy.sqlite"),store=new ModelPolicyStore(path),frames:Record<string,any>[]=[];
+ const adapter=createRoutingAdapter(root,frames);
+ (adapter as any).options.modelPolicyPath=path;
+ try {
+  await adapter.connect();await initializeClient(adapter,frames,"policy-client");
+  store.write(0,[{engine:"codex",model:"blocked"}],"admin");
+  await adapter.send(JSON.stringify({id:"blocked-turn",method:"turn/start",params:{threadId:"t",model:"blocked",input:[{type:"text",text:"blocked"}]},[LOGICAL_CLIENT_FIELD]:"policy-client"}));
+  const denied=await waitFor(frames,f=>f.id==="blocked-turn");assert.equal((denied.error as any).data.code,"model_usage_restricted");
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"blocked",input:[]}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("thread/goal/set",{threadId:"t",status:"active"}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"allowed",collaborationMode:{mode:"default",settings:{model:"blocked",reasoning_effort:"high"}},input:[]}),/Contact|restricted/);
+  const queued=(adapter as any).queueStore().add("t","policy-queue",[{type:"text",text:"retained"}]);
+  await assert.rejects((adapter as any).dispatchQueuedStart("t",queued.id),/Contact|restricted/);
+  assert.equal((adapter as any).queueStore().find("t",queued.id).state,"queued");
+  assert.equal((adapter as any).queueStore().find("t",queued.id).pausedReason,"model-restricted");
+ } finally {await adapter.close();store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("client creation installs MCP and its first input binds execution without a native resume", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-first-mcp-")), frames: Array<Record<string, unknown>> = [];
+  const bound: string[][] = []; let cancelled = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => { throw new Error("First input must use its creation credential"); },
+    () => ({ configuration: { url: "http://fixture/mcp" }, bind: (...args) => { bound.push(args); }, cancel() { cancelled++; } }));
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const created = await request("create-mcp", "thread/start", { cwd: root, testNoServerRequest: true });
+    const threadId = (created.result as any).thread.id;
+    const started = await request("first-input", "turn/start", { threadId, clientUserMessageId: "first-input", input: [{ type: "text", text: "synthetic" }] });
+    assert.equal(started.error, undefined);
+    assert.ok(bound.length > 0); assert.equal(bound[0]![0], threadId); assert.equal(bound[0]![1], "first-input"); assert.ok(bound[0]![2]);
+    const counts = await request("mcp-counts", "test/readMethodCounts", {});
+    assert.equal((counts.result as any)["thread/resume"] ?? 0, 0);
+    const inputs = await request("mcp-inputs", "test/readAcceptedInputs", {});
+    assert.equal((inputs.result as any).data.length, 1);
+  } finally { await adapter.close(); assert.equal(cancelled, 1); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("a disconnected creator cannot leak its pending MCP reservation or send a late thread/start", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-retired-mcp-")), frames: Array<Record<string, unknown>> = [];
+  let entered!: () => void, release!: () => void, cancelled = 0;
+  const preparing = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => null,
+    async () => { entered(); await gate; return { configuration: { url: "http://fixture/mcp" }, bind() {}, cancel() { cancelled++; } }; });
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const creation = adapter.send(JSON.stringify({ id: "retired-create", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await preparing; (adapter as any).disconnectClient("writer"); release(); await assert.rejects(creation, /revoked before native submission/);
+    assert.equal(cancelled, 1);
+    await initializeClient(adapter, frames, "reader");
+    await adapter.send(JSON.stringify({ id: "retired-counts", method: "test/readMethodCounts", params: {}, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    const counts = await waitFor(frames, frame => frame.id === "retired-counts");
+    assert.equal((counts.result as any)["thread/start"] ?? 0, 0);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

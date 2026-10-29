@@ -1,4 +1,5 @@
 import { WebSocketServer } from "ws";
+import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
 // A test-owned physical endpoint. Restarting it cannot affect a user Host.
 const server = new WebSocketServer({ host: "127.0.0.1", port: Number(process.env.FIXTURE_PORT ?? 0) });
@@ -8,7 +9,8 @@ server.on("connection", socket => socket.on("message", frame => {
   const request = JSON.parse(String(frame));
   if (request.id === undefined) return;
   process.send?.({ method: request.method });
-  const send = (result: unknown) => socket.send(JSON.stringify({ id: request.id, result }));
+  const send = (result: unknown) => socket.send(JSON.stringify({ id: request.id, result,
+    ...(request[LOGICAL_CLIENT_FIELD] === undefined ? {} : {[LOGICAL_CLIENT_FIELD]:request[LOGICAL_CLIENT_FIELD]}) }));
   switch (request.method) {
     case "initialize": send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "recovery-fixture" }); break;
     case "thread/list": send({ data: [thread("pin-target"), thread("other")], nextCursor: null }); break;

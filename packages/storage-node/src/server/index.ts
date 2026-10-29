@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, existsSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import lockfile from "proper-lockfile";
-import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
+import { openManagedDatabase, SqliteLifecycleError, acquireProcessWriter } from "@opencraft/sqlite-node";
 import type { ServerDatabaseSource } from "./repository.js";
 import { importServerData } from "./import.js";
 import { SERVER_MIGRATIONS, OPENCRAFT_VERSION } from "./migrations.generated.js";
@@ -20,7 +19,7 @@ export type ServerDatabase = Exclude<ServerDatabaseSource, string> & {
 /** Owns the same installation fence used by Headless, including offline admin commands. */
 export async function openServerDatabase(directory: string): Promise<ServerDatabase> {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const release = await lockfile.lock(join(directory, "server"), { realpath: false, retries: 0 });
+  const release = acquireProcessWriter(join(directory, "server.lock"));
   let managed: ReturnType<typeof openManagedDatabase> | undefined;
   try {
     const path = join(directory, "opencraft-server.sqlite");
@@ -42,8 +41,10 @@ export async function openServerDatabase(directory: string): Promise<ServerDatab
     if (imported === "migrated") managed = { ...managed, outcome: { ...managed.outcome, status: "migrated" } };
     let closed = false;
     return { ...managed, contract: SERVER_DATA_CONTRACT, async close() {
-      if (closed) return; closed = true;
-      try { managed!.database.close(); } finally { await release(); }
+      if (closed) return;
+      managed!.database.close();
+      release();
+      closed = true;
     } };
   } catch (error) {
     try { managed?.database.close(); } finally { await release(); }

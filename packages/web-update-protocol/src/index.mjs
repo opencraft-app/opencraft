@@ -10,12 +10,14 @@ const observation = value => value === undefined || (object(value)
 const nullableString = value => value === null || typeof value === 'string';
 export function parseWebUpdateStatus(value) {
   if (!object(value) || value.schemaVersion !== 1 || value.enabled !== true
+    || !(value.localTreeInstall === undefined || value.localTreeInstall === 0 || value.localTreeInstall === 1)
     || !(value.localInstall === undefined || typeof value.localInstall === 'boolean')
     || typeof value.authenticated !== 'boolean' || !identity(value.current)
     || !(value.latest === null || identity(value.latest)) || typeof value.checking !== 'boolean'
     || !nullableString(value.checkedAt) || !nullableString(value.checkError)
     || !(value.checkErrorCode == null || ['authentication', 'network', 'unavailable', 'registry'].includes(value.checkErrorCode))
     || !(value.recoveryRequired === undefined || typeof value.recoveryRequired === 'boolean')
+    || !(value.recovery === undefined || object(value.recovery) && typeof value.recovery.maintenanceMarker === 'boolean' && typeof value.recovery.rollbackHook === 'boolean')
     || typeof value.canRollback !== 'boolean' || typeof value.updateAvailable !== 'boolean'
     || !(value.execution == null || (object(value.execution) && value.execution.enabled === true && nullableString(value.execution.version) && nullableString(value.execution.buildId) && typeof value.execution.ready === 'boolean' && observation(value.execution.observation) && (value.execution.profile === undefined || ['daemon', 'headless'].includes(value.execution.profile))))
     || typeof value.packageName !== 'string' || typeof value.channel !== 'string'
@@ -23,11 +25,12 @@ export function parseWebUpdateStatus(value) {
       && typeof value.job.version === 'string' && ['downloading', 'verifying', 'starting', 'completed', 'failed'].includes(value.job.phase)
       && nullableString(value.job.error)))) throw new Error('Invalid Web update response');
   return {
-    schemaVersion: 1, enabled: true, localInstall: value.localInstall ?? false, authenticated: value.authenticated,
+    schemaVersion: 1, enabled: true, localInstall: value.localInstall ?? false, localTreeInstall: value.localTreeInstall ?? 0, authenticated: value.authenticated,
     current: { version: value.current.version, buildId: value.current.buildId },
     latest: value.latest === null ? null : { version: value.latest.version, buildId: value.latest.buildId },
     checking: value.checking, checkedAt: value.checkedAt, checkError: value.checkError, checkErrorCode: value.checkErrorCode ?? null,
     canRollback: value.canRollback, ...(value.recoveryRequired === undefined ? {} : { recoveryRequired: value.recoveryRequired }), updateAvailable: value.updateAvailable,
+    ...(value.recovery === undefined ? {} : { recovery: { maintenanceMarker: value.recovery.maintenanceMarker, rollbackHook: value.recovery.rollbackHook } }),
     execution: value.execution == null ? null : { enabled: true, version: value.execution.version, buildId: value.execution.buildId, ready: value.execution.ready, ...(value.execution.observation === undefined ? {} : { observation: { ...value.execution.observation } }), ...(value.execution.profile === undefined ? {} : { profile: value.execution.profile }) },
     packageName: value.packageName, channel: value.channel,
     job: value.job === null ? null : { id: value.job.id, version: value.job.version, phase: value.job.phase, error: value.job.error },

@@ -51,7 +51,8 @@ try {
       if (!rows.some(row => row.clientUserMessageId === entry.clientUserMessageId)) rows.push(entry);
       result = { queuedSubmission: entry };
       if (holdAck) { online = false; ws.close(1012, "ack lost"); return; }
-    } else if (method === "model/list") result = { data: [{ id: "fixture", model: "fixture", displayName: "Fixture", description: "Synthetic", hidden: false, isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: "medium", inputModalities: ["text"], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
+    } else if (method === "turn/start") result = { turn: { id: "identity-turn", items: [], status: "inProgress", error: null } };
+    else if (method === "model/list") result = { data: [{ id: "fixture", model: "fixture", displayName: "Fixture", description: "Synthetic", hidden: false, isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: "medium", inputModalities: ["text"], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
     else if (method === "thread/dynamicTools/register") result = { registered: 0 };
     else result = {};
     ws.send(JSON.stringify({ id: request.id, result }));
@@ -100,6 +101,32 @@ try {
     assert.deepEqual(errors, []); results.push({ width, theme, queuedOffline: true, cancelled: true, reloadFIFO: theme === "light", automaticReconnectFIFO: theme === "dark", quotaKeepsDraft: true });
     await page.screenshot({ path: `${output}/${width}-${theme}-storage-error.png` }); await page.close();
   }
+  // A ready connection is not custody while browser identity is recovering.
+  // Exercise the actual Editor failure/retry transition, not settleSubmission.
+  online = true; rows = []; holdAck = false;
+  const identityPage = await browser.newPage(); activePage = identityPage;
+  await identityPage.addInitScript("window.__name = value => value"); await identityPage.goto(origin);
+  await identityPage.waitForSelector('[data-authoritative="true"]');
+  await identityPage.evaluate(() => (window as any).fixture.account(null));
+  const identitySends = () => calls.filter(call => call.method === "thread/queue/add" || call.method === "turn/start");
+  const identityBefore = identitySends().length;
+  const identityEditor = identityPage.locator(".opencraft-composer-editor");
+  await identityEditor.fill("identity recovery keeps my input");
+  await identityPage.locator("[data-composer-primary-action]").click();
+  await identityPage.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === "failed");
+  assert.equal(await identityEditor.innerText(), "identity recovery keeps my input");
+  assert.equal(identitySends().length, identityBefore);
+  const firstIdentity = await identityPage.evaluate(() => (window as any).fixture.submissions()[0]);
+  await identityPage.evaluate(() => (window as any).fixture.account("account-one"));
+  await identityPage.locator("[data-composer-primary-action]").click();
+  await identityPage.waitForFunction(() => (window as any).fixture.draft().lifecycle.phase === "editing");
+  assert.equal((await identityEditor.innerText()).trim(), "");
+  await identityPage.waitForFunction(() => (window as any).fixture.snapshot().pendingSubmissions.some((row: any) => row.state === "accepted"));
+  assert.equal(identitySends().length, identityBefore + 1);
+  const retryIdentity = await identityPage.evaluate(() => (window as any).fixture.submissions()[1]);
+  assert.equal(retryIdentity.commandId, firstIdentity.commandId);
+  assert.equal(retryIdentity.clientMessageId, firstIdentity.clientMessageId);
+  await identityPage.close();
   // Lose the ACK after the server has accepted a message: the receipt restored
   // from queue/list must retire local uncertainty without a second queue/add.
   online = true; rows = []; holdAck = false;
@@ -123,7 +150,7 @@ try {
   await page.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.every((row: any) => !row.local));
   assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before + 2);
   await page.close();
-  await writeFile(`${output}/results.json`, JSON.stringify({ results, lostAckReconciled: true, actualEngine: false }, null, 2));
+  await writeFile(`${output}/results.json`, JSON.stringify({ results, identityRejectionKeepsDraft: true, lostAckReconciled: true, actualEngine: false }, null, 2));
   console.log(JSON.stringify({ results, lostAckReconciled: true }));
 } catch (error) { console.error(JSON.stringify({ snapshot: await activePage?.evaluate(() => ({ text: document.body.innerText, message: (window as any).fixture?.snapshot().error?.message, queueErrors: (window as any).fixture?.snapshot().queuedSubmissions.map((row: any) => row.error?.message), state: (window as any).fixture?.snapshot(), host: (window as any).fixture?.runtime() })).catch(() => null), error: String(error), methods: calls.map(call => call.method) })); throw error; }
 finally { await browser?.close(); for (const ws of sockets.clients) ws.terminate(); await new Promise<void>(resolve => sockets.close(() => resolve())); await vite.close(); }

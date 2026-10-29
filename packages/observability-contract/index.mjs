@@ -4,7 +4,7 @@ export const limits = Object.freeze({ eventBytes: 2048, batchEvents: 32, batchBy
   queueEvents: 2048, queueBytes: 2097152, recentEvents: 128, recentBytes: 131072,
   clientQueueBytes: 262144, rows: 500, responseBytes: 1048576, concurrency: 5,
   freshnessMs: 90000, retentionMs: 604800000, maxWindowMs: 86400000 });
-export const kinds = ['producer', 'operation', 'rpc', 'recovery', 'execution', 'queue', 'dependency', 'resource', 'client_signal'];
+export const kinds = ['producer', 'operation', 'rpc', 'recovery', 'execution', 'queue', 'dependency', 'resource', 'client_signal', 'availability', 'lifecycle'];
 export const operations = ['navigation', 'thread_open', 'thread_history_first_paint', 'catalog_first', 'catalog_complete', 'configuration_confirmed', 'submit_ready', 'preference_save', 'recovery', 'other'];
 export const outcomes = ['started', 'progress', 'ok', 'failed', 'timeout', 'aborted', 'unfinished', 'empty', 'unknown'];
 export const stages = ['connecting', 'initializing', 'backoff', 'blocked', 'queued', 'history', 'ready', 'model', 'tool', 'human', 'capacity', 'running', 'completed', 'failed', 'other'];
@@ -13,10 +13,10 @@ export const components = ['web', 'gateway', 'core', 'codex', 'dsh', 'pi', 'obse
 export const origins = ['interactive', 'automation', 'operator', 'probe', 'unknown'];
 const id = /^[a-zA-Z0-9_.:-]{1,128}$/u;
 const revision = /^[a-zA-Z0-9_.:+-]{1,128}$/u;
-const ids = ['eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId'];
-const enums = { kind: kinds, component: components, operationType: operations, outcome: outcomes,
+const ids = ['eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
+const enums = { lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
-  measurementScope: ['navigation','in_page','rpc','domain','process','client'],
+  measurementScope: ['navigation','in_page','rpc','domain','process','client','connection'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
   historyReadSource: ["open","snapshot-reread","attention","overview","navigation","refresh","task-metadata"],
   lengthBucket: ['lt50','50to199','200to499','500plus','unknown'],
@@ -35,10 +35,13 @@ export function sanitizeEvent(input, now = Date.now()) {
     event[key] = input[key];
   }
   if (!event.eventId || !event.producerId) return null;
-  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs']) if (input[key] !== undefined) {
+  if(event.errorCode && !/^(?:rpc:-?\d{1,10}|none|initialize|thread-list|timeout|connection|not-ready|unavailable|unknown)$/u.test(event.errorCode))return null;
+  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs','lastSuccessAt','consecutiveFailures']) if (input[key] !== undefined) {
     if (!Number.isFinite(input[key]) || input[key] < 0 || input[key] > Number.MAX_SAFE_INTEGER) return null;
     event[key] = input[key];
   }
+  if (event.kind === 'availability' && (!event.site || !event.hostId || !event.engine || !['ok','failed','timeout'].includes(event.outcome))) return null;
+  if (event.kind === 'lifecycle' && !event.lifecycle) return null;
   for (const key of ['sourceRevision','buildId','version','workloadDigest']) if (input[key] !== undefined) {
     if (input[key] === null) { event[key] = null; continue; }
     if (typeof input[key] !== 'string' || !revision.test(input[key])) return null;

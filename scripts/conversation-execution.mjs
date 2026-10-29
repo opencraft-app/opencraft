@@ -1,5 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { normalize } from 'node:path';
 import { APP_HOST_PROTOCOL_VERSION } from '@opencraft/app-host-protocol/version';
+import { projectConversationMetadata, readConversationPage } from './conversation-projections.mjs';
+import { parseTurnRecoveryNotice } from '@opencraft/appserver-protocol';
 
 /** Narrow internal logical-client lane; no client-supplied RPC method or Host is forwarded. */
 export function callConversationHost(appHost, binding, requestId, method, params, submissionContext, timeoutMs = 35_000) {
@@ -29,7 +32,8 @@ export function callConversationHost(appHost, binding, requestId, method, params
             try {
               const frame = JSON.parse(message.frame);
               if (frame.method || !['init', 'operation'].includes(frame.id)) return;
-              if (frame.error) return finish(Object.assign(new Error('Actor engine request rejected'), { code: frame.error.code }));
+              if (frame.error) return finish(Object.assign(new Error('Actor engine request rejected'), {
+                code: frame.error.code }));
               if (frame.id === 'init') send('operation', method, { ...params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });
               else finish(null, frame.result);
             } catch (error) { finish(error); }
@@ -40,16 +44,34 @@ export function callConversationHost(appHost, binding, requestId, method, params
     } catch (error) { finish(error); }
   });
 }
-export function createConversationExecution(getAppHost, {serverId, hostId}) {
+export function createConversationExecution(getAppHost, {serverId, hostId, engine}) {
   if (typeof hostId !== 'string' || !hostId.trim() || hostId.length > 256 || /[\x00-\x1f]/u.test(hostId)) throw new Error('Conversation execution Host required');
-  const invoke = (binding, id, method, params) => {
+  const invoke = (binding, id, method, params, timeoutMs) => {
     if (binding.hostId !== hostId) throw new Error('Unsupported Actor execution Host');
     const host = getAppHost(); if (!host) throw new Error('Actor Host unavailable');
-    return callConversationHost(host, binding, id, method, params);
+    return callConversationHost(host, binding, id, method, params, undefined, timeoutMs);
   };
   const binding = threadId => ({hostId, threadId});
   return {
     serverId, hostId,
+    async metadata(ref) {
+      if (ref.serverId !== serverId) throw Object.assign(new Error('Unknown conversation server'), {status:404,code:'conversation_unavailable'});
+      const { thread } = await invoke(binding(ref.threadId), 'metadata', 'thread/read', { includeTurns: false });
+      if (thread?.id !== ref.threadId) throw Object.assign(new Error('Conversation unavailable'), {status:404,code:'conversation_unavailable'});
+      let recovery = null;
+      if (!engine) {
+        try { recovery = parseTurnRecoveryNotice((await invoke(binding(ref.threadId), 'metadata-recovery', 'opencraft/turn-recovery/read', {}, 1000)).recovery); }
+        catch { /* Missing or unavailable recovery metadata does not invalidate native thread metadata. */ }
+      }
+      return projectConversationMetadata(serverId, thread, false, recovery);
+    },
+    async discoverMetadata(options) {
+      const result = await invoke(binding(''), 'catalog-metadata', 'thread/list', {
+        limit:30, archived:false, useStateDbOnly:true, cursor:options.cursor ?? null,
+        ...(options.projectId === undefined ? {} : { projectId: options.projectId }), ...(options.cwd === undefined ? {} : { cwd: normalize(options.cwd) }),
+      });
+      return { conversations: result.data.map(thread => projectConversationMetadata(serverId, thread, options.includeTitle)), nextCursor:result.nextCursor ?? null };
+    },
     async discover(search, cursor) {
       const result = await invoke(binding(''), 'catalog', 'thread/list', {limit:30, searchTerm:search.trim() || null, archived:false, cursor});
       return {conversations:result.data.map(t=>({ref:{serverId,threadId:t.id},title:t.name || t.preview || t.id})),nextCursor:result.nextCursor ?? null};
@@ -74,6 +96,10 @@ export function createConversationExecution(getAppHost, {serverId, hostId}) {
       const page=[]; let bytes=0;
       while(offset<entries.length && page.length<30) {const entry=entries[offset], size=Buffer.byteLength(JSON.stringify(entry));if(bytes+size>24000 && page.length) break;page.push(entry);bytes+=size;offset++;}
       return {entries:page,watermark,latestTurnId:thread.turns?.at(-1)?.id ?? null,truncated:offset<entries.length,nextCursor:offset<entries.length?Buffer.from(JSON.stringify({watermark,offset})).toString('base64url'):null};
+    },
+    async readBounded(ref, cursor) {
+      if(ref.serverId !== serverId) throw new Error('Unknown conversation server');
+      return readConversationPage((method, params) => invoke(binding(ref.threadId), 'history', method, params), ref, cursor);
     },
     async validate(binding) {
       const result = await invoke(binding, 'binding-validation', 'thread/read', { includeTurns: false });
@@ -121,6 +147,17 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
     return receipt ? { id: inputId, state:receipt.state, targetTurnId:receipt.turnId } : null;
   };
   return { ...primary, servers:descriptors, owns:serverId=>ports.has(serverId), serverForHost,
+    directory: () => ({instanceId:machineId, servers:descriptors.map(server => ({serverId:server.serverId,label:server.label,
+      engine:server.engine ?? 'codex', connectionState: getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
+      capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
+    metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
+    async discoverMetadata(options) {
+      const port = ports.get(options.serverId); if (!port) return reject();
+      if (descriptors.find(row => row.serverId === options.serverId)?.engine && (options.projectId !== undefined || options.cwd !== undefined))
+        throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+      const result = await port.discoverMetadata(options);
+      return {...result,conversations:result.conversations.filter(row => serverForHost(port.hostId,row.ref.threadId) === options.serverId)};
+    },
     serverForThread: threadId => /^(?:pi_|dsh_acp_|claude_|acp_)/u.test(threadId) ? serverForHost('opencraft-server', threadId) : primary.serverId,
     hostForServer: serverId => ports.get(serverId)?.hostId ?? reject(),
     async discover(search,cursor) {
@@ -143,6 +180,11 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
       return {conversations,nextCursor:Object.values(following).some(value=>value!==false)?Buffer.from(JSON.stringify(following)).toString('base64url'):null};
     },
     read(ref,cursor) { const hostId=ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.read(ref,cursor); },
+    readBounded(ref,cursor) {
+      const hostId=ports.get(ref.serverId)?.hostId ?? reject(), selected=select({...ref,hostId});
+      if(selected.engine) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+      return selected.port.readBounded(ref,cursor);
+    },
     validate(binding) { return select(binding).port.validate(binding); },
     receipt:(binding,id)=>native(binding,id,'receipt'),
     add:(binding,id,input,canAdmit)=>native(binding,id,'add',input,canAdmit),

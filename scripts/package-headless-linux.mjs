@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -9,13 +10,15 @@ import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
+import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
+import { buildConversationCli } from './build-conversation-cli.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -91,6 +94,7 @@ async function copyRuntimeModules(stageRoot) {
     await mkdir(dirname(target), { recursive: true });
     await cp(resolve(sourceBase, entry.from), target);
   }
+  await buildDshCapabilityPlugin(join(stageRoot, 'runtime/dsh/opencraft-capability-plugin.mjs'));
   await cp(join(repositoryRoot, "runtime/dsh/package.json"), join(stageRoot, "runtime/dsh/package.json"));
   await cp(join(repositoryRoot, "runtime/dsh/package-lock.json"), join(stageRoot, "runtime/dsh/package-lock.json"));
   await cp(join(repositoryRoot, "runtime/dsh/node_modules"), join(stageRoot, "runtime/dsh/node_modules"), {
@@ -170,6 +174,8 @@ export async function packageHeadlessLinux(composition = {}) {
     await cp(join(repositoryRoot, "scripts/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
     await chmod(join(stage, "bin/opencraft-server"), 0o755);
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
+    await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
+    await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
     await build({ entryPoints: [join(repositoryRoot, 'scripts/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
@@ -203,7 +209,7 @@ export async function packageHeadlessLinux(composition = {}) {
 }
 
 const isMain = process.argv[1] != null
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
   packageHeadlessLinux().then((path) => process.stdout.write(`${path}\n`)).catch((error) => {
     console.error(error);

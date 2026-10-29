@@ -18,6 +18,13 @@ as the existing destination. Mobile retains its labeled scrolling navigation,
 drawer-header Applications entrance and floating actions. Portal, conversation,
 draft, scrolling, account and navigation owners remain unchanged.
 
+Navigation glyph geometry belongs to the shared application-navigation role.
+Destination buttons and accessory Buttons consume the same icon token, including
+when Button inserts a label wrapper. Account avatars keep their own size role.
+Header panel entrances instead consume the shared chrome icon token: narrow
+layout and touch density project its size; nested cross-fade glyphs and portalled
+sidebar controls do not define independent sizes.
+
 ## Persistent sidebar control beside the brand
 
 Unified Shell navigation keeps its sidebar toggle in the persistent header,
@@ -570,3 +577,16 @@ time metadata, slot geometry, history cache and action-button availability;
 elapsed work duration is separate.
 
 Edge bridge acceptance: `OPENCRAFT_GESTURE_EDGE_ONLY=1 npx tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts` exercises the actual ClientRuntime and AppShell: Web native gutter, Apple PWA handoff and an injected host-neutral adapter, held open/close, cancel/reversal, full 24px boundary, resize, exclusions, disposal/rebind and draft identity. Synthetic host capabilities do not establish physical iOS native gesture acceptance.
+
+
+## Live directory membership
+
+A confirmed Server directory creation becomes a Sidebar row without waiting
+for title generation, opening the Thread or completion of an existing multi-page
+refetch. The directory projection applies Server changes over the current
+snapshot and preserves them across older in-flight reads. Later snapshots and
+changes converge into the existing query cache; the view does not own another
+writable directory. Background reconciliation preserves row owners, draft,
+focus, menus and scrolling. `OPENCRAFT_SMOKE_CATALOG_LIVE_ONLY=1` on the existing
+`smoke-sidebar-thread-catalog` consumer checks blocked-page creation, late-read
+retention, removal and draft/focus in both themes.

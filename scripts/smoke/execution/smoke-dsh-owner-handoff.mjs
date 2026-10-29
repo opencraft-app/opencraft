@@ -1,3 +1,5 @@
+import WebSocket from 'ws';
+import { ownerProbeRpc } from './owner-probe-rpc.mjs';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -12,7 +14,7 @@ const unknown=process.env.OPENCRAFT_DSH_DRILL_MODE === "unknown";
 const root=await mkdtemp('/tmp/dsh-owner-drill-');
 let releaseFinalModel;
 const finalModelReady=new Promise(resolve=>{releaseFinalModel=resolve;});
-const trace=join(root,'effect');let calls=0,host,consumer,socket,rpcId=0;const eventKinds=[];let effectRequests=0;
+const trace=join(root,'effect');let calls=0,host,consumer,socket;const eventKinds=[];let effectRequests=0;
 const model=createServer(async(req,res)=>{
  let raw='';for await(const chunk of req)raw+=chunk;
  const body=JSON.parse(raw),agent=Array.isArray(body.tools)&&body.tools.length>0;
@@ -29,11 +31,8 @@ const model=createServer(async(req,res)=>{
 const until=async(check,label)=>{for(let i=0;i<400;i++){if(await check())return;await delay(50);}throw Error('Timeout: '+label);};
 const effectServer=createServer(async(req,res)=>{for await(const chunk of req){}effectRequests++;await writeFile(trace,'start\ndone\n');res.destroy();});
 const expected=()=>({expectedOwner:host.handoff.authority.owner,expectedEpoch:host.handoff.authority.snapshot().epoch,operationId:'drill',fence:'drill'});
-const rpc=(method,params={})=>new Promise((accept,reject)=>{
- const id=++rpcId,timer=setTimeout(()=>{socket.removeEventListener('message',receive);reject(Error('RPC timeout: '+method));},15000);
- const receive=event=>{const frame=JSON.parse(event.data);if(frame.id!==id)return;if(frame.opencraftDshReceipt)socket.send(JSON.stringify({jsonrpc:"2.0",method:"opencraft/owner/receipt",params:frame.opencraftDshReceipt}));clearTimeout(timer);socket.removeEventListener('message',receive);frame.error?reject(Error(frame.error.message)):accept(frame.result);};
- socket.addEventListener('message',receive);socket.send(JSON.stringify({jsonrpc:'2.0',id,method,params}));
-});
+let rpc;
+
 try {
  await new Promise(done=>effectServer.listen(0,'127.0.0.1',done));
  await new Promise(done=>model.listen(0,'127.0.0.1',done));
@@ -49,6 +48,7 @@ try {
    consumer=await startIndependentEngineHost({dataDirectory:root,descriptorPath:join(root,'aggregate.json'),runtimeDirectory:root,dshDescriptorPath:options.descriptorPath,engines:['dsh','pi'],defaultEngine:'dsh'});
  }
  socket=new WebSocket(consumer?.websocketUrl ?? host.websocketUrl);await new Promise((done,fail)=>{socket.addEventListener('open',done,{once:true});socket.addEventListener('error',fail,{once:true});});
+ rpc=ownerProbeRpc(socket);
  socket.addEventListener('message',event=>{const packet=JSON.parse(event.data);
    if(packet.id!==undefined&&packet.method==='item/tool/call'){
      void fetch(`http://127.0.0.1:${effectServer.address().port}`,{method:'POST',body:'synthetic'}).then(()=>{throw Error('Expected lost response');},()=>{

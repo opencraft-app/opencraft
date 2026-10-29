@@ -6,6 +6,7 @@ export type AppServerClientErrorCode =
   | "HOST_EXISTS"
   | "HOST_NOT_FOUND"
   | "NOT_CONNECTED"
+  | "NOT_DISPATCHED"
   | "PROTOCOL_ERROR"
   | "QUEUE_FULL"
   | "TIMEOUT"

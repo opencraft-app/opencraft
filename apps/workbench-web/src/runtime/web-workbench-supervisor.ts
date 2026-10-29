@@ -497,6 +497,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional("opencraft.headless-model-services", async () => {
         const { createHeadlessModelServicesExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessModelServicesExtension({
+          fetcher: serverFetch,
           hostId: "opencraft-server",
           requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
         });
@@ -924,7 +925,9 @@ export async function createWebWorkbenchApplicationSupervisor(
             { browser: browserToolHost, terminal: terminalToolHost, connectors },
             { hostId: profile.hostId },
           );
-          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient);
+          const catalogScope = clientResources.getSnapshot();
+          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient,
+            () => clientResources.getSnapshot() === catalogScope);
           return () => { stopObservation(); stopDiagnostics(); catalog(); tools(); };
         },
         });

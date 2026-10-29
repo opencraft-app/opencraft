@@ -1,16 +1,17 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { headlessWebHostDefinitions } from './package-headless-linux.mjs';
 import { packageWebServer } from './package-web-server.mjs';
 
-export async function updateLocalServer({ version, archive, buildId,
+export async function updateLocalServer({ version, archive, buildId, tree, manifestSha256,
   url = process.env.OPENCRAFT_WEB_UPDATE_URL || `http://127.0.0.1:${process.env.OPENCRAFT_WEB_PORT || 10000}`,
   stateDirectory = process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web'),
   origin = process.env.OPENCRAFT_PUBLIC_ORIGIN || url,
@@ -36,7 +37,11 @@ export async function updateLocalServer({ version, archive, buildId,
   const login = await post('login', { key }); cookie = login.cookie.split(';')[0];
   const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   let packed;
-  if (archive) {
+  if (tree) {
+    if (archive || !version || !buildId || !/^[a-f0-9]{64}$/.test(manifestSha256)) throw new Error('Prepared tree requires exact version, buildId and manifest digest, without archive');
+    if (initial.localTreeInstall !== 1) throw new Error('Pinned bootstrap does not support signed local tree installation');
+    packed = { tree: resolve(tree), version, buildId, manifestSha256 };
+  } else if (archive) {
     if (!version || !buildId) throw new Error('Existing archive requires its exact version and buildId');
     packed = { archive: resolve(archive), version, buildId };
   } else {
@@ -50,21 +55,21 @@ export async function updateLocalServer({ version, archive, buildId,
     await promisify(execFile)('npm', ['run', 'build:web:release'], { cwd: repository, env: { ...process.env, ...profileEnvironment, OPENCRAFT_SOURCE_REVISION: revision }, maxBuffer: 32 * 1024 * 1024 });
     packed = await packageWebServer({ version, output, execution: initial.execution?.enabled === true, executionProfile });
   }
-  const integrity = `sha512-${createHash('sha512').update(await readFile(packed.archive)).digest('base64')}`;
-  const receipt = await post('install-local', { ...packed, archive: resolve(packed.archive), integrity });
+  const input = tree ? packed : { ...packed, archive: resolve(packed.archive), integrity: `sha512-${createHash('sha512').update(await readFile(packed.archive)).digest('base64')}` };
+  const receipt = await post(tree ? 'install-local-tree' : 'install-local', input);
   const deadline = Date.now() + 360_000;
   while (Date.now() < deadline) {
     const current = await status();
     if (current.job?.id === receipt.result.jobId && current.job.phase === 'failed') throw new Error(current.job.error || 'Local update failed');
     if (current.current.version === version && current.job?.id === receipt.result.jobId && current.job.phase === 'completed')
-      return { version, buildId: current.current.buildId, execution: current.execution, archive: packed.archive };
+      return { version, buildId: current.current.buildId, execution: current.execution, ...(tree ? { tree: packed.tree, activationTransport: 'prepared-tree' } : { archive: packed.archive }) };
     await delay(500);
   }
   throw new Error('Update status timed out; the server operation may still be running');
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
   try { console.log(JSON.stringify(await updateLocalServer({ version: argument('--version') || process.env.OPENCRAFT_RELEASE_VERSION,
-    archive: argument('--archive'), buildId: argument('--build-id') }), null, 2)); }
+    tree: argument('--tree'), manifestSha256: argument('--manifest-sha256'), archive: argument('--archive'), buildId: argument('--build-id') }), null, 2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
