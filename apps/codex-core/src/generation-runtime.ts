@@ -1,3 +1,4 @@
+import { appPayloadRequest, newAppChoice, verifyAppChoice, requireCallbackObservation, type AppPayloadChoice } from "./generation-app-payload.js";
 import { CodexRouterOwner } from "./router-owner.js";
 import { canonicalGenerationPath } from "./generation-files.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -12,7 +13,7 @@ import { readNativeHistory, type NativeHistoryFailures } from "./native-history-
 
 export type GenerationHostUsage = CodexGenerationHostUsage;
 export interface GenerationColdReplacement {
-  (old: GenerationRecord, current: GenerationRecord, threadIds: readonly string[]): Promise<unknown>;
+  (old: GenerationRecord, current: GenerationRecord, threadIds: readonly string[], options?: { appBundleOnly: boolean; restoringSourceApp?: boolean }): Promise<unknown>;
 }
 const paused = () => new NativeGenerationError({ code: -32000, message: "Codex is temporarily unavailable for maintenance; retry this request", data: { code: "CODEX_MAINTENANCE", retryable: true } });
 
@@ -24,6 +25,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   private readonly cached = new Map<string, { at: number; health: CodexAppServerHealth }>();
   private readonly requests = new Map<string, number>();
   private readonly retiring = new Set<string>();
+  private readonly changingPayload = new Set<string>();
   private readonly checking = new Set<string>();
   private readonly probes = new Map<string, { incarnation: number; peer: GenerationPeer; unexpectedRequests: number }>();
   private readonly preparations = new Map<string, { id: string; incarnation: number; epoch: number; identity: string; host: string; expires: number }>();
@@ -81,7 +83,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     await this.ensure(generation.id); return this.registry.get(generation.id)!;
   }
   async ensure(id: string, preserveRetiredPayload = false, refresh = false): Promise<CodexAppServerHealth> {
-    if (this.closed || this.retiring.has(id) || ["retiring", "revoking"].includes(this.registry.get(id)?.state ?? "")) throw paused();
+    if (this.closed || this.retiring.has(id) || this.changingPayload.has(id) || ["retiring", "revoking"].includes(this.registry.get(id)?.state ?? "")) throw paused();
     const pending = this.starting.get(id); if (pending) return pending;
     const cached = this.cached.get(id);
     if (!refresh && cached && this.now() - cached.at < 1_000) return cached.health;
@@ -92,6 +94,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     let generation = this.registry.get(id);
     if (!generation || generation.state === "discarded") throw new Error("Unknown or discarded generation");
     if (generation.executionUid !== (this.options.executionUid ?? process.getuid!()) || generation.executionGid !== (this.options.executionGid ?? process.getgid!())) throw new Error("Stored generation execution identity mismatch");
+    let appChoice = this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null;
+    if (appChoice) await verifyAppChoice(generation, appChoice);
     if (generation.state === "retired") {
       const active = this.registry.current().generation;
       // Rolling the default back must never silently downgrade a newer HOME.
@@ -99,23 +103,57 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const version = (g: GenerationRecord) => /^codex-cli (\d+)\.(\d+)\.(\d+)$/u.exec((this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity | null)?.cliVersion ?? "")?.slice(1).map(Number);
       const before = version(generation), after = version(active);
       const comparison = before && after ? after.reduce((order, value, index) => order || Math.sign(value - before[index]!), 0) : null;
-      const replacement = !preserveRetiredPayload && comparison !== null && comparison >= 0 ? active : generation;
-      const receipt = await this.options.replaceRetiredHome(generation, replacement, this.registry.durableThreadIds(id));
+      const replacement = appChoice ? { ...generation, bundle: appChoice.bundle } : !preserveRetiredPayload && comparison !== null && comparison >= 0 ? active : generation;
+      const receipt = await this.options.replaceRetiredHome(generation, replacement, this.registry.durableThreadIds(id), { appBundleOnly: !!appChoice, restoringSourceApp: appChoice?.restoringSourceApp });
       this.registry.setMetadata(`cold-replacement:${id}`, { version: 1, at: this.now(), receipt });
-      generation = this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node, nativeLauncher: replacement.nativeLauncher });
+      if (appChoice) await verifyAppChoice(generation, appChoice);
+      generation = appChoice ? this.registry.applyAppPayload(id, appChoice) : this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node, nativeLauncher: replacement.nativeLauncher });
     }
+    appChoice = this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null;
     const health = await this.options.supervisor.start(generation);
     if (await realpath(health.dataDirectory) !== await realpath(this.options.dataDirectory) || health.proxyBaseUrl !== this.options.proxyBaseUrl) throw new Error("Generation account Core identity mismatch");
     const expectedHome = await realpath(join(generation.runtimeDataDirectory, "runtime"));
     const actualHome = health.codexHome ?? (await readFile(`/proc/${health.codexPid}/environ`, "utf8")).split("\0").find(value => value.startsWith("CODEX_HOME="))?.slice(11);
     if (!actualHome || await realpath(actualHome) !== expectedHome) throw new Error("Generation native HOME mismatch");
     const identity = await this.options.supervisor.identify(generation, health);
+    if (appChoice?.applied) {
+      await verifyAppChoice(generation, appChoice);
+      if (identity.cliSha256 !== appChoice.cliSha256 || identity.cliVersion !== appChoice.cliVersion) throw new Error("APP-only CLI identity changed");
+      if (generation.state === "candidate" && !appChoice.restoringSourceApp) requireCallbackObservation(health);
+    }
     const previous = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity | null;
     if (generation.state === "candidate") this.registry.ready(id);
     else if (previous && JSON.stringify(previous) !== JSON.stringify(identity)) {
       this.registry.runtimeChanged(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
     }
     this.registry.setMetadata(`runtime:${id}`, identity); this.cached.set(id, { at: this.now(), health }); return health;
+  }
+  async selectAppPayload(value: Record<string, unknown>): Promise<AppPayloadChoice> {
+    const request = appPayloadRequest(value), id = request.id;
+    if (this.closed || this.changingPayload.has(id) || this.starting.has(id) || this.checking.has(id) || this.retiring.has(id)) throw paused();
+    this.changingPayload.add(id);
+    try {
+      const verify = () => {
+        this.verifyOwner(request.expectedOwner, request.expectedHost);
+        const g = this.registry.get(id);
+        if (!g || g.incarnation !== request.expectedIncarnation || this.registry.epoch() !== request.expectedEpoch
+          || this.registry.current().generation.id === id || !["ready", "draining", "retired", "candidate"].includes(g.state)) throw new Error("APP payload selection identity changed");
+        return g;
+      };
+      const g = verify(), recovering = g.state === "candidate";
+      if (recovering && !(this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null)?.applied) throw new Error("Only a failed explicit APP candidate can be recovered");
+      const identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
+      if (!recovering && ["ready", "draining"].includes(g.state)) {
+        if (!this.options.supervisor.inspect) throw new Error("APP selection requires read-only process inspection");
+        const health = await this.options.supervisor.inspect(g);
+        if (JSON.stringify(await this.options.supervisor.identify(g, health)) !== JSON.stringify(identity)) throw new Error("APP source identity changed");
+      }
+      const choice = await newAppChoice(g, identity, request, this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null);
+      verify();
+      if (recovering) { await this.options.supervisor.discardUnready(g); verify(); }
+      this.registry.selectAppPayload(id, request.expectedIncarnation, request.expectedEpoch, choice, recovering);
+      this.cached.delete(id); return choice;
+    } finally { this.changingPayload.delete(id); }
   }
   private hostIdentity(): string {
     const host = rpcRecord(this.registry.metadata("host-usage"));
@@ -143,7 +181,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       || proof.host !== this.hostIdentity() || proof.expires < this.now()) throw new Error("Generation preparation changed or expired");
   }
   async revoke(id: string, expectedEpoch: number, token: string): Promise<{ revoked: true }> {
-    if (this.retiring.has(id) || this.starting.has(id) || this.checking.has(id)) throw paused();
+    if (this.retiring.has(id) || this.changingPayload.has(id) || this.starting.has(id) || this.checking.has(id)) throw paused();
     // Take the lifecycle fence before any await. No in-flight ensure can pass
     // the starting check and no later ensure/activate can race the final stop.
     this.retiring.add(id);
@@ -175,7 +213,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     // Shared per-HOME starting lease serializes cold validation with concurrent reads.
     await this.ensure(id, true, preparation !== undefined);
     if (preparation !== undefined) this.verifyPreparation(id, expectedEpoch, preparation);
-    if (this.retiring.has(id) || this.registry.get(id)?.state === "revoking") throw paused();
+    if (this.retiring.has(id) || this.changingPayload.has(id) || this.registry.get(id)?.state === "revoking") throw paused();
     this.verifyOwner(expectedOwner, expectedHost);
     const epoch = this.registry.activate(id, expectedEpoch, operationId);
     if (preparation !== undefined) this.preparations.delete(preparation);
@@ -183,8 +221,14 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   }
   async discard(id: string): Promise<void> {
     const generation = this.registry.get(id);
-    if (!generation || generation.state !== "candidate" || this.starting.has(id)) throw new Error("Candidate cannot be discarded");
-    await this.options.supervisor.discardUnready(generation); this.registry.discard(id);
+    if (this.closed || !generation || generation.state !== "candidate" || this.starting.has(id) || this.changingPayload.has(id)
+      || this.checking.has(id) || this.retiring.has(id) || this.registry.metadata(`admitted:${id}`) || this.registry.durableThreadIds(id).length) throw new Error("Candidate cannot be discarded");
+    this.changingPayload.add(id);
+    try {
+      await this.options.supervisor.discardUnready(generation);
+      if (JSON.stringify(this.registry.get(id)) !== JSON.stringify(generation)) throw new Error("Discard candidate identity changed");
+      this.registry.discard(id);
+    } finally { this.changingPayload.delete(id); }
   }
   admit(ticket: GenerationTicket): () => void {
     if (this.closed || this.retiring.has(ticket.generationId) || !this.registry.valid(ticket)) throw paused();
@@ -280,7 +324,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   async retire(id: string): Promise<{ retired: boolean; reasons: string[] }> {
     const record = this.registry.get(id);
     if (!record || !["draining", "retiring"].includes(record.state)) return { retired: false, reasons: ["not-draining"] };
-    if (this.checking.has(id) || this.starting.has(id)) return { retired: false, reasons: ["lifecycle-operation"] };
+    if (this.checking.has(id) || this.changingPayload.has(id) || this.starting.has(id)) return { retired: false, reasons: ["lifecycle-operation"] };
     this.checking.add(id);
     try {
       if (record.state === "retiring") {
