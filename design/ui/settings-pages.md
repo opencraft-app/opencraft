@@ -41,5 +41,8 @@ Any other visible sentence that is not in the active language is omitted.
 
 - At phone width the navigation is the shell's. Page content keeps the same header, section, card, and stacked rows. Buttons wrap instead of sharing a line with a long value. Do not ellipsize a value that the user needs to read, such as a reset time.
 - A value that no longer fits beside its name moves under that name and aligns to the same left edge. It does not stay stuck to the right.
-- A version, build id, or other identifier uses a monospace face and wraps only after `.` or `-`. A Latin word or digit run is not split across lines.
+- A version, build id, or other identifier uses the registered `mono` family
+  (`--font-family-mono`), not a local font stack, and wraps only after `.` or `-`.
+  A Latin word or digit run is not split across lines. Family is the only override;
+  size, weight, and line-height stay with the row role.
 - A list row keeps its action on the name line, at the right, with at least a 44px target. The action does not take a line of its own.
