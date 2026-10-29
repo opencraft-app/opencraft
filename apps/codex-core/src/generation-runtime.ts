@@ -266,6 +266,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return check.unexpectedRequests ? ["native-server-request"] : [];
   }
   private acceptedReasons(id: string): string[] {
+    if (this.owner.snapshot().uncertain) return ["router-outcome-unknown"];
     return (this.requests.get(id) ?? 0) || this.registry.unresolvedCreations(id) || this.serverRequestCount(id) ? ["accepted-work"] : [];
   }
   private async finishRetirement(generation: GenerationRecord): Promise<void> {

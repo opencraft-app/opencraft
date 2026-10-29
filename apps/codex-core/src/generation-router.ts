@@ -44,7 +44,7 @@ export class CodexGenerationRouter {
 class RoutingSession {
   private readonly epoch = randomUUID();
   private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: () => void; completion?: { threadId: string; turnId: string; callId: string } }>();
   private readonly pendingStarts = new Map<string, () => void>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: () => void }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: () => void }>();
@@ -58,8 +58,10 @@ class RoutingSession {
       try { message = rpcRecord(JSON.parse(String(frame))); } catch { socket.close(1002); return; }
       let release: (() => void) | undefined;
       const operation = async () => {
-        if (this.router.runtime.owner && !this.router.runtime.owner.isOpen()) throw error("Router admission is fenced", true);
-        release = this.router.runtime.owner?.enter();
+        const reply = typeof message.method !== "string" && message.id !== undefined ? this.serverRequests.get(String(message.id)) : undefined;
+        const reconciliation = !!reply && !reply.answered && this.registry.valid(reply.ticket);
+        if (this.router.runtime.owner && !this.router.runtime.owner.isOpen() && !reconciliation) throw error("Router admission is fenced", true);
+        release = this.router.runtime.owner?.enter(reconciliation);
         if (this.closed) throw error("Routing connection is closed");
         await this.receive(message);
       };
@@ -91,9 +93,22 @@ class RoutingSession {
           const command = this.commands.get(processId);
           if (!command?.active || command.ticket.generationId !== id || command.ticket.incarnation !== incarnation) return;
         }
+        const completedItem = rpcRecord(nativeParams.item);
+        if (message.method === "item/completed" && completedItem.type === "dynamicToolCall" && ["completed", "failed"].includes(text(completedItem.status))) {
+          const matches = [...this.serverRequests].filter(([, request]) => request.operation === operation && request.completion
+            && request.completion.threadId === nativeParams.threadId && request.completion.turnId === nativeParams.turnId && request.completion.callId === completedItem.id);
+          if (matches.length > 1) this.router.runtime.owner?.uncertain();
+          if (matches.length === 1) {
+            const [key, request] = matches[0]!;
+            if (request.answered) request.release?.(); else this.router.runtime.owner?.uncertain();
+            this.serverRequests.delete(key);
+            this.emit({ method: "serverRequest/resolved", params: { threadId: request.completion!.threadId, requestId: key } });
+          }
+        }
         if (message.method === "serverRequest/resolved") {
           const entry = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === nativeParams.requestId);
           if (!entry) return;
+          if (entry[1].answered) entry[1].release?.(); else this.router.runtime.owner?.uncertain();
           this.serverRequests.delete(entry[0]); message = { ...message, params: { ...nativeParams, requestId: entry[0] } };
         }
         const process = processHandle ? this.processes.get(processHandle) : undefined;
@@ -118,7 +133,9 @@ class RoutingSession {
           // a fresh public identity, so stale responses cannot answer it.
           const liveRequest = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === message.id);
           const key = liveRequest?.[0] ?? `ocg:${this.epoch}:${randomUUID()}`;
-          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false });
+          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false, release: this.router.runtime.owner?.retainNativeCallback(),
+            completion: message.method === "item/tool/call" && tid && text(nativeParams.turnId) && text(nativeParams.callId)
+              ? { threadId: tid, turnId: text(nativeParams.turnId), callId: text(nativeParams.callId) } : undefined });
           this.emit({ ...message, id: key });
         } else this.emit({ ...message, __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id,
           incarnation, admissionEpoch: ticket.admissionEpoch, threadId: tid } });
@@ -136,7 +153,7 @@ class RoutingSession {
         for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation) command.active = false;
         for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation) { process.active = false; process.pending = false; }
         for (const [key, request] of this.serverRequests) if (request.ticket.generationId === id) {
-          this.serverRequests.delete(key);
+          this.router.runtime.owner?.uncertain(); this.serverRequests.delete(key);
           this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
@@ -329,14 +346,14 @@ class RoutingSession {
     for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation) { process.active = false; process.pending = false; }
     for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation) command.active = false;
     for (const [key, request] of this.serverRequests) if (request.ticket.generationId === id && request.ticket.incarnation === incarnation) {
-      this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
+      this.router.runtime.owner?.uncertain(); this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
     }
   }
   flushStarts(): void {
     for (const [id, forward] of this.pendingStarts) if (this.registry.route(id)) { this.pendingStarts.delete(id); forward(); }
   }
   serverRequestCount(generationId: string): number { return [...this.serverRequests.values()].filter(value => value.ticket.generationId === generationId).length + [...this.commands.values()].filter(value => value.active && value.ticket.generationId === generationId).length + [...this.processes.values()].filter(value => value.active && value.ticket.generationId === generationId).length; }
-  toolCount(): number { return [...this.commands.values()].filter(v => v.active).length + [...this.processes.values()].filter(v => v.active).length + this.pendingStarts.size; }
+  toolCount(): number { return this.serverRequests.size + [...this.commands.values()].filter(v => v.active).length + [...this.processes.values()].filter(v => v.active).length + this.pendingStarts.size; }
   close(): void {
     if (this.closed) return; this.closed = true;
     if (this.toolCount()) this.router.runtime.owner?.uncertain();
