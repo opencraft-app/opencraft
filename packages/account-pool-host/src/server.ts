@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { completedResponsesBody } from "./responses-stream.js";
+
 import type { CodexAccountPoolProxy } from "./codex-proxy.js";
 import { ACCOUNT_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
 
@@ -159,7 +161,10 @@ export async function startCodexAccountPoolServer(options: {
       progress.stage = "response-stream";
       if (response.body === null) outgoing.end();
       else await pipeline(
-        Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
+        (incoming.url ?? "/").split("?", 1)[0] === "/v1/responses"
+          && response.ok && response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "text/event-stream"
+          ? Readable.from(completedResponsesBody(response.body))
+          : Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
         outgoing,
         { signal: abort.signal },
       );

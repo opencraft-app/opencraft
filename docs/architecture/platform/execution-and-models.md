@@ -523,3 +523,21 @@ and [session capabilities](../../session-capabilities.md).
 ### Connector HTTP recovery and consumers
 
 Headless connector reads use the selected browser server context. Polling owns state and pending approvals; a successful read only invalidates managed configuration when supported definitions or instances change. Management views retain and release their Host subscription independently of background connection/approval synchronization. List reads coalesce while in flight and support cancellation; a configuration invalidation during a read schedules at most one subsequent read. Authentication failure revokes earlier requests across Hosts and backs off recovery; stale rejections cannot invalidate a newer successful response. Origin/protocol or resource denial clears only the affected Host and waits for an explicit retry. Mutations are never automatically replayed.
+
+### Responses stream completion and account-owner handoff
+
+A successful `/v1/responses` SSE stream ends at a complete JSON data record
+with `type: "response.completed"` and a response identity. The loopback bridge
+forwards that record, finishes downstream HTTP and cancels the remaining provider
+body; native consumers already stop reading at this protocol boundary. Waiting
+for provider HTTP EOF can turn an ordinary native close into an uncertain write.
+SSE framing is incremental across UTF-8/chunk/line boundaries. Completion-looking
+model text, incomplete records and malformed JSON do not end the stream. The
+observer retains at most 1 MiB per record; larger records pass through without
+completion recognition and retain conservative transport-failure handling.
+
+A client disconnect before completion or a failed upstream transport after
+dispatch still calls the owner uncertainty hook. No POST is replayed by this
+bridge, no historical uncertainty is removed, and installing a Web package does
+not replace an independently running account Core. Owner handoff must separately
+preserve its exact historical uncertainty list.
