@@ -531,9 +531,12 @@ with `type: "response.completed"` and a response identity. The loopback bridge
 forwards that record, finishes downstream HTTP and cancels the remaining provider
 body; native consumers already stop reading at this protocol boundary. Waiting
 for provider HTTP EOF can turn an ordinary native close into an uncertain write.
-SSE framing is incremental across UTF-8/chunk/line boundaries. Completion-looking
+SSE framing is incremental across UTF-8/chunk/line boundaries. A terminal CR
+waits for the following byte so a split CRLF delimiter is forwarded intact, as
+required by native streaming parsers. Completion-looking
 model text, incomplete records and malformed JSON do not end the stream. The
-observer retains at most 1 MiB per record; larger records pass through without
+observer limits recognition to 1,048,576 UTF-16 code units per record; larger
+records pass through without
 completion recognition and retain conservative transport-failure handling.
 
 A client disconnect before completion or a failed upstream transport after

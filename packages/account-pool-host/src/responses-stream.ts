@@ -7,10 +7,17 @@ class ResponsesCompletion {
   private size = 0;
   private oversized = false;
   private afterCR = false;
+  private completedAfterCR = false;
 
   push(chunk: Uint8Array): boolean {
     for (const char of this.decoder.decode(chunk, { stream: true })) {
-      if (this.afterCR && char === "\n") { this.afterCR = false; continue; }
+      if (this.afterCR) {
+        this.afterCR = false;
+        // Native streaming parsers need the byte after CR to disambiguate CRLF.
+        // Forward that byte before ending HTTP, including across chunk boundaries.
+        if (this.completedAfterCR) return true;
+        if (char === "\n") continue;
+      }
       this.afterCR = char === "\r";
       if (char === "\r" || char === "\n") {
         if (!this.hasLine) {
@@ -25,7 +32,10 @@ class ResponsesCompletion {
             } catch { /* Malformed data is not a completion receipt. */ }
           }
           this.data = []; this.size = 0; this.oversized = false;
-          if (completed) return true;
+          if (completed) {
+            if (this.afterCR) this.completedAfterCR = true;
+            else return true;
+          }
         } else if (!this.oversized && this.line.startsWith("data:")) {
           this.data.push(this.line.slice(5).replace(/^ /u, ""));
         }
