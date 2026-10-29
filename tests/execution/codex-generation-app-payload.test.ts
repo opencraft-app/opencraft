@@ -135,7 +135,7 @@ test("cold HOME validation records copy and validation time separately without r
   const server = createServer(), wss = new WebSocketServer({ server }), calls: string[] = [];
   wss.on("connection", socket => socket.on("message", raw => {
     const m = JSON.parse(String(raw)); calls.push(m.method);
-    if (m.id !== undefined) socket.send(JSON.stringify({ id: m.id, result: m.method === "thread/list" ? { data: [] } : m.method === "thread/read" ? { thread: { id: m.params.threadId } } : {} }));
+    if (m.id !== undefined) socket.send(JSON.stringify({ id: m.id, result: ["thread/list", "thread/loaded/list"].includes(m.method) ? { data: [] } : m.method === "thread/read" ? { thread: { id: m.params.threadId } } : {} }));
   }));
   await new Promise<void>(resolve => server.listen(nativeSocket, resolve));
   const old = { id: "old", state: "retired", incarnation: 1, endpoint: join(root, "old.sock"), runtimeDataDirectory: join(root, "old"), executable: "/fixed/codex", bundle: "/fixed/app.cjs", node: process.execPath, cwd: root } as GenerationRecord;
