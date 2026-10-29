@@ -1,0 +1,215 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { inspect, promisify } from 'node:util';
+import { execFile } from 'node:child_process';
+import { EmployeeGitVaultStore } from '../../scripts/employee-git-vault-store.js';
+import { AccountEnvironment } from '../../scripts/account-environment.js';
+import { ExecutionEnvironmentRuntime, environmentProjectId, type EnvironmentExecutionScope } from '../../scripts/execution-environment.js';
+import { ThreadIdentityDatabase } from '../../apps/opencraft-daemon/src/thread-identity-database.js';
+import { ExecutionLeaseStore } from '../../apps/opencraft-daemon/src/execution-lease-store.js';
+import { HostProcessService } from '../../apps/local-agent-host/src/process-service.js';
+import { PiShellWorker, shellText } from '../../plugins/pi-engine/src/shell.js';
+import { AcpEngine } from '../../plugins/acp-engine/src/index.js';
+import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
+import { EXECUTION_ENVIRONMENT_FIELD } from '../../scripts/execution-environment.js';
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const program = "process.stdout.write(require('node:crypto').createHash('sha256').update(process.env.SERVICE_KEY??'missing').digest('hex'))";
+const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });
+const scope = (account = 'employee:alice', projectId: string | null = 'a', threadId: string | null = null): EnvironmentExecutionScope => ({ account, projectId, threadId, hostId: 'opencraft-server' });
+async function fixture(t: test.TestContext) {
+  const root = await mkdtemp(join(tmpdir(), 'environment-injection-')), vault = new EmployeeGitVaultStore(root);
+  const runtime = new ExecutionEnvironmentRuntime(root, vault), environment = new AccountEnvironment(vault);
+  const directory = join(root, 'thread-identities', 'opencraft-server'); await mkdir(directory, { recursive: true });
+  const database = new ThreadIdentityDatabase(directory), leases = new ExecutionLeaseStore(database.database);
+  environment.replace('employee:alice', { projectId: null }, 0, [entry('alice-global')]);
+  environment.replace('employee:bob', { projectId: null }, 0, [entry('bob-global')]);
+  environment.replace('employee:alice', { projectId: environmentProjectId('opencraft-server', 'a') }, 0, [entry('alice-a')]);
+  const admit = (threadId: string, account: string, inputId = 'input') => {
+    runtime.bind('opencraft-server', threadId, 'a');
+    leases.capture(threadId, inputId, { principal: { provider: 'employee', subject: account }, ownership: 'human' });
+    leases.begin(threadId, inputId); leases.started(threadId, 'turn-' + inputId, inputId);
+  };
+  t.after(async () => { database.close(); vault.close(); await rm(root, { recursive: true, force: true }); });
+  return { root, vault, runtime, environment, leases, admit };
+}
+async function until(read: () => boolean | Promise<boolean>) {
+  const deadline = Date.now() + 10_000;
+  while (!await read()) { if (Date.now() > deadline) throw new Error('Environment process did not settle'); await new Promise(resolve => setTimeout(resolve, 20)); }
+}
+
+test('execution scope follows original admitted input; envelopes reject tampering, replay, method and project substitution', async t => {
+  const f = await fixture(t); f.admit('thread-a', 'alice');
+  assert.equal(f.runtime.execution('opencraft-server', 'thread-a', 'input').account, 'employee:alice');
+  assert.equal(f.runtime.execution('opencraft-server', 'thread-a', 'forged').account, null);
+  const original = scope('employee:alice', 'a', 'thread-a');
+  const token = f.runtime.seal(original, 'turn/start');
+  assert.throws(() => f.runtime.open(token, 'local-codex', 'turn/start', { threadId: 'thread-a' }));
+  assert.throws(() => f.runtime.open(token, 'opencraft-server', 'thread/start', { threadId: 'thread-a' }));
+  assert.throws(() => f.runtime.open(token, 'opencraft-server', 'turn/start', { threadId: 'thread-a', projectId: 'b' }));
+  assert.throws(() => f.runtime.open(token + 'x', 'opencraft-server', 'turn/start', { threadId: 'thread-a' }));
+  assert.deepEqual(f.runtime.open(token, 'opencraft-server', 'turn/start', { threadId: 'thread-a' }), original);
+  assert.throws(() => f.runtime.open(token, 'opencraft-server', 'turn/start', { threadId: 'thread-a' }));
+  assert.throws(() => f.runtime.scope({ sender: null, executionPrincipal: { provider: 'employee', subject: 'alice' }, validUntil: Date.now() + 5000 }, 'opencraft-server', { threadId: 'thread-a', projectId: 'b' }));
+});
+
+test('Workbench PTYs use employee/project snapshots and refuse another employee or project control', async t => {
+  const f = await fixture(t), service = new HostProcessService(f.runtime); t.after(() => service.close());
+  const launch = async (id: string, execution: EnvironmentExecutionScope) => {
+    service.dispatch('process/spawn', { processHandle: id, tty: true, command: [process.execPath, '-e', program], cwd: f.root, size: { cols: 100, rows: 30 } }, execution);
+    await until(() => (service.dispatch('process/attach', { processHandle: id, afterSequence: 0 }, execution) as any).phase === 'exited');
+    return (service.dispatch('process/attach', { processHandle: id, afterSequence: 0 }, execution) as any).output.map((row: any) => Buffer.from(row.deltaBase64, 'base64').toString()).join('').trim();
+  };
+  assert.equal(await launch('one', scope()), hash('alice-a'));
+  assert.equal(await launch('two', scope('employee:alice', 'b')), hash('alice-global'));
+  assert.equal(await launch('three', scope('employee:bob')), hash('bob-global'));
+  assert.throws(() => service.dispatch('process/attach', { processHandle: 'one', afterSequence: 0 }, scope('employee:bob')));
+  assert.throws(() => service.dispatch('process/kill', { processHandle: 'one' }, scope('employee:alice', 'b')));
+  assert.deepEqual((service.dispatch('process/list', {}, scope()) as any).processes.map((row: any) => row.processHandle), ['one']);
+  assert.throws(() => service.dispatch('process/spawn', { processHandle: 'override', tty: true, command: ['/bin/true'], size: { cols: 80, rows: 24 }, env: { SERVICE_KEY: 'forged' } }, scope()));
+});
+
+test('Pi shell workers and native execution environments use isolated snapshots; new workers see edits', async t => {
+  const f = await fixture(t); const workers: PiShellWorker[] = []; const events: unknown[] = [];
+  t.after(async () => { await Promise.all(workers.map(worker => worker.stop())); });
+  const worker = (execution: EnvironmentExecutionScope) => {
+    const result = new PiShellWorker({ cwd: f.root, directory: join(f.root, 'worker-' + workers.length), threadId: 'pi-test', environment: f.runtime.snapshot(execution), onNotification(event) { events.push(event); }, onLost() {} });
+    workers.push(result); return result;
+  };
+  const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(program)}`;
+  const old = worker(scope()); await old.start();
+  f.environment.replace('employee:alice', { projectId: environmentProjectId('opencraft-server', 'a') }, 1, [entry('alice-new')]);
+  for (const [peer, expected] of [[old, 'alice-a'], [worker(scope()), 'alice-new'], [worker(scope('employee:alice', 'b')), 'alice-global'], [worker(scope('employee:bob')), 'bob-global']] as const) {
+    const output = await peer.call({ command, mode: 'dispatch', background: true });
+    const id = output.details?.sessionId; let text = shellText(output);
+    await until(async () => { if (text.includes(hash(expected)) || JSON.stringify(events).includes(hash(expected))) return true; text += shellText(await peer.call({ sessionId: id })); return text.includes(hash(expected)); });
+  }
+  const env = new NodeExecutionEnv({ cwd: f.root, shellEnv: f.runtime.snapshot(scope()).apply(process.env) });
+  t.after(() => env.cleanup(BACKGROUND_CONTEXT));
+  let output = '';
+  const result = await env.exec([process.execPath, '-e', program], { onOutput: text => { output += text; } }, BACKGROUND_CONTEXT);
+  assert.equal(result.ok, true); assert.equal(output, hash('alice-new'));
+});
+
+test('ACP sessions own separate native processes and keep injected values out of metadata, errors and diagnostics', async t => {
+  const f = await fixture(t);
+  const peer = join(f.root, 'peer.mjs');
+  await writeFile(peer, `import {createInterface} from 'node:readline'; import {createHash} from 'node:crypto';
+    const send=v=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+'\\n');
+    createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line), p=m.params;
+    if(m.method==='initialize')send({id:m.id,result:{protocolVersion:1,agentCapabilities:{sessionCapabilities:{resume:{}}}}});
+    else if(m.method==='session/new')send({id:m.id,result:{sessionId:'native-one'}});
+    else if(m.method==='session/prompt'){process.stderr.write(process.env.SERVICE_KEY??'');send({method:'session/update',params:{sessionId:p.sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:createHash('sha256').update(process.env.SERVICE_KEY??'missing').digest('hex')}}}});send({id:m.id,result:{stopReason:'end_turn'}});}
+    else send({id:m.id,result:{}});});`);
+  const engine = new AcpEngine({ cwd: f.root, command: process.execPath, args: [peer], dataDirectory: join(f.root, 'acp'), executionEnvironment: f.runtime });
+  t.after(() => engine.close()); const messages: any[] = []; engine.subscribe((method, params) => messages.push({ method, params }));
+  const client = { notify() {}, async request() {} };
+  let lastThread = "";
+  for (const [account, project, expected] of [['alice', 'a', 'alice-a'], ['bob', 'a', 'bob-global'], ['alice', 'b', 'alice-global']]) {
+    const execution = scope('employee:' + account, project);
+    const created = await engine.request('thread/start', { cwd: f.root, [EXECUTION_ENVIRONMENT_FIELD]: f.runtime.seal({ ...execution, threadId: null }, 'thread/start') }, client);
+    const threadId = lastThread = created.thread.id;
+    f.admit(threadId, account); f.runtime.bind('opencraft-server', threadId, project);
+    await engine.request('turn/start', { threadId, clientUserMessageId: 'input', input: [{ type: 'text', text: 'probe' }] }, client);
+    await until(() => messages.some(row => row.method === 'turn/completed' && row.params.threadId === threadId));
+    const snapshot = engine.snapshot(threadId); assert.ok(JSON.stringify(snapshot).includes(hash(expected)));
+    for (const value of ['alice-a', 'bob-global', 'alice-global']) assert.equal(JSON.stringify([snapshot, engine.occupancy, created]).includes(value), false);
+  }
+  assert.equal(new Set(engine.processIds).size, 4);
+  f.leases.finished(lastThread, 'turn-input');
+  await engine.suspend();
+  assert.equal(f.runtime.execution('opencraft-server', lastThread).account, null);
+  await engine.request('thread/resume', { threadId: lastThread }, client);
+  f.admit(lastThread, 'alice', 'next'); f.runtime.bind('opencraft-server', lastThread, 'b');
+  const next = await engine.request('turn/start', { threadId: lastThread, clientUserMessageId: 'next', input: [{ type: 'text', text: 'again' }] }, client);
+  await until(() => messages.some(row => row.method === 'turn/completed' && row.params.turn.id === next.turn.id));
+  assert.ok(JSON.stringify(engine.snapshot(lastThread)).includes(hash('alice-global')));
+  const snapshot = f.runtime.snapshot(scope());
+  assert.equal(JSON.stringify(snapshot).includes('alice-a'), false); assert.equal(inspect(snapshot).includes('alice-a'), false);
+  assert.deepEqual(f.runtime.redact({ error: 'child failed: alice-a', nested: ['bob-global'] }), { error: 'child failed: [REDACTED]', nested: ['[REDACTED]'] });
+  for (const file of await readdir(join(f.root, 'acp'))) {
+    const bytes = await readFile(join(f.root, 'acp', file));
+    assert.equal(bytes.includes(Buffer.from('alice-a')), false);
+  }
+});
+
+test('pinned DSH bash and terminal spawn boundaries inject only the admitted employee/project', async t => {
+  const f = await fixture(t);
+  const { existsSync } = await import('node:fs');
+  const pinned = resolve(process.env.OPENCRAFT_DSH_RUNTIME ?? 'runtime/dsh');
+  if (!existsSync(join(pinned, 'node_modules/@deepseek-ai/dsh-bash-local/lib/index.js'))) { t.skip('Pinned DSH runtime is not installed'); return; }
+  const { patchDshThreadEnvironment } = await import('../../scripts/patch-dsh-thread-environment.mjs');
+  const { registerDshExecutionEnvironment } = await import('../../apps/local-agent-host/src/dsh-execution-environment.mjs');
+  const { pathToFileURL } = await import('node:url'); const { build } = await import('esbuild');
+  const isolated = join(f.root, 'pinned');
+  for (const name of ['dsh-bash-local', 'dsh-terminal-bash']) {
+    const target = join(isolated, 'node_modules/@deepseek-ai', name, 'lib/index.js');
+    await mkdir(join(target, '..'), { recursive: true });
+    await writeFile(target, await readFile(join(pinned, 'node_modules/@deepseek-ai', name, 'lib/index.js')));
+  }
+  await patchDshThreadEnvironment(isolated);
+  const module = join(isolated, 'node_modules/@deepseek-ai/dsh-bash-local/lib/index.js'), output = join(f.root, 'executor.mjs');
+  await build({ stdin: { contents: await readFile(module, 'utf8'), resolveDir: join(pinned, 'node_modules/@deepseek-ai/dsh-bash-local/lib'), sourcefile: module }, outfile: output, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', banner: { js: "import {createRequire} from 'node:module';const require=createRequire(import.meta.url);" } });
+  const { LocalBashExecutor } = await import(pathToFileURL(output).href);
+  const terminal = await readFile(join(isolated, 'node_modules/@deepseek-ai/dsh-terminal-bash/lib/index.js'), 'utf8');
+  const start = terminal.indexOf('function childEnvironment('), end = terminal.indexOf('\n/**', start);
+  assert.ok(start >= 0 && end > start);
+  const childEnvironment = new Function('CONTROLLED_PROMPT', terminal.slice(start, end) + ';return childEnvironment;')('probe> ');
+  let port: any;
+  registerDshExecutionEnvironment({ provide(_name: string, value: unknown) { port = value; }, inject(_deps: unknown, setup: any) { setup({ shellEnv: { register() {} } }); } }, (native: string) => native.replace('native-', ''), f.runtime);
+  for (const [id, account, projectId, expected] of [['one', 'alice', 'a', 'alice-a'], ['two', 'bob', 'a', 'bob-global'], ['three', 'alice', 'b', 'alice-global']]) {
+    f.admit(id, account); f.runtime.bind('opencraft-server', id, projectId);
+    const ctx = { get: () => port };
+    const shell = LocalBashExecutor.prototype.spawnSpec.call({ ctx, config: { maxSpillBytes: 10000, maxOutputBytes: 10000, graceMs: 100 } }, { workdir: f.root, env: {}, dshEnv: { DSH_SESSION_ID: 'native-' + id, DSH_OPENCRAFT_THREAD_ID: id } }, ['unused'], 10000);
+    const terminalEnv = childEnvironment({ owner: { id: 'native-' + id, ctx }, sessionId: 'terminal' }, 'bash');
+    for (const env of [shell.env, terminalEnv]) {
+      assert.equal((await promisify(execFile)(process.execPath, ['-e', program], { cwd: f.root, env })).stdout, hash(expected));
+    }
+  }
+});
+
+
+test('failed ACP native session creation releases its environment process and remains retryable', async t => {
+  const f = await fixture(t), peer = join(f.root, 'failure-peer.mjs'), pids = join(f.root, 'pids');
+  await writeFile(peer, `import {createInterface} from 'node:readline';import{appendFileSync}from'node:fs';appendFileSync(process.argv[2],process.pid+'\\n');
+    const send=v=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+'\\n');createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
+    if(m.method==='initialize')send({id:m.id,result:{protocolVersion:1,agentCapabilities:{sessionCapabilities:{resume:{}}}}});
+    else if(m.method==='session/new')send({id:m.id,error:{code:-32602,message:'fixture rejected creation'}});else send({id:m.id,result:{}});});`);
+  const engine = new AcpEngine({ cwd: f.root, command: process.execPath, args: [peer, pids], dataDirectory: join(f.root, 'failed-acp'), executionEnvironment: f.runtime });
+  t.after(() => engine.close());
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(engine.request('thread/start', { cwd: f.root, [EXECUTION_ENVIRONMENT_FIELD]: f.runtime.seal(scope('employee:alice', 'a', null), 'thread/start') }, { notify() {}, async request() {} }));
+    assert.equal(engine.processIds.length, 1);
+    assert.deepEqual(await engine.catalogThreadIds(), []);
+  }
+  for (const pid of (await readFile(pids, 'utf8')).trim().split('\n').map(Number)) if (!engine.processIds.includes(pid)) assert.throws(() => process.kill(pid, 0));
+});
+
+test('Pi durable tools follow the admitted input across employees and register every live worker for handoff', async t => {
+  const f = await fixture(t);
+  const { PiDurableSession } = await import('../../plugins/pi-engine/src/session.js');
+  const { createModels } = await import('@earendil-works/pi-ai');
+  const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai/providers/faux');
+  const faux = fauxProvider({ tokensPerSecond: 100000 }), models = createModels(); models.setProvider(faux.provider);
+  const native = await PiDurableSession.open({ threadId: 'pi-durable-environment', cwd: f.root, file: join(f.root, 'pi.sqlite'), agentDirectory: f.root, executionEnvironment: f.runtime, projectId: 'a',
+    models: models as any, tools: [], onSnapshot() {}, onTool: async () => { throw new Error('Unexpected tool'); }, onExit() {} });
+  try {
+    await native.configure({ model: { provider: 'faux', modelId: 'faux-1' }, cwd: f.root });
+    for (const [index, account, expected] of [[1, 'alice', 'alice-a'], [2, 'bob', 'bob-global']] as const) {
+      const inputId = 'human-' + index; f.admit('pi-durable-environment', account, inputId);
+      let output = '';
+      faux.setResponses([
+        fauxAssistantMessage(fauxToolCall('bash', { command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(program)}` }), { stopReason: 'toolUse' }),
+        (ctx: any) => { output = JSON.stringify(ctx.messages.filter((row: any) => row.role === 'toolResult').at(-1)); return fauxAssistantMessage('done'); },
+      ]);
+      await native.submit('probe', { turnId: inputId, clientId: account, input: [{ type: 'text', text: 'probe' }], createdAtMs: Date.now() }, inputId);
+      await until(async () => output.includes(hash(expected)) && !(await native.snapshot()).live.run);
+      assert.equal(native.workerProcessIds.length, 2, 'the schema worker and current scoped worker are both registered; idle obsolete scopes are released');
+      f.leases.finished('pi-durable-environment', 'turn-' + inputId);
+    }
+  } finally { await native.close(); }
+});
