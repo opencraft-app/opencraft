@@ -8,7 +8,7 @@
 
 设置读写须通过服务端当前 membership/admin 判断；身份、准入与角色来源继续由产品身份插件提供，不向核心引入企业身份依赖。普通用户只能读过滤后的可用目录与禁用原因，不能读取管理配置、审计或修改接口；管理员自身发起轮次同样受策略约束。写接口执行同源、有效身份和大小校验，提交时复核权限；审计记录服务端 Actor，不能信任客户端姓名。
 
-owner 内最终准入点必须读取共享 authority 的最新 revision。不能仅在网关缓存策略：内部调度会绕过它。authority 不可用时拒绝新增执行，历史读取仍可用；不以旧缓存放行。提交与准入有确定的序列化边界，更新完成后新准入均消费新 revision。具体跨进程传输及锁定方案需随 owner 维护方案落实。
+owner 内最终准入点必须读取共享 authority 的最新 revision。不能仅在网关缓存策略：内部调度会绕过它。authority 不可用时拒绝新增执行，历史读取仍可用；不以旧缓存放行。提交与准入有确定的序列化边界，更新完成后新准入均消费新 revision。各 owner 通过共享路径逐次只读 SQLite；写入用 BEGIN IMMEDIATE 事务串行更新。
 
 ## 执行点与回归契约
 
@@ -18,7 +18,7 @@ owner 内最终准入点必须读取共享 authority 的最新 revision。不能
 | Codex IM、恢复、goal | codex-engine-adapter.ts 的内部 requestPhysical(turn/start)，含恢复分支与 goal 定时器 | 新禁令后下一轮拒绝；保留原配置并给替代项 |
 | Pi IM、定时任务 | pi-engine/src/index.ts 的 inputs.submit 与 scheduled handle(turn/start) | 与普通请求同样拒绝 |
 | Pi 队列、自动派发、重启恢复 | dispatchQueue / native.submit，及普通 handle(turn/start) | 入队后禁用也必须拒绝派发，不丢输入，不宣称已执行 |
-| DSH goal、队列与恢复 | dsh-thread-engine.mjs 的 goals 服务及 DSH 原生调度准入 | 需继续追踪原生 scheduler 最终执行点；不能仅检查 adapter RPC |
+| DSH goal、队列与恢复 | dsh-thread-engine.mjs 的 goals 服务及 DSH 原生调度准入 | 原生 prepareCall 解析后 await policy admission，覆盖 goal 自动续跑；不能仅检查 adapter RPC |
 | ACP / DSH ACP | acp-engine/src/index.ts，代绑定及原生 prompt 前 | 旧会话绑定与新建都检查实际模型；不能以默认模型绕过 |
 | 线程编排 | thread-orchestration-execution.mjs、各引擎编排 create/continue 与最终 Turn 准入 | 子线程继承和显式覆盖都检查，工具返回明确拒绝 |
 | 活跃轮次 steer / 队列 steer | 检查是否开启新执行或改变模型；最终执行点兜底 | 不通过 steer 偷换禁用模型；不打断已开始轮次 |
@@ -39,9 +39,9 @@ RemoteEngineProvider 的 modelPrefix 只用于路由，不替代引擎内部的�
 
 ## 界面
 
-沿用 Settings 文档容器、共享 SettingsRow 和现有模型选择器；管理员入口按服务端 canManage 投影，主动作保存，次动作取消。普通用户的禁用选项置灰，附简短原因；旧选择仍可显示为受限，不自动改写草稿。错误走既有非阻塞通知，回复包含结构化可用替代项；无替代项时提示联系管理员。英文稳定 ID + 中文本地化，保持切语言时草稿与焦点。
+沿用 Settings 文档容器、共享 SettingsRow 和现有模型选择器；管理员入口按服务端 canManage 投影，主动作保存。普通用户的禁用选项置灰，附简短原因；旧选择仍可显示为受限，不自动改写草稿。错误走既有非阻塞通知，回复包含结构化可用替代项；无替代项时提示联系管理员。英文稳定 ID + 中文本地化，保持切语言时草稿与焦点。
 
-拟用中文：模型使用限制 / 禁用模型 / 禁用思考深度 / 管理员已禁用 / 保存 / 取消 / 模型已受限，请选择：{options} / 思考深度已受限，请选择：{options} / 暂无可用选项，请联系管理员。此为设计草案，最终文字需在上线回执核对。
+最终中文界面：模型使用限制 / 禁用模型 / 禁用思考深度 / 保存 / 无法保存限制，请重新加载后重试。 / 部分选项已被管理员禁用。服务端拒绝包含结构化替代项，沿用英文协议错误文案；没有替代项时提示联系管理员。
 
 ## 独立 owner 生效边界
 
