@@ -16,7 +16,10 @@ test('direct initialize/list, error and late response ACK every consumed receipt
   await once(server, 'listening');
   t.after(async () => { server.close(); await rm(root, { recursive: true, force: true }); });
   let acknowledgments = 0, sendLate;
-  server.on('connection', peer => peer.on('message', raw => {
+  server.on('connection', peer => {
+    // A response for a request this consumer never issued cannot retire custody.
+    peer.send(JSON.stringify({id:999,result:{},opencraftDshReceipt:{id:'foreign',receipt:'foreign'}}));
+    peer.on('message', raw => {
     const request = JSON.parse(String(raw));
     if (request.method === 'opencraft/owner/receipt') {
       receipts.acknowledge(request.params); acknowledgments++; return;
@@ -26,7 +29,8 @@ test('direct initialize/list, error and late response ACK every consumed receipt
       : { id: request.id, result: { data: [] } };
     const send = () => peer.send(JSON.stringify({ ...packet, opencraftDshReceipt: finish(packet) }));
     if (request.method === 'late') sendLate = send; else send();
-  }));
+    });
+  });
   const socket = new WebSocket(`ws://127.0.0.1:${server.address().port}`);
   await once(socket, 'open');
   t.after(() => socket.terminate());
