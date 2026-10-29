@@ -95,8 +95,10 @@ test("Composer retries unchanged failed promotion with the accepted identity and
   });
   const first = composer.createSubmitIntent(), draftId = composer.getSnapshot().draft.id;
   composer.dispatch({ type: "set-lifecycle", phase: "submitting" });
-  await assert.rejects(pipeline.submit(first), /activation failed/);
-  composer.settleSubmission(draftId, first, { status: "failed", error: "activation failed" });
+  // Match composer-editor: project model selections, then directly dispatch
+  // failed lifecycle from the awaited onSubmit catch (no settleSubmission).
+  await assert.rejects(pipeline.submit({ ...first, selections: { ...first.selections, model: "fixture" } }), /activation failed/);
+  composer.dispatch({ type: "set-lifecycle", phase: "failed", error: "activation failed" });
   const retry = composer.createSubmitIntent();
   assert.equal(retry.commandId, first.commandId);
   assert.equal(retry.clientMessageId, first.clientMessageId);
@@ -112,7 +114,17 @@ test("Composer retries unchanged failed promotion with the accepted identity and
   composer.dispatch({ type: "set-lifecycle", phase: "submitting" });
   composer.settleSubmission(composer.getSnapshot().draft.id, next, { status: "failed", error: "retryable" });
   composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "New input" }] }] } });
-  assert.notEqual(composer.createSubmitIntent().clientMessageId, next.clientMessageId);
+  const edited = composer.createSubmitIntent();
+  assert.notEqual(edited.clientMessageId, next.clientMessageId);
+  composer.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  composer.dispatch({ type: "set-lifecycle", phase: "failed", error: "not submitted" });
+  assert.equal(edited.target.type, "new-thread");
+  const target = edited.target as Extract<SubmitIntent["target"], { type: "new-thread" }>;
+  composer.dispatch({ type: "switch-target", target: { ...target, execution: { ...target.execution,
+    workspace: { cwd: "/moved", runtimeWorkspaceRoots: ["/moved"], projectId: "new-project" } } } });
+  const moved = composer.createSubmitIntent();
+  assert.notEqual(moved.clientMessageId, edited.clientMessageId);
+  assert.equal(moved.target.type === "new-thread" && moved.target.execution.workspace.cwd, "/moved");
   composer.dispose();
 });
 

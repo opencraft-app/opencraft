@@ -902,7 +902,8 @@ native process still lists the same loaded identity, and no rollout exists.
 Legacy or missing evidence, an uncertain send and accepted/persisted history do
 not qualify for an empty-history fallback. The existing generation route remains
 bound to the original native identity. Recovery also requires the original
-native subscription or a retained callback lane. A combined Core without that
+native subscription or an attested retained callback lane. A routing protocol
+version alone does not attest that capability. A combined Core without that
 lane rejects empty-Thread resume rather than claiming that events are restored.
 Once native acceptance is known, normal demand-based subscription release
 applies; only created/attempted input protects the provisional context.
@@ -920,6 +921,8 @@ original conversation's next-Turn queue with its own receipt. It cannot reuse
 the first input's receipt to clear unsent content.
 
 If promotion fails after acceptance, an unchanged Composer retry retains its
-original command/message identity. Editing the content or submission settings
-creates a new identity. Retry state belongs to the owning Draft and is retired
+original command/message identity, recorded when the Controller creates the
+intent so the Web editor's direct failure transition and projected model
+selections retain it too. Editing content, submission settings, or execution
+placement creates a new identity. Retry state belongs to the owning Draft and is retired
 when acceptance settles, the Draft clears, or its controller is disposed.

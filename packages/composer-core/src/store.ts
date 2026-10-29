@@ -339,7 +339,7 @@ export function createComposerController(
   let draft = restoreDraft(target);
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
-  const failedSubmissions = new Map<string, SubmitIntent>();
+  const submissionIntents = new Map<string, SubmitIntent>();
   const listeners = new Set<() => void>();
   const interactionListeners = new Set<() => void>();
   const disposeListeners = new Set<() => void>();
@@ -468,7 +468,7 @@ export function createComposerController(
       if (action.type === "reset-all") {
         submissionContinuation = null;
         draftCache.clear();
-        failedSubmissions.clear();
+        submissionIntents.clear();
         publish(createDraft(draft.target, services));
         return;
       }
@@ -497,7 +497,7 @@ export function createComposerController(
       }
       if (action.type === "clear") {
         draftCache.delete(encodeComposerTarget(draft.target));
-        failedSubmissions.delete(draft.id);
+        submissionIntents.delete(draft.id);
       }
       publish(reduce(draft, action, services));
     },
@@ -549,14 +549,18 @@ export function createComposerController(
         throw new Error(
           "Composer draft cannot be submitted in its current state",
         );
-      const previous = failedSubmissions.get(draft.id);
+      const previous = submissionIntents.get(draft.id);
       if (draft.lifecycle.phase === "failed" && previous
         && encodeComposerTarget(previous.target) === encodeComposerTarget(draft.target)
+        && (previous.target.type !== "new-thread" || draft.target.type === "new-thread"
+          && previous.target.execution.hostId === draft.target.execution.hostId
+          && JSON.stringify([previous.target.execution.workspace.cwd, previous.target.execution.workspace.projectId ?? null,
+            previous.target.execution.workspace.runtimeWorkspaceRoots]) === JSON.stringify([draft.target.execution.workspace.cwd,
+            draft.target.execution.workspace.projectId ?? null, draft.target.execution.workspace.runtimeWorkspaceRoots]))
         && previous.document === draft.document && previous.attachments === draft.attachments
         && previous.context === draft.context && previous.selections === draft.selections
         && previous.options === draft.options) return previous;
-      failedSubmissions.delete(draft.id);
-      return {
+      const intent: SubmitIntent = {
         commandId: services.createId(),
         clientMessageId: services.createId(),
         target: draft.target,
@@ -567,6 +571,11 @@ export function createComposerController(
         options: draft.options,
         createdAt: services.now(),
       };
+      // The Web editor projects model selections onto a copy of this intent and
+      // reports failure with set-lifecycle. Keep the owning Draft snapshot here
+      // so both that path and settleSubmission can retry the original identity.
+      submissionIntents.set(draft.id, intent);
+      return intent;
     },
     settleSubmission(draftId, intent, result) {
       // An async result may arrive after target navigation or controller
@@ -580,8 +589,7 @@ export function createComposerController(
       const sameContent = owner.document === intent.document
         && owner.attachments === intent.attachments
         && owner.context === intent.context;
-      if (result.status === "failed" && sameContent) failedSubmissions.set(draftId, intent);
-      else failedSubmissions.delete(draftId);
+      if (result.status !== "failed" || !sameContent) submissionIntents.delete(draftId);
       const next = result.status === "accepted" && sameContent
         ? reduce(owner, { type: "clear" }, services)
         : reduce(owner, {
@@ -675,7 +683,7 @@ export function createComposerController(
       interactionListeners.clear();
       listeners.clear();
       draftCache.clear();
-      failedSubmissions.clear();
+      submissionIntents.clear();
       view = null;
     },
   };

@@ -988,7 +988,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           // Native resume requires a rollout. Only a retained callback lane (or
           // this connection's original subscription) can watch an empty Thread.
           if (!this.nativeSubscribedThreads.has(string(historyParams.threadId))
-            && !this.nativeCore?.supportsOrchestration && !this.nativeCore?.supportsOrchestrationRouting) {
+            && !this.nativeCore?.supportsOrchestration) {
             this.emit({ id, error: { code: -32600, message: "Empty Thread recovery requires a retained native subscription" } }, clientId);
             return;
           }

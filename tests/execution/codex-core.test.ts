@@ -870,7 +870,7 @@ test("a never-dispatched creation keeps its native route and events through Host
   } finally { await f.close(); }
 });
 
-test("combined Core refuses empty creation recovery when its original native subscription is gone", async () => {
+for (const routingOnly of [false, true]) test(`Core refuses empty creation recovery without callbacks (routing-only=${routingOnly})`, async () => {
   const f = await fixture(async options => ({ ...options,
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
@@ -881,6 +881,14 @@ test("combined Core refuses empty creation recovery when its original native sub
     const { thread } = await a.rpc("browser", "thread/start");
     await a.engine.close();
     const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    if (routingOnly) {
+      // Real transport distinguishes routing advertisement from callbackReady.
+      // A router may still point at a legacy APP with no retained lane.
+      const native = (b.engine as any).nativeCore;
+      assert.equal(native.supportsOrchestration, false);
+      native.routed = true;
+      assert.equal(native.supportsOrchestrationRouting, true);
+    }
     await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /retained native subscription/);
     assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
     assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);
