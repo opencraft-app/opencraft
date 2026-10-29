@@ -181,3 +181,15 @@ gateway: external reachability must already be supplied by the host deployment.
 Verification includes `tests/resources/html-file-previews.test.ts` and
 `scripts/smoke/resources/smoke-html-file-preview.ts` (set
 `OPENCRAFT_HTML_PREVIEW_REPORT` to a self-contained report).
+
+
+Preview document reads can race a managed backend connection switch. The proxy
+reconnects only bodyless preview GETs on connection reset/refusal/pipe failure,
+up to three times (100/250/500 ms), before response headers. It never retries
+issuance/redemption POSTs, authorization errors or partial response streams.
+If the backend stays unavailable, it returns a non-cacheable 503 HTML page with
+a retry link rather than raw API JSON, including inside the report frame.
+Client closure cancels reconnects and releases the worker lease. Final failures
+log only a transport error code and retry count, never report URLs or credentials.
+This does not preserve in-memory preview sessions across a backend restart;
+a revoked/expired session still requires reopening the original file.

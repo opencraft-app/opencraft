@@ -46,3 +46,54 @@ test('readiness route tables are bounded, scoped and keep legacy defaults', () =
   assert.equal(isHeadlessBackendPath('/future-stream', true, future), true);
   for (const bad of [null, {}, { ...future, prefixes: ['//elsewhere'] }, { ...future, http: ['/bad?query'] }, { ...future, upgrade: Array(65).fill('/too-many') }]) assert.ok(!validHeadlessBackendRoutes(bad));
 });
+
+
+async function previewProxy(t, handler) {
+  const backend = createServer(handler); backend.listen(0, '127.0.0.1'); await once(backend, 'listening');
+  let released = 0;
+  const proxy = createHeadlessBackendProxy(`http://127.0.0.1:${backend.address().port}`);
+  const front = createServer((req, res) => proxy.http(req, res, () => released++));
+  front.listen(0, '127.0.0.1'); await once(front, 'listening');
+  t.after(async () => { for (const s of [front, backend]) { s.closeAllConnections(); await new Promise(r => s.close(r)); } });
+  return { url: `http://127.0.0.1:${front.address().port}`, released: () => released };
+}
+
+test('preview document reconnects after a backend reset without dropping credentials', async t => {
+  let calls = 0; const cookies = [];
+  const f = await previewProxy(t, (req, res) => {
+    cookies.push(req.headers.cookie); if (++calls === 1) { req.socket.destroy(); return; }
+    res.end('report recovered');
+  });
+  const result = await fetch(f.url + '/__opencraft_preview/s/' + 'a'.repeat(24) + '/document', { headers: {cookie:'preview=synthetic'} });
+  assert.equal(result.status, 200); assert.equal(await result.text(), 'report recovered');
+  assert.equal(calls, 2); assert.deepEqual(cookies, Array(2).fill('preview=synthetic'));
+});
+
+test('unavailable preview is a non-cacheable readable retry page; ticket POST is not replayed', async t => {
+  let calls = 0;
+  const f = await previewProxy(t, req => { calls++; req.socket.destroy(); });
+  const preview = await fetch(f.url + '/__opencraft_preview/');
+  assert.equal(preview.status, 503); assert.match(preview.headers.get('content-type'), /text\/html/u);
+  assert.match(preview.headers.get('cache-control'), /no-store/u); assert.match(await preview.text(), /重试加载/u);
+  assert.equal(calls, 4);
+  for (const path of ['tickets', 'redeem']) {
+    const before = calls;
+    const result = await fetch(f.url + '/__opencraft_preview/' + path, {method:'POST', body:'{}'});
+    assert.equal(result.status, 502); await result.text(); assert.equal(calls, before + 1);
+  }
+});
+
+test('an authorization rejection is returned as-is without reconnecting', async t => {
+  let calls = 0; const f = await previewProxy(t, (_req, res) => { calls++; res.writeHead(403); res.end('denied'); });
+  const result = await fetch(f.url + '/__opencraft_preview/');
+  assert.equal(result.status, 403); assert.equal(await result.text(), 'denied'); assert.equal(calls, 1);
+});
+
+
+test('closing a preview cancels pending reconnect and releases its lease once', async t => {
+  let calls = 0; const controller = new AbortController();
+  const f = await previewProxy(t, req => { calls++; req.socket.destroy(); controller.abort(); });
+  await assert.rejects(fetch(f.url + '/__opencraft_preview/', {signal:controller.signal}));
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(calls, 1); assert.equal(f.released(), 1);
+});
