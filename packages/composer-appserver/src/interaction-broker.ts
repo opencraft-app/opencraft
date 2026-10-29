@@ -1,4 +1,5 @@
 import { SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, parseSharedInteractionSnapshot, type SharedInteractionSnapshot } from "@opencraft/appserver-protocol";
+import { executionEngineExtension } from "@opencraft/appserver-client";
 import type {
   AppServerClient,
   ServerRequestResponseContext,
@@ -311,7 +312,8 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
 
 
   async sync(threadId: string): Promise<void> {
-    if (!this.sharedClient?.initializeResult?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION]) return;
+    if (!this.sharedClient || executionEngineExtension(this.sharedClient.initializeResult?.capabilities?.extensions,
+      threadId, SHARED_INTERACTIONS_EXTENSION)?.version !== 1) return;
     const revision = this.connectionRevision;
     const snapshot = await this.sharedClient.request(SHARED_INTERACTIONS_READ, { threadId });
     if (!this.disposed && revision === this.connectionRevision) this.applyShared(snapshot);
