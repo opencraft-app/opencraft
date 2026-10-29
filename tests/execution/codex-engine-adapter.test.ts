@@ -16,6 +16,41 @@ import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-ho
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
 
+for (const outcome of ["ready", "failed", "disconnected"] as const) test(`reopening during execution tool preparation waits for its existing owner (${outcome})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-resume-preflight-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer");
+    const threadId = "fixture-thread-1", internals = adapter as any;
+    internals.sessionMcpRetirements.set(threadId, { model: "preserved" });
+    const preparation = gate.then(() => {
+      internals.sessionMcpRefreshes.delete(threadId);
+      if (outcome === "failed") throw new Error("synthetic preparation failure");
+      internals.sessionMcpRetirements.delete(threadId);
+    });
+    void preparation.catch(() => {});
+    internals.sessionMcpRefreshes.set(threadId, preparation);
+    const reopening = adapter.send(JSON.stringify({ id: "reopen", method: "thread/resume", params: { threadId, excludeTurns: true }, [LOGICAL_CLIENT_FIELD]: "viewer" }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(frames.some(frame => frame.id === "reopen"), false, "no premature reconfiguration error");
+    if (outcome === "disconnected") await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "viewer" }));
+    release(); await reopening;
+    if (outcome === "disconnected") assert.equal(frames.some(frame => frame.id === "reopen"), false);
+    else {
+      const reply = await waitFor(frames, frame => frame.id === "reopen");
+      if (outcome === "ready") assert.equal(reply.error, undefined);
+      else assert.equal((reply.error as any).data.submissionOutcome, "rejected");
+    }
+    await initializeClient(adapter, frames, "inspector");
+    await adapter.send(JSON.stringify({ id: "counts-reopen", method: "test/readMethodCounts", params: {}, [LOGICAL_CLIENT_FIELD]: "inspector" }));
+    const counts = (await waitFor(frames, frame => frame.id === "counts-reopen")).result as any;
+    assert.equal(counts["thread/resume"] ?? 0, outcome === "ready" ? 1 : 0);
+    assert.equal(counts["turn/start"] ?? 0, 0);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
   const existing = frames.find(predicate);
   if (existing) return Promise.resolve(existing);

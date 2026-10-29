@@ -27,6 +27,16 @@ interface WireRequest {
   params: Record<string, unknown>;
 }
 
+test("execution activation can wait for tool preparation beyond the history read deadline", async () => {
+  const h = await createHarness({ readHistory: true, resumeDelayMs: 1_100 });
+  try {
+    await h.runtime.resume.read("thread-one");
+    await h.runtime.resume.activate({ threadId: "thread-one" });
+    assert.equal(h.requests.filter(request => request.method === "thread/resume").length, 1);
+    assert.equal(h.requests.filter(request => request.method === "turn/start").length, 0);
+  } finally { await h.close(); }
+});
+
 interface HarnessOptions {
   readHistory?: boolean;
   itemDetails?: boolean;

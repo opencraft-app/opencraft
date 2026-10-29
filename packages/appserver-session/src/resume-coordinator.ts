@@ -825,7 +825,11 @@ export class ThreadResumeCoordinatorService extends Service {
         // The message-window provider owns independent gateway and HTTP-idle
         // deadlines. An outer wall-clock limit would cancel a healthy body
         // download merely because its transport is slow.
-        timeoutMs: historyMode === "message-window" ? 0 : this.requestTimeoutMs,
+        // Execution activation can join native tool retirement (up to 90s).
+        // Its budget must cover that preflight; ordinary history keeps its
+        // independent read deadline and explicit unlimited budgets stay so.
+        timeoutMs: historyMode === "message-window" ? 0 : !presentation && this.requestTimeoutMs > 0
+          ? Math.max(this.requestTimeoutMs, 120_000) : this.requestTimeoutMs,
         priority: "user-blocking", signal: operation.signal,
       });
       let resumed: Awaited<ReturnType<typeof requestResume>>;
