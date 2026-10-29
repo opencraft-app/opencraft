@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import lockfile from "proper-lockfile";
+import { acquireProcessWriter } from '../packages/sqlite-node/src/index.ts';
 import { createSshHttpIngress, loadSshIngressConfiguration } from "@opencraft/ssh-http-ingress/server";
 import { createSshNativeRpcGateway } from "./ssh-native-rpc-gateway.mjs";
 import { createSshCodexControl } from "./ssh-codex-control.mjs";
@@ -259,7 +260,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
-  const releaseLock = await lockfile.lock(join(dataDirectory, "server"), { realpath: false, retries: 0 });
+  const releaseLock = acquireProcessWriter(join(dataDirectory, "server.lock"));
   let agent;
   let dshAgent;
   let releasePiOwner;
@@ -301,43 +302,47 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let observability;
   let turnPush;
   let closing = null;
-  const close = () => {
+  const close = (update = null) => {
     if (closing !== null) return closing;
-    capabilitiesReadyResolve();
-    codexReadiness?.close();
-    usageQueries?.close();
-    observability?.close();
-    closing = (async () => {
-      relay?.close();
-      hubController?.close();
-      remoteBrowser?.close();
-      fileDownloads?.close();
-      desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
-      await turnPush?.close();
-      // Retire admitted ingress clients before their Host provider.
-      await availabilityNotification?.close();
-      const entryResults = await Promise.allSettled([ ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
-      threadOrchestration?.stop();
-      await appHostServer?.close();
-      await threadOrchestration?.close();
-      entryResults.push(...await Promise.allSettled([connectorService?.close(), actorCollaboration?.close()]));
-      const results = [...entryResults, ...await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()])];
-      if (releasePiOwner) results.push(...await Promise.allSettled([releasePiOwner()]));
-      results.push(...await Promise.allSettled([(await dshAgent?.catch(() => undefined))?.close()]));
-      results.push(...await Promise.allSettled([capabilityMcp?.close()]));
-      executionRecovery?.close();
-      results.push(...await Promise.allSettled([agentIdentity?.close()]));
-      executionDatabase?.close();
-      // Settle every provider/store before releasing the directory lock, even
-      // when one disposer throws synchronously or returns a rejected promise.
-      for (const dispose of [() => mcpApps?.close(), () => sshManagement?.close(), () => identity?.close?.(),
+    // Publish the shared promise before invoking any disposer (including a
+    // synchronous failure or reentrant close). Retire listeners before stores.
+    closing = Promise.resolve().then(async () => {
+      const results = [];
+      const settle = async disposers => {
+        results.push(...await Promise.allSettled(disposers.map(dispose => Promise.resolve().then(dispose))));
+      };
+      capabilitiesReadyResolve();
+      let entryClosing;
+      const closeEntry = () => entryClosing ??= settle([
+        () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
+        () => codexReadiness?.close(), () => usageQueries?.close(), () => remoteBrowser?.close(),
+        () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
+        () => availabilityNotification?.close(), () => imPlugins?.close(),
+      ]);
+      await settle([() => web?.close(update, closeEntry)]);
+      // Custom Web adapters need not implement the optional carrier phase.
+      await closeEntry();
+      await settle([() => observability?.close()]);
+      await settle([() => threadOrchestration?.stop()]);
+      await settle([() => appHostServer?.close()]);
+      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close()]);
+      await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => capabilityMcp?.close()]);
+      if (releasePiOwner) await settle([() => releasePiOwner()]);
+      await settle([() => executionRecovery?.close(), () => agentIdentity?.close()]);
+      // Each writer finishes before the root kernel lock is released. A failed
+      // disposer is reported, but must not skip the remaining flushes.
+      for (const dispose of [() => executionDatabase?.close(),
+        () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.close?.(),
         () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
-        () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close(), () => releaseLock()]) {
-        results.push(...await Promise.allSettled([Promise.resolve().then(dispose)]));
+        () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close()]) {
+        await settle([dispose]);
       }
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
+      // A rejected flush is not a release receipt. The gateway exits nonzero;
+      // only actual process death then releases the kernel writer lock.
       if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
-    })();
+      releaseLock();
+    });
     return closing;
   };
   try {
@@ -466,7 +471,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       });
     capabilityBindings = new CapabilityBindings(join(dataDirectory, "session-capabilities.sqlite"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilitySigningKey(join(dataDirectory, "session-capabilities.key")), capabilityBindings, {
-      descriptorPath:join(dataDirectory,'session-capabilities.json'),
+      descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
       authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
       orchestration: async (session, request) => {
         const fields = ['turnId','callId','name','arguments','inputId','incarnation','toolCallKey'];
@@ -602,9 +607,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             await capabilitiesReady;
             const reservation = capabilityMcp.prepareExecution();
             return { configuration: reservation.configuration,
+              bindThread: threadId => reservation.bindThread({ serverId: actorCollaboration.execution.serverId, threadId }),
               bind: (threadId, inputId, executionId) => reservation.bind({ serverId: actorCollaboration.execution.serverId,
                 threadId, execution: { inputId, executionId } }),
               cancel: () => reservation.cancel() };
+          },
+          restoreSessionMcp: async threadId => {
+            await capabilitiesReady;
+            const reservation = capabilityMcp.restoreExecution({ serverId: actorCollaboration.execution.serverId, threadId });
+            return reservation && { configuration: reservation.configuration,
+              bindThread: id => reservation.bindThread({ serverId: actorCollaboration.execution.serverId, threadId: id }),
+              bind: (id, inputId, executionId) => reservation.bind({ serverId: actorCollaboration.execution.serverId,
+                threadId: id, execution: { inputId, executionId } }), cancel: () => reservation.cancel() };
           },
           sessionMcp: async (threadId, inputId, executionId) => {
             await capabilitiesReady;

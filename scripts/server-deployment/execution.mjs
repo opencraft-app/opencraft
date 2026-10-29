@@ -10,6 +10,7 @@ import { assertExecutionNativePayload } from './native-preflight.mjs';
 import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 import { browserRuntimeIdentity } from '../browser-runtime-identity.mjs';
+import { withGatewayUpdateIntent } from './gateway-update-intent.mjs';
 
 const exec = promisify(execFile);
 const daemonPayloadFiles = ['gateway.mjs', 'daemon.cjs', 'dsh-capability-plugin.mjs'];
@@ -201,6 +202,13 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     if (dshDescriptor && metadata.independentDshHost !== 1)
       throw new Error('Release cannot attach an independent DSH Host; crossing this migration boundary requires drained maintenance');
     if (engineDescriptor && metadata.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
+    if (profile === 'headless') {
+      let current;
+      try { current = JSON.parse(await readFile(join(link, 'package.json'), 'utf8')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (current?.opencraftExecution?.storageWriterProtocol === 2 && metadata.storageWriterProtocol !== 2)
+        throw new Error('Release cannot read the kernel-owned Headless writer locks');
+    }
     for (const file of [...daemonPayloadFiles, ...(profile === 'headless' ? ['dsh-thread-persistence-plugin.mjs', 'dsh-thread-projection-plugin.mjs'] : [])]) await readFile(join(release.releaseRoot, 'execution', file));
     await assertExecutionNativePayload(release.releaseRoot);
     await validate();
@@ -311,16 +319,17 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       const previousRuntimeHash = oldRoot ? await computeExecutionHash(oldRoot, comparisonIdentity) : null;
       const runtimeHash = await computeExecutionHash(release.releaseRoot, comparisonIdentity);
       const runtimeChanged = previousRuntimeHash !== runtimeHash;
+      const restartGateway = () => withGatewayUpdateIntent(link, release, restart);
       // Startup also reconciles a pointer changed by an interrupted update.
       if (oldRoot !== release.releaseRoot) {
         await point(release.releaseRoot);
         if (!runtimeChanged) {
           try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
-          catch { await restart(); }
-        } else await restart();
+          catch { await restartGateway(); }
+        } else await restartGateway();
       } else {
         try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
-        catch { await restart(); }
+        catch { await restartGateway(); }
       }
       await retainRuntime(release, await ready(release, before, dshBefore, engineBefore), true);
     },

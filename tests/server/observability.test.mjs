@@ -199,7 +199,7 @@ test('v1 evidence upgrades without rewriting migration history and rejects check
     db.prepare('INSERT INTO schema_migrations VALUES(1,?,?,?)').run('bounded-derived-observations',createHash('sha256').update(observationSchemaV1).digest('hex'),now);
     const original=event({actorKind:'human',originClass:'interactive',recoveryId:'existing',kind:'recovery'});
     db.prepare('INSERT INTO events(event_id,at,received,kind,component,actor,body) VALUES(?,?,?,?,?,?,?)').run(original.eventId,now,now,'recovery','web','verified',JSON.stringify(original));db.close();
-    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,5);
+    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,6);
     assert.equal(store.events(now-1000,now+1000,Date.now()).find(row=>row.eventId===original.eventId).recoveryId,'existing');
     assert.equal(store.activity(now-1000,now+1000).humans,1);assert.equal(store.recoveries(now-1000,now+1000).value,1);
     store.db.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=1").run();store.close();
@@ -287,6 +287,8 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       await observation.createObservabilityExtension().activate({ signal: controller.signal, commands: { register: (_definition, run) => {openCommand = run;} }, navigation: { register() {} } });
       openCommand(); assert.equal(opened, base + '/__opencraft_observe/grafana/d/opencraft-overview');
       const finish = observation.beginObservedOperation('thread_open'); finish('ok'); finish('failed');
+      for (const stage of ['connecting','host-ready','settled','backoff','connecting','host-ready','settled'])
+        observation.observeRecovery({hostId:'fixture',recoveryId:'test-recovery',stage,elapsedMs:1});
       let lifecycle, unsubscribed = false;
       const client = { connectionGeneration: 2, subscribeRequestLifecycle(callback) { lifecycle = callback; return () => { unsubscribed = true; }; } };
       const dispose = observation.installClientObservation(client);
@@ -308,6 +310,9 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const navigation = events.find(event => event.operationType === 'navigation');
       assert(navigation); assert.notEqual(navigation.operationId, operations[0].operationId);
       const requests = events.filter(event => event.kind === 'rpc');
+      const outages = events.filter(event => event.measurementScope === 'connection');
+      assert(outages.length >= 2); assert.equal(new Set(outages.map(event => event.recoveryId)).size,1,'cold startup is not an outage');
+      assert.equal(outages.filter(event => event.outcome === 'ok').length,1);
       assert.equal(requests.length, 2); assert.notEqual(requests[0].requestId, requests[1].requestId);
       assert(requests[1].incidentRef); assert.notEqual(requests[1].incidentRef, requests[1].eventId);
       console.log('client observation capability passed');
@@ -434,7 +439,7 @@ test('availability migration preserves v4 history and avoids scanning unrelated 
     store.db.exec('BEGIN');
     for (let i=0;i<10000;i++) insert.run('history-'+i,now,now,'resource','gateway',JSON.stringify({kind:'resource',at:now}));
     store.db.exec('COMMIT');
-    store.db.exec('DROP INDEX IF EXISTS events_availability; DELETE FROM schema_migrations WHERE version=5');
+    store.db.exec('DROP INDEX IF EXISTS gateway_lifecycle_window; DROP TABLE IF EXISTS connection_outages; DROP INDEX IF EXISTS events_availability; DELETE FROM schema_migrations WHERE version>=5');
     const history = store.db.prepare('SELECT version,name,checksum,applied_at FROM schema_migrations ORDER BY version').all();
     store.close(); store = new ObserveStore(path, () => now);
     const queries = [], prepare = store.db.prepare.bind(store.db);
@@ -448,7 +453,7 @@ test('availability migration preserves v4 history and avoids scanning unrelated 
       const plan = prepare('EXPLAIN QUERY PLAN '+sql).all(...Array((sql.match(/\?/g)??[]).length).fill(0));
       assert.ok(plan.some(row=>/USING INDEX events_availability/.test(row.detail)), 'availability reads must use the partial index: '+JSON.stringify(plan));
     }
-    assert.equal(store.outcome.appliedVersion, 5);
+    assert.equal(store.outcome.appliedVersion, 6);
     assert.equal(prepare('SELECT count(*) AS n FROM events').get().n, 10003);
     assert.deepEqual(prepare('SELECT version,name,checksum,applied_at FROM schema_migrations WHERE version<=4 ORDER BY version').all(), history);
   } finally {store?.close();await rm(directory,{recursive:true,force:true});}

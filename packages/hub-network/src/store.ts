@@ -1,7 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from 'node:crypto';
 import { lstatSync, openSync, closeSync, readFileSync, writeFileSync, renameSync, fsyncSync, mkdirSync, constants } from 'node:fs';
 import { dirname, isAbsolute } from 'node:path';
-import lockfile from 'proper-lockfile';
+import { acquireProcessWriter } from '@opencraft/sqlite-node';
 import { publicOrigin, transportEndpoint, validHubId, type IdentityAuthority, type HubService } from './contract.js';
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -60,7 +60,7 @@ export class HubStore {
   constructor(readonly path: string) {
     if (!isAbsolute(path)) throw new Error('Hub state requires an absolute path');
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.#release = lockfile.lockSync(path, { realpath: false });
+    this.#release = acquireProcessWriter(`${path}.lock`);
     try {
     let present = false;
     try { lstatSync(path); present = true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }

@@ -6,6 +6,8 @@ import { serverFetch, serverUrl } from './server-context';
 type Event = Record<string, string | number | null>;
 let enabled = false;
 const recoveryContexts = new Map<string,{recoveryId:string;attemptId?:string;generation?:number}>();
+const usableHosts = new Set<string>();
+const connectionOutages = new Map<string, { id: string; started: number }>();
 const historyOperations = new Map<string, string>();
 export function bindHistoryObservation(scope: { hostId: string; threadId: string }, operationId: string): () => void {
   const key = JSON.stringify([scope.hostId, scope.threadId]);
@@ -106,6 +108,19 @@ export function installClientObservation(client: AppServerClient) {
 }
 export function observeRecovery(event: Readonly<Record<string,string|number>>) {
   const nativeStage = String(event.stage);
+  const host = typeof event.hostId === 'string' ? event.hostId : null;
+  if (host && enabled) {
+    if (nativeStage === 'host-ready') usableHosts.add(host);
+    if (usableHosts.has(host) && ['transport-unavailable','waiting','backoff','connecting','manual-block'].includes(nativeStage) && !connectionOutages.has(host))
+      connectionOutages.set(host, { id: createClientId(), started: performance.now() });
+    const outage = connectionOutages.get(host);
+    if (outage) {
+      observeEvent({ kind: 'recovery', recoveryId: outage.id, hostId: host, measurementScope: 'connection',
+        stage: nativeStage === 'settled' ? 'ready' : 'connecting', outcome: nativeStage === 'settled' ? 'ok' : 'progress',
+        durationMs: Math.max(0, performance.now() - outage.started) });
+      if (nativeStage === 'settled') connectionOutages.delete(host);
+    }
+  }
   const mapped: Record<string,string> = {'settled':'ready','host-ready':'initializing','history-started':'history','history-authoritative':'history','history-failed':'failed','history-backoff':'backoff','manual-block':'blocked'};
   const stage = mapped[nativeStage] ?? nativeStage;
   const stages = new Set(['connecting','initializing','backoff','blocked','queued','history','ready','failed']);
@@ -132,7 +147,7 @@ export function createObservabilityExtension(title = 'Platform monitoring'): Tru
     const onVisibility=()=>{if(document.visibilityState==='hidden'){clearTimeout(timer);timer=undefined;}else{observeEvent({kind:'producer'});schedule();}};
     document.addEventListener('visibilitychange',onVisibility);
     const onOnline=()=>schedule();window.addEventListener('online',onOnline);
-    api.signal.addEventListener('abort',()=>{enabled=false;clearTimeout(timer);timer=undefined;pending=[];recent=[];recoveryContexts.clear();pendingBytes=recentBytes=0;document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('online',onOnline);},{once:true});
+    api.signal.addEventListener('abort',()=>{enabled=false;clearTimeout(timer);timer=undefined;pending=[];recent=[];recoveryContexts.clear();connectionOutages.clear();usableHosts.clear();pendingBytes=recentBytes=0;document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('online',onOnline);},{once:true});
     observeEvent({kind:'producer'});
     if(enabled){
       for(const listener of enabledListeners)listener();
