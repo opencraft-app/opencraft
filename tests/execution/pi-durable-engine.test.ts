@@ -1274,3 +1274,14 @@ test("Pi Engine Host publishes a durable creation to another directory client", 
   assert.deepEqual(event.params.change.thread.turns, []);
   assert.equal(received.some(n => n.method === "item/started"), false);
 });
+
+test("older mixed-Host pages can read an empty Pi approval baseline without acquiring approval authority", async t => {
+  const f = await fixture(t, []);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const snapshot = await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools);
+  assert.equal(snapshot.threadId, thread.id);
+  assert.deepEqual(snapshot.requests, []);
+  assert.equal(snapshot.canRespond, false);
+  assert.deepEqual(await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools), snapshot);
+  await assert.rejects(f.engine.request("opencraft/interactions/respond", { threadId: thread.id, interactionId: "missing" }, noTools), /does not support/);
+});

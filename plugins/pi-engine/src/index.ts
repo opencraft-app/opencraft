@@ -2,7 +2,7 @@ import { queueProjection, type PiQueuedInput } from "./queue.js";
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
-import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
+import { TURN_RECOVERY_EXTENSION, SHARED_INTERACTIONS_READ } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort } from "@opencraft/host-schedules";
@@ -774,6 +774,11 @@ export class PiEngine {
     }
     if (method === "thread/unsubscribe" && !this.sessions.has(params.threadId)) return { status: "notLoaded" };
     const session = await this.session(params.threadId);
+    if (method === SHARED_INTERACTIONS_READ) {
+      // Older mixed-Host clients inherited the default engine's approval
+      // capability. Pi owns no shared approvals; this read grants no reply port.
+      return { threadId: session.id, epoch: "pi:no-shared-approvals", revision: 0, requests: [], canRespond: false };
+    }
     if (method === "thread/fork") {
       assertPiFields(params);
       if (params.ephemeral !== true || params.excludeTurns !== true || params.path != null || params.lastTurnId != null)

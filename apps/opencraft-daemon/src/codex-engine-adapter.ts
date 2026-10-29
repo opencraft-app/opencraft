@@ -1,10 +1,11 @@
+import { ProvisionalThreads } from "./provisional-threads.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { ExecutionLeaseStore, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
-import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
+import { serializeHistoryReply, isHistoryResponseTooLargeError, AppServerRpcError, threadUnavailableReason } from "@opencraft/appserver-client";
 import { TranscriptReadCache } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
@@ -119,9 +120,20 @@ const MAX_PENDING_SERVER_REQUESTS = 256;
 const DEFAULT_HISTORY_READ_TIMEOUT_MS = 30_000;
 const MAX_HISTORY_READ_TIMEOUT_MS = 120_000;
 
+interface SessionMcpCreation {
+  readonly configuration: RpcRecord;
+  bindThread?(threadId: string): void;
+  bind(threadId: string, inputId: string, executionId: string): void;
+  cancel(): void;
+}
+class SessionMcpRecoveryPending extends Error {
+  constructor() { super("The previous reply is recovering; input was not sent. Retry shortly."); }
+}
 interface SharedCodexRoutingOptions {
   /** Trusted Host composition. Never accepted from renderer requests. */
   readonly sessionMcp?: (threadId: string, inputId?: string, executionId?: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
+  readonly createSessionMcp?: () => SessionMcpCreation | Promise<SessionMcpCreation>;
+  readonly restoreSessionMcp?: (threadId: string) => SessionMcpCreation | null | Promise<SessionMcpCreation | null>;
   readonly observationComponent?: 'core' | 'gateway';
   readonly tokenUsage?: {
     readonly queryWorkerEntry?: string;
@@ -305,6 +317,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private queue: OpenCraftHostQueue | null = null;
   private schedules: ConversationSchedules | null = null;
   private hostState: OpenCraftHostStateDatabase | null = null;
+  private provisionalThreads: ProvisionalThreads | null = null;
   private get executionLeases(): ExecutionLeaseStore | null { return this.hostState ? new ExecutionLeaseStore(this.hostState.database) : null; }
   private async reconcileExecutionLeases(): Promise<void> {
     const store = this.executionLeases;
@@ -525,6 +538,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   get storageOutcomes(): readonly { name: string; outcome: DatabaseOutcome }[] {
     return [
       ...(this.hostState ? [{ name: "opencraft-host-state", outcome: this.hostState.outcome }] : []),
+      ...(this.provisionalThreads ? [{ name: "thread-creation-lifecycle", outcome: this.provisionalThreads.outcome }] : []),
       ...(this.tokenUsageState ? [{ name: "token-usage", outcome: this.tokenUsageState.outcome }] : []),
       ...(this.schedules ? [{ name: "conversation-schedules", outcome: this.schedules.outcome }] : []),
       ...(this.recovery ? [{ name: "interrupted-turn-recovery", outcome: this.recovery.outcome }] : []),
@@ -580,6 +594,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     this.hostState = new OpenCraftHostStateDatabase(dataRoot);
+    this.provisionalThreads = new ProvisionalThreads(dataRoot);
     this.executionLeases?.suspend();
     const adapter = this;
     const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
@@ -962,6 +977,30 @@ export class CodexEngineAdapter implements DuplexTransport {
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
     const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
       && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded" || historyParams.itemsView === "presentation") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
+    if (id !== null && this.initializedClients.has(clientId)
+      && (message.method === "thread/read" || message.method === "thread/resume")
+      && Object.keys(historyParams).every(key => ["threadId", "includeTurns", "excludeTurns", "watch", "initialTurnsPage", "historyReadId", "history", "path", "model", "modelProvider", "cwd"].includes(key))) {
+      const epoch = this.clientEpoch(clientId);
+      const provisional = await this.provisionalResult(string(historyParams.threadId), historyParams);
+      if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== epoch) return;
+      if (provisional && this.provisionalThreads?.get(string(historyParams.threadId))?.phase === "created") {
+        if (message.method === "thread/resume") {
+          // Native resume requires a rollout. Only a retained callback lane (or
+          // this connection's original subscription) can watch an empty Thread.
+          if (!this.nativeSubscribedThreads.has(string(historyParams.threadId))
+            && !this.nativeCore?.supportsOrchestration) {
+            this.emit({ id, error: { code: -32600, message: "Empty Thread recovery requires a retained native subscription" } }, clientId);
+            return;
+          }
+          this.nativeSubscribedThreads.add(string(historyParams.threadId));
+          this.subscribeThread(string(historyParams.threadId), clientId);
+          this.claimInteractionOwner(string(historyParams.threadId), clientId);
+        } else if (historyParams.watch === true) this.watchHistory(string(historyParams.threadId), clientId);
+        if (this.initializedClients.has(clientId)) this.emit({ id, result: { ...provisional,
+          ...(message.method === "thread/read" ? { initialTurnsPage: { data: [], nextCursor: null } } : {}) } }, clientId);
+        return;
+      }
+    }
     if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       // Cache hydration has its own reply; it must not retain the frame send lane.
@@ -1211,6 +1250,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
       const forward = async () => {
+        if (message.method === "thread/resume" && this.sessionMcpRetirements.has(string(params.threadId))) {
+          try {
+            if (this.sessionMcpRefreshes.has(string(params.threadId))) throw new SessionMcpRecoveryPending();
+            await this.prepareSessionMcp(string(params.threadId));
+          }
+          catch (cause) { this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId); return; }
+        }
         if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
         if (message.method === "thread/start" || message.method === "thread/fork") {
           try { this.validateSubmissionContext(context); }
@@ -1250,8 +1296,17 @@ export class CodexEngineAdapter implements DuplexTransport {
           }
         }
         if (message.method === "turn/start") {
-          try { await this.prepareSessionMcp(string(params.threadId)); }
-          catch { this.emit({ id, error: { code: -32000, message: "Session tools could not be prepared; input was not sent. Retry after this thread is idle." } }, clientId); return; }
+          try {
+            const threadId = string(params.threadId), inputId = string(params.clientUserMessageId);
+            const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+            await this.prepareSessionMcp(threadId, inputId, executionId);
+          } catch (cause) {
+            const recovering = cause instanceof SessionMcpRecoveryPending;
+            this.diagnostic({ event: "session-mcp-preparation-failed", category: recovering ? "recovering" : "unavailable",
+              nativeCode: typeof record(cause).code === "number" ? record(cause).code : null });
+            this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
+            return;
+          }
           if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
           this.validateSubmissionContext(context);
         }
@@ -1292,7 +1347,10 @@ export class CodexEngineAdapter implements DuplexTransport {
           this.cancelNativeRelease(threadId);
         }
         if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
-        try{await this.writePhysical({ ...message, id: physicalId });}
+        try{await this.writePhysical({ ...message, id: physicalId }, () => {
+          this.validateSubmissionContext(context);
+          return this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch;
+        });}
         catch(error){if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
       };
       if (message.method === "thread/resume") {
@@ -1438,6 +1496,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       await this.transcriptCache?.close(); this.transcriptCache = null;
+      this.provisionalThreads?.close(); this.provisionalThreads = null;
       this.catalogChanges.clear();
       this.durableCatalog?.close(); this.durableCatalog = null;
       await this.providerRetry?.close(); this.providerRetry = null;
@@ -1702,6 +1761,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (Number(generation.incarnation) < known) return;
       this.generationIncarnations.set(generation.generationId, Number(generation.incarnation));
     }
+    if (message.method === "turn/completed") {
+      const threadId = string(record(message.params).threadId);
+      const initial = this.sessionMcpInitial.get(threadId);
+      if (initial?.inputId) { initial.reservation.cancel(); this.sessionMcpInitial.delete(threadId); }
+    }
     if (message.method === "opencraft/codex/generation/lost") {
       const params = record(message.params), key = JSON.stringify([generation.routingEpoch, params.generationId, params.incarnation, params.connectionEpoch]);
       if (generation.routingEpoch !== this.generationRoutingEpoch || this.generationLosses.has(key)) return;
@@ -1719,6 +1783,16 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     const id = responseId(message.id);
     if (id !== null) {
+      const creation = this.sessionMcpCreations.get(String(id));
+      if (creation && typeof message.method !== "string") {
+        this.sessionMcpCreations.delete(String(id));
+        const threadId = string(record(record(message.result).thread).id);
+        if (threadId && !("error" in message)) {
+          creation.bindThread?.(threadId);
+          this.sessionMcpInitial.set(threadId, { reservation: creation });
+        }
+        else creation.cancel();
+      }
       const internal = this.internalRequests.get(String(id));
       if (internal && typeof message.method !== "string") {
         this.internalRequests.delete(String(id));
@@ -2137,7 +2211,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       && (this.threadClients.get(threadId)?.size ?? 0) === 0
       && ![...this.pending.values()].some(request => request.params.threadId === threadId
         && (request.method === "thread/resume" || request.method === "turn/start") && this.validClientRequest(request))
-      && !this.hasHostThreadDemand(threadId);
+      && !this.hasHostThreadDemand(threadId)
+      && !["created", "attempted"].includes(this.provisionalThreads?.get(threadId)?.phase ?? "");
   }
 
   private scheduleNativeRelease(threadId: string, minimumDelayMs = 0): void {
@@ -2487,6 +2562,13 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (method === "turn/start" && !this.ephemeralThreads.has(string(params.threadId))) {
       this.recovery?.started(string(params.threadId), string(record(record(result).turn).id), string(params.clientUserMessageId));
     }
+    if (method === "thread/start" && record(record(result).thread).ephemeral !== true) {
+      const threadId = string(record(record(result).thread).id);
+      if (threadId) this.provisionalThreads?.created(threadId, record(result));
+    }
+    if (method === "turn/start") this.provisionalThreads?.accepted(string(params.threadId), string(params.clientUserMessageId), string(record(record(result).turn).id));
+    if (method === "thread/list" && Array.isArray(record(result).data))
+      for (const thread of record(result).data as unknown[]) this.provisionalThreads?.persisted(string(record(thread).id));
     if (method === "thread/start") {
       const configuration = record(params.config)["mcp_servers.opencraft_session"];
       const threadId = string(record(record(result).thread).id);
@@ -3111,11 +3193,76 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   // Confirmed configuration belongs to this physical connection. The in-flight
   // map only coalesces preparation; neither map is a configuration authority.
+  private sessionMcpFailure(cause: unknown): RpcRecord {
+    const detail = record(cause);
+    const reason = threadUnavailableReason(new AppServerRpcError({ code: typeof detail.code === "number" ? detail.code : -32000,
+      message: errorMessage(cause), data: detail.data }));
+    const recovering = cause instanceof SessionMcpRecoveryPending;
+    return { code: reason === "archived" ? -32071 : reason ? -32600 : -32000,
+      message: reason ? "This conversation is unavailable; input was not sent."
+        : recovering ? cause.message : "Session tools are unavailable; input was not sent. Reconnect and retry.",
+      data: { code: reason === "archived" ? "THREAD_ARCHIVED" : reason ? "THREAD_NOT_FOUND"
+        : recovering ? "SESSION_TOOLS_RECOVERING" : "SESSION_TOOLS_UNAVAILABLE",
+        submissionOutcome: "rejected", retryable: recovering } };
+  }
+  private readonly sessionMcpCreations = new Map<string, SessionMcpCreation>();
+  private readonly sessionMcpInitial = new Map<string, { reservation: SessionMcpCreation; inputId?: string }>();
+  private readonly sessionMcpRetirements = new Map<string, RpcRecord>();
   private readonly sessionMcpConfigurations = new Map<string, unknown>();
   private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
   private sessionMcpGeneration = 0;
+  private async provisionalResult(threadId: string, params: RpcRecord = {}): Promise<RpcRecord | null> {
+    const store = this.provisionalThreads;
+    const created = store?.get(threadId);
+    if (!created || created.phase !== "created") return null;
+    const result = created.result, thread = record(result.thread);
+    if (params.history != null || ["model", "modelProvider", "cwd", "path"].some(key =>
+      params[key] != null && !isDeepStrictEqual(params[key], key === "path" ? thread.path : result[key] ?? thread[key]))) return null;
+    const loaded = record(await this.requestPhysical("thread/loaded/list", {}));
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created"
+      || !Array.isArray(loaded.data) || !loaded.data.includes(threadId)) return null;
+    // A native peer can accept input while this Host is absent. Positive
+    // current history always defeats the saved empty creation, even if this
+    // Host never observed that peer's Turn acknowledgement.
+    let live: RpcRecord = thread;
+    try {
+      live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: true })).thread);
+      if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
+      const turns = Array.isArray(live.turns) ? live.turns : [];
+      if (turns.length) {
+        const first = record(turns[0]);
+        store!.accepted(threadId, originalExecutionInputIds({ items: Array.isArray(first.items) ? first.items : [] })[0] ?? `native:${string(first.id)}`, string(first.id));
+        return null;
+      }
+    } catch (cause) {
+      if (!(cause instanceof AppServerRpcError) || cause.code !== -32600
+        || !/history_missing|no rollout|thread.*not found/iu.test(cause.message)) throw cause;
+      const stillLoaded = record(await this.requestPhysical("thread/loaded/list", {}));
+      if (!Array.isArray(stillLoaded.data) || !stillLoaded.data.includes(threadId)) return null;
+    }
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created") return null;
+    // Never hide a file that has appeared since creation. Normal history remains authoritative.
+    if (typeof live.path === "string" && existsSync(live.path)) {
+      store!.persisted(threadId); return null;
+    }
+    return { ...result, thread: { ...thread, turns: [], creationPhase: "created" } };
+  }
   private async prepareSessionMcp(threadId: string, inputId?: string, executionId?: string): Promise<void> {
     if (!threadId || !this.options.sessionMcp) return;
+    let initial = this.sessionMcpInitial.get(threadId);
+    if (!initial && this.provisionalThreads?.get(threadId)?.phase === "created") {
+      const generation = this.sessionMcpGeneration;
+      const reservation = await this.options.restoreSessionMcp?.(threadId);
+      if (generation !== this.sessionMcpGeneration) throw new Error("Thread creation belongs to an expired connection");
+      if (reservation) { initial = { reservation }; this.sessionMcpInitial.set(threadId, initial); }
+    }
+    if (initial && !this.sessionMcpRetirements.has(threadId) && (!inputId || !initial.inputId || initial.inputId === inputId)) {
+      if (inputId) {
+        if (!executionId) throw new Error("Session tools require an attested execution");
+        initial.reservation.bind(threadId, inputId, executionId); initial.inputId = inputId;
+      }
+      return;
+    }
     for (;;) {
       const pending = this.sessionMcpRefreshes.get(threadId);
       if (pending) {
@@ -3154,9 +3301,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const status = string(record(thread.status).type);
-    if (!["idle", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
+    if (!["idle", "systemError", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
     this.cancelNativeRelease(threadId);
-    const live = status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true }));
+    const retirement = this.sessionMcpRetirements.get(threadId);
+    if (retirement && status !== "notLoaded") throw new SessionMcpRecoveryPending();
+    const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
     const resume: RpcRecord = {};
     for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
       if (live[key] !== undefined) resume[key] = live[key];
@@ -3171,14 +3320,15 @@ export class CodexEngineAdapter implements DuplexTransport {
     // valid either. A partial failure must not make a later rollback look applied.
     this.sessionMcpConfigurations.delete(threadId);
     if (status !== "notLoaded") {
+      this.sessionMcpRetirements.set(threadId, live);
       await request("thread/unsubscribe", { threadId });
-      // Native keeps durable threads in its catalog after unsubscribe. The
-      // idle resume boundary rebuilds the session configuration without relying
-      // on thread/read or loaded/list as an unloading acknowledgement.
+      const unloaded = record(await request("thread/read", { threadId, includeTurns: false }));
+      if (string(record(record(unloaded.thread).status).type) !== "notLoaded") throw new SessionMcpRecoveryPending();
     }
     await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
       "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
     } });
+    this.sessionMcpRetirements.delete(threadId);
     if (Object.keys(live).length) {
       const settings: RpcRecord = { threadId };
       if (profile) settings.permissions = profile;
@@ -3189,14 +3339,26 @@ export class CodexEngineAdapter implements DuplexTransport {
       await request("thread/settings/update", settings);
     }
     this.sessionMcpConfigurations.set(threadId, configuration);
+    this.sessionMcpRetirements.delete(threadId);
+    this.sessionMcpInitial.get(threadId)?.reservation.cancel();
+    this.sessionMcpInitial.delete(threadId);
   }
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
+    if (message.method === "thread/start" && record(message.params).ephemeral !== true && this.options.createSessionMcp) {
+      const generation = this.sessionMcpGeneration;
+      const creation = await this.options.createSessionMcp();
+      if (generation !== this.sessionMcpGeneration) { creation.cancel(); throw new Error("Thread creation belongs to an expired connection"); }
+      const params = record(message.params);
+      params.config = { ...record(params.config), "mcp_servers.opencraft_session": creation.configuration };
+      this.sessionMcpCreations.set(String(message.id), creation);
+    }
     if (message.method === "turn/start") {
       const params = record(message.params), threadId = string(params.threadId);
       const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
       const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
-      await this.prepareSessionMcp(threadId, inputId, executionId);
+      try { await this.prepareSessionMcp(threadId, inputId, executionId); }
+      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message)); }
     }
     if ((this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && (message.method === "turn/start" || message.method === "turn/steer")) {
       const params=record(message.params),delegationId=this.options.collaboration?.inputDelegation?.(string(params.threadId),string(params.clientUserMessageId),string(params.expectedTurnId)||undefined);
@@ -3218,24 +3380,31 @@ export class CodexEngineAdapter implements DuplexTransport {
         message = { ...message, params: { ...params, summary: "auto" } };
       }
     }
-    if (admit && (!this.physicalAvailable || !admit())) throw new RecoveryNotSubmitted("Automatic recovery was revoked before native submission");
-    if (message.method === "turn/start" && this.executionLeases) {
-      const params = record(message.params);
-      const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
-      message = { ...message, params: { ...params, clientUserMessageId: inputId } };
-      // This durable write precedes the physical send: native tools may start before the ACK.
-      this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
+    try {
+      if (admit && (!this.physicalAvailable || !admit())) throw new RecoveryNotSubmitted("Automatic recovery was revoked before native submission");
+      if (message.method === "turn/start" && this.executionLeases) {
+        const params = record(message.params);
+        const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
+        message = { ...message, params: { ...params, clientUserMessageId: inputId } };
+        // This durable write precedes the physical send: native tools may start before the ACK.
+        this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
+      }
+      if (message.method === "turn/start") this.provisionalThreads?.attempted(string(record(message.params).threadId), string(record(message.params).clientUserMessageId));
+      if (this.options.kind === "remote") {
+        return await this.options.transport.send(JSON.stringify(message)).catch(() => {
+          this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
+          this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
+          throw new Error("Remote delivery outcome is unknown");
+        });
+      }
+      if (this.nativeCore) return await this.nativeTransport!.send(JSON.stringify(message));
+      if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
+      this.child.stdin.write(`${JSON.stringify(message)}\n`);
+    } catch (error) {
+      const creation = this.sessionMcpCreations.get(String(message.id));
+      if (creation) { creation.cancel(); this.sessionMcpCreations.delete(String(message.id)); }
+      throw error;
     }
-    if (this.options.kind === "remote") {
-      return this.options.transport.send(JSON.stringify(message)).catch(() => {
-        this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
-        this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
-        throw new Error("Remote delivery outcome is unknown");
-      });
-    }
-    if (this.nativeCore) return this.nativeTransport!.send(JSON.stringify(message));
-    if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
-    this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private emit(message: RpcRecord, clientId?: string, method = ""): void {
@@ -3268,6 +3437,10 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.sessionMcpGeneration += 1;
       this.sessionMcpConfigurations.clear();
       this.sessionMcpRefreshes.clear();
+      for (const creation of this.sessionMcpCreations.values()) creation.cancel();
+      for (const [threadId, initial] of this.sessionMcpInitial)
+        if (!initial.reservation.bindThread) initial.reservation.cancel();
+      this.sessionMcpCreations.clear(); this.sessionMcpInitial.clear(); this.sessionMcpRetirements.clear();
     }
     for (const listener of this.statusListeners) listener(status);
   }

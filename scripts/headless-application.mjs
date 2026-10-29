@@ -598,6 +598,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => options.createCodexTransport?.() ?? new CodexEngineAdapter({
+          createSessionMcp: async () => {
+            await capabilitiesReady;
+            const reservation = capabilityMcp.prepareExecution();
+            return { configuration: reservation.configuration,
+              bind: (threadId, inputId, executionId) => reservation.bind({ serverId: actorCollaboration.execution.serverId,
+                threadId, execution: { inputId, executionId } }),
+              cancel: () => reservation.cancel() };
+          },
           sessionMcp: async (threadId, inputId, executionId) => {
             await capabilitiesReady;
             const session = {serverId:actorCollaboration.execution.serverId, threadId, ...(inputId ? {execution:{inputId, ...(executionId ? {executionId} : {})}} : {})};
