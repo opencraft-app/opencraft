@@ -1147,3 +1147,33 @@ test("New chat recovers a stale Host claim once without recreating an accepted T
     } finally { await runtime.dispose(); bridge.close(); await server.close(); }
   }
 });
+
+
+test("a shared native status cannot export one local RPC's no-dispatch proof to Renderer claims", async () => {
+  const { JsonRpcAppServerClient } = await import("@opencraft/appserver-client");
+  const { asHostId } = await import("@opencraft/chat-core");
+  class Native extends TestTransport {
+    override async send(frame: string) {
+      await super.send(frame);
+      const request = JSON.parse(frame);
+      if (request.method === "initialize") this.receive(JSON.stringify({ id: request.id, result: { userAgent: "local-proof" } }));
+    }
+    retireWithLocalProof(id: string | number) {
+      this.publish({ state: "failed", failure: { code: "NATIVE_FAILED", recovery: "automatic", notDispatchedRequestId: id } });
+    }
+  }
+  const physical = new Native(), ports = createPortPair();
+  const server = new AppHostServer({ createTransport: () => physical });
+  server.accept(ports.host, "proof-scope");
+  const bridge = new MessagePortAppHostClient(ports.browser, "proof-scope");
+  const client = new JsonRpcAppServerClient({ hostId: asHostId("local"), transport: bridge.createTransport("local") });
+  try {
+    await client.connect({ clientInfo: { name: "proof-scope", version: "1" } });
+    const pending = client.request("thread/start", {});
+    const rejected = assert.rejects(pending, (error: any) => error.code === "TRANSPORT_ERROR");
+    while (!physical.sent.some(frame => JSON.parse(frame).method === "thread/start")) await new Promise(resolve => setImmediate(resolve));
+    const request = physical.sent.map(frame => JSON.parse(frame)).find(frame => frame.method === "thread/start");
+    physical.retireWithLocalProof(request.id);
+    await rejected;
+  } finally { client.close(); bridge.close(); await server.close(); }
+});
