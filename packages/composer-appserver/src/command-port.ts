@@ -389,7 +389,9 @@ export function createAppServerConversationCommandPort(
         const hermesCode = cause instanceof AppServerRpcError
           ? (cause.data as { hermesCode?: unknown } | undefined)?.hermesCode : undefined;
         if ((cause instanceof AppServerClientError && ["TIMEOUT", "TRANSPORT_ERROR", "ABORTED"].includes(cause.code))
-          || ["timeout", "disconnected", "disposed"].includes(String(hermesCode))) {
+          || ["timeout", "disconnected", "disposed"].includes(String(hermesCode))
+          || (cause instanceof AppServerRpcError && typeof cause.data === "object" && cause.data !== null
+            && "submissionOutcome" in cause.data && cause.data.submissionOutcome === "unknown")) {
           throw new SubmissionOutcomeUnknownError({ cause });
         }
         throw cause;

@@ -64,3 +64,26 @@ test("domain preauthorization is per tool, survives reservation binding, and nev
  assert.equal(calls,1);assert.equal(mcp.config({serverId:"s",threadId:"one"}),null);
  const defaults=mcp.prepare([ordinary]).configuration as any;assert.equal(defaults.tools,undefined);
 });
+
+
+test("creation MCP waits for one execution binding and never authorizes a staged or replaced execution", async t => {
+  const service = new SessionCapabilities(), seen: unknown[] = [];
+  service.register({ id: "execution-fixture", tools: session => session.execution?.inputId === "first" ? [tool] : [],
+    async call(session) { seen.push(session.execution); return "ok"; } });
+  const mcp = new SessionCapabilityMcp(service, randomBytes(32)); await mcp.listen(); t.after(() => mcp.close());
+  const reservation = mcp.prepareExecution(), config = reservation.configuration as any;
+  const client = new Client({ name: "creation", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.http_headers } }));
+  t.after(() => client.close());
+  assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, true);
+  let completed = false; const listing = client.listTools().then(result => { completed = true; return result; });
+  await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(completed, false);
+  const session = { serverId: "server", threadId: "new", execution: { inputId: "first", executionId: "execution-first" } };
+  reservation.bind(session); reservation.bind(session);
+  assert.deepEqual((await listing).tools.map(tool => tool.name), ["reply"]);
+  assert.throws(() => reservation.bind({ ...session, execution: { inputId: "second", executionId: "execution-second" } }), /already bound/);
+  assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, false);
+  assert.deepEqual(seen, [session.execution]);
+  reservation.cancel();
+  await assert.rejects(client.listTools());
+});

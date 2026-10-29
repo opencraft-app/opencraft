@@ -32,6 +32,10 @@ export class SessionCapabilityMcp {
   private readonly calls = new Set<Server>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
+  private readonly executionReservations = new Map<string, {
+    bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
+    session?: CapabilitySession; expiresAt: number;
+  }>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
     private readonly options: { descriptorPath?: string; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown> } = {}) {
@@ -48,7 +52,7 @@ export class SessionCapabilityMcp {
   }
   token(session: CapabilitySession): string { return sessionCapabilityToken(this.key, session); }
   private bindingToken(id: string): string { return this.sign(["binding", id]); }
-  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string } | null {
+  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string; executionReservation?: Promise<CapabilitySession> } | null {
     const auth = request.headers.authorization;
     if (typeof auth !== "string" || auth.length > 4096 || !auth.startsWith("Bearer ")) return null;
     const parts = auth.slice(7).split(".");
@@ -68,6 +72,11 @@ export class SessionCapabilityMcp {
         return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }) };
       }
       if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
+      if (pair[0] === "execution-binding" && pair.length === 2) {
+        const reservation = this.executionReservations.get(pair[1]);
+        if (!reservation || (!reservation.session && reservation.expiresAt <= Date.now())) return null;
+        return { session: reservation.session ?? null, executionReservation: reservation.bound };
+      }
       if (pair[0] === "binding" && pair.length === 2) {
         const session = this.bindings?.get(pair[1]) ?? this.memoryBindings.get(pair[1]);
         if (session) return { session, reservationId: pair[1] };
@@ -118,6 +127,32 @@ export class SessionCapabilityMcp {
       cancel: () => { this.pending.delete(id); },
     };
   }
+  /** Creation installs an opaque credential before a Thread ID exists. The Host
+   * binds it once to the first attested execution before dispatching that input.
+   * Native MCP startup may list tools before thread/start returns; only that
+   * read waits for binding. No invocation can run with an unbound credential. */
+  prepareExecution() {
+    for (const [id, value] of this.executionReservations)
+      if (!value.session && value.expiresAt <= Date.now()) this.executionReservations.delete(id);
+    if (this.executionReservations.size >= 256) throw new Error("Too many pending execution capability reservations");
+    const id = randomUUID();
+    let resolve!: (session: CapabilitySession) => void;
+    const bound = new Promise<CapabilitySession>(done => { resolve = done; });
+    const reservation = { bound, resolve, expiresAt: Date.now() + 60_000, session: undefined as CapabilitySession | undefined };
+    this.executionReservations.set(id, reservation);
+    return { configuration: this.configuration(this.sign(["execution-binding", id]), []),
+      bind: (session: CapabilitySession) => {
+        if (this.executionReservations.get(id) !== reservation || (!reservation.session && reservation.expiresAt <= Date.now())
+          || !session.execution?.inputId || !session.execution.executionId) throw new Error("Execution capability reservation is unavailable");
+        if (reservation.session) {
+          if (JSON.stringify(reservation.session) !== JSON.stringify(session)) throw new Error("Execution capability reservation is already bound");
+          return;
+        }
+        reservation.session = structuredClone(session); resolve(reservation.session);
+      },
+      cancel: () => { this.executionReservations.delete(id); },
+    };
+  }
   async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
@@ -159,9 +194,20 @@ export class SessionCapabilityMcp {
       response.end(JSON.stringify({ allowed: this.options.authorizeInput?.(authenticated.session, inputId) === true })); return;
     }
     const mcp = new Server({ name: "opencraft-session", version: "1.0.0" }, { capabilities: { tools: {} } });
-    mcp.setRequestHandler(ListToolsRequestSchema, async () => {
-      if (authenticated.session) await this.capabilities.refresh(authenticated.session);
-      const tools = authenticated.session ? this.capabilities.tools(authenticated.session) : authenticated.tools ?? [];
+    mcp.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+      let session = authenticated.session;
+      if (!session && authenticated.executionReservation) {
+        session = await new Promise<CapabilitySession>((resolve, reject) => {
+          const abort = () => reject(new Error("Capability declaration wait was cancelled"));
+          if (extra.signal.aborted) { abort(); return; }
+          extra.signal.addEventListener("abort", abort, { once: true });
+          void authenticated.executionReservation!.then(value => {
+            extra.signal.removeEventListener("abort", abort); resolve(value);
+          });
+        });
+      }
+      if (session) await this.capabilities.refresh(session);
+      const tools = session ? this.capabilities.tools(session) : authenticated.tools ?? [];
       const staged = authenticated.reservationId ? this.pending.get(authenticated.reservationId) : undefined;
       if (tools.length && authenticated.reservationId) this.pending.delete(authenticated.reservationId);
       const visible = tools.length ? tools : staged && staged.expiresAt > Date.now() ? staged.tools : [];
@@ -186,6 +232,7 @@ export class SessionCapabilityMcp {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     }
     this.url = undefined;
+    this.executionReservations.clear();
     await Promise.allSettled([...this.calls].map(server => server.close()));
     await new Promise<void>(resolve => { this.server.close(() => resolve()); this.server.closeAllConnections(); });
   }

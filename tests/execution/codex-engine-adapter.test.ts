@@ -31,7 +31,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -45,6 +45,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     nativeSubscriptionGraceMs,
     tokenUsage,
     sessionMcp,
+    createSessionMcp,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
@@ -1718,4 +1719,49 @@ test("Codex provider retry classifies terminal native failures and respects stop
       }
     }
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("client creation installs MCP and its first input binds execution without a native resume", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-first-mcp-")), frames: Array<Record<string, unknown>> = [];
+  const bound: string[][] = []; let cancelled = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => { throw new Error("First input must use its creation credential"); },
+    () => ({ configuration: { url: "http://fixture/mcp" }, bind: (...args) => { bound.push(args); }, cancel() { cancelled++; } }));
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const created = await request("create-mcp", "thread/start", { cwd: root, testNoServerRequest: true });
+    const threadId = (created.result as any).thread.id;
+    const started = await request("first-input", "turn/start", { threadId, clientUserMessageId: "first-input", input: [{ type: "text", text: "synthetic" }] });
+    assert.equal(started.error, undefined);
+    assert.ok(bound.length > 0); assert.equal(bound[0]![0], threadId); assert.equal(bound[0]![1], "first-input"); assert.ok(bound[0]![2]);
+    const counts = await request("mcp-counts", "test/readMethodCounts", {});
+    assert.equal((counts.result as any)["thread/resume"] ?? 0, 0);
+    const inputs = await request("mcp-inputs", "test/readAcceptedInputs", {});
+    assert.equal((inputs.result as any).data.length, 1);
+  } finally { await adapter.close(); assert.equal(cancelled, 1); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("a disconnected creator cannot leak its pending MCP reservation or send a late thread/start", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-retired-mcp-")), frames: Array<Record<string, unknown>> = [];
+  let entered!: () => void, release!: () => void, cancelled = 0;
+  const preparing = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => null,
+    async () => { entered(); await gate; return { configuration: { url: "http://fixture/mcp" }, bind() {}, cancel() { cancelled++; } }; });
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const creation = adapter.send(JSON.stringify({ id: "retired-create", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await preparing; (adapter as any).disconnectClient("writer"); release(); await assert.rejects(creation, /revoked before native submission/);
+    assert.equal(cancelled, 1);
+    await initializeClient(adapter, frames, "reader");
+    await adapter.send(JSON.stringify({ id: "retired-counts", method: "test/readMethodCounts", params: {}, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    const counts = await waitFor(frames, frame => frame.id === "retired-counts");
+    assert.equal((counts.result as any)["thread/start"] ?? 0, 0);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

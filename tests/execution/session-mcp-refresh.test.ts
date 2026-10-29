@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { RecoveryNotSubmitted } from "@opencraft/host-recovery";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
@@ -9,14 +10,16 @@ function fixture() {
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
   Object.assign(adapter, { options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
-    sessionMcpRefreshes: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
+    sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
     async requestPhysical(method: string, params: any) {
       calls.push({ method, params });
       if (method === "thread/read") { assert.equal(params.includeTurns, false); return { thread: { status: { type: status } } }; }
       if (method === "thread/resume") {
+        status = "idle";
         assert.equal(params.excludeTurns, true);
         return { model: "preserved", cwd: "/original", approvalPolicy: "on-request", activePermissionProfile: { id: "profile" }, reasoningEffort: "high" };
       }
+      if (method === "thread/unsubscribe") status = "notLoaded";
       return {};
     } });
   return { adapter, calls, setConfig(value: any) { configuration = value; }, setStatus(value: string) { status = value; } };
@@ -57,7 +60,7 @@ test("failed settings restoration never marks configuration applied or starts a 
   const f = fixture(), request = f.adapter.requestPhysical;
   let fail = true;
   f.adapter.requestPhysical = async (method: string, params: any) => { if (method === "thread/settings/update" && fail) throw new Error("settings unavailable"); return request(method, params); };
-  await assert.rejects(f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one" } }), /settings unavailable/);
+  await assert.rejects(f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one" } }), (cause: unknown) => cause instanceof RecoveryNotSubmitted);
   assert.equal(f.adapter.sessionMcpConfigurations.has("one"), false); assert.equal(f.adapter.sessionMcpRefreshes.size, 0);
   assert(!f.calls.some(c => c.method === "turn/start")); fail = false;
   await f.adapter.prepareSessionMcp("one"); assert.equal(applied(f).length, 2);
@@ -122,4 +125,66 @@ test("early MCP reservation retains the attested standalone native incarnation",
   await f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one", clientUserMessageId: "input" } });
   assert.deepEqual(origins, [["one", "input", "attested-native"], ["one", "input", "attested-native"]]);
   assert.deepEqual(prepared, ["one", "input", "execution"]);
+});
+
+
+test("creation capabilities bind the first execution without reading or resuming an empty thread", async () => {
+  const f = fixture(), bindings: unknown[][] = []; let cancelled = 0;
+  const reservation = { configuration: config(), bind(...args: unknown[]) { bindings.push(args); }, cancel() { cancelled++; } };
+  f.adapter.sessionMcpInitial.set("new", { reservation });
+  f.adapter.sessionMcpConfigurations.set("new", config());
+  await f.adapter.prepareSessionMcp("new");
+  await f.adapter.prepareSessionMcp("new", "first", "execution-first");
+  await f.adapter.prepareSessionMcp("new", "first", "execution-first");
+  assert.deepEqual(bindings, [["new", "first", "execution-first"], ["new", "first", "execution-first"]]);
+  assert.equal(f.calls.length, 0);
+  f.setConfig(config("next"));
+  await f.adapter.prepareSessionMcp("new", "second", "execution-second");
+  assert.equal(applied(f).length, 1); assert.equal(cancelled, 1);
+  assert.equal(f.adapter.sessionMcpInitial.has("new"), false);
+});
+
+test("settled failed threads drain once, preserve settings, and apply tools after native unload", async () => {
+  const f = fixture(), request = f.adapter.requestPhysical;
+  f.setStatus("systemError");
+  let draining = true;
+  f.adapter.requestPhysical = async (method: string, params: any) => {
+    const result = await request(method, params);
+    if (method === "thread/unsubscribe" && draining) f.setStatus("systemError");
+    return result;
+  };
+  await assert.rejects(f.adapter.prepareSessionMcp("one"), /recovering/);
+  await assert.rejects(f.adapter.prepareSessionMcp("one"), /recovering/);
+  assert.equal(f.calls.filter(c => c.method === "thread/unsubscribe").length, 1);
+  assert.equal(f.calls.filter(c => c.method === "thread/resume").length, 1);
+  assert.equal(applied(f).length, 0);
+  draining = false; f.setStatus("notLoaded");
+  await f.adapter.prepareSessionMcp("one");
+  assert.equal(applied(f).length, 1);
+  assert.equal(applied(f)[0]!.params.model, "preserved");
+  assert.equal(f.adapter.sessionMcpRetirements.size, 0);
+});
+
+
+test("tool preparation preserves missing and archived thread classification without exposing native details", () => {
+  const f = fixture();
+  for (const [native, expected] of [
+    [{ code: -32600, message: "no rollout found for thread id private-thread" }, "THREAD_NOT_FOUND"],
+    [{ code: -32600, message: "sanitized", data: { code: "THREAD_NOT_FOUND" } }, "THREAD_NOT_FOUND"],
+    [{ code: -32071, message: "private-thread archived" }, "THREAD_ARCHIVED"],
+  ] as const) {
+    const cause = Object.assign(new Error(native.message), native);
+    const reply = f.adapter.sessionMcpFailure(cause);
+    assert.equal(reply.data.code, expected); assert.equal(reply.data.retryable, false);
+    assert.equal(reply.data.submissionOutcome, "rejected");
+    assert.doesNotMatch(JSON.stringify(reply), /private-thread/);
+  }
+});
+
+
+test("queued input tool-preflight failure is definitely not dispatched, never an ambiguous execution", async () => {
+  const f = fixture(); f.setStatus("active");
+  await assert.rejects(f.adapter.writePhysical({ method: "turn/start", params: { threadId: "one", clientUserMessageId: "queued-input" } }),
+    (cause: unknown) => cause instanceof RecoveryNotSubmitted);
+  assert(!f.calls.some(call => call.method === "turn/start"));
 });
