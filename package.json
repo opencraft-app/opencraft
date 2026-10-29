@@ -9,6 +9,7 @@
     "plugins/*"
   ],
   "allowScripts": {
+    "esbuild@0.18.20": true,
     "@parcel/watcher@2.6.0": true,
     "core-js@3.50.0": false,
     "core-js@3.51.0": false,
