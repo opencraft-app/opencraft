@@ -62,7 +62,13 @@ test("partial legacy shared DB failure rolls back and keeps source and pre-write
     const read = new DatabaseSync(path, { readOnly: true });
     assert.equal(read.prepare("SELECT client_message_id FROM message_senders").get()?.client_message_id, "m");
     assert.equal(read.prepare("SELECT name FROM sqlite_master WHERE name='schema_migrations'").get(), undefined); read.close();
-    assert.ok((await readdir(root)).some(name => name.includes(".pre-v15-")));
+    const snapshots = (await readdir(root)).filter(name => /^codex-host-queue\.sqlite\.pre-v\d+-.*\.sqlite$/u.test(name));
+    assert.equal(snapshots.length, 1, "failed conversion retains its original recovery point");
+    const snapshot = new DatabaseSync(join(root, snapshots[0]!), { readOnly: true });
+    try {
+      assert.equal(snapshot.prepare("SELECT client_message_id FROM message_senders").get()?.client_message_id, "m");
+      assert.equal(snapshot.prepare("SELECT name FROM sqlite_master WHERE name='schema_migrations'").get(), undefined);
+    } finally { snapshot.close(); }
     assert.ok(!(await readdir(root)).some(name => name.includes(".legacy-")));
     const retry = new OpenCraftHostStateDatabase(root); assert.equal(retry.outcome.status, "migrated"); retry.close();
   } finally { await rm(root, { recursive: true, force: true }); }
