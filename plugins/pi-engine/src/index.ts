@@ -1,4 +1,5 @@
 import { queueProjection, type PiQueuedInput } from "./queue.js";
+import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
@@ -114,7 +115,7 @@ export class PiEngine {
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
-  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  constructor(private readonly options: { dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -249,6 +250,7 @@ export class PiEngine {
     if (session.ephemeral && session.failed) throw new Error("Temporary Pi session is no longer available");
     return session.starting ??= (async () => {
       const native = await PiDurableSession.open({ threadId: session.id, cwd: session.cwd, file: join(this.options.directory, `${session.id}.sqlite`),
+        executionEnvironment: this.options.executionEnvironment, projectId: session.projectId ?? null,
         ephemeral: session.ephemeral, inherited: session.inherited, admissionOpen: this.admissionOpen, admitBackground: operation => this.admit(operation),
         agentDirectory: this.options.modelDirectory ?? this.options.directory, models: await this.modelsRuntime, tools: [...session.tools, ...this.hostTools(session)],
         prepareRecovery: async snapshot => {

@@ -1,3 +1,4 @@
+import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -11,6 +12,7 @@ import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-proto
 import { AcpStdioTransport, type AcpObject as Value } from "./transport.js";
 
 export interface AcpEngineOptions {
+  executionEnvironment?: ExecutionEnvironmentRuntime;
   id?: "acp" | "dsh-acp" | "claude-code";
   label?: string;
   command: string;
@@ -57,6 +59,10 @@ export class AcpEngine implements ExecutionEngineProvider {
   } : {}) }; }
   readonly inputs: HostInputPort;
   private transport: AcpStdioTransport;
+  private readonly sessionTransports = new Map<string, AcpStdioTransport>();
+  private readonly sessionEnvironments = new Map<string, ExecutionEnvironmentSnapshot>();
+  private native(session: Session): AcpStdioTransport { return this.sessionTransports.get(session.id) ?? this.transport; }
+  get processIds(): number[] { return [this.transport, ...this.sessionTransports.values()].flatMap(transport => transport.pid ? [transport.pid] : []); }
   private readonly sessions = new Map<string, Session>();
   private readonly pendingMcp = new Map<string, Session>();
   private readonly runtime = new Map<string, Runtime>();
@@ -85,7 +91,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   setOrchestration(port: AcpOrchestrationPort): void { this.orchestration = port; }
   get driverKind(): "acp" | "claude-code" { return this.id === "claude-code" ? "claude-code" : "acp"; }
   get occupancy() {
-    return { nativeOutcomeUnknown: this.nativeOutcomeUnknown ? 1 : 0, storageUnknown: this.persistenceFailed ? 1 : 0, unconfirmedTurns: [...this.sessions.values()].filter(session => { const active = this.runtime.get(session.id)?.active; return active ? active.status === "unconfirmed" : session.lastTurn?.status === "inProgress"; }).length, ...this.transport.occupancy, activeTurns: [...this.runtime.values()].filter(state => state.active?.status === "inProgress").length,
+    return { nativeOutcomeUnknown: this.nativeOutcomeUnknown ? 1 : 0, storageUnknown: this.persistenceFailed ? 1 : 0, unconfirmedTurns: [...this.sessions.values()].filter(session => { const active = this.runtime.get(session.id)?.active; return active ? active.status === "unconfirmed" : session.lastTurn?.status === "inProgress"; }).length, ...Object.fromEntries(Object.keys(this.transport.occupancy).map(key => [key, [this.transport, ...this.sessionTransports.values()].reduce((count, transport) => count + (transport.occupancy as Record<string, number>)[key], 0)])), activeTurns: [...this.runtime.values()].filter(state => state.active?.status === "inProgress").length,
       pendingCallbacks: this.activeCallbacks, pendingCreations: this.creations.size, preparedTickets: this.preparations.size, activeAdmissions: this.activeAdmissions,
       unconfirmedInputs: [...this.sessions.values()].reduce((sum, session) => sum + Object.values(session.receipts).filter(receipt => receipt.state === "unknown").length, 0) };
   }
@@ -133,9 +139,11 @@ export class AcpEngine implements ExecutionEngineProvider {
     void pending.finally(() => { if (this.inputCalls.get(key) === pending) this.inputCalls.delete(key); }).catch(() => {});
     return pending;
   }
-  private createTransport(): AcpStdioTransport {
+  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string): AcpStdioTransport {
     return new AcpStdioTransport({ ...this.options,
-      onNotification: (method, params) => this.update(method, params),
+      env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
+      redactError: environment ? message => environment.redact(message) : undefined,
+      onNotification: (method, params) => this.update(method, params, threadId),
       onRequest: async (method, params) => {
         if (method !== "session/request_permission") return fault("Unsupported ACP client request", -32601);
         const choices = Array.isArray(params.options) ? params.options : [];
@@ -147,7 +155,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         void this.persistJson(join(this.options.dataDirectory, "native-uncertainty.json"), { unknown: true }).catch(() => {});
       },
       onExit: () => {
-        for (const [id, state] of this.runtime) if (state.active?.status === "inProgress") {
+        for (const [id, state] of this.runtime) if ((!threadId || threadId === id) && state.active?.status === "inProgress") {
           state.active.status = "failed";
           this.notify("turn/completed", { threadId: id, turn: this.turn(state), error: { message: "ACP engine connection lost; outcome unconfirmed" } });
           state.loaded = false;
@@ -162,7 +170,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   executionObservation(threadId: string) {
     this.session(threadId);
     const active = this.state(threadId).active;
-    return {pid:this.processId, turn:active ? {id:active.id,status:active.status,inputId:active.inputId ?? null} : null};
+    return {pid:this.native(this.session(threadId)).pid, turn:active ? {id:active.id,status:active.status,inputId:active.inputId ?? null} : null};
   }
   ownsThread(id: string): boolean { return id.startsWith(this.threadPrefix); }
   ownsModel(id: string): boolean { return id.startsWith(this.modelPrefix); }
@@ -307,8 +315,18 @@ export class AcpEngine implements ExecutionEngineProvider {
         const tools = this.validateTools([...(params.dynamicTools ?? []), ...(this.orchestration?.tools ?? []).filter(tool => !(params.dynamicTools ?? []).some((entry: Value) => entry.name === tool.name))]);
         const id = this.threadPrefix + randomUUID();
         this.pendingMcp.set(id, { id, tools } as Session);
+        let transport = this.transport;
+        if (this.options.executionEnvironment) {
+          const envelope = params[EXECUTION_ENVIRONMENT_FIELD];
+          const scope = envelope === undefined ? { account: null, hostId: 'opencraft-server', projectId: params.projectId ?? null, threadId: null }
+            : this.options.executionEnvironment.open(envelope, 'opencraft-server', 'thread/start', params);
+          const environment = this.options.executionEnvironment.snapshot(scope);
+          transport = this.createTransport(environment, id);
+          this.sessionEnvironments.set(id, environment); this.sessionTransports.set(id, transport);
+          try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
+        }
         let result: Value;
-        try { result = await this.transport.request("session/new", { cwd, mcpServers: tools.length ? [this.mcp(id)] : [] }); }
+        try { result = await transport.request("session/new", { cwd, mcpServers: tools.length ? [this.mcp(id)] : [] }); }
         finally { this.pendingMcp.delete(id); }
         if (typeof result.sessionId !== "string" || !result.sessionId) throw new Error("ACP returned an invalid session id");
         const now = Math.floor(Date.now() / 1000);
@@ -360,7 +378,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "turn/interrupt") {
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
-      if (runtime.active?.status === "inProgress") this.transport.notify("session/cancel", { sessionId: session.nativeId });
+      if (runtime.active?.status === "inProgress") this.native(session).notify("session/cancel", { sessionId: session.nativeId });
       return {};
     }
     if (method === "opencraft/driver/status") return this.snapshot(session.id);
@@ -380,20 +398,29 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private async setModel(session: Session, model: string): Promise<void> {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
-    await this.transport.request("session/set_config_option", { sessionId: session.nativeId, configId: "model", value: model.slice(this.modelPrefix.length) });
+    await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: "model", value: model.slice(this.modelPrefix.length) });
     session.model = model; await this.save(session);
   }
   private async resume(session: Session): Promise<void> {
     await this.start(); const runtime = this.state(session.id);
+    if (this.options.executionEnvironment && !this.sessionTransports.has(session.id)) {
+      const environment = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id));
+      const transport = this.createTransport(environment, session.id);
+      await transport.start(); this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
+    }
     if (runtime.loaded) return;
     const sessions = value(this.capabilities.sessionCapabilities);
     const method = sessions.resume ? "session/resume" : this.capabilities.loadSession ? "session/load" : null;
     if (!method) return fault("ACP peer cannot resume persisted sessions", -32601);
-    await this.transport.request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
+    await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
     runtime.loaded = true;
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string): Promise<any> {
     await this.resume(session); const runtime = this.state(session.id);
+    if (this.options.executionEnvironment) {
+      const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
+      if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
+    }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress" };
     const active = runtime.active;
@@ -402,7 +429,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     session.lastTurn = { id: active.id, status: active.status };
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
-    void this.transport.request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
+    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
       session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});
@@ -417,9 +444,9 @@ export class AcpEngine implements ExecutionEngineProvider {
     });
     return { turn: this.turn(runtime) };
   }
-  private update(method: string, params: Value): void {
+  private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;
-    const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId); if (!session) return;
+    const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId)); if (!session) return;
     const runtime = this.state(session.id), active = runtime.active; if (!active || active.status !== "inProgress") return;
     const update = value(params.update), content = value(update.content);
     if (["agent_message_chunk", "agent_thought_chunk"].includes(update.sessionUpdate) && content.type === "text" && typeof content.text === "string") {
@@ -521,7 +548,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (!this.processId) return;
       if (!this.supportsResume) throw new Error("ACP peer cannot resume persisted sessions; suspension is unavailable");
       await this.persistence;
-      await this.transport.close();
+      await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); this.sessionTransports.clear(); this.sessionEnvironments.clear();
       for (const state of this.runtime.values()) state.loaded = false;
       this.transport = this.createTransport(); this.started = null;
     } finally { this.suspending = false; }
@@ -530,7 +557,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!this.toolServer) return;
     this.toolServer.closeAllConnections(); await new Promise<void>(resolve => this.toolServer!.close(() => resolve())); this.toolServer = undefined;
   }
-  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await this.transport.close(); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
+  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
 }
 
 /** Explicit DSH ACP launch. The previous web generation remains a separate owner. */

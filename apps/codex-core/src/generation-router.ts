@@ -210,6 +210,11 @@ class RoutingSession {
       const { peer } = await this.peer(ticket.generationId);
       this.emit({ id, result: await peer.call(method, params) }); return;
     }
+    if (method === "opencraft/environment/capability") {
+      const route = text(params.threadId) ? await this.findThread(text(params.threadId)) : null;
+      const health = await this.router.runtime.ensure(route?.generationId ?? this.registry.current().generation.id);
+      this.emit({ id, result: { supported: health.environmentVariablesVersion === 1 } }); return;
+    }
     if (method === "thread/list") { this.emit({ id, result: await this.listThreads(params) }); return; }
     if (method === "thread/loaded/list") {
       const data = new Set<string>();

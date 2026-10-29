@@ -334,6 +334,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 
 export function createTerminalWorkbenchPanelPlugin(
   registry: WorkbenchTerminalSessionRegistry,
+  resolveScope?: (ownerId: string) => { threadId?: string | null; projectId?: string | null },
 ) {
   const TerminalPanel = createTerminalPanel(registry);
   const activeTerminalSessionId = (state: ConversationPanelState): string | null => {
@@ -397,7 +398,7 @@ export function createTerminalWorkbenchPanelPlugin(
         creationLabel: "Terminal",
         run: (context) => {
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
-            resourceOwnerId: context.resourceOwnerId });
+            resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });
           observePanelOwner(context.ownerId);
         },

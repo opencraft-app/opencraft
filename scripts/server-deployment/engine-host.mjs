@@ -1,3 +1,4 @@
+import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -61,7 +62,7 @@ export async function startIndependentEngineHost(options) {
     const capabilities = new RemoteSessionCapabilities(dataDirectory, scope);
     pi = new PiEngine({
       ...(await createPiModelConfiguration(join(dataDirectory, 'models'), join(dataDirectory, 'pi'))),
-      admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
+      executionEnvironment: ExecutionEnvironmentRuntime.open(dataDirectory), admission: handoff, dataDirectory, directory: join(dataDirectory, 'pi'),
       attachmentDirectory: join(dataDirectory, 'agent', 'attachments'),
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,

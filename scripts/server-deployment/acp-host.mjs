@@ -1,3 +1,4 @@
+import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -43,6 +44,7 @@ export async function startIndependentAcpHost(options) {
     provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
+      config.executionEnvironment = ExecutionEnvironmentRuntime.open(identityDirectory);
       // The runtime that supplies the ACP profile is explicit and versioned by
       // the operator. Never replace or restart the previous DSH web owner.
       if (id === 'dsh-acp') {
