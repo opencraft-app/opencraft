@@ -339,6 +339,7 @@ export function createComposerController(
   let draft = restoreDraft(target);
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
+  const failedSubmissions = new Map<string, SubmitIntent>();
   const listeners = new Set<() => void>();
   const interactionListeners = new Set<() => void>();
   const disposeListeners = new Set<() => void>();
@@ -467,6 +468,7 @@ export function createComposerController(
       if (action.type === "reset-all") {
         submissionContinuation = null;
         draftCache.clear();
+        failedSubmissions.clear();
         publish(createDraft(draft.target, services));
         return;
       }
@@ -493,7 +495,10 @@ export function createComposerController(
         publish(restored ?? restoreDraft(action.target));
         return;
       }
-      if (action.type === "clear") draftCache.delete(encodeComposerTarget(draft.target));
+      if (action.type === "clear") {
+        draftCache.delete(encodeComposerTarget(draft.target));
+        failedSubmissions.delete(draft.id);
+      }
       publish(reduce(draft, action, services));
     },
     getDraftAttachment(draftId, attachmentId) {
@@ -544,6 +549,13 @@ export function createComposerController(
         throw new Error(
           "Composer draft cannot be submitted in its current state",
         );
+      const previous = failedSubmissions.get(draft.id);
+      if (draft.lifecycle.phase === "failed" && previous
+        && encodeComposerTarget(previous.target) === encodeComposerTarget(draft.target)
+        && previous.document === draft.document && previous.attachments === draft.attachments
+        && previous.context === draft.context && previous.selections === draft.selections
+        && previous.options === draft.options) return previous;
+      failedSubmissions.delete(draft.id);
       return {
         commandId: services.createId(),
         clientMessageId: services.createId(),
@@ -568,6 +580,8 @@ export function createComposerController(
       const sameContent = owner.document === intent.document
         && owner.attachments === intent.attachments
         && owner.context === intent.context;
+      if (result.status === "failed" && sameContent) failedSubmissions.set(draftId, intent);
+      else failedSubmissions.delete(draftId);
       const next = result.status === "accepted" && sameContent
         ? reduce(owner, { type: "clear" }, services)
         : reduce(owner, {
@@ -661,6 +675,7 @@ export function createComposerController(
       interactionListeners.clear();
       listeners.clear();
       draftCache.clear();
+      failedSubmissions.clear();
       view = null;
     },
   };

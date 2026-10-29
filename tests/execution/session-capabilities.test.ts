@@ -87,3 +87,54 @@ test("creation MCP waits for one execution binding and never authorizes a staged
   reservation.cancel();
   await assert.rejects(client.listTools());
 });
+
+test("a creation reservation keeps its endpoint and binds its first execution after listener replacement", async t => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { CapabilityBindings } = await import("../../packages/session-capabilities/src/bindings.js");
+  const root = await mkdtemp(join(tmpdir(), "creation-capabilities-"));
+  const path = join(root, "bindings.sqlite"), key = randomBytes(32), options = { descriptorPath: join(root, "endpoint.json"), retainEndpoint: true };
+  const service = new SessionCapabilities(); let calls = 0;
+  service.register({ id: "first", tools: session => session.execution?.inputId === "first" ? [tool] : [],
+    async call(session) { assert.equal(session.execution?.executionId, "native-first"); calls++; return {}; } });
+  let bindings = new CapabilityBindings(path), mcp = new SessionCapabilityMcp(service, key, bindings, options);
+  t.after(async () => { await mcp.close(); bindings.close(); await rm(root, { recursive: true, force: true }); });
+  await mcp.listen();
+  const scope = { serverId: "server", threadId: "new" }, original = mcp.prepareExecution();
+  original.bindThread(scope);
+  const config = original.configuration as any;
+  await mcp.close(); bindings.close();
+  bindings = new CapabilityBindings(path); mcp = new SessionCapabilityMcp(service, key, bindings, options);
+  await mcp.listen();
+  const restored = mcp.restoreExecution(scope); assert.ok(restored);
+  assert.deepEqual(restored.configuration, config, "the original native thread keeps its installed MCP configuration");
+  assert.equal(mcp.restoreExecution({ ...scope, threadId: "other" }), null);
+  restored.bind({ ...scope, execution: { inputId: "first", executionId: "native-first" } });
+  assert.throws(() => restored.bind({ ...scope, execution: { inputId: "second", executionId: "other" } }), /already bound/);
+  const client = new Client({ name: "creation-fixture", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.http_headers } }));
+  try { assert.equal((await client.callTool({ name: "reply", arguments: { text: "synthetic" } })).isError, false); }
+  finally { await client.close(); }
+  assert.equal(calls, 1);
+  restored.cancel(); assert.equal(mcp.restoreExecution(scope), null);
+});
+
+test("upgrading a v1 binding database preserves its existing session identity", async t => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+  const { openManagedDatabase } = await import("@opencraft/sqlite-node");
+  const { CapabilityBindings } = await import("../../packages/session-capabilities/src/bindings.js");
+  const root = await mkdtemp(join(tmpdir(), "capability-upgrade-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "bindings.sqlite");
+  const old = openManagedDatabase({ path, migrations: [{ version: 1, name: "session-capability-bindings",
+    sql: "CREATE TABLE capability_bindings(id TEXT PRIMARY KEY,server_id TEXT NOT NULL,thread_id TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(server_id,thread_id)) STRICT;" }] });
+  old.database.prepare("INSERT INTO capability_bindings VALUES('old','server','original',1)").run(); old.database.close();
+  const upgraded = new CapabilityBindings(path);
+  try {
+    assert.deepEqual(upgraded.get("old"), { serverId: "server", threadId: "original" });
+    upgraded.prepareExecution("new", { serverId: "server", threadId: "created" });
+    assert.equal(upgraded.executionId({ serverId: "server", threadId: "created" }), "new");
+  } finally { upgraded.close(); }
+});

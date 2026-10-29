@@ -1,3 +1,4 @@
+import { createConversationKey } from "@opencraft/chat-core";
 import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import type { ConversationScopeRegistry } from "./conversation-scope-registry";
@@ -78,7 +79,17 @@ export function createWorkbenchSubmissionPipeline(
       const draftId = intent.target.draftId;
       const current = config.scopes.getDraft(draftId);
       if (current === null) throw new Error(`Draft ${draftId} is unavailable`);
-      if (current.receipt !== null) return promoteAccepted(draftId);
+      if (current.receipt !== null) {
+        if (current.submission?.commandId === intent.commandId && current.submission.clientMessageId === intent.clientMessageId)
+          return promoteAccepted(draftId);
+        // The first receipt proves only its own input. A user can compose a
+        // different follow-up while history/promotion is still recovering.
+        const original = await promoteAccepted(draftId);
+        const receipt = await config.submitExistingThread({ ...intent, target: { type: "enqueue-follow-up",
+          key: createConversationKey(original.hostId, original.threadId) } });
+        await config.afterAccepted?.(receipt);
+        return receipt;
+      }
 
       config.scopes.beginSubmit(draftId, intent);
       let receipt: SubmissionReceipt;

@@ -677,7 +677,7 @@ test("a reused logical Client ID cannot inherit the previous connection's late r
   }
 });
 
-test("late thread/start success after disconnect releases the otherwise orphaned native subscription", async () => {
+test("late empty thread/start retains its native subscription until the first Turn can be submitted", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-late-start-"));
   const frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames, 0, undefined, 10);
@@ -691,20 +691,9 @@ test("late thread/start success after disconnect releases the otherwise orphaned
     await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "test/delayedResponseSent");
     assert.equal(frames.some(frame => frame.id === "a:start"), false);
-    let released = false;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      const id = `b:probe:${attempt}`;
-      await send("client-b", id, "test/emitThreadNotification", { threadId: "fixture-thread-1" });
-      const probe = await waitFor(frames, frame => frame.id === id);
-      if ((probe.result as any).nativeSubscribed === false) {
-        released = true;
-        break;
-      }
-    }
-    assert.equal(released, true);
-    await send("client-b", "b:duplicate-unsubscribe", "thread/unsubscribe", { threadId: "fixture-thread-1" });
-    assert.deepEqual((await waitFor(frames, frame => frame.id === "b:duplicate-unsubscribe")).result, { status: "notSubscribed" });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await send("client-b", "b:probe", "test/emitThreadNotification", { threadId: "fixture-thread-1" });
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "b:probe")).result, { nativeSubscribed: true });
     await send("client-b", "b:resume", "thread/resume", { threadId: "fixture-thread-1" });
     await waitFor(frames, frame => frame.id === "b:resume");
     await send("client-b", "b:probe-after-resume", "test/emitThreadNotification", { threadId: "fixture-thread-1" });
@@ -1088,6 +1077,8 @@ test("a closed client releases its thread subscriptions and native Codex context
     await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.method === "serverRequest/resolved");
     assert.deepEqual((await request("client-a", "test/emitThreadNotification", { threadId })).result, { nativeSubscribed: true });
+    await request("client-a", "turn/start", { threadId, input: [{ type: "text", text: "accepted" }], clientUserMessageId: "disconnect-input" });
+    await request("client-a", "test/completeTurn", { threadId });
     await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
     let released = false;
     for (let attempt = 0; attempt < 40; attempt += 1) {

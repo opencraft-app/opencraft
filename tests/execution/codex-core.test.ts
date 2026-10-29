@@ -385,14 +385,22 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
       { cwd, env, stdio: ["pipe", "pipe", "pipe"] }),
   };
   if (configure) options = await configure(options);
+  if (options.appServerEndpoint && !options.proxyPort) {
+    const reservation = createTcpServer();
+    await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    const port = (reservation.address() as import("node:net").AddressInfo).port;
+    await new Promise<void>(resolve => reservation.close(() => resolve()));
+    options = { ...options, proxyPort: port };
+  }
   const core = await startCodexCore(options);
+  const runtime = options.appServerEndpoint ? await startCodexAppServer({ ...options, endpoint: options.appServerEndpoint, coreEndpoint: options.endpoint }) : undefined;
   const control = new CodexCoreControlClient(core.endpoint, token);
   const adapters: CodexEngineAdapter[] = [];
-  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined) {
+  async function adapter(overlays = false, logDiagnostic: (event: Record<string, unknown>) => void = () => undefined, overrides: Partial<ConstructorParameters<typeof CodexEngineAdapter>[0]> = {}) {
     const engine = new CodexEngineAdapter({ ...options, coreEndpoint: core.endpoint, coreAuthToken: token,
       // Remote mode must not touch any local account store or spawn a child.
       dataDirectory: overlays ? options.dataDirectory : join(root, "forbidden"),
-      coreHostOverlays: overlays, logDiagnostic,
+      coreHostOverlays: overlays, logDiagnostic, ...overrides,
       spawnAppServer: () => { throw new Error("Remote mode spawned a writer"); } });
     adapters.push(engine);
     const frames: any[] = [];
@@ -413,7 +421,7 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
   }
   return { root, options, core, control, adapter, async close() {
     await Promise.all(adapters.map(engine => engine.close()));
-    await core.close(); await rm(root, { recursive: true, force: true });
+    await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true });
   } };
 }
 
@@ -821,5 +829,84 @@ for (const overlays of [false, true]) test(`directory readers learn a committed 
     assert.equal(events().length, 1, "native acceptance publishes independently of Thread subscriptions");
     assert.deepEqual(events()[0].params.change.thread.turns, []);
     assert.equal((await a.rpc("directory-reader", "thread/list", {})).data.length, before.data.length + 1);
+  } finally { await f.close(); }
+});
+
+test("a never-dispatched creation keeps its native route and events through Host replacement without a history resume", async () => {
+  const f = await fixture(async options => ({ ...options,
+    appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start", {});
+    const pid = (await f.control.health()).codexPid;
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true });
+    assert.equal(restored.thread.id, thread.id);
+    assert.equal(restored.thread.creationPhase, "created");
+    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, watch: true, initialTurnsPage: { limit: 10 } });
+    assert.deepEqual(read.initialTurnsPage.data, []);
+    const receipt = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "first-input", input: [{ type: "text", text: "synthetic-first" }] });
+    assert.ok(receipt.turn.id);
+    assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 1);
+    await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "recovered-progress" });
+    await b.rpc("browser", "fixture/complete", { threadId: thread.id });
+    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "recovered-progress"));
+    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === receipt.turn.id));
+    const history = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.equal(history.thread.turns.length, 1);
+    assert.equal(history.thread.turns[0].items[0].clientId, "first-input");
+    assert.equal(history.thread.creationPhase, undefined, "accepted input cannot be represented by the empty creation snapshot");
+    assert.equal((await f.control.health()).codexPid, pid);
+    await b.engine.close();
+    const facts = new ProvisionalThreads(f.options.dataDirectory);
+    try { assert.equal(facts.get(thread.id)?.phase, "accepted"); assert.equal(facts.get(thread.id)?.turnId, receipt.turn.id); }
+    finally { facts.close(); }
+  } finally { await f.close(); }
+});
+
+test("combined Core refuses empty creation recovery when its original native subscription is gone", async () => {
+  const f = await fixture(async options => ({ ...options,
+    spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+  }));
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start");
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /retained native subscription/);
+    assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
+    assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);
+  } finally { await f.close(); }
+});
+
+test("a lost first-Turn acknowledgement never turns attempted input into an empty conversation", async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize");
+    const { thread } = await a.rpc("browser", "thread/start", {});
+    await a.rpc("browser", "fixture/holdNextTurn");
+    const pending = a.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "uncertain-first", input: [{ type: "text", text: "synthetic" }] }).catch(() => undefined);
+    for (let i = 0; i < 100; i++) {
+      const read = await a.rpc("reader", "initialize").then(() => a.rpc("reader", "thread/read", { threadId: thread.id, includeTurns: true }));
+      if (read.thread.turns.length) break;
+      await delay(5);
+    }
+    await a.engine.close();
+    const b = await f.adapter(true); await b.rpc("browser", "initialize");
+    const read = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.equal(read.thread.creationPhase, undefined);
+    assert.equal(read.thread.turns.length, 1);
+    assert.equal(read.thread.turns[0].items[0].clientId, "uncertain-first");
+    await assert.rejects(b.rpc("browser", "thread/read", { threadId: "no-creation-evidence", initialTurnsPage: { limit: 10 } }),
+      "an unknown missing history cannot acquire a synthetic empty snapshot");
+    await pending;
   } finally { await f.close(); }
 });
