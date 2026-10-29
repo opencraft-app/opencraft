@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
-import { parseCodexAuthFileReference } from "@opencraft/account-pool-host";
+import { acquireCodexWriter, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -16,6 +16,20 @@ function privateJson(text: string) {
   try { return JSON.parse(text); }
   catch { throw new Error("Invalid private account JSON"); }
 }
+
+/** Exclusive, offline import of a preflighted legacy source; never opens proxy admission. */
+export async function sealLegacyAccountMaintenance(options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) {
+  const owner = new AccountCoreOwner(options);
+  await owner.inspectMaintenance();
+  const release = await acquireCodexWriter(options.dataDirectory, "accounts");
+  try {
+    await owner.load(receipt);
+    const state = owner.snapshot();
+    if (state.phase !== "released" || !state.legacyMaintenance) throw new Error("Legacy account maintenance was not sealed");
+    return { phase: state.phase, legacyMaintenance: state.legacyMaintenance,
+      unknownCount: state.uncertain.length, inspection: await owner.inspectMaintenance() };
+  } finally { release(); }
+}
 type Phase = "open" | "fenced" | "released" | "cold-ready";
 type HistoricalUnknown = { id: string; route: string }[];
 interface State {
@@ -26,6 +40,7 @@ interface State {
   ready?: { owner: string; identity: string };
   uncertain: { id: string; route: string }[];
   carriedUnknown?: HistoricalUnknown;
+  legacyMaintenance?: { receiptSha256: string; sourceBundleSha256: string; sourcePid: number };
 }
 export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown }
 
@@ -103,7 +118,7 @@ export class AccountCoreOwner {
   constructor(private readonly options: CodexAccountServiceOptions & { endpoint: string; appServerEndpoint?: string; authToken: string; runtimeDirectory: string }) {
     this.path = join(options.dataDirectory, "account-handoff.json");
   }
-  async load() {
+  async load(legacyMaintenanceReceipt?: string) {
     await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
     this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
     try {
@@ -115,15 +130,80 @@ export class AccountCoreOwner {
         if (value.schemaVersion !== 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 0
           || !["open", "fenced", "released", "cold-ready"].includes(value.phase) || !Array.isArray(value.uncertain)
           || value.phase !== "open" && ![value.operationId, value.fence, value.sourceOwner].every(v => typeof v === "string" && v.length > 0)
-          || ["released", "cold-ready"].includes(value.phase) && (!value.sealed || typeof value.sealed.storage !== "string" || !value.retained)) throw new Error("Invalid account handoff state");
+          || ["released", "cold-ready"].includes(value.phase) && (!value.sealed || typeof value.sealed.storage !== "string" || !value.retained)
+          || value.legacyMaintenance !== undefined && (!value.legacyMaintenance
+            || !/^[a-f0-9]{64}$/u.test(value.legacyMaintenance.receiptSha256)
+            || !/^[a-f0-9]{64}$/u.test(value.legacyMaintenance.sourceBundleSha256)
+            || !Number.isSafeInteger(value.legacyMaintenance.sourcePid) || value.legacyMaintenance.sourcePid < 1)) throw new Error("Invalid account handoff state");
         this.state = value;
       } finally { await file.close(); }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    if (this.state.phase === "fenced" && legacyMaintenanceReceipt) await this.importLegacyMaintenance(legacyMaintenanceReceipt);
+    if (legacyMaintenanceReceipt) {
+      const info = await privateInfo(legacyMaintenanceReceipt);
+      if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES || this.state.phase !== "released" || !this.state.legacyMaintenance
+        || await fileDigest(legacyMaintenanceReceipt) !== this.state.legacyMaintenance.receiptSha256) {
+        throw new Error("Legacy account maintenance receipt does not match the sealed operation");
+      }
+    }
     if (this.state.phase === "fenced") throw new Error("Account old writer release is unconfirmed; recovery required");
     // Verify before login recovery, schema opening or affinity pruning can mutate anything.
     if (this.state.phase !== "open" && (await readAccountStorage(this.options.dataDirectory)).sha256 !== this.state.sealed!.storage) {
       throw new Error("Account handoff current storage changed");
     }
+  }
+  /** Read-only preflight; callers retain the source fence and deployment lock. */
+  async inspectMaintenance() {
+    return { storage: await readAccountStorage(this.options.dataDirectory),
+      configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable) };
+  }
+  /** Explicit offline maintenance, not a cooperative release from the old owner. */
+  private async importLegacyMaintenance(path: string) {
+    const info = await privateInfo(path);
+    if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Legacy account maintenance receipt is too large");
+    const bytes = await readFile(path), value = privateJson(bytes.toString("utf8"));
+    const source = value?.source, h = value?.sourceSnapshot?.handoff, proof = value?.sourceSnapshot?.proof;
+    if (value?.schemaVersion !== 1 || value.kind !== "legacy-account-maintenance"
+      || !source || !Number.isSafeInteger(source.pid) || source.pid < 1 || source.bootId !== this.bootId
+      || typeof source.startTime !== "string" || !/^\d+$/u.test(source.startTime)
+      || typeof source.bundle !== "string" || !isAbsolute(source.bundle)
+      || typeof source.bundleSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(source.bundleSha256)
+      || !h || value.sourceSnapshot.pid !== source.pid || h.pid !== source.pid || h.bootId !== this.bootId
+      || h.protocolVersion !== 1 || h.topology !== "split" || h.phase !== "fenced" || h.persistence !== "ready"
+      || h.owner !== this.state.sourceOwner || h.sourceOwner !== h.owner || h.epoch !== this.state.epoch
+      || h.operationId !== this.state.operationId || h.fence !== this.state.fence || h.activeCalls !== 0
+      || !Array.isArray(h.uncertain) || h.uncertain.length === 0 || digest(h.uncertain) !== digest(this.state.uncertain)
+      || !proof || proof.ownerId !== h.owner || proof.epoch !== h.epoch || proof.operationId !== h.operationId || proof.fence !== h.fence
+      || proof.bootId !== h.bootId || proof.incarnation !== h.incarnation || proof.coverage !== "unknown" || proof.activeCount !== null
+      || proof.historicalUnknownSha256 !== undefined || !Number.isSafeInteger(proof.historicalCount)
+      || !proof.counts || Object.keys(proof.counts).sort().join(",") !== "oauth,proxy,refresh,requests,resetCredits,subscriptions"
+      || Object.values(proof.counts).some(count => count !== 0)
+      || h.retained && Object.values(h.retained).some(rows => !Array.isArray(rows) || rows.length !== 0)
+      || this.state.retained && Object.values(this.state.retained).some(rows => !Array.isArray(rows) || rows.length !== 0)) {
+      throw new Error("Legacy account maintenance receipt rejected");
+    }
+    const currentProcess = await readFile(`/proc/${source.pid}/stat`, "utf8").catch(error => {
+      if (error.code !== "ENOENT") throw error; return undefined;
+    });
+    if (currentProcess?.slice(currentProcess.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] === source.startTime) {
+      throw new Error("Legacy account source process is still present");
+    }
+    if (await fileDigest(source.bundle) !== source.bundleSha256) throw new Error("Legacy account source bundle changed");
+    const inspection = await this.inspectMaintenance();
+    const persistent = inspection.storage.tables.find(table => table.name === "pool_affinity");
+    if (!persistent || persistent.rows !== proof.historicalCount
+      || value.storageSha256 !== inspection.storage.sha256
+      || value.configurationSelectorSha256 !== inspection.configurationSelectorSha256
+      || value.cliSha256 !== inspection.cliSha256) throw new Error("Legacy account current storage, volatile responsibility or configuration changed");
+    const released: State = { ...this.state, phase: "released",
+      retained: { imageAffinities: [], resetReceipts: [], loginReceipts: [] },
+      carriedUnknown: structuredClone(this.state.uncertain),
+      sealed: { storage: inspection.storage.sha256, historicalCount: proof.historicalCount,
+        configurationSelectorSha256: inspection.configurationSelectorSha256, cliSha256: inspection.cliSha256,
+        historicalUnknownSha256: digest(this.state.uncertain) },
+      legacyMaintenance: { receiptSha256: createHash("sha256").update(bytes).digest("hex"), sourceBundleSha256: source.bundleSha256, sourcePid: source.pid }, ready: undefined };
+    this.serialized(released, 4096);
+    await this.save(released);
   }
   isOpen = () => !this.failed && !this.sealedProcess && !this.activating && this.state.phase === "open";
   retained() { return this.state.retained; }
@@ -201,7 +281,7 @@ export class AccountCoreOwner {
       || !this.proof?.idle || this.proof.identity !== input.proof || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account Core is not drained or proof expired");
     const carry = retained();
     const before = await readAccountStorage(this.options.dataDirectory);
-    const released: State = { ...this.state, phase: "released", retained: carry, sealed: { storage: before.sha256,
+    const released: State = { ...this.state, phase: "released", legacyMaintenance: undefined, retained: carry, sealed: { storage: before.sha256,
       historicalCount: observation.historicalCount,
       configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable), historicalUnknownSha256: digest(this.state.uncertain) }, ready: undefined };
     // Reserve the successor's ready identity before closing anything. An
@@ -232,6 +312,8 @@ export class AccountCoreOwner {
       throw new Error("Account handoff configuration or fixed CLI changed");
     }
     return { owner: this.owner, bootId: this.bootId, incarnation: this.incarnation, storage,
+      releaseKind: this.state.legacyMaintenance ? "legacy-maintenance" as const : "protocol" as const,
+      legacyReceiptSha256: this.state.legacyMaintenance?.receiptSha256,
       manifestSha256: await fileDigest(await realpath(process.argv[1]!)),
       configurationSelectorSha256,
       capabilitySha256: digest({ handoff: 1, coreProtocol: 1, proxy: 1, node: process.version, abi: process.versions.modules, arch: process.arch,
