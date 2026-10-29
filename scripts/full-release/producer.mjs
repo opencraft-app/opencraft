@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile, readdir, chmod, realpath } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, stat, mkdtemp, open, rename, copyFile, readdir, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, dirname } from 'node:path';
@@ -7,7 +7,7 @@ import { verifyFullArchive } from './archive.mjs';
 import { fileListDigest, signPreflight, signBytes, parseManifest, parseStrictJson, preflightFor, sha256 } from './contract.mjs';
 import { createPublicKey, createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { createRequire } from 'node:module';
+import { selectNpmFiles, packSelectedArchive, packageGzipLevel } from './npm-archive.mjs';
 import { fullComponents, prepareFullMetadata } from './components.mjs';
 const exec = promisify(execFile);
 function timing(name, started) {
@@ -39,16 +39,13 @@ export async function npmPack(root, directory, dryRun = false) {
 // Use the same installed npm's inventory rules (files, bundled dependencies,
 // ignores and mandatory files), without producing a preliminary gzip stream.
 export async function stagedInventory(root) {
+  return (await inventorySnapshot(root)).files;
+}
+async function inventorySnapshot(root) {
   const started = performance.now();
   await canonicalizeStagedModes(root);
-  const { stdout } = await exec('which', ['npm']);
-  const npmCli = await realpath(stdout.trim());
-  const requireNpm = createRequire(npmCli);
-  const Arborist = requireNpm('@npmcli/arborist');
-  const packlist = requireNpm('npm-packlist');
-  const tree = await new Arborist({ path: root }).loadActual();
-  const names = await packlist(tree, { path: root });
-  const tarOptions = requireNpm('pacote').DirFetcher.tarCreateOptions({ ...tree.package, _resolved: root });
+  const selection = await selectNpmFiles(root);
+  const names = selection.names, tarOptions = selection.options;
   const files = [];
   for (const name of names) {
     if (name === 'release/full-release.json' || name === 'release/full-release.sig') continue;
@@ -62,9 +59,10 @@ export async function stagedInventory(root) {
     files.push([name, hash.digest('hex'), bytes, info.mode & 0o111 ? '0755' : '0644']);
   }
   timing('staged-inventory', started);
-  return files.sort((a, b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0])));
+  return { selection, files: files.sort((a, b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0]))) };
 }
-export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities') }) {
+export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities'), gzipLevel = packageGzipLevel() }) {
+  gzipLevel = packageGzipLevel(gzipLevel);
   const keyStat = await stat(keyPath);
   if (!keyStat.isFile() || (keyStat.mode & 0o777) !== 0o600) throw new Error('Full release signing key must have mode 0600');
   const privateKey = await readFile(keyPath);
@@ -96,7 +94,13 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
   // Preliminary/retry packs never overwrite the retained final archive.
   const scratch = await mkdtemp(join(directory, '.full-release-pack-'));
   try {
-    const files = await stagedInventory(packageRoot);
+    // npm selection depends on names, package manifests and ignore rules, not
+    // these two metadata files' contents. Reserve them before the sole scan so
+    // their final signed bytes can replace the placeholders in the same list.
+    await writeFile(join(packageRoot, 'release/full-release.json'), '{}');
+    await writeFile(join(packageRoot, 'release/full-release.sig'), '{}');
+    const { files, selection } = await inventorySnapshot(packageRoot);
+    if (!['release/full-release.json', 'release/full-release.sig'].every(name => selection.names.includes(name))) throw new Error('npm rules exclude signed release metadata');
     const licenseFiles = files.filter(([name]) => /(?:^|\/)(?:LICENSE(?:\.[^/]*)?|NOTICE(?:\.[^/]*)?)$/i.test(name)).map(([name]) => name);
     if (!licenseFiles.length) throw new Error('Full release licenses are missing');
     const component = { componentId: 'bridge-distribution', role: 'web-bootstrap', version: pkg.version, buildId: pkg.opencraftWeb.buildId,
@@ -125,7 +129,10 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
     await mkdir(join(packageRoot, 'release'), { recursive: true });
     await writeFile(join(packageRoot, 'release/full-release.json'), bytes, { mode: 0o644 });
     await writeFile(join(packageRoot, 'release/full-release.sig'), JSON.stringify(signBytes(bytes, privateKey, keyId)), { mode: 0o644 });
-    const packed = await npmPack(packageRoot, scratch);
+    await canonicalizeStagedModes(packageRoot);
+    const packingStarted = performance.now();
+    const packed = await packSelectedArchive(selection, scratch, files, gzipLevel);
+    timing(`archive-stream-gzip${gzipLevel}`, packingStarted);
     // The final archive is also the inspection artifact: no second compressor.
     const dryRun = packed;
     const verificationStarted = performance.now();

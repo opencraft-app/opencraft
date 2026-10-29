@@ -368,3 +368,52 @@ test('signed npm consumer streams the pinned URL and rejects oversized bytes bef
   const positive=await promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'download')],options);assert.match(positive.stdout,/download verified/);assert.equal(paths.filter(p=>p==='/npm/app.tgz').length,1);
   oversize=true;await assert.rejects(promisify(execFile)(process.execPath,['--input-type=module','-e',script,join(root,'oversize')],options),error=>error.stdout.includes('Signed release stream download failed'));await assert.rejects(readFile(join(root,'oversize/release.tgz')),{code:'ENOENT'});
 });
+
+
+test('streamed sealing with default compression is byte-identical to npm pack', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'seal-npm-equivalence-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pkg = join(root, 'pkg'); await mkdir(join(pkg, 'runtime'), { recursive: true });
+  await mkdir(join(pkg, 'web')); await mkdir(join(root, 'npm'));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['runtime', 'web'], dependencies: { 'equivalence-dep': '1.0.0' }, bundleDependencies: ['equivalence-dep'], bin: 'runtime/main.mjs', opencraftWeb: { buildId: 'fixture' } }));
+  await mkdir(join(pkg, 'node_modules/equivalence-dep'), { recursive: true });
+  await writeFile(join(pkg, 'node_modules/equivalence-dep/package.json'), JSON.stringify({ name: 'equivalence-dep', version: '1.0.0', main: 'index.js' }));
+  await writeFile(join(pkg, 'node_modules/equivalence-dep/index.js'), 'module.exports=1');
+  await writeFile(join(pkg, 'runtime/main.mjs'), 'console.log(1)');
+  await writeFile(join(pkg, 'runtime/.npmignore'), 'hidden.txt\n');
+  await writeFile(join(pkg, 'runtime/hidden.txt'), 'must not ship');
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }));
+  await writeFile(join(pkg, 'LICENSE'), 'license');
+  const key = join(root, 'key.pem'); await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  const args = { packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId };
+  const sealed = await sealPackage({ ...args, gzipLevel: 9 });
+  const npm = await npmPack(pkg, join(root, 'npm'));
+  assert.equal(sealed.integrity, npm.integrity);
+  assert.deepEqual(await readFile(join(root, sealed.filename)), await readFile(join(root, 'npm', npm.filename)));
+  assert.deepEqual(sealed.files, npm.files);
+  assert.deepEqual(sealed.bundled, npm.bundled);
+  assert.equal(sealed.entryCount, npm.entryCount);
+  assert.equal(sealed.unpackedSize, npm.unpackedSize);
+  const retry = await sealPackage({ ...args, gzipLevel: 9 });
+  assert.equal(retry.integrity, sealed.integrity);
+  await assert.rejects(sealPackage({ ...args, gzipLevel: 3 }), /archive identity changed/);
+});
+
+test('signed metadata excluded by npm rules is rejected before sealing', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'seal-metadata-ignore-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pkg = join(root, 'pkg'); await mkdir(join(pkg, 'web'), { recursive: true });
+  await mkdir(join(pkg, 'release'));
+  await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['web', 'release'], opencraftWeb: { buildId: 'fixture' } }));
+  await writeFile(join(pkg, 'web/version.json'), JSON.stringify({ buildId: 'fixture', sourceRevision: source }));
+  await writeFile(join(pkg, 'LICENSE'), 'license');
+  await writeFile(join(pkg, 'release/.npmignore'), 'full-release.*\n');
+  const key = join(root, 'key.pem'); await writeFile(key, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+  await assert.rejects(sealPackage({ packageRoot: pkg, directory: root, template: fixture(), keyPath: key, keyId }), /exclude signed release metadata/);
+});
+
+test('package compression level rejects invalid configuration', async () => {
+  const { packageGzipLevel } = await import('../../scripts/full-release/npm-archive.mjs');
+  for (const value of ['', '0', '10', '3.5', 'fast', true]) assert.throws(() => packageGzipLevel(value));
+  for (const value of ['1', 3, '9']) assert.equal(packageGzipLevel(value), Number(value));
+});
