@@ -88,7 +88,8 @@
 @mixin application-navigation-glyph {
   // Native buttons and shared Button labels project the same glyph role.
   > svg,
-  > .ui-button__label > svg {
+  > .ui-button__label > svg,
+  > .ui-button__label [data-navigation-glyph-variant] {
     flex: 0 0 var(--size-application-navigation-icon);
     width: var(--size-application-navigation-icon);
     height: var(--size-application-navigation-icon);
