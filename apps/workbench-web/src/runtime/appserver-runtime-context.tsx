@@ -1082,8 +1082,8 @@ export function useComposerCatalog(
   const catalogActions = useMemo(() => ({
     onModelMenuOpen: () => {
       if (!enabled) return;
-      const failed = queryClient.getQueryState(options.queryKey)?.error != null;
-      void queryClient.fetchQuery({ ...options, ...(failed ? { staleTime: 0 } : {}) }).catch(() => undefined);
+      // Recheck server restrictions whenever a user opens the selector.
+      void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
     },
     retryModels: () => { if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
   }), [enabled, options, queryClient, snapshot.hostId]);

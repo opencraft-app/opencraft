@@ -1095,5 +1095,11 @@
   "fullUpgrade.cancel": "Cancel upgrade",
   "fullUpgrade.stop": "Stop after this step",
   "chat.archived.restore": "Restore conversation",
-  "chat.archived.restoring": "Restoring…"
+  "chat.archived.restoring": "Restoring…",
+  "modelPolicy.title": "Model usage restrictions",
+  "modelPolicy.models": "Blocked models",
+  "modelPolicy.efforts": "Blocked thinking levels",
+  "modelPolicy.save": "Save",
+  "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
+  "modelPolicy.hint": "Some options are disabled by your administrator."
 }

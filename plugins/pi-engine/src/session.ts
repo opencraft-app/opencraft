@@ -1,3 +1,6 @@
+import { piModel } from './contract.js';
+import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
+
 import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "../../../scripts/execution-environment.js";
 import { createHash, randomUUID } from "node:crypto";
 import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
@@ -9,7 +12,7 @@ import { piSkillsPrompt } from "./skills.js";
 import { ModelRuntime, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
 import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, createRegistry, defineDoc, defineExtension, defineTool,
-  Harness, MemoryStorage, section, watchEvents, type AgentEventStream, type Conversation, type Storage, type ContextView,
+  Harness, MemoryStorage, section, watchEvents, hook, GenerationTask, type AgentEventStream, type Conversation, type Storage, type ContextView,
   type EntryRecord, type SubmissionRecord, type TaskRecord, type AgentState, type LiveState, type UsageState } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -69,6 +72,9 @@ export class PiDurableSession {
   private readonly earlyShellNotifications = new Map<string, Value[]>();
   private replaceTools!: (tools: Value[]) => void;
   private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
+    modelPolicyPath?: string;
+    policyCatalog?():Promise<Value[]>;
+    onPolicyDenied?(error:ModelPolicyError):void;
     ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; projectId?: string | null;
     admissionOpen?(): boolean;
     admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
@@ -88,6 +94,20 @@ export class PiDurableSession {
     });
     this.shellSchema = (await this.shell.start()).parameters;
     const registry = createRegistry();
+    const admittedGenerations=new Set<string>();
+    registry.install(defineExtension({name:"opencraft.model-policy",hooks:[hook(GenerationTask,{
+      beforeRequest:async (_request,api) => {
+        if(!this.options.modelPolicyPath)return _request;
+        const agent=await api.snapshot(AgentDoc,api.conversationId,context);
+        const ref=agent?.model;
+        const key=JSON.stringify([api.taskId,ref,agent?.thinkingLevel]);
+        if(admittedGenerations.has(key))return _request;
+        const catalog=await this.options.policyCatalog?.() ?? (this.options.models.getAvailableSnapshot?.() ?? []).map((m:any)=>({model:piModel(m.provider,m.id)}));
+        assertModelPolicy(this.options.modelPolicyPath,"pi",ref ? piModel(ref.provider,ref.modelId) : null,agent?.thinkingLevel === "off" ? "none" : agent?.thinkingLevel,catalog);
+        admittedGenerations.add(key);
+        return _request;
+      },
+    })]}));
     // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
     registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
     registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
@@ -392,7 +412,7 @@ export class PiDurableSession {
       }, context);
     };
     try { await (this.options.admitBackground ? this.options.admitBackground(deliver) : deliver()); }
-    catch (error) { if (entered || this.options.admissionOpen?.() !== false) throw error; }
+    catch (error) { if (error instanceof ModelPolicyError) { this.options.onPolicyDenied?.(error); return; } if (entered || this.options.admissionOpen?.() !== false) throw error; }
     if (admitted && this.options.admissionOpen?.() !== false) this.harness.resume();
   }
   private async pages<T>(read: (cursor: any) => Promise<{ items: readonly T[]; next?: any }>): Promise<T[]> {
@@ -550,10 +570,10 @@ export class PiDurableSession {
       queue.items.push(item); return item;
     }, context);
   }
-  async changeQueue(action: "update" | "delete" | "reorder" | "pause", id?: string, replacement?: PiQueuedInput, order?: string[]) {
+  async changeQueue(action: "update" | "delete" | "reorder" | "pause", id?: string, replacement?: PiQueuedInput, order?: string[], reason: "user-stopped" | "model-restricted" = "user-stopped") {
     return this.root.commit(async tx => {
       const queue = await tx.doc(PiQueueDoc, this.root.id);
-      if (action === "pause") { queue.paused = true; queue.pauseReason = "user-stopped"; return null; }
+      if (action === "pause") { queue.paused = true; queue.pauseReason = reason; return null; }
       if (action === "reorder") {
         if (!order || order.length !== queue.items.length || new Set(order).size !== order.length
           || queue.items.some(item => item.state !== "queued" || !order.includes(item.id))) throw new Error("Pi queue order changed; refresh before reordering");

@@ -1097,5 +1097,11 @@
   "fullUpgrade.cancel": "ยกเลิกการอัปเกรด",
   "fullUpgrade.stop": "หยุดหลังขั้นตอนนี้",
   "chat.archived.restore": "กู้คืนการสนทนา",
-  "chat.archived.restoring": "กำลังกู้คืน…"
+  "chat.archived.restoring": "กำลังกู้คืน…",
+  "modelPolicy.title": "Model usage restrictions",
+  "modelPolicy.models": "Blocked models",
+  "modelPolicy.efforts": "Blocked thinking levels",
+  "modelPolicy.save": "Save",
+  "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
+  "modelPolicy.hint": "Some options are disabled by your administrator."
 }

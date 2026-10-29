@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
+import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
+import { ModelPolicyTransport } from '@opencraft/model-usage-policy/transport';
 import { startAvailabilityNotification } from './availability-notification.mjs';
 import { ExecutionEnvironmentTransport } from './execution-environment-transport.ts';
 import { HeadlessConnectors } from "../packages/connector-host/src/headless.ts";
@@ -276,6 +279,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let mcpApps;
   let ingress;
   let instanceAccess;
+  let modelPolicy;
   let membership;
   let actorStore;
   let actorCollaboration;
@@ -331,7 +335,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       executionDatabase?.close();
       // Settle every provider/store before releasing the directory lock, even
       // when one disposer throws synchronously or returns a rejected promise.
-      for (const dispose of [() => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
+      for (const dispose of [() => modelPolicy?.close(), () => mcpApps?.close(), () => sshManagement?.close(), () => identity?.executionEnvironment?.close(), () => identity?.close?.(),
         () => accountApplication?.close(), () => accountManagement?.close(), () => humanAuth?.close(), () => humanAccounts?.close(),
         () => capabilityBindings?.close(), () => actorStore?.close(), () => membership?.close(), () => releaseLock()]) {
         results.push(...await Promise.allSettled([Promise.resolve().then(dispose)]));
@@ -351,6 +355,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
       membership = new MembershipStore(join(dataDirectory, 'memberships.sqlite'));
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
+    const modelPolicyPath = join(dataDirectory, 'model-usage-policy.sqlite');
+    modelPolicy = new ModelPolicyStore(modelPolicyPath);
     // Identity adapters can bind their own credentials to this stable Human authority.
     actorStore = new ActorStore(join(dataDirectory, 'actors.sqlite'));
     if (composition.createIdentity) {
@@ -485,6 +491,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await capabilityMcp.listen();
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     const startDsh = () => dshAgent ??= startAgent({
+      modelPolicyPath,
       sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:dsh`),
       dshExecutable: options.dshExecutable ?? join(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
       dshCapabilityPlugin: options.dshCapabilityPlugin ?? join(root, "runtime/dsh/opencraft-capability-plugin.mjs"),
@@ -511,7 +518,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     } else if (engines.includes("pi")) {
       releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
-      piEngine = new PiEngine({ ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
+      piEngine = new PiEngine({ modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       // The in-process standalone mode has the same trusted port. Shared-server
       // deployments attach the independent owner through its descriptor instead.
       piEngine.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS, call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
@@ -588,7 +595,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
-        const transport = (() => {
+        const transport = new ModelPolicyTransport((() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
           new AgentDriverTransport(new ExecutionOwnershipTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId))), usageQueries, actorId => actorStore.get(actorId));
@@ -648,6 +655,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
           runtimeDirectory: options.runtimeDirectory ?? join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),
+          modelPolicyPath,
           coreEndpoint: options.codexCoreEndpoint,
           coreAuthToken: options.codexCoreAuthToken,
           coreHostOverlays: options.codexCoreEndpoint !== undefined,
@@ -656,7 +664,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
         })), mcpApps);
-        })();
+        })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         const scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
         return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
@@ -744,6 +752,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       ],
       desktopService: desktop ?? null,
       desktopAccess,
+      modelPolicyService: modelPolicyHttp(modelPolicy, request => {
+        const principal=instanceAccess?.authenticate(request);
+        if(!principal || !instanceAccess.role(principal)) return null;
+        return {actor:JSON.stringify([principal.provider,principal.subject]),administrator:instanceAccess.role(principal)==='admin',origin:instanceAccess.trustedOrigin(request)};
+      }),
       identityService: identity?.service ?? null,
       accessService: instanceAccess ?? null,
       actorService: actorAccess,

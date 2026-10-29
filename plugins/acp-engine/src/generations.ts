@@ -11,6 +11,7 @@ interface Generation { id: string; configPath: string; state: "serving" | "drain
 interface Registry { lastActivation?: { operationId: string | null; generationId: string; epoch: number; owner: string }; admissionEpoch?: number; schemaVersion: 1; current: string; generations: Generation[] }
 export interface AcpGenerationHostOptions {
   id: "acp" | "dsh-acp" | "claude-code";
+  modelPolicyPath?: string;
   dataDirectory: string;
   initialGeneration: { id: string; configPath: string };
   /** Deployment authority counts OS work outside the supervised native peers. */
@@ -97,7 +98,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     if (record.configurationDigest && record.configurationDigest !== digest) { await config.history?.close?.(); throw new Error("Pinned ACP generation command or options changed"); }
     record.configurationDigest = digest;
     if (config.id && config.id !== this.id) { await config.history?.close?.(); throw new Error("ACP generation driver kind cannot change"); }
-    const provider = new AcpEngine({ ...config, id: this.id, dataDirectory: join(this.options.dataDirectory, "generations", record.id) });
+    const provider = new AcpEngine({ ...config, modelPolicyPath: this.options.modelPolicyPath, id: this.id, dataDirectory: join(this.options.dataDirectory, "generations", record.id) });
     if (this.orchestration) provider.setOrchestration(this.orchestration);
     provider.subscribe((method, params) => { for (const listener of this.listeners) listener(method, { ...params, engineGenerationId: record.id }); });
     try {

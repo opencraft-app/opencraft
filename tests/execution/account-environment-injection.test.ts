@@ -274,3 +274,28 @@ test('a gateway preserves ordinary turns on a legacy Codex router and refuses co
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
+
+test('ACP cold explicit selection enforces model policy on its account-scoped native transport', async t => {
+  const f = await fixture(t);
+  const { ModelPolicyStore } = await import('@opencraft/model-usage-policy');
+  const path = join(f.root, 'policy.sqlite'), policy = new ModelPolicyStore(path);
+  t.after(() => policy.close());
+  const engine = new AcpEngine({ cwd: f.root, command: process.execPath, args: [resolve('tests/fixtures/acp-engine-peer.mjs')],
+    dataDirectory: join(f.root, 'policy-acp'), executionEnvironment: f.runtime, modelPolicyPath: path,
+    env: { ACP_TEST_MODELS: '1', ACP_TEST_MODEL_CONFIG_ID: 'model-selector' } });
+  t.after(() => engine.close());
+  const client = { notify() {}, async request() {} };
+  const { thread } = await engine.request('thread/start', { cwd: f.root,
+    [EXECUTION_ENVIRONMENT_FIELD]: f.runtime.seal(scope('employee:alice', 'a'), 'thread/start') }, client);
+  f.admit(thread.id, 'alice', 'selection');
+  await engine.suspend();
+  policy.write(0, [{ engine: 'acp', model: 'acp:blocked-native' }], 'admin');
+  await assert.rejects(engine.request('turn/start', { threadId: thread.id, clientUserMessageId: 'selection',
+    model: 'acp:blocked-native', input: [{ type: 'text', text: 'denied' }] }, client), /restricted/);
+  const result = await engine.request('turn/start', { threadId: thread.id, clientUserMessageId: 'selection',
+    model: 'acp:allowed-native', input: [{ type: 'text', text: 'allowed' }] }, client);
+  assert.equal(result.turn.status, 'inProgress');
+  assert.equal((await engine.request('thread/read', { threadId: thread.id }, client)).thread.model, 'acp:allowed-native');
+  await until(() => engine.snapshot(thread.id).activeTurn === null || engine.executionObservation(thread.id).turn?.status !== 'inProgress');
+  await engine.close();
+});

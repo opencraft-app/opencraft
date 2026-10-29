@@ -1,3 +1,4 @@
+import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -19,6 +20,7 @@ export interface AcpEngineOptions {
   args?: readonly string[];
   env?: NodeJS.ProcessEnv;
   cwd: string;
+  modelPolicyPath?: string;
   dataDirectory: string;
   /** An engine-native reader; opening history must never issue session/resume. */
   history?: { read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>; close?(): Promise<void> };
@@ -28,6 +30,8 @@ export interface AcpEngineOptions {
 interface Session {
   schemaVersion: 1; id: string; nativeId: string; cwd: string; model: string | null; name: string | null;
   createdAt: number; updatedAt: number; tools: Value[]; archived: boolean;
+  modelConfigId?: string;
+  modelCatalog?: {id:string;name:string}[];
   receipts: Record<string, HostInputReceipt>;
   lastTurn?: { id: string; status: string };
 }
@@ -131,7 +135,12 @@ export class AcpEngine implements ExecutionEngineProvider {
         // turns an accepted input into a blind second prompt.
         session.receipts[inputId] = { state: "unknown", turnId: null }; await this.save(session);
         if (!await canAdmit() || runtime.active?.status === "inProgress") { delete session.receipts[inputId]; await this.save(session); return null; }
-        const result = await this.prompt(session, [{ type: "text", text }], null, inputId);
+        let result;
+        try { result = await this.prompt(session, [{ type: "text", text }], null, inputId); }
+        catch(error) {
+          if (error instanceof ModelPolicyError) { delete session.receipts[inputId]; await this.save(session); }
+          throw error;
+        }
         const receipt: HostInputReceipt = { state: "delivered", turnId: result.turn.id };
         session.receipts[inputId] = receipt; await this.save(session); return receipt;
     }));
@@ -338,7 +347,8 @@ export class AcpEngine implements ExecutionEngineProvider {
           throw error;
         } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
-        const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: params.model ?? null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
+        const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
+        this.captureModels(session, result);
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
         if (params.model) await this.setModel(session, params.model);
@@ -354,7 +364,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const sessions = [...this.sessions.values()].filter(session => session.archived === (params.archived === true)).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
       return { data: sessions.slice(offset, offset + limit).map(session => this.metadata(session)), nextCursor: offset + limit < sessions.length ? String(offset + limit) : null };
     }
-    if (method === "model/list") return { data: [], nextCursor: null };
+    if (method === "model/list") return {data:[...new Map([...this.sessions.values()].flatMap(s => (s.modelCatalog ?? []).map(m => [m.id,{id:m.id,model:m.id,displayName:m.name,hidden:false,isDefault:s.model===m.id,supportedReasoningEfforts:[],defaultReasoningEffort:null}]))).values()],nextCursor:null};
     if (method === "opencraft/orchestration/ack") {
       const operation = String(params.operationId ?? ""); const creation = this.creations.get(operation);
       if (creation?.state === "created") { this.creations.delete(operation); await this.saveCreations(); }
@@ -381,6 +391,9 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (method === "turn/start") {
       if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
       if (params.clientUserMessageId !== undefined && (typeof params.clientUserMessageId !== "string" || !params.clientUserMessageId || params.clientUserMessageId.length > 512)) return fault("Invalid ACP input identity");
+      await this.resume(session, params.clientUserMessageId);
+      if (params.model) await this.setModel(session, params.model);
+      if (params.effort != null || params.reasoningEffort != null) return fault("This ACP driver does not advertise reasoning selection");
       runtime.owner = client;
       return this.prompt(session, this.promptContent(params.input), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId);
     }
@@ -404,10 +417,22 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!Array.isArray(input) || !input.length) return fault("ACP input must contain text");
     return input.map(item => { if (!item || item.type !== "text" || typeof item.text !== "string") return fault("This ACP adapter supports text input only"); return { type: "text", text: item.text }; });
   }
+  private captureModels(session: Session, result: Value): void {
+    const option = (Array.isArray(result.configOptions) ? result.configOptions : []).find((o:Value) => o.category === "model" || o.id === "model");
+    if (typeof option?.id === "string") session.modelConfigId=option.id;
+    const choices = Array.isArray(result.models?.availableModels) ? result.models.availableModels : (option?.options ?? []).flatMap((o:Value) => o.options ?? [o]);
+    if (choices.length) session.modelCatalog = choices.map((m:Value) => ({id:this.modelPrefix+String(m.modelId ?? m.value),name:String(m.name ?? m.modelId ?? m.value)}));
+    const current=result.models?.currentModelId ?? option?.currentValue;
+    if (typeof current === "string" && current) session.model=this.modelPrefix+current;
+  }
   private async setModel(session: Session, model: string): Promise<void> {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
-    await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: "model", value: model.slice(this.modelPrefix.length) });
-    session.model = model; await this.save(session);
+    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: model.slice(this.modelPrefix.length) });
+    this.captureModels(session, result);
+    const actual=result.models?.currentModelId ?? (result.configOptions ?? []).find((o:Value)=>o.category==="model" || o.id==="model")?.currentValue;
+    session.model = typeof actual === "string" ? this.modelPrefix+actual : model;
+    await this.save(session);
+    if(session.model!==model) return fault("The requested model was not selected. Choose another model.");
   }
   private async resume(session: Session, inputId?: string): Promise<void> {
     await this.start(); const runtime = this.state(session.id);
@@ -424,11 +449,13 @@ export class AcpEngine implements ExecutionEngineProvider {
     const sessions = value(this.capabilities.sessionCapabilities);
     const method = sessions.resume ? "session/resume" : this.capabilities.loadSession ? "session/load" : null;
     if (!method) return fault("ACP peer cannot resume persisted sessions", -32601);
-    await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
+    const result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
+    this.captureModels(session, result); await this.save(session);
     runtime.loaded = true;
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
+    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, null, (session.modelCatalog ?? []).map(m=>({model:m.id})));
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
@@ -459,8 +486,14 @@ export class AcpEngine implements ExecutionEngineProvider {
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;
     const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId)); if (!session) return;
+    const update = value(params.update);
+    if(update.sessionUpdate === "config_option_update") {
+      this.captureModels(session,update);
+      void this.save(session).catch(()=>{this.persistenceFailed=true;});
+      return;
+    }
     const runtime = this.state(session.id), active = runtime.active; if (!active || active.status !== "inProgress") return;
-    const update = value(params.update), content = value(update.content);
+    const content = value(update.content);
     if (["agent_message_chunk", "agent_thought_chunk"].includes(update.sessionUpdate) && content.type === "text" && typeof content.text === "string") {
       const type = update.sessionUpdate === "agent_message_chunk" ? "agentMessage" : "reasoning";
       let item = active.items.at(-1); if (item?.type !== type) { item = { id: randomUUID(), type, text: "" }; active.items.push(item); this.notify("item/started", { threadId: session.id, turnId: active.id, item }); }

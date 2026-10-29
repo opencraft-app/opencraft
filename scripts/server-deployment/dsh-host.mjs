@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
@@ -53,6 +54,8 @@ export async function startIndependentDshHost(configuration) {
   const handoff = new DshOwnerHandoff(options.dataDirectory,runtime,inspectOwnerCgroup);
     const machineIdentity = options.machineIdentity ?? await readDaemonMachineIdentity(
       machineIdentityDirectory ?? dirname(options.dataDirectory), machineName);
+    options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
+    new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
     options.environmentDataDirectory ??= machineIdentityDirectory ?? dirname(options.dataDirectory);
     runtime.machineId = machineIdentity.machineId;

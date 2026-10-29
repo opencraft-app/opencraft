@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { spawn } from "node:child_process";
@@ -1712,6 +1713,25 @@ test("Codex provider retry classifies terminal native failures and respects stop
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("Codex gateway RPC and owner-internal goal/recovery admission both enforce the latest policy", async () => {
+ const root=await mkdtemp(join(tmpdir(),"codex-model-policy-"));
+ const path=join(root,"policy.sqlite"),store=new ModelPolicyStore(path),frames:Record<string,any>[]=[];
+ const adapter=createRoutingAdapter(root,frames);
+ (adapter as any).options.modelPolicyPath=path;
+ try {
+  await adapter.connect();await initializeClient(adapter,frames,"policy-client");
+  store.write(0,[{engine:"codex",model:"blocked"}],"admin");
+  await adapter.send(JSON.stringify({id:"blocked-turn",method:"turn/start",params:{threadId:"t",model:"blocked",input:[{type:"text",text:"blocked"}]},[LOGICAL_CLIENT_FIELD]:"policy-client"}));
+  const denied=await waitFor(frames,f=>f.id==="blocked-turn");assert.equal((denied.error as any).data.code,"model_usage_restricted");
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"blocked",input:[]}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("thread/goal/set",{threadId:"t",status:"active"}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"allowed",collaborationMode:{mode:"default",settings:{model:"blocked",reasoning_effort:"high"}},input:[]}),/Contact|restricted/);
+  const queued=(adapter as any).queueStore().add("t","policy-queue",[{type:"text",text:"retained"}]);
+  await assert.rejects((adapter as any).dispatchQueuedStart("t",queued.id),/Contact|restricted/);
+  assert.equal((adapter as any).queueStore().find("t",queued.id).state,"queued");
+  assert.equal((adapter as any).queueStore().find("t",queued.id).pausedReason,"model-restricted");
+ } finally {await adapter.close();store.close();await rm(root,{recursive:true,force:true});}
+});
 
 test("client creation installs MCP and its first input binds execution without a native resume", async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-first-mcp-")), frames: Array<Record<string, unknown>> = [];
