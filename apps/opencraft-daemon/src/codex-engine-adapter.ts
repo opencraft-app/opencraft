@@ -635,14 +635,24 @@ export class CodexEngineAdapter implements DuplexTransport {
         const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
           threadId, cursor, limit, itemsView, sortDirection,
         }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
-        let page;
+        let page, fullPageSizeError: unknown;
         try { page = await request("full"); }
         catch (error) {
           if (!nativeHistoryTooLarge(error)) throw error;
-          page = await request("notLoaded");
+          fullPageSizeError = error;
+          const headers = await request("notLoaded");
+          page = { ...headers, data: headers.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
+            ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
         }
         for (const turn of page.data) if (turn.itemsView === "notLoaded") {
-          turn.items = await listTurnItems(threadId, turn.id, signal); turn.itemsView = "full";
+          try { turn.items = await listTurnItems(threadId, turn.id, signal); }
+          catch (error) {
+            // Preserve the full-page byte failure so the cache can reduce its
+            // limit when an older native cannot page Items separately.
+            if (fullPageSizeError && [-32601, -32602].includes(Number(record(error).code))) throw fullPageSizeError;
+            throw error;
+          }
+          turn.itemsView = "full";
         }
         return page;
       };

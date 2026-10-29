@@ -1619,7 +1619,7 @@ test("scheduled Codex completion is observed from native events without a histor
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false, false], [true, false, false], [true, true, false], [false, false, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget}, unsupported Items=${unsupportedItems})`, async () => {
+for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false, false], [true, false, false], [true, true, false], [false, false, true], [false, true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget}, unsupported Items=${unsupportedItems})`, async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-read-cache-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   let sequence = 0;
@@ -1660,7 +1660,8 @@ for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false
     const counts = await call("test/readMethodCounts", {});
     assert.equal(counts["thread/resume"] ?? 0, 0);
     assert.equal(counts["model/list"] ?? 0, 0);
-    assert.equal(counts["thread/turns/list"], unsupportedItems ? 2 : 1, "unsupported Items rebuild through full Turns; supported Items avoid the oversized full page");
+    if (unsupportedItems && smallHistoryBudget) assert.ok(counts["thread/turns/list"] > 2, "legacy full pages shrink to their supported byte budget");
+    else assert.equal(counts["thread/turns/list"], unsupportedItems ? 2 : 1, "unsupported Items rebuild through full Turns; supported Items avoid the oversized full page");
     assert.deepEqual((await call("test/emitThreadNotification", { threadId })).nativeSubscribed, false);
     await call("thread/resume", { threadId, excludeTurns: true });
     assert.equal((await call("test/readMethodCounts", {}))["thread/resume"], 1);

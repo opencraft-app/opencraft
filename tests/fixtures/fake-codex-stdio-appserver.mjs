@@ -107,7 +107,8 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/turns/list") {
-    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full") {
+    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full"
+      && (!unsupportedItemHistory.has(message.params.threadId) || message.params.limit > 2)) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];

@@ -158,7 +158,7 @@ try {
       }).observe(document, { subtree: true, childList: true, characterData: true });
     });
     await page.goto(`http://127.0.0.1:${visible.port}/local/${fixture.threadId}?hostId=local-codex`);
-    await page.waitForFunction(() => (window as any).historyFixturePaintMs !== undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => (window as any).historyFixturePaintMs !== undefined, undefined, { timeout: 15_000 });
     const ms = await page.evaluate(() => (window as any).historyFixturePaintMs);
     results.push({ label: "built-Application-DOM-first-paint", outcome: "ok", ms });
     if (value("--screenshot")) await page.screenshot({ path: value("--screenshot") });

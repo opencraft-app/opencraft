@@ -819,3 +819,7 @@ full Turn counts and older cursors still describe the complete index. A native
 protocol may support Turn headers without Item pagination. An explicit
 unsupported-Item response disables lazy indexing and reconstructs full native
 Turns through the existing reader; transient failures are propagated unchanged.
+
+When full native Turn pages exceed the transport byte budget and Item paging is
+unsupported, preserve the original size error so the existing reader can reduce
+the Turn page size. An unsupported Item RPC must not erase that size boundary.
