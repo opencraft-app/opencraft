@@ -7,7 +7,7 @@ export function codexRouterOwner(endpoint, tokenFile) {
   const rpc = async (action, input) => {
     const token = (await readFile(tokenFile, 'utf8')).trim();
     return new Promise((resolve, reject) => {
-      const req = request({ socketPath: endpoint, path: '/owner-handoff', method: action ? 'POST' : 'GET',
+      const req = request({ socketPath: endpoint, agent: false, path: '/owner-handoff', method: action ? 'POST' : 'GET',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }, response => {
         const chunks = []; let size = 0;
         response.on('data', chunk => { size += chunk.length; if (size > 1024 * 1024) response.destroy(new Error('router-response-limit')); else chunks.push(chunk); });
