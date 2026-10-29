@@ -40,7 +40,7 @@
 }
 
 .settings-identifier {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-family-mono);
   overflow-wrap: break-word;
   word-break: normal;
 }
