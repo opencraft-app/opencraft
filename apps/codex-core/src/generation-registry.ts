@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep, dirname, basename } from "node:path";
 import { generationDirectory } from "./generation-files.js";
 import { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, verifyManagedDatabaseHistory, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 export interface GenerationDefinition {
   readonly id: string;
@@ -71,6 +71,8 @@ export class CodexGenerationRegistry {
       chmodSync(join(directory, "codex-generations.sqlite"), 0o600);
     } catch (error) { this.lock.close(); throw error; }
   }
+  /** Owner-only transaction, including a logical seal calculated after metadata changes. */
+  metadataTransaction<T>(action: () => T): T { return this.transaction(action); }
   private transaction<T>(action: () => T): T {
     this.database.exec("BEGIN IMMEDIATE");
     try { const result = action(); this.database.exec("COMMIT"); return result; }
@@ -305,14 +307,33 @@ export class CodexGenerationRegistry {
   }
   /** Full logical cold read under the registry writer lock; handoff metadata is self-referential. */
   coldSnapshot(): unknown {
-    if (this.database.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
-      || this.database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Registry integrity failed");
-    const schema = this.database.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
-    const tables = this.database.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => {
-      const name = String(row.name);
-      return { name, rows: this.database.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ${name === "routing_metadata" ? "WHERE key != 'router-handoff'" : ""} ORDER BY rowid`).all() };
-    });
-    return { schema, tables };
+    return registrySnapshot(this.database);
   }
   close(): void { if (!this.closed) { this.closed = true; this.database.close(); this.lock.close(); } }
+}
+
+function registrySnapshot(database: DatabaseSync) {
+  if (database.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
+    || database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Registry integrity failed");
+  const schema = database.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
+  const tables = database.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => {
+    const name = String(row.name);
+    return { name, rows: database.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ${name === "routing_metadata" ? "WHERE key != 'router-handoff'" : ""} ORDER BY rowid`).all() };
+  });
+  return { schema, tables };
+}
+
+/** Logical, read-only inspection. Does not migrate, create or acquire the writer role. */
+export function inspectGenerationRegistry(directory: string) {
+  const database = new DatabaseSync(join(directory, "codex-generations.sqlite"), { readOnly: true });
+  try {
+    database.exec("PRAGMA query_only=ON; BEGIN");
+    verifyManagedDatabaseHistory(database, CODEX_GENERATION_MIGRATIONS);
+    const snapshot = registrySnapshot(database);
+    const metadata = database.prepare("SELECT key,value FROM routing_metadata ORDER BY key").all();
+    const generations = database.prepare("SELECT definition,state,incarnation FROM generations ORDER BY id").all().map(row => ({ ...JSON.parse(String(row.definition)), state: row.state, incarnation: row.incarnation })) as GenerationRecord[];
+    return { snapshot, metadata: Object.fromEntries(metadata.map(row => [String(row.key), JSON.parse(String(row.value))])), generations,
+      routes: database.prepare("SELECT thread_id,generation_id FROM thread_routes ORDER BY thread_id").all().map(row => ({ threadId: String(row.thread_id), generationId: String(row.generation_id) })),
+      unresolvedCreations: Number(database.prepare("SELECT count(*) AS n FROM creation_claims WHERE state IN ('accepted','sent')").get()!.n) };
+  } finally { database.close(); }
 }
