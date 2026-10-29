@@ -70,6 +70,8 @@ export async function* completedResponsesBody(body: ReadableStream<Uint8Array>):
   } finally {
     // Release the provider socket even if it keeps the HTTP stream open after
     // the protocol terminal event, or the downstream has already disconnected.
-    try { if (!eof) await reader.cancel().catch(() => undefined); } finally { reader.releaseLock(); }
+    // Cancellation may wait for the provider's socket cleanup. HTTP completion
+    // must not wait for that cleanup after a terminal record was forwarded.
+    try { if (!eof) void reader.cancel().catch(() => undefined); } finally { reader.releaseLock(); }
   }
 }
