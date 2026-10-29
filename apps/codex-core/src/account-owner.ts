@@ -17,15 +17,17 @@ function privateJson(text: string) {
   catch { throw new Error("Invalid private account JSON"); }
 }
 type Phase = "open" | "fenced" | "released" | "cold-ready";
+type HistoricalUnknown = { id: string; route: string }[];
 interface State {
   schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
   retained?: CodexAccountRetainedState;
   sealed?: { storage: string; historicalCount: number;
-    configurationSelectorSha256: string; cliSha256: string };
+    configurationSelectorSha256: string; cliSha256: string; historicalUnknownSha256?: string };
   ready?: { owner: string; identity: string };
   uncertain: { id: string; route: string }[];
+  carriedUnknown?: HistoricalUnknown;
 }
-export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string }
+export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown }
 
 async function privateInfo(path: string, directory = false, readOnlyExternal = false) {
   const info = await lstat(path);
@@ -168,7 +170,9 @@ export class AccountCoreOwner {
   async fence(input: AccountOwnerExpectation) {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
-    this.state = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained };
+    if (input.historicalUnknown !== undefined && digest(input.historicalUnknown) !== digest(this.state.uncertain)) throw new Error("Account historical unknown list changed");
+    this.state = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
+      carriedUnknown: structuredClone(input.historicalUnknown ?? []) };
     await this.save(this.state);
   }
   async abortFence(input: AccountOwnerExpectation) {
@@ -177,12 +181,13 @@ export class AccountCoreOwner {
     await this.save({ ...this.state, phase: "open" });
   }
   inspect(observation: { activeCount: number; counts: unknown; historicalCount: number } | undefined) {
-    const activeCount = observation ? observation.activeCount + this.calls + this.state.uncertain.length : this.calls + this.state.uncertain.length;
-    const unknown = this.failed || this.state.uncertain.length > 0;
+    const activeCount = (observation?.activeCount ?? 0) + this.calls;
+    const unknown = this.failed || !this.exactHistoricalUnknown();
     const proof = { ownerId: this.owner, operationId: this.state.operationId, epoch: this.state.epoch, fence: this.state.fence,
       bootId: this.bootId, incarnation: this.incarnation, expiresAt: new Date(Date.now() + 15_000).toISOString(),
       coverage: unknown ? "unknown" : "complete", activeCount: unknown ? null : activeCount,
-      historicalCount: observation?.historicalCount ?? this.state.sealed?.historicalCount ?? 0, counts: observation?.counts };
+      historicalCount: observation?.historicalCount ?? this.state.sealed?.historicalCount ?? 0, counts: observation?.counts,
+      historicalUnknownSha256: digest(this.state.uncertain), historicalUnknownCount: this.state.uncertain.length };
     this.proof = { identity: digest(proof), expiresAt: proof.expiresAt, idle: proof.coverage === "complete" && proof.activeCount === 0 };
     return { ...proof, identity: this.proof.identity };
   }
@@ -192,17 +197,17 @@ export class AccountCoreOwner {
   }
   async release(input: AccountOwnerExpectation & { proof?: string }, observation: { activeCount: number; historicalCount: number }, retained: () => CodexAccountRetainedState, stop: () => Promise<void>) {
     this.check(input);
-    if (this.state.phase !== "fenced" || observation.activeCount + this.calls !== 0 || this.state.uncertain.length
+    if (this.state.phase !== "fenced" || observation.activeCount + this.calls !== 0 || !this.exactHistoricalUnknown()
       || !this.proof?.idle || this.proof.identity !== input.proof || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account Core is not drained or proof expired");
     const carry = retained();
     const before = await readAccountStorage(this.options.dataDirectory);
     const released: State = { ...this.state, phase: "released", retained: carry, sealed: { storage: before.sha256,
       historicalCount: observation.historicalCount,
-      configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable) }, ready: undefined };
+      configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable), historicalUnknownSha256: digest(this.state.uncertain) }, ready: undefined };
     // Reserve the successor's ready identity before closing anything. An
     // oversized exact list is rejected while this source can still abort.
     this.serialized(released, 4096);
-    if (this.calls !== 0 || this.failed || this.state.uncertain.length || this.proof.identity !== input.proof
+    if (this.calls !== 0 || this.failed || !this.exactHistoricalUnknown() || released.sealed!.historicalUnknownSha256 !== digest(this.state.uncertain) || this.proof.identity !== input.proof
       || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account final drain proof changed");
     this.sealedProcess = true;
     await stop();
@@ -217,9 +222,11 @@ export class AccountCoreOwner {
       appServerEndpoint: this.options.appServerEndpoint, proxyPort: this.options.proxyPort, upstream: this.options.upstreamBaseUrl,
       nativeCodexHomeDirectory: this.options.nativeCodexHomeDirectory, runtimeDirectory: this.options.runtimeDirectory, token: digest(this.options.authToken) });
   }
+  private exactHistoricalUnknown() { return digest(this.state.uncertain) === digest(this.state.carriedUnknown ?? []); }
   private async readiness() {
     const storage = await readAccountStorage(this.options.dataDirectory);
-    if (!this.state.sealed || storage.sha256 !== this.state.sealed.storage) throw new Error("Account current storage differs from release receipt");
+    if (!this.state.sealed || storage.sha256 !== this.state.sealed.storage || !this.exactHistoricalUnknown()
+      || this.state.sealed.historicalUnknownSha256 !== undefined && this.state.sealed.historicalUnknownSha256 !== digest(this.state.uncertain)) throw new Error("Account current storage or historical unknown differs from release receipt");
     const cliSha256 = await fileDigest(this.options.executable), configurationSelectorSha256 = this.configuration();
     if (this.state.sealed.cliSha256 !== cliSha256 || this.state.sealed.configurationSelectorSha256 !== configurationSelectorSha256) {
       throw new Error("Account handoff configuration or fixed CLI changed");
@@ -229,7 +236,7 @@ export class AccountCoreOwner {
       configurationSelectorSha256,
       capabilitySha256: digest({ handoff: 1, coreProtocol: 1, proxy: 1, node: process.version, abi: process.versions.modules, arch: process.arch,
         platform: process.platform, executable: this.options.executable, cliSha256 }),
-      retainedSha256: digest(this.state.retained), storageOutcome: "ready" as const };
+      retainedSha256: digest(this.state.retained), historicalUnknownSha256: digest(this.state.uncertain), storageOutcome: "ready" as const };
   }
   async coldReady(input: AccountOwnerExpectation) {
     this.check(input);

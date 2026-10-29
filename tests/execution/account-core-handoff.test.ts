@@ -331,3 +331,31 @@ test("root cold handoff preserves a private external credential owned by its ind
     await chown(reference, 0, 0); await next.adapter.abortFence(f.input(await next.adapter.snapshot()));
   } finally { await f.close(); }
 });
+
+test("explicit terminal proxy unknown list survives cold handoff while active streams and new uncertainty block", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.start(), lost = await f.model(); await lost.body!.cancel();
+    let state: any;
+    for (let n = 0; n < 100; n++) { state = await first.adapter.snapshot(); if (state.handoff.uncertain.length && state.proof.counts.proxy === 0) break; await delay(10); }
+    const exact = state.handoff.uncertain; assert.equal(exact.length, 1);
+    await assert.rejects(first.adapter.acquireFence({ ...f.input(state), historicalUnknown: [{ ...exact[0], id: "wrong" }] }));
+    const live = await f.model();
+    const fenced = await first.adapter.acquireFence({ ...f.input(await first.adapter.snapshot()), historicalUnknown: exact });
+    assert.equal(fenced.proof.coverage, "complete"); assert.ok(fenced.proof.counts.proxy > 0);
+    await assert.rejects(first.adapter.releaseWriter({ ...f.input(fenced), proof: fenced.proof.identity }));
+    await live.text(); await delay(20);
+    const idle = await first.adapter.inspectDrain(f.input(fenced)); assert.equal(idle.proof.activeCount, 0);
+    await first.adapter.releaseWriter({ ...f.input(idle), proof: idle.proof.identity });
+    await f.stop(first.child); const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, exact); assert.deepEqual(cold.handoff.carriedUnknown, exact);
+    await next.adapter.releaseFence(f.input(cold), cold);
+    assert.deepEqual((await next.adapter.snapshot()).handoff.uncertain, exact);
+    const lostAgain = await f.model(); await lostAgain.body!.cancel();
+    for (let n = 0; n < 100; n++) { state = await next.adapter.snapshot(); if (state.handoff.uncertain.length === 2 && state.proof.counts.proxy === 0) break; await delay(10); }
+    await assert.rejects(next.adapter.acquireFence({ ...f.input(state), historicalUnknown: exact }));
+    const blocked = await next.adapter.acquireFence(f.input(state)); assert.equal(blocked.proof.coverage, "unknown");
+    await assert.rejects(next.adapter.releaseWriter({ ...f.input(blocked), proof: blocked.proof.identity }));
+    await next.adapter.abortFence(f.input(blocked));
+  } finally { await f.close(); }
+});

@@ -8,6 +8,7 @@ import { CodexGenerationRegistry, type GenerationDefinition, type GenerationReco
 import { GenerationPeer, NativeGenerationError, rpcRecord, type RpcRecord } from "./generation-peer.js";
 import type { GenerationRuntimeDirectory } from "./generation-router.js";
 import type { GenerationProcessIdentity, GenerationSupervisor } from "./generation-supervisor.js";
+import { readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
 
 export type GenerationHostUsage = CodexGenerationHostUsage;
 export interface GenerationColdReplacement {
@@ -35,6 +36,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     requireHostUsage: boolean; replaceRetiredHome: GenerationColdReplacement;
     executionUid?: number; executionGid?: number; runtimeParentDirectory?: string; socketParentDirectory?: string;
     now?: () => number;
+    nativeHistoryFailures?: NativeHistoryFailures;
   }) {
     this.registry = new CodexGenerationRegistry(options.directory);
     try { this.owner = new CodexRouterOwner(this.registry); }
@@ -352,6 +354,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   }
   async coldReadNative() {
     const values = [];
+    const failures = this.options.nativeHistoryFailures?.failures ?? [];
+    if (failures.some(row => !this.registry.list().some(g => ["active", "draining", "ready"].includes(g.state) && g.id === row.generationId))) throw new Error("Historical failure generation changed");
     if (this.registry.list().some(g => g.state === "retired" && this.registry.durableThreadIds(g.id).length)) throw new Error("Cold retired history combination is unverified");
     for (const g of this.registry.list().filter(g => ["active", "draining", "ready"].includes(g.state))) {
       const health = await this.options.supervisor.inspect!(g);
@@ -359,13 +363,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       if (JSON.stringify(identity) !== JSON.stringify(this.registry.metadata(`runtime:${g.id}`)) || health.callbackProtocolVersion !== 1) throw new Error("Native identity changed");
       const { peer } = await GenerationPeer.open(health.nativeSocket, { clientInfo: { name: "opencraft-router-cold-read", version: "1" }, capabilities: { experimentalApi: true } }, { message() {}, disconnected() {} });
       try {
-        const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
-        if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw new Error("Native subscriptions unavailable");
-        for (const id of this.registry.durableThreadIds(g.id)) {
-          const result = rpcRecord(await peer.call("thread/read", { threadId: id, includeTurns: false }));
-          if (rpcRecord(result.thread).id !== id) throw new Error("Native historical reader unavailable");
-        }
-        values.push({ generation: g.id, identity });
+        const history = await readNativeHistory(peer, g.id, this.registry.durableThreadIds(g.id), failures.filter(row => row.generationId === g.id));
+        values.push({ generation: g.id, identity, history });
       } finally { peer.close(); }
     }
     return values;
