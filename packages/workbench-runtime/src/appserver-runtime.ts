@@ -123,6 +123,7 @@ import {
   type TurnInterruptProvenance,
 } from "@opencraft/chat-runtime";
 import {
+  SubmitCompileError,
   AppServerFuzzyFileSearchController,
   AppServerInteractionBroker,
   AppServerInteractionLedger,
@@ -781,8 +782,19 @@ export function createAppServerWorkbenchRuntime(
     return client;
   };
 
+  // One runtime belongs to one Host/account. Keep the latest successful pages
+  // as advisory capability hints, without authorizing a model selection.
+  const recentModelPages = new Map<string, ModelListResponse>();
+  const modelPageKey = (scope: string | null | undefined, cursor: string | null | undefined) => JSON.stringify([scope ?? null, cursor ?? null]);
+  const rememberModelPage = (params: ModelListParams, page: ModelListResponse) => {
+    const key = modelPageKey(params.threadId, params.cursor);
+    recentModelPages.delete(key);
+    recentModelPages.set(key, page);
+    if (recentModelPages.size > 100) recentModelPages.delete(recentModelPages.keys().next().value!);
+    return page;
+  };
   const listSelectableModels = async (params: ModelListParams): Promise<ModelListResponse> => {
-    const page = await requireClient().request("model/list", params);
+    const page = rememberModelPage(params, await requireClient().request("model/list", params));
     if (!config.readSelectableModels) return page;
     const choices = new Map((await config.readSelectableModels(page.data) ?? []).map((choice) => [choice.id, choice]));
     return { ...page, data: page.data.flatMap((model) => {
@@ -1842,7 +1854,10 @@ export function createAppServerWorkbenchRuntime(
           let cursor: string | null = null;
           const seen = new Set<string>();
           do {
-            const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
+            const params = {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})};
+            const page: ModelListResponse = recentModelPages.get(modelPageKey(scope, cursor))
+              ?? recentModelPages.get(modelPageKey(null, cursor))
+              ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
             if (model) {
               const inputModalities = modelInputModalities(model.inputModalities);
@@ -1854,12 +1869,13 @@ export function createAppServerWorkbenchRuntime(
                 } catch {
                   // Model Settings is advisory when its remote read is unavailable; the Host still validates the model.
                 }
-                if (choices && !choices.some((choice) => choice.id === model.id)) throw new Error("所选模型已不可用，请重新选择");
+                if (choices && !choices.some((choice) => choice.id === model.id)) throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", "所选模型已不可用，请重新选择");
               }
               // The Host owns reasoning settings in embedded mode as well.
-              if (useHostDefault) return { inputModalities, model: model.model };
+              if (useHostDefault) return { inputModalities, model: model.model, serviceTiers: (model.serviceTiers?.length ? model.serviceTiers.map(tier => tier.id) : model.additionalSpeedTiers) ?? [] };
               return {
                 inputModalities,
+                serviceTiers: (model.serviceTiers?.length ? model.serviceTiers.map(tier => tier.id) : model.additionalSpeedTiers) ?? [],
                 ...(!modelId ? { model: model.model } : {}),
                 reasoning: reasoningCapability(
                   model.supportedReasoningEfforts.map(e => e.reasoningEffort),
@@ -1870,7 +1886,7 @@ export function createAppServerWorkbenchRuntime(
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          throw new Error(useHostDefault ? "当前 Bot 未配置可用的默认模型，请在模型设置中检查" : modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
+          return {}; // An incomplete catalog must not block submission.
         },
         dynamicTools: declaredDynamicTools(),
         onInterrupt: (event) => console.info("[turn-interrupt] client request", event),
