@@ -81,7 +81,14 @@ export async function startCodexGenerationService(options: {
     };
     const observation = async () => {
       const value = await runtime.handoffObservation(), counts = { ...value.counts, ...router.handoffCounts() };
-      return { ...value, counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0) };
+      const activeCount = Object.values(counts).reduce((a, b) => a + b, 0);
+      let coverage = value.coverage;
+      if (coverage === "complete" && activeCount === 0 && !runtime.owner.snapshot().uncertain) {
+        // Reject unsupported current history while the exact source can still
+        // abort. Discovering it only after release also defeats old-payload recovery.
+        try { await runtime.coldReadNative(); } catch { coverage = "unknown"; }
+      }
+      return { ...value, coverage, counts, activeCount };
     };
     control = await startControlServer(options.endpoint, options.token, async request => {
       if (request.url === "/owner-handoff") {
