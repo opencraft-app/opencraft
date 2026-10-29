@@ -48,6 +48,9 @@ export interface TransportFailureDisposition {
   readonly code: string;
   readonly recovery: "automatic" | "manual";
   readonly diagnostic?: TransportFailureDiagnostic;
+  /** Local RPC id whose send was explicitly rejected before native forwarding.
+   * No other pending request inherits this proof. */
+  readonly notDispatchedRequestId?: string | number;
 }
 
 export interface TransportStatus {
