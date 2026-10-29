@@ -993,7 +993,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           // this connection's original subscription) can watch an empty Thread.
           if (!this.nativeSubscribedThreads.has(string(historyParams.threadId))
             && !this.nativeCore?.supportsOrchestration) {
-            this.emit({ id, error: { code: -32600, message: "Empty Thread recovery requires a retained native subscription" } }, clientId);
+            this.emit({ id, error: { code: -32600, message: "当前连接无法恢复空会话" } }, clientId);
             return;
           }
           this.nativeSubscribedThreads.add(string(historyParams.threadId));
