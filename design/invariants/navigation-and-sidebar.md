@@ -18,6 +18,13 @@ as the existing destination. Mobile retains its labeled scrolling navigation,
 drawer-header Applications entrance and floating actions. Portal, conversation,
 draft, scrolling, account and navigation owners remain unchanged.
 
+Navigation glyph geometry belongs to the shared application-navigation role.
+Destination buttons and accessory Buttons consume the same icon token, including
+when Button inserts a label wrapper. Account avatars keep their own size role.
+Header panel entrances instead consume the shared chrome icon token: narrow
+layout and touch density project its size; nested cross-fade glyphs and portalled
+sidebar controls do not define independent sizes.
+
 ## Persistent sidebar control beside the brand
 
 Unified Shell navigation keeps its sidebar toggle in the persistent header,
