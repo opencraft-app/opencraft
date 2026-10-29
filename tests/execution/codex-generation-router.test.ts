@@ -214,14 +214,17 @@ test("path fork follows the actual source HOME and rejects a conflicting Thread 
 
 
 test("incarnation replacement expires old command/terminal/approval leases and observes loss without closing the front", async () => {
-  const f = await fixture();
+  const f = await fixture({}, false, true);
   try {
     const thread = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.thread.id });
     const request = f.messages.find(m => m.method === "item/commandExecution/requestApproval");
     await f.rpc("process/spawn", { processHandle: "terminal", command: ["synthetic"] });
     const held = f.hold("old", "command/exec"), running = f.rpc("command/exec", { processId: "command", command: ["synthetic"] });
     const rejected = assert.rejects(running, /unconfirmed/); await held.entered;
+    const originalIncarnation = f.registry.get("old")!.incarnation;
     f.registry.runtimeChanged("old"); await f.rpc("thread/read", { threadId: thread.thread.id }); await rejected; held.release();
+    const replaced = responsibilityRows(f.registry).filter(row => row.uncertainty?.["generation-replaced"]);
+    assert.ok(replaced.length >= 3); assert.ok(replaced.every(row => row.generationId === "old" && row.incarnation === originalIncarnation));
     assert.ok(f.messages.some(m => m.method === "serverRequest/resolved" && m.params.requestId === request.id));
     assert.ok(f.messages.some(m => m.method === "opencraft/codex/generation/lost" && m.__opencraftGeneration.incarnation === 2));
     await f.rpc("process/spawn", { processHandle: "terminal", command: ["synthetic"] });
@@ -329,6 +332,7 @@ test("native callback cancellation cannot erase a possibly dispatched Host opera
     const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
     await f.rpc("fixture/resolveApproval", { threadId: thread.id });
     assert.equal(f.owner!.snapshot().uncertain, true);
+    assert.ok(responsibilityRows(f.registry).some(row => row.threadId === thread.id && row.turnId === "turn" && row.uncertainty?.["native-resolved-before-reply"]));
     const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "cancelled", fence: "fence" };
     f.owner!.fence(input);
     const counts = f.router.handoffCounts();
@@ -350,5 +354,75 @@ test("native dynamic-tool item completion is an exact callback receipt scoped to
     assert.equal(f.replies.length,1); assert.equal(f.router.handoffCounts().connectionTools,0);
     assert.deepEqual(f.owner!.snapshot().pending,[]); assert.equal(f.owner!.snapshot().uncertain,false);
     assert.ok(f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));
+  } finally { await f.close(); }
+});
+
+function responsibilityRows(registry: CodexGenerationRegistry): any[] {
+  const snapshot = registry.coldSnapshot() as any;
+  return snapshot.tables.find((t: any) => t.name === "routing_metadata").rows
+    .filter((row: any) => row.key.startsWith("router-lease:")).map((row: any) => JSON.parse(row.value));
+}
+test("consumer loss durably identifies the exact native callback without recording its arguments", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
+    const before = responsibilityRows(f.registry).find(row => row.kind === "native-callback");
+    assert.equal(before.method, "item/commandExecution/requestApproval"); assert.equal(before.generationId, "old");
+    assert.equal(before.threadId, thread.id); assert.equal(before.turnId, "turn"); assert.equal(before.nativeRequestId, "7");
+    assert.ok(before.connectionId && before.rpcId.startsWith("ocg:"));
+    f.client.terminate();
+    for (let i = 0; i < 100 && !f.owner!.snapshot().uncertain; i++) await new Promise(r => setTimeout(r, 5));
+    const after = f.registry.metadata(`router-lease:${before.id}`) as any;
+    assert.ok(after.uncertainty["consumer-disconnected"].firstAt); assert.equal(after.threadId, thread.id);
+    assert.ok(f.owner!.snapshot().pending?.includes(before.id));
+  } finally { await f.close(); }
+});
+test("native loss attributes both RPC and process leases with protocol IDs and preserves unknown after late replies", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    await f.rpc("process/spawn", { processHandle: "terminal-1", command: ["PRIVATE_SCRIPT"], env: { KEY: "PRIVATE_ENV" } });
+    const gate = f.hold("old", "command/exec"), running = f.rpc("command/exec", { processId: "command-1", command: ["PRIVATE_COMMAND"] }).catch(() => undefined);
+    await gate.entered; f.crash("old"); await running; gate.release();
+    const unknown = responsibilityRows(f.registry).filter(row => row.uncertainty);
+    const process = unknown.find(row => row.kind === "connection-tool" && row.processHandle === "terminal-1");
+    const command = unknown.find(row => row.kind === "connection-tool" && row.processId === "command-1");
+    assert.ok(process?.uncertainty["native-disconnected"]); assert.ok(command?.uncertainty["native-disconnected"]);
+    assert.equal(process.method, "process/spawn"); assert.equal(command.method, "command/exec");
+    assert.equal(command.generationId, "old"); assert.ok(command.parentLeaseId);
+    const rpc = unknown.find(row => row.id === command.parentLeaseId); assert.equal(rpc.method, "command/exec");
+    assert.ok(rpc.uncertainty["native-result-unknown"]); assert.equal(rpc.connectionId, command.connectionId);
+    assert.ok(rpc.nativeRequestId); assert.equal(rpc.nativeRequestId, command.nativeRequestId); assert.ok(command.sentAt);
+    assert.doesNotMatch(JSON.stringify(unknown), /PRIVATE_|arguments|command":|env":/u);
+    assert.ok(f.owner!.snapshot().uncertain);
+  } finally { await f.close(); }
+});
+test("ambiguous native terminal events preserve evidence for every matching call instead of choosing a successful one", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start");
+    for (const id of [41, 42]) f.notifyNative("old", { id, method: "item/tool/call", params: { threadId: thread.id, turnId: "turn-ambiguous", callId: "shared-call", arguments: { key: "PRIVATE_ARGUMENT" } } });
+    for (let i = 0; i < 100 && f.router.handoffCounts().connectionTools < 2; i++) await new Promise(r => setTimeout(r, 5));
+    f.notifyNative("old", { method: "item/completed", params: { threadId: thread.id, turnId: "turn-ambiguous", item: { type: "dynamicToolCall", id: "shared-call", status: "completed" } } });
+    for (let i = 0; i < 100 && !f.owner!.snapshot().uncertain; i++) await new Promise(r => setTimeout(r, 5));
+    const records = responsibilityRows(f.registry).filter(row => row.uncertainty?.["ambiguous-native-completion"]);
+    assert.equal(records.length, 2); assert.deepEqual(records.map(row => row.nativeRequestId).sort(), ["41", "42"]);
+    assert.ok(records.every(row => row.threadId === thread.id && row.turnId === "turn-ambiguous" && row.callId === "shared-call"));
+    assert.doesNotMatch(JSON.stringify(records), /PRIVATE_ARGUMENT|arguments/u);
+    assert.equal(f.router.handoffCounts().connectionTools, 2);
+  } finally { await f.close(); }
+});
+test("evidence write failure at the native send boundary prevents the mutation from reaching native", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start");
+    const write = f.registry.setMetadata.bind(f.registry);
+    f.registry.setMetadata = (key, value) => {
+      const record = value as any;
+      if (key.startsWith("router-lease:") && record.method === "turn/start" && record.phase === "sent") throw Error("fixture send-evidence failure");
+      write(key, value);
+    };
+    await assert.rejects(f.rpc("turn/start", { threadId: thread.id }), /unconfirmed/);
+    assert.equal(f.calls.filter(row => row.method === "turn/start").length, 0);
+    assert.equal(f.owner!.isOpen(), false); assert.equal(f.owner!.snapshot().persistence, "unknown");
   } finally { await f.close(); }
 });

@@ -9,6 +9,36 @@ type State = { version: 1; epoch: number; phase: "open" | "fenced" | "released" 
 export interface RouterExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string }
 export interface RouterObservation { coverage: "complete" | "unknown"; activeCount: number; historicalCount: number; counts: Record<string, number> }
 
+export interface RouterLeaseContext {
+  method?: string; connectionId?: string; parentLeaseId?: string; rpcId?: string; nativeRequestId?: string;
+  generationId?: string; incarnation?: number; ownerEpoch?: string; admissionEpoch?: number;
+  threadId?: string; turnId?: string; callId?: string; processId?: string; processHandle?: string; operation?: string;
+}
+export type RouterUnknownReason = "unattributed" | "consumer-disconnected" | "native-disconnected" | "generation-replaced"
+  | "native-result-unknown" | "native-resolved-before-reply" | "ambiguous-native-completion";
+export interface RouterLease {
+  (): void;
+  readonly id: string;
+  update(context: RouterLeaseContext): void;
+  sent(): void;
+  unknown(reason: RouterUnknownReason): void;
+}
+type LeaseRecord = RouterLeaseContext & { version: 1; id: string; kind: string; routerOwner: string; routerIncarnation: string;
+  bootId: string; pid: number; phase: "accepted" | "sent" | "released"; acceptedAt: string; sentAt?: string; releasedAt?: string;
+  uncertainty?: Partial<Record<RouterUnknownReason, { firstAt: string; lastAt: string; count: number }>> };
+const RECENT_LEASES = "router-lease-recent", RECENT_LIMIT = 32;
+// Only protocol identity fields cross this boundary, never params, inputs, env,
+// paths, tool results or exception messages. Unsupported identity shapes stay absent.
+function leaseContext(input: RouterLeaseContext): RouterLeaseContext {
+  const value: Record<string, string | number> = {};
+  for (const key of ["method", "connectionId", "parentLeaseId", "rpcId", "nativeRequestId", "generationId", "ownerEpoch", "threadId", "turnId", "callId", "processId", "processHandle", "operation"] as const) {
+    const field = input[key];
+    if (typeof field === "string" && /^[a-zA-Z0-9_:/.-]{1,256}$/u.test(field)) value[key] = field;
+  }
+  for (const key of ["incarnation", "admissionEpoch"] as const) if (Number.isSafeInteger(input[key]) && input[key]! >= 0) value[key] = input[key]!;
+  return value;
+}
+
 /** Registry authority only. Native processes and HOME writers remain independent. */
 export class CodexRouterOwner {
   readonly owner = randomUUID();
@@ -31,31 +61,74 @@ export class CodexRouterOwner {
     if (this.state.phase !== "open" && this.storage() !== this.state.sealed) throw new Error("Router current registry differs from release");
   }
   isOpen = () => !this.failed && !this.busy && this.state.phase === "open";
-  enter(reconciliation = false) {
+  enter(reconciliation = false, context: RouterLeaseContext = {}): RouterLease {
     const sourceReply = reconciliation && !this.failed && !this.busy && this.state.phase === "fenced" && this.state.sourceOwner === this.owner;
     if (!this.isOpen() && !sourceReply) throw new Error("Router admission is fenced");
-    return this.retain();
+    return this.retain("rpc", context);
   }
-  retainNativeCallback() {
+  retainNativeCallback(context: RouterLeaseContext = {}): RouterLease {
     if (this.failed || this.busy || !["open", "fenced"].includes(this.state.phase)
       || this.state.phase === "fenced" && this.state.sourceOwner !== this.owner) throw new Error("Router callback admission is unconfirmed");
-    return this.retain();
+    return this.retain("native-callback", context);
   }
-  retainConnectionTool() {
+  retainConnectionTool(context: RouterLeaseContext = {}): RouterLease {
     if (this.failed || !this.calls || !["open", "fenced"].includes(this.state.phase)) throw new Error("Router tool admission is unconfirmed");
-    return this.retain();
+    return this.retain("connection-tool", context);
   }
-  private retain() {
-    const id = randomUUID();
-    this.save({ ...this.state, pending: [...(this.state.pending ?? []), id] });
+  private recent(): string[] {
+    const recent = this.registry.metadata(RECENT_LEASES) ?? [];
+    if (!Array.isArray(recent) || recent.length > RECENT_LIMIT || !recent.every(id => typeof id === "string" && /^[a-f0-9-]{36}$/u.test(id))) throw new Error("Invalid router lease retention state");
+    return recent;
+  }
+  private retain(kind: string, context: RouterLeaseContext): RouterLease {
+    const id = randomUUID(), key = `router-lease:${id}`;
+    let record: LeaseRecord = { version: 1, id, kind, routerOwner: this.owner, routerIncarnation: this.incarnation,
+      bootId: this.bootId, pid: process.pid, phase: "accepted", acceptedAt: new Date().toISOString(), ...leaseContext(context) };
+    this.save({ ...this.state, pending: [...(this.state.pending ?? []), id] }, { [key]: record });
     this.calls++; let done = false;
-    return () => { if (!done) { done = true; this.calls--; this.save({ ...this.state, pending: this.state.pending?.filter(value => value !== id) }); } };
+    const release = (() => {
+      if (done) return; done = true;
+      record = { ...record, phase: "released", releasedAt: new Date().toISOString() };
+      const recent = this.recent().filter(value => value !== id);
+      if (!record.uncertainty) recent.push(id);
+      const expired = recent.splice(0, Math.max(0, recent.length - RECENT_LIMIT));
+      this.save({ ...this.state, pending: this.state.pending?.filter(value => value !== id) },
+        { [key]: record, [RECENT_LEASES]: recent }, expired.map(value => `router-lease:${value}`));
+      this.calls--;
+    }) as RouterLease;
+    Object.assign(release, {
+      id,
+      update: (context: RouterLeaseContext) => {
+        if (done) return;
+        record = { ...record, ...leaseContext(context) }; this.save(this.state, { [key]: record });
+      },
+      sent: () => {
+        if (done || record.sentAt) return;
+        record = { ...record, phase: "sent", sentAt: new Date().toISOString() }; this.save(this.state, { [key]: record });
+      },
+      unknown: (reason: RouterUnknownReason) => {
+        const at = new Date().toISOString(), prior = record.uncertainty?.[reason];
+        record = { ...record, uncertainty: { ...record.uncertainty, [reason]: { firstAt: prior?.firstAt ?? at, lastAt: at, count: (prior?.count ?? 0) + 1 } } };
+        this.save({ ...this.state, uncertain: true }, { [key]: record, [RECENT_LEASES]: this.recent().filter(value => value !== id) });
+      },
+    });
+    return release;
   }
-  uncertain() { this.save({ ...this.state, uncertain: true }); }
+  uncertain(reason: RouterUnknownReason = "unattributed", context: RouterLeaseContext = {}) {
+    const id = randomUUID();
+    this.save({ ...this.state, uncertain: true }, { [`router-uncertainty:${id}`]: { version: 1, id, reason,
+      at: new Date().toISOString(), routerOwner: this.owner, routerIncarnation: this.incarnation, bootId: this.bootId, pid: process.pid, ...leaseContext(context) } });
+  }
   private storage() { return digest(this.registry.coldSnapshot()); }
-  private save(state: State) {
-    try { this.registry.setMetadata("router-handoff", state); this.state = state; }
-    catch (error) { this.failed = true; throw error; }
+  private save(state: State, evidence: Record<string, unknown> = {}, remove: readonly string[] = []) {
+    try { this.registry.updateMetadata({ "router-handoff": state, ...evidence }, remove); this.state = state; }
+    catch (error) {
+      this.failed = true;
+      // A later successful counter release must retain a failed unknown write's
+      // restart barrier. Keep the conservative bit in memory for that retry.
+      if (state.uncertain) this.state = { ...this.state, uncertain: true };
+      throw error;
+    }
   }
   snapshot() { return { ...this.state, owner: this.owner, incarnation: this.incarnation, bootId: this.bootId,
     protocolVersion: 1, pid: process.pid, activeCalls: this.calls, persistence: this.failed ? "unknown" : "ready" }; }
