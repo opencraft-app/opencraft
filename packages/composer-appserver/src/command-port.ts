@@ -125,10 +125,24 @@ export function createAppServerConversationCommandPort(
       intent = { ...intent, selections };
     }
     let resolved: SubmitCompilerOptions | undefined;
-    try { resolved = await config.resolveCompilerOptions?.(intent); }
+    let capabilityTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      resolved = await Promise.race([
+        config.resolveCompilerOptions?.(intent),
+        new Promise<SubmitCompilerOptions>(resolve => { capabilityTimer = setTimeout(() => resolve({ reasoning: undefined }), 2000); }),
+      ]);
+    }
     catch (cause) {
       if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") throw cause;
-      throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`);
+      if (cause instanceof SubmitCompileError) throw cause;
+      // Catalog availability is advisory; the Host validates model and effort.
+      resolved = { reasoning: undefined };
+    } finally {
+      clearTimeout(capabilityTimer);
+    }
+    if (!resolved?.serviceTiers?.includes(intent.selections.serviceTier ?? "")) {
+      const { serviceTier: _serviceTier, ...selections } = intent.selections;
+      intent = { ...intent, selections };
     }
     return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
   };

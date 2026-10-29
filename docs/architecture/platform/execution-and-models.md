@@ -541,3 +541,7 @@ dispatch still calls the owner uncertainty hook. No POST is replayed by this
 bridge, no historical uncertainty is removed, and installing a Web package does
 not replace an independently running account Core. Owner handoff must separately
 preserve its exact historical uncertainty list.
+
+## Advisory service tier capability
+
+Capability lookup reuses recent successful pages from the same runtime Host (preferring the Thread scope), with a two-second total pre-send budget. An uncached catalog request has a 1.8-second timeout. Submission includes a selected service tier only when the resolved model catalog declares it. Catalog failures or missing models omit the tier and leave model and reasoning validation to the Host. An explicit model-selection policy rejection and cancelled dispatch still block submission. Unsupported tiers are omitted silently without changing the saved preference.
