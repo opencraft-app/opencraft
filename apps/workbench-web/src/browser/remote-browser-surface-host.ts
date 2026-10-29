@@ -115,7 +115,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private root: HTMLElement | null = null;
   private storageIds = new Map<BrowserPageId, string>();
-  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1'), private readonly admitted: () => boolean = () => true) {
+  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1'), private readonly admitted: () => boolean = () => true, private readonly whenAdmitted?: () => Promise<void>) {
     this.restoreStorage();
   }
   restoreStorage() {
@@ -129,7 +129,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     this.storageIds.set(id, storage); this.persistStorage();
   }
   forget(id: BrowserPageId) { this.storageIds.delete(id); this.persistStorage(); }
-  private persistStorage() { try { this.storage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(this.storageIds))); } catch {} }
+  private persistStorage() { if (!this.admitted()) return; try { this.storage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(this.storageIds))); } catch {} }
 
   private hostIdentities = new Set<BrowserPageId>();
   bindHostIdentity(id: BrowserPageId) { this.hostIdentities.add(id); }
@@ -154,7 +154,6 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       park: () => this.park(id), close: () => this.release(id, false), clearCover: () => {}, cover: () => {} };
   }
   navigate(id: BrowserPageId, _title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force = false): boolean {
-    if (!this.admitted()) throw Object.assign(new Error('Remote browser awaits authenticated initialization'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
     const absent = !this.pages.has(id);
     if (absent && !this.hostIdentities.has(id)) this.backing?.(id);
     const p = this.ensure(id, events); p.events = events;
@@ -269,7 +268,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       nativeCopy: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
       viewportMeasured: false, width: 1280, height: 720, viewport: { width: 1280, height: 720 }, sentViewport: '', resizeTimer: null, resizing: false,
       latest: null, raf: 0, reconnect: null, connection: 0, retries: 0, needsKey: true, automation: null!, resetPointers: () => {}, resetInput: () => {}, inputDispose: () => {} };
-    if (!this.storageIds.has(id)) { this.storageIds.set(id, p.lease); this.persistStorage(); }
+    if (this.admitted() && !this.storageIds.has(id)) { this.storageIds.set(id, p.lease); this.persistStorage(); }
     const call = (method: string, input?: unknown): Promise<any> => {
       if (['inspect', 'readContext', 'wait'].includes(method)) return p.ready.then(() => this.call(p, 'automation', { method, input }));
       const operation = p.agentQueue.catch(() => {}).then(async () => {
@@ -307,6 +306,17 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     p.ready = this.connect(p); void p.ready.catch(error => { if (!p.closed) p.events.onError(error.message); });
   }
   private connect(p: Page): Promise<void> {
+    // Restored panels may mount while the offline shell is still authenticating.
+    // Give them a presentation port immediately; only admit physical resources
+    // after the authoritative metadata has loaded.
+    if (!this.admitted()) return (this.whenAdmitted?.() ?? Promise.reject(new Error('Remote browser awaits authenticated initialization'))).then(() => {
+      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
+      if (!this.admitted()) throw new Error('Remote browser awaits authenticated initialization');
+      this.restoreStorage();
+      p.lease = (this.storageIds.get(p.id) ?? p.lease).replace(':', '-');
+      this.storageIds.set(p.id, p.lease); this.persistStorage();
+      return this.connect(p);
+    });
     // Native creation must follow the metadata commit, including reconnect.
     if (this.storage.flush) return this.storage.flush().then(() => {
       if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
