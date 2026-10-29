@@ -25,6 +25,8 @@ test('incremental directory selection remains equal to a fresh npm scan across p
   }
   await compare(); // Populate.
   await compare(); // Reuse, including bundles and mandatory paths outside files.
+  await put('ignored/package.json', '{invalid policy fixture'); await compare();
+  await rm(join(root, 'ignored'), { recursive: true });
   manifest.version = '1.0.1'; manifest.opencraftWeb = { buildId: 'new-build' }; await updateManifest(); await compare();
   await put('runtime/a.js', 'changed contents and size'); await compare();
   await rm(join(root, 'web/a.js')); await put('web/b.js', 'new hashed asset'); await compare();
