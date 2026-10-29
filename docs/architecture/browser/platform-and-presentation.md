@@ -257,3 +257,13 @@ lease, focus or keyboard policy.
 Conversation rows expose the logical tabs held by their canonical Host+Thread binding, including tabs retained without a visible presentation. The coordinator owns a stable, per-conversation subscribable metadata projection (tab identity, title and URL); reads do not create a binding, open a panel, prepare a surface or attach to a native page. Title/navigation updates reuse unchanged projections and notify only the affected conversation. Binding promotion also refreshes the directory.
 
 The row resource menu lists tab titles, opens an existing tab in its original scope, and offers explicit close-all for that conversation. It shares the Sidebar's exclusive menu owner. Leaving the conversation or dismissing this menu does not destroy tabs or take input control. Counts describe retained logical tabs, not measured CPU or memory, native liveness or viewer/controller ownership.
+
+### Remote browser metadata budgets
+
+Conversation binding aliases cover the catalog rather than only open browser tabs.
+Their value budget is 1 Mi UTF-16 code units; pages, tabs and lease mappings each
+retain a 64 Ki code-unit budget. Client initial reads, writes and server validation
+consume the shared browser-core limits. The 8 MiB wire budget accommodates all four
+fields at maximum size with worst-case JSON escaping. Rejecting an oversized local
+snapshot does not poison the authenticated metadata connection or erase its last
+acknowledged value; unrelated valid metadata can still be committed.

@@ -1,3 +1,4 @@
+import { browserMetadataValueLimit, browserMetadataWireLimit } from '@opencraft/browser-core/metadata-limits';
 import { prepareBrowserRuntimeAccess } from './remote-browser-access.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -49,7 +50,7 @@ export class RemoteBrowserService {
     this.diagnosticCount = 0;
     this.diagnosticCounts = new Map();
     this.display = displayFlow.createDisplayFlow({ bounds: this.mediaBuckets, keyframe: (page, bucket) => this.keyframe(page, bucket), diagnose: event => this.diagnose(event), pace: page => this.displayPace(page) });
-    this.server = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 128 * 1024 });
+    this.server = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: browserMetadataWireLimit });
   }
   async load() {
     this.loading ??= (async () => {
@@ -184,7 +185,7 @@ export class RemoteBrowserService {
       const previous = draft.states.find(([owner]) => owner === ownerId)?.[1] ?? { revision: 0, values: {} };
       const scope = createHash('sha256').update(this.dataDirectory + '\0' + ownerId).digest('hex');
       if (input.scope !== scope) throw sessionError('STATE_CONFLICT', 'Browser account changed; reload to synchronize');
-      if (!['pages', 'tabs', 'storage', 'bindings'].includes(input.key) || typeof input.value !== 'string' || input.value.length > 64 * 1024
+      if (!['pages', 'tabs', 'storage', 'bindings'].includes(input.key) || typeof input.value !== 'string' || input.value.length > browserMetadataValueLimit(input.key)
         || !/^[a-zA-Z0-9-]{20,100}$/.test(input.mutationId ?? '')) throw new Error('Invalid browser metadata');
       const fingerprint = createHash('sha256').update(JSON.stringify([input.key, input.value])).digest('hex');
       const receipt = previous.receipts?.find(r => r.id === input.mutationId);
