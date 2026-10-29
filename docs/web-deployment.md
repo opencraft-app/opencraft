@@ -525,3 +525,23 @@ in bounded chunks instead of allocating one archive-sized Base64 string.
 完整签名包的sealer直接读取当前npm自带的Arborist/npm-packlist清单并计算文件摘要，写入
 签名后只压缩一次。inspection/dry-run和交付使用同一最终归档，仍执行签名、文件列表、
 权限与预算的完整验证；不能将暂存文件清单当作归档已通过的证据。
+
+### Same-host signed directory installation
+
+A pinned bootstrap configured with a full-release trust root advertises
+`localTreeInstall: 1`. The authenticated local updater can accept
+`--tree <absolute-staging-root> --manifest-sha256 <digest>` with an exact version
+and build ID. It copies only signed files into a fresh installation directory,
+checks all target hashes, sizes, modes, paths, budgets, signatures and replay
+state, then uses the ordinary managed activation and rollback transaction.
+Links are rejected; the staging tree is never executed in place.
+
+`sealPackage({prepareOnly:true,...})` reserves the immutable release identity and
+writes signed metadata without creating an archive or claiming archive SRI.
+After activation and health checks, `archivePreparedPackage` can serialize that
+same tree, independently verify the complete archive and finalize its SRI.
+Archive retries preserve the original manifest and identity; changed contents
+require a new release identity. A failed archive build must not reinstall or
+roll back a healthy running version. Consumers without this capability retain
+the existing archive installation path. Deployments must promote the pinned
+bootstrap once using a verified complete package before selecting this path.

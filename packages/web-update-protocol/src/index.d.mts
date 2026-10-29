@@ -11,6 +11,7 @@ export interface WebUpdateStatus {
   readonly schemaVersion: 1;
   readonly enabled: true;
   readonly localInstall: boolean;
+  readonly localTreeInstall?: 0 | 1;
   readonly authenticated: boolean;
   readonly current: WebReleaseIdentity;
   readonly latest: WebReleaseIdentity | null;
