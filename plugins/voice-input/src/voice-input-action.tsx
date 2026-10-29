@@ -6,7 +6,6 @@ import type { ComposerActionHost } from "@opencraft/extension-react";
 import type { ComposerTransientTextInput, ComposerAudioLevels } from "@opencraft/composer-core";
 import { DictationCompletion } from "./dictation-completion";
 import { DictationPressGesture } from "./dictation-press-gesture";
-import { useMobileEditorVoiceHold } from "./mobile-editor-voice-hold";
 
 import type {
   SpeechInputError,
@@ -21,7 +20,6 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
   return function VoiceInputAction({
     mutations,
     disabled,
-    platform,
   }: ComposerActionHost) {
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const sessionRef = useRef<SpeechInputSession | null>(null);
@@ -230,10 +228,6 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         void finishRecognitionRef.current?.();
       }
     };
-    useMobileEditorVoiceHold(buttonRef, {
-      enabled: platform === "web" && !disabled && available && !activeRef.current,
-      start, finish: finishHeldRecording, cancel,
-    });
     const listening = phase === "listening";
     const active = listening || phase === "starting" || phase === "transcribing" || phase === "failed";
     const label = !available
