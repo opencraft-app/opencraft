@@ -109,7 +109,7 @@ export async function startCodexGenerationService(options: {
         } else if (request.method !== "GET") throw new Error("Unknown router handoff method");
         return { status: 200, value: { pid: process.pid, handoff: runtime.owner.snapshot(), proof, ready } };
       }
-      const done = runtime.owner.enter();
+      const done = runtime.owner.enter(false, { method: `${request.method ?? "UNKNOWN"}/control`, operation: ["/health", "/generations", "/generation-host", "/generation-directory"].find(path => request.url?.split("?")[0] === path) });
       try {
       if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
         const query = new URL(request.url, "http://local.invalid");
@@ -126,6 +126,7 @@ export async function startCodexGenerationService(options: {
       if (request.method !== "POST" || !["/generations", "/generation-host"].includes(request.url ?? "")) return { status: 404, value: { error: "Unknown generation operation" } };
       const value = await readControlJson(request), params = value.params as Record<string, unknown>;
       if (!params || typeof params !== "object" || Array.isArray(params)) return { status: 400, value: { error: "Invalid generation envelope" } };
+      done.update({ operation: typeof value.operation === "string" ? value.operation : undefined, generationId: typeof params.id === "string" ? params.id : typeof (params.definition as Record<string, unknown> | undefined)?.id === "string" ? (params.definition as Record<string, unknown>).id as string : undefined });
       if (request.url === "/generation-host") {
         if (value.operation === "claim") return { status: 200, value: runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
         if (value.operation === "state") return { status: 200, value: runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };

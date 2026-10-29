@@ -47,7 +47,7 @@ export class GenerationPeer {
       } catch (error) { peer.close(); throw error; }
     } catch (error) { socket.terminate(); throw error; }
   }
-  call(method: string, params: RpcRecord, sent?: () => void, timeoutMs: number | null = 120_000): Promise<unknown> {
+  call(method: string, params: RpcRecord, sent?: (nativeRequestId: string) => void, timeoutMs: number | null = 120_000): Promise<unknown> {
     if (this.closed || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Native generation is unavailable before submission"));
     const id = `${this.connectionEpoch}:${++this.sequence}`;
     return new Promise((resolve, reject) => {
@@ -56,7 +56,7 @@ export class GenerationPeer {
         reject(new NativeGenerationError({ code: -32082, message: "Native generation request timed out; delivery is unconfirmed", data: { resultUnknown: true } }));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      try { sent?.(); this.socket.send(JSON.stringify({ id, method, params })); }
+      try { sent?.(id); this.socket.send(JSON.stringify({ id, method, params })); }
       catch (error) { this.pending.delete(id); clearTimeout(timer); reject(error instanceof Error ? error : new Error("Native generation send failed")); }
     });
   }

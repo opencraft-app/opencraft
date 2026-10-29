@@ -281,6 +281,13 @@ export class CodexGenerationRegistry {
   setMetadata(key: string, value: unknown): void {
     this.database.prepare("INSERT INTO routing_metadata VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
   }
+  /** One writer transaction couples responsibility evidence to its admission state. */
+  updateMetadata(values: Readonly<Record<string, unknown>>, remove: readonly string[] = []): void {
+    this.transaction(() => {
+      for (const key of remove) this.database.prepare("DELETE FROM routing_metadata WHERE key=?").run(key);
+      for (const [key, value] of Object.entries(values)) this.setMetadata(key, value);
+    });
+  }
   routes(): { threadId: string; generationId: string }[] {
     return this.database.prepare("SELECT thread_id,generation_id FROM thread_routes ORDER BY thread_id").all().map(row => ({ threadId: String(row.thread_id), generationId: String(row.generation_id) }));
   }
