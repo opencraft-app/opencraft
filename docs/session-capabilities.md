@@ -55,6 +55,16 @@ unsubscribe does not mean its durable catalog row disappears. Active turns are
 never cancelled to refresh tools. Ephemeral inference threads cannot gain these
 capabilities.
 
+The managed native launch fixes `thread_unload_delay_secs=0`. The Host already
+owns the subscription release grace period; native must not add another idle
+retention delay after that explicit release. Native still requires the last
+subscription to leave and the execution to be idle. This preserves active turns
+and execution-bound credentials while allowing idle tool rotation to complete
+promptly. The setting is consumed at AppServer startup: changing a thread config,
+writing config at runtime or reloading MCP does not establish that an existing
+native owner adopted it. Verify the actual launch and owner generation separately
+from a Web update.
+
 Refresh preparation is single-flight per thread and physical connection. Callers
 resolve the current provider configuration after waiting; they cannot reinstall
 an older captured value. The applied snapshot uses structural equality, so JSON
