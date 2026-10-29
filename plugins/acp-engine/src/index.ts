@@ -1,4 +1,4 @@
-import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot } from "../../../scripts/execution-environment.js";
+import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -316,9 +316,10 @@ export class AcpEngine implements ExecutionEngineProvider {
         const id = this.threadPrefix + randomUUID();
         this.pendingMcp.set(id, { id, tools } as Session);
         let transport = this.transport;
+        let executionScope: EnvironmentExecutionScope | undefined;
         if (this.options.executionEnvironment) {
           const envelope = params[EXECUTION_ENVIRONMENT_FIELD];
-          const scope = envelope === undefined ? { account: null, hostId: 'opencraft-server', projectId: params.projectId ?? null, threadId: null }
+          const scope = executionScope = envelope === undefined ? { account: null, hostId: 'opencraft-server', projectId: params.projectId ?? null, threadId: null }
             : this.options.executionEnvironment.open(envelope, 'opencraft-server', 'thread/start', params);
           const environment = this.options.executionEnvironment.snapshot(scope);
           transport = this.createTransport(environment, id);
@@ -326,9 +327,16 @@ export class AcpEngine implements ExecutionEngineProvider {
           try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
         }
         let result: Value;
-        try { result = await transport.request("session/new", { cwd, mcpServers: tools.length ? [this.mcp(id)] : [] }); }
-        finally { this.pendingMcp.delete(id); }
-        if (typeof result.sessionId !== "string" || !result.sessionId) throw new Error("ACP returned an invalid session id");
+        try {
+          result = await transport.request("session/new", { cwd, mcpServers: tools.length ? [this.mcp(id)] : [] });
+          if (typeof result.sessionId !== "string" || !result.sessionId) throw new Error("ACP returned an invalid session id");
+          if (executionScope) this.options.executionEnvironment!.rememberCreation(executionScope, id);
+        } catch (error) {
+          if (transport !== this.transport) {
+            await transport.close(); this.sessionTransports.delete(id); this.sessionEnvironments.delete(id);
+          }
+          throw error;
+        } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: params.model ?? null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
@@ -401,12 +409,16 @@ export class AcpEngine implements ExecutionEngineProvider {
     await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: "model", value: model.slice(this.modelPrefix.length) });
     session.model = model; await this.save(session);
   }
-  private async resume(session: Session): Promise<void> {
+  private async resume(session: Session, inputId?: string): Promise<void> {
     await this.start(); const runtime = this.state(session.id);
     if (this.options.executionEnvironment && !this.sessionTransports.has(session.id)) {
-      const environment = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id));
+      const scope = this.options.executionEnvironment.creation('opencraft-server', session.id)
+        ?? (inputId ? this.options.executionEnvironment.execution('opencraft-server', session.id, inputId) : null);
+      if (!scope) return; // Legacy catalog reads remain cold until an attested input.
+      const environment = this.options.executionEnvironment.snapshot(scope);
       const transport = this.createTransport(environment, session.id);
-      await transport.start(); this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
+      try { await transport.start(); } catch { await transport.close(); throw new Error("ACP environment process unavailable"); }
+      this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
     }
     if (runtime.loaded) return;
     const sessions = value(this.capabilities.sessionCapabilities);
@@ -416,7 +428,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     runtime.loaded = true;
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string): Promise<any> {
-    await this.resume(session); const runtime = this.state(session.id);
+    await this.resume(session, inputId); const runtime = this.state(session.id);
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");

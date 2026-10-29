@@ -1012,7 +1012,7 @@ export class PiEngine {
         const snapshot = session.ephemeral ? await session.native?.snapshot()
           : await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.directory, "handoff-cache"));
         if (!snapshot) { unknown = true; continue; }
-        if (session.native?.idleWorkerPid) workers.push(session.native.idleWorkerPid);
+        if (session.native) workers.push(...session.native.workerProcessIds);
         if (!snapshot.live || typeof snapshot.live !== "object" || Array.isArray(snapshot.live) || !snapshot.agent || typeof snapshot.agent !== "object" || Array.isArray(snapshot.agent)
           || !Array.isArray(snapshot.inbox) || snapshot.queue && !Array.isArray(snapshot.queue.items) || snapshot.shell && !Array.isArray(snapshot.shell.records)) throw new Error("Invalid Pi native documents");
         if (!snapshot.privateCalls || typeof snapshot.privateCalls !== "object" || !snapshot.privateCalls.calls) throw new Error("Invalid Pi private call document");

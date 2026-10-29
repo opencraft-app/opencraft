@@ -72,6 +72,18 @@ export class ExecutionEnvironmentRuntime {
     try { this.vault.writeDocument(PLATFORM, key, current.revision, { projectId }); }
     catch (error) { if (!(error instanceof GitVaultError) || error.code !== 'conflict') throw error; }
   }
+  rememberCreation(scope: EnvironmentExecutionScope, threadId: string) {
+    if (!text(threadId) || !text(scope.hostId) || scope.account !== null && !text(scope.account) || scope.projectId !== null && !text(scope.projectId)) throw new EnvironmentError('invalid');
+    const key = namespace('origin', scope.hostId, threadId), prior = this.vault.readDocument(PLATFORM, key);
+    if (prior.document !== null) throw new EnvironmentError('conflict', 409);
+    this.vault.writeDocument(PLATFORM, key, prior.revision, { ...scope, threadId });
+  }
+  creation(hostId: string, threadId: string): EnvironmentExecutionScope | null {
+    const value = this.vault.readDocument(PLATFORM, namespace('origin', hostId, threadId)).document as EnvironmentExecutionScope | null;
+    if (!value) return null;
+    if (value.hostId !== hostId || value.threadId !== threadId || value.account !== null && !text(value.account) || value.projectId !== null && !text(value.projectId)) throw new EnvironmentError('unavailable');
+    return Object.freeze({ ...value });
+  }
   rememberProjects(hostId: string, projects: readonly { id: string; name: string }[]) {
     if (!text(hostId) || projects.length > 1000 || projects.some(p => !text(p.id) || !text(p.name))) throw new EnvironmentError('invalid');
     const key = namespace('catalog', hostId), current = this.vault.readDocument(PLATFORM, key);

@@ -108,10 +108,11 @@ test('ACP sessions own separate native processes and keep injected values out of
   const engine = new AcpEngine({ cwd: f.root, command: process.execPath, args: [peer], dataDirectory: join(f.root, 'acp'), executionEnvironment: f.runtime });
   t.after(() => engine.close()); const messages: any[] = []; engine.subscribe((method, params) => messages.push({ method, params }));
   const client = { notify() {}, async request() {} };
+  let lastThread = "";
   for (const [account, project, expected] of [['alice', 'a', 'alice-a'], ['bob', 'a', 'bob-global'], ['alice', 'b', 'alice-global']]) {
     const execution = scope('employee:' + account, project);
     const created = await engine.request('thread/start', { cwd: f.root, [EXECUTION_ENVIRONMENT_FIELD]: f.runtime.seal({ ...execution, threadId: null }, 'thread/start') }, client);
-    const threadId = created.thread.id;
+    const threadId = lastThread = created.thread.id;
     f.admit(threadId, account); f.runtime.bind('opencraft-server', threadId, project);
     await engine.request('turn/start', { threadId, clientUserMessageId: 'input', input: [{ type: 'text', text: 'probe' }] }, client);
     await until(() => messages.some(row => row.method === 'turn/completed' && row.params.threadId === threadId));
@@ -119,6 +120,14 @@ test('ACP sessions own separate native processes and keep injected values out of
     for (const value of ['alice-a', 'bob-global', 'alice-global']) assert.equal(JSON.stringify([snapshot, engine.occupancy, created]).includes(value), false);
   }
   assert.equal(new Set(engine.processIds).size, 4);
+  f.leases.finished(lastThread, 'turn-input');
+  await engine.suspend();
+  assert.equal(f.runtime.execution('opencraft-server', lastThread).account, null);
+  await engine.request('thread/resume', { threadId: lastThread }, client);
+  f.admit(lastThread, 'alice', 'next'); f.runtime.bind('opencraft-server', lastThread, 'b');
+  const next = await engine.request('turn/start', { threadId: lastThread, clientUserMessageId: 'next', input: [{ type: 'text', text: 'again' }] }, client);
+  await until(() => messages.some(row => row.method === 'turn/completed' && row.params.turn.id === next.turn.id));
+  assert.ok(JSON.stringify(engine.snapshot(lastThread)).includes(hash('alice-global')));
   const snapshot = f.runtime.snapshot(scope());
   assert.equal(JSON.stringify(snapshot).includes('alice-a'), false); assert.equal(inspect(snapshot).includes('alice-a'), false);
   assert.deepEqual(f.runtime.redact({ error: 'child failed: alice-a', nested: ['bob-global'] }), { error: 'child failed: [REDACTED]', nested: ['[REDACTED]'] });
@@ -161,4 +170,46 @@ test('pinned DSH bash and terminal spawn boundaries inject only the admitted emp
       assert.equal((await promisify(execFile)(process.execPath, ['-e', program], { cwd: f.root, env })).stdout, hash(expected));
     }
   }
+});
+
+
+test('failed ACP native session creation releases its environment process and remains retryable', async t => {
+  const f = await fixture(t), peer = join(f.root, 'failure-peer.mjs'), pids = join(f.root, 'pids');
+  await writeFile(peer, `import {createInterface} from 'node:readline';import{appendFileSync}from'node:fs';appendFileSync(process.argv[2],process.pid+'\\n');
+    const send=v=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+'\\n');createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
+    if(m.method==='initialize')send({id:m.id,result:{protocolVersion:1,agentCapabilities:{sessionCapabilities:{resume:{}}}}});
+    else if(m.method==='session/new')send({id:m.id,error:{code:-32602,message:'fixture rejected creation'}});else send({id:m.id,result:{}});});`);
+  const engine = new AcpEngine({ cwd: f.root, command: process.execPath, args: [peer, pids], dataDirectory: join(f.root, 'failed-acp'), executionEnvironment: f.runtime });
+  t.after(() => engine.close());
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(engine.request('thread/start', { cwd: f.root, [EXECUTION_ENVIRONMENT_FIELD]: f.runtime.seal(scope('employee:alice', 'a', null), 'thread/start') }, { notify() {}, async request() {} }));
+    assert.equal(engine.processIds.length, 1);
+    assert.deepEqual(await engine.catalogThreadIds(), []);
+  }
+  for (const pid of (await readFile(pids, 'utf8')).trim().split('\n').map(Number)) if (!engine.processIds.includes(pid)) assert.throws(() => process.kill(pid, 0));
+});
+
+test('Pi durable tools follow the admitted input across employees and register every live worker for handoff', async t => {
+  const f = await fixture(t);
+  const { PiDurableSession } = await import('../../plugins/pi-engine/src/session.js');
+  const { createModels } = await import('@earendil-works/pi-ai');
+  const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai/providers/faux');
+  const faux = fauxProvider({ tokensPerSecond: 100000 }), models = createModels(); models.setProvider(faux.provider);
+  const native = await PiDurableSession.open({ threadId: 'pi-durable-environment', cwd: f.root, file: join(f.root, 'pi.sqlite'), agentDirectory: f.root, executionEnvironment: f.runtime, projectId: 'a',
+    models: models as any, tools: [], onSnapshot() {}, onTool: async () => { throw new Error('Unexpected tool'); }, onExit() {} });
+  try {
+    await native.configure({ model: { provider: 'faux', modelId: 'faux-1' }, cwd: f.root });
+    for (const [index, account, expected] of [[1, 'alice', 'alice-a'], [2, 'bob', 'bob-global']] as const) {
+      const inputId = 'human-' + index; f.admit('pi-durable-environment', account, inputId);
+      let output = '';
+      faux.setResponses([
+        fauxAssistantMessage(fauxToolCall('bash', { command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(program)}` }), { stopReason: 'toolUse' }),
+        (ctx: any) => { output = JSON.stringify(ctx.messages.filter((row: any) => row.role === 'toolResult').at(-1)); return fauxAssistantMessage('done'); },
+      ]);
+      await native.submit('probe', { turnId: inputId, clientId: account, input: [{ type: 'text', text: 'probe' }], createdAtMs: Date.now() }, inputId);
+      await until(async () => output.includes(hash(expected)) && !(await native.snapshot()).live.run);
+      assert.equal(native.workerProcessIds.length, 2, 'the schema worker and current scoped worker are both registered; idle obsolete scopes are released');
+      f.leases.finished('pi-durable-environment', 'turn-' + inputId);
+    }
+  } finally { await native.close(); }
 });

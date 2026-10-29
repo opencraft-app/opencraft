@@ -205,6 +205,12 @@ export class PiDurableSession {
     if (!snapshot) return this.shell;
     let worker = this.environmentWorkers.get(snapshot.key);
     if (!worker) {
+      if (this.shellLaunches === 0) {
+        const active = new Set(await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.filter(record => record.state === "running").map(record => record.generation), context));
+        for (const [key, previous] of this.environmentWorkers) if (!active.has(previous.generation)) {
+          await previous.stop(); this.environmentWorkers.delete(key);
+        }
+      }
       if (this.environmentWorkers.size >= 64) throw new Error("Shell environment limit reached; reopen the session");
       worker = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId, randomUUID()), threadId: this.options.threadId, environment: snapshot,
         onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
@@ -598,6 +604,7 @@ export class PiDurableSession {
   }
   get backgroundWork() { return this.shellLaunches + this.shellNotifications + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
   get idleWorkerPid() { return this.shell?.pid; }
+  get workerProcessIds() { return [this.shell, ...this.environmentWorkers.values()].flatMap(worker => worker?.pid ? [worker.pid] : []); }
   resumeBackground() { return this.deliverShellNotifications(); }
   resume() { if (this.options.admissionOpen?.() !== false) this.harness.resume(); }
   /** Host-only provenance; no model message and no human sender is fabricated. */
