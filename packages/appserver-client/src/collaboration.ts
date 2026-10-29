@@ -34,9 +34,10 @@ export class CollaborationClient {
   }
   servers() { return this.readCommand<'servers'>('servers', { action: 'servers' }); }
   metadata(ref: ConversationRef) { return this.readCommand<'metadata'>('metadata', { action: 'metadata', reference: ref }); }
-  discover(serverId: string, cursor?: string, includeTitle = false) {
+  discover(serverId: string, cursor?: string, includeTitle = false, filters: { projectId?: string; cwd?: string } = {}) {
+    if (filters.projectId !== undefined || filters.cwd !== undefined) this.require('discoverFilters');
     return this.readCommand<'discover'>('metadataDiscovery',
-      { action: 'discover', metadataOnly: true, serverId, ...(cursor ? { cursor } : {}), includeTitle });
+      { action: 'discover', metadataOnly: true, serverId, ...(cursor ? { cursor } : {}), includeTitle, ...filters });
   }
   read(ref: ConversationRef, cursor?: string) {
     return this.readCommand<'read'>('boundedRead',

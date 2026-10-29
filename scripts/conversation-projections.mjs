@@ -3,13 +3,15 @@ import { createHash } from 'node:crypto';
 const fault = (status, code) => Object.assign(new Error(code), { status, code });
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
-export function projectConversationMetadata(serverId, thread, includeTitle = false) {
+export function projectConversationMetadata(serverId, thread, includeTitle = false, recovery = null) {
   const status = thread.status?.type;
   const flags = thread.status?.activeFlags ?? [];
-  const attention = flags.includes('waitingOnApproval') ? 'approval' : flags.includes('waitingOnUserInput') ? 'question' : null;
+  const attention = status !== 'active' ? null : flags.includes('waitingOnApproval') ? 'approval' : flags.includes('waitingOnUserInput') ? 'question' : null;
   return { ref: { serverId, threadId: thread.id }, projectId: thread.projectId ?? null, cwd: thread.cwd ?? null,
-    runtime: attention ? 'awaiting_interaction' : status === 'active' ? 'running' : status === 'idle' ? 'idle' : status === 'systemError' ? 'failed' : 'unknown',
-    currentTurnId: null, recovery: null, attention: attention ? { kind: attention, interactionId: null } : null,
+    runtime: attention ? 'awaiting_interaction' : recovery?.state === 'scheduled' ? 'recovering'
+      : recovery?.state === 'unconfirmed' ? 'unknown' : recovery?.state === 'exhausted' ? 'failed'
+      : status === 'active' ? 'running' : status === 'idle' ? 'idle' : status === 'systemError' ? 'failed' : 'unknown',
+    currentTurnId: null, recovery, attention: attention ? { kind: attention, interactionId: null } : null,
     observedAt: Date.now(), ...(includeTitle && typeof thread.name === 'string' ? { title: thread.name } : {}) };
 }
 

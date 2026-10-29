@@ -24,6 +24,7 @@ const loadedThreads = new Set();
 const subscribedThreads = new Set();
 const archivedThreads = new Set();
 const threadNames = new Map();
+const threadMetadata = new Map();
 const titleThreads = new Set();
 let nextTitleThread = 0;
 let threadReadsPaused = false;
@@ -32,10 +33,12 @@ const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 function readThread(message) {
   const active = turns.get(message.params.threadId);
   const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : systemErrorThreads.has(message.params.threadId) ? "systemError" : "idle";
-  send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  const metadata = threadMetadata.get(message.params.threadId) ?? {};
+  send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
 }
 input.on("line", line => {
   const message = JSON.parse(line);
+  if (message.method === 'test/setMetadata') { threadMetadata.set(message.params.threadId, message.params.metadata); send({id: message.id, result: {}}); return; }
   if (typeof message.params?.permissions === "string") permissionRequests.push({ method: message.method, params: message.params });
   if (message.method === "test/readPermissionRequests") { send({ id: message.id, result: { data: permissionRequests } }); return; }
   if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
@@ -87,9 +90,11 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/list") {
-    const thread = { id: "fixture-thread-1", name: threadNames.get("fixture-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
+    const thread = { ...(threadMetadata.get('fixture-thread-1') ?? {}), id: "fixture-thread-1", name: threadNames.get("fixture-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
     const matchesArchiveFilter = message.params?.archived === true ? archivedThreads.has(thread.id) : !archivedThreads.has(thread.id);
-    send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter ? [thread] : [], nextCursor: null } });
+    const matchesFilters = (message.params.projectId === undefined || message.params.projectId === thread.projectId)
+      && (message.params.cwd === undefined || (Array.isArray(message.params.cwd) ? message.params.cwd.includes(thread.cwd) : message.params.cwd === thread.cwd));
+    send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter && matchesFilters ? [thread] : [], nextCursor: null } });
     return;
   }
   if (message.method === "permissionProfile/list") {

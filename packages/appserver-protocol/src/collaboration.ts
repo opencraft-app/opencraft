@@ -4,10 +4,10 @@ export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
-  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean };
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
 }
 export interface ConversationMetadata {
   ref: ConversationRef; projectId: string | null; cwd: string | null;
@@ -17,7 +17,7 @@ export interface ConversationMetadata {
   observedAt: number; title?: string;
 }
 export interface ConversationDiscovery {
-  serverId: string; cursor?: string | null; includeTitle?: boolean;
+  serverId: string; cursor?: string | null; includeTitle?: boolean; projectId?: string; cwd?: string;
 }
 export interface ConversationHistory {
   entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string }[];

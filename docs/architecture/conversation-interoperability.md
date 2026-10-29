@@ -144,6 +144,14 @@ Legacy delivery consumers retain their original response. CLI sends issue one
 mutation; disconnections retain the original key and never replay the send.
 Waiting for delivery polls only receipts and recognizes submitted/injected as
 engine acceptance, while taskOutcome remains unknown.
+Discovery filters are separately negotiated and passed to native metadata-only
+catalog reads with a bounded page. Paths are normalized on the Server, without
+using the calling machine's cwd. Engines without filter support reject the
+request before opening a native catalog. Attention is projected from explicit
+native flags, without fetching interaction payloads; unavailable identity stays
+null. A configured public UI base can render the canonical resource link.
+Recovery is read from the existing Host recovery owner. Exact-turn steer uses
+the original execution/queue authority and never falls back to queue.
 
 Configured local Codex and enabled Pi/DSH targets can be discovered, read and
 receive messages through the shared core. Actor run bindings and source-tool
