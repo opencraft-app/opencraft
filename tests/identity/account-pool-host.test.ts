@@ -1766,3 +1766,46 @@ for (const [name, chunks] of [
     } finally { await server?.close(); pool.close(); await rm(root, { recursive: true, force: true }); }
   });
 }
+
+for (const client of ["await HTTP EOF", "close after terminal record"] as const) {
+test(`Responses completion with pending upstream cancellation: ${client}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-completion-cancel-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const cancellationStarted = deferred<void>(), finishCancellation = deferred<void>();
+  const uncertain: string[] = [];
+  const terminal = 'data: {"type":"response.completed","response":{"id":"resp-fixture"}}\n\n';
+  let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  let body: Promise<string> | undefined;
+  const abort = new AbortController();
+  try {
+    pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+      { accessToken: "fixture", refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local");
+    server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool,
+      upstreamBaseUrl: "https://fixture.example.test", fetch: async () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode(terminal)); },
+        async cancel() { cancellationStarted.resolve(); await finishCancellation.promise; },
+      }), { headers: { "content-type": "text/event-stream" } }) }),
+      onUncertain: route => { uncertain.push(route); } });
+    const response = await fetch(`${server.url}/v1/responses`, { method: "POST", signal: abort.signal,
+      headers: { "x-opencraft-account-pool-token": token }, body: "{}" });
+    if (client === "await HTTP EOF") {
+      body = response.text();
+      await within(cancellationStarted.promise, "upstream cancellation was not requested");
+      assert.equal(await within(body, "HTTP completion waited for upstream cancellation"), terminal);
+    } else {
+      const reader = response.body!.getReader();
+      assert.equal(new TextDecoder().decode((await reader.read()).value), terminal);
+      abort.abort();
+      await within((async () => {
+        while (server!.activeCount() !== 0) await new Promise(resolve => setTimeout(resolve, 1));
+      })(), "completed client disconnect remained active");
+    }
+    assert.deepEqual(uncertain, []);
+  } finally {
+    abort.abort(); finishCancellation.resolve(); await body?.catch(() => undefined); await server?.close(); pool.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+}

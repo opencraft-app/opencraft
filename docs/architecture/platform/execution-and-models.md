@@ -529,7 +529,9 @@ Headless connector reads use the selected browser server context. Polling owns s
 A successful `/v1/responses` SSE stream ends at a complete JSON data record
 with `type: "response.completed"` and a response identity. The loopback bridge
 forwards that record, finishes downstream HTTP and cancels the remaining provider
-body; native consumers already stop reading at this protocol boundary. Waiting
+body without waiting for asynchronous provider cancellation to settle; socket
+cleanup must not delay downstream HTTP completion. Native consumers already stop
+reading at this protocol boundary. Waiting
 for provider HTTP EOF can turn an ordinary native close into an uncertain write.
 SSE framing is incremental across UTF-8/chunk/line boundaries. A terminal CR
 waits for the following byte so a split CRLF delimiter is forwarded intact, as
