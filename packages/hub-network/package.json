@@ -8,6 +8,7 @@
     "./node": "./src/node.ts"
   },
   "dependencies": {
+    "@opencraft/sqlite-node": "*",
     "@opencraft/identity-core": "*",
     "@opencraft/relay-protocol": "*",
     "ws": "^8.22.0",

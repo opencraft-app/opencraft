@@ -148,7 +148,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.os = [process.platform];
     manifest.cpu = [process.arch];
     manifest.opencraftExecution = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
-      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1 } : {}) };
+      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1, storageWriterProtocol: 2 } : {}) };
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));

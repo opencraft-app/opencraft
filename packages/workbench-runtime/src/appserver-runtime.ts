@@ -1781,7 +1781,7 @@ export function createAppServerWorkbenchRuntime(
         if (status.state !== "closed" && status.state !== "failed") return;
         if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
         connection.lost(status.reason === undefined ? new Error("Host connection lost") : new Error(status.reason),
-          status.failure?.recovery === "manual");
+          status.failure?.recovery === "manual", status.failure?.diagnostic?.closeCode === 1012 || status.failure?.code === 'APP_SERVER_RESTARTING');
       });
       removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(() => {
         if (disposed || config.autoReconnect === false || !connection.admitRecoveryHint()) return;

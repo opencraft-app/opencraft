@@ -16,7 +16,7 @@ const revision = /^[a-zA-Z0-9_.:+-]{1,128}$/u;
 const ids = ['eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
 const enums = { lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
-  measurementScope: ['navigation','in_page','rpc','domain','process','client'],
+  measurementScope: ['navigation','in_page','rpc','domain','process','client','connection'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
   historyReadSource: ["open","snapshot-reread","attention","overview","navigation","refresh","task-metadata"],
   lengthBucket: ['lt50','50to199','200to499','500plus','unknown'],

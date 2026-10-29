@@ -19,7 +19,7 @@ async function until(read, condition) {
   for (let i = 0; i < 500; i++) { const value = await read(); if (condition(value)) return value; await delay(20); }
   throw new Error('Update did not finish');
 }
-test('independent DSH rejects legacy candidates and rollback baselines before changing a pointer or service', { timeout: 180_000 }, async () => {
+test('independent DSH rejects legacy candidates and rollback baselines before changing a pointer or service', { timeout: 360_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-rollback-boundary-'));
   try {
     const webRoot = join(root, 'web'); await mkdir(webRoot);
@@ -56,6 +56,15 @@ test('independent DSH rejects legacy candidates and rollback baselines before ch
     await assert.rejects(readFile(`${link}.pins.json`), { code: 'ENOENT' });
     // Embedded deployments can still inspect existing profile-v1 packages.
     await createExecutionDeployment(settings).inspect({ releaseRoot: legacyRoot });
+    const candidateManifestPath = join(packed.packageRoot, 'package.json');
+    const candidateManifest = JSON.parse(await readFile(candidateManifestPath, 'utf8'));
+    delete candidateManifest.opencraftExecution.storageWriterProtocol;
+    await writeFile(candidateManifestPath, JSON.stringify(candidateManifest));
+    await assert.rejects(createExecutionDeployment(settings).inspect({ releaseRoot: packed.packageRoot }), /kernel-owned Headless writer locks/);
+    await assert.rejects(createExecutionDeployment(settings).apply({ releaseRoot: packed.packageRoot }), /kernel-owned Headless writer locks/);
+    assert.equal(await readlink(link), legacyRoot); assert.equal(restarts, 0);
+    candidateManifest.opencraftExecution.storageWriterProtocol = 2;
+    await writeFile(candidateManifestPath, JSON.stringify(candidateManifest));
     manifest.opencraftExecution.independentDshHost = 1;
     delete manifest.opencraftExecution.independentEngineHost;
     await writeFile(manifestPath, JSON.stringify(manifest));

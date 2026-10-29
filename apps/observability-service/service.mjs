@@ -140,6 +140,16 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
     for(const row of store.executions(nowMs-86400000,nowMs))lines.push(`opencraft_executions{outcome="${row.outcome}"} ${row.count}`);
     const recoveries=store.recoveries(nowMs-86400000,nowMs);
     lines.push(`opencraft_recovery_episodes ${recoveries.value}`);
+    for (const row of store.gatewayDisconnections(nowMs-limits.retentionMs,nowMs)) {
+      if (!/^[a-zA-Z0-9_.:+-]{1,128}$/u.test(row.buildId ?? '') || !/^[a-zA-Z0-9_.:-]{1,128}$/u.test(row.updateId ?? '')) continue;
+      lines.push(`opencraft_gateway_update_disconnections{update="${row.updateId}",build="${row.buildId}"} ${row.count}`);
+    }
+    for (const row of store.connectionDowntime(nowMs-limits.retentionMs,nowMs)) {
+      if (!/^[a-f0-9]{64}$/u.test(row.actor)) continue;
+      const dimension = `actor="${row.actor}",day="${row.day}"`;
+      lines.push(`opencraft_person_connection_downtime_seconds{${dimension}} ${row.seconds}`,
+        `opencraft_person_connection_unfinished{${dimension}} ${row.unfinished}`);
+    }
     // Finite dimensions only. Counts persist across service restarts in the derived store.
     for(const row of store.db.prepare('SELECT name,dimension,value FROM metrics').all()) {
       if(row.name==='foreground_operation_bucket'){const [operation,cache,engine,le]=JSON.parse(row.dimension);lines.push(`opencraft_interactive_operation_duration_seconds_bucket{operation="${operation}",cache="${cache}",engine="${engine}",le="${le}"} ${row.value}`);}

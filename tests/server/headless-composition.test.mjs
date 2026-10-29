@@ -140,11 +140,10 @@ test('local machine ingress proves the socket source and preserves remote and Ac
   socket.close(); await once(socket, 'close');
 });
 
-test('an identity disposal failure is reported after all owned resources and directory lock are released', async t => {
+test('a disposal failure settles other resources but retains the writer until process exit', async t => {
   const f = await fixture(t); let closes = 0;
   const app = await startHeadlessServer(f.options, { createIdentity: async () => ({ providers: [], close() { closes++; throw new Error('fixture disposal failure'); } }) });
   const first = app.close(), second = app.close(); assert.equal(first, second);
   await assert.rejects(first, AggregateError); assert.equal(closes, 1);
-  const replacement = await startHeadlessServer(f.options); t.after(() => replacement.close());
-  assert.equal((await fetch(replacement.url)).status, 200);
+  await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
 });
