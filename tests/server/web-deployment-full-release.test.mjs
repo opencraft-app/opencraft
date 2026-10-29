@@ -373,6 +373,9 @@ test('signed npm consumer streams the pinned URL and rejects oversized bytes bef
 test('streamed sealing with default compression is byte-identical to npm pack', async t => {
   const root = await mkdtemp(join(tmpdir(), 'seal-npm-equivalence-'));
   t.after(() => rm(root, { recursive: true, force: true }));
+  const previousCache = process.env.OPENCRAFT_PACKAGE_CACHE_DIR;
+  process.env.OPENCRAFT_PACKAGE_CACHE_DIR = join(root, 'selection-cache');
+  t.after(() => { if (previousCache === undefined) delete process.env.OPENCRAFT_PACKAGE_CACHE_DIR; else process.env.OPENCRAFT_PACKAGE_CACHE_DIR = previousCache; });
   const pkg = join(root, 'pkg'); await mkdir(join(pkg, 'runtime'), { recursive: true });
   await mkdir(join(pkg, 'web')); await mkdir(join(root, 'npm'));
   await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: trust.packageName, version: '1.0.0', files: ['runtime', 'web'], dependencies: { 'equivalence-dep': '1.0.0' }, bundleDependencies: ['equivalence-dep'], bin: 'runtime/main.mjs', opencraftWeb: { buildId: 'fixture' } }));

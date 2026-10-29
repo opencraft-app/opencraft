@@ -1,8 +1,9 @@
 // Use the build owner's installed npm for selection and tar semantics. The
-// selection belongs to one frozen staging transaction, never another release.
-import { realpath, stat } from 'node:fs/promises';
+// content inventory belongs to one frozen staging transaction. Cached path
+// selection is revalidated against that transaction's topology and npm policy.
+import { realpath, stat, readFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -10,16 +11,22 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
 import { parseNpmPackResult } from '../web-deployment/npm-pack-result.mjs';
+import { selectWithCache } from './selection-cache.mjs';
 const exec = promisify(execFile);
 export function packageGzipLevel(value = process.env.OPENCRAFT_PACKAGE_GZIP_LEVEL ?? '9') {
   if (!/^[1-9]$/.test(String(value))) throw new Error('Package gzip level must be an integer from 1 through 9');
   return Number(value);
 }
-export async function selectNpmFiles(root) {
+export async function selectNpmFiles(root, { cacheDirectory = process.env.OPENCRAFT_PACKAGE_CACHE_DIR } = {}) {
   const { stdout } = await exec('which', ['npm']);
-  const npm = createRequire(await realpath(stdout.trim()));
+  const npmPath = await realpath(stdout.trim());
+  const npm = createRequire(npmPath);
   const tree = await new (npm('@npmcli/arborist'))({ path: root }).loadActual();
-  const names = await npm('npm-packlist')(tree, { path: root });
+  const names = await selectWithCache({ root, tree, packlist: npm('npm-packlist'), cacheDirectory,
+    toolchain: [process.version, process.platform, process.arch, stdout.trim(),
+      npmPath, JSON.parse(await readFile(join(dirname(npmPath), '../package.json'), 'utf8')).version,
+      ...await Promise.all(['npm-packlist', 'ignore-walk', 'minimatch', '@npmcli/arborist'].map(async name =>
+        createHash('sha256').update(await readFile(npm.resolve(name))).digest('hex')))] });
   const manifest = tree.package;
   return { root, names, manifest, tar: npm('tar'), options: npm('pacote').DirFetcher.tarCreateOptions({ ...manifest, _resolved: root }) };
 }

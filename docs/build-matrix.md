@@ -779,4 +779,15 @@ bundled dependencies, without a second selection or a whole-archive buffer.
 trades larger transfers for less compression CPU. Signing, exclusive release
 identity, archive budgets and the final independent archive verification still
 apply. Changing compression for an already completed release cannot overwrite
-its bound integrity. This selection is never reused across releases.
+its bound integrity. Signed content inventories are always rebuilt per release.
+
+When `OPENCRAFT_PACKAGE_CACHE_DIR` is set, npm selection can reuse unchanged
+top-level directories. The key covers their names/types/link targets, every
+package/ignore/lock policy file in the staging tree, and npm/Node/toolchain identity.
+Only the root package version, `opencraftWeb.buildId` and `opencraftFullRelease`
+identity are normalized; ordinary file contents are still hashed on every build.
+Changed directories use the original npm walker; root manifests and ignore files
+are always processed. External or broken links disable reuse, and a damaged cache
+causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
+`[package-selection]` reports reuse and elapsed time. Removing the cache restores
+cold selection; this cache never replaces signing or independent archive checks.
