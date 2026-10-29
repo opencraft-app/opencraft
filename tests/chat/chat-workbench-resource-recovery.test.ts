@@ -321,3 +321,72 @@ for (const readHistory of [false, true]) test(`message-window bootstrap preserve
     lease.release();
   } finally { await runtime.dispose(); }
 });
+
+test("an engine without shared approvals restores its old conversation and sends offline input exactly once", async () => {
+  let peer!: InMemoryAppServerPeer;
+  const calls: string[] = [], sent: string[] = [];
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
+  const transport = new MemoryTransport({
+    connected(value) { peer = value; },
+    receive(raw, reply) {
+      const request = JSON.parse(raw); if (request.id === undefined) return;
+      calls.push(request.method);
+      const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
+      if (request.method === "initialize") send({ capabilities: { extensions: {
+        "opencraft/shared-interactions": { version: 1 },
+        "opencraft/execution-engines": { version: 1, defaultEngine: "codex", providers: [{
+          id: "pi", threadPrefix: "pi_", extensions: {
+            "opencraft/read-history": { version: 1, initialTurnsPage: true },
+            "opencraft/thread-follow-up": { version: 1, queue: true },
+          },
+        }] },
+      } } });
+      else if (request.method === "thread/read") {
+        assert.equal(request.params.watch, true, "recovery restores the old conversation subscription");
+        send({ thread: thread("pi_original"), initialTurnsPage: { data: [], nextCursor: null } });
+      } else if (request.method === "thread/resume") {
+        send({ thread: thread("pi_original"), model: "fixture", modelProvider: "fixture", cwd: "/workspace",
+          approvalPolicy: "on-request", approvalsReviewer: null, sandbox: {}, runtimeWorkspaceRoots: ["/workspace"],
+          initialTurnsPage: { data: [], nextCursor: null } });
+      } else if (request.method === "opencraft/interactions/read") {
+        reply.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Pi does not support opencraft/interactions/read" } }));
+      } else if (request.method === "thread/queue/add") {
+        sent.push(request.params.clientUserMessageId);
+        send({ submission: { id: "receipt", clientMessageId: request.params.clientUserMessageId,
+          input: request.params.input, state: "queued", createdAt: 1 }, replayed: false });
+      } else if (request.method === "model/list") send({ data: [{ id: "fixture", model: "fixture", isDefault: true, inputModalities: ["text"] }], nextCursor: null });
+      else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
+      else send({});
+    },
+  });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "mixed-engine", transport, autoReconnect: false,
+    requestTimeoutMs: 100, reconnectDelaysMs: [5], outbox: {
+      read: () => rows, write: (_key, value) => { rows = structuredClone(value); }, subscribe: () => () => {},
+    } });
+  const until = async (condition: () => boolean) => {
+    for (let i = 0; i < 100 && !condition(); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(condition(), "the original conversation must leave loading without a reload");
+  };
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("pi_original"); lease.setRecoveryVisibility(true);
+    await until(() => lease.getSnapshot().authoritative);
+    peer.close("gateway update");
+    const { createConversationKey } = await import("@opencraft/chat-core");
+    await lease.submit({ commandId: "offline", clientMessageId: "offline-input", target: {
+      type: "existing-thread", key: createConversationKey("mixed-engine", "pi_original"),
+    }, document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "offline input" }] }] },
+      attachments: [], context: [], selections: { model: "fixture" }, options: { autoContext: false }, createdAt: 1 });
+    assert.equal(rows.length, 1); assert.deepEqual(sent, []);
+    await runtime.reconnect();
+    await until(() => lease.getSnapshot().authoritative);
+    await until(() => rows.length === 0);
+    assert.deepEqual(sent, ["offline-input"]);
+    assert.equal(calls.includes("opencraft/interactions/read"), false, "another engine's approval capability is not inherited");
+    peer.send(JSON.stringify({ method: "turn/started", params: { threadId: "pi_original",
+      turn: { id: "continued", status: "inProgress", items: [] } } }));
+    await until(() => lease.getSnapshot().activeTurn !== null);
+    assert.equal(lease.getSnapshot().phase, "live");
+    lease.release();
+  } finally { await runtime.dispose(); }
+});

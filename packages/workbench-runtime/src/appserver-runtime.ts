@@ -1230,7 +1230,7 @@ export function createAppServerWorkbenchRuntime(
         const status = view.thread?.status;
         const waiting = humanInteractionWaitReason(status) !== null;
         if (!waiting || view.pendingInteractions.length > 0) interactionRecoveryKey = null;
-        else if (currentClient.initializeResult?.capabilities?.extensions?.[SHARED_INTERACTIONS_EXTENSION]) {
+        else if (executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, SHARED_INTERACTIONS_EXTENSION)?.version === 1) {
           const key = `${view.connectionGeneration}:${view.turns.at(-1)?.id ?? "thread"}`;
           if (interactionRecoveryKey !== key) {
             interactionRecoveryKey = key;
