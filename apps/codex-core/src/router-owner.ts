@@ -31,8 +31,14 @@ export class CodexRouterOwner {
     if (this.state.phase !== "open" && this.storage() !== this.state.sealed) throw new Error("Router current registry differs from release");
   }
   isOpen = () => !this.failed && !this.busy && this.state.phase === "open";
-  enter() {
-    if (!this.isOpen()) throw new Error("Router admission is fenced");
+  enter(reconciliation = false) {
+    const sourceReply = reconciliation && !this.failed && !this.busy && this.state.phase === "fenced" && this.state.sourceOwner === this.owner;
+    if (!this.isOpen() && !sourceReply) throw new Error("Router admission is fenced");
+    return this.retain();
+  }
+  retainNativeCallback() {
+    if (this.failed || this.busy || !["open", "fenced"].includes(this.state.phase)
+      || this.state.phase === "fenced" && this.state.sourceOwner !== this.owner) throw new Error("Router callback admission is unconfirmed");
     return this.retain();
   }
   retainConnectionTool() {

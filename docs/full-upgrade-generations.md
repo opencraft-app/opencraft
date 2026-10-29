@@ -81,7 +81,11 @@ account storage nor native HOME. A durable fence closes routing sockets and all
 ordinary control paths, including creation, Resume, generation lifecycle and Host
 usage writes. Accepted RPCs and pending connection establishment remain counted
 until completion; stopping a consumer does not erase accepted work. Connection
-PTY/tool loss or unconfirmed mutation delivery blocks release. Unresolved creation
+PTY/tool loss or unconfirmed mutation delivery blocks release. Every native
+server request retains a durable router admission until its original consumer
+reply and native resolution. Matching replies to existing requests can complete
+behind the source fence; new methods remain closed. Native cancellation before
+a consumer reply cannot prove an external tool had no effect and remains unknown. Unresolved creation
 claims and native callback/admission counters also block release; missing counters
 or changed native identity produce unknown coverage.
 
