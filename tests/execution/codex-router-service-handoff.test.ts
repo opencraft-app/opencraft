@@ -58,9 +58,15 @@ test("real router service preserves native subscriptions and registry across rel
   const action = async (action: string, extra = {}) => rpc("/owner-handoff", { action, ...await input(), ...extra });
   try {
     service = await startCodexGenerationService(options);
+    const state = await rpc("/generations");
+    const retention = { id: "original", retained: true, expectedOwner: state.routingEpoch, expectedHost: state.preparationOwner,
+      expectedEpoch: state.admissionEpoch, expectedIncarnation: state.generations[0].incarnation };
+    assert.equal((await rpc("/generations", { operation: "retention", params: retention })).status, 200);
+    assert.equal((await rpc("/generations")).generations[0].retention.retained, true);
     peer = (await GenerationPeer.open(service.nativeSocket, {}, { message() {}, disconnected() {} })).peer;
     assert.equal((await peer.call("thread/list", {}) as any).data[0].id, "historical");
     await action("fence");
+    assert.equal((await rpc("/generations", { operation: "retention", params: { ...retention, retained: false } })).status, 503);
     assert.equal((await rpc("/health")).status, 503);
     await assert.rejects(peer.call("thread/resume", { threadId: "historical" }), /fenced/);
     await assert.rejects(GenerationPeer.open(service.nativeSocket, {}, { message() {}, disconnected() {} }));
@@ -90,6 +96,8 @@ test("real router service preserves native subscriptions and registry across rel
     assert.equal((await rpc("/owner-handoff", { action: "resume", ...oldInput, identity: cold.ready.identity })).status, 503);
     const recovered = await action("cold-ready"); assert.equal(recovered.status, 200);
     assert.equal((await action("resume", { identity: recovered.ready.identity })).status, 200);
+    assert.equal((await rpc("/generations")).generations[0].retention.retained, true);
+    assert.equal((await rpc("/generations", { operation: "retention", params: { ...retention, retained: false } })).status, 503, "replacement writer rejects a stale retention selection");
     const recoveryMs = performance.now() - started;
     peer = (await GenerationPeer.open(service.nativeSocket, {}, { message() {}, disconnected() {} })).peer;
     assert.equal((await peer.call("thread/resume", { threadId: "historical" }) as any).thread.id, "historical");

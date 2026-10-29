@@ -14,6 +14,7 @@ import { readNativeHistory, type NativeHistoryFailures } from "./native-history-
 export type GenerationHostUsage = CodexGenerationHostUsage;
 export interface GenerationColdReplacement {
   (old: GenerationRecord, current: GenerationRecord, threadIds: readonly string[], options?: { appBundleOnly: boolean; restoringSourceApp?: boolean }): Promise<unknown>;
+  readonly historyFailures?: NativeHistoryFailures;
 }
 const paused = () => new NativeGenerationError({ code: -32000, message: "Codex is temporarily unavailable for maintenance; retry this request", data: { code: "CODEX_MAINTENANCE", retryable: true } });
 
@@ -47,6 +48,28 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     if (this.owner.isOpen()) this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
   }
   private now(): number { return this.options.now?.() ?? Date.now(); }
+  setRetention(value: Record<string, unknown>) {
+    const keys = ["id", "retained", "expectedIncarnation", "expectedEpoch", "expectedOwner", "expectedHost"];
+    if (Object.keys(value).length !== keys.length || keys.some(key => !(key in value))
+      || ["id", "expectedOwner", "expectedHost"].some(key => typeof value[key] !== "string" || !value[key])
+      || typeof value.retained !== "boolean" || ![value.expectedIncarnation, value.expectedEpoch].every(v => Number.isSafeInteger(v) && Number(v) >= 0)) throw new Error("Invalid generation retention selection");
+    const id = value.id as string;
+    this.verifyOwner(value.expectedOwner as string, value.expectedHost as string);
+    const generation = this.registry.get(id);
+    if (this.closed || !this.owner.isOpen() || !generation || !["active", "ready", "draining", "retired"].includes(generation.state)
+      || generation.incarnation !== value.expectedIncarnation || this.registry.epoch() !== value.expectedEpoch
+      || this.starting.has(id) || this.checking.has(id) || this.retiring.has(id) || this.changingPayload.has(id)) throw new Error("Generation retention identity changed");
+    const receipt = { version: 1, retained: value.retained, incarnation: generation.incarnation, admissionEpoch: this.registry.epoch(), owner: this.registry.ownerEpoch, at: this.now() };
+    this.registry.setMetadata(`retention:${id}`, receipt);
+    return receipt;
+  }
+  private isRetained(id: string): boolean {
+    const value = this.registry.metadata(`retention:${id}`);
+    if (value === null) return false;
+    const receipt = rpcRecord(value);
+    if (receipt.version !== 1 || typeof receipt.retained !== "boolean") throw new Error("Invalid durable generation retention");
+    return receipt.retained;
+  }
   directory(threadId?: string): CodexGenerationDirectory {
     const generations = this.registry.list().filter(generation => generation.state !== "discarded");
     const route = threadId === undefined ? null : this.registry.route(threadId);
@@ -324,9 +347,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   async retire(id: string): Promise<{ retired: boolean; reasons: string[] }> {
     const record = this.registry.get(id);
     if (!record || !["draining", "retiring"].includes(record.state)) return { retired: false, reasons: ["not-draining"] };
+    if (this.isRetained(id)) return { retired: false, reasons: ["operator-retained"] };
     if (this.checking.has(id) || this.changingPayload.has(id) || this.starting.has(id)) return { retired: false, reasons: ["lifecycle-operation"] };
     this.checking.add(id);
     try {
+      const expected = this.options.nativeHistoryFailures?.failures.filter(row => row.generationId === id) ?? [];
+      if (expected.length && JSON.stringify(this.options.replaceRetiredHome.historyFailures?.failures.filter(row => row.generationId === id)) !== JSON.stringify(expected)) throw new Error("Cold HOME reader does not support the retained history policy");
       if (record.state === "retiring") {
         this.retiring.add(id); await this.finishRetirement(record); return { retired: true, reasons: [] };
       }
@@ -335,11 +361,14 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const health = await this.ensure(id, false, true), generation = this.registry.get(id)!;
       reasons = await this.nativeReasons(generation, health);
       if (reasons.length) return { retired: false, reasons };
+      let acknowledgedHost: string | undefined, acknowledgedFence: number | undefined;
       if (this.options.requireHostUsage) {
         const epoch = this.fenceHost(id, true), deadline = Date.now() + 15_000;
         for (;;) {
           const usage = rpcRecord(this.registry.metadata("host-usage"));
-          if (usage.routingEpoch === this.registry.ownerEpoch && usage.acknowledgedFenceEpoch === epoch) break;
+          if (usage.routingEpoch === this.registry.ownerEpoch && usage.acknowledgedFenceEpoch === epoch) {
+            acknowledgedHost = this.hostIdentity(); acknowledgedFence = epoch; break;
+          }
           if (Date.now() >= deadline) return { retired: false, reasons: ["host-fence-unacknowledged"] };
           await new Promise(resolve => setTimeout(resolve, 25));
         }
@@ -354,7 +383,22 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       reasons = [...await this.nativeReasons(generation, latestHealth), ...this.acceptedReasons(id), ...this.hostReasons(id)];
       if (reasons.length) return { retired: false, reasons };
       const identity = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity;
+      // A live source must still be recoverable under the selected cold reader.
+      // Check while the per-generation admission barrier is held, before stop.
+      const ids = this.registry.durableThreadIds(id);
+      if (ids.length || expected.length) {
+        const history = await readNativeHistory((await this.probe(generation, latestHealth)).peer, id, ids, expected);
+        this.registry.setMetadata(`retirement-history:${id}`, { version: 1, at: this.now(), incarnation: generation.incarnation, history });
+      }
+      reasons = [...await this.nativeReasons(generation, latestHealth), ...this.acceptedReasons(id), ...this.hostReasons(id)];
+      if (reasons.length) return { retired: false, reasons };
       if (!await this.options.supervisor.processesQuiet(identity)) return { retired: false, reasons: ["native-process"] };
+      if (JSON.stringify(this.registry.durableThreadIds(id)) !== JSON.stringify(ids)) return { retired: false, reasons: ["native-history-changed"] };
+      const usage = rpcRecord(this.registry.metadata("host-usage")), fences = this.fences();
+      if (this.options.requireHostUsage && (this.hostIdentity() !== acknowledgedHost || usage.acknowledgedFenceEpoch !== acknowledgedFence
+        || fences.fenceEpoch !== acknowledgedFence || !fences.fencedGenerationIds.includes(id))) return { retired: false, reasons: ["host-fence-changed"] };
+      reasons = [...this.acceptedReasons(id), ...this.hostReasons(id)];
+      if (reasons.length) return { retired: false, reasons };
       this.registry.fenceRetirement(id, generation.incarnation);
       await this.finishRetirement(generation); return { retired: true, reasons: [] };
     } finally {

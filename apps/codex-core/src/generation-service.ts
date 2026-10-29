@@ -52,7 +52,7 @@ export async function startCodexGenerationService(options: {
   if (socketDirectoryOwner.uid !== execution.uid || socketDirectoryOwner.gid !== execution.gid) await chown(dirname(options.endpoint), execution.uid, execution.gid);
   const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory, coreEndpoint: options.coreEndpoint,
     dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
-  const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor });
+  const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor, nativeHistoryFailures: options.nativeHistoryFailures });
   const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
     runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures });
@@ -64,6 +64,7 @@ export async function startCodexGenerationService(options: {
   const state = () => ({ preparationOwner: runtime.preparationOwner(), lastActivation: runtime.registry.metadata("last-activation"), routingEpoch: runtime.registry.ownerEpoch, admissionEpoch: runtime.registry.epoch(),
     generations: runtime.registry.list().map(generation => ({ ...generation,
       runtime: runtime.registry.metadata(`runtime:${generation.id}`), appPayload: runtime.registry.metadata(`app-payload:${generation.id}`), coldReplacement: runtime.registry.metadata(`cold-replacement:${generation.id}`), drain: runtime.registry.metadata(`drain:${generation.id}`),
+      retention: runtime.registry.metadata(`retention:${generation.id}`), retirementHistory: runtime.registry.metadata(`retirement-history:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
     fences: runtime.fences(true), storage: runtime.registry.outcome });
   const close = () => closing ??= (async () => { await control?.close(); await socket?.close(); await runtime.close(); })();
@@ -129,6 +130,7 @@ export async function startCodexGenerationService(options: {
         if (value.operation === "claim") return { status: 200, value: runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
         if (value.operation === "state") return { status: 200, value: runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
       } else {
+        if (value.operation === "retention") return { status: 200, value: runtime.setRetention(params) };
         if (value.operation === "app-payload") return { status: 200, value: await runtime.selectAppPayload(params) };
         if (value.operation === "prepare") return { status: 200, value: await runtime.prepare(params.definition as unknown as GenerationDefinition, params.legacy === true, params.expectedOwner as string | undefined, params.expectedHost as string | undefined) };
         if (value.operation === "preparation") return { status: 200, value: { preparation: await runtime.preparation(String(params.id ?? ""), params.expectedOwner as string | undefined, params.expectedHost as string | undefined) } };
