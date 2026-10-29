@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -37,6 +38,7 @@ export async function startIndependentAcpHost(options) {
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`, token = randomUUID();
   let provider, host, server, closed;
   try {
+    new ModelPolicyStore(join(dirname(dataDirectory), "model-usage-policy.sqlite")).close();
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
     const capabilities = new RemoteSessionCapabilities(options.sessionCapabilitiesDirectory ?? identityDirectory, `server:${machine.machineId}:${id}`);

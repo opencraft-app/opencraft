@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { verifyDshOwnerAdmission } from '../patch-dsh-owner-admission.mjs';
 import { createServer } from 'node:http';
@@ -44,12 +45,13 @@ export async function startIndependentDshHost(configuration) {
   const handoff = new DshOwnerHandoff(options.dataDirectory,runtime,inspectOwnerCgroup);
     const machineIdentity = options.machineIdentity ?? await readDaemonMachineIdentity(
       machineIdentityDirectory ?? dirname(options.dataDirectory), machineName);
+    options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
+    new ModelPolicyStore(options.modelPolicyPath).close();
     options.machineIdentity = machineIdentity;
     runtime.machineId = machineIdentity.machineId;
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
     options.authorizeHostInput ??= (threadId, inputId) => sessionCapabilities.authorizeInput(threadId, inputId);
-    options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
     options.taskServerId ??= "opencraft-server";
     options.taskSkillDirectories ??= [resolve(options.dataDirectory, "../codex/runtime/skills")];
     if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {

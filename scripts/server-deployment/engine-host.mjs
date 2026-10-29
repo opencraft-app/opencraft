@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +56,7 @@ export async function startIndependentEngineHost(options) {
     token = randomUUID();
   try {
     await Promise.all(['pi','projects','models'].map(name => mkdir(join(dataDirectory,name), { recursive:true, mode:0o700 })));
+    new ModelPolicyStore(join(dataDirectory, "model-usage-policy.sqlite")).close();
     await handoff.load();
     const machine = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     const scope = `server:${machine.machineId}:pi`;
