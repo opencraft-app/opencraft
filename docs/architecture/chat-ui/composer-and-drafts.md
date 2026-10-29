@@ -861,3 +861,19 @@ pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
 leave a timer that starts recording over the editor later.
+
+
+## New Draft creation after rejected Host admission
+
+A New chat creation may join its existing Host connection owner and retry once
+when the Server explicitly rejected the request before native forwarding. The
+same immutable intent, Draft and attachments survive this recovery. Capability
+lookup preserves this typed rejection so a stale lease cannot leave the Draft
+stuck behind a generic model-capability error.
+
+The command port distinguishes a rejected first creation from a later rejected
+Turn after `thread/start` or `thread/fork` already returned. The latter keeps
+`SubmissionOutcomeUnknownError` and cannot restart creation automatically. Other
+pending writes, timeouts, lost acknowledgements and legacy untyped failures never
+inherit no-dispatch proof. Retry failures are presented by the Draft owner rather
+than escaping the button handler as unhandled Promise rejections.

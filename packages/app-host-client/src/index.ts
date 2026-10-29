@@ -1,5 +1,6 @@
 import {
   APP_HOST_PROTOCOL_VERSION,
+  APP_HOST_SEND_NOT_ADMITTED,
   type AppHostConnectResult,
   type AppHostErrorPayload,
   type AppHostToRendererMessage,
@@ -658,6 +659,22 @@ class AppHostChannelTransport implements DuplexTransport {
     }
     const signals = combineAbortSignals([owner.signal, ...(signal ? [signal] : [])]);
     return this.client.sendHostFrame(this.hostId, this.leaseId, owner.generation, frame, signals.signal)
+      .catch((cause: unknown) => {
+        if ((cause as { code?: unknown } | null)?.code === APP_HOST_SEND_NOT_ADMITTED
+          && !this.closed && this.lifetime === owner && owner.active) {
+          let id: unknown;
+          try { id = (JSON.parse(frame) as { id?: unknown })?.id; } catch { /* Non-RPC frames have no request proof. */ }
+          const failed: TransportStatus = {
+            state: "failed", reason: cause instanceof Error ? cause.message : String(cause),
+            failure: { code: APP_HOST_SEND_NOT_ADMITTED,
+              recovery: (cause as { retryable?: unknown }).retryable === false ? "manual" : "automatic",
+              ...(typeof id === "string" || typeof id === "number" ? { notDispatchedRequestId: id } : {}) },
+          };
+          owner.retire(failed);
+          this.setStatus(failed);
+        }
+        throw cause;
+      })
       .finally(() => signals.dispose());
   }
 

@@ -817,7 +817,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
     // Repeated terminal snapshots belong to the retired native activity. They
     // cannot cancel a successor that has not started native admission yet.
     if (firstRetirement) this.initialization?.cancel(new AppServerClientError("TRANSPORT_ERROR", reason));
-    this.rejectAllPending(new AppServerClientError("TRANSPORT_ERROR", reason), "failed");
+    for (const id of [...this.pending.keys()]) {
+      this.rejectPending(id, new AppServerClientError(
+        id === status.failure?.notDispatchedRequestId ? "NOT_DISPATCHED" : "TRANSPORT_ERROR", reason,
+      ), "failed");
+    }
     this.invalidateServerRequests(new AppServerClientError("TRANSPORT_ERROR", reason));
   }
 

@@ -1,5 +1,6 @@
 import {
   APP_HOST_PROTOCOL_VERSION,
+  APP_HOST_SEND_NOT_ADMITTED,
   stampLogicalClientFrame,
   LOGICAL_CLIENT_FIELD,
   type AppHostErrorPayload,
@@ -88,10 +89,21 @@ interface HostSlot {
   lastState: TransportStatus["state"];
 }
 
+class HostSendNotAdmittedError extends Error {
+  readonly code = APP_HOST_SEND_NOT_ADMITTED;
+  readonly retryable: boolean;
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.retryable = (cause as { retryable?: unknown } | null)?.retryable !== false;
+  }
+}
+
 function normalizeError(cause: unknown): AppHostErrorPayload {
   const candidate = cause as { code?: unknown; retryable?: unknown } | null;
   return {
-    code: typeof candidate?.code === "string" ? candidate.code : "APP_HOST_FAILURE",
+    code: typeof candidate?.code === "string"
+      && (candidate.code !== APP_HOST_SEND_NOT_ADMITTED || cause instanceof HostSendNotAdmittedError)
+      ? candidate.code : "APP_HOST_FAILURE",
     message: cause instanceof Error ? cause.message : String(cause),
     retryable: candidate?.retryable === true,
   };
@@ -284,13 +296,16 @@ export class AppHostServer {
       return { hostId: message.hostId, generation: record.generation };
     }
     if (message.type === "host/send") {
-      this.forwardingAdmissions.get(message)?.();
-      const record = this.requireWritableClaim(
-        connection,
-        message.hostId,
-        message.leaseId,
-        message.generation,
-      );
+      let record: HostRecord;
+      try {
+        this.forwardingAdmissions.get(message)?.();
+        record = this.requireWritableClaim(
+          connection, message.hostId, message.leaseId, message.generation,
+        );
+      } catch (cause) {
+        // Only this boundary proves that native forwarding never began.
+        throw new HostSendNotAdmittedError(cause);
+      }
       const frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
       const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;

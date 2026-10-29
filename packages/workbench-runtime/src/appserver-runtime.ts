@@ -114,6 +114,7 @@ import {
 import {
   createReplicaConversationRuntime,
   createConversationOutbox,
+  SubmissionNotDispatchedError,
   type ConversationOutbox,
   type ConversationCommandPort,
   type ConversationRuntime,
@@ -2538,15 +2539,24 @@ export function createAppServerWorkbenchRuntime(
         throw new Error("This New chat Draft targets a different Host");
       }
       await runtime.connect();
-      if (commandPort === null)
-        throw new Error("AppServer command port is unavailable");
-      const durability = client?.initializeResult?.capabilities?.extensions?.[
-        OPENCRAFT_THREAD_START_DURABILITY_EXTENSION
-      ] as { version?: unknown; durableAfter?: unknown } | undefined;
-      return durability?.version === 1
-        && durability.durableAfter === "first-turn-accepted"
-        ? commandPort.submit(intent)
-        : commandPort.createThread(intent);
+      const create = () => {
+        if (disposed || commandPort === null)
+          throw new Error("AppServer command port is unavailable");
+        const durability = client?.initializeResult?.capabilities?.extensions?.[
+          OPENCRAFT_THREAD_START_DURABILITY_EXTENSION
+        ] as { version?: unknown; durableAfter?: unknown } | undefined;
+        return durability?.version === 1 && durability.durableAfter === "first-turn-accepted"
+          ? commandPort.submit(intent) : commandPort.createThread(intent);
+      };
+      try { return await create(); }
+      catch (cause) {
+        if (!(cause instanceof SubmissionNotDispatchedError)
+          && !(cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED")) throw cause;
+        // Join the Host's recovery owner; only an explicitly unsent creation
+        // can cross this boundary, and it gets at most one fresh attempt.
+        await runtime.connect();
+        return create();
+      }
     },
     async submit(intent) {
       if (intent.target.type === "new-thread") return runtime.createThread(intent);

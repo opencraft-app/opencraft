@@ -1068,3 +1068,82 @@ test("ordinary pending-request backpressure does not revoke a healthy bridge", a
     assert.deepEqual(physical.sent, ["in flight", "capacity restored"]);
   } finally { gate.resolve(); client.close(); connection.close(); await server.close(); }
 });
+
+test("stale send admission retires the channel and proves only that RPC was not dispatched", async () => {
+  const { JsonRpcAppServerClient } = await import("@opencraft/appserver-client");
+  const { asHostId } = await import("@opencraft/chat-core");
+  class Native extends TestTransport {
+    override async send(frame: string) {
+      await super.send(frame);
+      const request = JSON.parse(frame);
+      if (request.id === undefined || request.method === "turn/start") return;
+      const result = request.method === "initialize" ? { userAgent: "admission-fixture" }
+        : request.method === "thread/start" ? { thread: { id: "new-thread" } } : {};
+      this.receive(JSON.stringify({ id: request.id, result }));
+    }
+  }
+  const physical: Native[] = [];
+  const server = new AppHostServer({ createTransport: () => { const native = new Native(); physical.push(native); return native; } });
+  const pair = createPortPair();
+  let loseTerminal = false;
+  server.accept({ ...pair.host, postMessage: message => {
+    if (loseTerminal && message.type === "host/status") return;
+    pair.host.postMessage(message);
+  } }, "admission-fixture");
+  const bridge = new MessagePortAppHostClient(pair.browser, "admission-fixture");
+  const transport = bridge.createTransport("local");
+  const client = new JsonRpcAppServerClient({ hostId: asHostId("local"), transport });
+  const initialize = { clientInfo: { name: "admission-fixture", version: "1" } };
+  try {
+    await client.connect(initialize);
+    const accepted = client.request("turn/start", { threadId: "existing", input: [] });
+    const acceptedFailure = assert.rejects(accepted, (error: any) => error.code === "TRANSPORT_ERROR");
+    while (!physical[0]!.sent.some(frame => JSON.parse(frame).method === "turn/start")) await new Promise(resolve => setImmediate(resolve));
+    loseTerminal = true;
+    await server.resetHost("local");
+    assert.equal(transport.status.state, "open", "lost status leaves the original stale snapshot");
+    await assert.rejects(client.request("thread/start", {}), (error: any) => error.code === "NOT_DISPATCHED");
+    await acceptedFailure;
+    assert.equal(transport.status.state, "failed", "the send rejection must reach the existing recovery owner");
+    assert.equal(physical[0]!.sent.filter(frame => JSON.parse(frame).method === "thread/start").length, 0);
+    loseTerminal = false;
+    await client.connect(initialize);
+    assert.equal((await client.request("thread/start", {})).thread.id, "new-thread");
+    assert.equal(physical[1]!.sent.filter(frame => JSON.parse(frame).method === "thread/start").length, 1);
+    assert.equal(physical[1]!.sent.filter(frame => JSON.parse(frame).method === "turn/start").length, 0, "an earlier admitted write cannot be replayed");
+  } finally { client.close(); bridge.close(); await server.close(); }
+});
+
+test("New chat recovers a stale Host claim once without recreating an accepted Thread", async () => {
+  const { createAppServerWorkbenchRuntime } = await import("@opencraft/workbench-runtime");
+  const { createHarness, intent } = await import("../fixtures/workbench-draft-harness");
+  for (const durable of [false, true]) {
+    const physical: ReturnType<typeof createHarness>[] = [];
+    const server = new AppHostServer({ createTransport: () => {
+      const harness = createHarness(false, false, [], false, undefined, false, false, durable);
+      physical.push(harness);
+      return harness.transport;
+    } });
+    const { browser: rendererPort, host: hostPort } = createPortPair();
+    let loseTerminal = false;
+    const post = hostPort.postMessage.bind(hostPort);
+    hostPort.postMessage = message => { if (!loseTerminal || message.type !== "host/status") post(message); };
+    server.accept(hostPort, "new-chat-recovery");
+    const bridge = new MessagePortAppHostClient(rendererPort, "new-chat-recovery");
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", createTransport: () => bridge.createTransport("local"), autoReconnect: false });
+    try {
+      await runtime.connect();
+      loseTerminal = true;
+      await server.resetHost("local");
+      assert.equal(runtime.getSnapshot().phase, "ready", "the missing terminal event preserves the stale view");
+      const receipt = await runtime.createThread(intent({ type: "new-thread", draftId: "recovered-draft",
+        execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } }));
+      assert.equal(receipt.threadId, "thread-created");
+      assert.equal(receipt.turnId, durable ? "turn-created" : null);
+      assert.equal(physical.length, 2);
+      assert.equal(physical[0]!.requests.filter(request => request.method === "thread/start").length, 0);
+      assert.equal(physical[1]!.requests.filter(request => request.method === "thread/start").length, 1);
+      assert.equal(physical[1]!.requests.filter(request => request.method === "turn/start").length, durable ? 1 : 0);
+    } finally { await runtime.dispose(); bridge.close(); await server.close(); }
+  }
+});

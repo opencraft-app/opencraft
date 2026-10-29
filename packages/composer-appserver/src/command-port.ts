@@ -126,7 +126,10 @@ export function createAppServerConversationCommandPort(
     }
     let resolved: SubmitCompilerOptions | undefined;
     try { resolved = await config.resolveCompilerOptions?.(intent); }
-    catch (cause) { throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`); }
+    catch (cause) {
+      if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") throw cause;
+      throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`);
+    }
     return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
   };
   const now = config.now ?? Date.now;
@@ -183,6 +186,7 @@ export function createAppServerConversationCommandPort(
     intent: SubmitIntent,
     options?: { readonly canDispatch: () => boolean },
     onAdmission?: () => void,
+    onCreationAccepted?: () => void,
   ): Promise<SubmissionReceipt> => {
     const method = intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
       : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start";
@@ -224,6 +228,7 @@ export function createAppServerConversationCommandPort(
             : { projectId: intent.target.execution.workspace.projectId }),
         }, requestOptions);
         onAdmission?.();
+        onCreationAccepted?.();
         threadId = started.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -244,6 +249,7 @@ export function createAppServerConversationCommandPort(
           ...forkOptions(compiled.threadOptions),
         }, requestOptions);
         onAdmission?.();
+        onCreationAccepted?.();
         threadId = forked.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -354,8 +360,13 @@ export function createAppServerConversationCommandPort(
     createThread,
     async submit(intent, options) {
       let admitted = false;
-      try { return await execute(intent, options, () => { admitted = true; }); }
+      let creationAccepted = false;
+      try { return await execute(intent, options, () => { admitted = true; }, () => { creationAccepted = true; }); }
       catch (cause) {
+        if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") {
+          if (creationAccepted) throw new SubmissionOutcomeUnknownError({ cause });
+          throw new SubmissionNotDispatchedError();
+        }
         if (cause instanceof AppServerClientError && cause.code === "NOT_CONNECTED") {
           // A later RPC may be unsent after an earlier creation already committed.
           if (admitted) throw new SubmissionOutcomeUnknownError({ cause });
