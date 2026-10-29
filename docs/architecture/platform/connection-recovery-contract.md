@@ -1413,3 +1413,8 @@ receives `NOT_DISPATCHED`; other in-flight requests retain uncertain transport
 failure. A late old rejection cannot retire a successor. Legacy servers without
 explicit admission proof remain conservative. This does not replay native frames
 or introduce another connection owner.
+
+Shared native `host/status` publishes only the protocol's failure code and
+recovery disposition. A native-local no-dispatch RPC id must never cross this
+boundary: another logical claim may have reused that numeric id for a write that
+was already admitted. Only the matching `host/send` rejection grants local proof.

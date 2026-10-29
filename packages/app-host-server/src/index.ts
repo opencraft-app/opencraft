@@ -499,7 +499,12 @@ export class AppHostServer {
           if (status.state !== "open") record.forwarding.abort(lostHostConnection(status));
           else if (record.forwarding.signal.aborted) record.forwarding = new AbortController();
           slot.lastState = status.state;
-          this.publish(slot.hostId, generation, { type: "host/status", hostId: slot.hostId, generation, status });
+          // Native-local RPC ids are not evidence for any Renderer claim.
+          // Project only the protocol's shared failure disposition.
+          const publicStatus = { ...status, ...(status.failure ? {
+            failure: { code: status.failure.code, recovery: status.failure.recovery },
+          } : {}) };
+          this.publish(slot.hostId, generation, { type: "host/status", hostId: slot.hostId, generation, status: publicStatus });
         };
         // Keep each acquired disposer even if a later subscription throws.
         physical.disposers.push(transport.subscribeMessage(frame => {
