@@ -1,3 +1,4 @@
+import { CodexRouterOwner } from "./router-owner.js";
 import { canonicalGenerationPath } from "./generation-files.js";
 import { randomUUID, createHash } from "node:crypto";
 import { realpath, readFile, stat } from "node:fs/promises";
@@ -17,6 +18,7 @@ const paused = () => new NativeGenerationError({ code: -32000, message: "Codex i
 /** Routing/lifecycle authority only. Native and Host remain the task/data authorities. */
 export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   readonly registry: CodexGenerationRegistry;
+  readonly owner: CodexRouterOwner;
   private readonly starting = new Map<string, Promise<CodexAppServerHealth>>();
   private readonly cached = new Map<string, { at: number; health: CodexAppServerHealth }>();
   private readonly requests = new Map<string, number>();
@@ -35,8 +37,10 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     now?: () => number;
   }) {
     this.registry = new CodexGenerationRegistry(options.directory);
+    try { this.owner = new CodexRouterOwner(this.registry); }
+    catch (error) { this.registry.close(); throw error; }
     const previous = rpcRecord(this.registry.metadata("retirement-fences"));
-    this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
+    if (this.owner.isOpen()) this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
   }
   private now(): number { return this.options.now?.() ?? Date.now(); }
   directory(threadId?: string): CodexGenerationDirectory {
@@ -314,7 +318,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   startMonitor(intervalMs = 5_000): void {
     if (this.monitor) return;
     this.monitor = setInterval(() => {
-      if (this.closed || this.monitoring) return;
+      if (this.closed || this.monitoring || !this.owner.isOpen()) return;
       this.monitoring = (async () => {
         for (const g of this.registry.list().filter(value => ["draining", "retiring"].includes(value.state))) {
           try { const result = await this.retire(g.id); this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), ...result }); }
@@ -323,6 +327,47 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       })().finally(() => { this.monitoring = undefined; });
     }, intervalMs);
     this.monitor.unref();
+  }
+  async quiesceRouter() {
+    await this.monitoring;
+    for (const { peer } of this.probes.values()) peer.close();
+    this.probes.clear();
+  }
+  async handoffObservation() {
+    const counts = { starting: this.starting.size, lifecycle: this.checking.size + this.retiring.size + this.registry.list().filter(g => ["retiring", "revoking", "candidate"].includes(g.state) || g.state === "retired" && this.registry.durableThreadIds(g.id).length).length,
+      rpc: [...this.requests.values()].reduce((a, b) => a + b, 0), monitor: this.monitoring ? 1 : 0,
+      unresolvedCreations: this.registry.list().reduce((n, g) => n + this.registry.unresolvedCreations(g.id), 0), nativeAdmission: 0 };
+    let coverage: "complete" | "unknown" = "complete";
+    try {
+      for (const g of this.registry.list().filter(g => ["active", "draining", "ready"].includes(g.state))) {
+        const health = await this.options.supervisor.inspect!(g);
+        const identity = await this.options.supervisor.identify(g, health);
+        if (JSON.stringify(identity) !== JSON.stringify(this.registry.metadata(`runtime:${g.id}`))
+          || health.callbackProtocolVersion !== 1 || !Number.isSafeInteger(health.pendingCallbacks) || !Number.isSafeInteger(health.pendingOrchestrationMutations)) throw new Error("Native admission coverage unavailable");
+        counts.nativeAdmission += health.pendingCallbacks! + health.pendingOrchestrationMutations!;
+      }
+    } catch { coverage = "unknown"; }
+    return { coverage, counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0), historicalCount: this.registry.routes().length };
+  }
+  async coldReadNative() {
+    const values = [];
+    if (this.registry.list().some(g => g.state === "retired" && this.registry.durableThreadIds(g.id).length)) throw new Error("Cold retired history combination is unverified");
+    for (const g of this.registry.list().filter(g => ["active", "draining", "ready"].includes(g.state))) {
+      const health = await this.options.supervisor.inspect!(g);
+      const identity = await this.options.supervisor.identify(g, health);
+      if (JSON.stringify(identity) !== JSON.stringify(this.registry.metadata(`runtime:${g.id}`)) || health.callbackProtocolVersion !== 1) throw new Error("Native identity changed");
+      const { peer } = await GenerationPeer.open(health.nativeSocket, { clientInfo: { name: "opencraft-router-cold-read", version: "1" }, capabilities: { experimentalApi: true } }, { message() {}, disconnected() {} });
+      try {
+        const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
+        if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw new Error("Native subscriptions unavailable");
+        for (const id of this.registry.durableThreadIds(g.id)) {
+          const result = rpcRecord(await peer.call("thread/read", { threadId: id, includeTurns: false }));
+          if (rpcRecord(result.thread).id !== id) throw new Error("Native historical reader unavailable");
+        }
+        values.push({ generation: g.id, identity });
+      } finally { peer.close(); }
+    }
+    return values;
   }
   async close(): Promise<void> {
     this.closed = true; clearInterval(this.monitor); await this.monitoring; await Promise.allSettled(this.starting.values());

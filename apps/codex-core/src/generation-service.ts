@@ -1,17 +1,20 @@
+import { createHash } from "node:crypto";
+import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
-import { realpath, mkdir, stat, chown, chmod } from "node:fs/promises";
+import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { CodexCoreControlClient, CodexCoreUnavailableError, CODEX_CORE_PROTOCOL_VERSION, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import { startControlServer, readControlJson } from "./control-server.js";
 import { CodexGenerationRuntime } from "./generation-runtime.js";
 import { CodexGenerationRouter, startGenerationSocket } from "./generation-router.js";
 import { coldHomeValidator } from "./generation-cold-home.js";
-import { SystemdGenerationSupervisor } from "./generation-supervisor.js";
+import { type GenerationSupervisor, SystemdGenerationSupervisor } from "./generation-supervisor.js";
 import type { GenerationDefinition } from "./generation-registry.js";
 
 export async function startCodexGenerationService(options: {
   endpoint: string; coreEndpoint: string; tokenFile: string; token: string; dataDirectory: string;
   registryDirectory: string; systemdScope: "user" | "system"; requireHostUsage: boolean;
+  supervisor?: GenerationSupervisor;
   bootstrap?: { generation: GenerationDefinition; legacy?: boolean }; signal?: AbortSignal;
 }) {
   if (process.platform !== "linux" || ![options.endpoint, options.coreEndpoint, options.tokenFile, options.dataDirectory, options.registryDirectory].every(isAbsolute)
@@ -44,7 +47,7 @@ export async function startCodexGenerationService(options: {
   await chmod(dirname(options.endpoint), 0o700);
   const socketDirectoryOwner = await stat(dirname(options.endpoint));
   if (socketDirectoryOwner.uid !== execution.uid || socketDirectoryOwner.gid !== execution.gid) await chown(dirname(options.endpoint), execution.uid, execution.gid);
-  const supervisor = new SystemdGenerationSupervisor({ registryDirectory, coreEndpoint: options.coreEndpoint,
+  const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory, coreEndpoint: options.coreEndpoint,
     dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
   const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor });
   const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
@@ -62,10 +65,41 @@ export async function startCodexGenerationService(options: {
     fences: runtime.fences(true), storage: runtime.registry.outcome });
   const close = () => closing ??= (async () => { await control?.close(); await socket?.close(); await runtime.close(); })();
   try {
-    await validator.recover(runtime.registry.list());
+    if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
     socket = await startGenerationSocket(nativeSocket, router);
     await chown(nativeSocket, execution.uid, execution.gid);
+    const configuration = async () => {
+      const artifacts = [];
+      for (const g of runtime.registry.list()) {
+        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node].map(async path => ({
+          path, sha256: createHash("sha256").update(await readFile(path)).digest("hex") }))) });
+      }
+      const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
+      return createHash("sha256").update(JSON.stringify({ ...options, token: createHash("sha256").update(options.token).digest("hex"), signal: undefined, supervisor: undefined,
+        node: process.version, abi: process.versions.modules, proxyBaseUrl, artifacts,
+        environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => !managed.has(key)).sort(([a], [b]) => a.localeCompare(b))) })).digest("hex");
+    };
+    const observation = async () => {
+      const value = await runtime.handoffObservation(), counts = { ...value.counts, ...router.handoffCounts() };
+      return { ...value, counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0) };
+    };
     control = await startControlServer(options.endpoint, options.token, async request => {
+      if (request.url === "/owner-handoff") {
+        let proof: unknown, ready: unknown;
+        if (request.method === "POST") {
+          const value = await readControlJson(request), input = value as unknown as RouterExpectation;
+          if (value.action === "fence") { runtime.owner.fence(input); await runtime.quiesceRouter(); }
+          else if (value.action === "abort") runtime.owner.abort(input);
+          else if (value.action === "inspect") proof = runtime.owner.inspect(input, await observation());
+          else if (value.action === "release") { const config = await configuration(); runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }
+          else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), () => runtime.coldReadNative());
+          else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), () => runtime.coldReadNative());
+          else throw new Error("Unknown router handoff action");
+        } else if (request.method !== "GET") throw new Error("Unknown router handoff method");
+        return { status: 200, value: { pid: process.pid, handoff: runtime.owner.snapshot(), proof, ready } };
+      }
+      const done = runtime.owner.enter();
+      try {
       if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
         const query = new URL(request.url, "http://local.invalid");
         return { status: 200, value: runtime.directory(query.searchParams.get("threadId") ?? undefined) };
@@ -93,13 +127,14 @@ export async function startCodexGenerationService(options: {
         if (value.operation === "retire") return { status: 200, value: await runtime.retire(String(params.id ?? "")) };
       }
       return { status: 400, value: { error: "Unknown generation operation" } };
+      } finally { done(); }
     });
     await chown(options.endpoint, execution.uid, execution.gid);
-    if (options.bootstrap && (!runtime.registry.get(options.bootstrap.generation.id) || runtime.registry.epoch() === 0)) {
+    if (runtime.owner.isOpen() && options.bootstrap && (!runtime.registry.get(options.bootstrap.generation.id) || runtime.registry.epoch() === 0)) {
       await runtime.prepare(options.bootstrap.generation, options.bootstrap.legacy === true);
       if (runtime.registry.epoch() === 0) await runtime.activate(options.bootstrap.generation.id, 0);
     }
-    if (runtime.registry.epoch() > 0) await runtime.ensure(runtime.registry.current().generation.id);
+    if (runtime.owner.isOpen() && runtime.registry.epoch() > 0) await runtime.ensure(runtime.registry.current().generation.id);
     options.signal?.throwIfAborted(); runtime.startMonitor();
     return { endpoint: options.endpoint, nativeSocket, close };
   } catch (reason) { await close(); throw reason; }
