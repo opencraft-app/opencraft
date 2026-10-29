@@ -86,9 +86,13 @@ export async function startCodexGenerationService(options: {
       const value = await runtime.handoffObservation(), counts = { ...value.counts, ...router.handoffCounts() };
       const activeCount = Object.values(counts).reduce((a, b) => a + b, 0);
       let coverage = value.coverage;
-      if (coverage === "complete" && activeCount === 0 && runtime.owner.currentResponsibilityConfirmed()) {
+      const onlySubscriptions = activeCount === counts.subscriptions;
+      const historicalWarmDrain = onlySubscriptions && runtime.owner.historicalUnknownSha256() !== undefined;
+      if (coverage === "complete" && (activeCount === 0 || historicalWarmDrain) && runtime.owner.currentResponsibilityConfirmed()) {
         // Reject unsupported current history while the exact source can still
         // abort. Discovering it only after release also defeats old-payload recovery.
+        // With retained unknown, prove Native/Core quiet before the controller
+        // disconnects idle subscribers; their presence must not skip this proof.
         try { await coldRead(); } catch { coverage = "unknown"; }
       }
       return { ...value, coverage, counts, activeCount };

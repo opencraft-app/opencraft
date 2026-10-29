@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
+import { CodexGenerationRegistry } from "../../apps/codex-core/src/generation-registry.js";
+import { routerDigest } from "../../apps/codex-core/src/router-maintenance.js";
 import { CodexGenerationRuntime } from "../../apps/codex-core/src/generation-runtime.js";
 import { startCodexGenerationService } from "../../apps/codex-core/src/generation-service.js";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
@@ -11,12 +13,12 @@ import { GenerationPeer } from "../../apps/codex-core/src/generation-peer.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 
-test("real router service preserves native subscriptions and registry across release, candidate failure and current-data recovery", async () => {
+for (const carriedHistory of [false, true]) test("real router service preserves native subscriptions and registry across release, candidate failure and current-data recovery (history=" + carriedHistory + ")", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-router-service-"));
   const data = join(root, "data"), directory = join(root, "sockets"), registry = join(root, "registry"), native = join(root, "native.sock");
   await mkdir(data, { mode: 0o700 }); await mkdir(directory, { mode: 0o700 });
   const token = "synthetic-router-private-control-token", endpoint = join(directory, "control.sock"), coreEndpoint = join(root, "core.sock");
-  const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false;
+  const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false, coreProxy = 0;
   const http = createServer(), wss = new WebSocketServer({ server: http });
   wss.on("connection", socket => socket.on("message", raw => {
     const m = JSON.parse(String(raw)); calls.push(m.method);
@@ -26,11 +28,11 @@ test("real router service preserves native subscriptions and registry across rel
     const result = m.method === "initialize" ? { userAgent: "retained-native" }
       : m.method === "thread/list" ? { data: [{ id: "historical", status: { type: "idle" } }], nextCursor: null }
       : m.method === "thread/loaded/list" ? { data: ["historical"] }
-      : ["thread/read", "thread/resume"].includes(m.method) ? { thread: { id: "historical" } } : {};
+      : ["thread/read", "thread/resume"].includes(m.method) ? { thread: { id: "historical", status: { type: "idle" } } } : {};
     socket.send(JSON.stringify({ id: m.id, result }));
   }));
   await new Promise<void>(r => http.listen(native, r));
-  const core = await startControlServer(coreEndpoint, token, async () => ({ status: 200, value: {
+  const core = await startControlServer(coreEndpoint, token, async request => request.url === "/owner-handoff" ? ({ status: 200, value: { pid: process.pid, handoff: { protocolVersion: 1, topology: "split", phase: "open", persistence: "ready", owner: "core-fixture", epoch: 0, uncertain: [] }, proof: { counts: { oauth: 0, proxy: coreProxy, refresh: 0, requests: 0, resetCredits: 0, subscriptions: 0 } } } }) : ({ status: 200, value: {
     protocolVersion: 1, dataDirectory: data, launch: { env: { OPENCRAFT_CODEX_POOL_AUTH_TOKEN: "synthetic" }, auth: { type: "chatgptAuthTokens", accessToken: "synthetic" }, args: ['chatgpt_base_url="http://127.0.0.1:1"'] } } }));
   const health = { protocolVersion: 1 as const, pid: process.pid, codexPid: process.pid, dataDirectory: data,
     proxyBaseUrl: "http://127.0.0.1:1", codexHome: join(data, "runtime"), nativeSocket: native, callbackProtocolVersion: 1 as const,
@@ -54,7 +56,7 @@ test("real router service preserves native subscriptions and registry across rel
       const chunks: Buffer[] = []; response.on("data", b => chunks.push(b)); response.on("end", () => resolve({ status: response.statusCode, ...JSON.parse(Buffer.concat(chunks).toString()) }));
     }); req.on("error", reject); req.end(value ? JSON.stringify(value) : undefined);
   });
-  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence" }; };
+  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence", historicalUnknownSha256: h.historicalUnknownSha256 }; };
   const action = async (action: string, extra = {}) => rpc("/owner-handoff", { action, ...await input(), ...extra });
   try {
     service = await startCodexGenerationService(options);
@@ -84,7 +86,19 @@ test("real router service preserves native subscriptions and registry across rel
     rejectHistory = false; await action("fence");
     const proof = (await action("inspect")).proof; assert.equal(proof.activeCount, 0);
     assert.equal((await action("release", { proof: proof.identity })).status, 200);
-    await service.close(); service = await startCodexGenerationService(options);
+    await service.close();
+    if (carriedHistory) {
+      // Persist the already-imported responsibility fixture while the source is
+      // released. The service must exercise its real historical cold reader.
+      const registryOwner = new CodexGenerationRegistry(registry);
+      const archive = { version: 1, receipt: { source: { owner: "prior-router" }, sourceHandoff: { version: 1, uncertain: true, pending: ["legacy-unknown"] } } };
+      const id = routerDigest(archive);
+      registryOwner.setMetadata(`router-history:${id}`, archive);
+      const state = registryOwner.metadata("router-handoff") as Record<string, unknown>;
+      registryOwner.setMetadata("router-handoff", { ...state, history: [id], pending: ["legacy-unknown"], uncertain: true, currentUncertain: false, sealed: routerDigest(registryOwner.coldSnapshot()) });
+      registryOwner.close();
+    }
+    service = await startCodexGenerationService(options);
     for (const kind of ["launcher", "native"] as const) {
       await writeFile(artifacts[kind], "changed fixed launcher artifact\n");
       assert.equal((await action("cold-ready")).status, 503);
@@ -102,6 +116,18 @@ test("real router service preserves native subscriptions and registry across rel
     peer = (await GenerationPeer.open(service.nativeSocket, {}, { message() {}, disconnected() {} })).peer;
     assert.equal((await peer.call("thread/resume", { threadId: "historical" }) as any).thread.id, "historical");
     assert.equal(resumes, 1); assert.equal(calls.filter(m => m === "turn/start").length, 0);
+    if (carriedHistory) {
+      await action("fence"); coreProxy = 1;
+      const busy = (await action("inspect")).proof;
+      assert.equal(busy.counts.subscriptions, 1);
+      assert.equal(busy.coverage, "unknown", "an active Core proxy blocks drain while the original consumer remains subscribed");
+      assert.equal(busy.activeCount, null);
+      coreProxy = 0;
+      const quiet = (await action("inspect")).proof;
+      assert.equal(quiet.coverage, "complete"); assert.equal(quiet.activeCount, 1);
+      assert.equal((await action("abort")).status, 200);
+      assert.deepEqual((await rpc("/owner-handoff")).handoff.pending, ["legacy-unknown"]);
+    }
     console.info(JSON.stringify({ routerServiceRecoveryMs: recoveryMs, nativePreserved: true, resumes }));
   } finally {
     peer?.close(); await service?.close(); await core.close(); for (const socket of wss.clients) socket.terminate(); wss.close(); await new Promise<void>(r => http.close(() => r())); await rm(root, { recursive: true, force: true });
