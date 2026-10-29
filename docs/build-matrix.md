@@ -750,3 +750,18 @@ The startup-resource policy rejects this module in the required bootstrap graph;
 initial Thread baseline and cancellation admission remain in the Session core.
 Both ordinary hidden-map builds and release builds retain their existing asset
 naming, minification, startup byte limits and separate browser compatibility checks.
+
+## Full-runtime packaging cache
+
+On Linux x64, `OPENCRAFT_PACKAGE_CACHE_DIR` optionally reuses assembled Codex/DSH
+runtime dependency closures. Keys include pinned manifests/locks, transformation
+and patch sources, Node/ABI, platform, architecture and libc. Cached payloads
+are copied to independent files and their complete inventory, SHA256 and modes
+are verified before use; a missing or invalid entry rebuilds normally. The
+cache is trusted build infrastructure and must only be writable by the build
+owner. Remove its directory while idle to force a cold build.
+
+Core and release identities, provenance, signing, final compression and archive
+verification are generated for every release. `OPENCRAFT_PACKAGE_TIMINGS=1`
+emits inventory, npm-pack and archive-verification durations to stderr; runtime
+cache messages report hit/miss duration. The JSON packaging result is unchanged.
