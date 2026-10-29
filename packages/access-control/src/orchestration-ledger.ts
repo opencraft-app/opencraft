@@ -2,56 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
 /** Appended to the collaboration owner's migrations; never opened independently. */
-export const ORCHESTRATION_SCHEMA = `
-CREATE TABLE opencraft_thread_relations (
- thread_id TEXT PRIMARY KEY, server_id TEXT NOT NULL, driver_kind TEXT NOT NULL,
- engine_host_generation TEXT, native_session_id TEXT, owner_actor_id TEXT NOT NULL,
- parent_thread_id TEXT, lifecycle_owner_thread_id TEXT, forked_from_id TEXT,
- visibility TEXT NOT NULL CHECK(visibility IN ('visible','hidden')),
- runtime_status TEXT NOT NULL, root_turn_id TEXT, turn_id TEXT,
- delegation_revision INTEGER NOT NULL DEFAULT 0, auto_exchange_depth INTEGER NOT NULL DEFAULT 0,
- has_direct_user_input INTEGER NOT NULL DEFAULT 0, user_input_excerpt TEXT,
- updated_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE INDEX opencraft_thread_parents ON opencraft_thread_relations(parent_thread_id);
-CREATE TABLE opencraft_orchestration_operations (
- operation_id TEXT PRIMARY KEY, tool_call_key TEXT NOT NULL UNIQUE, idempotency_key TEXT UNIQUE,
- fingerprint TEXT NOT NULL, arguments_json TEXT NOT NULL, delegation_id TEXT NOT NULL,
- issuer_actor_id TEXT NOT NULL, kind TEXT NOT NULL, sender_thread_id TEXT NOT NULL,
- target_thread_id TEXT, client_message_id TEXT UNIQUE, mode TEXT NOT NULL,
- state TEXT NOT NULL, waiting_on TEXT, result_json TEXT,
- created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE INDEX opencraft_orchestration_pending ON opencraft_orchestration_operations(state,created_at_ms);
-CREATE TABLE opencraft_orchestration_tool_calls (
- tool_call_key TEXT PRIMARY KEY, operation_id TEXT NOT NULL REFERENCES opencraft_orchestration_operations(operation_id)
-) STRICT;
-CREATE TABLE opencraft_parent_notification_batches (
- batch_id TEXT PRIMARY KEY, parent_thread_id TEXT NOT NULL, child_thread_id TEXT NOT NULL,
- child_root_turn_id TEXT NOT NULL, outcome_kind TEXT NOT NULL,
- has_direct_user_input INTEGER NOT NULL DEFAULT 0, user_input_excerpt TEXT,
- summary_json TEXT NOT NULL, first_queued_at_ms INTEGER NOT NULL,
- deliver_after_ms INTEGER NOT NULL, max_deadline_ms INTEGER NOT NULL,
- state TEXT NOT NULL DEFAULT 'pending', client_message_id TEXT,
- UNIQUE(parent_thread_id,child_thread_id,child_root_turn_id,outcome_kind)
-) STRICT;
-CREATE INDEX opencraft_parent_notification_due ON opencraft_parent_notification_batches(state,deliver_after_ms);
-CREATE TABLE opencraft_wait_tickets (
- wait_ticket_id TEXT PRIMARY KEY, caller_thread_id TEXT NOT NULL, caller_turn_id TEXT NOT NULL,
- target_thread_ids_json TEXT NOT NULL, wait_for TEXT NOT NULL CHECK(wait_for IN ('all_settled','any_settled')),
- state TEXT NOT NULL CHECK(state IN ('active','satisfied','expired','cancelled')),
- created_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE INDEX opencraft_wait_pending ON opencraft_wait_tickets(state,expires_at_ms);
-`;
+export { ORCHESTRATION_SCHEMA } from "@opencraft/storage-node/server-legacy";
 
 /** v5 adds durable runtime facts without fabricating parentage or ownership. */
-export const ORCHESTRATION_VIEW_SCHEMA = `
-CREATE TABLE opencraft_orchestration_runtime_views (
- thread_id TEXT PRIMARY KEY, root_turn_id TEXT, turn_id TEXT, state TEXT NOT NULL,
- updated_at_ms INTEGER NOT NULL
-) STRICT;
-`;
+export { ORCHESTRATION_VIEW_SCHEMA } from "@opencraft/storage-node/server-legacy";
 
 export type ThreadRuntimeStatus = 'starting' | 'active' | 'recovering' | 'awaiting_interaction' | 'idle' | 'error';
 export interface ThreadRelation {

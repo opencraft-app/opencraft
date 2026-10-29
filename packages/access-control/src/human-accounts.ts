@@ -1,19 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from '@opencraft/sqlite-node';
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, type Principal } from '@opencraft/identity-core';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { LocalAccountProvider, LocalAccountRecord, LocalAccountRepository } from '@opencraft/identity-core/local-account';
 
-const SCHEMA = `
-CREATE TABLE local_accounts (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL,
- salt TEXT NOT NULL, password_digest TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), version INTEGER NOT NULL) STRICT;
-CREATE TABLE human_logins (digest TEXT PRIMARY KEY, principal TEXT NOT NULL, actor_id TEXT NOT NULL,
- generation INTEGER NOT NULL, account_version INTEGER, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL) STRICT;
-CREATE INDEX human_logins_expiry ON human_logins(expires_at);
-CREATE TABLE human_identity_labels (binding TEXT PRIMARY KEY, label TEXT NOT NULL) STRICT;
-`;
+
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 export interface HumanLogin {
   readonly digest: string;
@@ -27,9 +21,10 @@ export class HumanAccounts {
   #local: { provider: LocalAccountProvider; owner: symbol } | null = null;
   readonly localAccountRepository: LocalAccountRepository;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string, readonly actors: ActorStore, readonly now = Date.now) {
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject',
-      migrations: [{ version: 1, name: 'human-browser-logins', sql: SCHEMA }], validateSchema: createSchemaValidator(SCHEMA) });
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly now = Date.now) {
+    const managed = openServerRepository(path, "human-logins");
+    this.#closeDatabase = managed.close;
     this.#db = managed.database; this.outcome = managed.outcome;
     const record = (row: ReturnType<ReturnType<DatabaseSync['prepare']>['get']>): LocalAccountRecord | null => row ? {
       id: row.id as string, username: row.username as string, displayName: row.display_name as string,
@@ -116,6 +111,6 @@ export class HumanAccounts {
   // Process shutdown preserves durable sessions; explicit deactivation revokes them.
   close() {
     const provider = this.#local?.provider; this.#local = null;
-    try { provider?.close(); } finally { this.#db.close(); }
+    try { provider?.close(); } finally { this.#closeDatabase(); }
   }
 }

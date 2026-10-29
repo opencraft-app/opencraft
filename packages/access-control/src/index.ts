@@ -1,14 +1,13 @@
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
-import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from "@opencraft/identity-core";
 import type { IdentityProvider, IdentityRequest } from "@opencraft/identity-core/node";
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ActorStore } from './actors.js';
-const BASELINE = `CREATE TABLE members (binding TEXT PRIMARY KEY NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','member')), enabled INTEGER NOT NULL CHECK(enabled IN (0,1))) STRICT;
-CREATE TABLE access_audit (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, operator TEXT NOT NULL, binding TEXT NOT NULL, action TEXT NOT NULL) STRICT;
-CREATE TABLE access_imports (source TEXT PRIMARY KEY NOT NULL) STRICT;`;
-const ACTOR_MEMBERSHIPS = `CREATE TABLE actor_members (actor_id TEXT PRIMARY KEY NOT NULL,
- role TEXT NOT NULL CHECK(role IN ('admin','member')), enabled INTEGER NOT NULL CHECK(enabled IN (0,1))) STRICT;`;
+
+
 export type MemberRole = "admin" | "member";
 /** Optional trusted provider policy. Cached decisions never authenticate a request. */
 export interface InstanceAdmissionPolicy {
@@ -19,11 +18,10 @@ export interface InstanceAdmissionPolicy {
 export class MembershipStore {
   readonly #db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string) {
-    const managed = openManagedDatabase({ path, migrations: [
-      { version: 1, name: "instance-memberships", sql: BASELINE },
-      { version: 2, name: 'actor-memberships', sql: ACTOR_MEMBERSHIPS },
-    ], validateSchema: createSchemaValidator(BASELINE + ACTOR_MEMBERSHIPS) });
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource) {
+    const managed = openServerRepository(path, "memberships");
+    this.#closeDatabase = managed.close;
     this.#db = managed.database; this.outcome = managed.outcome;
   }
   membership(p: Pick<Principal, "provider" | "subject">): { role: MemberRole; enabled: boolean } | null {
@@ -38,8 +36,7 @@ export class MembershipStore {
     const binding = principalKey(p);
     // An explicit stable-subject grant/revocation always wins over a legacy name.
     if (this.#db.prepare('SELECT binding FROM members WHERE binding=?').get(binding)) return;
-    this.#db.exec('BEGIN IMMEDIATE');
-    try {
+    sqliteTransaction(this.#db, () => {
       for (const subject of p.aliases ?? []) {
         const alias = principalKey({ provider: p.provider, subject });
         const row = this.#db.prepare('SELECT role FROM members WHERE binding=? AND enabled=1').get(alias);
@@ -49,8 +46,7 @@ export class MembershipStore {
         this.#db.prepare('INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)').run(Date.now(), 'verified-provider', binding, 'bind-legacy-alias:' + alias);
         break;
       }
-      this.#db.exec('COMMIT');
-    } catch (e) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw e; }
+    });
   }
   list() { return this.#db.prepare("SELECT binding,role,enabled FROM members ORDER BY binding").all(); }
   listActors() { return this.#db.prepare('SELECT actor_id,role,enabled FROM actor_members ORDER BY actor_id').all(); }
@@ -59,52 +55,44 @@ export class MembershipStore {
     return row ? { role: row.role as MemberRole, enabled: row.enabled === 1 } : null;
   }
   importActorMembership(actorId: string, role: MemberRole) {
-    this.#db.exec('BEGIN IMMEDIATE');
-    try {
+    sqliteTransaction(this.#db, () => {
       const result = this.#db.prepare('INSERT OR IGNORE INTO actor_members VALUES(?,?,1)').run(actorId, role);
       if (result.changes) this.#db.prepare('INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)')
         .run(Date.now(), 'verified-provider', actorId, 'import-legacy-actor-membership:' + role);
-      this.#db.exec('COMMIT');
-    } catch (e) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw e; }
+    });
   }
   setActor(actorId: string, role: MemberRole, enabled: boolean, operator: string) {
     if (!/^human:\/\/[^/]+\/[^/]+$/u.test(actorId) || !['admin', 'member'].includes(role)
       || typeof enabled !== 'boolean' || !operator || operator.length > 256) throw new Error('Invalid actor membership');
-    this.#db.exec('BEGIN IMMEDIATE');
-    try {
+    sqliteTransaction(this.#db, () => {
       this.#db.prepare('INSERT INTO actor_members VALUES(?,?,?) ON CONFLICT(actor_id) DO UPDATE SET role=excluded.role,enabled=excluded.enabled')
         .run(actorId, role, enabled ? 1 : 0);
       this.#db.prepare('INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)')
         .run(Date.now(), operator, actorId, JSON.stringify({ role, enabled }));
-      this.#db.exec('COMMIT');
-    } catch (e) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw e; }
+    });
   }
   audit() { return this.#db.prepare("SELECT id,at,operator,binding,action FROM access_audit ORDER BY id DESC LIMIT 1000").all(); }
   set(p: Pick<Principal, "provider" | "subject">, role: MemberRole, enabled: boolean, operator: string) {
     parsePrincipal({ ...p, displayName: p.subject, expiresAt: 0 });
     if (!["admin", "member"].includes(role) || typeof enabled !== "boolean" || !operator || operator.length > 256) throw new Error("Invalid membership change");
-    this.#db.exec("BEGIN IMMEDIATE");
-    try {
+    sqliteTransaction(this.#db, () => {
       this.#db.prepare("INSERT INTO members(binding,role,enabled) VALUES(?,?,?) ON CONFLICT(binding) DO UPDATE SET role=excluded.role,enabled=excluded.enabled").run(principalKey(p), role, enabled ? 1 : 0);
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), operator, principalKey(p), JSON.stringify({ role, enabled }));
-      this.#db.exec("COMMIT");
-    } catch (e) { if (this.#db.isTransaction) this.#db.exec("ROLLBACK"); throw e; }
+    });
   }
   /** Compatibility import only once; later administration never resurrects revoked entries. */
   importBindings(source: string, bindings: readonly Pick<Principal, "provider" | "subject">[]) {
     if (this.#db.prepare("SELECT source FROM access_imports WHERE source=?").get(source)) return;
-    this.#db.exec("BEGIN IMMEDIATE");
-    try {
+    sqliteTransaction(this.#db, () => {
       for (const p of bindings) {
         parsePrincipal({ ...p, displayName: p.subject, expiresAt: 0 });
         this.#db.prepare("INSERT OR IGNORE INTO members(binding,role,enabled) VALUES(?,'member',1)").run(principalKey(p));
       }
       this.#db.prepare("INSERT INTO access_imports(source) VALUES(?)").run(source);
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
-      this.#db.exec("COMMIT");
-    } catch (e) { if (this.#db.isTransaction) this.#db.exec("ROLLBACK"); throw e; }
+    });
   }
-  close() { this.#db.close(); }
+  close() { this.#closeDatabase(); }
 }
 export class InstanceAccess {
   readonly #cache = new WeakMap<object, Principal | null>();

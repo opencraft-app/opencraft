@@ -9,6 +9,7 @@
     "plugins/*"
   ],
   "allowScripts": {
+    "esbuild@0.18.20": true,
     "@parcel/watcher@2.6.0": true,
     "core-js@3.50.0": false,
     "core-js@3.51.0": false,
@@ -212,7 +213,7 @@
     "check:hover": "node scripts/check-hover-policy.mjs",
     "test:hover": "node --test tests/tooling/hover-policy.test.mjs && tsx scripts/smoke/shell/smoke-touch-hover.ts",
     "check:boundaries": "npm run check:typography && npm run check:hover && npm run check:controls && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run test:cli && npm run test:startup && npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run test:controls && npm run test:typography && npm run test:sqlite-node && npm run test:local-agent-storage && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:file-preview && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:tasks && npm run test:schedules && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:react-runtime && npm run test:workbench:unit && npm run test:mcp-apps && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:relay && npm run test:hub-network && npm run test:identity-storage && npm run test:actors && npm run test:human-auth && npm run test:codex-core && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run check:startup:cache && npm run build:expo:web && npm run build:expo:ios",
+    "gate": "npm run test:cli && npm run test:startup && npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run test:controls && npm run test:typography && npm run check:storage && npm run test:sqlite-node && npm run test:local-agent-storage && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:file-preview && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:tasks && npm run test:schedules && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:react-runtime && npm run test:workbench:unit && npm run test:mcp-apps && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:relay && npm run test:hub-network && npm run test:identity-storage && npm run test:actors && npm run test:human-auth && npm run test:codex-core && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run check:startup:cache && npm run build:expo:web && npm run build:expo:ios",
     "test:tasks": "tsx --test tests/tasks/tasks-*.test.ts",
     "test:schedules": "tsx --test tests/chat/conversation-schedules.test.ts tests/tasks/scheduled-task-rows.test.ts",
     "smoke:sidebar-schedules": "tsx scripts/smoke/tasks/smoke-sidebar-schedules.ts",
@@ -234,7 +235,7 @@
     "smoke:server-updates": "tsx scripts/smoke/server/smoke-server-updates.ts",
     "storage:move": "tsx scripts/move-owned-host-storage.ts",
     "test:codex-core": "tsx --test tests/protocol/shared-interactions.test.ts tests/execution/shared-interaction-routing.test.ts tests/storage/owned-historical-bot-storage-names.test.ts tests/storage/owned-storage-move.test.ts tests/storage/owned-host-storage-names.test.ts tests/storage/owned-database-path.test.ts tests/chat/opencraft-message-attachments.test.ts tests/execution/codex-core.test.ts tests/execution/account-core-handoff.test.ts tests/execution/codex-router-handoff.test.ts tests/execution/codex-router-maintenance.test.ts tests/execution/codex-router-maintenance-native.test.ts tests/execution/codex-router-service-handoff.test.ts tests/execution/codex-maintenance-release.test.ts tests/execution/core-initialize-failure-recovery.test.ts tests/execution/codex-orchestration-control.test.ts tests/execution/orchestration-callback-lane.test.ts tests/execution/codex-generations.test.ts tests/execution/codex-generation-router.test.ts tests/execution/codex-generation-lifecycle.test.ts tests/execution/codex-generation-app-payload.test.ts tests/execution/codex-generation-retention.test.ts tests/execution/codex-generation-host.test.ts tests/execution/codex-generation-supervisor.test.ts tests/execution/codex-native-storage.test.ts tests/storage/opencraft-host-state-database.test.ts tests/usage/token-usage-model-backfill.test.ts tests/usage/token-usage-backfill-cli.test.ts",
-    "test:sqlite-node": "tsx --test tests/storage/sqlite-node.test.ts tests/storage/process-writer-lock.test.ts",
+    "test:sqlite-node": "tsx --test tests/storage/sqlite-node.test.ts tests/storage/process-writer-lock.test.ts tests/storage/server-storage.test.ts",
     "test:typography": "tsx --test tests/shell/typography-system.test.ts tests/shell/ui-typography-harness.test.ts tests/chat/conversation-activity-visual.test.ts",
     "smoke:typography": "tsx scripts/smoke/shell/smoke-typography.ts",
     "smoke:tasks:team": "tsx scripts/smoke/tasks/smoke-tasks-team.ts",
@@ -294,7 +295,9 @@
     "test:model-policy": "tsx --test tests/execution/model-usage-policy.test.ts",
     "test:account-environment": "tsx --test tests/identity/account-environment.test.ts",
     "cli": "tsx apps/opencraft-cli/src/main.ts",
-    "test:cli": "node --import tsx --test tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts tests/chat/conversation-cli-steer.test.ts"
+    "test:cli": "node --import tsx --test tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts tests/chat/conversation-cli-steer.test.ts",
+    "generate:storage": "npm run db:generate --workspace @opencraft/storage-node",
+    "check:storage": "node scripts/compile-storage-migrations.mjs --check"
   },
   "dependencies": {
     "react": "19.3.1",

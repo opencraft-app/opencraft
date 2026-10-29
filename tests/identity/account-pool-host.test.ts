@@ -1355,7 +1355,7 @@ test("known pre-ledger AccountPool tables retain account metadata, affinity, act
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("unknown legacy account-pool schema is moved aside with backups and leaves empty database", async () => {
+test("unknown legacy account-pool schema is rejected without replacing accounts", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-legacy-missing-"));
   const databasePath = join(root, "pool.sqlite");
   const secretsDirectory = join(root, "secrets");
@@ -1368,17 +1368,11 @@ test("unknown legacy account-pool schema is moved aside with backups and leaves 
     CREATE TABLE unknown_owner_data (id TEXT PRIMARY KEY) STRICT;
     INSERT INTO pool_accounts VALUES('account-a','codex','A','chatgpt-a',1,1,1000);`);
     legacy.close();
-    const pool = new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 });
-    try {
-      assert.equal(pool.outcome.status, "moved-aside");
-      assert.ok(pool.outcome.backupPath);
-      assert.equal(pool.listAccounts().length, 0);
-      const files = await readdir(root);
-      assert.ok(files.some(name => name.includes(".pre-v3-")));
-      assert.ok(files.some(name => name.includes(".legacy-")));
-    } finally {
-      pool.close();
-    }
+    assert.throws(() => new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 }),
+      (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+    const retained = new DatabaseSync(databasePath, { readOnly: true });
+    assert.equal(retained.prepare("SELECT id FROM pool_accounts").get()?.id, "account-a"); retained.close();
+    assert.ok(!(await readdir(root)).some(name => name.includes(".legacy-")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

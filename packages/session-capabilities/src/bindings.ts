@@ -1,18 +1,11 @@
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import type { CapabilitySession } from "./index.js";
-const schema = `CREATE TABLE capability_bindings(id TEXT PRIMARY KEY,server_id TEXT NOT NULL,thread_id TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(server_id,thread_id)) STRICT;`;
-const executionSchema = `CREATE TABLE execution_capability_bindings (
- id TEXT PRIMARY KEY, server_id TEXT NOT NULL, thread_id TEXT NOT NULL,
- session_json TEXT, UNIQUE(server_id,thread_id)
-) STRICT;`;
 /** A preallocated credential is bound once, after the engine assigns its Thread ID.
  * No model arguments, credentials or call payloads are stored here. */
 export class CapabilityBindings {
   private readonly managed;
-  constructor(path: string) {
-    this.managed = openManagedDatabase({ path, legacyPolicy: "reject",
-      migrations: [{ version: 1, name: "session-capability-bindings", sql: schema },
-        { version: 2, name: "execution-capability-bindings", sql: executionSchema }], validateSchema: createSchemaValidator(schema + executionSchema) });
+  constructor(path: ServerDatabaseSource) {
+    this.managed = openServerRepository(path, "session-capabilities");
   }
   get outcome() { return this.managed.outcome; }
   bind(id: string, session: CapabilitySession): void {
@@ -45,5 +38,5 @@ export class CapabilityBindings {
     this.managed.database.prepare("UPDATE execution_capability_bindings SET session_json=? WHERE id=?").run(JSON.stringify(session), id);
   }
   removeExecution(id: string): void { this.managed.database.prepare("DELETE FROM execution_capability_bindings WHERE id=?").run(id); }
-  close() { this.managed.database.close(); }
+  close() { this.managed.close(); }
 }

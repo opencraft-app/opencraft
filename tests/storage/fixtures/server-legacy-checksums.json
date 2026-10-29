@@ -1,0 +1,74 @@
+{
+  "actors": [
+    {
+      "version": 1,
+      "name": "actor-identities",
+      "checksum": "57957b4932ee6736470433246f8b36ce3cfb603c7bad6a5ddfc79f61aa7fb52b"
+    }
+  ],
+  "memberships": [
+    {
+      "version": 1,
+      "name": "instance-memberships",
+      "checksum": "9fd5a2cd84e508f2e68c7227a226b7b509984621a57c4ac31c35942727a2866c"
+    },
+    {
+      "version": 2,
+      "name": "actor-memberships",
+      "checksum": "dd9690f49fc43b86e4fd0251d9da0e6a524b7bb91878ee91e276bd8651a684a5"
+    }
+  ],
+  "human-logins": [
+    {
+      "version": 1,
+      "name": "human-browser-logins",
+      "checksum": "9eef49e725d63c05252f9ae4c126e065f5cda49d420bb553b4fa6c34bc04eec1"
+    }
+  ],
+  "account-onboarding": [
+    {
+      "version": 1,
+      "name": "account-onboarding",
+      "checksum": "a557b4c8e1253128094aec0bcdc641ac5f52d9b7e25ebef23ce79ffd08b76cf7"
+    }
+  ],
+  "actor-collaboration": [
+    {
+      "version": 1,
+      "name": "actor-collaboration",
+      "checksum": "53b42c9070c30c1b639a9c1dc8dbb23f58ae3c0404122a7e353380854b0fec19"
+    },
+    {
+      "version": 2,
+      "name": "conversation-resources",
+      "checksum": "5abf6aa465e98955422e137e94964d85d4ff3473f853b345043b0a1b6f93a886"
+    },
+    {
+      "version": 3,
+      "name": "thread-orchestration",
+      "checksum": "9c3a56d0e03a63cfc3a856b8fcb01a2c220368deb019064c634829623cfb2d31"
+    },
+    {
+      "version": 4,
+      "name": "thread-orchestration-authority",
+      "checksum": "48be9a1373f0bf8c320eb078a030c6f2c8fe93647088fea8ea170adaf08b6d26"
+    },
+    {
+      "version": 5,
+      "name": "thread-orchestration-views",
+      "checksum": "5ff829626fcb3f555d6306fa1b00b7708991e2b85f31901991130d34a158a19d"
+    }
+  ],
+  "session-capabilities": [
+    {
+      "version": 1,
+      "name": "session-capability-bindings",
+      "checksum": "5254761de2d3b098cf7de8e9da88b7d0a1bdc25a2c2b8b082e44bfcdc7bc7d6d"
+    },
+    {
+      "version": 2,
+      "name": "execution-capability-bindings",
+      "checksum": "aaeca16d0761d654cd82a01ecb33d154fc0edf843548d174e66cf24710397f8f"
+    }
+  ]
+}

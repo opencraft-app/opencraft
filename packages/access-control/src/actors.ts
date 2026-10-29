@@ -1,22 +1,12 @@
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from '@opencraft/identity-core';
 import type { Actor, ActorContext, ActorKind } from '@opencraft/identity-core/actors';
 
-const SCHEMA = `
-CREATE TABLE actor_authority (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL) STRICT;
-CREATE TABLE actors (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('human','session')),
- display_name TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), generation INTEGER NOT NULL,
- created_at INTEGER NOT NULL, created_by TEXT) STRICT;
-CREATE TABLE actor_bindings (binding TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES actors(id)) STRICT;
-CREATE TABLE actor_credentials (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES actors(id),
- digest TEXT NOT NULL, generation INTEGER NOT NULL, expires_at INTEGER NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1))) STRICT;
-CREATE TABLE actor_grants (actor_id TEXT NOT NULL REFERENCES actors(id), resource TEXT NOT NULL,
- action TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), PRIMARY KEY(actor_id,resource,action)) STRICT;
-CREATE TABLE actor_audit (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, operator TEXT NOT NULL,
- actor_id TEXT NOT NULL, action TEXT NOT NULL, resource TEXT) STRICT;
-`;
+
 const TOKEN_PREFIX = 'oc_actor_v1.';
 function name(value: string) {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\x00-\x1f]/u.test(value)) throw new Error('Invalid actor name');
@@ -49,8 +39,10 @@ export class ActorStore {
   readonly #db: DatabaseSync;
   readonly authority: string;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string, readonly now: () => number = Date.now) {
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: [{ version: 1, name: 'actor-identities', sql: SCHEMA }], validateSchema: createSchemaValidator(SCHEMA) });
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource, readonly now: () => number = Date.now) {
+    const managed = openServerRepository(path, "actors");
+    this.#closeDatabase = managed.close;
     this.#db = managed.database;
     this.outcome = managed.outcome;
     this.#db.exec('PRAGMA foreign_keys=ON');
@@ -97,11 +89,7 @@ export class ActorStore {
       this.#audit(owner.actorId, owner.actorId, 'unbind-identity', principalKey(binding));
     });
   }
-  #transaction<T>(run: () => T): T {
-    this.#db.exec('BEGIN IMMEDIATE');
-    try { const result = run(); this.#db.exec('COMMIT'); return result; }
-    catch (error) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw error; }
-  }
+  #transaction<T>(run: () => T): T { return sqliteTransaction(this.#db, run); }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')
@@ -214,7 +202,7 @@ export class ActorStore {
         .get(actorId, resource, action);
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#humanRegistrationListeners.clear(); this.#db.close(); }
+  close() { this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {

@@ -60,6 +60,12 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   });
 }
 
+export function buildHumanAccountBundle(output) {
+  return build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: output,
+    bundle: true, platform: 'node', format: 'esm', target: 'node26',
+    banner: { js: "import { createRequire as createOpenCraftRequire } from 'node:module'; const require = createOpenCraftRequire(import.meta.url);" } });
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
@@ -170,8 +176,7 @@ export async function packageHeadlessLinux(composition = {}) {
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
-    await build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: join(stage, 'runtime/human-account.mjs'),
-      bundle: true, platform: 'node', format: 'esm', target: 'node26' });
+    await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
     await build({ entryPoints: [join(repositoryRoot, 'scripts/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.

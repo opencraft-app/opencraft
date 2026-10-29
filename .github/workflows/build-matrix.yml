@@ -177,6 +177,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: npm run check:storage && npm run test:sqlite-node
       - run: npm run test:headless-server
       - run: npm run matrix:build -- headless-linux-amd64-tar
         if: needs.plan.outputs.headless-package == 'true'

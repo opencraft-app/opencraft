@@ -1,13 +1,15 @@
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
 import { randomUUID, createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { openManagedDatabase, createSchemaValidator } from '@opencraft/sqlite-node';
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
-import { ORCHESTRATION_SCHEMA, ORCHESTRATION_VIEW_SCHEMA, ThreadOrchestrationLedger } from './orchestration-ledger.js';
-import { ORCHESTRATION_AUTHORITY_SCHEMA, type BoundedThreadDelegation, type OrchestrationMessageOrigin } from './orchestration-authority.js';
+import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
+import { type BoundedThreadDelegation, type OrchestrationMessageOrigin } from './orchestration-authority.js';
 
 export const ACTOR_INPUT_PREFIX = 'actor-input:';
 export type InputMode = 'queue' | 'steer';
@@ -35,34 +37,12 @@ export interface ConversationExecutionPort {
 export class CollaborationError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
-const SCHEMA = `
-CREATE TABLE actor_run_bindings(actor_id TEXT PRIMARY KEY, host_id TEXT NOT NULL, thread_id TEXT NOT NULL UNIQUE, epoch INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT;
-CREATE TABLE actor_messages(id TEXT PRIMARY KEY, seq INTEGER NOT NULL UNIQUE, channel_id TEXT NOT NULL, author_id TEXT NOT NULL, target_id TEXT NOT NULL, content TEXT NOT NULL, reply_to TEXT, created_at INTEGER NOT NULL) STRICT;
-CREATE INDEX actor_messages_channel ON actor_messages(channel_id,seq);
-CREATE TABLE actor_deliveries(message_id TEXT NOT NULL REFERENCES actor_messages(id), receiver_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('received','read')), received_at INTEGER NOT NULL, read_at INTEGER, PRIMARY KEY(message_id,receiver_id)) STRICT;
-CREATE TABLE actor_execution_requests(id TEXT PRIMARY KEY, requester_id TEXT NOT NULL, requester_generation INTEGER NOT NULL, target_id TEXT NOT NULL, target_generation INTEGER NOT NULL, binding_epoch INTEGER NOT NULL, thread_id TEXT NOT NULL, mode TEXT NOT NULL CHECK(mode IN ('queue','steer')), expected_turn_id TEXT, state TEXT NOT NULL CHECK(state IN ('accepted','transferring','queued','submitted','injected','rejected','cancelled','unknown')), queue_id TEXT, turn_id TEXT, reason TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT;
-CREATE TABLE actor_collaboration_audit(id TEXT PRIMARY KEY, action TEXT NOT NULL, actor_id TEXT NOT NULL, resource_id TEXT NOT NULL, detail TEXT NOT NULL, happened_at INTEGER NOT NULL) STRICT;
-CREATE INDEX actor_execution_pending ON actor_execution_requests(state,created_at);
-CREATE TABLE actor_execution_inputs(request_id TEXT NOT NULL REFERENCES actor_execution_requests(id), message_id TEXT NOT NULL REFERENCES actor_messages(id), position INTEGER NOT NULL, PRIMARY KEY(request_id,message_id), UNIQUE(request_id,position)) STRICT;
-CREATE TABLE actor_send_keys(actor_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, fingerprint TEXT NOT NULL, message_id TEXT, request_id TEXT, PRIMARY KEY(actor_id,idempotency_key)) STRICT;
-`;
 
-const V2 = `
-ALTER TABLE actor_messages ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'actor';
-ALTER TABLE actor_messages ADD COLUMN server_id TEXT;
-ALTER TABLE actor_messages ADD COLUMN source_ref TEXT;
-ALTER TABLE actor_messages ADD COLUMN delegation_id TEXT;
-ALTER TABLE actor_execution_requests ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'actor';
-ALTER TABLE actor_execution_requests ADD COLUMN host_id TEXT DEFAULT 'local-codex';
-ALTER TABLE actor_execution_requests ADD COLUMN server_id TEXT;
-ALTER TABLE actor_execution_requests ADD COLUMN credential_id TEXT;
-ALTER TABLE actor_execution_requests ADD COLUMN expires_at INTEGER;
-CREATE TABLE conversation_authorities(id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, turn_id TEXT, input_id TEXT, actor_id TEXT NOT NULL, generation INTEGER NOT NULL, credential_id TEXT, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(thread_id,turn_id), UNIQUE(thread_id,input_id)) STRICT;
-CREATE TABLE conversation_turn_authorities(thread_id TEXT NOT NULL,turn_id TEXT NOT NULL,authority_id TEXT NOT NULL REFERENCES conversation_authorities(id),PRIMARY KEY(thread_id,turn_id)) STRICT;
-CREATE TABLE conversation_tool_budget(authority_id TEXT PRIMARY KEY, sent INTEGER NOT NULL) STRICT;
-`;
 
-export const COLLABORATION_MIGRATIONS = [{ version: 1, name: 'actor-collaboration', sql: SCHEMA }, { version: 2, name: 'conversation-resources', sql: V2 }, { version: 3, name: 'thread-orchestration', sql: ORCHESTRATION_SCHEMA }, { version: 4, name: 'thread-orchestration-authority', sql: ORCHESTRATION_AUTHORITY_SCHEMA }, { version: 5, name: 'thread-orchestration-views', sql: ORCHESTRATION_VIEW_SCHEMA }];
+
+
+import { SERVER_LEGACY_MIGRATIONS } from "@opencraft/storage-node/server-legacy";
+export const COLLABORATION_MIGRATIONS = SERVER_LEGACY_MIGRATIONS["actor-collaboration"];
 
 type Row = Record<string, unknown>;
 // Only pre-existing nullable request rows use this historical identity.
@@ -100,19 +80,16 @@ export class Collaboration {
   #pump: Promise<void> | null = null;
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
-  constructor(path: string, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true) {
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: COLLABORATION_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + V2 + ORCHESTRATION_SCHEMA + ORCHESTRATION_AUTHORITY_SCHEMA + ORCHESTRATION_VIEW_SCHEMA) });
+    const managed = openServerRepository(path, "actor-collaboration");
+    this.#closeDatabase = managed.close;
     this.database = managed.database; this.outcome = managed.outcome;
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.#unregisterAuthority = actors.registerResourceAuthority(resource => { const ref = parseConversationRef(resource); return !!ref && this.#owns(ref.serverId); });
   }
-  #transaction<T>(operation: () => T): T {
-    if (this.database.isTransaction) return operation();
-    this.database.exec('BEGIN IMMEDIATE');
-    try { const result = operation(); this.database.exec('COMMIT'); return result; }
-    catch (error) { this.database.exec('ROLLBACK'); throw error; }
-  }
+  #transaction<T>(operation: () => T): T { return sqliteTransaction(this.database, operation); }
   start() {
     if (this.#timer || this.#closed) return;
     this.#timer = setInterval(() => { void this.pump().catch(() => {}); }, 500); this.#timer.unref();
@@ -120,7 +97,7 @@ export class Collaboration {
   async close() {
     if (this.#closed) return;
     this.#closed = true; if (this.#timer) clearInterval(this.#timer);
-    await this.#operations; this.#unregisterAuthority(); this.database.close();
+    await this.#operations; this.#unregisterAuthority(); this.#closeDatabase();
   }
   get available() { return !this.#closed; }
   binding(actorId: string): RunBinding | null {

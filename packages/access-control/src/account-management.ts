@@ -1,6 +1,8 @@
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { openManagedDatabase, createSchemaValidator } from '@opencraft/sqlite-node';
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, type Principal } from '@opencraft/identity-core';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { LocalAccountProvider } from '@opencraft/identity-core/local-account';
@@ -8,10 +10,7 @@ import type { ActorStore } from './actors.js';
 import type { HumanAccounts } from './human-accounts.js';
 import type { MembershipStore } from './index.js';
 
-const SCHEMA = `CREATE TABLE account_setup (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL,
- mode TEXT, username TEXT, subject TEXT, owner_actor TEXT) STRICT;
-CREATE TABLE account_invitations (digest TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, state TEXT NOT NULL,
- username TEXT, subject TEXT NOT NULL, actor_id TEXT, created_by TEXT NOT NULL) STRICT;`;
+
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export class AccountManagementError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); }
@@ -32,10 +31,11 @@ export class HumanAccountManagement {
   readonly #db: DatabaseSync;
   readonly #operations = new Set<string>();
   #closed = false;
-  constructor(path: string, readonly accounts: HumanAccounts, readonly actors: ActorStore,
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource, readonly accounts: HumanAccounts, readonly actors: ActorStore,
     readonly members: MembershipStore, readonly now = Date.now) {
-    this.#db = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: [{ version: 1, name: 'account-onboarding', sql: SCHEMA }],
-      validateSchema: createSchemaValidator(SCHEMA) }).database;
+    const managed = openServerRepository(path, "account-onboarding");
+    this.#db = managed.database; this.#closeDatabase = managed.close;
     if (!this.#db.prepare('SELECT id FROM account_setup WHERE id=1').get()) {
       const existing = actors.list().some(actor => actor.kind === 'human') || accounts.listLocalAccounts().length > 0
         || members.listActors().length > 0 || members.list().length > 0;
@@ -51,11 +51,7 @@ export class HumanAccountManagement {
   isDesktopOwner(actorId: string): boolean {
     this.#assertOpen(); const row = this.#row(); return row.mode === 'desktop' && row.owner_actor === actorId;
   }
-  #transaction<T>(run: () => T): T {
-    this.#db.exec('BEGIN IMMEDIATE');
-    try { const result = run(); this.#db.exec('COMMIT'); return result; }
-    catch (error) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw error; }
-  }
+  #transaction<T>(run: () => T): T { return sqliteTransaction(this.#db, run); }
   #provider(): LocalAccountProvider {
     const provider = this.accounts.localAccounts;
     check(provider?.available && provider.createWithId, 'account_provisioning_unavailable', 503); return provider;
@@ -164,5 +160,5 @@ export class HumanAccountManagement {
     check(this.actors.get(actorId)?.kind === 'human' && ['admin', 'member'].includes(role) && typeof enabled === 'boolean', 'invalid_member', 400);
     this.members.setActor(actorId, role, enabled, context.actorId);
   }
-  close() { if (this.#closed) return; this.#closed = true; this.#db.close(); }
+  close() { if (this.#closed) return; this.#closed = true; this.#closeDatabase(); }
 }

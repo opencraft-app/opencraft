@@ -1,6 +1,6 @@
 # 插件持久化契约
 
-状态：2026-10-13 client-local 与首个 [Host 通用文档 API](host-document-storage.md) 已实现，九个自有 Node SQLite 库已接入 [共享生命周期](sqlite-lifecycle.md)。Native 适配、其他 Host 实现与历史所有 origin 找回仍未交付；无账本旧库可能备份后移开重建，不承诺所有历史数据无损升级。
+状态：2026-10-13 client-local 与首个 [Host 通用文档 API](host-document-storage.md) 已实现，九个自有 Node SQLite 库已接入 [共享生命周期](sqlite-lifecycle.md)。Native 适配、其他 Host 实现与历史所有 origin 找回仍未交付；未知无账本结构拒绝打开并保留原数据；已知结构按受管迁移接入，不自动移开重建。
 
 ## 当前最小 API
 
@@ -22,7 +22,7 @@ Electron profile 下新增 `opencraft-extensions.sqlite`，设置和安装记录
 
 ## 1. 决策
 
-插件默认使用宿主提供的异步 JSON/KV 数据接口，不依赖 SQLite、IndexedDB、Drizzle 或文件路径。本期保留 node:sqlite，不引入 ORM。数据接口保持窄职责，不扩大权限、文件和凭据的访问边界。
+插件默认使用宿主提供的异步 JSON/KV 数据接口，不依赖 SQLite、IndexedDB、Drizzle 或文件路径。Node 运行时继续使用 node:sqlite；Server 核心的 Drizzle schema 与 SQL 生成由平台持有，不进入插件数据接口。数据接口保持窄职责，不扩大权限、文件和凭据的访问边界。
 
 | 数据 | 唯一 authority | 物理实现 |
 |---|---|---|
