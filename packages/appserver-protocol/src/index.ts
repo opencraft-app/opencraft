@@ -29,3 +29,5 @@ export * from "./schedule-time";
 export * from "./turn-recovery";
 
 export * from "./shared-interactions";
+
+export * from "./thread-note";

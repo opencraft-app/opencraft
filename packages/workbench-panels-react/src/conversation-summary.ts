@@ -2,9 +2,15 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 import type { TimelineSnapshot } from "@opencraft/chat-core";
 import type { ComponentType } from "react";
 
+export interface ConversationNoteTransport {
+  /** Captures the authorized Host and Thread; cannot follow another selection. */
+  exchange(update: string, vector: string): Promise<{ update: string }>;
+}
+
 /** Trusted renderer port. The conversation remains the sole data owner. */
 export interface ConversationSummaryContext {
   readonly scopeKey: string;
+  readonly note?: ConversationNoteTransport;
   readonly title?: string;
   readonly timeline: TimelineSnapshot | null;
   readonly goal: { readonly objective: string; readonly status: string } | null;

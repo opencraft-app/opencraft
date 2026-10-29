@@ -48,3 +48,11 @@
   @media (prefers-reduced-motion: reduce) { &__section-heading svg, &__link { transition: none; } }
 }
 :root[data-ui-density="touch"] { .thread-summary__row, .thread-summary__section-heading { min-height: 44px; } }
+
+.thread-summary {
+  &__note { padding-block: calc(var(--spacing) * 2) calc(var(--spacing) * 3); margin-bottom: calc(var(--spacing) * 3); border-bottom: 1px solid var(--color-border-subtle); }
+  &__note-heading { display: flex; align-items: center; gap: calc(var(--spacing) * 2); margin-bottom: calc(var(--spacing) * 2); > svg { flex-shrink: 0; color: var(--color-text-secondary); } > h3 { flex: 1; margin: 0; @include typography.role(control); } }
+  &__note-editor { box-sizing: border-box; display: block; width: 100%; min-height: 160px; resize: vertical; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: calc(var(--spacing) * 2); background: var(--color-background-input); color: var(--color-text); @include typography.role(body); overflow-wrap: anywhere; &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; } &::placeholder { color: var(--color-text-tertiary); } }
+  &__note-preview { min-height: 160px; overflow: hidden; overflow-wrap: anywhere; }
+  &__note-status { margin: calc(var(--spacing) * 2) 0 0; min-height: 1.5em; @include typography.role(caption, tertiary); &[data-note-status="offline"] { color: var(--color-text-warning); } }
+}

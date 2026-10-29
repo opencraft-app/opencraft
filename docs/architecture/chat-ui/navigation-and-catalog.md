@@ -266,3 +266,19 @@ remaining relative directories distinguish equal names. Full original paths rema
 in tooltips and resource callbacks. The presentation does not resolve filesystem
 paths or infer a workspace root. Keyboard focus and touch targets remain available
 in the floating panel and adaptive sheet, including read-only history.
+
+### Optional collaborative note port
+
+A trusted host can provide `ConversationSummaryContext.note`, a transport captured
+for one authorized conversation. The thread-summary plugin then places a Markdown
+note above the existing read-only plan/files/activity projections. The transport
+exchanges Yjs updates and state vectors and must enforce current identity and
+conversation access on every read or write. This change supplies the renderer,
+CRDT client, protocol DTO and a separate managed SQLite ThreadNoteStore; it does
+not install an authenticated server route or advertise that capability by itself.
+Client-local preferences and native engine databases are not note authorities.
+The SQLite owner commits before acknowledgement, rejects invalid/oversized updates,
+and keys documents by server and conversation identity supplied by the trusted host.
+Pending edits are retained within the current page session, with no claim of
+durable offline drafts across reload. Remote edits wait during IME composition
+and preserve selection through Yjs relative positions.
