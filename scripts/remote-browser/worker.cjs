@@ -8,7 +8,7 @@ const { installClipboard } = require('./clipboard.cjs');
 const { installIme } = require('./ime.cjs');
 const { initializeNativeFocus } = require('./focus.cjs');
 const { createControls } = require('./controls.cjs');
-const { createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS } = require('./touch.cjs');
+const { isTouchInput, createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS } = require('./touch.cjs');
 app.commandLine.appendSwitch('opencraft-remote-clipboard');
 // Keep per-contact release semantics stable on our pinned Chromium runtime.
 app.commandLine.appendSwitch('disable-features', 'SyntheticPointerActions');
@@ -406,9 +406,7 @@ async function command(message) {
     if (['left','right','middle'].includes(input.button)) event.button = input.button;
     if (typeof input.keyCode === 'string' && input.keyCode.length <= 64) event.keyCode = input.keyCode;
     if (Array.isArray(input.modifiers)) event.modifiers = input.modifiers.filter(v => ['shift','control','alt','meta','leftButtonDown'].includes(v));
-    const touch = input.pointerType === 'touch'
-      || ['iphone','ipad','android-phone','android-tablet'].includes(p.deviceProfile)
-      || p.deviceProfile === 'desktop-touch' && input.pointerType === undefined;
+    const touch = isTouchInput(input, p.deviceProfile);
     if (touch && ['mouseMove','mouseDown','mouseUp'].includes(event.type) && (!event.button || event.button === 'left')) return p.touch.mouse(event);
     p.pressedKeys ??= new Set(); p.pressedButtons ??= new Set();
     if (event.type === 'keyDown' && event.keyCode) p.pressedKeys.add(event.keyCode);
