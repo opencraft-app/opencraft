@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { startCodexCore } from "./main.js";
+import { startCodexCore, type CodexCoreOptions } from "./main.js";
+import { AccountCoreOwner, sealLegacyAccountMaintenance } from "./account-owner.js";
+import { isAbsolute } from "node:path";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -14,14 +16,32 @@ function optional(name: string): string | undefined { return process.argv.includ
 async function main() {
   const token = (await readFile(argument("--token-file"), "utf8")).trim();
   let shutdown: ((code: number) => Promise<void>) | undefined;
-  const core = await startCodexCore({
+  const options: CodexCoreOptions = {
     endpoint: argument("--endpoint"), authToken: token,
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
     appServerEndpoint: optional("--app-server-endpoint"),
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
-  });
+  };
+  const inspectMaintenance = process.argv.includes("--inspect-account-maintenance");
+  const legacyReceipt = optional("--seal-legacy-account-maintenance");
+  if (inspectMaintenance || legacyReceipt) {
+    if (inspectMaintenance && legacyReceipt || !options.appServerEndpoint || options.appServerEndpoint === options.endpoint
+      || !Number.isSafeInteger(options.proxyPort) || options.proxyPort! < 1 || options.proxyPort! > 65535
+      || ![options.endpoint, options.appServerEndpoint, options.dataDirectory,
+      options.runtimeDirectory, options.nativeCodexHomeDirectory, options.executable].every(isAbsolute)
+      || options.authToken.length < 32 || legacyReceipt && !isAbsolute(legacyReceipt)) throw new Error("Invalid split account maintenance configuration");
+  }
+  if (inspectMaintenance) {
+    console.log(JSON.stringify(await new AccountCoreOwner(options).inspectMaintenance()));
+    return;
+  }
+  if (legacyReceipt) {
+    console.log(JSON.stringify(await sealLegacyAccountMaintenance(options, legacyReceipt)));
+    return;
+  }
+  const core = await startCodexCore(options);
   shutdown = async (code: number) => { await core.close(); process.exit(code); };
   process.once("SIGTERM", () => void shutdown!(0));
   process.once("SIGINT", () => void shutdown!(0));

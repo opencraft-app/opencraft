@@ -347,6 +347,31 @@ execution; it cannot claim split continuity. Such a bridge records any normal
 question/approval cancellation and actual interruption, without editing logs,
 arming goals or replaying mutations.
 
+For a split protocol-1 account source that cannot carry a nonempty unknown list,
+the fixed successor CLI has two explicit offline modes:
+`--inspect-account-maintenance` reads the current storage/configuration/CLI
+digests without starting services; `--seal-legacy-account-maintenance <receipt>`
+acquires the accounts writer lock and seals a private maintenance receipt.
+The receipt binds the stopped source PID/start time, boot, bundle digest,
+fenced owner/epoch/operation, exact unknown list and zero occupancy snapshot.
+Every historical responsibility must be accounted for by persistent affinity
+rows: additional image affinities or completed login/reset receipts make this
+legacy starting point unsupported. Check this before stopping the source and
+abort its fence when unsupported. The seal rechecks it against current storage;
+it does not fabricate a cooperative source release. Cold readiness identifies
+this as `releaseKind: legacy-maintenance` and binds the receipt digest. No
+database restore, mutation replay or unknown removal is part of this bridge.
+
+The deployment owner must hold its lock continuously across source fencing,
+stop, offline seal, cold readiness and any compensation. Drain naturally, wait
+the agreed grace period and resnapshot the exact list before fencing. Source
+control shutdown closes connections with incomplete headers or already answered
+reads; accepted handlers still finish and flush their responses. A legacy
+control parser stall cannot justify killing work: explicit process termination
+requires a verified zero-work snapshot, durable fence and no unexported volatile
+responsibility. A failed switch restores a compatible bundle against current
+data under the same lock, or leaves the durable fence for reconciliation.
+
 After confirmed release, a failed candidate is stopped before restarting a
 compatible previous bundle against current data. The recovered process takes a
 new cold proof before admission opens. It never restores an old database snapshot.

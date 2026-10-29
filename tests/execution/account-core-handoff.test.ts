@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, chown, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
+import { connect } from "node:net";
+import { once } from "node:events";
+import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -38,8 +42,9 @@ async function fixture() {
   options.proxyPort = (reserve.address() as any).port; await new Promise<void>(r => reserve.close(() => r()));
   const config = join(root, "core.json"); await writeFile(config, JSON.stringify(options), { mode: 0o600 });
   async function start(extraEnvironment: Record<string, string> = {}) {
+    const environment = { PATH: process.env.PATH, HOME: root, ...extraEnvironment };
     const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", "core", config], {
-      cwd: resolve(import.meta.dirname, "../.."), env: { PATH: process.env.PATH, HOME: root, ...extraEnvironment }, stdio: ["ignore", "pipe", "pipe"] });
+      cwd: resolve(import.meta.dirname, "../.."), env: environment, stdio: ["ignore", "pipe", "pipe"] });
     children.push(child); let errors = ""; child.stderr!.on("data", b => { errors += b; });
     await new Promise<void>((resolve, reject) => {
       child.stdout!.on("data", b => { if (String(b).includes("ready\n")) resolve(); });
@@ -47,7 +52,7 @@ async function fixture() {
     });
     const descriptor = join(root, `descriptor-${child.pid}.json`);
     await writeFile(descriptor, JSON.stringify({ schemaVersion: 1, pid: child.pid, endpoint: socket, token }), { mode: 0o600 });
-    return { child, adapter: accountCoreOwner(descriptor), logs: () => errors };
+    return { child, environment, adapter: accountCoreOwner(descriptor), logs: () => errors };
   }
   async function stop(child: ChildProcess) {
     if (child.exitCode !== null || child.signalCode !== null) return;
@@ -64,7 +69,15 @@ async function fixture() {
   });
   const account = async () => (await accountRpc("list")).status;
   const input = (s: any) => ({ expectedOwner: s.handoff.owner, expectedEpoch: s.handoff.epoch, operationId: "handoff-test", fence: "fence-test" });
-  return { root, data, start, stop, model, account, accountRpc, consumeCalls: () => consumeCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
+  async function maintenance(mode: string, receipt: string | undefined, environment: NodeJS.ProcessEnv) {
+    const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", mode, config, ...(receipt ? [receipt] : [])], {
+      cwd: resolve(import.meta.dirname, "../.."), env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    children.push(child); let output = "", errors = "";
+    child.stdout!.on("data", bytes => { output += bytes; }); child.stderr!.on("data", bytes => { errors += bytes; });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
+    return { code, output, errors };
+  }
+  return { root, data, start, stop, model, account, accountRpc, maintenance, consumeCalls: () => consumeCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
 }
 
 test("split account handoff drains full streams, freezes account RPC, preserves image affinity and repeats across owners", async () => {
@@ -357,5 +370,99 @@ test("explicit terminal proxy unknown list survives cold handoff while active st
     const blocked = await next.adapter.acquireFence(f.input(state)); assert.equal(blocked.proof.coverage, "unknown");
     await assert.rejects(next.adapter.releaseWriter({ ...f.input(blocked), proof: blocked.proof.identity }));
     await next.adapter.abortFence(f.input(blocked));
+  } finally { await f.close(); }
+});
+
+
+for (const [name, bytes, answered] of [
+  ["partial HTTP headers", "GET /owner-handoff HTTP/1.1\r\nHost: local\r\n", false],
+  ["answered inspection with unread partial body", "GET /owner-handoff HTTP/1.1\r\nHost: local\r\nContent-Length: 100\r\n\r\nx", true],
+] as const) {
+  test(`control shutdown closes non-executing connections: ${name}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "oc-control-close-")), endpoint = join(root, "control.sock");
+    const server = await startControlServer(endpoint, token, async () => ({ status: 200, value: { inspected: true } }));
+    const socket = connect(endpoint); let closing: Promise<void> | undefined;
+    try {
+      await once(socket, "connect");
+      const response = answered ? once(socket, "data") : undefined;
+      socket.write(bytes.replace("Host: local", `Host: local\r\nAuthorization: Bearer ${token}`));
+      if (response) await response; else await delay(20);
+      closing = server.close();
+      assert.equal(await Promise.race([closing.then(() => true), delay(500).then(() => false)]), true,
+        "a connection with no running operation must not hold Core shutdown");
+    } finally { socket.destroy(); await closing; await server.close(); await rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test("control shutdown still drains an accepted mutation and delivers its response", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-control-drain-")), endpoint = join(root, "control.sock");
+  let entered!: () => void, finish!: () => void, committed = false;
+  const accepted = new Promise<void>(resolve => { entered = resolve; });
+  const complete = new Promise<void>(resolve => { finish = resolve; });
+  const server = await startControlServer(endpoint, token, async () => {
+    entered(); await complete; committed = true; return { status: 200, value: { committed: true } };
+  });
+  let closing: Promise<void> | undefined;
+  const response = new Promise<string>((resolve, reject) => {
+    const req = request({ socketPath: endpoint, method: "POST", headers: { authorization: `Bearer ${token}` } }, res => {
+      let body = ""; res.on("data", chunk => { body += chunk; }); res.on("end", () => resolve(body)); res.on("error", reject);
+    }); req.on("error", reject); req.end();
+  });
+  try {
+    await accepted; let closed = false; closing = server.close().then(() => { closed = true; });
+    await delay(30); assert.equal(closed, false); assert.equal(committed, false);
+    finish(); assert.deepEqual(JSON.parse(await response), { committed: true });
+    await closing; assert.equal(committed, true);
+  } finally { finish(); await response.catch(() => undefined); await closing; await server.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("legacy-shaped maintenance keeps exact unknown responsibility and refuses changed receipts", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const source = await f.start();
+    const body = await f.model("/v1/responses", false), reader = body.body!.getReader(); await reader.read(); await reader.cancel();
+    let snapshot = await source.adapter.snapshot();
+    for (let n = 0; n < 200 && (snapshot.handoff.uncertain.length !== 1 || snapshot.proof.counts.proxy !== 0); n++) {
+      await delay(5); snapshot = await source.adapter.snapshot();
+    }
+    assert.equal(snapshot.handoff.uncertain.length, 1); assert.equal(snapshot.proof.counts.proxy, 0);
+    snapshot = await source.adapter.acquireFence(f.input(snapshot));
+    // This fixture exposes the legacy protocol shape; the immutable production
+    // legacy executable is exercised separately by the maintenance drill.
+    delete snapshot.proof.historicalUnknownSha256; delete snapshot.proof.historicalUnknownCount;
+    const inspection = await f.maintenance("maintenance-inspect", undefined, source.environment);
+    assert.equal(inspection.code, 0, inspection.errors); const inspected = JSON.parse(inspection.output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "legacy-account-maintenance", source: {
+      pid: source.child.pid, startTime, bootId: snapshot.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: snapshot, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const receiptPath = join(f.root, "legacy-receipt.json"); await writeFile(receiptPath, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const alive = await f.maintenance("maintenance-seal", receiptPath, source.environment);
+    assert.notEqual(alive.code, 0); assert.match(alive.errors, /already owned/);
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    await f.stop(source.child);
+    for (const [name, change] of [
+      ["active request", (r: any) => { r.sourceSnapshot.proof.counts.proxy = 1; }],
+      ["volatile responsibility", (r: any) => { r.sourceSnapshot.proof.historicalCount++; }],
+      ["unknown identity", (r: any) => { r.sourceSnapshot.handoff.uncertain[0].id = "different"; }],
+      ["current storage", (r: any) => { r.storageSha256 = "0".repeat(64); }],
+      ["configuration", (r: any) => { r.configurationSelectorSha256 = "0".repeat(64); }],
+    ] as const) {
+      const changed = structuredClone(receipt); change(changed); const path = join(f.root, `${name}.json`);
+      await writeFile(path, JSON.stringify(changed), { mode: 0o600 });
+      const rejected = await f.maintenance("maintenance-seal", path, source.environment);
+      assert.notEqual(rejected.code, 0, name); assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    }
+    const sealed = await f.maintenance("maintenance-seal", receiptPath, source.environment); assert.equal(sealed.code, 0, sealed.errors);
+    const candidate = await f.start(), cold = await candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot()));
+    assert.equal(cold.ready.releaseKind, "legacy-maintenance"); assert.equal(cold.ready.storage.sha256, inspected.storage.sha256);
+    assert.deepEqual(cold.handoff.uncertain, snapshot.handoff.uncertain);
+    await candidate.adapter.releaseFence(f.input(cold), cold);
+    assert.deepEqual((await candidate.adapter.snapshot()).handoff.uncertain, snapshot.handoff.uncertain);
   } finally { await f.close(); }
 });

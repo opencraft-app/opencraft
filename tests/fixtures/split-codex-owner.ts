@@ -1,9 +1,15 @@
 // Isolated drill child entry. Configuration contains synthetic data only.
 import { readFile } from "node:fs/promises";
 import { startCodexCore } from "../../apps/codex-core/src/main.js";
+import { AccountCoreOwner, sealLegacyAccountMaintenance } from "../../apps/codex-core/src/account-owner.js";
 import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 
 const options = JSON.parse(await readFile(process.argv[3]!, "utf8"));
+if (process.argv[2] === "maintenance-inspect") {
+  console.log(JSON.stringify(await new AccountCoreOwner(options).inspectMaintenance()));
+} else if (process.argv[2] === "maintenance-seal") {
+  console.log(JSON.stringify(await sealLegacyAccountMaintenance(options, process.argv[4]!)));
+} else {
 let shutdown: ((code: number) => Promise<void>) | undefined;
 const onFailure = () => void shutdown?.(1);
 const service = process.argv[2] === "runtime" ? await startCodexAppServer({ ...options, onFailure })
@@ -25,3 +31,5 @@ shutdown = async code => { await service.close(); process.exit(code); };
 process.on("SIGTERM", () => void shutdown!(0));
 process.on("SIGINT", () => void shutdown!(0));
 process.stdout.write("ready\n");
+
+}
