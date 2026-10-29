@@ -14,6 +14,10 @@ opencraft thread list --server '<server-id>' --json
 opencraft thread show '<conversation-uri-or-https-link>' --json
 opencraft thread log '<conversation-uri>' --json
 opencraft thread log '<conversation-uri>' --cursor '<nextCursor>' --json
+opencraft thread send '<conversation-uri>' 'Review this change' --mode queue --key review-01 --json
+opencraft thread send '<conversation-uri>' --message-file ./message.txt --key review-02 --wait delivered --timeout 30s --json
+opencraft thread lookup '<conversation-uri>' --key review-01 --json
+opencraft thread show '<conversation-uri>' --delivery '<request-id>' --json
 ```
 
 Profiles contain only the SSH alias, expected installation identity and optional
@@ -37,6 +41,21 @@ This first CLI release supports bounded logs on Codex. Other engines report
 `read:false` and `boundedRead:false` in the directory and reject CLI logs with
 `UNSUPPORTED_CAPABILITY`. Their existing conversation readers remain available
 through their original consumers; the CLI never selects those readers.
+
+Send accepts positional text, a UTF-8 `--message-file`, or stdin (including
+`--message-file -`); choose one. Non-interactive calls require an explicit `--key`.
+Interactive calls can generate a key saved before sending, with only the Actor,
+installation, target and timestamp, in `operations/` beside the profiles file.
+Identical Actor/key/payload repeats return the original request; changed content
+or target conflicts. A disconnected send returns exit 7 and the original key.
+Use `thread lookup --key` or `thread show --delivery-key` for read-only accounting;
+a missing record remains unknown and is not permission to resend or change keys.
+
+`--wait delivered` polls until submitted/injected, which means the engine accepted
+the input. It does not mean the task completed: `taskOutcome` remains unknown.
+Timeout/disconnection exits 7 and preserves the key and known receipt. Explicit
+rejection/cancellation while waiting exits 8. Querying those facts succeeds with
+exit 0. The CLI creates no second queue and never resumes or stops the target.
 
 Every `--json` invocation writes exactly one envelope to stdout:
 `{schemaVersion:1,ok:true,data:...}` or
