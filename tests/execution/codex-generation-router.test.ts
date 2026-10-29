@@ -22,9 +22,9 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
     const http = (await import("node:http")).createServer(); http.on("upgrade", (r, s, h) => server.handleUpgrade(r, s, h, ws => server.emit("connection", ws)));
     await new Promise<void>(resolve => http.listen(nativeSocket, resolve)); servers.push(server);
     const table = new Map<string, any>(); threads.set(id, table);
-    server.on("connection", ws => { sockets.push(ws); ws.on("message", async raw => {
+    server.on("connection", ws => { sockets.push(ws); let dynamicReply: any; ws.on("message", async raw => {
       const m = JSON.parse(String(raw));
-      if (!m.method && m.id !== undefined) { replies.push({ generation: id, id: m.id, result: m.result }); if (handoff) ws.send(JSON.stringify({ method: "serverRequest/resolved", params: { requestId: m.id } })); return; }
+      if (!m.method && m.id !== undefined) { replies.push({ generation: id, id: m.id, result: m.result }); if (handoff) ws.send(JSON.stringify(dynamicReply ? { method: "item/completed", params: { threadId: dynamicReply.threadId, turnId: dynamicReply.turnId, item: { type: "dynamicToolCall", id: dynamicReply.callId, status: "completed", success: true } } } : { method: "serverRequest/resolved", params: { requestId: m.id } })); return; }
       if (m.id === undefined) return;
       const params = m.params ?? {}; calls.push({ generation: id, method: m.method, params });
       const gate = holds.get(id);
@@ -42,6 +42,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
         const all = [...table.values()].sort((a, b) => b.updatedAt - a.updatedAt), offset = Number(params.cursor ?? 0), size = params.limit ?? 100;
         result = { data: all.slice(offset, offset + size), nextCursor: offset + size < all.length ? String(offset + size) : null };
       } else if (m.method === "thread/loaded/list") result = { data: [...table.keys()] };
+      else if (m.method === "fixture/dynamic") { dynamicReply = { threadId: params.threadId, turnId: "native-turn", callId: "native-call" }; ws.send(JSON.stringify({ id: 7, method: "item/tool/call", params: { ...dynamicReply, namespace: null, tool: "fixture_dynamic", arguments: {} } })); }
       else if (m.method === "fixture/approval") { ws.send(JSON.stringify({ id: 7, method: "item/commandExecution/requestApproval", params: { threadId: params.threadId, turnId: "turn" } })); }
       else if (m.method === "fixture/resolveApproval") { ws.send(JSON.stringify({ method: "serverRequest/resolved", params: { threadId: params.threadId, requestId: 7 } })); }
       else if (m.method === "model/list") result = { data: [id] };
@@ -69,6 +70,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
   await rpc("initialize", { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } });
   return { registry, owner, router, get client(){return client;}, messages, calls, replies, threads, rpc, relays,fence(id:string){fenced.add(id);},
     async reconnect(){client.terminate();await new Promise<void>(resolve=>client.once('close',()=>resolve()));client=new WebSocket(`ws+unix://${join(root,'router.sock')}:/?opencraftLane=fixture-gateway`);client.on('message',raw=>messages.push(JSON.parse(String(raw))));await new Promise<void>(resolve=>client.once('open',resolve));await rpc('initialize',{clientInfo:{name:'test',version:'1'},capabilities:{experimentalApi:true}});},
+    notifyNative(id: string, message: unknown) { for (const socket of servers[id === "old" ? 0 : 1]!.clients) socket.send(JSON.stringify(message)); },
     crash(id: string) { for (const ws of servers[id === "old" ? 0 : 1]!.clients) ws.terminate(); },
     hold(id: string, method: string) {
       let enteredResolve!: () => void, finish!: () => void;
@@ -332,5 +334,21 @@ test("native callback cancellation cannot erase a possibly dispatched Host opera
     const counts = f.router.handoffCounts();
     const proof = f.owner!.inspect({ ...input, expectedEpoch: input.expectedEpoch + 1 }, { coverage: "complete", counts, activeCount: Object.values(counts).reduce((a,b)=>a+b,0), historicalCount: 1 });
     assert.equal(proof.coverage, "unknown"); assert.equal(proof.activeCount, null);
+  } finally { await f.close(); }
+});
+
+test("native dynamic-tool item completion is an exact callback receipt scoped to its thread and turn", async () => {
+  const f = await fixture({}, false, true);
+  try {
+    const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/dynamic", { threadId: thread.id });
+    const callback = f.messages.find(m => m.method === "item/tool/call");
+    f.notifyNative("old", { method: "item/completed", params: { threadId: thread.id, turnId: "other-turn", item: { type: "dynamicToolCall", id: "native-call", status: "completed" } } });
+    await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(f.router.handoffCounts().connectionTools, 1);
+    const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "dynamic", fence: "fence" };
+    f.owner!.fence(input); f.client.send(JSON.stringify({ id: callback.id, result: { success: true, contentItems: [] } }));
+    for (let n=0;n<100&&(f.router.handoffCounts().connectionTools || !f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));n++) await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(f.replies.length,1); assert.equal(f.router.handoffCounts().connectionTools,0);
+    assert.deepEqual(f.owner!.snapshot().pending,[]); assert.equal(f.owner!.snapshot().uncertain,false);
+    assert.ok(f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));
   } finally { await f.close(); }
 });

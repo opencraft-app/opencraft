@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
@@ -36,12 +36,16 @@ test("real router service preserves native subscriptions and registry across rel
     get pendingCallbacks() { return pending; }, pendingOrchestrationMutations: 0 };
   await mkdir(health.codexHome, { mode: 0o700 });
   const identity = { ownerPid: process.pid, nativePid: process.pid, ownerStart: "1", nativeStart: "1", unit: "fixture", cliSha256: "fixed", cliVersion: "codex-cli 0.162.1" };
+  const artifacts = { cli: join(root, "fixture-cli"), node: join(root, "fixture-node"), app: join(root, "fixture-app.cjs") };
+  // The injected supervisor owns the Native boundary; tiny fixed artifacts keep
+  // this protocol fixture from repeatedly hashing the test runner's Node binary.
+  for (const [kind, path] of Object.entries(artifacts)) await writeFile(path, `synthetic ${kind} artifact\n`, { mode: 0o600 });
   const options = { endpoint, coreEndpoint, token, tokenFile: join(root, "unused-token"), dataDirectory: data, registryDirectory: registry,
     systemdScope: "system" as const, requireHostUsage: false, supervisor: {
       start: async () => health, inspect: async () => health, identify: async () => identity,
       stop: async () => { throw Error("Router cannot stop native"); }, discardUnready: async () => {}, processesQuiet: async () => true },
     bootstrap: { generation: { id: "original", endpoint: join(directory, "app", "control.sock"), runtimeDataDirectory: data,
-      executable: process.execPath, bundle: process.argv[1]!, node: process.execPath, cwd: root } } };
+      executable: artifacts.cli, bundle: artifacts.app, node: artifacts.node, cwd: root } } };
   let service: Awaited<ReturnType<typeof startCodexGenerationService>> | undefined;
   let peer: GenerationPeer | undefined;
   const rpc = (path: string, value?: unknown) => new Promise<any>((resolve, reject) => {
@@ -98,4 +102,16 @@ test("unsupported retired durable history blocks source release while abort rema
     assert.throws(()=>runtime.owner.release({...input(),proof:proof.identity},observation,"config"),/drained/);
     runtime.owner.abort(input()); assert.ok(runtime.owner.isOpen());
   } finally { await runtime.close(); await rm(root,{recursive:true,force:true}); }
+});
+
+test("unconfirmed router callbacks prevent background native retirement", async () => {
+  const root=await mkdtemp(join(tmpdir(),"oc-router-unknown-retire-")); let stops=0;
+  const runtime=new CodexGenerationRuntime({directory:root,dataDirectory:root,proxyBaseUrl:"http://127.0.0.1:1",requireHostUsage:false,replaceRetiredHome:async()=>{},supervisor:{
+    start:async()=>{throw Error("Native observation must not start while outcome is unknown");},identify:async()=>{throw Error("No identity");},stop:async()=>{stops++;},discardUnready:async()=>{},processesQuiet:async()=>true}});
+  try{
+    for(const id of ["old","new"]){runtime.registry.register({id,endpoint:join(root,id,"control.sock"),runtimeDataDirectory:join(root,id,"data"),executable:process.execPath,bundle:process.argv[1]!,node:process.execPath,cwd:root});runtime.registry.ready(id);}
+    runtime.registry.activate("old",0);runtime.registry.activate("new",1);runtime.owner.uncertain();
+    const result=await runtime.retire("old");assert.equal(result.retired,false);assert.ok(result.reasons.includes("router-outcome-unknown"));
+    assert.equal(stops,0);assert.equal(runtime.registry.get("old")!.state,"draining");
+  }finally{await runtime.close();await rm(root,{recursive:true,force:true});}
 });

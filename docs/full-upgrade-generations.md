@@ -85,7 +85,10 @@ PTY/tool loss or unconfirmed mutation delivery blocks release. Every native
 server request retains a durable router admission until its original consumer
 reply and native resolution. Matching replies to existing requests can complete
 behind the source fence; new methods remain closed. Native cancellation before
-a consumer reply cannot prove an external tool had no effect and remains unknown. Unresolved creation
+a consumer reply cannot prove an external tool had no effect and remains unknown.
+Dynamic tools can confirm resolution through the native terminal `item/completed`
+receipt, matched by connection, thread, turn and call identity; the router does
+not require a separate server-request notification that these CLIs do not emit. Unresolved creation
 claims and native callback/admission counters also block release; missing counters
 or changed native identity produce unknown coverage.
 

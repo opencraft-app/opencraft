@@ -44,7 +44,7 @@ export class CodexGenerationRouter {
 class RoutingSession {
   private readonly epoch = randomUUID();
   private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: () => void }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: () => void; completion?: { threadId: string; turnId: string; callId: string } }>();
   private readonly pendingStarts = new Map<string, () => void>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: () => void }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: () => void }>();
@@ -93,6 +93,18 @@ class RoutingSession {
           const command = this.commands.get(processId);
           if (!command?.active || command.ticket.generationId !== id || command.ticket.incarnation !== incarnation) return;
         }
+        const completedItem = rpcRecord(nativeParams.item);
+        if (message.method === "item/completed" && completedItem.type === "dynamicToolCall" && ["completed", "failed"].includes(text(completedItem.status))) {
+          const matches = [...this.serverRequests].filter(([, request]) => request.operation === operation && request.completion
+            && request.completion.threadId === nativeParams.threadId && request.completion.turnId === nativeParams.turnId && request.completion.callId === completedItem.id);
+          if (matches.length > 1) this.router.runtime.owner?.uncertain();
+          if (matches.length === 1) {
+            const [key, request] = matches[0]!;
+            if (request.answered) request.release?.(); else this.router.runtime.owner?.uncertain();
+            this.serverRequests.delete(key);
+            this.emit({ method: "serverRequest/resolved", params: { threadId: request.completion!.threadId, requestId: key } });
+          }
+        }
         if (message.method === "serverRequest/resolved") {
           const entry = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === nativeParams.requestId);
           if (!entry) return;
@@ -121,7 +133,9 @@ class RoutingSession {
           // a fresh public identity, so stale responses cannot answer it.
           const liveRequest = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === message.id);
           const key = liveRequest?.[0] ?? `ocg:${this.epoch}:${randomUUID()}`;
-          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false, release: this.router.runtime.owner?.retainNativeCallback() });
+          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false, release: this.router.runtime.owner?.retainNativeCallback(),
+            completion: message.method === "item/tool/call" && tid && text(nativeParams.turnId) && text(nativeParams.callId)
+              ? { threadId: tid, turnId: text(nativeParams.turnId), callId: text(nativeParams.callId) } : undefined });
           this.emit({ ...message, id: key });
         } else this.emit({ ...message, __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id,
           incarnation, admissionEpoch: ticket.admissionEpoch, threadId: tid } });
