@@ -1619,7 +1619,7 @@ test("scheduled Codex completion is observed from native events without a histor
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], [true, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget})`, async () => {
+for (const [legacyItems, smallHistoryBudget, unsupportedItems] of [[false, false, false], [true, false, false], [true, true, false], [false, false, true]]) test(`cached Codex history opens without Resume, models, or ownership (legacy Items=${legacyItems}, small budget=${smallHistoryBudget}, unsupported Items=${unsupportedItems})`, async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-read-cache-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
   let sequence = 0;
@@ -1636,7 +1636,7 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     await mkdir(nativeHome, { recursive: true });
     const turns = Array.from({ length: 12 }, (_, n) => ({ id: `cached-turn-${n}`, status: "completed", items: [{ id: `answer-${n}`, type: "agentMessage", text: `Historical reply ${n}` }] }));
     await writeFile(path, turns.map(turn => JSON.stringify({ type: "turn_context", payload: { turn_id: turn.id } }) + "\n").join(""));
-    await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget });
+    await call("test/setHistory", { threadId, path, turns, legacyItems, smallHistoryBudget, unsupportedItems });
     const read = () => call("thread/read", { threadId, watch: true, includeTurns: false, initialTurnsPage: { limit: 10 } });
     const cold = await read(), warm = await read();
     const metadata = await call("thread/read", { threadId, includeTurns: false });
@@ -1660,7 +1660,7 @@ for (const [legacyItems, smallHistoryBudget] of [[false, false], [true, false], 
     const counts = await call("test/readMethodCounts", {});
     assert.equal(counts["thread/resume"] ?? 0, 0);
     assert.equal(counts["model/list"] ?? 0, 0);
-    assert.equal(counts["thread/turns/list"], smallHistoryBudget ? 2 : 1);
+    assert.equal(counts["thread/turns/list"], unsupportedItems ? 2 : 1, "unsupported Items rebuild through full Turns; supported Items avoid the oversized full page");
     assert.deepEqual((await call("test/emitThreadNotification", { threadId })).nativeSubscribed, false);
     await call("thread/resume", { threadId, excludeTurns: true });
     assert.equal((await call("test/readMethodCounts", {}))["thread/resume"], 1);

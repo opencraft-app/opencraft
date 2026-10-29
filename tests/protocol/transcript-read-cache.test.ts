@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { TranscriptReadCache, type NativeTranscriptPort } from "@opencraft/native-history-node";
+import { TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA, type NativeTranscriptPort } from "@opencraft/native-history-node";
 import { readUsageIncrement } from "../../apps/opencraft-daemon/src/token-usage-derived-source.js";
 import { CodexNativeStorage } from "../../apps/opencraft-daemon/src/codex-native-storage.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
@@ -128,13 +128,13 @@ test("schema change and deleting the whole cache directory both reconstruct nati
   const expected = (await f.cache.read(id)).initialTurnsPage.data;
   await mkdir(join(f.cache.directory, `${id}.blobs`));
   await writeFile(join(f.cache.directory, `${id}.blobs`, "orphan.blob"), "discard");
-  await f.reopen(2);
+  await f.reopen(TRANSCRIPT_PROJECTION_SCHEMA + 1);
   assert.deepEqual((await f.cache.read(id)).initialTurnsPage.data, expected);
   const file = join(f.cache.directory, `${id}.turns.jsonl`);
   const validJsonCorruption = (await readFile(file, "utf8")).replace("Question", "Tampered");
   await writeFile(file, validJsonCorruption);
   assert.deepEqual((await f.cache.read(id)).initialTurnsPage.data, expected);
-  assert.equal((await f.query("SELECT projection_schema_version FROM opencraft_cache_meta"))[0]!.projection_schema_version, 2);
+  assert.equal((await f.query("SELECT projection_schema_version FROM opencraft_cache_meta"))[0]!.projection_schema_version, TRANSCRIPT_PROJECTION_SCHEMA + 1);
   await assert.rejects(stat(join(f.cache.directory, `${id}.blobs`, "orphan.blob")), { code: "ENOENT" });
   await rm(join(f.root, "cache"), { recursive: true });
   assert.deepEqual((await f.cache.read(id)).initialTurnsPage.data, expected);
@@ -479,4 +479,90 @@ test("presentation keeps MCP surface metadata and unknown/native-visible bodies 
   const detail = await f.cache.page(id, mcp.historyDetail!.cursor, 1, undefined, "full", "desc", undefined, undefined, mcp.id);
   assert.deepEqual(detail.data[0]!.items, [f.source[0]!.items![2]]);
   assert.deepEqual(preview.items!.slice(3), f.source[0]!.items!.slice(3));
+});
+
+test("601-turn cold index loads only requested native Item bodies and preserves full count and older cursors", async t => {
+  const f = await fixture(t, 601), headers: number[] = [], hydrated: string[] = [];
+  const port = f.port as NativeTranscriptPort;
+  port.listTurns = async () => { throw new Error("cold index must not eagerly project full native pages"); };
+  port.listTurnHeaders = async (_id: string, cursor: string | null, limit: number) => {
+    headers.push(limit);
+    const offset = Number(cursor ?? 0), turns = f.source.slice().reverse();
+    return { data: turns.slice(offset, offset + limit).map(turn => ({ ...turn, items: [], itemsView: "notLoaded" })),
+      nextCursor: offset + limit < turns.length ? String(offset + limit) : null };
+  };
+  port.listTurnItems = async (_id: string, turnId: string) => {
+    hydrated.push(turnId); return structuredClone(f.source.find(turn => turn.id === turnId)!.items);
+  };
+  const first = await f.cache.read(id, 1, undefined, "presentation");
+  assert.equal(first.thread.historyTurnCount, 601);
+  assert.deepEqual(first.initialTurnsPage.data, f.source.slice(-1).map(turn => ({ ...turn, itemsView: "full" })));
+  assert.deepEqual(hydrated, ["turn-600"], "hidden Turns must not contribute native body reads to first paint");
+  assert.equal(headers.length, 7);
+  const older = await f.cache.page(id, first.initialTurnsPage.nextCursor, 2);
+  assert.deepEqual(older.data.map(turn => turn.id), ["turn-599", "turn-598"]);
+  assert.deepEqual(hydrated, ["turn-600", "turn-599", "turn-598"]);
+  const before = hydrated.length;
+  await f.cache.read(id, 1);
+  assert.equal(hydrated.length, before, "a warm body stays materialized");
+  f.source.push(turn(601)); await appendFile(f.path, line("turn-601"));
+  assert.equal((await f.cache.read(id, 1)).thread.historyTurnCount, 602);
+  assert.deepEqual((await f.cache.page(id, older.nextCursor, 2)).data.map(turn => turn.id), ["turn-597", "turn-596"]);
+});
+
+test("a header-capable port returning full Turns remains compatible without Item paging", async t => {
+  const f = await fixture(t, 25), original = f.port.listTurns;
+  const port = f.port as NativeTranscriptPort;
+  port.listTurnHeaders = original;
+  port.listTurnItems = async () => { throw new Error("full native pages need no Item hydration"); };
+  assert.deepEqual((await f.cache.read(id, 2)).initialTurnsPage.data, f.source.slice(-2).reverse());
+});
+
+test("invalidating an in-flight lazy Item hydration cannot publish or store its late body", async t => {
+  const f = await fixture(t, 20), port = f.port as NativeTranscriptPort;
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; }), held = new Promise<void>(resolve => { release = resolve; });
+  port.listTurnHeaders = async (_id, cursor, limit) => {
+    const offset = Number(cursor ?? 0), turns = f.source.slice().reverse();
+    return { data: turns.slice(offset, offset + limit).map(turn => ({ ...turn, items: [], itemsView: "notLoaded" })), nextCursor: null };
+  };
+  port.listTurnItems = async () => { enter(); await held; return f.source.at(-1)!.items; };
+  t.after(release);
+  const reading = f.cache.read(id, 1), rejected = assert.rejects(reading, /invalidated/);
+  await entered;
+  const invalidated = f.cache.invalidate(id); release();
+  await rejected; await invalidated;
+  assert.equal((await f.query("SELECT count(*) AS n FROM opencraft_turn_offset_index"))[0]!.n, 0);
+});
+
+
+test("downgrading the projection schema rebuilds lazy headers as full native Turns", async t => {
+  const f = await fixture(t, 25), port = f.port as NativeTranscriptPort;
+  port.listTurnHeaders = async (_id, cursor, limit) => {
+    const offset = Number(cursor ?? 0), turns = f.source.slice().reverse();
+    return { data: turns.slice(offset, offset + limit).map(turn => ({ ...turn, items: [], itemsView: "notLoaded" })),
+      nextCursor: offset + limit < turns.length ? String(offset + limit) : null };
+  };
+  port.listTurnItems = async (_id, turnId) => structuredClone(f.source.find(turn => turn.id === turnId)!.items);
+  await f.cache.read(id, 1);
+  delete port.listTurnHeaders; delete port.listTurnItems;
+  await f.reopen(TRANSCRIPT_PROJECTION_SCHEMA - 1);
+  assert.deepEqual((await f.cache.read(id, 10)).initialTurnsPage.data, f.source.slice(-10).reverse());
+});
+
+test("header rebuild keeps a partial rollout record pending until the next append", async t => {
+  const f = await fixture(t, 20), port = f.port as NativeTranscriptPort;
+  port.listTurnHeaders = async (_id, cursor, limit) => {
+    const offset = Number(cursor ?? 0), turns = f.source.slice().reverse();
+    return { data: turns.slice(offset, offset + limit).map(turn => ({ ...turn, items: [], itemsView: "notLoaded" })),
+      nextCursor: offset + limit < turns.length ? String(offset + limit) : null };
+  };
+  port.listTurnItems = async (_id, turnId) => structuredClone(f.source.find(turn => turn.id === turnId)!.items);
+  const pending = line("turn-20");
+  await appendFile(f.path, pending.slice(0, -2));
+  assert.equal((await f.cache.read(id, 1)).thread.historyTurnCount, 20);
+  f.source.push(turn(20)); await appendFile(f.path, pending.slice(-2));
+  const appended = await f.cache.read(id, 1);
+  assert.equal(appended.thread.historyTurnCount, 21);
+  assert.deepEqual(appended.initialTurnsPage.data.map(turn => turn.id), ["turn-20"]);
 });

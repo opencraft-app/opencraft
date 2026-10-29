@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { observeNativeTranscriptFiles, TranscriptReadCache } from "@opencraft/native-history-node";
+import { observeNativeTranscriptFiles, TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA } from "@opencraft/native-history-node";
 import { createPiTranscriptCache, readPiSnapshot } from "../../plugins/pi-engine/src/read-history.js";
 import { DshAppServerAdapter } from "../../apps/local-agent-host/src/dsh-appserver-adapter.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
@@ -85,7 +85,7 @@ test("Pi snapshot cache observes SQLite WAL commits, pages without snapshots on 
     async listTurns(_id, cursor, limit) { const turns = (await options.readTurns()).reverse(), offset = Number(cursor ?? 0);
       return { data: turns.slice(offset, offset + limit), nextCursor: offset + limit < turns.length ? String(offset + limit) : null };
     },
-  }, { projectionSchema: 2 });
+  }, { projectionSchema: TRANSCRIPT_PROJECTION_SCHEMA + 1 });
   assert.equal((await cache.read("pi_test")).initialTurnsPage.data[0]!.id, "turn-21");
   assert.equal(reads, 7);
 });

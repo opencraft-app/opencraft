@@ -8,7 +8,7 @@ import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type Exe
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError, AppServerRpcError, threadUnavailableReason } from "@opencraft/appserver-client";
-import { TranscriptReadCache } from "@opencraft/native-history-node";
+import { NativeItemPaginationUnsupported, TranscriptReadCache } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
@@ -604,11 +604,34 @@ export class CodexEngineAdapter implements DuplexTransport {
     const adapter = this;
     const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
       () => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
-    this.transcriptCache = new TranscriptReadCache(dataRoot, {
-      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
-      resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
-      readThread: async (threadId, signal) => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread as AppServerThread,
-      listTurns: async (threadId, cursor, limit, signal, sortDirection = "desc") => {
+    const listTurnItems = async (threadId: string, turnId: string, signal?: AbortSignal) => {
+      const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
+      let itemCursor: string | null = null, budget = 100;
+      const seen = new Set<string>();
+      do {
+        let response: any;
+        for (;;) {
+          try { response = await this.requestPhysical("thread/items/list", { threadId, turnId,
+            cursor: itemCursor, limit: budget, sortDirection: "asc" }, 30_000, signal); break; }
+          catch (error) {
+            if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
+            budget = Math.max(1, Math.floor(budget / 2));
+          }
+        }
+        if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
+          throw new Error("Invalid native Item page");
+        for (const entry of response.data) {
+          const item = record(entry.item ?? entry);
+          if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turnId)) throw new Error("Invalid native Item");
+          items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
+        }
+        itemCursor = response.nextCursor;
+        if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
+        if (itemCursor !== null) seen.add(itemCursor);
+      } while (itemCursor !== null);
+      return items;
+    };
+    const listTurns = async (threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection: "asc" | "desc" = "desc") => {
         const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
           threadId, cursor, limit, itemsView, sortDirection,
         }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
@@ -619,34 +642,37 @@ export class CodexEngineAdapter implements DuplexTransport {
           page = await request("notLoaded");
         }
         for (const turn of page.data) if (turn.itemsView === "notLoaded") {
-          const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
-          let itemCursor: string | null = null, budget = 100;
-          const seen = new Set<string>();
-          do {
-            let response: any;
-            for (;;) {
-              try { response = await this.requestPhysical("thread/items/list", { threadId, turnId: turn.id,
-                cursor: itemCursor, limit: budget, sortDirection: "asc" }, 30_000, signal); break; }
-              catch (error) {
-                if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
-                budget = Math.max(1, Math.floor(budget / 2));
-              }
-            }
-            if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
-              throw new Error("Invalid native Item page");
-            for (const entry of response.data) {
-              const item = record(entry.item ?? entry);
-              if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turn.id)) throw new Error("Invalid native Item");
-              items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
-            }
-            itemCursor = response.nextCursor;
-            if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
-            if (itemCursor !== null) seen.add(itemCursor);
-          } while (itemCursor !== null);
-          turn.items = items; turn.itemsView = "full";
+          turn.items = await listTurnItems(threadId, turn.id, signal); turn.itemsView = "full";
         }
         return page;
+      };
+    this.transcriptCache = new TranscriptReadCache(dataRoot, {
+      get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
+      resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
+      listTurnItems: async (threadId, turnId, signal) => {
+        try { return await listTurnItems(threadId, turnId, signal); }
+        catch (error) {
+          if ([-32601, -32602].includes(Number(record(error).code)))
+            throw new NativeItemPaginationUnsupported("Native Item pagination is unavailable", { cause: error });
+          throw error;
+        }
       },
+      listTurnHeaders: async (threadId, cursor, limit, signal) => {
+        try {
+          const page = await this.requestPhysical("thread/turns/list", {
+            threadId, cursor, limit, itemsView: "notLoaded", sortDirection: "desc",
+          }, 30_000, signal) as { data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null };
+          return { ...page, data: page.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
+            ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
+        }
+        catch (error) {
+          // An older native reader can serve full pages without a header view.
+          if (![-32601, -32602].includes(Number(record(error).code))) throw error;
+          return listTurns(threadId, cursor, limit, signal);
+        }
+      },
+      readThread: async (threadId, signal) => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread as AppServerThread,
+      listTurns,
     }, { measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
     try {
       const telemetry=new TokenUsageTelemetry();

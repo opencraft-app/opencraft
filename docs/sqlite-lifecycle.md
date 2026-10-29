@@ -804,4 +804,18 @@ An in-flight read with an older revision cannot publish its result. Successful
 archive/delete replies wait for cleanup; native archived/deleted notifications
 also invalidate the derived files, including changes made by another client.
 Native paginators that return `notLoaded` despite a full request are hydrated
-through read-only Item pages before any Turn enters this cache.
+through read-only Item pages before a full Turn is returned.
+
+Codex header-capable readers build the complete Turn index with `notLoaded`
+pages, storing explicit lazy placeholders. Only the requested visible Turns
+materialize their canonical read-only Item pages; presentation and detail views
+share those lossless bodies. Rebuilds skip decoding rollout bodies only when the
+observed file ends in a complete newline; partial records keep the conservative
+scan cursor. Incremental dirty-suffix detection is unchanged. Projection schema
+2 distinguishes lazy records from schema 1: either upgrade or downgrade drops
+and reconstructs this disposable cache, never the native ledger. Item hydration
+checks cancellation and the per-Thread revision before writing or publishing;
+full Turn counts and older cursors still describe the complete index. A native
+protocol may support Turn headers without Item pagination. An explicit
+unsupported-Item response disables lazy indexing and reconstructs full native
+Turns through the existing reader; transient failures are propagated unchanged.

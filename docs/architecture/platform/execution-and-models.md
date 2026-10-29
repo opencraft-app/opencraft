@@ -566,3 +566,22 @@ input identity and require reconciliation. Failed or disconnected preparation
 retires only its own reservation; an accepted native execution is never replayed
 because a View failed to activate. Terminal system-error contexts retire once
 before a subsequent tool configuration is applied.
+
+
+### History admission and cold reconstruction
+
+Authenticated `thread/read`, `thread/turns/list`, `thread/items/list` and
+`thread/history/cancel` use the independent AppHost read path alongside catalog
+reads. A pending `turn/start` tool preparation must not hold these requests in
+the Host mutation FIFO. Session authorization, logical-client fencing and the
+existing write FIFO still apply; cancelling a history operation can reach its
+owner while another request is pending.
+
+Codex cold history indexes every canonical Turn through header-only pages and
+materializes Item bodies only for the requested page. This keeps the complete
+count and stable cursor ordering without transferring hidden tool output before
+first paint. The paired header/Item port is optional; older native protocols and
+other engines retain their full-page path. Disposable projection schema 2 fences
+old readers from lazy placeholders; see [SQLite lifecycle](../../sqlite-lifecycle.md).
+The isolated native regression is documented in
+[history cold reproduction](../../../scripts/performance/README.md).
