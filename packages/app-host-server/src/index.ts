@@ -19,13 +19,13 @@ export interface WorkbenchRequestIdentity {
   handle(request: IncomingMessage, response: ServerResponse): boolean | Promise<boolean>;
 }
 
-function isIndependentCatalogFrame(frame: unknown): boolean {
+function isIndependentReadFrame(frame: unknown): boolean {
   if (typeof frame !== "string") return false;
   try {
     const request = JSON.parse(frame);
     return request !== null && typeof request === "object"
       && (typeof request.id === "string" || typeof request.id === "number")
-      && (request.method === "model/list" || request.method === "thread/list");
+      && ["model/list", "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/history/cancel"].includes(request.method);
   } catch { return false; }
 }
 
@@ -843,10 +843,10 @@ export class AppHostServerConnection {
       ? message.hostId : "";
     if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
       this.admitForwarding(this, message as RendererToAppHostMessage);
-      // Catalog RPCs are independent reads. A provider's send can await Turn
-      // preparation or another RPC, so awaiting it in the writable queue must
-      // not hold model/thread discovery behind that unrelated work.
-      if (isIndependentCatalogFrame((message as { frame?: unknown }).frame)) {
+      // Discovery and history reads observe native state without ordering behind
+      // an unrelated Turn's tool preparation. Cancellation must reach that same
+      // independent lane. Writable frames retain their existing FIFO.
+      if (isIndependentReadFrame((message as { frame?: unknown }).frame)) {
         void this.receive(message);
         return;
       }

@@ -156,7 +156,7 @@ test("queued reads share the end-to-end deadline and disposal leaves the shared 
 
 test("Host subscription/status checks request no history and schedule inspection uses bounded turn metadata", async () => {
   const adapter: any = Object.create(CodexEngineAdapter.prototype), calls: any[] = [];
-  adapter.nativeCore = {}; adapter.nativeSubscribedThreads = new Set();
+  adapter.nativeCore = {}; adapter.nativeSubscribedThreads = new Set(); adapter.sessionMcpRetirements = new Map();
   adapter.requestPhysical = async (method: string, params: any) => {
     calls.push({ method, params });
     if (method === "thread/read") return { thread: { status: { type: "idle" } } };
