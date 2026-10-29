@@ -12,6 +12,7 @@ const withHost = false;
 const evidenceDirectory = ".local/model-policy";
 const source = `
 import React from 'react';
+import {SessionModelPicker} from '/packages/composer-editor/src/session-model-picker.tsx';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createWebWorkbenchApplication,WorkbenchRoot} from '/apps/workbench-web/src/workbench-root.tsx';
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
@@ -27,7 +28,7 @@ await application.supervisor.extensions.activateOptional(createHeadlessModelServ
 application.supervisor.navigation.openSettings('appearance');
 function DensityBoundary(){const preferences=useUiPreferencesRuntime();React.useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);return <WorkbenchRoot application={application}/>;}
 createIntlTestRoot(document.getElementById('app'),undefined,'zh-CN').render(<DensityBoundary/>);
-window.proof={catalog:()=>application.supervisor.extensions.contributions.getSnapshot(),open:()=>application.supervisor.navigation.openSettings('opencraft.headless-model-services.policy'),theme:setThemePreference};
+window.proof={empty:()=>{const target=document.createElement('div');document.body.append(target);createIntlTestRoot(target,undefined,'zh-CN').render(<SessionModelPicker catalog={{models:[],permissionProfiles:[],policyRestricted:true}} label='模型' selected={null} disabled={false} open={true} onOpenChange={()=>{}} onSelect={()=>{}} focus={{triggerProps:{},contentProps:{}}}/>);},catalog:()=>application.supervisor.extensions.contributions.getSnapshot(),open:()=>application.supervisor.navigation.openSettings('opencraft.headless-model-services.policy'),theme:setThemePreference};
 document.body.dataset.ready='true';
 `;
 let policy={canManage:true,revision:0,rules:[] as unknown[]};
@@ -79,5 +80,7 @@ try {
   await page.screenshot({path:evidenceDirectory+'/'+theme+'-'+width+'.png',fullPage:true});
  }
  const member=await browser.newPage();await member.route('**/__opencraft_model_policy',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({canManage:false})}));await member.goto(server.resolvedUrls!.local[0]);await member.waitForSelector('body[data-ready="true"]');assert.equal(await member.getByText('模型使用限制',{exact:true}).count(),0);await member.close();
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',screenshots:evidenceDirectory,verified:['real Settings route','admin save','light/dark','wide/narrow']}));
+ await page.evaluate(()=>(window as any).proof.empty());
+ await page.getByText('部分选项已被管理员禁用。',{exact:true}).waitFor();
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',screenshots:evidenceDirectory,verified:['real Settings route','admin save','fully restricted catalog reason','light/dark','wide/narrow']}));
 }finally{await browser?.close();await server.close();}

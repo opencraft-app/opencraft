@@ -1300,6 +1300,7 @@ export function App({
   );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
       models: projectComposerModelChoices(composerCatalog.models),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
