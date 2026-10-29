@@ -62,6 +62,19 @@ previews. The native history remains authoritative.
 
 ## Commands, permission and audit
 
+The bundled [CLI](../cli.md) negotiates `servers`, `metadata`,
+`metadataDiscovery` and `boundedRead` independently on this same command lane.
+The directory returns the admitted Actor and stable installation/Server identity.
+Metadata discovery disables native rollout repair and projects only explicit
+metadata; it never substitutes preview text for an absent title. CLI history
+uses native item pagination and chunk continuations instead of full-history
+hydration. Cursors bind the resource, observed native revision and item hash.
+The CLI sends `bounded:true`; this selects a separate bounded projection on the
+same execution owner. It cannot fall back to the legacy conversation reader.
+Codex supports this projection; other engines explicitly reject it until their
+native reads are bounded. Existing UI and model-tool readers retain their wire
+contract.
+
 `opencraft/collaboration` is the initialized Host command lane. `reference`,
 `discover`, `read`, `send`, `delivery` and `cancel` reuse the same core authority as
 model tools and the existing Actor HTTP channel adapter. The wire cannot supply

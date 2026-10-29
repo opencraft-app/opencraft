@@ -2,6 +2,38 @@
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
+/** Each addition is negotiated independently; version alone grants no capability. */
+export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true } as const;
+export interface ConversationServer {
+  serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean };
+}
+export interface ConversationMetadata {
+  ref: ConversationRef; projectId: string | null; cwd: string | null;
+  runtime: 'idle' | 'running' | 'recovering' | 'awaiting_interaction' | 'failed' | 'unknown';
+  currentTurnId: string | null; recovery: unknown | null;
+  attention: { kind: 'approval' | 'question' | 'login' | 'setup' | 'unknown'; interactionId: string | null } | null;
+  observedAt: number; title?: string;
+}
+export interface ConversationDiscovery {
+  serverId: string; cursor?: string | null; includeTitle?: boolean;
+}
+export interface ConversationHistory {
+  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string }[];
+  nextCursor: string | null; watermark: string; truncated: boolean; latestTurnId: string | null;
+}
+export interface ConversationDirectory {
+  instanceId: string; actor: { id: string; kind: 'human' | 'session'; generation: number }; servers: ConversationServer[];
+}
+export interface CollaborationReadCommandMap {
+  servers: { request: { action: 'servers' }; result: ConversationDirectory };
+  metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
+  discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
+    result: { conversations: ConversationMetadata[]; nextCursor: string | null } };
+  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string };
+    result: { ref: ConversationRef; externalContext: boolean; history: ConversationHistory } };
+}
 const prefix = "opencraft://conversation/v1/";
 function component(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.length > 256 || /[\x00-\x20\x7f]/u.test(value)) throw new Error("Invalid conversation reference");

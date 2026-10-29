@@ -18,6 +18,7 @@ import { copySshRuntime } from "./package-ssh-runtime.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
+import { buildConversationCli } from './build-conversation-cli.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -167,6 +168,8 @@ export async function packageHeadlessLinux(composition = {}) {
     await cp(join(repositoryRoot, "scripts/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
     await chmod(join(stage, "bin/opencraft-server"), 0o755);
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
+    await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
+    await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
     await build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: join(stage, 'runtime/human-account.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     await build({ entryPoints: [join(repositoryRoot, 'scripts/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
