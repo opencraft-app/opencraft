@@ -25,7 +25,8 @@ import { packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false, prepareOnly = false }) {
+  if (prepareOnly && !fullRelease) throw new Error('Prepared trees require a signed full release');
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
@@ -179,7 +180,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       compressedBytes: result.size, unpackedBytes: result.unpackedSize, entries: result.entryCount, components };
   }
   if (fullRelease) {
-    const result = await sealPackage({ packageRoot, directory, ...fullRelease });
+    const result = await sealPackage({ packageRoot, directory, ...fullRelease, prepareOnly });
+    if (result.preparedTree) return { version, buildId: web.buildId, packageRoot, images, preparedTree: result.preparedTree, fullRelease: result.fullRelease };
     return { version, buildId: web.buildId, packageRoot, archive: join(directory, result.filename), integrity: result.integrity, sha: result.shasum, images, fullRelease: result.fullRelease };
   }
   const { stdout } = await promisify(execFile)('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
@@ -190,6 +192,7 @@ export async function packageWebServerFromEnvironment(composition = {}) {
   return packageWebServer({ version: process.env.OPENCRAFT_RELEASE_VERSION,
     execution: process.env.OPENCRAFT_PACKAGE_EXECUTION === '1',
     executionProfile: process.env.OPENCRAFT_EXECUTION_PROFILE || 'daemon',
+    prepareOnly: process.env.OPENCRAFT_PACKAGE_PREPARE_ONLY === '1',
     completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1', dryRun: process.env.OPENCRAFT_PACKAGE_DRY_RUN === '1',
     output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT || join(repositoryRoot, '.local/web-packages'), ...composition });
 }

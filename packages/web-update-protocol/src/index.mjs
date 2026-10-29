@@ -10,6 +10,7 @@ const observation = value => value === undefined || (object(value)
 const nullableString = value => value === null || typeof value === 'string';
 export function parseWebUpdateStatus(value) {
   if (!object(value) || value.schemaVersion !== 1 || value.enabled !== true
+    || !(value.localTreeInstall === undefined || value.localTreeInstall === 0 || value.localTreeInstall === 1)
     || !(value.localInstall === undefined || typeof value.localInstall === 'boolean')
     || typeof value.authenticated !== 'boolean' || !identity(value.current)
     || !(value.latest === null || identity(value.latest)) || typeof value.checking !== 'boolean'
@@ -24,7 +25,7 @@ export function parseWebUpdateStatus(value) {
       && typeof value.job.version === 'string' && ['downloading', 'verifying', 'starting', 'completed', 'failed'].includes(value.job.phase)
       && nullableString(value.job.error)))) throw new Error('Invalid Web update response');
   return {
-    schemaVersion: 1, enabled: true, localInstall: value.localInstall ?? false, authenticated: value.authenticated,
+    schemaVersion: 1, enabled: true, localInstall: value.localInstall ?? false, localTreeInstall: value.localTreeInstall ?? 0, authenticated: value.authenticated,
     current: { version: value.current.version, buildId: value.current.buildId },
     latest: value.latest === null ? null : { version: value.latest.version, buildId: value.latest.buildId },
     checking: value.checking, checkedAt: value.checkedAt, checkError: value.checkError, checkErrorCode: value.checkErrorCode ?? null,

@@ -11,6 +11,7 @@ import { createServer, request as httpRequest } from 'node:http';
 import { createConnection } from 'node:net';
 import { readFile, writeFile, mkdir, rename, rm, cp, stat, readdir, open } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
+import { createLocalTreeReleaseSource } from './local-tree-release.mjs';
 import { createLocalReleaseSource } from './local-release.mjs';
 import semver from 'semver';
 import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes } from './headless-backend.mjs';
@@ -197,7 +198,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
     }
     async function snapshot(request) {
       const executionStatus = execution ? await execution.status() : null;
-      return { schemaVersion: 1, enabled: true, localInstall: true, authenticated: authenticated(request),
+      return { schemaVersion: 1, enabled: true, localInstall: true, localTreeInstall: fullReleaseTrust ? 1 : 0, authenticated: authenticated(request),
         current: { version: persisted.current.version, buildId: persisted.current.buildId },
         latest: latest ? { version: latest.version, buildId: latest.buildId } : null,
         checking: checking !== null, checkedAt, checkError, checkErrorCode, packageName: PACKAGE_NAME, channel: source.channel || channel || 'latest',
@@ -271,10 +272,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           }
         }
         else {
-          const archive = await releaseSource.download(selected, staging);
+          const archive = releaseSource.prepare ? null : await releaseSource.download(selected, staging);
           job.phase = 'verifying'; persisted.job = { ...job };
           await childState('verifying');
-          const unpacked = await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
+          const unpacked = releaseSource.prepare ? await releaseSource.prepare(selected, staging)
+            : await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
           if (unpacked.version !== selected.version || unpacked.buildId !== selected.buildId) throw new Error('Downloaded release differs from the checked release');
           await assertReleaseProfile(unpacked, persisted.current);
           releaseContainer = join(directory, 'releases', job.id);
@@ -399,12 +401,14 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           if (pathname === `${WEB_UPDATE_PATH}/install`) {
             if (!latest || input?.version !== latest.version || !isNewerVersion(latest.version, persisted.current.version)) { json(response, 409, { error: 'Check updates again before installing' }); return; }
             selected = { ...latest };
-          } else if (pathname === `${WEB_UPDATE_PATH}/install-local`) {
+          } else if (([`${WEB_UPDATE_PATH}/install-local`, `${WEB_UPDATE_PATH}/install-local-tree`].includes(pathname))) {
             if (!semver.valid(input?.version) || !isNewerVersion(input.version, persisted.current.version)
               || typeof input.buildId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(input.buildId)) {
               json(response, 409, { error: 'Local release must have a newer exact version and valid build identity' }); return;
             }
-            releaseSource = createLocalReleaseSource(input.archive, { stateFile: join(directory, 'full-release-state.json') });
+            releaseSource = pathname.endsWith('/install-local-tree')
+              ? createLocalTreeReleaseSource(input.tree, input.manifestSha256, { stateFile: join(directory, 'full-release-state.json') })
+              : createLocalReleaseSource(input.archive, { stateFile: join(directory, 'full-release-state.json') });
             selected = { version: input.version, buildId: input.buildId, integrity: input.integrity };
           } else if (pathname === `${WEB_UPDATE_PATH}/rollback`) {
             if (!persisted.previous) { json(response, 409, { error: 'No previous release is available' }); return; }
