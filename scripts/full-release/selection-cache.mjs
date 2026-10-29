@@ -69,7 +69,14 @@ export async function selectWithCache({ root, tree, packlist, toolchain, cacheDi
   root = await realpath(root);
   if (inside(relative(root, cacheDirectory))) throw new Error('Selection cache must be outside the staging tree');
   const started = performance.now();
-  const state = await snapshot(root, toolchain);
+  let state;
+  try { state = await snapshot(root, toolchain); }
+  catch {
+    // npm may legitimately ignore unreadable or malformed policy fixtures.
+    // An optional optimization must never add validation to npm's selection.
+    console.error('[package-selection] fingerprint unavailable; using npm scan');
+    return packlist(tree, { path: root });
+  }
   if (!state.eligible) return packlist(tree, { path: root });
   const location = join(cacheDirectory, 'npm-selection-v1.json');
   let previous;
