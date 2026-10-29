@@ -1307,6 +1307,17 @@ export class CodexEngineAdapter implements DuplexTransport {
         threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
       const forward = async () => {
+        if (message.method === "thread/resume") {
+          // Execution activation joins its existing tool preparation. A view
+          // must not race that owner by installing another configuration.
+          try { await this.sessionMcpRefreshes.get(string(params.threadId)); }
+          catch (cause) {
+            if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch)
+              this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
+            return;
+          }
+        }
+        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
         if (message.method === "thread/resume" && this.sessionMcpRetirements.has(string(params.threadId))) {
           try {
             if (this.sessionMcpRefreshes.has(string(params.threadId))) throw new SessionMcpRecoveryPending();
