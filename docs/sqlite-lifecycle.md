@@ -104,13 +104,13 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 旧产品回迁保留既有 owner 已支持的数据升级：`pool_accounts` 的七列基线及按原顺序追加的五个 nullable 元数据列；已存在的 `pool_affinity`、`pool_active_account` 必须匹配原结构，`pool_quota` 可以是原六列或已追加 `limit_windows_json` 的七列。缺少辅助表允许由转换创建；额外表、列、索引或已知列定义不符不接纳。识别与转换由 [AccountPool owner](../packages/account-pool-host/src/store.ts) 提供，不是公共层放宽全部库的 schema 策略。
 
-`openManagedDatabase` 的可选 `legacyMigration` 只处理没有账本且不匹配当前目标指纹的旧库；`accepts` 读取结构指纹和只读 schema objects（类型、名称、SQL），`migrate` 在写入前备份完成后执行。转换、最终目标指纹校验和既有版本账本登记在同一事务内原子提交，outcome 为 `migrated`；事务内重新核对识别时的结构与对象，防止转换前结构变化。失败回滚、保留备份并拒绝打开，不退回移开重建；重复打开为 `up-to-date`，不再转换。已匹配当前结构仍为 `adopted`，未知结构仍为 `moved-aside`。已有账本的 newer-schema/history-mismatch 校验在此入口之前执行，不允许 owner 转换绕过；已发布基线 SQL 与 checksum 不改。
+`openManagedDatabase` 的可选 `legacyMigration` 只处理没有账本且不匹配当前目标指纹的旧库；`accepts` 读取结构指纹和只读 schema objects（类型、名称、SQL），`migrate` 在写入前备份完成后执行。转换、最终目标指纹校验和既有版本账本登记在同一事务内原子提交，outcome 为 `migrated`；事务内重新核对识别时的结构与对象，防止转换前结构变化。失败回滚、保留备份并拒绝打开，不退回移开重建；重复打开为 `up-to-date`，不再转换。已匹配当前结构仍为 `adopted`，未知结构拒绝打开并保留原文件。已有账本的 newer-schema/history-mismatch 校验在此入口之前执行，不允许 owner 转换绕过；已发布基线 SQL 与 checksum 不改。
 
 [AccountPool 测试](../tests/identity/account-pool-host.test.ts) 保留原七列 fixture、账号和 ready 断言，并覆盖带辅助表/关联状态的旧库与重复打开；GitHub 移开用例改用真正未知结构。公共 [SQLite 测试](../tests/storage/sqlite-node.test.ts) 覆盖转换失败和最终结构不符的回滚、恢复点及已有账本拒绝。
 
 ### session-routing 已知无 intent 旧结构
 
-[routing owner](../apps/local-agent-host/src/dsh-session-routing.ts) 只接受与原两表结构匹配的无账本旧库：可以缺 `dsh_pending_generations.intent`，或缺原构造器会创建的 generations/pending 表。通过同一 `legacyMigration` 创建缺表并补 nullable intent；已有对象必须与这两种旧 DDL 定义一致。generation 全部坐标和 pending 记录保留；旧 pending.intent 为 null，不合成 publication evidence，原 `reconcile` 仍拒绝不完整发布。备份、转换/结构校验/账本原子性与 AccountPool 相同，已发布 BASELINE/checksum 不变；未知对象、列、约束或索引仍移开。对应 [routing 测试](../tests/execution/dsh-session-routing.test.ts) 覆盖原映射、水位、pending、缺表、拒绝发布与重复打开；Host storage/daemon ready 投影已知旧 routing 的 `migrated` outcome，仍覆盖未知结构的 `moved-aside`。
+[routing owner](../apps/local-agent-host/src/dsh-session-routing.ts) 只接受与原两表结构匹配的无账本旧库：可以缺 `dsh_pending_generations.intent`，或缺原构造器会创建的 generations/pending 表。通过同一 `legacyMigration` 创建缺表并补 nullable intent；已有对象必须与这两种旧 DDL 定义一致。generation 全部坐标和 pending 记录保留；旧 pending.intent 为 null，不合成 publication evidence，原 `reconcile` 仍拒绝不完整发布。备份、转换/结构校验/账本原子性与 AccountPool 相同，已发布 BASELINE/checksum 不变；未知对象、列、约束或索引保留原文件并拒绝打开。对应 [routing 测试](../tests/execution/dsh-session-routing.test.ts) 覆盖原映射、水位、pending、缺表、拒绝发布与重复打开；Host storage/daemon ready 投影已知旧 routing 的 `migrated` outcome，未知结构不发布 ready。
 
 ### 本次五个 Host owner 的旧构造器核对
 
@@ -132,8 +132,8 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 - attachments 沿用原表/索引和记录身份，允许原构造器支持的缺索引；不迁移或改写 attachment payload。
 - Tasks 沿用已发布 v1 账本，拒绝非空无账本库；默认固定 Local Agent authority 预开，私有 Codex Tasks 仍在用户实际发现/使用功能时打开，capabilities 成功回执之前必须完成迁移。未使用它不创建第二份 Tasks 文件或阻止 Codex 连接。
 - SSH 保留原 v1 SQL/name/hash、私有路径/key/密文，v2 只投影旧 reader 的 user_version。已有 v1 及新建后中断于 v1 的受证结构可重试；未知基线、新版/错误账本、失去 key 都拒绝，不替换 credentials。
-- 新接入 owner 使用 `createSchemaValidator` 严格比对 sqlite_master 的 type/name/SQL（只忽略引号外排版与 IF NOT EXISTS）。有账本但丢表、约束或索引变更不能被 up-to-date 掩盖。最终 SQL、目标校验、最终账本记账位于同一迁移事务；legacy 转换同样在记账前校验。`legacyPolicy` 保持 Tasks/SSH 原拒绝无账本边界，state/attachments 只接纳有旧源码证据的已知结构，未知库保留原文件并拒绝；公共九库未启用该新策略，旧默认行为不改。
-- [下游 fixtures](../tests/storage/downstream-sqlite-lifecycle.test.ts) 对照固定导入前源码，覆盖记录/关联/密文/CAS、重复打开、错误/新版历史、缺域对象、转换与 v2 失败回滚/恢复点。公共 runner 的无 owner 校验仍只提供下述有限指纹，不能声称所有历史库都做了 SQL 对象级检查。
+- 新接入 owner 使用 `createSchemaValidator` 严格比对 sqlite_master 的 type/name/SQL（只忽略引号外排版与 IF NOT EXISTS）。有账本但丢表、约束或索引变更不能被 up-to-date 掩盖。最终 SQL、目标校验、最终账本记账位于同一迁移事务；legacy 转换同样在记账前校验。`legacyPolicy` 保持 Tasks/SSH 原拒绝无账本边界，state/attachments 只接纳有旧源码证据的已知结构，未知库保留原文件并拒绝；其余受管库同样拒绝未知结构，不再自动移开重建。
+- [下游 fixtures](../tests/storage/downstream-sqlite-lifecycle.test.ts) 对照固定导入前源码，覆盖记录/关联/密文/CAS、重复打开、错误/新版历史、缺域对象、转换与 v2 失败回滚/恢复点。未提供 owner 校验时，公共 runner 从完整迁移链重建目标结构并严格比较 SQL 对象；owner 的业务语义校验仍由各自实现提供。
 
 ## 5. 打开与升级流程
 
