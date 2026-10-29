@@ -1254,7 +1254,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             return;
           }
         }
-        if (message.method === "turn/start") {
+        if (message.method === "turn/start" && !this.options.executionEnvironment) {
           try { await this.prepareSessionMcp(string(params.threadId)); }
           catch { this.emit({ id, error: { code: -32000, message: "Session tools could not be prepared; input was not sent. Retry after this thread is idle." } }, clientId); return; }
           if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
