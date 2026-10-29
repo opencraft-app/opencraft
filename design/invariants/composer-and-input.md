@@ -316,7 +316,7 @@ scrollport negative control. The origin shift is an adversarial coordinate test,
 not a native keyboard simulation; this cannot prove native
 floating-keyboard occlusion when the browser supplies no rectangle.
 
-- DIC-13：输入框仅用于文字编辑；触摸短点、重复点击和长按都不得启动语音，保留浏览器原生聚焦、光标、选区及上下文菜单。语音仅由专用麦克风按钮显式启动，沿用单击/150ms长按、松手完成、取消、权限竞态与草稿连续性契约。共享交互密度提供至少44px麦克风触摸框；Composer scoped contact owner 继续隔离菜单和麦克风的物理接触。
+- DIC-13：输入框仅用于文字编辑；触摸短点、重复点击和长按都不得启动语音，保留浏览器原生聚焦、光标、选区及上下文菜单。语音仅由专用麦克风按钮显式启动，沿用单击/150ms长按、松手完成、取消、权限竞态与草稿连续性契约。共享交互密度提供至少44px麦克风触摸框。
 
 - WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为唯一“触控体验”偏好，SettingsSegmented提供 auto/on/off（自动/开启/关闭），默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 同时投影 shared hit-target/gap token、触控输入框、浮动顶栏与窄屏浏览布局；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。输入框不提供听写手势，触控体验偏好仅影响共享呈现和命中区域。
 
