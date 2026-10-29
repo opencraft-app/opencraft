@@ -53,6 +53,12 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
         latest.current.finish();
       }
     };
+    // Either native touch release or pointer release must disarm a pending
+    // hold, independently of the other event reaching this listener. Once recording
+    // starts, native touchend still owns finish (blur can cancel its pointer).
+    const pointerEnd = (event: PointerEvent) => {
+      if (event.pointerType === "touch" && held && !held.active) cancel();
+    };
     const context = (event: Event) => { if (held?.active || performance.now() < suppressUntil) event.preventDefault(); };
     const click = (event: Event) => { if (performance.now() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); } };
     const anotherContact = (event: TouchEvent) => { if (held && event.touches.length !== 1) cancel(); };
@@ -66,6 +72,8 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
     window.addEventListener("touchmove", move, { capture: true, passive: false });
     window.addEventListener("touchend", up, { capture: true, passive: false });
     window.addEventListener("touchcancel", cancel, true);
+    window.addEventListener("pointerup", pointerEnd, true);
+    window.addEventListener("pointercancel", pointerEnd, true);
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", visibility);
     return () => {
@@ -74,6 +82,7 @@ export function useMobileEditorVoiceHold(action: RefObject<HTMLButtonElement | n
       window.removeEventListener("touchstart", anotherContact, true);
       window.removeEventListener("touchmove", move, true); window.removeEventListener("touchend", up, true);
       window.removeEventListener("touchcancel", cancel, true); window.removeEventListener("blur", cancel);
+      window.removeEventListener("pointerup", pointerEnd, true); window.removeEventListener("pointercancel", pointerEnd, true);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [action]);
