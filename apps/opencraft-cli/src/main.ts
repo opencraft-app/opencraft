@@ -70,7 +70,7 @@ export function classify(error: unknown): CliError {
   if (status === 409) return new CliError(5, (code ?? 'conflict').toUpperCase(), code === 'history_changed' ? 'History changed. Start a new page.' : 'State conflict.');
   if (status === 503) return new CliError(8, 'SERVER_UNAVAILABLE', 'Server operation failed.', true);
   if (fault.code === 'TIMEOUT') return new CliError(7, 'TIMEOUT', 'Request timed out.', true);
-  if (fault.message === 'SSH access required' || fault.cause?.message === 'SSH access required' || fault.message?.includes('SSH_ACCESS_REQUIRED')) return new CliError(4, 'AUTH_REQUIRED', 'Configure your employee SSH access.');
+  if (fault.message?.includes('SSH_AUTH_REQUIRED') || fault.cause?.message?.includes('SSH_AUTH_REQUIRED')) return new CliError(4, 'AUTH_REQUIRED', 'Configure your employee SSH access.');
   return new CliError(7, 'CONNECTION_UNAVAILABLE', 'Connection unavailable.', true);
 }
 export async function run(argv: string[]) {
