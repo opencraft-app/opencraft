@@ -10,13 +10,16 @@ import { CodexGenerationRouter, startGenerationSocket } from "./generation-route
 import { coldHomeValidator } from "./generation-cold-home.js";
 import { type GenerationSupervisor, SystemdGenerationSupervisor } from "./generation-supervisor.js";
 import type { GenerationDefinition } from "./generation-registry.js";
+import { nativeHistoryFailures, type NativeHistoryFailures } from "./native-history-read.js";
 
 export async function startCodexGenerationService(options: {
   endpoint: string; coreEndpoint: string; tokenFile: string; token: string; dataDirectory: string;
   registryDirectory: string; systemdScope: "user" | "system"; requireHostUsage: boolean;
   supervisor?: GenerationSupervisor;
+  nativeHistoryFailures?: NativeHistoryFailures;
   bootstrap?: { generation: GenerationDefinition; legacy?: boolean }; signal?: AbortSignal;
 }) {
+  options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
   if (process.platform !== "linux" || ![options.endpoint, options.coreEndpoint, options.tokenFile, options.dataDirectory, options.registryDirectory].every(isAbsolute)
     || options.endpoint === options.coreEndpoint || options.token.length < 32) throw new Error("Invalid generation routing configuration");
   const core = new CodexCoreControlClient(options.coreEndpoint, options.token);
@@ -52,7 +55,7 @@ export async function startCodexGenerationService(options: {
   const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor });
   const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
-    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint) });
+    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures });
   const router = new CodexGenerationRouter(runtime); runtime.serverRequestCount = id => router.serverRequestCount(id);
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   let socket: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;

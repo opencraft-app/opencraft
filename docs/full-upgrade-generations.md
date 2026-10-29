@@ -135,3 +135,32 @@ release rechecks it. An unreadable binding yields unknown coverage while the
 original writer can still abort; it cannot first be discovered after release,
 when a compatible old payload may fail the same cold read. No binding is removed
 or reclassified to force a successful handoff.
+
+### Exact retained historical failures
+
+A durable binding that was already unreadable through the source production
+router may be retained without deleting, reclassifying or resuming its Thread.
+The operator supplies `--native-history-failures-file`, a private version-1 JSON
+manifest with `failures` entries containing `generationId`, `threadId` and exactly
+two `reads`, ordered by `includeTurns: false`, then `true`. Each read records the
+native JSON-RPC `code` and SHA256 of its complete error object (`errorSha256`).
+Establish this evidence through the old router before authorizing it; a candidate
+must never generate its own exception list.
+
+The manifest contents participate in the router configuration seal. Source
+inspection/release and successor cold-ready/resume run the same reader: every
+other durable binding must read successfully, and each retained binding must
+remain unloaded and reproduce both exact errors. A missing binding, additional
+failure, changed error, or newly readable listed binding rejects the operation.
+The result retains the complete failure list in the cold proof; it is still a
+historical failure and never becomes a successful read.
+
+For Account Core, an operator can supply `historicalUnknown` to the fence action,
+containing the exact existing `{id, route}` list. Only this explicit list can be
+carried unchanged across release/cold readiness. In-flight account/proxy/OAuth
+work still counts and blocks zero; a new uncertainty after the list was captured
+invalidates the proof. Omitted or mismatched lists cannot waive unknown delivery.
+The carried list remains durable and unknown after resume, with its digest bound
+to both release and cold readiness. This also applies when bridging a Core from a
+direct APP endpoint to a router; endpoint changes are recorded as topology
+maintenance, separately from a compatible protocol handoff.

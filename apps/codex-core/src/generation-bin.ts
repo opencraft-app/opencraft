@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { startCodexGenerationService } from "./generation-service.js";
+import { readNativeHistoryFailures } from "./native-history-read.js";
 
 const argument = (name: string) => {
   const i = process.argv.indexOf(name), value = i >= 0 ? process.argv[i + 1]?.trim() : undefined;
@@ -18,6 +19,7 @@ async function main() {
     tokenFile, token: (await readFile(tokenFile, "utf8")).trim(), dataDirectory: argument("--data-directory"),
     registryDirectory: argument("--registry-directory"), systemdScope: scope,
     requireHostUsage: !process.argv.includes("--native-only"),
+    nativeHistoryFailures: process.argv.includes("--native-history-failures-file") ? await readNativeHistoryFailures(argument("--native-history-failures-file")) : undefined,
     bootstrap: process.argv.includes("--bootstrap-file") ? JSON.parse(await readFile(argument("--bootstrap-file"), "utf8")) : undefined,
     signal: startup.signal });
   stop = async () => { await service.close(); process.exit(0); };
