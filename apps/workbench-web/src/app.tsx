@@ -1,5 +1,6 @@
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
+import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
 import { configureDesktopServer } from './runtime/configure-desktop-server';
 import { desktopServerPort } from './runtime/desktop-server-connections';
 import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
@@ -1012,24 +1013,10 @@ export function App({
         throw error;
       }
 
-      if (localQueueAdmission) {
-        return submission.then(() => true, error => {
-          clearLatestTurnPlacement(submittedPlacement);
-          throw error;
-        });
-      }
       if (intent.target.type !== "new-thread") {
-        // The active Conversation Runtime synchronously publishes an optimistic
-        // item before its transport command begins. At that point it owns the
-        // immutable submission and the Composer draft has been consumed. Do
-        // not retain the same text in the EditorView while a remote Host (for
-        // example Hermes over enterprise service) is still acknowledging the command.
-        void submission.catch(() => {
-          clearLatestTurnPlacement(submittedPlacement);
-          // Failure presentation belongs to the Conversation Runtime's
-          // optimistic item. A later Composer draft must remain untouched.
-        });
-        return true;
+        return completeConversationComposerSubmission(submittedIntent, submission,
+          activeThreadLease?.getSnapshot() ?? null,
+          () => clearLatestTurnPlacement(submittedPlacement));
       }
 
       // The Conversation Scope synchronously owns the immutable first Turn,

@@ -557,9 +557,17 @@ export function createComposerController(
           && JSON.stringify([previous.target.execution.workspace.cwd, previous.target.execution.workspace.projectId ?? null,
             previous.target.execution.workspace.runtimeWorkspaceRoots]) === JSON.stringify([draft.target.execution.workspace.cwd,
             draft.target.execution.workspace.projectId ?? null, draft.target.execution.workspace.runtimeWorkspaceRoots]))
-        && previous.document === draft.document && previous.attachments === draft.attachments
+        && (previous.document === draft.document || JSON.stringify(previous.document) === JSON.stringify(draft.document))
+        && previous.attachments === draft.attachments
         && previous.context === draft.context && previous.selections === draft.selections
-        && previous.options === draft.options) return previous;
+        && previous.options === draft.options) {
+        // EditorView serializes its document again on every Send, including an
+        // unchanged retry. Preserve delivery identity while using the current
+        // document reference so later settlement still belongs to this draft.
+        const retry = { ...previous, document: draft.document };
+        submissionIntents.set(draft.id, retry);
+        return retry;
+      }
       const intent: SubmitIntent = {
         commandId: services.createId(),
         clientMessageId: services.createId(),

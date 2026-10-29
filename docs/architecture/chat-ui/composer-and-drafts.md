@@ -15,6 +15,14 @@ Storage denial, capacity errors and unsupported attachment/context handles retai
 the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
 
+A ready connection alone does not consume a draft. The Web submit boundary
+checks that the same command and client message identity is already published
+in the target conversation's pending or queued submissions; otherwise it awaits
+admission, retaining the draft if identity restoration, hydration or persistence
+fails. Already owned online submissions release the editor before remote ACK.
+An unchanged failed retry keeps its delivery identity even when EditorView
+serializes an equivalent document again, while settlement uses the current draft.
+
 The original immutable message and client identity survive reload. Once the
 existing recovery owner has restored an authoritative live baseline, one drain
 moves never-attempted inputs FIFO into the existing Host next-turn queue. A
