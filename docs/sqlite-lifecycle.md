@@ -1,23 +1,24 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-16 已实现十六类自有 Node SQLite 物理库的独立迁移账本、升级前备份与旧库处置；配置目录的 Local Agent 六库在启动期打开，Codex/SSH 的功能私有 owner 按实际使用生命周期打开，摘要进入健康检查。保留 node:sqlite，不引入 ORM，不提供自动恢复备份。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)，验证边界见第 7 节。
+状态：2026-10-28 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
 
 ## 1. 设计结论
 
-统一的是数据库生命周期和迁移纪律，不是把全部存储合成一个文件、所有读写搬进一个服务，或让 ORM 类型穿透协议。
+同一 Server 进程的核心元数据合库，领域 repository 保留独立业务语义并借用 owner 的连接。独立进程、Host、执行日志、计量与缓存保持各自隔离；ORM 类型不穿透协议。
 
-- **权威数据**：保留既有文件路径和身份，按账本向前迁移；已知 checksum 不一致、历史缺失或未知新版拒绝打开。无账本旧库按 owner 的已知结构和既有拒绝契约采纳、原子转换或拒绝；原公共九库的内部开发阶段默认仍允许备份后移开，不能把移开重建称为无损升级。
+- **权威数据**：保留既有文件路径和身份，按账本向前迁移；已知 checksum 不一致、历史缺失或未知新版拒绝打开。无账本旧库只按已知完整结构或 owner 明确声明的转换采纳；未知结构拒绝打开，不能自动移走权威文件并创建空库。活动库缺失但备份、旧移开文件、pending journal 或 WAL/SHM 尚在时拒绝空库初始化。
 - **副本/索引**：与权威数据分开；本轮没有新增 replica 清库或重建策略。
 - **启动恢复和维护**：OAuth 未完成事务取消、执行 epoch fencing、过期清理由业务 owner 在库打开后执行，不属于 schema migration。
 
-平台模块负责连接、物理迁移、备份和错误分类；进程负责独占 owner 与 ready；领域/插件负责文档格式与业务恢复。保留现有 repository 与 CAS，不建设 SQL diff、通用 ORM、跨库事务或任意脚本迁移框架。
+平台模块负责连接、物理迁移、备份和错误分类；进程负责独占 owner 与 ready；领域/插件负责文档格式与业务恢复。保留现有 repository 与 CAS；Server schema 的开发期 diff 由 Drizzle Kit 生成，运行时不动态推断结构或执行任意脚本。
 
 ## 2. 现有存储清单
 
-以下十六类物理库均经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
+以下存储条目经 `openManagedDatabase` 打开并暴露 outcome。路径由可信平台/进程配置确定，Renderer/RPC 不提供任意数据库路径。
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
+| `opencraft-server.sqlite` | [Server storage owner](../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
@@ -88,13 +89,14 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ## 4. 版本与兼容模型
 
-每个物理库有独立 `schema_migrations(version, name, checksum, applied_at)` 账本；迁移列表版本从 1 连续递增，SQL 原文由共享模块计算 SHA-256，调用方不提供 checksum。已记录历史必须是当前源码列表的连续前缀，version、name、checksum 全部匹配；未知较高版本报 `newer-schema`，缺失/改写历史报 `history-mismatch`。没有程序版本到 schema 版本的映射，也没有第二份物理 schema 版本轴。
+每个物理库有唯一 `schema_migrations(version, name, checksum, applied_at)` 账本；连续 version/name/SQL SHA-256 必须匹配，未知新版本及历史漂移拒绝打开。Server 的六类历史账本冻结在 `storage-node/src/server/legacy.ts`，只用于旧库兼容读取与副本转换；新核心库使用一条统一迁移链。`SERVER_DATA_CONTRACT` 将根 package 的 OpenCraft 版本、核心迁移目标和清单 hash 绑定到安装完成回执；实际账本和结构仍须验证，修改产品版本字符串不能跳过迁移。此回执只证明 Server 核心，未代替其他 Host、客户端与原生引擎的版本。
+
 
 文档 payload 另有版本：[threads document](../apps/local-agent-host/src/thread-catalog.ts) 无 version 的旧记录按 v1 读取，写入显式 v1，拒绝未知新版；[extension records](../packages/document-storage/src/contract.ts) 的 `data_version` 对应文档 `version`，CAS 事务拒绝格式倒退。插件纯内容转换由 [document-migrations](../packages/extension-runtime/src/document-migrations.ts) 管理，不让插件改物理表。
 
 程序 buildId、插件 packageVersion/SDK 兼容范围、SQL 账本、IndexedDB database.version、payloadVersion、revision/CAS、协议和引擎存储格式相互独立。
 
-当前是内部开发阶段，不承诺 N-1 旧二进制兼容，不跑旧二进制回退门禁。无账本旧库在有限结构比较一致时采纳，否则默认先备份再移开重建。AccountPool、session-routing、executions 与 managed-connectors owner 显式声明下述已知旧结构的兼容转换，未声明该能力的 owner 行为不变。已有账本沿经验证的迁移链向前升级，拒绝不匹配历史。旧的无守卫二进制不能被新 metadata 阻止，代码回退不等于 schema 降级或数据恢复。
+不承诺任意 N-1 旧二进制兼容。当前无账本旧库只有通过完整结构验证或已知转换才能采纳，未知结构拒绝打开。AccountPool、session-routing、executions 与 managed-connectors owner 显式声明下述已知旧结构的兼容转换，未声明该能力的 owner 行为不变。已有账本沿经验证的迁移链向前升级，拒绝不匹配历史。部分迁移已提交且恢复记录仍指向更新目标时，旧代码不能将中间状态当作完成；若尚未发生版本推进，原版本可在结构验证后恢复使用。旧的无守卫二进制不能被新 metadata 阻止，代码回退不等于 schema 降级或数据恢复。
 
 ### AccountPool 已知无账本旧结构
 
@@ -133,21 +135,30 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ## 5. 打开与升级流程
 
+### Server 核心合库与存量导入
+
+`openServerDatabase(dataDirectory)` 取得原 Headless `server` 目录 fence，在业务服务启动前打开唯一核心连接。Headless、`human-account` 和 `access-admin` 都走此入口；离线命令要求先停止同目录的 Server，不再并发修改六个旧库。`access-admin` 接受新库文件名，也将旧 `memberships.sqlite` 参数当作同目录兼容入口，实际只写新核心库。
+
+首次导入识别六个固定来源：`actors.sqlite`、`human-logins.sqlite`、`memberships.sqlite`、`account-onboarding.sqlite`、`actor-collaboration.sqlite`、`session-capabilities.sqlite`。包含已有数据的停用功能也参与导入，缺失来源有明确 absence 回执。缺失原库却残留 sidecar 或旧恢复文件时不视为 absence。
+
+恢复材料在 `.server-import/<operationId>/`：`*.original.sqlite` 是 `VACUUM INTO` 一致快照，`*.working.sqlite` 是执行已发布升级链的副本，`sources.json` 保存来源摘要与历史。文件私有；原库不建表、不记新账本、不删除。六份数据及导入回执在新库的一个事务中提交，并验证逐表行数、内容等价、外键和账号/成员的 Actor 引用。Actor authority、ID、凭据摘要、会话及权限不重新生成。
+
+`opencraft_server_imports` 和 `opencraft_server_installation` 是迁移创建的内部表。提交前崩溃回滚，提交后崩溃以完成回执为准，不重复导入。重启对仍存在的退休来源校验逻辑摘要，不以旧库作为业务读取 fallback；发现旧程序修改原库则拒绝启动，避免数据分叉。完成迁入后，当前核心库的一致备份可独立恢复，缺失的退休源不要求重新找回；退休源存在孤立 sidecar 时仍拒绝。存储 owner 保留 `.server-import` 目录作为安装身份，已有该目录而核心库或账本缺失时拒绝重建。核心库备份只覆盖这六类数据，整个部署仍需保全其他 owner、密钥和附件。
+
+Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle snapshots 在同目录 `migrations/`。`npm run generate:storage` 生成 SQL、保留所有核心表的 SQLite STRICT 约束并编译随包 TS；`npm run check:storage` 检查源码 SQL 与随包内容一致。迁移测试还检查 schema 与 snapshot 无差异。运行时不读取仓库相对路径、不需要 Drizzle Kit、libsql 或另一个迁移账本。
+
 ### openManagedDatabase
 
 [lifecycle](../packages/sqlite-node/src/lifecycle.ts) 的实际步骤是：
 
-1. 校验连续迁移列表和正整数备份保留数；打开连接，设置 WAL、`busy_timeout=5000`，目录权限 0700、库文件 0600。`:memory:` 跳过文件操作与备份；`foreign_keys` 由业务 owner 设置。
-2. 校验已有历史，计算有限结构指纹，区分空库、有账本库和非空无账本旧库。
-3. 空库执行完整链；有账本且待升级的非空库/账本库先备份，再逐版本迁移；当前版本无需备份。
-4. 无账本旧库在内存目标库执行完整迁移链并比较指纹。一致则先备份，在一个 `BEGIN IMMEDIATE` 事务中重新核对结构并写入全部账本，返回 `adopted`。不一致但 owner 显式识别的已知旧结构按第 4 节兼容转换返回 `migrated`；否则先备份、关闭连接、移开旧文件、创建新库并执行迁移，返回 `moved-aside`。不一致且未被 owner 识别的内存旧库无法移开，报 `unsupported-legacy`。
-5. 再次校验历史，成功后清理超额备份；返回连接与 outcome。连接由调用方关闭；失败关闭当前连接并抛分类错误。
+1. 验证迁移声明，检查缺失活动库的孤立恢复文件，设置 WAL、busy timeout 和私有权限。
+2. 校验实际账本；验证 pending 恢复点可读、历史匹配并未被较旧目标越过。
+3. 有数据的升级先制作一致快照，持久化 pending intent 后才执行 SQL。重试复用首次恢复点，不追加中间状态快照挤掉它。
+4. 空库执行完整链；账本库逐版本执行；无账本旧库通过完整 schema 验证或明确转换后原子写入账本。未知旧结构拒绝，业务初始化不得补结构。
+5. 验证完整目标结构，包括表、索引定义、约束与触发器；owner 可提供校验器，未提供时从完整迁移链构建期望结构。有限指纹只用于旧库候选判断，不作为最终接纳依据。
+6. 完成后保留原始恢复点并清理超额旧备份；清理失败返回已提交成功的 outcome 与 `maintenanceWarnings`，不把升级报告成未提交。
 
-每个待应用版本在独立 `BEGIN IMMEDIATE` 事务内再次校验历史、执行 SQL 并写账本；失败回滚该版本，已提交版本保持有效。各库不是一个事务；后续库失败不撤回之前库的升级，重启时按各自账本续行。
-
-指纹由 [migrations](../packages/sqlite-node/src/migrations.ts) 比较用户表集合、`PRAGMA table_info` 的 name/type/notnull/dflt_value/pk 和索引名；排除 `sqlite_*` 与账本表。它不校验索引定义、CHECK、外键、触发器或 STRICT，不是完整 schema diff。“一致”仅指这个有限比较。routing 已知无 intent/缺已知对象的旧库按 owner 声明原子转换并保留 generation/pending；完整旧结构采纳，未知结构仍遵循原移开策略。
-
-旧库及仍存在的同名 WAL/SHM 各自原子重命名为 `.legacy-<时间戳>`，文件保留、不自动清理。文件集合不是跨文件原子操作；rename 失败撤回本次已完成的 rename。调用方必须保证没有其他活跃连接。
+每个版本的 schema 与账本同事务；嵌套同步事务使用 savepoint，不提交调用方事务。不同物理库仍不是一个事务；Server 合库导入自身是一个目标库事务。`moved-aside` 只保留为旧协议状态兼容，新执行器不再产生该处置。
 
 ### daemon 启动与 owner
 
@@ -168,7 +179,7 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 | `busy` | SQLite BUSY/LOCKED |
 | `history-mismatch` | 列表不连续、已有 version/name/checksum 不匹配，或 owner 严格目标结构校验失败 |
 | `newer-schema` | 库含当前源码未知的较高版本 |
-| `unsupported-legacy` | 无法移开的不一致内存旧库，或 owner 转换未产出目标结构 |
+| `unsupported-legacy` | 未知旧结构、转换未产出目标结构，或活动库缺失但存在恢复文件 |
 | `io` | 文件/权限/磁盘等其余底层错误，以及非法保留数 |
 | `migration-failed` | SQLite SQL/约束错误 |
 
@@ -176,7 +187,7 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ### 备份与恢复
 
-[backup](../packages/sqlite-node/src/backup.ts) 用 `VACUUM INTO` 制作包含已提交 WAL 数据的一致快照，不复制正在写入的单个 `.sqlite`。快照与源库同目录，名称为 `<库文件名>.pre-v<N>-<ISO时间戳>.sqlite`，时间戳冒号替换为连字符，文件权限 0600。服务器位置为 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`。默认保留 3 份；只有本次处置成功才保留本次快照及最新的另外 2 份，不因时钟回拨删除本次恢复点；失败不清理既有备份。必需备份失败则不执行迁移。
+[backup](../packages/sqlite-node/src/backup.ts) 用 `VACUUM INTO` 制作包含已提交 WAL 数据的一致快照，不复制正在写入的单个 `.sqlite`。快照与源库同目录，名称为 `<库文件名>.pre-v<N>-<ISO时间戳>.sqlite`，时间戳冒号替换为连字符，文件权限 0600。服务器位置为 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`。默认保留 3 份；只有本次处置成功才保留本次快照及最新的另外 2 份，不因时钟回拨删除本次恢复点；失败不清理既有备份。同一 pending upgrade 复用首次快照；只有完成才结束该操作。必需备份或 intent 持久化失败则不执行迁移。备份清理失败只报告维护告警。
 
 更新/回退只切换代码，不自动恢复数据库；恢复旧备份会丢弃其后的写入。人工恢复应：
 
@@ -187,18 +198,20 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ## 6. 执行机制与文件拓扑
 
-共享模块的五个实现文件，加一个公开出口：
+共享 SQLite 原语和 Server owner 的职责：
 
 | 文件 | 职责 |
 |---|---|
 | [connection.ts](../packages/sqlite-node/src/connection.ts) | node:sqlite 连接、权限与 PRAGMA |
 | [lifecycle.ts](../packages/sqlite-node/src/lifecycle.ts) | openManagedDatabase 编排与 outcome |
 | [migrations.ts](../packages/sqlite-node/src/migrations.ts) | 账本、原文 SHA-256、事务、历史校验与有限指纹 |
-| [backup.ts](../packages/sqlite-node/src/backup.ts) | 快照、成功后保留清理与旧库移开 |
+| [backup.ts](../packages/sqlite-node/src/backup.ts) | 一致快照与成功后保留清理 |
+| [recovery.ts](../packages/sqlite-node/src/recovery.ts) | 持久 pending intent、恢复点复用与孤立文件保护 |
+| [Server owner](../packages/storage-node/src/server/index.ts) | 核心合库、安装 fence、产品版本契约与连接生命周期 |
 | [errors.ts](../packages/sqlite-node/src/errors.ts) | 六类错误 |
 | [index.ts](../packages/sqlite-node/src/index.ts) | 最小公共 API |
 
-迁移 SQL 是第 2 节各 owner 源码里的 TS 常量，随 Main/Daemon/core bundle 交付，没有独立 SQL 资产目录或 manifest。migrations 为 readonly 的 version/name/sql 列表；返回 database 与 outcome（status、appliedVersion、可选 backupPath、movedAsidePaths）。共享包不导入 Feature/React、账户服务或执行引擎；连接不跨 IPC。生产不动态 diff 数据库，不依赖仓库 cwd、不联网下载迁移。
+Server 迁移由 Drizzle schema 生成明文 SQL 和 snapshots，编译成 TS 常量进入 bundle；其他未收敛 owner 继续保留原 TS 迁移声明。migrations 为 readonly 的 version/name/sql 列表；返回 database 与 outcome（status、appliedVersion、可选 backupPath、movedAsidePaths）。共享包不导入 Feature/React、账户服务或执行引擎；连接不跨 IPC。生产不动态 diff 数据库，不依赖仓库 cwd、不联网下载迁移。
 
 executions 中 hypernode 表 DDL 以 [DSH_EXECUTION_BASELINE](../apps/local-agent-host/src/dsh-execution-authority.ts) 为基线权威；[execution-authority](../apps/local-agent-host/src/hypernode/execution-authority.js) 与 [thread-queue](../apps/local-agent-host/src/hypernode/thread-queue.js) 的 `initializeSchema` 保持与基线一致。当前构造器仍调用声明中的 `CREATE ... IF NOT EXISTS`，在已完成基线迁移的库上为 no-op，不承担表结构升级。[指纹等价测试](../tests/execution/dsh-execution-authority.test.ts) 防止基线与初始化声明漂移。已发布 SQL 不改写，后续结构变化追加版本迁移；hypernode 变更还需同步基线与初始化声明，不能建立第二份升级 authority。
 
@@ -210,9 +223,9 @@ IndexedDB 使用原生升级事务，不运行 SQL runner；广播仅通知已�
 
 - 十三类物理库接入共享生命周期；document-storage 保持原 v1 SQL/hash，extensions 与 host-documents 共用实现但账本各自独立；threads 增加 payload 版本守卫。
 - Local Agent 配置目录的六库启动门禁、owner claim、认证 ready 摘要及 gateway 健康投影；OAuth 清理与 execution fencing 保留在业务 owner。
-- [共享模块测试](../tests/storage/sqlite-node.test.ts) 覆盖空库、旧库采纳/移开、多版本升级、重复打开、checksum/未知新版拒绝、事务回滚、WAL 备份与保留；各 store 测试验证原领域读写/CAS 和旧库处置。
+- [共享模块测试](../tests/storage/sqlite-node.test.ts) 覆盖空库、旧库采纳/拒绝、多版本升级、重复打开、checksum/未知新版拒绝、事务回滚、WAL 备份与保留；各 store 测试验证原领域读写/CAS 和旧库处置。
 - [Host storage 测试](../tests/storage/local-agent-storage.test.ts)、[daemon 测试](../tests/execution/opencraft-daemon.test.ts)、[更新器测试](../tests/server/server-deployment.test.mjs) 覆盖双启动、启动失败拒绝 ready、旧五库/新完整 owner 摘要与健康失败回退。
-- 既有 [服务器 smoke](../scripts/smoke/server/smoke-server-updates.ts) 使用真实 npm、生产 SPA、打包 gateway/daemon 与 Codex CLI，推理为合成回环服务，systemd 为隔离重启替身。早期 routing 移开报告不再证明当前已知无 intent 的处理；当前原子转换与未知拒绝/移开由 owner fixtures 验证。本阶段不宣称重跑完整更新 gate 或真实局域网端到端。
+- 既有 [服务器 smoke](../scripts/smoke/server/smoke-server-updates.ts) 使用真实 npm、生产 SPA、打包 gateway/daemon 与 Codex CLI，推理为合成回环服务，systemd 为隔离重启替身。早期 routing 移开报告不再证明当前已知无 intent 的处理；当前原子转换与未知拒绝由 owner fixtures 验证。本阶段不宣称重跑完整更新 gate 或真实局域网端到端。
 
 ### 明确未做
 
@@ -221,7 +234,7 @@ IndexedDB 使用原生升级事务，不运行 SQL runner；广播仅通知已�
 - 未跑 N-1 旧二进制回退，不承诺任意降级；不自动恢复备份，不提供恢复 UI、跨库原子升级或大规模在线回填框架。
 - 未迁移真实用户数据库；未以本轮 Node 库工作覆盖 Native adapter、所有远端 Host、历史所有 Electron origin 找回或新签名发行包验收。
 
-历史设计与实施记录见 [任务计划](../design/sqlite-lifecycle/task_plan.md)、[进展](../design/sqlite-lifecycle/progress.md)。本分支尚未推送或发布，源码与 smoke 证据不代表线上部署已升级。
+历史设计与实施记录见 [任务计划](../design/sqlite-lifecycle/task_plan.md)、[进展](../design/sqlite-lifecycle/progress.md)。源码与测试证据不代表线上部署已升级。Server 合库的回归见 `tests/storage/server-storage.test.ts`：真实旧结构和业务记录、原始文件和历史保留、备份恢复、重复打开、CLI、SIGKILL 前后恢复及未知版本拒绝。未迁移真实用户数据。
 
 ### 受管 Headless 的历史 Codex Bot 数据保留
 

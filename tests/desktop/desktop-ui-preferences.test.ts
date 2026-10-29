@@ -33,7 +33,7 @@ test("Electron UI preferences persist with revision conflicts and a fixed key re
 import { DatabaseSync } from "node:sqlite";
 import { readdirSync } from "node:fs";
 
-test("DesktopUiPreferenceStore manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", () => {
+test("DesktopUiPreferenceStore manages SQLite lifecycle: fresh, up-to-date, adopted, and rejected legacy", () => {
   const root = mkdtempSync(join(tmpdir(), "opencraft-ui-lifecycle-"));
   const path = join(root, "opencraft-ui.sqlite");
   try {
@@ -53,7 +53,7 @@ test("DesktopUiPreferenceStore manages SQLite lifecycle: fresh, up-to-date, adop
   }
 });
 
-test("DesktopUiPreferenceStore adopts legacy matching database and moves aside mismatched legacy database", () => {
+test("DesktopUiPreferenceStore adopts legacy matching database and rejects mismatched legacy database", () => {
   for (const matching of [true, false]) {
     const root = mkdtempSync(join(tmpdir(), `opencraft-ui-legacy-${matching ? "match" : "mismatch"}-`));
     const path = join(root, "opencraft-ui.sqlite");
@@ -74,13 +74,19 @@ test("DesktopUiPreferenceStore adopts legacy matching database and moves aside m
       }
       raw.close();
 
+      if (!matching) {
+        assert.throws(() => new DesktopUiPreferenceStore(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE type='table'").get()); retained.close();
+        continue;
+      }
       const store = new DesktopUiPreferenceStore(path);
       try {
-        assert.equal(store.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.equal(store.outcome.status, "adopted");
         assert.ok(store.outcome.backupPath);
         const files = readdirSync(root);
         assert.ok(files.some(f => f.includes(".pre-v1-")));
-        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+        assert.equal(files.some(f => f.includes(".legacy-")), false);
 
         if (matching) {
           assert.equal(store.load("shell.applicationsPinned")?.valueJson, "true");

@@ -28,7 +28,7 @@ test("OpenCraft owns durable names/archive/provenance and never persists tempora
 import { DatabaseSync } from "node:sqlite";
 import { readdir } from "node:fs/promises";
 
-test("ThreadCatalog manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", async () => {
+test("ThreadCatalog manages SQLite lifecycle: fresh, up-to-date, adopted, and rejected legacy", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-thread-catalog-lifecycle-"));
   const path = join(directory, "threads.sqlite");
   try {
@@ -48,7 +48,7 @@ test("ThreadCatalog manages SQLite lifecycle: fresh, up-to-date, adopted, and mo
   }
 });
 
-test("ThreadCatalog adopts legacy database with matching schema and moves aside mismatched legacy database", async () => {
+test("ThreadCatalog adopts legacy database with matching schema and rejects mismatched legacy database", async () => {
   for (const matching of [true, false]) {
     const directory = await mkdtemp(join(tmpdir(), `oc-thread-catalog-legacy-${matching ? "match" : "mismatch"}-`));
     const path = join(directory, "threads.sqlite");
@@ -63,13 +63,19 @@ test("ThreadCatalog adopts legacy database with matching schema and moves aside 
       }
       raw.close();
 
+      if (!matching) {
+        assert.throws(() => new ThreadCatalog(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE type='table'").get()); retained.close();
+        continue;
+      }
       const catalog = new ThreadCatalog(path);
       try {
-        assert.equal(catalog.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.equal(catalog.outcome.status, "adopted");
         assert.ok(catalog.outcome.backupPath);
         const files = await readdir(directory);
         assert.ok(files.some(f => f.includes(".pre-v1-")));
-        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+        assert.equal(files.some(f => f.includes(".legacy-")), false);
 
         if (matching) {
           assert.equal(catalog.get("legacy-1")?.name, "Legacy");

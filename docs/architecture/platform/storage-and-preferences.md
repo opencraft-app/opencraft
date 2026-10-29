@@ -46,8 +46,7 @@ and gateway/Headless health project only actual owner opening results. These are
 migration dispositions, not claims that every optional engine is initialized.
 See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
 recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
-for payload migration. This retains node:sqlite without Drizzle; Web retains
-IndexedDB. Known database identity handoffs wait for other windows to release
+for payload migration. Server core consolidates six domains in `opencraft-server.sqlite`; Drizzle owns its schema authoring and SQL generation, while the single managed executor retains node:sqlite at runtime. Host and Electron physical consolidation is deferred; Web retains IndexedDB. Known database identity handoffs wait for other windows to release
 connections within a bounded deadline; the Sidebar adapter closes on versionchange
 and startup rollback owns its handle before loading layout rows. Expired migration
 opens retain late-handle cleanup and abort late upgrades. Both bootstrap recovery

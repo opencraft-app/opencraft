@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { openServerDatabase } from "../packages/storage-node/src/server/index.ts";
 import { HeadlessConnectors } from "../packages/connector-host/src/headless.ts";
 import { CapabilityBindings } from "../packages/session-capabilities/src/bindings.ts";
 import { SessionCapabilities } from "../packages/session-capabilities/src/index.ts";
@@ -258,7 +259,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
-  const releaseLock = await lockfile.lock(join(dataDirectory, "server"), { realpath: false, retries: 0 });
+  const serverStorage = await openServerDatabase(dataDirectory);
+  const releaseLock = () => serverStorage.close();
   let agent;
   let dshAgent;
   let releasePiOwner;
@@ -346,10 +348,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const imConfiguration = await readImConfiguration(options.imConfigFile);
     hubController = await createHubController(join(dataDirectory, 'hub-network-controller.json'), join(dataDirectory, 'hub-network.json'));
     if (options.accessControl || humanConfiguration?.setupTokenFile || options.accessMemberProviders?.length || relayConfiguration || hubController.node?.store.state.origin)
-      membership = new MembershipStore(join(dataDirectory, 'memberships.sqlite'));
+      membership = new MembershipStore(serverStorage);
     const machineIdentity = await readDaemonMachineIdentity(dataDirectory, options.machineName);
     // Identity adapters can bind their own credentials to this stable Human authority.
-    actorStore = new ActorStore(join(dataDirectory, 'actors.sqlite'));
+    actorStore = new ActorStore(serverStorage);
     if (composition.createIdentity) {
       identity = await composition.createIdentity({ dataDirectory, membership, relayConfiguration,
         hubAuthority: hubController.node?.store.state.authority ?? null,
@@ -372,7 +374,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       return principal && (composition.isHuman?.(principal) ?? true) ? principal : null;
     };
     if (humanConfiguration) {
-      humanAccounts = new HumanAccounts(join(dataDirectory, 'human-logins.sqlite'), actorStore);
+      humanAccounts = new HumanAccounts(serverStorage, actorStore);
       if (humanConfiguration.local) {
         const localAccounts = new LocalAccountServerPlugin(humanAccounts.localAccountRepository);
         humanAccounts.registerLocalAccounts(localAccounts);
@@ -386,7 +388,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
             || typeof input.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(input.token)) throw new Error('Invalid private setup token file');
           setupToken = input.token;
         }
-        accountManagement = new HumanAccountManagement(join(dataDirectory, 'account-onboarding.sqlite'), humanAccounts, actorStore, membership);
+        accountManagement = new HumanAccountManagement(serverStorage, humanAccounts, actorStore, membership);
         accountApplication = new LocalAccountApplication({ auth: humanAuth, management: accountManagement, setupToken });
       }
     }
@@ -437,7 +439,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           });
         }};
       }});
-    actorCollaboration = new Collaboration(join(dataDirectory, 'actor-collaboration.sqlite'), actorStore,
+    actorCollaboration = new Collaboration(serverStorage, actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
     actorCollaboration.start();
@@ -462,7 +464,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       (hostId, threadId) => {
         return conversationExecution.serverForHost(hostId, threadId);
       });
-    capabilityBindings = new CapabilityBindings(join(dataDirectory, "session-capabilities.sqlite"));
+    capabilityBindings = new CapabilityBindings(serverStorage);
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilitySigningKey(join(dataDirectory, "session-capabilities.key")), capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'),
       authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
@@ -704,7 +706,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       fileDownloads,
       getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
       getStorageOutcomes: () => [
-        ...(capabilityBindings ? [{name:'session-capabilities',status:capabilityBindings.outcome.status,appliedVersion:capabilityBindings.outcome.appliedVersion,movedAside:capabilityBindings.outcome.movedAsidePaths.length>0}] : []),
+        { name: 'server-core', status: serverStorage.outcome.status, appliedVersion: serverStorage.outcome.appliedVersion,
+          movedAside: false, productVersion: serverStorage.contract.productVersion, contractHash: serverStorage.contract.hash },
         ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-posts',status:imPlugins.postOutcome.status,appliedVersion:imPlugins.postOutcome.appliedVersion,movedAside:imPlugins.postOutcome.movedAsidePaths.length>0}] : []),
         ...(agent.storageOutcomes ?? []),
@@ -715,14 +718,6 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
           movedAside: agentIdentity.store.outcome.movedAsidePaths.length > 0 }] : []),
         ...(identity?.getStorageOutcomes?.() ?? []), ...[...codexStorageOutcomes.values()].flat(),
-        { name: 'actor-collaboration', status: actorCollaboration.outcome.status, appliedVersion: actorCollaboration.outcome.appliedVersion,
-          movedAside: actorCollaboration.outcome.movedAsidePaths.length > 0 },
-        { name: 'actors', status: actorStore.outcome.status, appliedVersion: actorStore.outcome.appliedVersion,
-          movedAside: actorStore.outcome.movedAsidePaths.length > 0 },
-        ...(humanAccounts ? [{ name: 'human-logins', status: humanAccounts.outcome.status, appliedVersion: humanAccounts.outcome.appliedVersion,
-          movedAside: humanAccounts.outcome.movedAsidePaths.length > 0 }] : []),
-        ...(membership ? [{ name: 'memberships', status: membership.outcome.status, appliedVersion: membership.outcome.appliedVersion,
-          movedAside: membership.outcome.movedAsidePaths.length > 0 }] : []),
         ...(sshManagement ? [{ name: "ssh-connections", status: sshManagement.store.outcome.status,
           appliedVersion: sshManagement.store.outcome.appliedVersion, backupPath: sshManagement.store.outcome.backupPath,
           movedAside: sshManagement.store.outcome.movedAsidePaths.length > 0 }] : []),
@@ -774,7 +769,7 @@ export async function runHeadlessCli({ parseArguments = parseHeadlessArguments, 
     const args = parseArguments(process.argv.slice(2));
     if (args.help) {
       process.stdout.write('Optional IM server plugins: --im-config ABSOLUTE_PRIVATE_JSON (also OPENCRAFT_IM_CONFIG_FILE); requires verified human sender bindings.\n');
-      process.stdout.write('Optional instance-owned membership: --access-control (memberships.sqlite under --data-dir); administer with access-admin. --access-member-provider PROVIDER admits verified identities from that provider as ordinary members; explicit revocations and admin roles remain authoritative. --relay-connect-file ABSOLUTE_PRIVATE_JSON enables an outbound relay and requires instance membership.\n');
+      process.stdout.write('Optional instance-owned membership: --access-control (opencraft-server.sqlite under --data-dir); administer with access-admin. --access-member-provider PROVIDER admits verified identities from that provider as ordinary members; explicit revocations and admin roles remain authoritative. --relay-connect-file ABSOLUTE_PRIVATE_JSON enables an outbound relay and requires instance membership.\n');
       process.stdout.write('Optional human login (bundled opencraft.account plugin for local accounts): --human-auth-config ABSOLUTE_PRIVATE_JSON (local accounts and OIDC); initialize new instances at /setup with a private setupTokenFile, or recover with human-account. setupTokenFile enables instance membership; otherwise add --access-control explicitly.\n');
       process.stdout.write('Optional same-machine managed Web workspace: --local-access-file ABSOLUTE_PRIVATE_FILE (also OPENCRAFT_LOCAL_ACCESS_FILE); the same private key file must be configured at the outer managed Web entry.\n');
       for (const line of help) process.stdout.write(line + '\n');

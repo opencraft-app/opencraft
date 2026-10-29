@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, renameSync, rmSync, statSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openManagedDatabase, SqliteLifecycleError, type Migration } from "@opencraft/sqlite-node";
@@ -146,19 +146,15 @@ test("matching legacy target schema is adopted without rerunning SQL or losing r
   again.database.close();
 });
 
-test("different legacy tables, columns or index names are backed up and moved aside", t => {
+test("unknown legacy structures are rejected and retained at their original identity", t => {
   for (const sql of [chain[0]!.sql, chain[0]!.sql + "; CREATE INDEX other ON items(value)", "CREATE TABLE other(id INTEGER)"]) {
-    const path = fixture(t);
-    const legacy = new DatabaseSync(path);
-    legacy.exec(sql);
-    legacy.close();
-    const replaced = open(path);
-    assert.equal(replaced.outcome.status, "moved-aside");
-    assert.ok(replaced.outcome.backupPath);
-    assert.ok(replaced.outcome.movedAsidePaths[0]?.includes(".legacy-"));
-    assert.ok(statSync(replaced.outcome.movedAsidePaths[0]!).isFile());
-    assert.equal(replaced.database.prepare("SELECT count(*) AS n FROM items").get()?.n, 0);
-    replaced.database.close();
+    const path = fixture(t), legacy = new DatabaseSync(path);
+    legacy.exec(sql); legacy.close();
+    assert.throws(() => open(path), rejects("unsupported-legacy"));
+    const retained = new DatabaseSync(path);
+    assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE type='table'").get());
+    retained.close();
+    assert.ok(!readdirSync(join(path, "..")).some(name => name.includes(".legacy-") || name.includes(".pre-v")));
   }
 });
 
@@ -290,7 +286,7 @@ test("document store still rejects a current ledger whose domain table is missin
   const tamper = new DatabaseSync(path);
   tamper.exec("DROP TABLE extension_records");
   tamper.close();
-  assert.throws(() => new SqliteDocumentStore(path), /no such table/);
+  assert.throws(() => new SqliteDocumentStore(path), rejects("history-mismatch"));
 });
 
 
@@ -309,4 +305,70 @@ test("retention always preserves this upgrade's snapshot even with future-dated 
   assert.equal(snapshot.prepare("SELECT value FROM items").get()?.value, "after-old-backup");
   snapshot.close();
   assert.deepEqual(readdirSync(join(path, "..")).filter(name => name.includes("pre-v")), [third.outcome.backupPath!.split("/").at(-1)]);
+});
+
+
+test("a current ledger cannot hide missing tables or extra legacy triggers", t => {
+  const path = fixture(t), current = open(path);
+  current.database.exec("DROP TABLE items"); current.database.close();
+  assert.throws(() => open(path), rejects("history-mismatch"));
+  const legacyPath = fixture(t), legacy = new DatabaseSync(legacyPath);
+  legacy.exec(chain.map(m => m.sql).join(";") + ";CREATE TRIGGER discard AFTER INSERT ON items BEGIN DELETE FROM items WHERE id=new.id; END");
+  legacy.close();
+  assert.throws(() => open(legacyPath), rejects("history-mismatch"));
+});
+
+test("failed multi-version upgrades reuse the original recovery point through retries and completion", t => {
+  const path = fixture(t), previous = open(path, chain.slice(0, 1));
+  previous.database.exec("INSERT INTO items(value) VALUES('original')"); previous.database.close();
+  const broken = [...chain.slice(0, 2), { version: 3, name: "index", sql: "INSERT INTO absent VALUES(1)" }];
+  for (let i = 0; i < 5; i++) assert.throws(() => open(path, broken), rejects("migration-failed"));
+  const names = () => readdirSync(join(path, "..")).filter(n => n.includes(".pre-v"));
+  assert.equal(names().length, 1);
+  assert.throws(() => open(path, chain.slice(0, 2)), rejects("newer-schema"), "old code cannot complete a newer partial upgrade");
+  const recovered = open(path); recovered.database.close();
+  assert.equal(names().length, 1);
+  const snapshot = new DatabaseSync(join(path, "..", names()[0]!));
+  assert.equal(snapshot.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 1);
+  assert.equal(snapshot.prepare("SELECT value FROM items").get()?.value, "original"); snapshot.close();
+  assert.equal(existsSync(path + ".pending-migration.json"), false);
+});
+
+test("post-commit backup cleanup failure returns a successful outcome with a maintenance warning", t => {
+  const path = fixture(t); open(path, chain.slice(0, 1)).database.close();
+  mkdirSync(path + ".pre-v2-2000-01-01T00-00-00.000Z.sqlite");
+  const upgraded = open(path, chain.slice(0, 2), 1);
+  assert.equal(upgraded.outcome.status, "migrated");
+  assert.deepEqual(upgraded.outcome.maintenanceWarnings, ["backup-cleanup-failed"]);
+  assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 2);
+  upgraded.database.close();
+});
+
+test("missing active files with legacy or recovery artifacts never initialize an empty authority", t => {
+  for (const suffix of [".legacy-interrupted", ".pre-v2-2000-01-01T00-00-00.000Z.sqlite", "-wal", ".pending-migration.json"]) {
+    const path = fixture(t); writeFileSync(path + suffix, "recovery");
+    assert.throws(() => open(path), rejects("unsupported-legacy"));
+    assert.equal(existsSync(path), false);
+  }
+  const empty = fixture(t);
+  new DatabaseSync(empty).close();
+  writeFileSync(empty + ".legacy-interrupted", "retained");
+  assert.throws(() => open(empty), rejects("unsupported-legacy"));
+});
+
+test("backup failure prevents mutation, and SQL failure restores original business values", t => {
+  const path = fixture(t), previous = open(path, chain.slice(0, 1));
+  previous.database.exec("INSERT INTO items(value) VALUES('original')"); previous.database.close();
+  const prepare = DatabaseSync.prototype.prepare;
+  const injected = t.mock.method(DatabaseSync.prototype, "prepare", function(this: DatabaseSync, sql: string) {
+    if (sql === "VACUUM INTO ?") throw Object.assign(new Error("synthetic full disk"), { errcode: 13 });
+    return prepare.call(this, sql);
+  });
+  assert.throws(() => open(path), rejects("io")); injected.mock.restore();
+  const broken = [...chain.slice(0, 1), { version: 2, name: "broken", sql: "UPDATE items SET value='changed'; ALTER TABLE items ADD COLUMN extra TEXT; INSERT INTO absent VALUES(1)" }];
+  assert.throws(() => open(path, broken), rejects("migration-failed"));
+  const check = new DatabaseSync(path, { readOnly: true });
+  assert.equal(check.prepare("SELECT value FROM items").get()?.value, "original");
+  assert.equal(check.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 1);
+  assert.equal(check.prepare("PRAGMA table_info(items)").all().length, 2); check.close();
 });

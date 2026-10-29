@@ -1,13 +1,12 @@
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import type { CapabilitySession } from "./index.js";
-const schema = `CREATE TABLE capability_bindings(id TEXT PRIMARY KEY,server_id TEXT NOT NULL,thread_id TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(server_id,thread_id)) STRICT;`;
+
 /** A preallocated credential is bound once, after the engine assigns its Thread ID.
  * No model arguments, credentials or call payloads are stored here. */
 export class CapabilityBindings {
   private readonly managed;
-  constructor(path: string) {
-    this.managed = openManagedDatabase({ path, legacyPolicy: "reject",
-      migrations: [{ version: 1, name: "session-capability-bindings", sql: schema }], validateSchema: createSchemaValidator(schema) });
+  constructor(path: ServerDatabaseSource) {
+    this.managed = openServerRepository(path, "session-capabilities");
   }
   get outcome() { return this.managed.outcome; }
   bind(id: string, session: CapabilitySession): void {
@@ -21,5 +20,5 @@ export class CapabilityBindings {
     const row = this.managed.database.prepare("SELECT id FROM capability_bindings WHERE server_id=? AND thread_id=?").get(session.serverId, session.threadId);
     return row ? String(row.id) : null;
   }
-  close() { this.managed.database.close(); }
+  close() { this.managed.close(); }
 }

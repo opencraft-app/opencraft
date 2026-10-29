@@ -7,8 +7,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { build } from 'esbuild';
-import { buildHeadlessBundle } from '../../scripts/package-headless-linux.mjs';
+import { buildHeadlessBundle, buildHumanAccountBundle } from '../../scripts/package-headless-linux.mjs';
 import { createManagedWebServer } from '../../scripts/web-deployment/server.mjs';
 import { releaseFixture } from '../support/web-deployment-fixture.mjs';
 import { humanAuthFixture, AuthBrowser } from '../support/human-auth-fixture';
@@ -21,7 +20,7 @@ test('real Headless and operator CLI bundles provision local login, preserve Act
   await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'human-test', headlessServer: true, headlessHostId: 'opencraft-server' }));
   const serverBundle = join(dir, 'server.mjs'), accountBundle = join(dir, 'human-account.mjs');
   await buildHeadlessBundle(serverBundle);
-  await build({ entryPoints: [fileURLToPath(new URL('../../scripts/human-account.ts', import.meta.url))], outfile: accountBundle, bundle: true, platform: 'node', format: 'esm', target: 'node26' });
+  await buildHumanAccountBundle(accountBundle);
   const passwordFile = join(dir, 'password.json'), password = 'artifact-fixture-passphrase';
   await writeFile(passwordFile, JSON.stringify({ password }), { mode: 0o600 });
   const run = async (...args: string[]) => {
@@ -45,7 +44,10 @@ test('real Headless and operator CLI bundles provision local login, preserve Act
   assert.equal((await browser.call('/__opencraft_auth/')).status, 200);
   assert.equal((await browser.call('/__opencraft_auth/local', { username: 'admin', password, mode: 'login' })).status, 200);
   assert.equal((await browser.call('/')).status, 403);
+  await assert.rejects(run('grant', 'admin', 'admin'), /already being held/);
+  await app.close(); app = undefined;
   await run('grant', 'admin', 'admin');
+  app = await startHeadlessServer(options);
   const first = await (await browser.call('/__opencraft_actors/me')).json() as any;
   assert.ok(first.actor.id);
   await app.close(); app = await startHeadlessServer(options);
@@ -67,7 +69,9 @@ test('real Headless and operator CLI bundles provision local login, preserve Act
   assert.equal((await browser.call('/__opencraft_actors/me')).status, 401, 're-enabling plugin never resurrects revoked cookies');
   assert.equal((await browser.call('/__opencraft_auth/local', { username: 'admin', password, mode: 'login' })).status, 200);
   assert.equal((await (await browser.call('/__opencraft_actors/me')).json() as any).actor.id, first.actor.id);
-  await run('revoke', 'admin'); assert.equal((await browser.call('/')).status, 403);
+  await app.close(); app = undefined;
+  await run('revoke', 'admin'); app = await startHeadlessServer(options);
+  assert.equal((await browser.call('/')).status, 403);
 });
 
 test('old fixed launcher fallback reaches packaged login worker, forwards cookies and retains update/health authority', async t => {

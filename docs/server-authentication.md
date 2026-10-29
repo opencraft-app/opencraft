@@ -55,7 +55,7 @@ does not imply that private plugin directories or all client dependencies moved.
 使用请求语言，由页面作用域的 IntlRuntime 格式化现有英文与中文文案。
 成员与连接操作在原控件内反馈，错误在独立通知层呈现，不挤动表单或清除草稿。
 
-插件拥有用户名规范、密码策略、scrypt 验证及改密/禁用的凭据版本证明。核心通过窄存储端口保留既有 `human-logins.sqlite` v1 表与 checksum，继续拥有浏览器登录态、自然人绑定和授权；核心不导入插件。已有账号、密码、local subject、绑定及权限无需迁移或重新注册。
+插件拥有用户名规范、密码策略、scrypt 验证及改密/禁用的凭据版本证明。核心通过窄存储端口拥有凭据数据、浏览器登录态、自然人绑定和授权；凭据策略仍归插件。Server 启动将既有 `human-logins.sqlite` v1 数据及其余五类核心数据导入 `opencraft-server.sqlite`，原 SQL/hash 作为不可变来源历史保留。账号、密码摘要、local subject、绑定与权限不重新注册。
 
 配置 `local: true` 由服务器启用随包插件；`false` 禁用本地登录并撤销原本地浏览器登录态，OIDC 登录与 Actor 权限独立。普通服务重启保留有效登录态。插件缺失或停用不能关闭成员准入，未完成的密码验证/创建在插件释放后不会写入或签发登录态。服务端激活的 disposer 只退休自身代次并撤销本地登录，不改变其他身份或权限。
 
@@ -71,7 +71,7 @@ node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {rand
 
 配置 `setupTokenFile` 会同时启用实例成员准入。安装者打开 `/setup`，输入私有文件中的初始化凭证、用户名与密码，创建首个 Human 管理员。首个匿名访问者不能抢占管理员。完成后 `/setup` 跳转账号管理；删除初始化凭证配置或停用所有账号均不重新开放初始化。已有 Human、凭据或成员的部署保持关闭，不抢占既有安装。
 
-初始化先持久化模式、用户名和固定凭据 subject，再创建凭据、Human 和成员授权；中断后以原用户名和密码继续，不创建第二个管理员，也不会领用碰巧同名的其他账号。相关记录在数据目录的 `account-onboarding.sqlite`，沿用受管 SQLite 迁移及备份契约，不改既有账号表。恢复使用下文操作人命令。
+初始化先持久化模式、用户名和固定凭据 subject，再创建凭据、Human 和成员授权；中断后以原用户名和密码继续，不创建第二个管理员，也不会领用碰巧同名的其他账号。相关记录在统一 `opencraft-server.sqlite`，旧 `account-onboarding.sqlite` 在启动时连同账号和权限导入；沿用受管迁移、备份和中断恢复契约。恢复使用下文操作人命令。
 
 ### 邀请和成员管理
 
@@ -206,7 +206,7 @@ OIDC 身份键为完整 `[issuer, sub]` 元组的 SHA-256，避免不透明 sub 
 
 OIDC 事务保存在认证 owner 内存中，十分钟过期、绑定发起浏览器且只能消费一次；取消、退出、原账号变化或服务重启均不能通过迟到回调建立绑定。写接口要求精确同源 JSON，密码验证有全局并发和尝试次数上限，密码使用 scrypt（N=131072、r=8、p=1、独立随机 salt）。实际部署仍需可信 TLS 入口。
 
-`actors.sqlite` 拥有身份和绑定；`human-logins.sqlite` 拥有本地凭据与浏览器会话；`memberships.sqlite` v2 保存 Actor 成员资格。旧身份级授权在可信身份首次使用时导入 Actor，旧授权不覆盖已有 Actor 撤权。兼容 `access-admin` 和成员 HTTP API 可按旧稳定身份更新对应 Actor；新 API 也接受 `{actorId, role, enabled}`。资源权限、Session Actor 凭据及业务资源 owner 保持各自权威。
+身份绑定、凭据与浏览器会话、Actor 成员资格在 `opencraft-server.sqlite` 的独立领域表中，由同一 Server storage owner 管理连接和迁移；旧六库只作为已记录的迁入来源。旧身份级授权在可信身份首次使用时导入 Actor，旧授权不覆盖已有 Actor 撤权。兼容 `access-admin` 和成员 HTTP API 可按旧稳定身份更新对应 Actor；新 API 也接受 `{actorId, role, enabled}`。资源权限、Session Actor 凭据及业务资源 owner 保持各自权威。
 
 登录退出、账号禁用、Actor 解绑/禁用和成员撤权在持续连接上重新校验并退役 WebSocket。Session Actor bearer 不能调用登录或绑定接口，也不能借此进入旧的无资源范围执行 API。
 
@@ -223,3 +223,5 @@ SQLite 升级遵循[生命周期契约](sqlite-lifecycle.md)。成员库追加 v
 ## 主体协作入口
 
 自然人和 Session 可通过[主体协作接口](actor-collaboration-api.md)共用持久消息与显式 queue / steer 请求。登录成功或创建 Session 不授予这些动作；需要目标 Actor 的具体 grant，运行绑定由 registry 管理者设置。此接口未放开 Session bearer 对旧共享入口的访问，也不改变各产品账号或既有匿名策略。
+
+管理命令与服务启动共享安装 fence。运行 `human-account` 或 `access-admin` 前先停止同数据目录的 Headless Server；命令自动完成存量导入并操作统一核心库。原 `access-admin /absolute/memberships.sqlite ...` 参数保留为同目录兼容入口，不再写旧成员库。
