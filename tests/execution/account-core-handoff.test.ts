@@ -352,6 +352,15 @@ test("explicit terminal proxy unknown list survives cold handoff while active st
     let state: any;
     for (let n = 0; n < 100; n++) { state = await first.adapter.snapshot(); if (state.handoff.uncertain.length && state.proof.counts.proxy === 0) break; await delay(10); }
     const exact = state.handoff.uncertain; assert.equal(exact.length, 1);
+    const evidence = exact[0].diagnostic;
+    assert.equal(evidence.reason, "client-disconnected"); assert.equal(evidence.method, "POST");
+    assert.equal(evidence.completionObserved, false); assert.equal(evidence.owner, state.handoff.owner);
+    assert.equal(evidence.pid, first.child.pid); assert.equal(evidence.bootId, state.handoff.bootId);
+    assert.equal(evidence.incarnation, state.handoff.incarnation);
+    assert.equal(evidence.ownerEpoch, state.handoff.epoch);
+    assert.match(evidence.requestId, /^[a-f0-9-]{36}$/u);
+    // Non-UUID affinity labels in this fixture are not published as coordinates.
+    assert.equal(evidence.threadId, undefined); assert.equal(evidence.turnId, undefined);
     await assert.rejects(first.adapter.acquireFence({ ...f.input(state), historicalUnknown: [{ ...exact[0], id: "wrong" }] }));
     const live = await f.model();
     const fenced = await first.adapter.acquireFence({ ...f.input(await first.adapter.snapshot()), historicalUnknown: exact });

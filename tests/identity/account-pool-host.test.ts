@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  type AccountPoolUncertainDiagnostic,
   AccountPoolStore,
   CodexSubscriptionService,
   AccountCredentialRefreshManager,
@@ -961,6 +962,7 @@ test("an upstream stream failure interrupts the client connection without crashi
     void failUpstream.promise.then(() => outgoing.destroy());
   }));
   const uncertain: string[] = [];
+  const diagnostics: AccountPoolUncertainDiagnostic[] = [];
   const processErrors = captureUnhandledProcessErrors();
   let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
   let pool: AccountPoolStore | undefined;
@@ -971,7 +973,7 @@ test("an upstream stream failure interrupts the client connection without crashi
     const token = pool.issueHostToken("local");
     server = await startCodexAccountPoolServer({
       proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: `${upstream.url}/backend-api/codex` }),
-      onUncertain: route => { uncertain.push(route); },
+      onUncertain: (route, d) => { uncertain.push(route); diagnostics.push(d); },
     });
     const response = await fetch(`${server.url}/v1/responses`, {
       method: "POST",
@@ -989,6 +991,10 @@ test("an upstream stream failure interrupts the client connection without crashi
     assert.deepEqual(await followUp.json(), { data: [{ id: "gpt-test" }] });
     assert.equal(responseCount, 1);
     assert.deepEqual(uncertain, ["/v1/responses"]);
+    assert.equal(diagnostics[0].reason, "upstream-failed");
+    assert.equal(diagnostics[0].upstreamReadFailed, true);
+    assert.equal(diagnostics[0].completionObserved, false);
+    assert.equal(diagnostics[0].responseStatus, 200);
     processErrors.assertNone();
   } finally {
     failUpstream.resolve();
@@ -1712,6 +1718,7 @@ for (const [name, terminal, expectedUnknown] of [
     outgoing.once("close", () => upstreamClosed.resolve());
   }));
   const uncertain: string[] = [];
+  const diagnostics: AccountPoolUncertainDiagnostic[] = [];
   let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
   const abort = new AbortController();
   try {
@@ -1719,15 +1726,31 @@ for (const [name, terminal, expectedUnknown] of [
       { accessToken: "fixture", refreshToken: null, expiresAt: null });
     const token = pool.issueHostToken("local");
     server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: upstream.url }),
-      onUncertain: route => { uncertain.push(route); } });
+      onUncertain: (route, diagnostic) => { uncertain.push(route); diagnostics.push(diagnostic); } });
     const response = await fetch(`${server.url}/v1/responses`, { method: "POST", signal: abort.signal,
-      headers: { "content-type": "application/json", "x-opencraft-account-pool-token": token }, body: "{}" });
+      headers: { "content-type": "application/json", "x-opencraft-account-pool-token": token,
+        "thread-id": "11111111-1111-4111-8111-111111111111",
+        "x-codex-turn-metadata": JSON.stringify({ turn_id: "22222222-2222-4222-8222-222222222222", private: "metadata-secret" }),
+      }, body: '{"input":"prompt-secret"}'  });
     const reader = response.body!.getReader();
     assert.equal(new TextDecoder().decode((await reader.read()).value), terminal);
     abort.abort();
     await within(upstreamClosed.promise, "upstream not closed");
     await server.close();
     assert.deepEqual(uncertain, expectedUnknown ? ["/v1/responses"] : []);
+    assert.equal(diagnostics.length, expectedUnknown ? 1 : 0);
+    if (expectedUnknown) {
+      const d = diagnostics[0];
+      assert.equal(d.reason, "client-disconnected"); assert.equal(d.stage, "response-stream");
+      assert.equal(d.method, "POST"); assert.equal(d.completionObserved, false);
+      assert.equal(d.threadId, "11111111-1111-4111-8111-111111111111");
+      assert.equal(d.turnId, "22222222-2222-4222-8222-222222222222");
+      assert.equal(d.correlationSource, "thread-id+x-codex-turn-metadata");
+      assert.ok(d.acceptedAt <= d.sentAt! && d.sentAt! <= d.firstAt);
+      assert.equal(d.firstAt, d.lastAt); assert.equal(d.count, 1);
+      assert.match(d.requestId, /^[a-f0-9-]{36}$/u);
+      for (const secret of [token, "prompt-secret", "metadata-secret"]) assert.equal(JSON.stringify(d).includes(secret), false);
+    }
   } finally {
     abort.abort(); await server?.close(); await upstream.close(); pool.close();
     await rm(root, { recursive: true, force: true });
