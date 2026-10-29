@@ -129,3 +129,9 @@ identities and artifact digests. These artifacts join the cold configuration pro
 A missing, replaced or additional child fails closed; retirement also checks that
 both the launcher and native child have exited. Direct executable generations keep
 their existing identity path.
+
+The final source zero inspection also runs the Native historical reader, and
+release rechecks it. An unreadable binding yields unknown coverage while the
+original writer can still abort; it cannot first be discovered after release,
+when a compatible old payload may fail the same cold read. No binding is removed
+or reclassified to force a successful handoff.

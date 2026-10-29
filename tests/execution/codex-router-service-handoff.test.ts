@@ -16,11 +16,12 @@ test("real router service preserves native subscriptions and registry across rel
   const data = join(root, "data"), directory = join(root, "sockets"), registry = join(root, "registry"), native = join(root, "native.sock");
   await mkdir(data, { mode: 0o700 }); await mkdir(directory, { mode: 0o700 });
   const token = "synthetic-router-private-control-token", endpoint = join(directory, "control.sock"), coreEndpoint = join(root, "core.sock");
-  const calls: string[] = []; let pending = 0, resumes = 0;
+  const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false;
   const http = createServer(), wss = new WebSocketServer({ server: http });
   wss.on("connection", socket => socket.on("message", raw => {
     const m = JSON.parse(String(raw)); calls.push(m.method);
     if (m.id === undefined) return;
+    if (m.method === "thread/read" && rejectHistory) { socket.send(JSON.stringify({ id: m.id, error: { code: -32600, message: "Historical binding is unavailable" } })); return; }
     if (m.method === "thread/resume") resumes++;
     const result = m.method === "initialize" ? { userAgent: "retained-native" }
       : m.method === "thread/list" ? { data: [{ id: "historical", status: { type: "idle" } }], nextCursor: null }
@@ -68,6 +69,13 @@ test("real router service preserves native subscriptions and registry across rel
     await new Promise(r => setTimeout(r, 30));
     pending = 1; assert.equal((await action("inspect")).proof.counts.nativeAdmission, 1);
     assert.equal((await action("release", { proof: "fake" })).status, 503); pending = 0;
+    const initiallyReadable = (await action("inspect")).proof; assert.equal(initiallyReadable.activeCount, 0);
+    rejectHistory = true;
+    assert.equal((await action("release", { proof: initiallyReadable.identity })).status, 503, "release rechecks Native history after inspection");
+    const rejected = (await action("inspect")).proof; assert.equal(rejected.coverage, "unknown"); assert.equal(rejected.activeCount, null);
+    assert.equal((await rpc("/owner-handoff")).handoff.phase, "fenced");
+    assert.equal((await action("abort")).status, 200, "unreadable history leaves the original source recoverable");
+    rejectHistory = false; await action("fence");
     const proof = (await action("inspect")).proof; assert.equal(proof.activeCount, 0);
     assert.equal((await action("release", { proof: proof.identity })).status, 200);
     await service.close(); service = await startCodexGenerationService(options);
