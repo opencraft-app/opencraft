@@ -99,6 +99,8 @@ test("Composer retries unchanged failed promotion with the accepted identity and
   // failed lifecycle from the awaited onSubmit catch (no settleSubmission).
   await assert.rejects(pipeline.submit({ ...first, selections: { ...first.selections, model: "fixture" } }), /activation failed/);
   composer.dispatch({ type: "set-lifecycle", phase: "failed", error: "activation failed" });
+  // The real EditorView serializes an equivalent new document on retry.
+  composer.dispatch({ type: "set-document", document: structuredClone(first.document) });
   const retry = composer.createSubmitIntent();
   assert.equal(retry.commandId, first.commandId);
   assert.equal(retry.clientMessageId, first.clientMessageId);
