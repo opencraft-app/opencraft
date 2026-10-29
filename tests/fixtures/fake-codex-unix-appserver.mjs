@@ -65,12 +65,15 @@ sockets.on("connection", socket => {
       }
       if (!threads.has(params.threadId)) { send({ id, error: { code: -1, message: "Missing thread" } }); return; }
       subscribed.add(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE) threads.get(params.threadId).status = { type: "idle" };
       const reply = () => send({ id, result: { thread: threads.get(params.threadId) } });
       if (params.fixtureDelay) setTimeout(reply, 100); else reply();
       return;
     }
     if (method === "thread/unsubscribe") {
-      send({ id, result: { status: subscribed.delete(params.threadId) ? "unsubscribed" : "notSubscribed" } }); return;
+      const removed = subscribed.delete(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE && ![...subscriptions.values()].some(ids => ids.has(params.threadId))) threads.get(params.threadId).status = { type: "notLoaded" };
+      send({ id, result: { status: removed ? "unsubscribed" : "notSubscribed" } }); return;
     }
     if (method === "fixture/publish") {
       for (const [client, ids] of subscriptions) if (ids.has(params.threadId)) {
