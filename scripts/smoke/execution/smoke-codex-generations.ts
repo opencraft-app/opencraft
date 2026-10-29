@@ -110,7 +110,10 @@ async function startRoutingOwner() {
       "--property=Restart=on-failure", "--property=RestartSec=1", "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity",
       `--working-directory=${cwd}`, `--setenv=HOME=${join(root, "home")}`, `--setenv=TMPDIR=${root}`, "--", process.execPath, ...args]);
     else execFileSync("systemctl", ["start", routingUnit]);
-    await wait(() => admin(undefined, undefined, true), "routing systemd owner starts/recover bootstrap");
+    await wait(async () => {
+      const state = await admin(undefined, undefined, true);
+      return state.handoff.phase === "open" ? new CodexCoreControlClient(routerEndpoint, token).appServerHealth() : state;
+    }, "routing systemd owner starts/recover bootstrap");
     const pid = Number(execFileSync("systemctl", ["show", routingUnit, "-p", "MainPID", "--value"], { encoding: "utf8" }).trim());
     assert.ok(pid > 0);
     assert.equal(execFileSync("systemctl", ["show", routingUnit, "-p", "RuntimeDirectory", "--value"], { encoding: "utf8" }).trim(), "", "routing unit must not own sibling socket-directory cleanup");
