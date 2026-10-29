@@ -27,6 +27,13 @@ export interface ManagedDatabaseOptions {
   };
 }
 
+/** Read-only preflight uses the same ledger authority as a managed writer open. */
+export function verifyManagedDatabaseHistory(database: DatabaseSync, migrations: readonly Migration[]): void {
+  if (validateHistory(database, prepareMigrations(migrations)) !== migrations.length) {
+    throw new SqliteLifecycleError("history-mismatch", "Database requires migration before maintenance sealing");
+  }
+}
+
 function schemaObjects(database: DatabaseSync) {
   return database.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name!='schema_migrations' ORDER BY type,name")
     .all() as unknown as Array<{ type: string; name: string; sql: string }>;
