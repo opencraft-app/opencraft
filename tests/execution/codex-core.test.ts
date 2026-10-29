@@ -892,7 +892,7 @@ for (const routingOnly of [false, true]) test(`Core refuses empty creation recov
       native.routed = true;
       assert.equal(native.supportsOrchestrationRouting, true);
     }
-    await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /retained native subscription/);
+    await assert.rejects(b.rpc("browser", "thread/resume", { threadId: thread.id }), /当前连接无法恢复空会话/);
     assert.equal((await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true })).thread.turns.length, 0);
     assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 0);
   } finally { await f.close(); }
