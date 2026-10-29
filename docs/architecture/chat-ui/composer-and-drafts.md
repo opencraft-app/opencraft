@@ -887,4 +887,42 @@ An engine without shared interactions skips that read; it must not inherit the
 default engine's capability and repeatedly fail history recovery. Engines that
 advertise shared interactions still restore their pending approvals before the
 Replica grants sending authority. Transport recovery, watched history, and exact
-outbox acknowledgement remain owned by their existing services.
+outbox acknowledgement remain owned by their existing services. For already
+loaded older mixed-Host clients, Pi accepts a read-only empty shared-approval
+baseline with no response authority; this does not advertise shared approvals
+or add an approval response method.
+
+### First-input creation recovery
+
+A created Thread, an attempted first input, a native acceptance receipt and a
+persisted transcript are distinct facts. The local Codex Host records positive
+creation evidence before returning its acknowledgement. A replacement Host may
+restore that exact empty creation only while no first input was attempted, the
+native process still lists the same loaded identity, and no rollout exists.
+Legacy or missing evidence, an uncertain send and accepted/persisted history do
+not qualify for an empty-history fallback. The existing generation route remains
+bound to the original native identity. Recovery also requires the original
+native subscription or an attested retained callback lane. A routing protocol
+version alone does not attest that capability. A combined Core without that
+lane rejects empty-Thread resume rather than claiming that events are restored.
+Once native acceptance is known, normal demand-based subscription release
+applies; only created/attempted input protects the provisional context.
+
+Creation-time MCP credentials retain their original endpoint and persistent
+Thread binding across a managed listener replacement. They bind once to the
+first attested execution; listing or recovering a creation never authorizes a
+tool call. A first-Turn dispatch retires empty-history eligibility before the
+native write. The Composer keeps its Draft until native acceptance; unknown
+outcomes still require positive message acknowledgement rather than replay.
+
+A later input composed while the accepted first Turn is still promoting has a
+different command/message identity. It waits for promotion and then enters the
+original conversation's next-Turn queue with its own receipt. It cannot reuse
+the first input's receipt to clear unsent content.
+
+If promotion fails after acceptance, an unchanged Composer retry retains its
+original command/message identity, recorded when the Controller creates the
+intent so the Web editor's direct failure transition and projected model
+selections retain it too. Editing content, submission settings, or execution
+placement creates a new identity. Retry state belongs to the owning Draft and is retired
+when acceptance settles, the Draft clears, or its controller is disposed.

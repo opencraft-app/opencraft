@@ -548,3 +548,16 @@ preserve its exact historical uncertainty list.
 ## Advisory service tier capability
 
 Capability lookup reuses recent successful pages from the same runtime Host (preferring the Thread scope), with a two-second total pre-send budget. An uncached catalog request has a 1.8-second timeout. Submission includes a selected service tier only when the resolved model catalog declares it. Catalog failures or missing models omit the tier and leave model and reasoning validation to the Host. An explicit model-selection policy rejection and cancelled dispatch still block submission. Unsupported tiers are omitted silently without changing the saved preference.
+
+
+### Creation-time execution tools
+
+The Host installs a single-use execution-bound MCP reservation when it creates
+an empty Thread. Before the first native Turn, its attested execution binds the
+reservation without attempting to resume missing rollout history. Preparation
+failures are classified separately from a physical native send: only positive
+not-submitted evidence permits a new attempt. Unknown outcomes retain their
+input identity and require reconciliation. Failed or disconnected preparation
+retires only its own reservation; an accepted native execution is never replayed
+because a View failed to activate. Terminal system-error contexts retire once
+before a subsequent tool configuration is applied.

@@ -700,7 +700,7 @@ export function App({
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
   const threadShortcutCommands = activeThreadLease !== null && sideChatAction
     && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label },
+    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
       ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
     : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly

@@ -532,11 +532,11 @@ in the child. Closing releases the child without changing parent history or draf
 
 ### Side chat slash command
 
-An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Explicit submission of the standalone command invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
+An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Selecting the standalone `/side` suggestion with Enter or a pointer immediately invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
 
 ### Inline command discovery
 
-Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text; explicit submission owns execution.
+Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text by default; explicit submission owns execution. The local `/side` action opts into immediate submission on selection when it is the entire draft without attachments or context. It opens the side chat directly without a second Send gesture; other commands retain editable insertion.
 ### Side chat model display
 
 Side chat displays its fork’s current execution model as compact, non-interactive Composer metadata. It offers no model menu and submits no model, effort or service-tier override; the child conversation retains execution ownership. Main conversation model controls are unchanged.

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, closeSync, writeFileSync, statSync } from "node:fs";
+import { mkdirSync, openSync, readFileSync, closeSync, writeFileSync, statSync, lstatSync } from "node:fs";
 import { dirname } from "node:path";
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -32,8 +32,12 @@ export class SessionCapabilityMcp {
   private readonly calls = new Set<Server>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
+  private readonly executionReservations = new Map<string, {
+    bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
+    session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number;
+  }>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
-    private readonly options: { descriptorPath?: string; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
+    private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown> } = {}) {
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
@@ -48,7 +52,7 @@ export class SessionCapabilityMcp {
   }
   token(session: CapabilitySession): string { return sessionCapabilityToken(this.key, session); }
   private bindingToken(id: string): string { return this.sign(["binding", id]); }
-  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string } | null {
+  private authenticate(request: IncomingMessage): { session: CapabilitySession | null; tools?: readonly CapabilityTool[]; reservationId?: string; executionReservation?: Promise<CapabilitySession> } | null {
     const auth = request.headers.authorization;
     if (typeof auth !== "string" || auth.length > 4096 || !auth.startsWith("Bearer ")) return null;
     const parts = auth.slice(7).split(".");
@@ -68,6 +72,11 @@ export class SessionCapabilityMcp {
         return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }) };
       }
       if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
+      if (pair[0] === "execution-binding" && pair.length === 2) {
+        const reservation = this.executionReservation(pair[1]);
+        if (!reservation || (!reservation.scope && !reservation.session && reservation.expiresAt <= Date.now())) return null;
+        return { session: reservation.session ?? null, executionReservation: reservation.bound };
+      }
       if (pair[0] === "binding" && pair.length === 2) {
         const session = this.bindings?.get(pair[1]) ?? this.memoryBindings.get(pair[1]);
         if (session) return { session, reservationId: pair[1] };
@@ -78,7 +87,19 @@ export class SessionCapabilityMcp {
     } catch { return null; }
   }
   async listen(): Promise<void> {
-    await new Promise<void>((resolve, reject) => { this.server.once("error", reject); this.server.listen(0, "127.0.0.1", () => { this.server.off("error", reject); resolve(); }); });
+    let port = 0;
+    if (this.options.retainEndpoint && this.options.descriptorPath) {
+      try {
+        const info = lstatSync(this.options.descriptorPath);
+        if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid?.() || info.mode & 0o077 || info.size > 4096)
+          throw new Error("Invalid capability endpoint descriptor");
+        const endpoint = new URL(JSON.parse(readFileSync(this.options.descriptorPath, "utf8")).url);
+        if (endpoint.protocol !== "http:" || endpoint.hostname !== "127.0.0.1" || endpoint.pathname !== "/mcp" || !endpoint.port)
+          throw new Error("Invalid capability endpoint descriptor");
+        port = Number(endpoint.port);
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+    await new Promise<void>((resolve, reject) => { this.server.once("error", reject); this.server.listen(port, "127.0.0.1", () => { this.server.off("error", reject); resolve(); }); });
     const address = this.server.address();
     if (!address || typeof address === "string") throw new Error("Capability listener unavailable");
     this.url = `http://127.0.0.1:${address.port}/mcp`;
@@ -117,6 +138,62 @@ export class SessionCapabilityMcp {
       },
       cancel: () => { this.pending.delete(id); },
     };
+  }
+  /** Creation installs an opaque credential before a Thread ID exists. The Host
+   * binds it once to the first attested execution before dispatching that input.
+   * Native MCP startup may list tools before thread/start returns; only that
+   * read waits for binding. No invocation can run with an unbound credential. */
+  private executionReservation(id: string) {
+    const existing = this.executionReservations.get(id);
+    if (existing) return existing;
+    const saved = this.bindings?.execution(id);
+    if (!saved) return undefined;
+    let resolve!: (session: CapabilitySession) => void;
+    const bound = new Promise<CapabilitySession>(done => { resolve = done; });
+    const reservation = { bound, resolve, scope: saved.scope, session: saved.session ?? undefined, expiresAt: Infinity };
+    if (saved.session) resolve(saved.session);
+    this.executionReservations.set(id, reservation);
+    return reservation;
+  }
+  private executionHandle(id: string, reservation: NonNullable<ReturnType<SessionCapabilityMcp["executionReservation"]>>) {
+    return { configuration: this.configuration(this.sign(["execution-binding", id]), []),
+      bindThread: (scope: CapabilitySession) => {
+        if (this.executionReservations.get(id) !== reservation || reservation.scope
+          || reservation.expiresAt <= Date.now()) throw new Error("Execution capability reservation is unavailable");
+        this.bindings?.prepareExecution(id, scope);
+        reservation.scope = { serverId: scope.serverId, threadId: scope.threadId };
+      },
+      bind: (session: CapabilitySession) => {
+        if (this.executionReservations.get(id) !== reservation || (!reservation.scope && reservation.expiresAt <= Date.now())
+          || !session.execution?.inputId || !session.execution.executionId
+          || reservation.scope && (reservation.scope.serverId !== session.serverId || reservation.scope.threadId !== session.threadId))
+          throw new Error("Execution capability reservation is unavailable");
+        if (reservation.session) {
+          if (JSON.stringify(reservation.session) !== JSON.stringify(session)) throw new Error("Execution capability reservation is already bound");
+          return;
+        }
+        if (reservation.scope) this.bindings?.bindExecution(id, session);
+        reservation.session = structuredClone(session); reservation.resolve(reservation.session);
+      },
+      cancel: () => { this.bindings?.removeExecution(id); this.executionReservations.delete(id); },
+    };
+  }
+  prepareExecution() {
+    for (const [id, value] of this.executionReservations)
+      if (!value.scope && !value.session && value.expiresAt <= Date.now()) this.executionReservations.delete(id);
+    if (this.executionReservations.size >= 256) throw new Error("Too many pending execution capability reservations");
+    const id = randomUUID();
+    let resolve!: (session: CapabilitySession) => void;
+    const bound = new Promise<CapabilitySession>(done => { resolve = done; });
+    const reservation = { bound, resolve, expiresAt: Date.now() + 60_000, session: undefined as CapabilitySession | undefined,
+      scope: undefined as CapabilitySession | undefined };
+    this.executionReservations.set(id, reservation);
+    return this.executionHandle(id, reservation);
+  }
+  restoreExecution(scope: CapabilitySession) {
+    const id = this.bindings?.executionId(scope);
+    const reservation = id ? this.executionReservation(id) : undefined;
+    return id && reservation ? this.executionHandle(id, reservation) : null;
   }
   async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader("cache-control", "no-store");
@@ -159,9 +236,20 @@ export class SessionCapabilityMcp {
       response.end(JSON.stringify({ allowed: this.options.authorizeInput?.(authenticated.session, inputId) === true })); return;
     }
     const mcp = new Server({ name: "opencraft-session", version: "1.0.0" }, { capabilities: { tools: {} } });
-    mcp.setRequestHandler(ListToolsRequestSchema, async () => {
-      if (authenticated.session) await this.capabilities.refresh(authenticated.session);
-      const tools = authenticated.session ? this.capabilities.tools(authenticated.session) : authenticated.tools ?? [];
+    mcp.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+      let session = authenticated.session;
+      if (!session && authenticated.executionReservation) {
+        session = await new Promise<CapabilitySession>((resolve, reject) => {
+          const abort = () => reject(new Error("Capability declaration wait was cancelled"));
+          if (extra.signal.aborted) { abort(); return; }
+          extra.signal.addEventListener("abort", abort, { once: true });
+          void authenticated.executionReservation!.then(value => {
+            extra.signal.removeEventListener("abort", abort); resolve(value);
+          });
+        });
+      }
+      if (session) await this.capabilities.refresh(session);
+      const tools = session ? this.capabilities.tools(session) : authenticated.tools ?? [];
       const staged = authenticated.reservationId ? this.pending.get(authenticated.reservationId) : undefined;
       if (tools.length && authenticated.reservationId) this.pending.delete(authenticated.reservationId);
       const visible = tools.length ? tools : staged && staged.expiresAt > Date.now() ? staged.tools : [];
@@ -181,11 +269,12 @@ export class SessionCapabilityMcp {
     await transport.handleRequest(request, response, body);
   }
   async close(): Promise<void> {
-    if (this.options.descriptorPath) {
+    if (this.options.descriptorPath && !this.options.retainEndpoint) {
       try { const value = JSON.parse(await readFile(this.options.descriptorPath, "utf8")); if (value.url === this.url) await rm(this.options.descriptorPath); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     }
     this.url = undefined;
+    this.executionReservations.clear();
     await Promise.allSettled([...this.calls].map(server => server.close()));
     await new Promise<void>(resolve => { this.server.close(() => resolve()); this.server.closeAllConnections(); });
   }

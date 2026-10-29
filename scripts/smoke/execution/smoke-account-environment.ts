@@ -43,7 +43,12 @@ const model = createServer(async (request, response) => {
 });
 await new Promise<void>(resolve => model.listen(0, '127.0.0.1', resolve));
 const diagnostics: unknown[] = [], frames: any[] = [];
+const toolConfiguration = { enabled: false, url: 'http://127.0.0.1:1/mcp' };
+const toolBindings: string[][] = [];
 const adapter = new CodexEngineAdapter({ executable: process.env.OPENCRAFT_CODEX_EXECUTABLE ?? 'codex', runtimeDirectory: root, dataDirectory: join(root, 'codex'), nativeCodexHomeDirectory: join(root, 'native'), executionEnvironment: runtime,
+  sessionMcp: () => toolConfiguration,
+  createSessionMcp: () => ({ configuration: toolConfiguration,
+    bind: (threadId, inputId, executionId) => { toolBindings.push([threadId, inputId, executionId]); }, cancel() {} }),
   upstreamBaseUrl: `http://127.0.0.1:${(model.address() as any).port}/backend-api/codex`, fetch: async (input, init) => String(input).includes('/wham/usage') ? Response.json({ plan_type: 'fixture' }) : fetch(input, init), logDiagnostic: event => diagnostics.push(event) });
 adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
 const wait = async (predicate: (frame: any) => boolean) => { const deadline = Date.now() + 120_000; while (Date.now() < deadline) { const found = frames.find(predicate); if (found) return found; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('Codex environment smoke timed out'); };
@@ -62,6 +67,8 @@ try {
   await call('turn/start', { threadId, input: [{ type: 'text', text: 'probe environment', text_elements: [] }], clientUserMessageId: 'environment-input' }, true);
   await wait(frame => frame.method === 'turn/completed' && frame.params.threadId === threadId);
   assert.equal(observed, true, 'Native exec_command must read the employee/project value');
+  assert.ok(toolBindings.some(binding => binding[0] === threadId && binding[1] === 'environment-input' && binding[2]),
+    'First-turn environment injection must also bind its creation-time tool reservation');
   assert.equal(JSON.stringify([frames, diagnostics]).includes(secret), false);
   await adapter.close();
   const files = async (path: string): Promise<string[]> => (await Promise.all((await readdir(path, { withFileTypes: true })).map(async entry => entry.isDirectory() ? files(join(path, entry.name)) : [join(path, entry.name)]))).flat();
