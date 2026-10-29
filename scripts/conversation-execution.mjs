@@ -46,10 +46,10 @@ export function callConversationHost(appHost, binding, requestId, method, params
 }
 export function createConversationExecution(getAppHost, {serverId, hostId, engine}) {
   if (typeof hostId !== 'string' || !hostId.trim() || hostId.length > 256 || /[\x00-\x1f]/u.test(hostId)) throw new Error('Conversation execution Host required');
-  const invoke = (binding, id, method, params) => {
+  const invoke = (binding, id, method, params, timeoutMs) => {
     if (binding.hostId !== hostId) throw new Error('Unsupported Actor execution Host');
     const host = getAppHost(); if (!host) throw new Error('Actor Host unavailable');
-    return callConversationHost(host, binding, id, method, params);
+    return callConversationHost(host, binding, id, method, params, undefined, timeoutMs);
   };
   const binding = threadId => ({hostId, threadId});
   return {
@@ -58,7 +58,11 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
       if (ref.serverId !== serverId) throw Object.assign(new Error('Unknown conversation server'), {status:404,code:'conversation_unavailable'});
       const { thread } = await invoke(binding(ref.threadId), 'metadata', 'thread/read', { includeTurns: false });
       if (thread?.id !== ref.threadId) throw Object.assign(new Error('Conversation unavailable'), {status:404,code:'conversation_unavailable'});
-      const recovery = engine ? null : parseTurnRecoveryNotice((await invoke(binding(ref.threadId), 'metadata-recovery', 'opencraft/turn-recovery/read', {})).recovery);
+      let recovery = null;
+      if (!engine) {
+        try { recovery = parseTurnRecoveryNotice((await invoke(binding(ref.threadId), 'metadata-recovery', 'opencraft/turn-recovery/read', {}, 1000)).recovery); }
+        catch { /* Missing or unavailable recovery metadata does not invalidate native thread metadata. */ }
+      }
       return projectConversationMetadata(serverId, thread, false, recovery);
     },
     async discoverMetadata(options) {

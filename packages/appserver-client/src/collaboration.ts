@@ -24,16 +24,16 @@ export class CollaborationClient {
   require(capability: string) {
     if (this.capabilities.version !== 1 || this.capabilities[capability] !== true) throw new UnsupportedCollaborationCapability(capability);
   }
-  async command<T>(capability: string, params: Record<string, unknown>): Promise<T> {
+  async command<T>(capability: string, params: Record<string, unknown>, timeoutMs = 15_000): Promise<T> {
     this.require(capability);
-    return await this.connection.request(COLLABORATION_METHOD, params) as T;
+    return await this.connection.request(COLLABORATION_METHOD, params, { timeoutMs }) as T;
   }
   private readCommand<Action extends keyof CollaborationReadCommandMap>(capability: string,
-    params: CollaborationReadCommandMap[Action]['request']): Promise<CollaborationReadCommandMap[Action]['result']> {
-    return this.command(capability, { ...params });
+    params: CollaborationReadCommandMap[Action]['request'], timeoutMs?: number): Promise<CollaborationReadCommandMap[Action]['result']> {
+    return this.command(capability, { ...params }, timeoutMs);
   }
   servers() { return this.readCommand<'servers'>('servers', { action: 'servers' }); }
-  metadata(ref: ConversationRef) { return this.readCommand<'metadata'>('metadata', { action: 'metadata', reference: ref }); }
+  metadata(ref: ConversationRef, timeoutMs?: number) { return this.readCommand<'metadata'>('metadata', { action: 'metadata', reference: ref }, timeoutMs); }
   discover(serverId: string, cursor?: string, includeTitle = false, filters: { projectId?: string; cwd?: string } = {}) {
     if (filters.projectId !== undefined || filters.cwd !== undefined) this.require('discoverFilters');
     return this.readCommand<'discover'>('metadataDiscovery',

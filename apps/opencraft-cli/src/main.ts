@@ -9,7 +9,7 @@ import { CollaborationClient } from '@opencraft/appserver-client/collaboration';
 import { parseConversationRef, conversationLink, type ConversationRef, type ConversationMetadata } from '@opencraft/appserver-protocol/collaboration';
 import { CliSshTransport } from './ssh';
 import { CliError, classify } from './errors';
-import { prepareSend, sendMessage } from './send';
+import { prepareSend, sendMessage, type SendInput } from './send';
 export { CliError, classify } from './errors';
 
 interface Profile { sshAlias: string; instanceId: string; defaultServer?: string; sshConfig?: string; webUrl?: string }
@@ -59,6 +59,18 @@ function webUrl(value: string): string {
 }
 function withAttentionLink(row: ConversationMetadata, profile: Profile) {
   return row.attention ? { ...row, attention: { ...row.attention, uiLink: profile.webUrl ? conversationLink(profile.webUrl, row.ref) : null } } : row;
+}
+export async function sendWithAttention(client: CollaborationClient, ref: ConversationRef, input: SendInput,
+  scope: Parameters<typeof sendMessage>[3], profile: Profile) {
+  if (input.execution?.mode === 'steer') return sendMessage(client, ref, input, scope);
+  let metadata: ReturnType<typeof withAttentionLink> | undefined;
+  try { metadata = withAttentionLink(await client.metadata(ref, 2000), profile); }
+  catch { /* Auxiliary metadata is not execution authority or a send prerequisite. */ }
+  const receipt = await sendMessage(client, ref, input, scope);
+  if (['submitted','injected'].includes(receipt.deliveryState)) return receipt;
+  if (!metadata) return { ...receipt, attention: { kind: 'unknown', interactionId: null,
+    uiLink: profile.webUrl ? conversationLink(profile.webUrl, ref) : null, observedAt: null } };
+  return metadata.attention ? { ...receipt, attention: { ...metadata.attention, observedAt: metadata.observedAt } } : receipt;
 }
 async function save(config: Connections) {
   const path = configPath(), temp = path + '.' + randomUUID();
@@ -165,11 +177,8 @@ export async function run(argv: string[]) {
     if (args[1] === 'lookup') return await client.lookup(uriRef!, options.key!);
     if (args[1] === 'send' && sendInput) {
       if (server.capabilities[sendInput.execution?.mode ?? 'queue'] !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks this input mode.');
-      const metadata = withAttentionLink(await client.metadata(uriRef!), profile);
-      const receipt = await sendMessage(client, uriRef!, sendInput, { instanceId: directory.instanceId, actorId: directory.actor.id,
-        recordsDirectory: join(dirname(configPath()), 'operations') });
-      return { ...receipt, ...(metadata.attention && !['submitted','injected'].includes(receipt.deliveryState)
-        ? { attention: { ...metadata.attention, observedAt: metadata.observedAt } } : {}) };
+      return await sendWithAttention(client, uriRef!, sendInput, { instanceId: directory.instanceId, actorId: directory.actor.id,
+        recordsDirectory: join(dirname(configPath()), 'operations') }, profile);
     }
     if (args[1] === 'log' && args.length === 3) {
       if (server.capabilities.boundedRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks bounded history for this engine.');

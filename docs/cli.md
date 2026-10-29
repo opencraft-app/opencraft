@@ -51,6 +51,10 @@ configured public URL the link is null. Open that UI to act; the CLI does not
 answer interactions. Queue acceptance can carry the last observed attention and
 timestamp while remaining unconsumed. Recovery metadata comes from the existing
 Host recovery read; recovering/unknown/idle do not establish task completion.
+Recovery reads are optional and bounded to one second; unavailable recovery stays
+null while native metadata remains available. Steer performs no attention read.
+Queue's optional attention read has a two-second budget; failure reports an
+unknown attention kind and never prevents the send.
 
 `list` and `show` return metadata without titles, previews, messages or tools.
 `list --include-title` includes only explicit native titles, without a preview

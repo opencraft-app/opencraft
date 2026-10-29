@@ -152,6 +152,9 @@ native flags, without fetching interaction payloads; unavailable identity stays
 null. A configured public UI base can render the canonical resource link.
 Recovery is read from the existing Host recovery owner. Exact-turn steer uses
 the original execution/queue authority and never falls back to queue.
+Steer skips optional attention reads. Queue attention has a bounded read budget
+and degrades to unknown without preventing admission; recovery enrichment also
+has a bounded optional read and cannot invalidate successful native metadata.
 
 Configured local Codex and enabled Pi/DSH targets can be discovered, read and
 receive messages through the shared core. Actor run bindings and source-tool
