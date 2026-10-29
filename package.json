@@ -250,7 +250,7 @@
     "smoke:browser-todo": "tsx scripts/smoke/browser/smoke-browser-todo.ts",
     "build:relay": "node scripts/package-relay.mjs",
     "test:actors": "tsx --test tests/identity/actors.test.ts tests/identity/actor-collaboration.test.ts tests/identity/actor-collaboration-codex.test.ts tests/identity/thread-orchestration-ledger.test.ts tests/identity/thread-orchestration-broker.test.ts tests/usage/token-usage-orchestration.test.ts",
-    "test:relay": "tsx --test tests/shell/assertion-admission-probes.test.ts tests/protocol/relay-application.test.ts tests/protocol/relay-capacity.test.ts tests/protocol/relay-access.test.ts tests/protocol/relay-authentication.test.ts tests/protocol/relay-entry-origin.test.ts tests/protocol/relay-managed.test.ts tests/server/server-selection.test.ts tests/server/server-context.test.ts",
+    "test:relay": "tsx --test tests/protocol/relay-html-preview.test.ts tests/shell/assertion-admission-probes.test.ts tests/protocol/relay-application.test.ts tests/protocol/relay-capacity.test.ts tests/protocol/relay-access.test.ts tests/protocol/relay-authentication.test.ts tests/protocol/relay-entry-origin.test.ts tests/protocol/relay-managed.test.ts tests/server/server-selection.test.ts tests/server/server-context.test.ts",
     "auth:account": "tsx scripts/human-account.ts",
     "test:human-auth": "tsx --test tests/identity/human-auth.test.ts tests/identity/human-auth-artifact.test.ts tests/identity/local-account-plugin.test.ts tests/identity/account-setup.test.ts tests/identity/account-page.test.ts tests/identity/account-client-scope.test.ts tests/identity/desktop-account.test.ts",
     "smoke:human-auth": "tsx scripts/smoke/execution/smoke-human-auth.ts",
