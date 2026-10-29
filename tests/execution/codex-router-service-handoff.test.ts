@@ -36,7 +36,7 @@ test("real router service preserves native subscriptions and registry across rel
     get pendingCallbacks() { return pending; }, pendingOrchestrationMutations: 0 };
   await mkdir(health.codexHome, { mode: 0o700 });
   const identity = { ownerPid: process.pid, nativePid: process.pid, ownerStart: "1", nativeStart: "1", unit: "fixture", cliSha256: "fixed", cliVersion: "codex-cli 0.162.1" };
-  const artifacts = { cli: join(root, "fixture-cli"), node: join(root, "fixture-node"), app: join(root, "fixture-app.cjs") };
+  const artifacts = { cli: join(root, "fixture-cli"), node: join(root, "fixture-node"), app: join(root, "fixture-app.cjs"), launcher: join(root, "fixture-launcher.cjs"), native: join(root, "fixture-native") };
   // The injected supervisor owns the Native boundary; tiny fixed artifacts keep
   // this protocol fixture from repeatedly hashing the test runner's Node binary.
   for (const [kind, path] of Object.entries(artifacts)) await writeFile(path, `synthetic ${kind} artifact\n`, { mode: 0o600 });
@@ -45,7 +45,7 @@ test("real router service preserves native subscriptions and registry across rel
       start: async () => health, inspect: async () => health, identify: async () => identity,
       stop: async () => { throw Error("Router cannot stop native"); }, discardUnready: async () => {}, processesQuiet: async () => true },
     bootstrap: { generation: { id: "original", endpoint: join(directory, "app", "control.sock"), runtimeDataDirectory: data,
-      executable: artifacts.cli, bundle: artifacts.app, node: artifacts.node, cwd: root } } };
+      executable: artifacts.cli, bundle: artifacts.app, node: artifacts.node, nativeLauncher: { entrypoint: artifacts.launcher, executable: artifacts.native }, cwd: root } } };
   let service: Awaited<ReturnType<typeof startCodexGenerationService>> | undefined;
   let peer: GenerationPeer | undefined;
   const rpc = (path: string, value?: unknown) => new Promise<any>((resolve, reject) => {
@@ -71,6 +71,11 @@ test("real router service preserves native subscriptions and registry across rel
     const proof = (await action("inspect")).proof; assert.equal(proof.activeCount, 0);
     assert.equal((await action("release", { proof: proof.identity })).status, 200);
     await service.close(); service = await startCodexGenerationService(options);
+    for (const kind of ["launcher", "native"] as const) {
+      await writeFile(artifacts[kind], "changed fixed launcher artifact\n");
+      assert.equal((await action("cold-ready")).status, 503);
+      await writeFile(artifacts[kind], `synthetic ${kind} artifact\n`);
+    }
     const cold = await action("cold-ready"); assert.equal(cold.status, 200);
     const oldInput = await input();
     const started = performance.now(); await service.close(); service = await startCodexGenerationService(options);

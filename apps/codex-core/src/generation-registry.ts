@@ -12,6 +12,8 @@ export interface GenerationDefinition {
   readonly executable: string;
   readonly bundle: string;
   readonly node: string;
+  /** Fixed Node CLI entrypoint and its native child, for packaged launchers. */
+  readonly nativeLauncher?: { readonly entrypoint: string; readonly executable: string };
   readonly cwd: string;
   readonly executionUid?: number;
   readonly executionGid?: number;
@@ -75,7 +77,8 @@ export class CodexGenerationRegistry {
   }
   register(definition: GenerationDefinition): GenerationRecord {
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(definition.id)
-      || ![definition.endpoint, definition.runtimeDataDirectory, definition.executable, definition.bundle, definition.node, definition.cwd].every(isAbsolute)) {
+      || ![definition.endpoint, definition.runtimeDataDirectory, definition.executable, definition.bundle, definition.node, definition.cwd].every(isAbsolute)
+      || definition.nativeLauncher !== undefined && (!definition.nativeLauncher || ![definition.nativeLauncher.entrypoint, definition.nativeLauncher.executable].every(path => typeof path === "string" && isAbsolute(path)))) {
       throw new Error("Invalid generation definition");
     }
     const executionUid = definition.executionUid ?? process.getuid!(), executionGid = definition.executionGid ?? process.getgid!();
@@ -217,12 +220,12 @@ export class CodexGenerationRegistry {
     if (!generation || !["draining", "retiring"].includes(generation.state) || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new Error("Generation is not drained");
     this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
   }
-  replaceRetired(id: string, replacement: Pick<GenerationDefinition, "executable" | "bundle" | "node">): GenerationRecord {
+  replaceRetired(id: string, replacement: Pick<GenerationDefinition, "executable" | "bundle" | "node" | "nativeLauncher">): GenerationRecord {
     const generation = this.get(id);
     if (!generation || generation.state !== "retired") throw new Error("Only a retired HOME can change runtime payload");
     const { state: _state, incarnation: _incarnation, externalUnit: _unit, ...definition } = generation;
     const next = { ...definition, ...replacement };
-    if (![next.executable, next.bundle, next.node].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
+    if (![next.executable, next.bundle, next.node, ...(next.nativeLauncher ? [next.nativeLauncher.entrypoint, next.nativeLauncher.executable] : [])].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
     this.database.prepare("UPDATE generations SET definition=?,state='candidate' WHERE id=?").run(JSON.stringify(next), id);
     return this.get(id)!;
   }

@@ -71,7 +71,7 @@ export async function startCodexGenerationService(options: {
     const configuration = async () => {
       const artifacts = [];
       for (const g of runtime.registry.list()) {
-        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node].map(async path => ({
+        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node, ...(g.nativeLauncher ? [g.nativeLauncher.entrypoint, g.nativeLauncher.executable] : [])].map(async path => ({
           path, sha256: createHash("sha256").update(await readFile(path)).digest("hex") }))) });
       }
       const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);

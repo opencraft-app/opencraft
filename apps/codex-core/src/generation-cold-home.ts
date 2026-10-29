@@ -61,7 +61,7 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
     await generationCopyOwner(socketDirectory, old.executionUid ?? process.getuid!(), old.executionGid ?? process.getgid!());
     const { externalUnit: _unit, ...definition } = old;
     const candidate: GenerationRecord = { ...definition, id: `validation-${randomUUID()}`, endpoint: join(socketDirectory, "control.sock"),
-      executable: current.executable, bundle: current.bundle, node: current.node, state: "candidate", incarnation: 0 };
+      executable: current.executable, bundle: current.bundle, node: current.node, nativeLauncher: current.nativeLauncher, state: "candidate", incarnation: 0 };
     // This unit is independent of the routing owner. Persist its identity before starting it.
     const handoffTemporary = `${pendingPath(old.id)}.${randomUUID()}.tmp`;
     await writeFile(handoffTemporary, JSON.stringify({ version: 1, validationId: candidate.id,
