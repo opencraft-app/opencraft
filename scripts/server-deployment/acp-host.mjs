@@ -40,7 +40,7 @@ export async function startIndependentAcpHost(options) {
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
     const capabilities = new RemoteSessionCapabilities(options.sessionCapabilitiesDirectory ?? identityDirectory, `server:${machine.machineId}:${id}`);
-    provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
+    provider = new AcpGenerationHost({ modelPolicyPath: join(dirname(dataDirectory), "model-usage-policy.sqlite"), id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
       // The runtime that supplies the ACP profile is explicit and versioned by

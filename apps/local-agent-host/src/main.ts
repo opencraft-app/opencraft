@@ -135,6 +135,7 @@ export async function startLocalAgentHost(options: {
   readonly runtimeDirectory?: string;
   /** Explicit development/package path; the Agent Host never infers Electron's cwd. */
   readonly dshCapabilityPlugin?: string;
+  readonly modelPolicyPath?: string;
   readonly dataDirectory?: string;
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
@@ -199,6 +200,7 @@ export async function startLocalAgentHost(options: {
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
       { insert: [{ id: "opencraft-capability", name: plugin, config: {
+      modelPolicyPath: options.modelPolicyPath,
       token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,

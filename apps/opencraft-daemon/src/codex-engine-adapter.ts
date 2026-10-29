@@ -1,3 +1,4 @@
+import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
@@ -171,6 +172,7 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly writerOwnership?: boolean;
   readonly executable: string;
   readonly runtimeDirectory: string;
+  readonly modelPolicyPath?: string;
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
@@ -905,6 +907,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
+    try { await this.checkModelPolicy(message.method, record(message.params)); }
+    catch (cause) {
+      const error=cause as Error & {code?:number;data?:unknown};
+      this.emit({id:message.id,error:{code:error.code ?? -32043,message:error.message,data:error.data}},clientId);return;
+    }
+
     if (message.method === "runtime/client/disconnect") {
       this.diagnostic({ event: "client-disconnect", clientId, pid: this.child?.pid ?? null });
       this.disconnectClient(clientId);
@@ -2398,11 +2406,21 @@ export class CodexEngineAdapter implements DuplexTransport {
     throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
   }
 
+  private async checkModelPolicy(method: unknown, params: RpcRecord): Promise<void> {
+    if (!(method === "turn/start" || method === "thread/goal/set" && params.status !== "paused" && params.status !== "complete" && params.status !== "blocked") || this.options.kind === "remote" || !this.options.modelPolicyPath || !readPolicy(this.options.modelPolicyPath).rules.some(r=>r.engine==="codex")) return;
+      const thread = record(record(await this.requestPhysical("thread/read", {threadId: params.threadId, includeTurns:false})).thread);
+      const catalog = record(await this.requestPhysical("model/list", {})).data;
+      const models = Array.isArray(catalog) ? catalog : [];
+      const {model,effort}=resolvePolicySelection("codex",params,thread,models);
+      assertModelPolicy(this.options.modelPolicyPath, "codex", model, effort, models);
+  }
+
   private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
+    await this.checkModelPolicy(method, params);
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
     const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
@@ -2894,7 +2912,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
     const first = queue.firstAwaitingAdmission(threadId);
-    if (!first || first.state !== "queued") return;
+    if (!first || first.state !== "queued" || first.pausedReason === "model-restricted") return;
     const recovery=this.recovery?.snapshot(threadId);
     if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake(); this.providerRetry?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
@@ -2955,7 +2973,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emitQueueChanged(threadId);
       return response;
     } catch (error) {
-      queue.settle(threadId, id, "unknown", "steer-delivery-unconfirmed");
+      queue.settle(threadId, id, error instanceof ModelPolicyError ? "queued" : "unknown", error instanceof ModelPolicyError ? "model-restricted" : "steer-delivery-unconfirmed");
       this.emitQueueChanged(threadId);
       throw error;
     }

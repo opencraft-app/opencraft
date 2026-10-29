@@ -1,3 +1,4 @@
+import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
 import { createBackgroundJobProofs } from "./dsh-background-jobs.mjs";
@@ -20,6 +21,22 @@ import { createInstructionController, sessionInstructions, hasSessionInstruction
 
 export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments", "goals", "jobs", "settings"];
 export async function apply(ctx, config) {
+  const policyKey = Symbol.for("opencraft.dsh.model-policy.v1");
+  globalThis[policyKey] = createDshPolicyBoundary(config.modelPolicyPath, async current => {
+    const providers = ctx.llm.listProviders();
+    const groups = await Promise.all(providers.map(async provider => ctx.llm.listModels(provider.id)));
+    const models = groups.flat();
+    // Keep failure guidance bounded; resolve native defaults rather than guessing.
+    const candidates = [current, ...models.filter(model=>model.provider!==current.provider || model.id!==current.model).slice(0,20).map(model=>({provider:model.provider,model:model.id}))];
+    const results = await Promise.allSettled(candidates.map(async model => {
+      const info=await ctx.llm.resolveModelInfo(model.provider,model.model);
+      return {model:`dsh-model:${encodeURIComponent(model.provider)}:${encodeURIComponent(model.model)}`,
+        defaultReasoningEffort:info.reasoning?.defaultEffort ?? 'none',
+        supportedReasoningEfforts:(info.reasoning?.efforts ?? []).map(e=>({reasoningEffort:e.id}))};
+    }));
+    return results.flatMap(result=>result.status==='fulfilled' ? [result.value] : []);
+  });
+  ctx.effect(() => () => { delete globalThis[policyKey]; });
   if (config.ownerRequired && globalThis[Symbol.for("opencraft.dsh.owner.v1")]) throw new Error("Native owner reload requires process restart");
   const nativeOwner = config.ownerRequired ? createDshNativeOwner(ctx, join(process.env.DSH_HOME, "owner-handoff"), config.token) : null;
   if (nativeOwner) globalThis[Symbol.for("opencraft.dsh.owner.v1")] = nativeOwner;

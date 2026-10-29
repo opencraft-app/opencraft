@@ -545,3 +545,7 @@ preserve its exact historical uncertainty list.
 ## Advisory service tier capability
 
 Capability lookup reuses recent successful pages from the same runtime Host (preferring the Thread scope), with a two-second total pre-send budget. An uncached catalog request has a 1.8-second timeout. Submission includes a selected service tier only when the resolved model catalog declares it. Catalog failures or missing models omit the tier and leave model and reasoning validation to the Host. An explicit model-selection policy rejection and cancelled dispatch still block submission. Unsupported tiers are omitted silently without changing the saved preference.
+
+## Administrator model usage policy
+
+Deployment restrictions belong to the server, independently of personal model defaults. The managed policy database commits revision changes and actor-attributed audit records atomically. Only current server administrators may read management settings or mutate them; provider identities remain supplied by product composition. The gateway filters catalogs and rejects execution against restricted models or reasoning levels. Native Pi queue dispatch, DSH resolved request admission, ACP prompt admission and Codex internal recovery/goal admission also check policy. An already admitted Turn continues; the next Turn reads current rules. A denied persisted selection remains selected until the user chooses another option. See [policy design](../../../design/model-usage-policy.md).

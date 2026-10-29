@@ -284,12 +284,13 @@
     "test:client-resources": "tsx --test tests/storage/client-resources.test.ts",
     "test:git-identity": "tsx --test tests/identity/git-vault.test.ts tests/identity/git-identity-broker.test.ts tests/identity/git-identity-origin.test.ts",
     "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node scripts/employee-git-vault-store.ts scripts/git-identity*.ts",
-    "test:agent-drivers": "tsx --test tests/execution/pi-orchestration-driver.test.ts tests/execution/acp-engine.test.ts tests/execution/acp-host-handoff.test.ts tests/execution/full-upgrade-generation.test.ts tests/execution/independent-acp-host.test.mjs tests/execution/agent-driver-transport.test.ts",
+    "test:agent-drivers": "tsx --test tests/execution/pi-orchestration-driver.test.ts tests/execution/acp-engine.test.ts tests/execution/acp-host-handoff.test.ts tests/execution/full-upgrade-generation.test.ts tests/execution/independent-acp-host.test.mjs tests/execution/agent-driver-transport.test.ts tests/execution/model-usage-policy.test.ts",
     "check:controls": "node scripts/check-control-ownership.mjs",
     "test:controls": "node --test tests/shell/control-ownership.test.mjs && tsc -p tests/tsconfig.controls.json",
     "smoke:controls": "tsx tests/shell/shared-controls.browser.ts",
     "smoke:settings-layout": "tsx tests/shell/settings-row-layout.browser.ts",
-    "smoke:disclosures": "tsx scripts/smoke/composer/smoke-disclosure-feedback.ts"
+    "smoke:disclosures": "tsx scripts/smoke/composer/smoke-disclosure-feedback.ts",
+    "test:model-policy": "tsx --test tests/execution/model-usage-policy.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",

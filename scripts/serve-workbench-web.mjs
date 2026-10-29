@@ -414,6 +414,7 @@ export async function createWorkbenchWebServer({
   speechService = null,
   remoteBrowserService = null,
   /** @type {import('@opencraft/app-host-server').WorkbenchRequestIdentity | null} */
+  modelPolicyService = null,
   identityService = null,
   localAccess = null,
   accessService = null,
@@ -577,6 +578,7 @@ export async function createWorkbenchWebServer({
         if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
+      if (modelPolicyService && await modelPolicyService(request, response)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {

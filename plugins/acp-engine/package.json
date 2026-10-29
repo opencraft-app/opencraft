@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./generations": "./src/generations.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./generations": "./src/generations.ts"
+  },
   "dependencies": {
     "@opencraft/appserver-client": "0.1.0",
-    "@opencraft/appserver-protocol": "0.1.0"
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/model-usage-policy": "0.1.0"
   },
-  "scripts": { "typecheck": "tsc --noEmit" }
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
 }

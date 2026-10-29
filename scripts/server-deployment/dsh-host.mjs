@@ -49,6 +49,7 @@ export async function startIndependentDshHost(configuration) {
     const sessionCapabilities = new RemoteSessionCapabilities(dirname(options.dataDirectory), `server:${machineIdentity.machineId}:dsh`);
     options.sessionCapabilities ??= sessionCapabilities;
     options.authorizeHostInput ??= (threadId, inputId) => sessionCapabilities.authorizeInput(threadId, inputId);
+    options.modelPolicyPath ??= join(dirname(options.dataDirectory), "model-usage-policy.sqlite");
     options.taskServerId ??= "opencraft-server";
     options.taskSkillDirectories ??= [resolve(options.dataDirectory, "../codex/runtime/skills")];
     if (taskCodexCoreEndpoint || taskCodexCoreTokenFile) {
