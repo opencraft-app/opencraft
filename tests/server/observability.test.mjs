@@ -283,9 +283,12 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const disabled = observation.beginObservedOperation('thread_open'); disabled('ok');
       observation.observeEvent({ kind: 'producer' });
       assert.equal(capabilityReads, 0); assert.deepEqual(batches, []);
+      observation.observeRecovery({hostId:'early-ready',recoveryId:'early-startup',stage:'host-ready',elapsedMs:1});
       const controller = new AbortController();
       await observation.createObservabilityExtension().activate({ signal: controller.signal, commands: { register: (_definition, run) => {openCommand = run;} }, navigation: { register() {} } });
       openCommand(); assert.equal(opened, base + '/__opencraft_observe/grafana/d/opencraft-overview');
+      for (const stage of ['backoff','connecting','host-ready','settled'])
+        observation.observeRecovery({hostId:'early-ready',recoveryId:'early-recovery',stage,elapsedMs:1});
       const finish = observation.beginObservedOperation('thread_open'); finish('ok'); finish('failed');
       for (const stage of ['connecting','host-ready','settled','backoff','connecting','host-ready','settled'])
         observation.observeRecovery({hostId:'fixture',recoveryId:'test-recovery',stage,elapsedMs:1});
@@ -310,7 +313,9 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const navigation = events.find(event => event.operationType === 'navigation');
       assert(navigation); assert.notEqual(navigation.operationId, operations[0].operationId);
       const requests = events.filter(event => event.kind === 'rpc');
-      const outages = events.filter(event => event.measurementScope === 'connection');
+      const earlyOutages = events.filter(event => event.measurementScope === 'connection' && event.hostId === 'early-ready');
+      assert.equal(earlyOutages.filter(event => event.outcome === 'ok').length,1,'a Host ready before telemetry activation still measures its first outage');
+      const outages = events.filter(event => event.measurementScope === 'connection' && event.hostId === 'fixture');
       assert(outages.length >= 2); assert.equal(new Set(outages.map(event => event.recoveryId)).size,1,'cold startup is not an outage');
       assert.equal(outages.filter(event => event.outcome === 'ok').length,1);
       assert.equal(requests.length, 2); assert.notEqual(requests[0].requestId, requests[1].requestId);

@@ -109,12 +109,12 @@ export function installClientObservation(client: AppServerClient) {
 export function observeRecovery(event: Readonly<Record<string,string|number>>) {
   const nativeStage = String(event.stage);
   const host = typeof event.hostId === 'string' ? event.hostId : null;
-  if (host && enabled) {
+  if (host) {
     if (nativeStage === 'host-ready') usableHosts.add(host);
-    if (usableHosts.has(host) && ['transport-unavailable','waiting','backoff','connecting','manual-block'].includes(nativeStage) && !connectionOutages.has(host))
+    if (enabled && usableHosts.has(host) && ['transport-unavailable','waiting','backoff','connecting','manual-block'].includes(nativeStage) && !connectionOutages.has(host))
       connectionOutages.set(host, { id: createClientId(), started: performance.now() });
     const outage = connectionOutages.get(host);
-    if (outage) {
+    if (enabled && outage) {
       observeEvent({ kind: 'recovery', recoveryId: outage.id, hostId: host, measurementScope: 'connection',
         stage: nativeStage === 'settled' ? 'ready' : 'connecting', outcome: nativeStage === 'settled' ? 'ok' : 'progress',
         durationMs: Math.max(0, performance.now() - outage.started) });
