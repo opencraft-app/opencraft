@@ -91,3 +91,11 @@ Host 队列沿 `ThreadQueueStore` 的终态语义：`deleted` 与 `dispatched` �
 ## 普通引擎崩溃与交接崩溃
 
 同一存活 Host 的 open/ready owner 遇到 native 引擎意外退出时，沿既有有界重启预算重建引擎、路由代次和流连接，重新完成 bootstrap sealing 与 native admission 后恢复 health。自动恢复与 fence/release 共用控制队列；队列中 fence 先完成时不允许恢复重开写入。已经 fenced、released、cold-ready 或持久化未知时仍保持 recovery-required。恢复失败才将 open owner 持久 fence，不能把正常崩溃直接当成交接释放不明。手动 restartEngine 仍拒绝绕过交接。
+
+## 冷依赖的生命周期与直接拨测
+
+受管技能等冷依赖必须安装到 release GC 之外的不可变内容目录，按内容地址声明精确根；各 owner 与恢复配置保留原 pin，不能把发布软链的 realpath 当成持久地址。更新先固定新内容，再在同一次 owner 交接中更新精确声明与链接；普通安装保留现有 owner 的不可变 pin。旧 pin 在仍有恢复引用时不回收。
+
+`dependencyRoots` 是符号链接目标的授权集合，不是额外必读资源；已经删除但未使用的授权不阻止冷就绪或旧 owner 恢复。实际被引用的链接仍须存在、位于声明闭包内并完整读取，不能以旧配置为由跳过损坏资源或放宽根目录授权。旧二进制恢复前须确认其配置声明和受管链接均落到仍保留的不可变目录。
+
+直接 owner 拨测消费 initialize/list 或错误响应后，必须回传该响应的精确 `opencraftDshReceipt`。超时后仍实际解析到的迟到响应也须 ACK；不得重执行来猜测原结果。`ownerProbeRpc` 在 ACK flush 后交付响应，拨测用 graceful close 完成传输；ACK 失败不得宣称拨测成功。未收到或未处理的响应仍保留未知责任。
