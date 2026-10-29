@@ -1,3 +1,5 @@
+const seededHistory = new Set();
+const unsupportedItemHistory = new Set();
 const legacyItems = new Set();
 const smallHistoryBudgets = new Set();
 const systemErrorThreads = new Set();
@@ -47,7 +49,7 @@ input.on("line", line => {
     if (!threadReadsPaused) for (const read of heldThreadReads.splice(0)) readThread(read);
     send({ id: message.id, result: {} }); return;
   }
-  if (message.method === "test/setHistory") {threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
+  if (message.method === "test/setHistory") {seededHistory.add(message.params.threadId);if(message.params.unsupportedItems)unsupportedItemHistory.add(message.params.threadId);threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
   if (message.method === "test/emitTool") {
     const id=nextServerRequestId++;testTools.set(String(id),message.params);send({id,method:"item/tool/call",params:{...message.params,callId:String(id)}});send({id:message.id,result:{requestId:id}});return;
   }
@@ -105,7 +107,8 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/turns/list") {
-    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full") {
+    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full"
+      && (!unsupportedItemHistory.has(message.params.threadId) || message.params.limit > 2)) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
@@ -115,10 +118,11 @@ input.on("line", line => {
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
+    if (unsupportedItemHistory.has(message.params.threadId)) {send({id:message.id,error:{code:-32601,message:"Item pagination unsupported"}});return;}
     if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
       send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
     }
-    const items = (legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
     if (message.params.sortDirection === 'desc') items.reverse();
     const offset = message.params.cursor ? Number(message.params.cursor) : 0;
     const limit = message.params.limit ?? 100;

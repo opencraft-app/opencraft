@@ -10,7 +10,8 @@ import { AppHostServer } from "@opencraft/app-host-server";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 
-for (const method of ["model/list", "thread/list"] as const) test(`${method} reaches Codex while an earlier Turn is preparing its tools`, { timeout: 10_000 }, async () => {
+const preparationMs = Number(process.env.OPENCRAFT_HISTORY_REPRO_PREPARATION_MS ?? 0);
+for (const method of ["model/list", "thread/list", "thread/read", "thread/turns/list", "thread/items/list"] as const) test(`${method} reaches Codex while an earlier Turn is preparing its tools`, { timeout: Math.max(10_000, preparationMs + 5_000) }, async () => {
   const root = await mkdtemp(join(tmpdir(), "catalog-head-of-line-"));
   let release!: () => void, entered!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
@@ -35,18 +36,28 @@ for (const method of ["model/list", "thread/list"] as const) test(`${method} rea
   const host = new MessagePortAppHostClient(port2, "catalog-test");
   const client = new JsonRpcAppServerClient({ hostId: "local-codex", transport: host.createTransport("local-codex") });
   let turn: Promise<unknown> | undefined;
+  let releaseTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     await client.connect({ clientInfo: { name: "catalog-test", version: "1" } });
     const started = await client.request("thread/start", { testNoServerRequest: true } as never);
     turn = client.request("turn/start", { threadId: started.thread.id, input: [{ type: "text", text: "synthetic" }] });
     await preparing;
-    const catalog = await client.request(method, {}, { timeoutMs: 500 });
-    assert.ok(Array.isArray(catalog.data));
+    if (preparationMs) releaseTimer = setTimeout(release, preparationMs);
+    const readStarted = performance.now();
+    const params = method === "thread/read" ? { threadId: started.thread.id, includeTurns: false }
+      : method === "thread/turns/list" ? { threadId: started.thread.id, limit: 1, itemsView: "full", sortDirection: "desc" }
+      : method === "thread/items/list" ? { threadId: started.thread.id, limit: 1, sortDirection: "asc" } : {};
+    const catalog = await client.request(method, params as never, { timeoutMs: preparationMs ? preparationMs + 2_000 : 500 });
+    const readMs = performance.now() - readStarted;
+    if (preparationMs) console.log(JSON.stringify({ synthetic: true, boundary: "AppHost-before-Core", method, preparationMs, readMs }));
+    assert.ok(readMs < 10_000, `${method} waited ${readMs}ms for unrelated tool preparation`);
+    if (method === "thread/read") assert.equal(catalog.thread.id, started.thread.id);
+    else assert.ok(Array.isArray(catalog.data));
     if (method === "model/list") assert.ok(catalog.data.length > 0);
     release();
     await turn;
   } finally {
-    release(); await turn?.catch(() => {});
+    clearTimeout(releaseTimer); release(); await turn?.catch(() => {});
     await client.close(); host.close(); await server.close();
     port1.close(); port2.close(); await rm(root, { recursive: true, force: true });
   }
