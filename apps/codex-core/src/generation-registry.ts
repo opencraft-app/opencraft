@@ -272,5 +272,16 @@ export class CodexGenerationRegistry {
     this.database.prepare("UPDATE generations SET incarnation=incarnation+1 WHERE id=?").run(id);
     return this.get(id)!;
   }
+  /** Full logical cold read under the registry writer lock; handoff metadata is self-referential. */
+  coldSnapshot(): unknown {
+    if (this.database.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
+      || this.database.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Registry integrity failed");
+    const schema = this.database.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
+    const tables = this.database.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => {
+      const name = String(row.name);
+      return { name, rows: this.database.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ${name === "routing_metadata" ? "WHERE key != 'router-handoff'" : ""} ORDER BY rowid`).all() };
+    });
+    return { schema, tables };
+  }
   close(): void { if (!this.closed) { this.closed = true; this.database.close(); this.lock.close(); } }
 }

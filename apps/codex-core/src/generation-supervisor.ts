@@ -17,6 +17,7 @@ export interface GenerationProcessIdentity {
   readonly unit: string;
 }
 export interface GenerationSupervisor {
+  inspect?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
   start(generation: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth>;
   discardUnready(generation: GenerationRecord): Promise<void>;
   identify(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity>;
@@ -44,6 +45,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   private async disableBoot(unit: string, fileState: string): Promise<void> {
     if (["enabled", "enabled-runtime"].includes(fileState)) await execute("systemctl", [...this.scope(), "disable", "--", unit]);
   }
+  async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
   private async health(g: GenerationRecord): Promise<CodexAppServerHealth> {
     return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
   }

@@ -70,3 +70,47 @@ two explicit CLI vendor binaries, isolated accounts and a loopback synthetic
 model. The fixture supports separately bundled entries through
 `OPENCRAFT_DRILL_SOURCE_ROOT` and `OPENCRAFT_DRILL_CORE_ENTRY`; neither changes
 the production owner or invokes a paid model.
+
+
+## Router owner handoff
+
+The router is the sole registry writer. Its private authenticated `/owner-handoff`
+endpoint supports `fence`, `inspect`, `release`, `cold-ready`, `resume` and source-only
+`abort`, using the owner expectation and exact proof contract. It owns neither
+account storage nor native HOME. A durable fence closes routing sockets and all
+ordinary control paths, including creation, Resume, generation lifecycle and Host
+usage writes. Accepted RPCs and pending connection establishment remain counted
+until completion; stopping a consumer does not erase accepted work. Connection
+PTY/tool loss or unconfirmed mutation delivery blocks release. Unresolved creation
+claims and native callback/admission counters also block release; missing counters
+or changed native identity produce unknown coverage.
+
+Maintenance shuts down execution consumers before replacing the router. An idle
+subscription still prevents release until it disconnects. Native APP processes are
+independently supervised and remain alive, retaining their turns, questions,
+approvals, goals and histories. The router does not answer, arm or replay them.
+An older APP with unsplit callback counters may block handoff on a human wait;
+that starting combination has no proof of safe handoff and must remain fenced or
+abort normally, without manufacturing idle.
+
+Release requires a current, unexpired exact zero proof and seals a full logical
+registry read: schema, migration checksums, generation definitions, admission,
+thread routes, creation receipts and all metadata. A successor must acquire the
+existing SQLite OS writer lock, read the same current registry and configuration,
+verify fixed CLI/APP/Node artifacts and surviving native identities, initialize
+fresh read-only native connections, and read each durable historical binding.
+It does not Resume during cold validation. Its readiness binds boot, incarnation,
+bundle, configuration, Node/ABI and native identities; readiness from a crashed
+candidate cannot reopen admission. Recovery stops the candidate, starts a
+compatible retained router on current data, obtains new readiness and resumes;
+no database snapshot is restored. A fenced source that crashes before confirmed
+release stays recovery-required. The retirement monitor and bootstrap recovery
+cannot mutate a fenced successor before the resume decision.
+
+The deployment supervisor holds its deployment lock throughout this transaction,
+then starts consumers and verifies a fresh initialize plus thread/list and native
+resubscription. The single-initialize rule per socket remains unchanged. A failed
+handshake must retire that socket before retry; raw router restart is not a fence.
+The full-stack parent plan remains blocked pending other owners and compatibility
+combinations. Router-specific verification extends the existing isolated real-CLI
+drill with `OPENCRAFT_DRILL_ROUTER_HANDOFF=1`.
