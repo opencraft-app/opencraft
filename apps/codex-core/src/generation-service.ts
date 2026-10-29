@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inspectRouterNative, readRouterRegistry, routerDigest, routerFileDigest } from "./router-maintenance.js";
 import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
@@ -17,6 +18,7 @@ export async function startCodexGenerationService(options: {
   registryDirectory: string; systemdScope: "user" | "system"; requireHostUsage: boolean;
   supervisor?: GenerationSupervisor;
   nativeHistoryFailures?: NativeHistoryFailures;
+  maintenanceFile?: string;
   bootstrap?: { generation: GenerationDefinition; legacy?: boolean }; signal?: AbortSignal;
 }) {
   options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
@@ -55,7 +57,7 @@ export async function startCodexGenerationService(options: {
   const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor, nativeHistoryFailures: options.nativeHistoryFailures });
   const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
-    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures });
+    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures, maintenanceFile: options.maintenanceFile });
   const router = new CodexGenerationRouter(runtime); runtime.serverRequestCount = id => router.serverRequestCount(id);
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   let socket: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;
@@ -72,25 +74,22 @@ export async function startCodexGenerationService(options: {
     if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
     socket = await startGenerationSocket(nativeSocket, router);
     await chown(nativeSocket, execution.uid, execution.gid);
-    const configuration = async () => {
-      const artifacts = [];
-      for (const g of runtime.registry.list()) {
-        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node, ...(g.nativeLauncher ? [g.nativeLauncher.entrypoint, g.nativeLauncher.executable] : [])].map(async path => ({
-          path, sha256: createHash("sha256").update(await readFile(path)).digest("hex") }))) });
-      }
-      const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
-      return createHash("sha256").update(JSON.stringify({ ...options, token: createHash("sha256").update(options.token).digest("hex"), signal: undefined, supervisor: undefined,
-        node: process.version, abi: process.versions.modules, proxyBaseUrl, artifacts,
-        environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => !managed.has(key)).sort(([a], [b]) => a.localeCompare(b))) })).digest("hex");
-    };
+    const configuration = () => routerConfiguration(options, runtime.registry.list(), proxyBaseUrl);
+    const nativeMaintenance = () => inspectRouterNative({ generations: runtime.registry.list(), routes: runtime.registry.routes(),
+      metadata: Object.fromEntries([...runtime.registry.list().map(g => [`runtime:${g.id}`, runtime.registry.metadata(`runtime:${g.id}`)]),
+        ...runtime.registry.routes().map(r => [`thread-retention:${r.threadId}`, runtime.registry.metadata(`thread-retention:${r.threadId}`)])]),
+      unresolvedCreations: runtime.registry.list().reduce((n, g) => n + runtime.registry.unresolvedCreations(g.id), 0),
+      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! });
+    const coldRead = () => runtime.owner.snapshot().history?.length ? nativeMaintenance() : runtime.coldReadNative();
+    if (runtime.owner.maintenancePending()) await runtime.owner.importMaintenance(await configuration(), nativeMaintenance);
     const observation = async () => {
       const value = await runtime.handoffObservation(), counts = { ...value.counts, ...router.handoffCounts() };
       const activeCount = Object.values(counts).reduce((a, b) => a + b, 0);
       let coverage = value.coverage;
-      if (coverage === "complete" && activeCount === 0 && !runtime.owner.snapshot().uncertain) {
+      if (coverage === "complete" && activeCount === 0 && runtime.owner.currentResponsibilityConfirmed()) {
         // Reject unsupported current history while the exact source can still
         // abort. Discovering it only after release also defeats old-payload recovery.
-        try { await runtime.coldReadNative(); } catch { coverage = "unknown"; }
+        try { await coldRead(); } catch { coverage = "unknown"; }
       }
       return { ...value, coverage, counts, activeCount };
     };
@@ -103,8 +102,8 @@ export async function startCodexGenerationService(options: {
           else if (value.action === "abort") runtime.owner.abort(input);
           else if (value.action === "inspect") proof = runtime.owner.inspect(input, await observation());
           else if (value.action === "release") { const config = await configuration(); runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }
-          else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), () => runtime.coldReadNative());
-          else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), () => runtime.coldReadNative());
+          else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), coldRead);
+          else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), coldRead);
           else throw new Error("Unknown router handoff action");
         } else if (request.method !== "GET") throw new Error("Unknown router handoff method");
         return { status: 200, value: { pid: process.pid, handoff: runtime.owner.snapshot(), proof, ready } };
@@ -152,4 +151,33 @@ export async function startCodexGenerationService(options: {
     options.signal?.throwIfAborted(); runtime.startMonitor();
     return { endpoint: options.endpoint, nativeSocket, close };
   } catch (reason) { await close(); throw reason; }
+}
+
+export async function routerConfiguration(options: Parameters<typeof startCodexGenerationService>[0], generations: import("./generation-registry.js").GenerationRecord[], proxyBaseUrl: string) {
+      const artifacts = [];
+      for (const g of generations) {
+        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node, ...(g.nativeLauncher ? [g.nativeLauncher.entrypoint, g.nativeLauncher.executable] : [])].map(async path => ({
+          path, sha256: await routerFileDigest(path) }))) });
+      }
+      const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
+      return createHash("sha256").update(JSON.stringify({ ...options, token: createHash("sha256").update(options.token).digest("hex"), signal: undefined, supervisor: undefined, maintenanceFile: undefined,
+        node: process.version, abi: process.versions.modules, proxyBaseUrl, artifacts,
+        environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => !managed.has(key)).sort(([a], [b]) => a.localeCompare(b))) })).digest("hex");
+}
+
+/** Read-only collector; opens no routing socket and never takes the registry writer role. */
+export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0]) {
+  options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
+  const launch = await new CodexCoreControlClient(options.coreEndpoint, options.token).appServerLaunch();
+  if (await realpath(options.dataDirectory) !== launch.dataDirectory) throw Error("Router account data selector changed");
+  const base = launch.launch.args.find(v => v.startsWith("chatgpt_base_url=")); if (!base) throw Error("Router proxy selector unavailable");
+  const proxyBaseUrl: string = JSON.parse(base.slice(base.indexOf("=") + 1)), state = readRouterRegistry(options.registryDirectory);
+  const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory: options.registryDirectory, coreEndpoint: options.coreEndpoint,
+    dataDirectory: options.dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
+  const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! });
+  const after = readRouterRegistry(options.registryDirectory);
+  if (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"])) throw Error("Router current registry changed during collection");
+  return { sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,
+    sourceProcess: state.metadata["router-live-owner"],
+    configurationSha256: await routerConfiguration(options, state.generations, proxyBaseUrl) };
 }

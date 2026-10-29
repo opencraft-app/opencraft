@@ -40,9 +40,10 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     executionUid?: number; executionGid?: number; runtimeParentDirectory?: string; socketParentDirectory?: string;
     now?: () => number;
     nativeHistoryFailures?: NativeHistoryFailures;
+    maintenanceFile?: string;
   }) {
     this.registry = new CodexGenerationRegistry(options.directory);
-    try { this.owner = new CodexRouterOwner(this.registry); }
+    try { this.owner = new CodexRouterOwner(this.registry, options.maintenanceFile); }
     catch (error) { this.registry.close(); throw error; }
     const previous = rpcRecord(this.registry.metadata("retirement-fences"));
     if (this.owner.isOpen()) this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
