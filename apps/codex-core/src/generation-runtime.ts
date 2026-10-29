@@ -100,7 +100,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       const replacement = !preserveRetiredPayload && comparison !== null && comparison >= 0 ? active : generation;
       const receipt = await this.options.replaceRetiredHome(generation, replacement, this.registry.durableThreadIds(id));
       this.registry.setMetadata(`cold-replacement:${id}`, { version: 1, at: this.now(), receipt });
-      generation = this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node });
+      generation = this.registry.replaceRetired(id, { executable: replacement.executable, bundle: replacement.bundle, node: replacement.node, nativeLauncher: replacement.nativeLauncher });
     }
     const health = await this.options.supervisor.start(generation);
     if (await realpath(health.dataDirectory) !== await realpath(this.options.dataDirectory) || health.proxyBaseUrl !== this.options.proxyBaseUrl) throw new Error("Generation account Core identity mismatch");

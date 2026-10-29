@@ -121,3 +121,11 @@ handshake must retire that socket before retry; raw router restart is not a fenc
 The full-stack parent plan remains blocked pending other owners and compatibility
 combinations. Router-specific verification extends the existing isolated real-CLI
 drill with `OPENCRAFT_DRILL_ROUTER_HANDOFF=1`.
+
+Packaged CLIs that retain a Node launcher declare `nativeLauncher` with the fixed
+JavaScript entrypoint and native executable. Adoption verifies the APP's configured
+CLI, launcher Node and arguments, exactly one native child, UID/GID, process start
+identities and artifact digests. These artifacts join the cold configuration proof.
+A missing, replaced or additional child fails closed; retirement also checks that
+both the launcher and native child have exited. Direct executable generations keep
+their existing identity path.
