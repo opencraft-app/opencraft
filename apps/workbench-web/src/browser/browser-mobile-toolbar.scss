@@ -6,12 +6,18 @@
   .app-shell-header-motion-host { display: none; }
 }
 
+.browser-panel[data-mobile-browser='true'],
+.thread-composer-overlay-host[data-mobile-browser='true'] {
+  --browser-mobile-control: max(44px, var(--size-control-hit-min));
+  // One control row, its padding/border, bottom gap and separation above it.
+  // The guest and the body-level Composer consume the same dock allocation.
+  --browser-mobile-dock-height: calc(var(--browser-mobile-control) + var(--spacing) * 5 + var(--width-composer-rail-border) * 2);
+}
+
 .browser-panel[data-mobile-browser='true'] {
   position: relative;
-  --browser-mobile-control: max(44px, var(--size-control-hit-min));
   // The Shell row (and body portals measured from it) already excludes the
   // device bottom inset. Panel controls retain only their ordinary spacing.
-  --browser-mobile-dock-height: calc(var(--browser-mobile-control) * 2 + var(--spacing) * 5);
   .browser-viewport-slot { margin-bottom: var(--browser-mobile-dock-height); }
   .browser-device-toolbar { flex-wrap: wrap; height: auto; min-height: var(--browser-mobile-control); }
 }
@@ -21,33 +27,36 @@
   left: max(calc(var(--spacing) * 3), var(--safe-layout-inset-left, env(safe-area-inset-left, 0px)));
   right: max(calc(var(--spacing) * 3), var(--safe-layout-inset-right, env(safe-area-inset-right, 0px)));
   z-index: 2;
-  display: grid;
-  gap: calc(var(--spacing) * 2);
+  min-width: 0;
   .browser-toolbar-button {
+    flex: 0 0 var(--browser-mobile-control);
     width: var(--browser-mobile-control); height: var(--browser-mobile-control);
     border-radius: var(--radius-full); color: var(--color-text-secondary);
     > svg { width: 21px; height: 21px; }
   }
-  .browser-toolbar-button:has(> span):not(.browser-mobile-dock__tabs) {
-    display: flex; gap: calc(var(--spacing) * 2); width: auto; padding-inline: calc(var(--spacing) * 2);
-    @include typography.role(control-compact);
+  .browser-toolbar-button[aria-pressed='true'] {
+    color: var(--color-text-accent);
+    background: var(--color-background-navigation-current);
   }
 }
-.browser-mobile-dock__address, .browser-mobile-dock__actions {
+.browser-mobile-dock__address {
   @include material.surface;
-  display: flex; min-width: 0; align-items: center;
+  display: flex; min-width: 0; align-items: center; margin: 0;
   padding: calc(var(--spacing) * .5); border-radius: var(--radius-composer-newera);
   border: var(--width-composer-rail-border) solid var(--color-border-composer-newera);
 }
-.browser-mobile-dock__actions { justify-content: space-around; }
+.browser-mobile-dock__actions { display: flex; flex: none; align-items: center; }
+// Local address editing uses the keyboard's Go action. Remote-page keyboard
+// visibility never hides the dedicated browser controls.
+.browser-mobile-dock[data-address-editing='true'] .browser-mobile-dock__actions { display: none; }
 .browser-mobile-dock__location {
   display: flex; min-width: 0; flex: 1; gap: var(--spacing); align-items: center;
   color: var(--color-text-tertiary);
   > svg { flex: none; }
   input {
     width: 100%; min-width: 0; min-height: 44px; border: 0; outline: 0; padding: 0;
-    background: transparent; color: var(--color-text); text-align: center;
-    font-size: 16px;
+    background: transparent; color: var(--color-text); text-align: center; text-overflow: ellipsis;
+    @include typography.role(mobile-input);
     &:focus { text-align: start; }
   }
 }
@@ -68,7 +77,7 @@
   }
   &__search {
     width: 100%; padding: calc(var(--spacing) * 3); border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-full); background: var(--color-background-input); color: var(--color-text); font-size: 16px;
+    border-radius: var(--radius-full); background: var(--color-background-input); color: var(--color-text); @include typography.role(mobile-input);
   }
   &__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--spacing) * 4); overflow-y: auto; min-height: 0; padding: var(--spacing); }
   &__utilities {
@@ -87,29 +96,14 @@
   &--new { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: calc(var(--spacing) * 3); min-height: 190px; padding: calc(var(--spacing) * 3); border-style: dashed; color: var(--color-text-secondary); @include typography.role(control-compact); }
 }
 
-// Preserve the same editor node, history renderer and body-level guest plane.
+// Preserve the original two surfaces: the recent turn behind the unchanged
+// Composer. Shell owns safe-area/keyboard contraction; this only reserves dock.
 .thread-composer-overlay-host[data-mobile-browser='true'] {
-  .thread-composer-overlay__padding { padding-inline: max(calc(var(--spacing) * 3), env(safe-area-inset-left, 0px)) max(calc(var(--spacing) * 3), env(safe-area-inset-right, 0px)); padding-bottom: calc(var(--spacing) * 2); }
-  .thread-composer-overlay__content { max-width: 100%; }
-  .thread-composer-overlay__interactive {
-    @include material.surface;
-    border-radius: var(--radius-composer-newera); padding: calc(var(--spacing) * 3);
-    border: 1px solid var(--color-border-composer-newera);
-    max-height: calc(100cqh - var(--spacing) * 4); overflow-y: auto; overscroll-behavior: contain;
+  .thread-composer-overlay__padding {
+    padding-inline: max(calc(var(--spacing) * 3), env(safe-area-inset-left, 0px)) max(calc(var(--spacing) * 3), env(safe-area-inset-right, 0px));
+    padding-bottom: var(--browser-mobile-dock-height);
   }
-  .thread-composer-overlay__latest { position: relative; inset: auto; margin: calc(var(--spacing) * 3) 0; border: 0; background: transparent; box-shadow: none; padding: 0; }
+  .thread-composer-overlay__content { max-width: 100%; }
+  .thread-composer-overlay__latest { inset-inline: calc(var(--spacing) * 2); }
   .thread-composer-overlay__response { max-height: min(40cqh, var(--right-panel-composer-preview-max-height)); }
-  .thread-composer-overlay__summary { padding-inline: var(--spacing); }
-  .thread-composer-overlay__editor-slot { margin-top: calc(var(--spacing) * 3); }
-}
-.browser-agent-sheet__header {
-  display: flex; justify-content: space-between; align-items: center;
-  > span { display: flex; gap: calc(var(--spacing) * 2); align-items: center; @include typography.role(panel-title); }
-  > button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--radius-full); color: var(--color-text-secondary); background: var(--color-background-button-tertiary); }
-}
-.browser-agent-sheet__context { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-text-secondary); @include typography.role(metadata); }
-html[data-timeline-keyboard-open='true'] {
-  .browser-mobile-dock__actions { display: none; }
-  .browser-panel[data-mobile-browser='true'] { --browser-mobile-dock-height: calc(var(--browser-mobile-control) + var(--spacing) * 3); }
-  .thread-composer-overlay-host[data-mobile-browser='true'] .thread-composer-overlay__padding { padding-bottom: calc(var(--spacing) * 2); }
 }

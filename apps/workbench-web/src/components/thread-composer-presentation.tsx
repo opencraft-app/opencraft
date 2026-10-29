@@ -62,6 +62,7 @@ export function FloatingComposerToggle({ activeTabId, label }: {
   activeTabId: string;
   label?: string;
 }) {
+  const intl = useIntl();
   const { store, shown } = useFloatingComposerControls(activeTabId);
   const reduced = Boolean(useReducedMotion());
   const shell = useShellPresentation();
@@ -72,7 +73,7 @@ export function FloatingComposerToggle({ activeTabId, label }: {
     <button
       type="button"
       className="browser-toolbar-button"
-      aria-label={toggleLabel}
+      aria-label={mobile ? intl.formatMessage({ id: 'browser.agent.title', defaultMessage: 'Agent' }) : toggleLabel}
       title={toggleLabel}
       aria-pressed={shown}
       onClick={() => {
@@ -124,7 +125,6 @@ export function ThreadComposerPresentation({
   documentContext?: ConversationDocumentContextValue;
   forceExpanded?: boolean;
 }) {
-  const intl = useIntl();
   const newera = useTouchBrowserLayout();
   const shell = useShellPresentation();
   const shellAnchor = useContext(ComposerOverlayAnchorContext);
@@ -307,7 +307,7 @@ export function ThreadComposerPresentation({
       );
       host.current?.style.setProperty(
         "--right-panel-composer-preview-max-height",
-        floating
+        floating && !mobileBrowser
           ? "22.5rem"
           : `max(0px, calc(${previewSpace}px - var(--min-height-workspace-tool-visible)))`
       );
@@ -346,7 +346,7 @@ export function ThreadComposerPresentation({
       element.style.removeProperty("--right-panel-composer-overlay-height");
       element.style.removeProperty("--right-panel-composer-overlay-reserve");
     };
-  }, [overlay, shellAnchor, floating, view.mounted, view.handles, Boolean(latest && documentContext)]);
+  }, [overlay, shellAnchor, floating, mobileBrowser, view.mounted, view.handles, Boolean(latest && documentContext)]);
   useEffect(() => {
     if (!overlay || !view.peeked || !page) return;
     return browser?.surfaces.trackPointerNearBottom?.(
@@ -567,12 +567,6 @@ export function ThreadComposerPresentation({
                           event.preventDefault();
                       }}
                     >
-                      {mobileBrowser ? <header className="browser-agent-sheet__header">
-                        <span><MessageSquare size={18} />{intl.formatMessage({ id: 'browser.agent.title', defaultMessage: 'Agent' })}</span>
-                        <button type="button" aria-label={intl.formatMessage({ id: 'browser.agent.close', defaultMessage: 'Close Agent' })}
-                          onClick={() => hide(true)}><ChevronDown size={19} /></button>
-                      </header> : null}
-                      {mobileBrowser && page ? <div className="browser-agent-sheet__context">{page.title}</div> : null}
                       {latest && documentContext ? (
                         <div
                           ref={latestSurface}

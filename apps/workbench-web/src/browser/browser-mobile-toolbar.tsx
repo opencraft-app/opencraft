@@ -1,7 +1,7 @@
 import './browser-mobile-toolbar.scss';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BrowserPageSnapshot, BrowserTabSnapshot } from '@opencraft/browser-core';
-import { AddIcon, ChevronLeftIcon, CloseIcon, ExternalLinkIcon, GlobeIcon, MoreIcon, RefreshIcon, SidebarLayoutIcon, SquareIcon } from '@opencraft/design-system-web/action-icons';
+import { AddIcon, ChevronLeftIcon, CloseIcon, ExternalLinkIcon, MoreIcon, RefreshIcon, SidebarLayoutIcon, SquareIcon } from '@opencraft/design-system-web/action-icons';
 import { useIntl } from '@opencraft/i18n/react';
 import { ModalSurface } from '../components/modal/modal-surface';
 import { SafeLayout } from '@opencraft/design-system-web/safe-layout';
@@ -15,7 +15,7 @@ import { BrowserResourcesButton } from './browser-resources-button';
 import { useOptionalBrowserRuntime, useWebBrowserPageRuntime, useBrowserWorkbench } from './browser-runtime-context';
 
 function domain(url: string | null) {
-  try { return url ? new URL(url).host : ''; } catch { return url ?? ''; }
+  try { return url ? new URL(url).host.replace(/^www\./, '') : ''; } catch { return url ?? ''; }
 }
 
 /** Mobile chrome consumes the same navigation, resource and editing owners. */
@@ -52,13 +52,12 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
   const openSheet = (next: 'tabs' | 'more') => { hideAgent(); setFilter(''); setError(null); setSheet(next); };
   return <>
     <div className="browser-mobile-dock" data-address-editing={editing}>
-      <form className="browser-mobile-dock__address" onSubmit={event => {
+      <form className="browser-mobile-dock__address" aria-label={text({ id: 'browser.mobile.navigation', defaultMessage: 'Browser controls' })} onSubmit={event => {
         if (submit(event)) input.current?.blur();
       }}>
         <button type="button" className="browser-toolbar-button" disabled={!page.navigation.canGoBack}
           aria-label={text({ id: 'navigation.back', defaultMessage: 'Back' })} onClick={() => pages.goBack(page.id)}><ChevronLeftIcon size={23} /></button>
         <label className="browser-mobile-dock__location">
-          <GlobeIcon size={15} />
           <input ref={input} aria-label={text({ id: 'browser.address', defaultMessage: 'Web address' })} autoCapitalize="none" autoCorrect="off"
             spellCheck={false} inputMode="url" enterKeyHint="go" value={editing ? address : domain(page.navigation.currentUrl)}
             placeholder={text({ id: 'browser.address.placeholder', defaultMessage: 'Enter a web address' })}
@@ -66,15 +65,8 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
             onBlur={() => setEditing(false)} onChange={event => setAddress(event.currentTarget.value)}
             onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); input.current?.blur(); } }} />
         </label>
-        <button type="button" className="browser-toolbar-button" aria-label={text(page.navigation.isLoading ? { id: 'browser.stop', defaultMessage: 'Stop' } : { id: 'browser.reload', defaultMessage: 'Reload' })}
-          onClick={() => page.navigation.isLoading ? pages.stop(page.id) : pages.reload(page.id)}>
-          {page.navigation.isLoading ? <CloseIcon size={21} /> : <RefreshIcon size={21} />}
-        </button>
-      </form>
       <nav className="browser-mobile-dock__actions" aria-label={text({ id: 'browser.mobile.navigation', defaultMessage: 'Browser controls' })}>
-        <button type="button" className="browser-toolbar-button" aria-label={text({ id: 'browser.mobile.workspace', defaultMessage: 'Back to workspace' })}
-          onClick={() => { hideAgent(); shell?.toggleRightPanel(); }}><SidebarLayoutIcon size={21} /></button>
-        <FloatingComposerToggle activeTabId={panelTabId} label={text({ id: 'browser.agent.title', defaultMessage: 'Agent' })} />
+        <FloatingComposerToggle activeTabId={panelTabId} />
         <BrowserKeyboardButton surfaces={runtime?.surfaces} pageId={page.id} beforeShow={hideAgent} />
         {navigation ? <button type="button" className="browser-toolbar-button browser-mobile-dock__tabs"
           aria-label={text({ id: 'panel.tabs', defaultMessage: 'Tabs' })} aria-haspopup="dialog" onClick={() => openSheet('tabs')}>
@@ -83,6 +75,7 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
         <button type="button" className="browser-toolbar-button" aria-label={text({ id: 'browser.mobile.more', defaultMessage: 'More browser actions' })}
           aria-haspopup="dialog" onClick={() => openSheet('more')}><MoreIcon size={23} /></button>
       </nav>
+      </form>
     </div>
     {sheet ? <ModalSurface label={sheet === 'tabs' ? text({ id: 'panel.tabs', defaultMessage: 'Tabs' }) : text({ id: 'browser.mobile.more', defaultMessage: 'More browser actions' })}
       className={`browser-mobile-sheet browser-mobile-sheet--${sheet}`} presentation={sheet === 'tabs' ? 'fullscreen' : 'adaptive-sheet'}
@@ -109,6 +102,11 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
           </button> : null}
         </div>
       </> : <div className="browser-mobile-sheet__utilities">
+        <button type="button" onClick={() => run(() => { shell?.toggleRightPanel(); })}><SidebarLayoutIcon size={21} />{text({ id: 'browser.mobile.workspace', defaultMessage: 'Back to workspace' })}</button>
+        <button type="button" onClick={() => run(() => page.navigation.isLoading ? pages.stop(page.id) : pages.reload(page.id))}>
+          {page.navigation.isLoading ? <CloseIcon size={21} /> : <RefreshIcon size={21} />}
+          {text(page.navigation.isLoading ? { id: 'browser.stop', defaultMessage: 'Stop' } : { id: 'browser.reload', defaultMessage: 'Reload' })}
+        </button>
         <BrowserControlButton surfaces={runtime?.surfaces} pageId={page.id} showLabel />
         <BrowserResourcesButton surfaces={runtime?.surfaces} workbench={workbench} ownerId={tab.ownerId} showLabel />
         <button type="button" disabled={!page.navigation.canGoForward} onClick={() => run(() => { pages.goForward(page.id); })}>{text({ id: 'navigation.forward', defaultMessage: 'Forward' })}</button>

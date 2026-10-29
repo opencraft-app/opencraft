@@ -73,7 +73,11 @@ status-excluded `innerHeight`, `clientHeight` or VisualViewport reports must not
 replace that resting extent. The existing viewport owner signals actual geometric
 contraction separately from keyboard focus; only the contracted Shell uses its
 available height. Pinch alone does not contract the canvas, and blur does not end
-an observed contraction. No second measured-canvas variable is introduced.
+an observed contraction. No second measured-canvas variable is introduced. The row's interactive
+content is also capped by CSS `100dvh`, so an oversized `100vh` paint canvas
+cannot move the Composer beyond the dynamic window. This CSS cap does not
+reinterpret status-excluded client/visual reports, add inset compensation, or
+replace the viewport port's keyboard contraction.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
 document roots or main Shell. SafeLayout allocates the main content bottom once;
 independent drawer action surfaces keep their own allocation. Do not add a
@@ -199,7 +203,11 @@ source-item key as message projections.
 
 ## Floating material ownership
 
-Newera narrow full-width browser chrome groups address/navigation at the bottom.
+Touch narrow full-width browser chrome combines back, a flexible address field,
+the icon-only Agent toggle, independent remote keyboard, tabs and more in one
+bottom material rail. Reload/stop and workspace return live in more. Address
+editing expands the same input in place; a remote software keyboard does not
+hide its keyboard control. Mouse presentation retains its desktop toolbar.
 The active browser supplies the mobile chrome projection; Shell retains drawer,
 safe-area and visual viewport ownership. Its duplicate top controls are hidden
 only while that active mobile browser provides workspace, tab and utility
@@ -207,7 +215,16 @@ actions. Native Safari controls remain outside the document's ownership.
 The dock reserves a stable content area; software-keyboard state reuses the
 existing viewport projection rather than adding another resize observer.
 Agent is on demand in this presentation, retaining the original Composer node,
-draft and conversation owner. Overview dialogs use the shared modal adapter.
+draft, footer and conversation owner. The existing latest-turn renderer floats
+as a narrower separate card behind that Composer, including process and reply
+content; there is no enclosing Agent sheet or extra heading. Both stay inside
+the protected Shell extent and above the rail using the same dock allocation.
+The preview owns bounded scrolling; the Composer remains in front and the rail
+remains reachable. Overview dialogs use the shared modal adapter.
+Verification: `scripts/smoke/shell/smoke-workspace-presentation.ts` covers real
+Shell/Browser/Composer touch consumers, rail capacity, keyboard/safe-area
+projection, draft/editor/page identity and mouse presentation. System keyboard
+behavior on a physical phone remains device acceptance.
 
 Shared floating surfaces consume design-system `material.web` and theme-owned
 neutral frost roles. Backdrop color may show softly through the panel; a brand
@@ -292,10 +309,12 @@ ordinary prop and width changes preserve drafts and mount identity. Exit presenc
 immediately becomes inert, aria-hidden and pointer-disabled. Desktop entrance
 translates the surface by -8px while its header counter-translates, then settles;
 exit translation keeps opacity. Reduced motion skips settling. Mobile depth
-consumes the same Shell progress, clamps 90–100% scale and 45–100% opacity, and
-adds no separate exit animation. Its stationary wash remains a sibling outside
-the scaled layer, consumes the same progress from 65% to zero opacity, and stays
-transparent in reduced motion; Shell CSS retains material and hit-test ownership.
+consumes the same Shell progress and clamps 90–100% scale, with no opacity
+animation on the ancestor of glass controls and no separate exit animation.
+Its stationary wash remains a sibling outside the scaled layer, consumes the
+same progress from 65% to zero opacity, and stays transparent in reduced motion;
+Shell CSS retains material and hit-test ownership. This separation keeps
+`backdrop-filter` descendants in a stable opacity/compositing context.
 Existing resize transactions own bounds,
 keyboard/default width, commits and cancellation; the floating resize port cannot
 collapse the sidebar.
@@ -526,3 +545,24 @@ failures may try one fresh resource graph; even a newer reported build must not 
 an already recovered document. Persistent failures retain the explicit retry surface. This does not
 change viewport geometry or turn storage/evaluation failures into resource retries. The serving
 contract is documented in [Web resource recovery](../../docs/web-local-deployment.md#保留本地数据的模块资源恢复).
+
+
+## Anchored footer surfaces in embedded presentations
+
+Account popovers and anonymous sign-in dropdowns consume
+`useWorkbenchPresentationRoot()` rather than the Sidecar footer. Full-page
+Workbench uses the document portal; embedded Workbench keeps overlays in its
+supplied local presentation root so style and focus stay within the presentation.
+The physical overlay must escape sidebar clipping and material ancestors while
+Radix measures the trigger and applies viewport collisions. This changes no Host,
+account, navigation preference or draft owner. The application drawer retains its
+local layout. See [footer overlay topology](navigation-and-sidebar.md#footer-overlay-topology)
+for consumer hit-testing and resize/focus coverage.
+
+Compact destination rails adapt the same shared NavigationList/NavigationItem
+used for labeled destinations. Compact list gutter and button geometry belong
+to that shared owner; Shell supplies track placement and density. Footer Settings
+and account triggers use icon content layout on the compact rail, so an avatar
+does not add row padding to the hit box. Moving to the labeled mobile drawer
+retains the action identity, portal, current route and original conversation state.
+See [navigation and sidebar](navigation-and-sidebar.md#consistent-compact-destination-controls).
