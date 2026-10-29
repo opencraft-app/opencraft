@@ -4,7 +4,7 @@ export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "
 export const COLLABORATION_METHOD = "opencraft/collaboration";
 /** Each addition is negotiated independently; version alone grants no capability. */
 export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
-  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true } as const;
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true } as const;
 export interface ConversationServer {
   serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
   capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean };
@@ -26,6 +26,13 @@ export interface ConversationHistory {
 export interface ConversationDirectory {
   instanceId: string; actor: { id: string; kind: 'human' | 'session'; generation: number }; servers: ConversationServer[];
 }
+export interface ConversationReceipt {
+  ref: ConversationRef; operationKey: string; messageId: string; requestId: string;
+  mode: 'queue' | 'steer'; deliveryState: OrchestrationDeliveryStatus;
+  targetTurnId: string | null; observedAt: number; taskOutcome: 'unknown';
+}
+export type ConversationLookup = { found: true; receipt: ConversationReceipt } |
+  { found: false; ref: ConversationRef; operationKey: string; deliveryState: 'unknown'; observedAt: number; taskOutcome: 'unknown' };
 export interface CollaborationReadCommandMap {
   servers: { request: { action: 'servers' }; result: ConversationDirectory };
   metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };

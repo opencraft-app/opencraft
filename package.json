@@ -294,7 +294,7 @@
     "test:model-policy": "tsx --test tests/execution/model-usage-policy.test.ts",
     "test:account-environment": "tsx --test tests/identity/account-environment.test.ts",
     "cli": "tsx apps/opencraft-cli/src/main.ts",
-    "test:cli": "node --import tsx --test tests/chat/conversation-cli-read.test.ts"
+    "test:cli": "node --import tsx --test tests/chat/conversation-cli-read.test.ts tests/chat/conversation-cli-send.test.ts tests/chat/conversation-cli-input.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",

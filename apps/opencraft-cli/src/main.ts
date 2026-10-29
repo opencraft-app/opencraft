@@ -5,13 +5,13 @@ import { dirname, join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { CollaborationClient, UnsupportedCollaborationCapability } from '@opencraft/appserver-client/collaboration';
+import { CollaborationClient } from '@opencraft/appserver-client/collaboration';
 import { parseConversationRef, type ConversationRef } from '@opencraft/appserver-protocol/collaboration';
 import { CliSshTransport } from './ssh';
+import { CliError, classify } from './errors';
+import { prepareSend, sendMessage } from './send';
+export { CliError, classify } from './errors';
 
-export class CliError extends Error {
-  constructor(readonly exitCode: number, readonly code: string, message: string, readonly retryable = false, readonly details?: unknown) { super(message); }
-}
 interface Profile { sshAlias: string; instanceId: string; defaultServer?: string; sshConfig?: string }
 interface Connections { schemaVersion: 1; defaultConnection?: string; connections: Record<string, Profile> }
 const help = `Usage: opencraft <command> [options]
@@ -21,9 +21,15 @@ const help = `Usage: opencraft <command> [options]
   thread list [--cursor <cursor>] [--include-title]
   thread show <ref-or-link>
   thread log <ref-or-link> [--cursor <cursor>]
+  thread send <ref-or-link> [text] [--mode queue] --key <key>
+    [--message-file <file|->] [--wait delivered --timeout 30s]
+  thread show <ref-or-link> --delivery <request-id>
+  thread lookup <ref-or-link> --key <key>
 Options: --connection <name> --server <id> --json --help
 SSH uses your SSH config, agent/key and known_hosts.
 show/list return metadata. log reads one bounded page.
+Non-interactive sends need --key. Pipe stdin or pass --message-file -.
+Accepted is not completed. After disconnection, use lookup; do not resend.
 `;
 const configPath = () => process.env.OPENCRAFT_CONFIG ?? join(homedir(), '.config/opencraft/connections.json');
 async function load(): Promise<Connections> {
@@ -58,21 +64,6 @@ function reference(value: string | undefined, serverId: string | undefined): Con
   if (value.includes('://') || !serverId || !value.trim() || /[\s\x00-\x1f]/u.test(value)) throw new CliError(2, 'INVALID_REFERENCE', 'Give a canonical ref or --server.');
   return { serverId, threadId: value };
 }
-export function classify(error: unknown): CliError {
-  if (error instanceof CliError) return error;
-  if (error instanceof UnsupportedCollaborationCapability) return new CliError(6, error.code, 'Host lacks ' + error.capability + '.');
-  const fault = error as { code?: string; data?: { code?: string; status?: number }; message?: string; cause?: { message?: string } };
-  const code = fault.data?.code, status = fault.data?.status;
-  if (code === 'unsupported_capability') return new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks this capability.');
-  if (status === 400) return new CliError(2, (code ?? 'invalid_input').toUpperCase(), 'Invalid input.');
-  if (status === 401 || status === 403) return new CliError(4, status === 401 ? 'AUTH_REQUIRED' : 'FORBIDDEN', 'Check your account access.');
-  if (status === 404) return new CliError(3, 'UNAVAILABLE', 'Resource unavailable.');
-  if (status === 409) return new CliError(5, (code ?? 'conflict').toUpperCase(), code === 'history_changed' ? 'History changed. Start a new page.' : 'State conflict.');
-  if (status === 503) return new CliError(8, 'SERVER_UNAVAILABLE', 'Server operation failed.', true);
-  if (fault.code === 'TIMEOUT') return new CliError(7, 'TIMEOUT', 'Request timed out.', true);
-  if (fault.message?.includes('SSH_AUTH_REQUIRED') || fault.cause?.message?.includes('SSH_AUTH_REQUIRED')) return new CliError(4, 'AUTH_REQUIRED', 'Configure your employee SSH access.');
-  return new CliError(7, 'CONNECTION_UNAVAILABLE', 'Connection unavailable.', true);
-}
 export async function run(argv: string[]) {
   let parsed;
   try {
@@ -81,6 +72,8 @@ export async function run(argv: string[]) {
       cursor: { type: 'string' }, 'include-title': { type: 'boolean' }, 'metadata-only': { type: 'boolean' },
       ssh: { type: 'string' }, instance: { type: 'string' }, default: { type: 'boolean' }, 'default-server': { type: 'string' },
       'ssh-config': { type: 'string' },
+      mode: { type: 'string' }, key: { type: 'string' }, 'message-file': { type: 'string' },
+      wait: { type: 'string' }, timeout: { type: 'string' }, delivery: { type: 'string' }, 'delivery-key': { type: 'string' },
     } });
   } catch { throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.'); }
   const optionNames = parsed.tokens.filter(token => token.kind === 'option').map(token => token.name);
@@ -88,11 +81,17 @@ export async function run(argv: string[]) {
   const options = parsed.values, args = parsed.positionals;
   if (options.help || args.length === 0) return { help };
   const command = args.slice(0, args[0] === 'status' ? 1 : 2).join(' ');
-  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3 };
+  const counts: Record<string, number> = { status: 1, 'server list': 2, 'connection add': 3, 'thread list': 2, 'thread show': 3, 'thread log': 3,
+    'thread send': args.length === 4 ? 4 : 3, 'thread lookup': 3 };
   if (counts[command] !== args.length) throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
   const allowed = ['json', 'connection', 'server', ...(command === 'connection add' ? ['ssh','ssh-config','instance','default','default-server'] : []),
-    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread list' ? ['include-title','metadata-only'] : [])];
+    ...(['thread list','thread log'].includes(command) ? ['cursor'] : []), ...(command === 'thread list' ? ['include-title','metadata-only'] : []),
+    ...(command === 'thread send' ? ['mode','key','message-file','wait','timeout'] : []),
+    ...(command === 'thread lookup' ? ['key'] : []), ...(command === 'thread show' ? ['delivery','delivery-key'] : [])];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new CliError(2, 'INVALID_ARGUMENTS', 'Option is not valid for this command.');
+  if (options.delivery !== undefined && options['delivery-key'] !== undefined) throw new CliError(2, 'INVALID_ARGUMENTS', 'Choose --delivery or --delivery-key.');
+  if (command === 'thread lookup' && !options.key) throw new CliError(2, 'INVALID_ARGUMENTS', 'Lookup needs --key.');
+  const sendInput = command === 'thread send' ? await prepareSend(args[3], options['message-file'], options.key, options.mode, options.wait, options.timeout) : null;
   const config = await load();
   let profile: Profile, selected: string, selectionSource: string;
   const adding = args[0] === 'connection' && args[1] === 'add';
@@ -138,7 +137,17 @@ export async function run(argv: string[]) {
       actor: directory.actor, server, connectionState: 'ready' };
     if (args[0] !== 'thread') throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
     if (args[1] === 'list' && args.length === 2) return await client.discover(server.serverId, options.cursor, options['include-title']);
-    if (args[1] === 'show' && args.length === 3) return await client.metadata(uriRef!);
+    if (args[1] === 'show' && args.length === 3) {
+      if (options.delivery !== undefined) return await client.delivery(uriRef!, options.delivery);
+      if (options['delivery-key'] !== undefined) return await client.lookup(uriRef!, options['delivery-key']);
+      return await client.metadata(uriRef!);
+    }
+    if (args[1] === 'lookup') return await client.lookup(uriRef!, options.key!);
+    if (args[1] === 'send' && sendInput) {
+      if (server.capabilities.queue !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks queue.');
+      return await sendMessage(client, uriRef!, sendInput, { instanceId: directory.instanceId, actorId: directory.actor.id,
+        recordsDirectory: join(dirname(configPath()), 'operations') });
+    }
     if (args[1] === 'log' && args.length === 3) {
       if (server.capabilities.boundedRead !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks bounded history for this engine.');
       return await client.read(uriRef!, options.cursor);

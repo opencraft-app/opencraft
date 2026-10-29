@@ -135,6 +135,16 @@ after revocation.
 
 ## Supported boundary and verification
 
+The CLI's `lookup` action reads the existing Actor/key ledger, reauthorizes the
+canonical conversation, and returns an allowlisted receipt without reading
+message content or triggering the execution pump. Missing keys remain unknown:
+an earlier in-flight request may still commit. `delivery` with `metadataOnly`
+uses the same receipt projection and is negotiated as `deliveryMetadata`.
+Legacy delivery consumers retain their original response. CLI sends issue one
+mutation; disconnections retain the original key and never replay the send.
+Waiting for delivery polls only receipts and recognizes submitted/injected as
+engine acceptance, while taskOutcome remains unknown.
+
 Configured local Codex and enabled Pi/DSH targets can be discovered, read and
 receive messages through the shared core. Actor run bindings and source-tool
 delegation remain on the primary Codex authority; target routing does not extend
