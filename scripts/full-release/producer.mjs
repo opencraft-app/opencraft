@@ -10,6 +10,9 @@ import { createReadStream } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fullComponents, prepareFullMetadata } from './components.mjs';
 const exec = promisify(execFile);
+function timing(name, started) {
+  if (process.env.OPENCRAFT_PACKAGE_TIMINGS === '1') console.error(`[package-timing] ${name} ${(performance.now() - started).toFixed(0)}ms`);
+}
 async function canonicalizeStagedModes(root) {
   // The staging tree is public payload. npm preserves restrictive modes rather
   // than repairing them, including release files created under umask 0077.
@@ -26,14 +29,17 @@ async function canonicalizeStagedModes(root) {
   }
 }
 export async function npmPack(root, directory, dryRun = false) {
+  const started = performance.now();
   await canonicalizeStagedModes(root);
   const { stdout } = await exec('npm', ['pack', '--ignore-scripts', '--json', '--workspaces=false', '--pack-destination', directory,
     ...(dryRun ? ['--dry-run'] : [])], { cwd: root, maxBuffer: 32 * 1024 ** 2 });
+  timing(dryRun ? 'npm-pack-dry-run' : 'npm-pack', started);
   return parseNpmPackResult(JSON.parse(stdout));
 }
 // Use the same installed npm's inventory rules (files, bundled dependencies,
 // ignores and mandatory files), without producing a preliminary gzip stream.
 export async function stagedInventory(root) {
+  const started = performance.now();
   await canonicalizeStagedModes(root);
   const { stdout } = await exec('which', ['npm']);
   const npmCli = await realpath(stdout.trim());
@@ -55,6 +61,7 @@ export async function stagedInventory(root) {
     if (bytes !== info.size) throw new Error('Full release staged file changed during inventory');
     files.push([name, hash.digest('hex'), bytes, info.mode & 0o111 ? '0755' : '0644']);
   }
+  timing('staged-inventory', started);
   return files.sort((a, b) => Buffer.compare(Buffer.from(a[0]), Buffer.from(b[0])));
 }
 export async function sealPackage({ packageRoot, directory, template, keyPath, keyId, trustedKeys = null, identityDirectory = join(dirname(keyPath), 'full-release-identities') }) {
@@ -121,7 +128,9 @@ export async function sealPackage({ packageRoot, directory, template, keyPath, k
     const packed = await npmPack(packageRoot, scratch);
     // The final archive is also the inspection artifact: no second compressor.
     const dryRun = packed;
+    const verificationStarted = performance.now();
     const verified = await verifyFullArchive(join(scratch, packed.filename), trust, { preflight: preflightFor(template) });
+    timing('verify-full-archive', verificationStarted);
     if (binding?.integrity && binding.integrity !== packed.integrity) throw new Error('Full release archive identity changed');
     const finalIdentity = { ...identity, integrity: packed.integrity, archive: join(directory, packed.filename), buildId: pkg.opencraftWeb.buildId };
     const handle = await open(identityPath + '.tmp', 'w', 0o600);
