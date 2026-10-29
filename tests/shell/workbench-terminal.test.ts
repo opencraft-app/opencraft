@@ -73,7 +73,8 @@ test("terminal contributes a direct shortcut and a type for the shared panel pic
   const runtime = await createWorkbenchPanelReactRuntime();
   const registry = new WorkbenchTerminalSessionRegistry(() => { throw new Error("No host required for contribution test"); });
   const calls: string[] = [];
-  registry.open = options => { calls.push(`new:${options.hostId}:${options.cwd}`); return "new"; };
+  const scopes: unknown[] = [];
+  registry.open = options => { scopes.push({ threadId: options.threadId, projectId: options.projectId }); calls.push(`new:${options.hostId}:${options.cwd}`); return "new"; };
   registry.restore = async hostId => { calls.push(`restore:${hostId}`); return ["restored"]; };
   try {
     await runtime.install(createTerminalWorkbenchPanelPlugin(registry));
@@ -83,10 +84,11 @@ test("terminal contributes a direct shortcut and a type for the shared panel pic
     assert.equal(actions[0]?.creationLabel, "Terminal");
     assert.equal("tabKind" in actions[0]!, false);
     assert.equal("items" in actions[0]!, false);
-    const context = { hostId: "local", ownerId: "view", resourceOwnerId: "resource", cwd: "/workspace" };
+    const context = { hostId: "local", ownerId: "view", resourceOwnerId: "resource", cwd: "/workspace", threadId: null, projectId: "draft-project" };
     await actions[0]!.run(context);
     await actions[0]!.run(context);
     assert.deepEqual(calls, ["new:local:/workspace", "new:local:/workspace"]);
+    assert.deepEqual(scopes, [{ threadId: null, projectId: "draft-project" }, { threadId: null, projectId: "draft-project" }]);
   } finally { await runtime.dispose(); await registry.dispose(); }
 });
 

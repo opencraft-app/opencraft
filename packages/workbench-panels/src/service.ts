@@ -22,6 +22,8 @@ export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unk
 }
 
 export interface PanelToolbarActionContext {
+  readonly threadId?: string | null;
+  readonly projectId?: string | null;
   readonly ownerId: string;
   readonly resourceOwnerId: string;
   readonly hostId: string;

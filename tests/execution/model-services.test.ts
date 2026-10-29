@@ -9,6 +9,8 @@ import { ModelServicesController } from "../../plugins/builtin-agents/src/model-
 import { createModelServicesView } from "../../plugins/builtin-agents/src/model-services/view";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugins/builtin-agents/src/local-agent-settings-service";
 
+const renderWithIntl = (element: React.ReactNode) => renderToStaticMarkup(createElement(IntlProvider, { locale: "zh-CN", messages }, element));
+
 function fixture(discovered: readonly { id: string; input?: readonly ("text" | "image")[]; reasoningEfforts?: false | Record<string, string> }[] = []) {
   const calls: { method: string; params: any }[] = [];
   let revision = 7, config: any = { baseURL: "https://example.invalid/v1", api: "openai-completions", apiKeyEnv: "TEST_REF", models: [{ id: "test-model", input: [] }] };
@@ -35,7 +37,7 @@ test("configured connections collapse without claiming a successful probe; dirty
   const f = fixture(); await f.service.refresh(); f.controller.select('test');
   const draft = f.controller.draft(f.provider); draft.credentialSet = true;
   const View = createModelServicesView(f.controller);
-  const render = () => renderToStaticMarkup(createElement(IntlProvider, { locale: "zh-CN", messages }, createElement(View, {} as any)));
+  const render = () => renderWithIntl(createElement(View, {} as any));
   assert.match(render(), /连接已配置/);
   assert.match(render(), /连接已配置 · 已启用/);
   f.provider.enabled = false;
@@ -164,7 +166,7 @@ test("model settings show discovered thinking levels beside the corresponding mo
   await f.service.refresh(); f.controller.select("test");
   await f.controller.fetchModels(f.provider);
   const View = createModelServicesView(f.controller);
-  const markup = renderToStaticMarkup(createElement(IntlProvider, { locale: "zh-CN", messages }, createElement(View, {} as any)));
+  const markup = renderWithIntl(createElement(View, {} as any));
   assert.match(markup, /思考档位：低、高、最高/u);
   assert.match(markup, /aria-label="模型操作：test-model"/u);
   f.controller.dispose(); f.service.dispose();
@@ -206,7 +208,7 @@ test("loading providers uses only an accessible in-place pending icon", () => {
   const controller = new ModelServicesController(service);
   void service.refresh();
   const View = createModelServicesView(controller);
-  const markup = renderToStaticMarkup(createElement(IntlProvider, { locale: "zh-CN", messages }, createElement(View, {} as any)));
+  const markup = renderWithIntl(createElement(View, {} as any));
   assert.match(markup, /model-services__pending/u);
   assert.match(markup, /role="status" aria-label="正在加载提供商"/u);
   assert.doesNotMatch(markup, />正在加载提供商/u);

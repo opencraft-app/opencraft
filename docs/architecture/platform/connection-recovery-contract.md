@@ -1093,8 +1093,15 @@ Direct trusted handle calls retain their ordinary writable-claim checks.
 These are different retirement outcomes: a forwarding operation already issued
 to the provider has an unknown remote result; an obsolete queued intent must not
 newly cross that provider boundary. Neither outcome automatically replays work.
-While its native owner and claim remain live, a queued frame retains normal FIFO
-ordering. Service-owned Host lifetime, Actor identity and execution ownership are
+While its native owner and claim remain live, a queued writable frame retains
+normal FIFO ordering. Independent `model/list` and `thread/list` requests bypass
+this writable queue: a provider send may await asynchronous Turn/tool preparation,
+which must not hold catalog discovery until that unrelated operation completes.
+Catalog forwarding still captures and revalidates the same claim/native admission,
+passes the same submission context and signal, and returns only its own ACK/error.
+This is concurrent execution of independent reads, with no cached response, retry
+or mutation reordering. Callers requiring read-after-write await the write RPC
+response before requesting its catalog. Service-owned Host lifetime, Actor identity and execution ownership are
 unchanged. Remote claim reclamation and Host state projection remain independent
 obligations, not consequences of ending this local forwarding wait.
 

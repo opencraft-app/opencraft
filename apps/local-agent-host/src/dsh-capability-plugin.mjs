@@ -1,3 +1,4 @@
+import { ExecutionEnvironmentRuntime } from "../../../scripts/execution-environment.ts";
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
 import { createBackgroundJobProofs } from "./dsh-background-jobs.mjs";
@@ -45,7 +46,9 @@ export async function apply(ctx, config) {
   if (checkpoints) for (const checkpoint of await checkpoints.list()) {
     generations.set(checkpoint.sourceSessionId, { logicalSessionId: checkpoint.logicalSessionId, generation: checkpoint.generation });
   }
-  registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId);
+  const environmentRuntime = config.environmentDataDirectory ? ExecutionEnvironmentRuntime.open(config.environmentDataDirectory) : undefined;
+  ctx.on("dispose", () => environmentRuntime?.close());
+  registerDshExecutionEnvironment(ctx, nativeId => generations.get(nativeId)?.logicalSessionId ?? nativeId, environmentRuntime);
   ctx.on("session/event", (session, event) => {
     if (nativeOwner && event.type === "turn/end") void ctx.sessions.flush(session)
       .then(() => nativeOwner.commitPrivateTurn(String(session.id ?? session.header.id),event.data.turn))

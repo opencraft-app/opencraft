@@ -17,6 +17,7 @@ import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
+import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -86,6 +87,7 @@ async function copyRuntimeModules(stageRoot) {
     await mkdir(dirname(target), { recursive: true });
     await cp(resolve(sourceBase, entry.from), target);
   }
+  await buildDshCapabilityPlugin(join(stageRoot, 'runtime/dsh/opencraft-capability-plugin.mjs'));
   await cp(join(repositoryRoot, "runtime/dsh/package.json"), join(stageRoot, "runtime/dsh/package.json"));
   await cp(join(repositoryRoot, "runtime/dsh/package-lock.json"), join(stageRoot, "runtime/dsh/package-lock.json"));
   await cp(join(repositoryRoot, "runtime/dsh/node_modules"), join(stageRoot, "runtime/dsh/node_modules"), {

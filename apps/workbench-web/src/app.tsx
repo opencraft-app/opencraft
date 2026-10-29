@@ -691,6 +691,8 @@ export function App({
       creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
     } : action);
   const panelToolbarContext: PanelToolbarActionContext = {
+    threadId: draft ? null : activeThreadId,
+    projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
     ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
     cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
       ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
