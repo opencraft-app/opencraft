@@ -260,7 +260,7 @@
     "test:file-preview": "tsx --test tests/resources/file-preview-core.test.ts tests/resources/structured-preview.test.ts tests/resources/office-legacy-word.test.ts",
     "smoke:office-preview": "tsx scripts/smoke/resources/smoke-office-preview.ts",
     "smoke:office-resources": "tsx scripts/smoke/resources/smoke-office-resources.ts",
-    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity",
+    "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity && npm run test:account-environment",
     "test:mcp-apps": "tsx --test tests/extensions/mcp-app-host.test.ts tests/extensions/mcp-app-builder.test.ts",
     "smoke:mcp-apps": "tsx scripts/smoke/extensions/smoke-mcp-app-host.ts",
     "smoke:host-composer-commands": "tsx scripts/smoke/execution/smoke-host-composer-commands.ts",
@@ -283,13 +283,14 @@
     "smoke:derived-history": "node --import tsx scripts/smoke/conversation/smoke-derived-history.ts",
     "test:client-resources": "tsx --test tests/storage/client-resources.test.ts",
     "test:git-identity": "tsx --test tests/identity/git-vault.test.ts tests/identity/git-identity-broker.test.ts tests/identity/git-identity-origin.test.ts",
-    "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node scripts/employee-git-vault-store.ts scripts/git-identity*.ts",
+    "typecheck:git-identity": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --types node scripts/employee-git-vault-store.ts scripts/git-identity*.ts scripts/account-environment*.ts",
     "test:agent-drivers": "tsx --test tests/execution/pi-orchestration-driver.test.ts tests/execution/acp-engine.test.ts tests/execution/acp-host-handoff.test.ts tests/execution/full-upgrade-generation.test.ts tests/execution/independent-acp-host.test.mjs tests/execution/agent-driver-transport.test.ts",
     "check:controls": "node scripts/check-control-ownership.mjs",
     "test:controls": "node --test tests/shell/control-ownership.test.mjs && tsc -p tests/tsconfig.controls.json",
     "smoke:controls": "tsx tests/shell/shared-controls.browser.ts",
     "smoke:settings-layout": "tsx tests/shell/settings-row-layout.browser.ts",
-    "smoke:disclosures": "tsx scripts/smoke/composer/smoke-disclosure-feedback.ts"
+    "smoke:disclosures": "tsx scripts/smoke/composer/smoke-disclosure-feedback.ts",
+    "test:account-environment": "tsx --test tests/identity/account-environment.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",

@@ -114,6 +114,17 @@ export class EmployeeGitVaultStore {
     if (record.credential !== null && (typeof record.credential !== 'string' || !record.credential || record.credential.length > 4096 || /[\r\n\0]/u.test(record.credential))) throw new GitVaultError('unavailable', 503);
     return { revision: record.revision, secret: record.credential as string | null };
   }
+  /** Internal encrypted document port. Consumers own their schema and namespace;
+   * this port is never exposed as an HTTP read operation. */
+  readDocument(account: string, namespace: string): { revision: number; document: unknown } {
+    if (!namespace.startsWith('document-')) throw new GitVaultError('invalid');
+    const record = this.readValue(account, namespace);
+    return { revision: record.revision, document: record.credential };
+  }
+  writeDocument(account: string, namespace: string, revision: number, document: unknown): void {
+    if (!namespace.startsWith('document-')) throw new GitVaultError('invalid');
+    this.writeValue(account, namespace, revision, document);
+  }
   writeSecret(account: string, service: string, revision: number, secret: string | null): { revision: number; configured: boolean } {
     if (secret !== null && (typeof secret !== 'string' || !secret || secret.length > 4096 || /[\r\n\0]/u.test(secret))) throw new GitVaultError('invalid');
     this.writeValue(account, service, revision, secret);

@@ -46,3 +46,15 @@ Any other visible sentence that is not in the active language is omitted.
   A Latin word or digit run is not split across lines. Family is the only override;
   size, weight, and line-height stay with the row role.
 - A list row keeps its action on the name line, at the right, with at least a 44px target. The action does not take a line of its own.
+
+## Environment variable editor
+
+The shared `EnvironmentVariablesEditor` composes these Settings primitives. It
+keeps the account/project selection, object rows and a single add/edit form in
+one document. Scope changes are disabled while a draft is open, secret values
+stay masked after saving, and cancel releases the draft without browser storage.
+A secret is replaced through a blank password field; changing it to an ordinary
+value requires re-entry. Products provide localized labels and the authenticated
+management port. Async failures use the host notice port; input validation has a
+stable reserved slot. Runtime availability is owned by the launch adapters, not
+by the existence of this editor.
