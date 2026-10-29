@@ -63,8 +63,13 @@ export function createHeadlessModelServicesExtension(options: {
       let active=true;
       api.subscriptions.add(()=>{active=false;});
       await import('./model-policy-view').then(async module=>{
-        const document=await module.readModelPolicy(options.fetcher);
-        if(!active || !document.canManage)return;
+        // Keep this optional authorization probe inside the fulfilled import.
+        // Vite reports rejections returned from a preload callback as
+        // `vite:preloadError`; allowing a 401/403/404/transport failure to
+        // escape here makes the release-recovery bootstrap mistake a business
+        // request failure for a missing JavaScript chunk and replace the app.
+        const document=await module.readModelPolicy(options.fetcher).catch(()=>null);
+        if(!active || !document?.canManage)return;
         api.views.register({id:'opencraft.headless-model-services.policy.view',title:'Model usage restrictions',viewType:'opencraft.headless-model-services.policy',platforms:['web']});
         api.settings.registerPage({id:'opencraft.headless-model-services.policy',title:'Model usage restrictions',titleMessage:{id:'modelPolicy.title',defaultMessage:'Model usage restrictions'},viewId:'opencraft.headless-model-services.policy.view',group:'Server',groupMessage:{id:'settings.groups.server',defaultMessage:'Server'},icon:'brain',platforms:['web']});
         api.internal.register('platformViewRenderer',{viewType:'opencraft.headless-model-services.policy',Component:module.createModelPolicyView(options.requestHost,options.hostId,options.fetcher)});

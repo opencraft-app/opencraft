@@ -52,3 +52,9 @@ Pi、多引擎 Host、DSH、ACP 是独立固定 owner，仅更新 gateway 不更
 核心包 model-usage-policy 拥有独立 managed SQLite 库、CAS+审计、只读原生 reader、HTTP authority 和网关 Transport。所有策略均适用于管理员自身。原生 reader 不持有策略缓存；策略库不可读时拒绝新增执行。Pi 被禁队列暂停并保留输入；ACP 已证明拒绝的 IM 输入清除未知回执，允许改配置后重试。
 
 回归覆盖权限、CAS、审计、目录投影、网关执行与队列入口、Pi 普通输入与真实自动派发、Codex 外部/内部恢复和 goal、ACP 默认模型与 IM、DSH resolved request 边界。真实 locked DSH smoke 覆盖运行中更新策略、当前轮次继续且下一轮不再发起模型请求。设置页使用真实 Workbench Settings 路由验证保存和非管理员无入口；宽窄、浅深主题的截图应在每次界面变更后复核。
+
+## 可选权限探针与首屏恢复
+
+管理入口的权限发现是可选能力，401/403/404、网络失败及普通成员的 canManage=false 均不应中止其他功能初始化。Vite 生产构建会将动态 import 的 fulfilled 回调拒绝转为 preloadError；可选读取须在该回调内处理拒绝，不能只在外层 import.catch 吞掉错误。真实模块资源加载失败仍由既有恢复边界处理。
+
+回归 tests/browser/model-policy-bootstrap.test.ts 使用生产 Vite 构建、实际扩展激活及页面已有的恢复 bootstrap，在390×844触屏环境验证普通成员、401/403/404、断网和管理员首屏注册；故意移除内层catch的旧行为对照必须触发preloadError及整页恢复，防止无效的开发模式测试误报通过。该用例独立运行，不加入发布探针或发布检查。
