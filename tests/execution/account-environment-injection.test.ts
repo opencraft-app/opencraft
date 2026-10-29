@@ -17,6 +17,7 @@ import { AcpEngine } from '../../plugins/acp-engine/src/index.js';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { EXECUTION_ENVIRONMENT_FIELD } from '../../scripts/execution-environment.js';
+import { buildDshCapabilityPlugin } from '../../scripts/package-dsh-capability-runtime.mjs';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const program = "process.stdout.write(require('node:crypto').createHash('sha256').update(process.env.SERVICE_KEY??'missing').digest('hex'))";
 const entry = (value: string) => ({ name: 'SERVICE_KEY', value, secret: true });
@@ -41,6 +42,17 @@ async function until(read: () => boolean | Promise<boolean>) {
   const deadline = Date.now() + 10_000;
   while (!await read()) { if (Date.now() > deadline) throw new Error('Environment process did not settle'); await new Promise(resolve => setTimeout(resolve, 20)); }
 }
+
+test('packaged DSH capability resource loads without a source tree or TypeScript loader', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'environment-packaged-dsh-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plugin = join(root, 'runtime/dsh/opencraft-capability-plugin.mjs');
+  await buildDshCapabilityPlugin(plugin);
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
+    "const plugin=await import(process.argv[1]);if(typeof plugin.apply!=='function')process.exit(1);console.log('loaded')", plugin],
+    { cwd: root, env: { ...process.env, NODE_OPTIONS: '' } });
+  assert.equal(stdout.trim(), 'loaded');
+});
 
 test('execution scope follows original admitted input; envelopes reject tampering, replay, method and project substitution', async t => {
   const f = await fixture(t); f.admit('thread-a', 'alice');

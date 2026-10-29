@@ -5,6 +5,9 @@ Pi, DSH, ACP and Workbench terminal launch adapters are connected. Independently
 installed execution owners must consume this version before their launch adapter
 is effective. Installing a gateway does not replace those owners.
 
+Headless and Electron package the DSH capability resource as a bundled module;
+its credential runtime must not depend on source files or a parent TS loader.
+
 An authenticated person owns variables for all of their projects, with optional
 Project ID overrides. Project values win by exact name; removing an override
 restores the personal default. Identity comes from trusted ingress or execution
