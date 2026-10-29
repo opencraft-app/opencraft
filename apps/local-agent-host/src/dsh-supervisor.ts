@@ -66,7 +66,8 @@ export class DshSupervisor {
       stdio: ["ignore", "pipe", "pipe"],
     });
     this.child = child;
-    child.stderr.pipe(process.stderr);
+    // Native diagnostics may contain user process output. Keep only bounded readiness parsing.
+    child.stderr.resume();
     return new Promise<string>((resolve, reject) => {
       let stdout = "";
       let settled = false;
@@ -82,7 +83,6 @@ export class DshSupervisor {
       }, this.options.startupTimeoutMs ?? 30_000);
       child.stdout.on("data", (chunk: Buffer) => {
         const text = chunk.toString("utf8");
-        process.stdout.write(`[dsh] ${text}`);
         stdout = (stdout + text).slice(-8192);
         const match = /dsh web:\s*(https?:\/\/[^\s]+)/u.exec(stdout);
         const bridge = /opencraft capability bridge:\s*(http:\/\/127\.0\.0\.1:\d+)/u.exec(stdout);

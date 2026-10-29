@@ -1,3 +1,4 @@
+import { ExecutionEnvironmentRuntime } from "../execution-environment.ts";
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -36,6 +37,7 @@ export async function startIndependentAcpHost(options) {
     node: process.version, nodeAbi: process.versions.modules };
   const temporary = `${descriptorPath}.${randomUUID()}.tmp`, token = randomUUID();
   let provider, host, server, closed;
+  const environmentRuntimes = new Set();
   try {
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
@@ -43,6 +45,8 @@ export async function startIndependentAcpHost(options) {
     provider = new AcpGenerationHost({ id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
+      config.executionEnvironment = ExecutionEnvironmentRuntime.open(identityDirectory);
+      if (config.executionEnvironment) environmentRuntimes.add(config.executionEnvironment);
       // The runtime that supplies the ACP profile is explicit and versioned by
       // the operator. Never replace or restart the previous DSH web owner.
       if (id === 'dsh-acp') {
@@ -114,13 +118,15 @@ export async function startIndependentAcpHost(options) {
       return closed ??= (async () => {
         try { server.closeAllConnections(); await new Promise(accept => server.close(accept)); await host.close(); }
         finally { await rm(descriptorPath, { force: true }); }
-        await release(); await releaseKernel();
+        for (const environment of environmentRuntimes) environment.close();
+        environmentRuntimes.clear(); await release(); await releaseKernel();
       })();
     } };
   } catch (error) {
     server?.closeAllConnections(); if (server?.listening) await new Promise(accept => server.close(accept));
     if (host) await host.close(); else await provider?.close();
-    await rm(temporary, { force: true }); await release(); await releaseKernel(); throw error;
+    await rm(temporary, { force: true }); for (const environment of environmentRuntimes) environment.close();
+        environmentRuntimes.clear(); await release(); await releaseKernel(); throw error;
   }
 }
 

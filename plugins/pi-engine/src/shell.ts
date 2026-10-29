@@ -2,9 +2,10 @@ import { fork, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
+import type { ExecutionEnvironmentSnapshot } from '../../../scripts/execution-environment.js';
 
 export type ShellRecord = { id: string; state: "running" | "completed" | "interrupted"; command: string;
-  output: string; detached: boolean; isError?: boolean; rawOutput?: string; truncated?: boolean; exitCode?: number | null; createdAtMs: number; notified?: boolean; turnId?: string; generation: string; monitorEvents?: { id: number; content: string; createdAtMs: number }[] };
+  output: string; detached: boolean; isError?: boolean; rawOutput?: string; truncated?: boolean; exitCode?: number | null; createdAtMs: number; notified?: boolean; turnId?: string; generation: string; environmentOwner?: string; monitorEvents?: { id: number; content: string; createdAtMs: number }[] };
 export const PiShellDoc = defineDoc<{ records: ShellRecord[]; paused: boolean }>({
   kind: "opencraft.piShell", version: 1, scope: "conversation", history: "latest", fork: "initial",
   initial: () => ({ records: [], paused: false }),
@@ -22,7 +23,7 @@ export class PiShellWorker {
   private pending = new Map<number, { resolve(result: ShellResult): void; reject(error: Error): void }>();
   private stopping?: Promise<void>;
   private intentional = false;
-  constructor(private readonly options: { cwd: string; directory: string; threadId: string;
+  constructor(private readonly options: { cwd: string; directory: string; threadId: string; environment?: ExecutionEnvironmentSnapshot;
     onNotification(message: Record<string, any>): void; onLost(generation: string): void }) {}
   get pid() { return this.child?.pid; }
   async start(): Promise<{ parameters: Record<string, any> }> {
@@ -31,8 +32,8 @@ export class PiShellWorker {
       const bundled = new URL("./pi-shell-worker.mjs", import.meta.url);
       const entry = existsSync(bundled) ? bundled : new URL("./shell-worker.ts", import.meta.url);
       const child = this.child = fork(entry, [JSON.stringify({ cwd: this.options.cwd, directory: this.options.directory })], {
-        stdio: ["ignore", "ignore", "inherit", "ipc"],
-        env: { ...process.env, OPENCRAFT_THREAD_ID: this.options.threadId, PI_CODING_AGENT_DIR: this.options.directory },
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+        env: { ...(this.options.environment?.apply(process.env) ?? process.env), OPENCRAFT_THREAD_ID: this.options.threadId, PI_CODING_AGENT_DIR: this.options.directory },
         execArgv: entry.pathname.endsWith(".ts") ? ["--import", "tsx"] : [],
       });
       const deadline = setTimeout(() => { reject(new Error("Pi shell worker did not initialize")); void this.stop(); }, 30_000);

@@ -641,3 +641,9 @@ The original `interface.touchFriendly` values retain authority; both entry types
 default to Automatic. An old Newera preference record cannot independently change
 the composer, floating header or narrow browser chrome. Changing the setting keeps
 the existing editor, draft, selection, panels and scrolling owners.
+
+Terminal launch context carries the selected durable Project ID even before a
+Draft has a Thread. Existing conversations carry their Thread ID as well; the
+trusted Host resolves its project binding. A working directory or panel owner
+identifier never substitutes for account/project execution authority. See
+[account environment variables](account-environment.md).

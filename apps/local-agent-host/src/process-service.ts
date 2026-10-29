@@ -1,8 +1,12 @@
 import { homedir } from "node:os";
 import { spawn, type IPty } from "node-pty";
 import type { ProcessOutput, ProcessSnapshot } from "@opencraft/appserver-protocol";
+import { validateEnvironmentName } from '../../../scripts/account-environment.js';
+import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '../../../scripts/execution-environment.js';
 
 interface Session {
+  owner?: string;
+  scope?: EnvironmentExecutionScope;
   pty: IPty;
   phase: "running" | "exited";
   exitCode: number | null;
@@ -23,6 +27,7 @@ function size(value: unknown) {
 
 /** Owned by the authenticated local Host, never by a socket or an Agent adapter. */
 export class HostProcessService {
+  constructor(private readonly environment?: ExecutionEnvironmentRuntime) {}
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: unknown) => void>();
   private closed = false;
@@ -33,10 +38,12 @@ export class HostProcessService {
   private emit(method: string, params: unknown) {
     for (const listener of this.listeners) listener(method, params);
   }
-  dispatch(method: string, raw: unknown): unknown {
+  dispatch(method: string, raw: unknown, scope?: EnvironmentExecutionScope): unknown {
     if (this.closed) throw new Error("Process service is closed");
     const p = object(raw ?? {});
-    if (method === "process/list") return { processes: [...this.sessions].map(([id, s]) => {
+    if (this.environment && !scope) throw new Error('Environment execution identity required');
+    const snapshot = scope && this.environment?.snapshot(scope);
+    if (method === "process/list") return { processes: [...this.sessions].filter(([, s]) => !snapshot || s.owner === snapshot.owner).map(([id, s]) => {
       const { output: _, ...metadata } = this.snapshot(id, s, s.sequence);
       return metadata;
     }) };
@@ -54,15 +61,17 @@ export class HostProcessService {
       const dimensions = size(p.size);
       if (p.cwd != null && typeof p.cwd !== "string") throw new Error("Invalid working directory");
       const env: Record<string, string> = {};
-      for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
+      for (const [key, value] of Object.entries(snapshot?.apply(process.env) ?? process.env)) if (value !== undefined) env[key] = value;
       for (const [key, value] of Object.entries(p.env == null ? {} : object(p.env))) {
+        if (snapshot) validateEnvironmentName(key);
+        if (snapshot && Object.hasOwn(snapshot.overlay(), key)) throw new Error('Managed environment cannot be overridden');
         if (value === null) delete env[key];
         else if (typeof value === "string") env[key] = value;
         else throw new Error("Invalid process environment");
       }
       env.TERM = "xterm-256color";
       const pty = spawn(p.command[0] as string, p.command.slice(1) as string[], { ...dimensions, cwd: p.cwd as string ?? homedir(), env, name: "xterm-256color" });
-      const session: Session = { pty, phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
+      const session: Session = { pty, scope, owner: snapshot?.owner, phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
       this.sessions.set(id, session);
       pty.onData(data => {
         // Individual chunks are bounded as well as the whole replay ring.
@@ -83,7 +92,7 @@ export class HostProcessService {
       return { processHandle: id };
     }
     const session = this.sessions.get(id);
-    if (!session) throw new Error("Process session not found");
+    if (!session || snapshot && session.owner !== snapshot.owner) throw new Error("Process session not found");
     if (method === "process/attach") {
       if (!Number.isSafeInteger(p.afterSequence) || Number(p.afterSequence) < 0 || Number(p.afterSequence) > session.sequence) throw new Error("Invalid output cursor");
       return this.snapshot(id, session, Number(p.afterSequence));

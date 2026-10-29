@@ -9,7 +9,9 @@ function fixture() {
   const adapter: any = Object.create(CodexEngineAdapter.prototype);
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
-  Object.assign(adapter, { options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
+  Object.assign(adapter, { ephemeralThreads: new Set(), nativeSubscribedThreads: new Set(),
+    environmentCreations: new Map(), executionEnvironments: new Map(), initialEnvironmentThreads: new Set(),
+    options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
     sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
     async requestPhysical(method: string, params: any) {
       calls.push({ method, params });
