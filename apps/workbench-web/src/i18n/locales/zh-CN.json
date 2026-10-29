@@ -1125,5 +1125,7 @@
   "modelPolicy.efforts": "禁用思考深度",
   "modelPolicy.save": "保存",
   "modelPolicy.error": "无法保存限制，请重新加载后重试。",
-  "modelPolicy.hint": "部分选项已被管理员禁用。"
+  "modelPolicy.hint": "部分选项已被管理员禁用。",
+  "preview.externalHint": "在浏览器中打开此 HTML 报告，查看完整内容并使用交互控件。",
+  "preview.externalUnavailable": "无法打开预览，请重试或下载原件。"
 }

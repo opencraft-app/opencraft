@@ -228,7 +228,7 @@ export async function createWorkbenchWebServer({
   const normalizedCodexTarget = codexServerTarget === null ? null : normalizeTarget(codexServerTarget);
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const deploymentConfig = headlessServer ? { hosts: [{ hostId: "opencraft-server", label: "Server", kind: "durable",
-    executionLocation: "This server", url: "/appserver", workspaceBrowseRoots: ["/"] }], builtinAgents: true, hypernode: false, fileDownloads: true } : websiteDeploymentConfig({
+    executionLocation: "This server", url: "/appserver", workspaceBrowseRoots: ["/"] }], builtinAgents: true, hypernode: false, fileDownloads: true, htmlPreviews: true } : websiteDeploymentConfig({
     appServerTarget: normalizedTarget, codexServerTarget: normalizedCodexTarget, hyperNodeUser,
   });
   const userPlugins = userPluginDirectory ? await loadUserPlugins(userPluginDirectory) : null;

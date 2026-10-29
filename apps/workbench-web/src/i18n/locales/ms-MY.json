@@ -1103,5 +1103,7 @@
   "modelPolicy.efforts": "Blocked thinking levels",
   "modelPolicy.save": "Save",
   "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
-  "modelPolicy.hint": "Some options are disabled by your administrator."
+  "modelPolicy.hint": "Some options are disabled by your administrator.",
+  "preview.externalHint": "Buka laporan HTML ini dalam pelayar untuk melihat kandungan dan menggunakan kawalan interaktif.",
+  "preview.externalUnavailable": "Pratonton tidak dapat dibuka. Cuba lagi atau muat turun fail asal."
 }

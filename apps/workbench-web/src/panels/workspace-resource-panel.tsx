@@ -1,4 +1,6 @@
-import { IconButton } from "@opencraft/design-system-web/button";
+import { ExternalLinkIcon } from "@opencraft/design-system-web/action-icons";
+import { htmlFilePreviewUrl, htmlFilePreviewAvailable } from "../runtime/html-file-preview";
+import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { ZoomableImage } from "@opencraft/chat-render-web";
 import { FolderIcon as Folder, FolderOpenIcon as FolderOpen, LoadingRingIcon as LoaderCircle, EditIcon as Pencil, ResetIcon as RotateCcw, SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import { FilePreviewView, MAX_FILE_PREVIEW_BYTES, useFilePreviewAvailable } from "@opencraft/file-preview-web";
@@ -20,7 +22,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -204,6 +205,15 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
   const [sourceView, setSourceView] = useState<string | null>(null);
   const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
   const showSource = sourceView === documentId;
+  const [externalPreviewError, setExternalPreviewError] = useState(false);
+  useEffect(() => setExternalPreviewError(false), [documentId]);
+  const openBrowserPreview = () => {
+    setExternalPreviewError(false);
+    try {
+      window.open(new URL(htmlFilePreviewUrl(snapshot.hostId, selectedPath), window.location.href).href,
+        "_blank", "noopener,noreferrer");
+    } catch { setExternalPreviewError(true); }
+  };
   const loadMediaSource = useMemo(
     () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
     [runtime, blobs, snapshot.hostId],
@@ -450,6 +460,12 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
             </div>
           ) : null}
           {!resource.data?.isDirectory ? <div className="workspace-file-viewer__actions">
+            {htmlFilePreviewAvailable(snapshot.hostId, selectedPath) ? <IconButton
+              type="button"
+              aria-label={intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
+              title={intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
+              onClick={openBrowserPreview}
+            ><ExternalLinkIcon size={14} /></IconButton> : null}
             <a
               role="link"
               aria-label={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
@@ -461,6 +477,9 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
             ><Download size={14} aria-hidden="true" /></a>
           </div> : null}
         </header>
+        {externalPreviewError ? <p className="workspace-file-viewer__external-error" role="alert">
+          {intl.formatMessage({ id: "preview.externalUnavailable", defaultMessage: "Could not open the preview. Try again or download the original file." })}
+        </p> : null}
         {resource.isPending ? (
           <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
             {previewOnly ? intl.formatMessage({ id: "panel.readingFile", defaultMessage: "Loading file…" })
@@ -541,6 +560,14 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
               />
             )}
           </Suspense>
+        ) : resource.data?.blob && htmlFilePreviewAvailable(snapshot.hostId, selectedPath) ? (
+          <div className="workspace-file-viewer__state workspace-file-viewer__external-report">
+            <p>{intl.formatMessage({ id: "preview.externalHint", defaultMessage: "Open this HTML report in your browser to view its contents and interactive controls." })}</p>
+            <Button type="button" onClick={openBrowserPreview}>
+              <ExternalLinkIcon size={16} />
+              {intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
+            </Button>
+          </div>
         ) : resource.data?.blob ? (
           <WorkspaceMediaPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} kind="file" />
         ) : (

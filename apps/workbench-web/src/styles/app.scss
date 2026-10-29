@@ -12919,3 +12919,18 @@ html[data-window-host="browser"] body {
 }
 
 .thread-live-changes .thread-turn-diff-live { @include controls.density-target; }
+
+
+.workspace-file-viewer__external-error {
+  margin: 0;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  font: var(--typography-metadata-font);
+  color: var(--color-text-danger);
+}
+
+.workspace-file-viewer__external-report {
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  p { margin: 0; }
+}

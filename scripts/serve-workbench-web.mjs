@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
 import { serveNotModified } from "./web-asset-cache.mjs";
+import { HtmlFilePreviews } from "./html-file-previews.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
@@ -447,6 +448,8 @@ export async function createWorkbenchWebServer({
       || (!!accessService?.trustedOrigin(request) && (request.headers.origin === accessService.trustedOrigin(request) || (!requireOrigin && request.headers.origin === undefined)));
   };
   const runtimeReports = [];
+  const htmlPreviews = typeof fileDownloads?.readPreview === 'function'
+    ? new HtmlFilePreviews((...args) => fileDownloads.readPreview(...args)) : null;
   let lastImRejection = {key: "", at: 0};
   const imRejectionCodes = new Set([
     "authentication_required", "instance_access_denied", "actor_access_denied",
@@ -506,6 +509,8 @@ export async function createWorkbenchWebServer({
       }
       const url = new URL(request.url || "/", "http://opencraft.invalid");
       const local = !!localAccess?.origin(request);
+      // These capabilities only reach a frozen report, never installation APIs.
+      if (htmlPreviews && await htmlPreviews.handlePublic(request, response, sameOrigin)) return;
       if (!local && !["/health", "/__opencraft_health"].includes(url.pathname)) await accessService?.prepare?.(request);
       // Login/callback endpoints must remain reachable before instance admission.
       if (url.pathname === '/setup' || url.pathname === '/__opencraft_account' || url.pathname.startsWith('/__opencraft_account/')) {
@@ -558,9 +563,9 @@ export async function createWorkbenchWebServer({
         if (identity) { const unwatch = accessService.watch(identity, () => response.destroy()); response.once('close', unwatch); }
         if (await accessService.handle(request, response)) return;
       }
-      if (url.pathname === "/__opencraft_files") {
+      if (url.pathname === "/__opencraft_files" || url.pathname === "/__opencraft_preview/tickets") {
         if (!fileDownloads) { sendJson(response, 404, { error: "missing" }); return; }
-        await fileDownloads.handle(request, response, hostId => {
+        const authorizeFile = hostId => {
           try {
             return sameOrigin(request, false)
               && (!hostId.startsWith("ssh:") || sshManagement?.authorized(request) === true)
@@ -568,7 +573,12 @@ export async function createWorkbenchWebServer({
                 && (accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204) === 204))
               && (!actorService || actorService.legacyAdmissionStatus(request) === 204);
           } catch { return false; }
-        });
+        };
+        if (url.pathname === "/__opencraft_preview/tickets") {
+          if (!htmlPreviews) { sendJson(response,404,{error:'missing'}); return; }
+          if (!sameOrigin(request,true)) { sendJson(response,403,{error:'same_origin_required'}); return; }
+          await htmlPreviews.issue(request,response,authorizeFile);
+        } else await fileDownloads.handle(request, response, authorizeFile);
         return;
       }
       if (url.pathname.startsWith("/__opencraft_observe/")) {
@@ -963,6 +973,7 @@ export async function createWorkbenchWebServer({
       });
     },
     close(update = null, retireIngress = () => undefined) {
+      htmlPreviews?.close();
       closing = true;
       speechService?.close();
       remoteBrowserService?.close();

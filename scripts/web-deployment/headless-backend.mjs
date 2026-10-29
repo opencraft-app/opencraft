@@ -4,7 +4,7 @@ import { createConnection } from 'node:net';
 /** Only Headless-owned API routes. Static files and update authority stay in Web. */
 export const headlessBackendRoutes = Object.freeze({
   http: ['/setup', '/appserver', '/apphost', '/ssh-apphost', '/desktop/connect', '/__opencraft_push', '/__opencraft_health', '/health', '/__opencraft_ssh_servers', '/__opencraft_apphost_diagnostic', '/__opencraft_files'],
-  prefixes: ['/__opencraft_account', '/__opencraft_observe', '/__opencraft_browser', '/__opencraft_hub', '/__opencraft_auth', '/__opencraft_actors', '/__opencraft_connectors', '/__opencraft_im', '/__opencraft_access', '/__opencraft_ssh', '/__opencraft_enterprise_identity', '/__opencraft_speech', '/__opencraft_apphost'],
+  prefixes: ['/__opencraft_preview', '/__opencraft_account', '/__opencraft_observe', '/__opencraft_browser', '/__opencraft_hub', '/__opencraft_auth', '/__opencraft_actors', '/__opencraft_connectors', '/__opencraft_im', '/__opencraft_access', '/__opencraft_ssh', '/__opencraft_enterprise_identity', '/__opencraft_speech', '/__opencraft_apphost'],
   upgrade: ['/__opencraft_browser/stream', '/appserver', '/apphost', '/ssh-apphost', '/desktop/connect', '/__opencraft_hub/control', '/__opencraft_hub/data'],
 });
 export function validHeadlessBackendRoutes(value) {
@@ -50,13 +50,43 @@ export function createHeadlessBackendProxy(target) {
       });
     },
     http(request, response, release) {
-      const upstream = httpRequest({ hostname: '127.0.0.1', port, path: request.url, method: request.method, headers: request.headers }, result => {
-        result.on('error', () => response.destroy()); result.on('aborted', () => response.destroy());
-        result.on('close', () => { if (!result.complete) response.destroy(); });
-        response.writeHead(result.statusCode, result.headers); result.pipe(response);
-      });
-      upstream.on('error', () => { if (!response.headersSent) { response.writeHead(502, { 'content-type': 'application/json' }); response.end('{"error":"Headless backend unavailable"}'); } else response.destroy(); });
-      response.once('close', () => { upstream.destroy(); release(); }); request.pipe(upstream);
+      // A preview navigation may race a managed backend switch. Only bodyless
+      // reads can reconnect; ticket issuance/redemption must never be replayed.
+      const pathname = new URL(request.url ?? '/', 'http://invalid').pathname;
+      const previewRead = request.method === 'GET'
+        && /^\/__opencraft_preview\/(?:s\/[a-f0-9]{24}\/(?:document)?)?$/u.test(pathname)
+        && !request.headers['transfer-encoding'] && Number(request.headers['content-length'] ?? 0) === 0;
+      const delays = [100, 250, 500];
+      let upstream, timer, retries = 0;
+      response.once('close', () => { clearTimeout(timer); upstream?.destroy(); release(); });
+      const connect = () => {
+        if (response.destroyed) return;
+        upstream = httpRequest({ hostname: '127.0.0.1', port, path: request.url, method: request.method,
+          headers: request.headers, ...(retries ? { agent: false } : {}) }, result => {
+          result.on('error', () => response.destroy()); result.on('aborted', () => response.destroy());
+          result.on('close', () => { if (!result.complete) response.destroy(); });
+          response.writeHead(result.statusCode, result.headers); result.pipe(response);
+        });
+        upstream.on('error', error => {
+          if (response.destroyed) return;
+          if (response.headersSent) { response.destroy(); return; }
+          if (previewRead && ['ECONNREFUSED', 'ECONNRESET', 'EPIPE'].includes(error.code) && retries < delays.length) {
+            timer = setTimeout(connect, delays[retries++]); return;
+          }
+          if (previewRead) {
+            console.warn('[opencraft preview] backend read unavailable', { code: error.code ?? 'unknown', retries });
+            response.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store',
+              'retry-after': '2', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff',
+              'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
+            response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>预览暂时不可用</title><body><h1>预览服务暂时不可用</h1><p>服务可能正在切换，请稍后<a href="">重试加载</a>。如果提示链接已失效，请回到文件页面重新打开。</p></body></html>');
+          } else {
+            response.writeHead(502, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+            response.end('{"error":"Headless backend unavailable"}');
+          }
+        });
+        if (retries) upstream.end(); else request.pipe(upstream);
+      };
+      connect();
     },
     upgrade(request, socket, head, release, tunnels) {
       const upstream = createConnection({ host: '127.0.0.1', port }); tunnels.add(socket);
