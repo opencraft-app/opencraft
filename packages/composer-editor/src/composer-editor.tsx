@@ -165,6 +165,7 @@ export interface ComposerAgentModelGroup {
 }
 
 export interface ComposerSelectionCatalog {
+  readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
   readonly models: readonly ComposerModelOption[];
   /** Cached names/capabilities for the selected model only; never selectable choices. */
@@ -2515,7 +2516,7 @@ export const OpenCraftComposer = forwardRef<
                 onOpenChange={changePicker("intelligence")} onSelect={selectModel} portalContainer={portalContainer}
                 focus={intelligenceFocus} /> : null}
               {!modelDisplayOnly && modelSelectionPolicy === "user" ? <ComposerModelPicker
-                policyRestricted={catalogModels.some(m=>m.policyRestricted)}
+                policyRestricted={selectionCatalog?.policyRestricted || catalogModels.some(m=>m.policyRestricted)}
                 hasSelectedModel={selectedModel !== null}
                 label={compactSelectedModelLabel} modelLabel={modelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
