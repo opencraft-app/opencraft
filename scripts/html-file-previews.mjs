@@ -144,7 +144,21 @@ export class HtmlFilePreviews {
     if (path === PREFIX || path === PREFIX + '/') {
       if (request.method !== 'GET') { json(response,405,{error:'method_not_allowed'}); return true; }
       const nonce = random();
-      const script = `const ticket=new URLSearchParams(location.hash.slice(1)).get('ticket');history.replaceState(null,'',location.pathname+location.search);(async()=>{if(!ticket)throw Error();const response=await fetch(new URL('redeem',location.href),{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})});if(!response.ok)throw Error();const result=await response.json();if(!/^\\.\\/s\\/[a-f0-9]{24}\\/$/.test(result.path))throw Error();location.replace(new URL(result.path,location.href));})().catch(()=>{document.getElementById('state').textContent='预览链接无效、已过期或已使用，请回到文件页面重新打开。'});`;
+      const script = `const params=new URLSearchParams(location.hash.slice(1));history.replaceState(null,'',location.pathname+location.search);(async()=>{
+        let ticket=params.get('ticket');
+        if(!ticket&&params.has('open')){
+          const source=JSON.parse(params.get('open'));
+          if(!source||typeof source.hostId!=='string'||typeof source.path!=='string')throw Error();
+          const issued=await fetch(new URL('tickets',location.href),{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({hostId:source.hostId,path:source.path})});
+          if(!issued.ok)throw Error();
+          const entry=await issued.json();
+          if(typeof entry.path!=='string'||!/^\\/__opencraft_preview\\/#ticket=[A-Za-z0-9_-]{32}$/.test(entry.path))throw Error();
+          ticket=entry.path.split('#ticket=')[1];
+        }
+        if(!ticket)throw Error();
+        const response=await fetch(new URL('redeem',location.href),{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})});
+        if(!response.ok)throw Error();const result=await response.json();if(!/^\\.\\/s\\/[a-f0-9]{24}\\/$/.test(result.path))throw Error();location.replace(new URL(result.path,location.href));
+      })().catch(()=>{document.getElementById('state').textContent='预览无法打开：链接无效、已过期或没有文件访问权限，请回到文件页面重试。'});`;
       // A fragment is never sent to the server, referrer or ordinary HTTP log.
       html(response, 200, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>打开预览</title><body><p id="state">正在打开预览…</p><script nonce="${nonce}">${script}</script></body></html>`, `${shellPolicy}; connect-src 'self'; script-src 'nonce-${nonce}'`);
       return true;

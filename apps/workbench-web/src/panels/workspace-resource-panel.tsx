@@ -1,5 +1,5 @@
 import { ExternalLinkIcon } from "@opencraft/design-system-web/action-icons";
-import { createHtmlFilePreview, htmlFilePreviewAvailable } from "../runtime/html-file-preview";
+import { htmlFilePreviewUrl, htmlFilePreviewAvailable } from "../runtime/html-file-preview";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { ZoomableImage } from "@opencraft/chat-render-web";
 import { FolderIcon as Folder, FolderOpenIcon as FolderOpen, LoadingRingIcon as LoaderCircle, EditIcon as Pencil, ResetIcon as RotateCcw, SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
@@ -22,7 +22,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -206,34 +205,14 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
   const [sourceView, setSourceView] = useState<string | null>(null);
   const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
   const showSource = sourceView === documentId;
-  const [previewOpening, setPreviewOpening] = useState(false);
   const [externalPreviewError, setExternalPreviewError] = useState(false);
-  const previewAttempt = useRef<{ controller: AbortController; window: Window } | null>(null);
-  useEffect(() => {
-    setPreviewOpening(false); setExternalPreviewError(false);
-    return () => {
-      const attempt = previewAttempt.current;
-      previewAttempt.current = null;
-      attempt?.controller.abort(); attempt?.window.close();
-    };
-  }, [documentId]);
+  useEffect(() => setExternalPreviewError(false), [documentId]);
   const openBrowserPreview = () => {
-    if (previewAttempt.current) return;
-    const target = window.open("about:blank", "_blank");
-    if (!target) { setExternalPreviewError(true); return; }
-    target.opener = null;
-    const attempt = { controller: new AbortController(), window: target };
-    previewAttempt.current = attempt;
-    setPreviewOpening(true); setExternalPreviewError(false);
-    void createHtmlFilePreview(snapshot.hostId, selectedPath, attempt.controller.signal).then(entry => {
-      if (previewAttempt.current !== attempt) return;
-      if (!target.closed) target.location.replace(new URL(entry, window.location.href).href);
-    }).catch(() => {
-      target.close();
-      if (previewAttempt.current === attempt) setExternalPreviewError(true);
-    }).finally(() => {
-      if (previewAttempt.current === attempt) { previewAttempt.current = null; setPreviewOpening(false); }
-    });
+    setExternalPreviewError(false);
+    try {
+      window.open(new URL(htmlFilePreviewUrl(snapshot.hostId, selectedPath), window.location.href).href,
+        "_blank", "noopener,noreferrer");
+    } catch { setExternalPreviewError(true); }
   };
   const loadMediaSource = useMemo(
     () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
@@ -485,9 +464,8 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
               type="button"
               aria-label={intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
               title={intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
-              disabled={previewOpening}
               onClick={openBrowserPreview}
-            >{previewOpening ? <LoaderCircle className="is-spinning" size={14} /> : <ExternalLinkIcon size={14} />}</IconButton> : null}
+            ><ExternalLinkIcon size={14} /></IconButton> : null}
             <a
               role="link"
               aria-label={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
@@ -585,7 +563,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
         ) : resource.data?.blob && htmlFilePreviewAvailable(snapshot.hostId, selectedPath) ? (
           <div className="workspace-file-viewer__state workspace-file-viewer__external-report">
             <p>{intl.formatMessage({ id: "preview.externalHint", defaultMessage: "Open this HTML report in your browser to view its contents and interactive controls." })}</p>
-            <Button type="button" disabled={previewOpening} onClick={openBrowserPreview}>
+            <Button type="button" onClick={openBrowserPreview}>
               <ExternalLinkIcon size={16} />
               {intl.formatMessage({ id: "chat.link.openInBrowser", defaultMessage: "Open in browser" })}
             </Button>

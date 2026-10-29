@@ -154,7 +154,13 @@ canonical resource boundaries, including symlinks. The final inlined document is
 bounded to 32 MiB; unsupported/external resources are not proxied. This is a
 standalone report viewer, not a live website/app or arbitrary directory server.
 
-The returned path has no domain; the browser applies its existing Server base path
+The browser action synchronously opens the real bootstrap URL with a fragment-only
+Host/file request. The new page removes it before authenticated same-origin ticket
+issuance, then redeems locally. No about:blank WindowProxy or opener is required;
+managed hosts can forward the URL without returning a window handle. Preparation
+and permission failures show a visible error in the new page.
+
+The returned ticket path has no domain; the browser applies its existing Server base path
 and public origin. A 60-second ticket is carried only in the URL fragment, removed
 from browser history before a same-origin redemption POST, and consumed atomically.
 GET/link scanners do not consume it. Redemption creates a 15-minute HttpOnly,
