@@ -5,7 +5,8 @@ import type { CollaborationClient } from '@opencraft/appserver-client/collaborat
 import type { ConversationRef, ConversationReceipt } from '@opencraft/appserver-protocol/collaboration';
 import { CliError, classify } from './errors';
 
-export interface SendInput { content: string; operationKey: string; generated: boolean; timeoutMs: number | null }
+export interface SendInput { content: string; operationKey: string; generated: boolean; timeoutMs: number | null;
+  execution?: { mode: 'queue' } | { mode: 'steer'; expectedTurnId: string } }
 function invalid(message: string): never { throw new CliError(2, 'INVALID_INPUT', message); }
 async function readInput(source: AsyncIterable<Buffer | string>) {
   const chunks: Buffer[] = []; let size = 0;
@@ -18,8 +19,10 @@ async function readInput(source: AsyncIterable<Buffer | string>) {
   catch { return invalid('Use UTF-8 text.'); }
 }
 export async function prepareSend(text: string | undefined, file: string | undefined, key: string | undefined,
-  mode: string | undefined, wait: string | undefined, timeout: string | undefined): Promise<SendInput> {
-  if (mode !== undefined && mode !== 'queue') invalid('Use --mode queue.');
+  mode: string | undefined, wait: string | undefined, timeout: string | undefined, expectedTurnId?: string): Promise<SendInput> {
+  if (mode !== undefined && !['queue','steer'].includes(mode)) invalid('Use --mode queue or steer.');
+  if (mode === 'steer' && (!expectedTurnId || expectedTurnId.length > 256 || /[\s\x00-\x1f]/u.test(expectedTurnId))) invalid('Steer needs exact --expected-turn.');
+  if (mode !== 'steer' && expectedTurnId !== undefined) invalid('--expected-turn needs --mode steer.');
   if (wait !== undefined && wait !== 'delivered') invalid('Use --wait delivered.');
   if (timeout !== undefined && wait === undefined) invalid('--timeout needs --wait delivered.');
   if (!key && !process.stdin.isTTY) invalid('Non-interactive send needs --key.');
@@ -41,28 +44,30 @@ export async function prepareSend(text: string | undefined, file: string | undef
   } else if (file === '-' || content === undefined && !process.stdin.isTTY) content = await readInput(process.stdin);
   if (content === undefined || !content.trim()) invalid('Give a message.');
   if (content.length > 16384 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(content)) invalid('Invalid message.');
-  return { content, operationKey: key ?? randomUUID(), generated: key === undefined, timeoutMs };
+  return { content, operationKey: key ?? randomUUID(), generated: key === undefined, timeoutMs,
+    execution: mode === 'steer' ? { mode, expectedTurnId: expectedTurnId! } : { mode: 'queue' } };
 }
 
 export async function sendMessage(client: CollaborationClient, ref: ConversationRef, input: SendInput,
   scope: { instanceId: string; actorId: string; recordsDirectory: string }) {
   // Reject missing capabilities before persisting a generated key or issuing a mutation.
-  client.require('queue');
+  const execution = input.execution ?? { mode: 'queue' };
+  client.require(execution.mode);
   client.require('lookup');
   if (input.timeoutMs !== null) client.require('deliveryMetadata');
   if (input.generated) {
     try {
       await mkdir(scope.recordsDirectory, { recursive: true, mode: 0o700 });
       await writeFile(join(scope.recordsDirectory, input.operationKey + '.json'), JSON.stringify({ schemaVersion: 1,
-        instanceId: scope.instanceId, actorId: scope.actorId, ref, operationKey: input.operationKey, createdAt: Date.now() }) + '\n', { flag: 'wx', mode: 0o600 });
+        instanceId: scope.instanceId, actorId: scope.actorId, ref, operationKey: input.operationKey, execution, createdAt: Date.now() }) + '\n', { flag: 'wx', mode: 0o600 });
     } catch { throw new CliError(2, 'OPERATION_RECORD_FAILED', 'Cannot save operation key.'); }
   }
   let receipt: ConversationReceipt | undefined;
   try {
     // Exactly one invocation. Disconnection never retries this mutation.
-    const sent = await client.send(ref, input.content, input.operationKey, { mode: 'queue' });
+    const sent = await client.send(ref, input.content, input.operationKey, execution);
     receipt = { ref, operationKey: input.operationKey, messageId: sent.messageId, requestId: sent.requestId,
-      mode: 'queue', deliveryState: 'accepted', targetTurnId: null, observedAt: Date.now(), taskOutcome: 'unknown' };
+      mode: execution.mode, deliveryState: 'accepted', targetTurnId: null, observedAt: Date.now(), taskOutcome: 'unknown' };
     if (input.timeoutMs === null) return { ...receipt, replayed: sent.replayed };
     const deadline = performance.now() + input.timeoutMs;
     while (performance.now() < deadline) {

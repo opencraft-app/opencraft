@@ -484,10 +484,12 @@ export class Collaboration {
     if (action === 'servers') { fields(args, []); return this.servers(context); }
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
     if (action === 'discover' && args.metadataOnly === true) {
-      fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly']);
+      fields(args, ['serverId', 'cursor', 'includeTitle', 'metadataOnly', 'projectId', 'cwd']);
       if (args.includeTitle !== undefined && typeof args.includeTitle !== 'boolean') throw new CollaborationError(400, 'invalid_field');
+      if (args.cwd !== undefined && (typeof args.cwd !== 'string' || !args.cwd.startsWith('/') || /[\x00-\x1f]/u.test(args.cwd))) throw new CollaborationError(400, 'absolute_cwd_required');
       return this.discoverMetadata(context, { serverId: text(args.serverId),
-        cursor: args.cursor == null ? null : text(args.cursor, 4096), includeTitle: args.includeTitle === true });
+        cursor: args.cursor == null ? null : text(args.cursor, 4096), includeTitle: args.includeTitle === true,
+        ...(args.projectId === undefined ? {} : { projectId: text(args.projectId) }), ...(args.cwd === undefined ? {} : { cwd: text(args.cwd, 4096) }) });
     }
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }

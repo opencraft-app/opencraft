@@ -53,6 +53,7 @@ test('old Host capabilities fail before issuing content reads or mutations', asy
     await client.connect();
     await assert.rejects(client.metadata({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
     await assert.rejects(client.read({ serverId: 's', threadId: 't' }), { code: 'UNSUPPORTED_CAPABILITY' });
+    assert.throws(() => client.discover('s', undefined, false, { projectId: 'p' }), { code: 'UNSUPPORTED_CAPABILITY' });
     assert.deepEqual(methods, ['initialize']);
   } finally { await client.close(); }
 });

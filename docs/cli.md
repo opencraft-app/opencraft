@@ -18,6 +18,8 @@ opencraft thread send '<conversation-uri>' 'Review this change' --mode queue --k
 opencraft thread send '<conversation-uri>' --message-file ./message.txt --key review-02 --wait delivered --timeout 30s --json
 opencraft thread lookup '<conversation-uri>' --key review-01 --json
 opencraft thread show '<conversation-uri>' --delivery '<request-id>' --json
+opencraft thread send '<conversation-uri>' 'Adjust the current turn' --mode steer --expected-turn '<exact-turn-id>' --key steer-01 --wait delivered --json
+opencraft thread list --server '<server-id>' --project '<project-id>' --cwd /remote/repo --json
 ```
 
 Profiles contain only the SSH alias, expected installation identity and optional
@@ -28,6 +30,32 @@ registration to choose an explicit default. `--connection` overrides
 require a selection. Explicit options that conflict with a URI fail. Links are
 parsed locally and never cause requests to their origin. Unknown installations
 and legacy page links are not guessed.
+
+Project filters use exact IDs, never project names. `--cwd` is an absolute path
+in the selected Server's filesystem and is normalized there; the caller's cwd
+is not substituted. Each request remains a bounded native catalog page. Filters
+are negotiated independently; this release supports Codex filters, and other
+engines explicitly return unsupported rather than ignore a filter.
+
+Steer requires `--mode steer --expected-turn <exact-turn-id>`. It targets only
+that running Turn; stale/finished Turns are rejected without queue fallback.
+The Turn ID from a known delivery receipt can be used as the explicit target.
+Metadata may leave currentTurnId null when it cannot establish the native value.
+Queue remains the default mode.
+
+`attention` contains only the waiting kind and available interaction identity,
+never questions or approval payloads. Approval/question native flags are exposed;
+unavailable login/setup details are not guessed. Configure the connection with
+`--web-url https://your-server.example/` to attach a canonical UI link. Without a
+configured public URL the link is null. Open that UI to act; the CLI does not
+answer interactions. Queue acceptance can carry the last observed attention and
+timestamp while remaining unconsumed. Recovery metadata comes from the existing
+Host recovery read; recovering/unknown/idle do not establish task completion.
+Recovery reads are optional and bounded to one second; unavailable recovery stays
+null while native metadata remains available. Steer performs no attention read.
+Queue is durably accepted before its optional attention read, which has a
+two-second budget. Failure reports an unknown attention kind and preserves
+the accepted receipt; it cannot delay admission behind a slow Host read.
 
 `list` and `show` return metadata without titles, previews, messages or tools.
 `list --include-title` includes only explicit native titles, without a preview
