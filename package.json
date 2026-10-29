@@ -257,7 +257,7 @@
     "test:hub-network": "tsx --test tests/protocol/hub-network.test.ts",
     "smoke:hub-network": "tsx scripts/smoke/execution/smoke-hub-network.ts",
     "smoke:hub-network-settings": "tsx scripts/smoke/execution/smoke-hub-network-settings.ts",
-    "test:file-preview": "tsx --test tests/resources/file-preview-core.test.ts tests/resources/structured-preview.test.ts tests/resources/office-legacy-word.test.ts",
+    "test:file-preview": "tsx --test tests/resources/file-preview-core.test.ts tests/resources/structured-preview.test.ts tests/resources/office-legacy-word.test.ts tests/resources/host-file-downloads.test.ts tests/resources/html-file-previews.test.ts",
     "smoke:office-preview": "tsx scripts/smoke/resources/smoke-office-preview.ts",
     "smoke:office-resources": "tsx scripts/smoke/resources/smoke-office-resources.ts",
     "test:identity-storage": "tsx --test tests/identity/account-model-defaults.test.ts tests/identity/unified-thread-identity.test.ts tests/chat/opencraft-message-senders.test.ts && npm run test:git-identity && npm run test:account-environment",

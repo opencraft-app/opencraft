@@ -138,3 +138,40 @@ messages rather than raw parser diagnostics.
 DOC and DOCX share a retained paper viewport with zoom and fit-width controls. The scroll container and scaled page frame remain local to the preview; changing application locale does not recreate the renderer or reset zoom.
 
 PPTX previews reveal the current slide in the thumbnail rail when it is reopened or its retained tab is reactivated. This scroll is confined to the preview rail.
+
+## Explicit external HTML reports
+
+Headless websites advertise `htmlPreviews` separately from original downloads.
+The resource header offers Open in browser for HTML on supported local/SSH Hosts;
+static and desktop deployments without that capability retain existing preview and
+download. The inert inline iframe and its script-disabled policy remain unchanged.
+Large HTML outside the existing editable-text limit can still use the external action.
+
+The authorized same-origin POST `/__opencraft_preview/tickets` snapshots one HTML
+file (25 MiB admission) and up to 64 statically referenced relative resources under
+its directory. Local and SSH reads reuse the owned binary data plane and check
+canonical resource boundaries, including symlinks. The final inlined document is
+bounded to 32 MiB; unsupported/external resources are not proxied. This is a
+standalone report viewer, not a live website/app or arbitrary directory server.
+
+The returned path has no domain; the browser applies its existing Server base path
+and public origin. A 60-second ticket is carried only in the URL fragment, removed
+from browser history before a same-origin redemption POST, and consumed atomically.
+GET/link scanners do not consume it. Redemption creates a 15-minute HttpOnly,
+SameSite=Strict purpose-limited cookie (Secure except loopback HTTP). The preview
+cookie admits only that immutable snapshot, never application APIs or file download.
+Refresh uses the preview session; expired/revoked links require a fresh action.
+Original issuer admission, including Actor/SSH authorization, is rechecked; restart
+or shutdown revokes the in-memory store. Capacity is bounded to 16 snapshots and
+64 MiB plus at most two in-flight preparations.
+
+A trusted parent shell embeds the report with `sandbox=allow-scripts` and a matching
+response sandbox CSP. The report has an opaque origin, no main-page/cookie access,
+no connection permission and no nested frames/forms; ordinary report scripts and
+native details controls work with embedded images. No main login token is in the
+URL or document. This does not create a public tunnel or bypass an outer identity
+gateway: external reachability must already be supplied by the host deployment.
+
+Verification includes `tests/resources/html-file-previews.test.ts` and
+`scripts/smoke/resources/smoke-html-file-preview.ts` (set
+`OPENCRAFT_HTML_PREVIEW_REPORT` to a self-contained report).
