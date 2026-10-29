@@ -1,3 +1,4 @@
+import type { ConversationScopeId } from '../conversation-binding';
 import type { HeadlessConnectorPort } from "./headless-port";
 import type { AppServerClient } from "@opencraft/appserver-client";
 import type { AuthenticationService } from "../authentication/authentication-service";
@@ -99,12 +100,12 @@ export class ConnectorManager {
   }
   selectionConfirmed(hostId: string, scopeId: string, id: string): boolean {
     const remote = this.remoteConfig(id);
-    if (remote) { const binding = this.bindings.getSnapshot().bindings.find(b => b.scopeId === scopeId && b.hostId === hostId);
-      return !!binding?.conversationKey && this.remote?.state(hostId)?.selections.some(s => s.threadId === binding.conversationKey!.threadId && s.connectorIds.includes(remote.server)) === true; }
+    if (remote) { const binding = this.bindings.resolve(scopeId as ConversationScopeId);
+      return binding?.hostId === hostId && !!binding.conversationKey && this.remote?.state(hostId)?.selections.some(s => s.threadId === binding.conversationKey!.threadId && s.connectorIds.includes(remote.server)) === true; }
     return this.confirmedScopes.get(key(hostId, scopeId))?.has(id) === true; }
   async select(hostId: string, scopeId: string, id: string, enabled: boolean): Promise<void> {
-    const binding = this.bindings.getSnapshot().bindings.find(b => b.scopeId === scopeId && b.hostId === hostId);
-    if (!binding) throw new Error("会话目标已失效");
+    const binding = this.bindings.resolve(scopeId as ConversationScopeId);
+    if (!binding || binding.hostId !== hostId) throw new Error("会话目标已失效");
     const remote = this.remoteConfig(id);
     if (remote) { if (!binding.conversationKey) throw new Error("会话目标已失效");
       await this.remote!.command(hostId, "select", { threadId: binding.conversationKey.threadId, id: remote.server, enabled }); return; }
@@ -121,7 +122,7 @@ export class ConnectorManager {
     });
     if (this.disposed || this.selectionIntents.get(intentKey) !== intent) return;
     this.selectionIntents.delete(intentKey);
-    if (enabled && (!this.bindings.getSnapshot().bindings.some(b => b.scopeId === scopeId && b.hostId === hostId)
+    if (enabled && (!(this.bindings.resolve(scopeId as ConversationScopeId)?.hostId===hostId)
       || !this.runtime.getSnapshot().connections.some(c => c.connectionId === connection!.connectionId && ["ready", "partial"].includes(c.phase)))) {
       throw new Error("保存期间连接已变化，请重新连接并确认本会话使用");
     }
@@ -246,8 +247,8 @@ export class ConnectorManager {
       for (const selection of this.record.value.selections) {
         const confirmed = this.confirmedScopes.get(key(selection.hostId, selection.scopeId));
         if (!confirmed?.size) continue;
-        const binding = this.bindings.getSnapshot().bindings.find(b => b.scopeId === selection.scopeId && b.hostId === selection.hostId);
-        if (!binding?.conversationKey) continue;
+        const binding = this.bindings.resolve(selection.scopeId as ConversationScopeId);
+        if (!binding?.conversationKey || binding.hostId !== selection.hostId) continue;
         const scope = { hostId: selection.hostId, threadId: binding.conversationKey.threadId }, scopeKey = key(scope.hostId, scope.threadId); wanted.add(scopeKey);
         const ids = this.runtime.getSnapshot().connections.filter(c => c.hostId === scope.hostId && selection.connectorIds.some(id => confirmed.has(id) && providerId(id) === c.connectorId) && ["ready", "partial"].includes(c.phase)).map(c => c.connectionId).sort();
         const signature = JSON.stringify(ids); if (this.applied.get(scopeKey)?.signature === signature) continue;
@@ -264,7 +265,7 @@ export class ConnectorManager {
     }
     const configuration = { ...structuredClone(this.record.value), connectors: [...this.record.value.connectors] };
     if (this.remote) {
-      const hostIds = new Set([...this.remote.hostIds(), ...configuration.connectors.map(c => c.hostId), ...this.bindings.getSnapshot().bindings.map(b => b.hostId)]);
+      const hostIds = new Set([...this.remote.hostIds(), ...configuration.connectors.map(c => c.hostId), ...this.bindings.hostIds()]);
       configuration.connectors = configuration.connectors.filter(c => c.kind !== "managed" || !this.remote!.owns(c.hostId));
       for (const hostId of hostIds) if (this.remote.owns(hostId)) for (const row of this.remote.state(hostId)?.instances ?? []) {
         const id = `headless:${hostId}:${row.id}`;
