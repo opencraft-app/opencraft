@@ -53,8 +53,9 @@ timestamp while remaining unconsumed. Recovery metadata comes from the existing
 Host recovery read; recovering/unknown/idle do not establish task completion.
 Recovery reads are optional and bounded to one second; unavailable recovery stays
 null while native metadata remains available. Steer performs no attention read.
-Queue's optional attention read has a two-second budget; failure reports an
-unknown attention kind and never prevents the send.
+Queue is durably accepted before its optional attention read, which has a
+two-second budget. Failure reports an unknown attention kind and preserves
+the accepted receipt; it cannot delay admission behind a slow Host read.
 
 `list` and `show` return metadata without titles, previews, messages or tools.
 `list --include-title` includes only explicit native titles, without a preview

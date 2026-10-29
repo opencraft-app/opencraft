@@ -29,15 +29,28 @@ const titleThreads = new Set();
 let nextTitleThread = 0;
 let threadReadsPaused = false;
 const heldThreadReads = [];
+const delayedThreadReads = new Set();
+const delayedReadWaiters = [];
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 function readThread(message) {
   const active = turns.get(message.params.threadId);
   const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : systemErrorThreads.has(message.params.threadId) ? "systemError" : "idle";
   const metadata = threadMetadata.get(message.params.threadId) ?? {};
-  send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  const reply = () => send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  if (metadata.readDelayMs) {
+    const timer = setTimeout(() => {
+      reply(); delayedThreadReads.delete(timer);
+      if (!delayedThreadReads.size) for (const id of delayedReadWaiters.splice(0)) send({id,result:{}});
+    }, metadata.readDelayMs);
+    delayedThreadReads.add(timer);
+  } else reply();
 }
 input.on("line", line => {
   const message = JSON.parse(line);
+  if (message.method === 'test/waitForDelayedReads') {
+    if (delayedThreadReads.size) delayedReadWaiters.push(message.id); else send({id:message.id,result:{}});
+    return;
+  }
   if (message.method === 'test/setMetadata') { threadMetadata.set(message.params.threadId, message.params.metadata); send({id: message.id, result: {}}); return; }
   if (typeof message.params?.permissions === "string") permissionRequests.push({ method: message.method, params: message.params });
   if (message.method === "test/readPermissionRequests") { send({ id: message.id, result: { data: permissionRequests } }); return; }

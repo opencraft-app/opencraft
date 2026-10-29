@@ -63,11 +63,11 @@ function withAttentionLink(row: ConversationMetadata, profile: Profile) {
 export async function sendWithAttention(client: CollaborationClient, ref: ConversationRef, input: SendInput,
   scope: Parameters<typeof sendMessage>[3], profile: Profile) {
   if (input.execution?.mode === 'steer') return sendMessage(client, ref, input, scope);
+  const receipt = await sendMessage(client, ref, input, scope);
+  if (['submitted','injected'].includes(receipt.deliveryState)) return receipt;
   let metadata: ReturnType<typeof withAttentionLink> | undefined;
   try { metadata = withAttentionLink(await client.metadata(ref, 2000), profile); }
   catch { /* Auxiliary metadata is not execution authority or a send prerequisite. */ }
-  const receipt = await sendMessage(client, ref, input, scope);
-  if (['submitted','injected'].includes(receipt.deliveryState)) return receipt;
   if (!metadata) return { ...receipt, attention: { kind: 'unknown', interactionId: null,
     uiLink: profile.webUrl ? conversationLink(profile.webUrl, ref) : null, observedAt: null } };
   return metadata.attention ? { ...receipt, attention: { ...metadata.attention, observedAt: metadata.observedAt } } : receipt;

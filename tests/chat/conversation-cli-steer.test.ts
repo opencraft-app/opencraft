@@ -59,6 +59,24 @@ test('steer skips auxiliary metadata; queue still sends when attention is unavai
   assert.equal(queue.deliveryState, 'accepted'); assert.equal((queue as any).attention.kind, 'unknown');
   assert.equal(reads, 1); assert.equal(sends, 2);
 });
+test('queue admission precedes a slow metadata operation on a serial Host channel', { timeout: 2000 }, async () => {
+  const ref = { serverId: 'server', threadId: 't' }, trace: string[] = [];
+  let channel = Promise.resolve<unknown>(undefined);
+  const enqueue = <T>(operation: () => Promise<T>) => {
+    const result = channel.then(operation); channel = result.catch(() => {}); return result;
+  };
+  const client = { require() {},
+    metadata() {
+      void enqueue(async () => { trace.push('metadata'); return new Promise(() => {}); });
+      return new Promise((_resolve, reject) => setTimeout(() => reject(Error('local read deadline')), 10));
+    },
+    send() { return enqueue(async () => { trace.push('accepted'); return { messageId: 'm', requestId: 'r', replayed: false }; }); },
+  } as unknown as CollaborationClient;
+  const receipt = await sendWithAttention(client, ref, { content: 'synthetic', operationKey: 'key', generated: false, timeoutMs: null },
+    { instanceId: 'i', actorId: 'a', recordsDirectory: '/unused' }, { sshAlias: 'synthetic', instanceId: 'i' });
+  assert.deepEqual(trace, ['accepted', 'metadata']); assert.equal(receipt.deliveryState, 'accepted');
+  assert.equal((receipt as any).attention.kind, 'unknown');
+});
 test('native metadata and attention remain readable when recovery is unsupported or times out', async t => {
   const keepAlive = setTimeout(() => {}, 2000); t.after(() => clearTimeout(keepAlive));
   for (const missing of ['unsupported', 'timeout']) {
