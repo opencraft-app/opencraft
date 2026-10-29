@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
+import type { AccountPoolUncertainDiagnostic, CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
 import { acquireCodexWriter, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
@@ -31,14 +31,16 @@ export async function sealLegacyAccountMaintenance(options: ConstructorParameter
   } finally { release(); }
 }
 type Phase = "open" | "fenced" | "released" | "cold-ready";
-type HistoricalUnknown = { id: string; route: string }[];
+type HistoricalUnknown = { id: string; route: string; diagnostic?: AccountPoolUncertainDiagnostic & {
+  owner: string; bootId: string; incarnation: string; pid: number; ownerEpoch: number;
+} }[];
 interface State {
   schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
   retained?: CodexAccountRetainedState;
   sealed?: { storage: string; historicalCount: number;
     configurationSelectorSha256: string; cliSha256: string; historicalUnknownSha256?: string };
   ready?: { owner: string; identity: string };
-  uncertain: { id: string; route: string }[];
+  uncertain: HistoricalUnknown;
   carriedUnknown?: HistoricalUnknown;
   legacyMaintenance?: { receiptSha256: string; sourceBundleSha256: string; sourcePid: number };
 }
@@ -213,10 +215,12 @@ export class AccountCoreOwner {
     this.calls++;
     let done = false; return () => { if (!done) { done = true; this.calls--; } };
   }
-  uncertain = async (route: string) => {
+  uncertain = async (route: string, diagnostic?: AccountPoolUncertainDiagnostic) => {
     // Delivery uncertainty blocks handoff. It is not a storage failure and must
     // not disable unrelated account traffic in an otherwise open owner.
-    this.state.uncertain.push({ id: randomUUID(), route: ["/v1/responses", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(route) ? route : "other" });
+    this.state.uncertain.push({ id: randomUUID(), route: ["/v1/responses", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(route) ? route : "other",
+      ...(diagnostic ? { diagnostic: { ...diagnostic, owner: this.owner, bootId: this.bootId,
+        incarnation: this.incarnation, pid: process.pid, ownerEpoch: this.state.epoch } } : {}) });
     // This write participates in the same transition queue as the fence. A
     // request remains active until its uncertainty is durable.
     while (this.transitioning) await new Promise(resolve => setTimeout(resolve, 1));

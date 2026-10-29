@@ -55,15 +55,16 @@ class ResponsesCompletion {
 }
 
 /** Responses ends at response.completed; native consumers need not await HTTP EOF. */
-export async function* completedResponsesBody(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+export async function* completedResponsesBody(body: ReadableStream<Uint8Array>, observe?: (event: "completion" | "eof" | "read-failed") => void): AsyncGenerator<Uint8Array> {
   const reader = body.getReader();
   const completion = new ResponsesCompletion();
   let eof = false;
   try {
     while (true) {
-      const next = await reader.read();
-      if (next.done) { eof = true; return; }
+      const next = await reader.read().catch(error => { observe?.("read-failed"); throw error; });
+      if (next.done) { eof = true; observe?.("eof"); return; }
       const completed = completion.push(next.value);
+      if (completed) observe?.("completion");
       yield next.value;
       if (completed) return;
     }

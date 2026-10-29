@@ -585,3 +585,24 @@ other engines retain their full-page path. Disposable projection schema 2 fences
 old readers from lazy placeholders; see [SQLite lifecycle](../../sqlite-lifecycle.md).
 The isolated native regression is documented in
 [history cold reproduction](../../../scripts/performance/README.md).
+
+### Account proxy uncertain diagnostics
+
+Each newly persisted HTTP uncertainty retains a local random `requestId`, method,
+handler stage, first observed failure reason (`client-disconnected`,
+`upstream-failed`, or `response-stream-failed`), acceptance/dispatch/observation
+times, HTTP status and header state, and whether a complete Responses terminal
+record, upstream EOF, or upstream read failure was observed. Completion observation
+is not a client delivery acknowledgement. The owner adds its owner/boot/incarnation,
+PID and admission epoch. One record represents one failed local HTTP request; it
+does not count native retries or prove how many upstream executions occurred.
+
+Only UUID thread/turn coordinates explicitly present in `thread-id` or
+`x-codex-turn-metadata` are retained with their header source. Conflicting thread
+coordinates suppress the metadata turn association. Session/affinity/cache keys
+are not inferred thread IDs. No call ID is inferred when absent, and HTTP request
+IDs are not router leases or RPC IDs. Diagnostics do not retain input, arbitrary
+metadata, credentials, response content or raw error strings. Old id/route-only
+records remain unchanged; cold handoff preserves each entire record, including
+optional evidence, in its exact historical manifest. These additions do not
+change admission, replay, cancellation or uncertainty classification.

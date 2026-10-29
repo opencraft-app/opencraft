@@ -8,7 +8,7 @@ import { CodexSubscriptionService } from "./codex-usage.js";
 import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
-import { startCodexAccountPoolServer } from "./server.js";
+import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from "./server.js";
 
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
 
@@ -23,7 +23,7 @@ export interface CodexAccountServiceOptions {
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly ownerHandoff?: {
     admissionOpen(): boolean;
-    onUncertain(route: string): void | Promise<void>;
+    onUncertain(route: string, diagnostic: AccountPoolUncertainDiagnostic): void | Promise<void>;
     retained?: CodexAccountRetainedState;
   };
 }
