@@ -7,7 +7,7 @@ import { request } from "node:http";
 import { CodexGenerationRegistry } from "../../apps/codex-core/src/generation-registry.js";
 import { routerDigest } from "../../apps/codex-core/src/router-maintenance.js";
 import { CodexGenerationRuntime } from "../../apps/codex-core/src/generation-runtime.js";
-import { startCodexGenerationService } from "../../apps/codex-core/src/generation-service.js";
+import { startCodexGenerationService, inspectRouterMaintenanceService } from "../../apps/codex-core/src/generation-service.js";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 import { GenerationPeer } from "../../apps/codex-core/src/generation-peer.js";
 import { WebSocketServer } from "ws";
@@ -19,11 +19,12 @@ for (const carriedHistory of [false, true]) test("real router service preserves 
   await mkdir(data, { mode: 0o700 }); await mkdir(directory, { mode: 0o700 });
   const token = "synthetic-router-private-control-token", endpoint = join(directory, "control.sock"), coreEndpoint = join(root, "core.sock");
   const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false, coreProxy = 0;
+  const unavailable = new Set<string>();
   const http = createServer(), wss = new WebSocketServer({ server: http });
   wss.on("connection", socket => socket.on("message", raw => {
     const m = JSON.parse(String(raw)); calls.push(m.method);
     if (m.id === undefined) return;
-    if (m.method === "thread/read" && rejectHistory) { socket.send(JSON.stringify({ id: m.id, error: { code: -32600, message: "Historical binding is unavailable" } })); return; }
+    if (m.method === "thread/read" && (rejectHistory || unavailable.has(m.params.threadId))) { socket.send(JSON.stringify({ id: m.id, error: { code: -32600, message: "Historical binding is unavailable" } })); return; }
     if (m.method === "thread/resume") resumes++;
     const result = m.method === "initialize" ? { userAgent: "retained-native" }
       : m.method === "thread/list" ? { data: [{ id: "historical", status: { type: "idle" } }], nextCursor: null }
@@ -91,12 +92,20 @@ for (const carriedHistory of [false, true]) test("real router service preserves 
       // Persist the already-imported responsibility fixture while the source is
       // released. The service must exercise its real historical cold reader.
       const registryOwner = new CodexGenerationRegistry(registry);
-      const archive = { version: 1, receipt: { source: { owner: "prior-router" }, sourceHandoff: { version: 1, uncertain: true, pending: ["legacy-unknown"] } } };
+      const entries = ["empty-one", "empty-two"].map(threadId => ({ generationId: "original", incarnation: 1, threadId,
+        reads: [false, true].map(includeTurns => ({ includeTurns, code: -32600, errorSha256: routerDigest({ code: -32600, message: "Historical binding is unavailable" }) })),
+        creation: { phase: "created", inputId: null, turnId: null, executionLeases: 0, submissions: 0, queueInputs: 0, turnAuthorities: 0, inputAuthorities: 0, inputOrigins: 0, actorRequests: 0, nativeRows: 0 } }));
+      for (const entry of entries) { registryOwner.discover(entry.threadId, "original"); unavailable.add(entry.threadId); }
+      const archive = { version: 1, receipt: { source: { owner: "prior-router" }, sourceHandoff: { version: 1, uncertain: true, pending: ["legacy-unknown"] },
+        native: { hostColdUnavailable: { version: 1, kind: "host-cold-unavailable", source: { owner: "prior-router", bootId: "prior-boot" }, checkedAt: new Date(Date.now() - 16 * 60_000).toISOString(), evidenceSha256: "e".repeat(64), entries } } } };
       const id = routerDigest(archive);
       registryOwner.setMetadata(`router-history:${id}`, archive);
       const state = registryOwner.metadata("router-handoff") as Record<string, unknown>;
       registryOwner.setMetadata("router-handoff", { ...state, history: [id], pending: ["legacy-unknown"], uncertain: true, currentUncertain: false, sealed: routerDigest(registryOwner.coldSnapshot()) });
       registryOwner.close();
+      const inspection = await inspectRouterMaintenanceService(options, true);
+      assert.equal(inspection.sourceHandoff && (inspection.sourceHandoff as any).phase, "released");
+      assert.equal(inspection.native.generations[0]!.history.coldUnavailable!.length, 2, "released collector inherits the archive after the physical seal was cleared");
     }
     service = await startCodexGenerationService(options);
     for (const kind of ["launcher", "native"] as const) {
@@ -105,6 +114,11 @@ for (const carriedHistory of [false, true]) test("real router service preserves 
       await writeFile(artifacts[kind], `synthetic ${kind} artifact\n`);
     }
     const cold = await action("cold-ready"); assert.equal(cold.status, 200);
+    if (carriedHistory) {
+      const inspection = await inspectRouterMaintenanceService(options, true);
+      assert.equal((inspection.sourceHandoff as any).phase, "cold-ready");
+      assert.equal(inspection.native.generations[0]!.history.coldUnavailable!.length, 2);
+    }
     const oldInput = await input();
     const started = performance.now(); await service.close(); service = await startCodexGenerationService(options);
     assert.equal((await rpc("/owner-handoff", { action: "resume", ...oldInput, identity: cold.ready.identity })).status, 503);

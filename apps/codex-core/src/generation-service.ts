@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { inspectRouterNative, readRouterRegistry, routerDigest, routerFileDigest, committedHostRestartArchive } from "./router-maintenance.js";
+import { inspectRouterNative, readRouterRegistry, routerDigest, routerFileDigest, committedHostRestartArchive, archivedHostColdUnavailable, type HostColdUnavailablePolicy } from "./router-maintenance.js";
 import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
@@ -79,7 +79,7 @@ export async function startCodexGenerationService(options: {
       metadata: Object.fromEntries([...runtime.registry.list().map(g => [`runtime:${g.id}`, runtime.registry.metadata(`runtime:${g.id}`)]),
         ...runtime.registry.routes().map(r => [`thread-retention:${r.threadId}`, runtime.registry.metadata(`thread-retention:${r.threadId}`)])]),
       unresolvedCreations: runtime.registry.list().reduce((n, g) => n + runtime.registry.unresolvedCreations(g.id), 0),
-      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, runtime.owner.continuingNative(), runtime.owner.hostRestartPending());
+      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, runtime.owner.continuingNative(), runtime.owner.hostRestartPending(), runtime.owner.hostColdUnavailable(), runtime.owner.hostColdUnavailableArchived());
     const coldRead = () => runtime.owner.snapshot().history?.length ? nativeMaintenance() : runtime.coldReadNative();
     if (runtime.owner.maintenancePending()) await runtime.owner.importMaintenance(await configuration(), nativeMaintenance);
     const observation = async () => {
@@ -170,7 +170,7 @@ export async function routerConfiguration(options: Parameters<typeof startCodexG
 }
 
 /** Read-only collector; opens no routing socket and never takes the registry writer role. */
-export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0], continuing = false, provisional = false, hostRestart = false) {
+export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0], continuing = false, provisional = false, hostRestart = false, coldUnavailable?: HostColdUnavailablePolicy) {
   options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
   const launch = await new CodexCoreControlClient(options.coreEndpoint, options.token).appServerLaunch();
   if (await realpath(options.dataDirectory) !== launch.dataDirectory) throw Error("Router account data selector changed");
@@ -182,8 +182,21 @@ export async function inspectRouterMaintenanceService(options: Parameters<typeof
   const recoveryBootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
   if (hostRestart && !source?.bootId) throw Error("Host restart requires a durable source boot identity");
   const committedHostRestart = hostRestart && source?.bootId === recoveryBootId ? committedHostRestartArchive(state.metadata, recoveryBootId) : undefined;
+  const handoff = state.metadata["router-handoff"] as { maintenanceSeal?: string; phase?: string; operationId?: string; fence?: string; history?: string[] } | undefined;
+  const archive = handoff?.maintenanceSeal ? state.metadata[`router-history:${handoff.maintenanceSeal}`] as { receipt?: { operationId?: string; fence?: string; source?: { owner?: string; bootId?: string }; native?: { hostColdUnavailable?: HostColdUnavailablePolicy } } } | undefined : undefined;
+  if (archive && routerDigest(archive) !== handoff!.maintenanceSeal) throw Error("Host cold-unavailable archive changed");
+  const inheritedUnavailable = archivedHostColdUnavailable(handoff?.history, key => state.metadata[key]);
+  const retainedUnavailable = archive?.receipt?.native?.hostColdUnavailable ?? inheritedUnavailable;
+  if (coldUnavailable && (!hostRestart || committedHostRestart && routerDigest(coldUnavailable) !== routerDigest(retainedUnavailable))) throw Error("Host cold-unavailable input is outside its approved recovery");
+  const policyArchived = !!archive?.receipt?.native?.hostColdUnavailable && !!retainedUnavailable
+    && routerDigest(archive.receipt.native.hostColdUnavailable) === routerDigest(retainedUnavailable)
+    && ["released", "cold-ready"].includes(handoff?.phase ?? "")
+    && source?.owner === archive!.receipt!.source?.owner && source?.bootId === archive!.receipt!.source?.bootId
+    && handoff?.operationId === archive!.receipt!.operationId && handoff?.fence === archive!.receipt!.fence
+    && (!coldUnavailable || routerDigest(coldUnavailable) === routerDigest(retainedUnavailable));
   const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, continuing || !!committedHostRestart,
-    hostRestart && !committedHostRestart ? { sourceBootId: source!.bootId!, recoveryBootId } : undefined);
+    hostRestart && !committedHostRestart ? { sourceBootId: source!.bootId!, sourceOwner: source!.owner, recoveryBootId, ...(policyArchived ? { policyArchived: true } : {}) } : undefined, coldUnavailable ?? retainedUnavailable,
+    !!inheritedUnavailable && routerDigest(coldUnavailable ?? retainedUnavailable) === routerDigest(inheritedUnavailable));
   const after = readRouterRegistry(options.registryDirectory);
   if (!provisional && (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"]))) throw Error("Router current registry changed during collection");
   return { ...(provisional ? { provisional: true } : {}), sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,

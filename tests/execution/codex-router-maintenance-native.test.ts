@@ -12,9 +12,10 @@ import type { GenerationRecord } from "../../apps/codex-core/src/generation-regi
 
 async function fixture() {
   const root=await mkdtemp(join(tmpdir(),'router-maintenance-native-')),socket=join(root,'native.sock'),endpoint=join(root,'core.sock');
-  const work={core:0,oauth:0,callbacks:0,process:false,turn:false,goal:false,unexpected:false,changedIdentity:false,systemError:false,busyCommand:false,missingTurns:false,missingItems:false,lateTurn:false,readTurns:0};const calls:string[]=[];
+  const work={core:0,oauth:0,callbacks:0,process:false,turn:false,goal:false,unexpected:false,changedIdentity:false,systemError:false,busyCommand:false,missingTurns:false,missingItems:false,lateTurn:false,readTurns:0,missingIds:[]as string[],changedReadError:false};const calls:string[]=[];
   const server=createServer(),wss=new WebSocketServer({server});
   wss.on('connection',ws=>ws.on('message',raw=>{const m=JSON.parse(String(raw));calls.push(m.method);if(m.id===undefined)return;
+    if(m.method==='thread/read'&&work.missingIds.includes(m.params.threadId)){ws.send(JSON.stringify({id:m.id,error:{code:-32600,message:work.changedReadError&&m.params.includeTurns?'Changed missing Thread':'Thread is not loaded'}}));return;}
     const result=m.method==='initialize'?{}:m.method==='thread/loaded/list'?{data:['thread']}:
       m.method==='thread/goal/get'?{goal:work.goal?{status:'active'}:null}:
       m.method==='thread/read'?{thread:{id:m.params.threadId,status:{type:work.turn?'active':work.systemError?'systemError':'idle'},...(m.params.includeTurns?{turns:work.missingTurns?[]:[{id:'turn',status:work.lateTurn&&work.readTurns++>0?'inProgress':'failed',...(work.missingItems?{}:{items:[{id:'command',type:'commandExecution',status:work.busyCommand?'inProgress':'completed'}]})}]}:{})}}:{};
@@ -57,4 +58,53 @@ test('host restart re-proves current physical identities without rewriting metad
 });
 for(const field of ['core','callbacks','process','turn','unexpected']as const)test('host restart rejects current unresolved work: '+field,async()=>{
  const f=await fixture();try{(f.work as any)[field]=['core','callbacks'].includes(field)?1:true;await assert.rejects(inspectRouterNative(f.options,false,{sourceBootId:'old-boot',recoveryBootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim()}));}finally{await f.close();}
+});
+
+async function unavailableFixture(){
+ const f=await fixture();f.options.metadata['runtime:old'].cliSha256='a'.repeat(64);
+ const missing=['empty-a','empty-b'];f.work.missingIds=missing;
+ for(const id of missing)f.options.routes.push({generationId:'old',threadId:id});
+ const policy={version:1 as const,kind:'host-cold-unavailable'as const,source:{owner:'source',bootId:'previous-boot'},checkedAt:new Date().toISOString(),evidenceSha256:'e'.repeat(64),entries:missing.map(threadId=>({generationId:'old',incarnation:1,threadId,reads:[false,true].map(includeTurns=>({includeTurns,code:-32600,errorSha256:routerDigest({code:-32600,message:'Thread is not loaded'})})),creation:{phase:'created'as const,inputId:null,turnId:null,executionLeases:0,submissions:0,queueInputs:0,turnAuthorities:0,inputAuthorities:0,inputOrigins:0,actorRequests:0,nativeRows:0}}))};
+ const host={sourceBootId:'previous-boot',sourceOwner:'source',recoveryBootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim()};
+ return {...f,policy,host};
+}
+test('host cold-unavailable proof retains exactly two approved zero-Turn bindings as unavailable',async()=>{
+ const f=await unavailableFixture();try{
+  const before=routerDigest(f.options.metadata),routes=structuredClone(f.options.routes);
+  await assert.rejects(inspectRouterNative(f.options,false,f.host),'unapproved missing binding blocks');
+  const proof=await inspectRouterNative(f.options,false,f.host,f.policy);
+  assert.deepEqual(proof.hostColdUnavailable,f.policy);assert.equal(proof.generations[0]!.history.failures.length,0);
+  assert.deepEqual(proof.generations[0]!.history.coldUnavailable!.map(row=>row.threadId),['empty-a','empty-b']);
+  assert.deepEqual(f.options.routes,routes);assert.equal(routerDigest(f.options.metadata),before);
+  assert(f.calls.every(method=>['initialize','initialized','thread/loaded/list','thread/read'].includes(method)));
+  await assert.rejects(inspectRouterNative(f.options,false,undefined,f.policy),'ordinary strict recovery does not acquire host exceptions');
+  await assert.rejects(inspectRouterNative(f.options,true,undefined,f.policy),'unarchived continuing proof cannot learn an exception');
+  const ordinary=await inspectRouterNative(f.options,false,undefined,f.policy,true);assert.equal(ordinary.generations[0]!.history.coldUnavailable!.length,2);
+  const continuing=await inspectRouterNative(f.options,true,undefined,f.policy,true);assert.deepEqual(continuing.hostColdUnavailable,f.policy);
+ }finally{await f.close();}
+});
+for(const failure of ['third','read-error','incarnation','source','has-input','has-turn','queue','evidence','stale']as const)test('host cold-unavailable rejects '+failure,async()=>{
+ const f=await unavailableFixture();try{
+  if(failure==='third'){f.options.routes.push({generationId:'old',threadId:'extra'});f.work.missingIds.push('extra');}
+  if(failure==='read-error')f.work.changedReadError=true;
+  if(failure==='incarnation')f.policy.entries[0]!.incarnation=2;
+  if(failure==='source')f.policy.source.owner='foreign';
+  if(failure==='has-input')(f.policy.entries[0]!.creation as any).inputId='input';
+  if(failure==='has-turn')(f.policy.entries[0]!.creation as any).turnId='turn';
+  if(failure==='queue')f.policy.entries[0]!.creation.queueInputs=1;
+  if(failure==='evidence')f.policy.evidenceSha256='missing';
+  if(failure==='stale')f.policy.checkedAt=new Date(Date.now()-16*60_000).toISOString();
+  await assert.rejects(inspectRouterNative(f.options,false,f.host,f.policy));
+ }finally{await f.close();}
+});
+
+test('archived negative evidence survives its timestamp while a new host proof still requires fresh evidence',async()=>{
+ const f=await unavailableFixture();try{
+  f.policy.checkedAt=new Date(Date.now()-16*60_000).toISOString();
+  await assert.rejects(inspectRouterNative(f.options,false,f.host,f.policy),/Invalid host/);
+  const proof=await inspectRouterNative(f.options,false,{...f.host,policyArchived:true},f.policy);
+  assert.equal(proof.generations[0]!.history.coldUnavailable!.length,2);
+  const recovery=await inspectRouterNative(f.options,true,undefined,f.policy,true);assert.deepEqual(recovery.hostColdUnavailable,f.policy);
+  f.work.changedReadError=true;await assert.rejects(inspectRouterNative(f.options,false,{...f.host,policyArchived:true},f.policy));
+ }finally{await f.close();}
 });

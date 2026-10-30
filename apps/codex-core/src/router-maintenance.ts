@@ -6,7 +6,7 @@ import { request } from "node:http";
 import { inspectGenerationRegistry, type GenerationRecord } from "./generation-registry.js";
 import type { GenerationSupervisor } from "./generation-supervisor.js";
 import { GenerationPeer, NativeGenerationError, rpcRecord } from "./generation-peer.js";
-import { readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
+import { readNativeHistory, nativeHistoryFailures, type NativeHistoryFailure, type NativeHistoryFailures } from "./native-history-read.js";
 import { generationArtifactDigest } from "./generation-artifact-digest.js";
 
 export const routerDigest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -43,6 +43,36 @@ export function committedHostRestartArchive(metadata: Record<string, unknown>, b
 }
 const sha = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(value);
+export interface HostColdUnavailablePolicy {
+  version: 1; kind: "host-cold-unavailable"; source: { owner: string; bootId: string }; checkedAt: string; evidenceSha256: string;
+  entries: (NativeHistoryFailure & { incarnation: number; creation: { phase: "created"; inputId: null; turnId: null;
+    executionLeases: number; submissions: number; queueInputs: number; turnAuthorities: number; inputAuthorities: number; inputOrigins: number; actorRequests: number; nativeRows: number } })[];
+}
+export function hostColdUnavailablePolicy(input: unknown, requireFresh = true): HostColdUnavailablePolicy {
+  const p = rpcRecord(input), source = rpcRecord(p.source), now = Date.now(), checked = Date.parse(String(p.checkedAt));
+  if (p.version !== 1 || p.kind !== "host-cold-unavailable" || !identity(source.owner) || !identity(source.bootId)
+    || !sha(p.evidenceSha256) || !Number.isFinite(checked) || requireFresh && (checked > now + 1000 || checked < now - 15 * 60_000)
+    || !Array.isArray(p.entries) || !p.entries.length || p.entries.length > 128) throw Error("Invalid host cold-unavailable policy");
+  nativeHistoryFailures({ version: 1, failures: p.entries });
+  for (const entry of p.entries) {
+    const row = rpcRecord(entry), c = rpcRecord(row.creation);
+    if (!Number.isSafeInteger(row.incarnation) || Number(row.incarnation) < 1 || c.phase !== "created" || c.inputId !== null || c.turnId !== null
+      || ["executionLeases", "submissions", "queueInputs", "turnAuthorities", "inputAuthorities", "inputOrigins", "actorRequests", "nativeRows"].some(key => c[key] !== 0)) throw Error("Host cold-unavailable Thread has work or incomplete evidence");
+  }
+  return structuredClone(input) as HostColdUnavailablePolicy;
+}
+export function archivedHostColdUnavailable(history: unknown, read: (key: string) => unknown): HostColdUnavailablePolicy | undefined {
+  if (history === undefined) return undefined;
+  if (!Array.isArray(history) || new Set(history).size !== history.length) throw Error("Invalid cold-unavailable archive sequence");
+  const rows = history.map(id => {
+    if (!sha(id)) throw Error("Invalid cold-unavailable archive identity");
+    const row = rpcRecord(read(`router-history:${id}`));
+    if (row.version !== 1 || routerDigest(row) !== id) throw Error("Cold-unavailable archive changed");
+    return rpcRecord(rpcRecord(row.receipt).native).hostColdUnavailable;
+  });
+  const policy = rows.reverse().find(value => value !== undefined);
+  return policy === undefined ? undefined : hostColdUnavailablePolicy(policy, false);
+}
 export function privateRouterJson(path: string): unknown {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -111,6 +141,10 @@ export function readRouterMaintenance(path: string, state: unknown, storage: str
   if (value.mode === "host-restart" && (host.policy !== "host-restart-v1" || host.sourceBootId !== value.source.bootId
     || host.recoveryBootId !== value.controller.bootId || raw.phase !== "open"
     || !Array.isArray(raw.history) || !raw.history.length || !sha(raw.configuration) || raw.configuration !== value.configurationSha256)) throw Error("Invalid host restart proof");
+  if (host.hostColdUnavailable) {
+    const policy = hostColdUnavailablePolicy(host.hostColdUnavailable, value.mode === "host-restart");
+    if (value.mode === "host-restart" && (policy.source.owner !== value.source.owner || policy.source.bootId !== value.source.bootId)) throw Error("Host cold-unavailable receipt source changed");
+  }
   const continuing = rpcRecord(value.native).policy === "continuing-v1";
   if (value.mode === "interrupted-source" && (!continuing || raw.phase !== "fenced" || raw.sourceOwner !== value.source.owner
     || raw.operationId !== value.operationId || raw.fence !== value.fence)
@@ -140,6 +174,7 @@ export function routerNativeDigest(value: unknown) {
   const core = rpcRecord(native.core);
   if (native.version !== 1 || !Array.isArray(native.generations) || !core.owner || !Number.isSafeInteger(core.pid) || !Number.isSafeInteger(core.epoch)) throw Error("Invalid continuing Native proof");
   return routerDigest({ version: 1, policy: native.policy, core: { owner: core.owner, epoch: core.epoch, pid: core.pid },
+    ...(native.hostColdUnavailable ? { hostColdUnavailable: native.hostColdUnavailable } : {}),
     generations: native.generations.map(raw => { const g = rpcRecord(raw); return { generationId: g.generationId, incarnation: g.incarnation, identity: g.identity }; }) });
 }
 
@@ -167,7 +202,7 @@ export function hostRestartRuntime(oldValue: unknown, currentValue: unknown) {
 export function routerPhysicalNativeDigest(value: unknown) {
   const native = rpcRecord(value), core = rpcRecord(native.core);
   if (native.version !== 1 || !Array.isArray(native.generations) || !core.owner || !Number.isSafeInteger(core.pid) || !Number.isSafeInteger(core.epoch)) throw Error("Invalid host Native proof");
-  return routerDigest({ core: { owner: core.owner, epoch: core.epoch, pid: core.pid }, generations: native.generations.map(raw => {
+  return routerDigest({ core: { owner: core.owner, epoch: core.epoch, pid: core.pid }, ...(native.hostColdUnavailable ? { hostColdUnavailable: native.hostColdUnavailable } : {}), generations: native.generations.map(raw => {
     const g = rpcRecord(raw); return { generationId: g.generationId, incarnation: g.incarnation, identity: g.identity, programs: g.programs };
   }) });
 }
@@ -204,10 +239,12 @@ async function quietLoadedThreads(peer: GenerationPeer) {
 export async function inspectRouterNative(options: {
   generations: GenerationRecord[]; routes: { threadId: string; generationId: string }[]; metadata: Record<string, unknown>;
   unresolvedCreations: number; supervisor: GenerationSupervisor; coreEndpoint: string; token: string; failures: NativeHistoryFailures;
-}, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string }) {
+}, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string; sourceOwner?: string; policyArchived?: boolean }, coldUnavailable?: HostColdUnavailablePolicy, unavailableArchived = false) {
   if (hostRestart && (continuing || hostRestart.sourceBootId === hostRestart.recoveryBootId
     || hostRestart.recoveryBootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim())) throw Error("Invalid host restart boot transition");
   if ((!continuing && options.unresolvedCreations) || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
+  const unavailable = coldUnavailable ? hostColdUnavailablePolicy(coldUnavailable, !!hostRestart && !hostRestart.policyArchived) : undefined;
+  if (unavailable && (!hostRestart && !unavailableArchived || hostRestart && (unavailable.source.bootId !== hostRestart.sourceBootId || unavailable.source.owner !== hostRestart.sourceOwner))) throw Error("Host cold-unavailable source policy differs");
   const core = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreQuiet = (v: any) => v.handoff?.protocolVersion === 1 && v.handoff?.topology === "split" && v.handoff?.phase === "open" && v.handoff?.persistence === "ready"
     && typeof v.handoff?.owner === "string" && !!v.handoff.owner && Number.isSafeInteger(v.pid) && v.pid > 0
@@ -218,8 +255,11 @@ export async function inspectRouterNative(options: {
   if (!coreQuiet(core)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROXY_BUSY", "Core has active or unobserved proxy work");
   const generations = [];
   const durable = options.routes.filter(r => options.metadata[`thread-retention:${r.threadId}`] == null);
+  if (unavailable?.entries.some(row => !durable.some(route => route.threadId === row.threadId && route.generationId === row.generationId)
+    || !options.generations.some(g => g.id === row.generationId && g.incarnation === row.incarnation))) throw Error("Host cold-unavailable route changed");
   if (options.failures.failures.some(f => !durable.some(r => r.generationId === f.generationId && r.threadId === f.threadId))) throw Error("Historical failure route changed");
   for (const g of options.generations.filter(g => g.state !== "discarded")) {
+    const missing = unavailable?.entries.filter(row => row.generationId === g.id) ?? [];
     const health = await options.supervisor.inspect!(g), identity = await options.supervisor.identify(g, health);
     const processesQuiet = await options.supervisor.processesQuiet(identity);
     let programs: unknown;
@@ -240,9 +280,9 @@ export async function inspectRouterNative(options: {
         const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
         if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw Error("Native loaded coverage is unavailable");
         const routes = durable.filter(r => r.generationId === g.id), expected = options.failures.failures.filter(f => f.generationId === g.id);
-        const retained = await readNativeHistory(peer, g.id, expected.map(row => row.threadId), expected);
+        const retained = await readNativeHistory(peer, g.id, [...expected, ...missing].map(row => row.threadId), expected, missing);
         const unconfirmedLoadedReads = [];
-        for (const route of routes.filter(r => !expected.some(f => f.threadId === r.threadId))) {
+        for (const route of routes.filter(r => ![...expected, ...missing].some(f => f.threadId === r.threadId))) {
           try {
             const result = rpcRecord(await peer.call("thread/read", { threadId: route.threadId, includeTurns: false }, undefined, 2000));
             if (rpcRecord(result.thread).id !== route.threadId) throw Error("Native historical identity changed");
@@ -256,12 +296,12 @@ export async function inspectRouterNative(options: {
         const after = await options.supervisor.inspect!(g), afterIdentity = await options.supervisor.identify(g, after);
         if (disconnected || routerDigest(afterIdentity) !== routerDigest(identity) || after.callbackProtocolVersion !== 1) throw Error("Continuing Native owner changed");
         generations.push({ generationId: g.id, incarnation: g.incarnation, identity, loaded: [...loaded.data].sort(),
-          history: { historicalCount: routes.length, failures: retained.failures, unconfirmedLoadedReads },
+          history: { historicalCount: routes.length, failures: retained.failures, ...(missing.length ? { coldUnavailable: retained.coldUnavailable } : {}), unconfirmedLoadedReads },
           observations: { pendingCallbacks: after.pendingCallbacks, pendingOrchestrationMutations: after.pendingOrchestrationMutations, processesQuiet, serverRequestObserved: unexpected } });
         continue;
       }
       const loaded = await quietLoadedThreads(peer);
-      const history = await readNativeHistory(peer, g.id, durable.filter(r => r.generationId === g.id).map(r => r.threadId), options.failures.failures.filter(f => f.generationId === g.id));
+      const history = await readNativeHistory(peer, g.id, durable.filter(r => r.generationId === g.id).map(r => r.threadId), options.failures.failures.filter(f => f.generationId === g.id), missing);
       if (routerDigest(await quietLoadedThreads(peer)) !== routerDigest(loaded)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_PROOF_CHANGED", "Native terminal evidence changed during inspection");
       const after = await options.supervisor.inspect!(g);
       if (unexpected || disconnected || after.pid !== health.pid || after.codexPid !== health.codexPid || after.pendingCallbacks !== 0 || after.pendingOrchestrationMutations !== 0
@@ -275,7 +315,7 @@ export async function inspectRouterNative(options: {
   const coreIdentity = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid, historicalUnknown: v.handoff?.uncertain });
   const stableCore = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid });
   if (routerDigest(continuing ? stableCore(after) : coreIdentity(after)) !== routerDigest(continuing ? stableCore(core) : coreIdentity(core)) || !coreQuiet(after)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROOF_CHANGED", "Core changed during inspection");
-  return { version: 1, ...(hostRestart ? { policy: "host-restart-v1", ...hostRestart } : {}), ...(continuing ? { policy: "continuing-v1", observations: { coreCounts: after.proof.counts, unresolvedCreations: options.unresolvedCreations } } : {}), core: coreIdentity(after), generations };
+  return { version: 1, ...(hostRestart ? { policy: "host-restart-v1", ...hostRestart } : {}), ...(unavailable ? { hostColdUnavailable: unavailable } : {}), ...(continuing ? { policy: "continuing-v1", observations: { coreCounts: after.proof.counts, unresolvedCreations: options.unresolvedCreations } } : {}), core: coreIdentity(after), generations };
 }
 
 export const readRouterRegistry = inspectGenerationRegistry;

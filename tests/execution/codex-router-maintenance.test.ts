@@ -198,3 +198,30 @@ test("host resume committed before process death can be recognized only by its e
   assert.throws(()=>committedHostRestartArchive({...metadata,"router-live-owner":f.receipt.source},f.receipt.controller.bootId));
  }finally{await f.close();}
 });
+
+test('host cold-unavailable responsibility is archived separately without changing configuration or pending work',async()=>{
+ const {f,native,raw}=await hostFixture();try{
+  const policy={version:1,kind:'host-cold-unavailable',source:{owner:f.receipt.source.owner,bootId:f.receipt.source.bootId},checkedAt:new Date().toISOString(),evidenceSha256:'e'.repeat(64),entries:[{generationId:'restored',incarnation:1,threadId:'kept-thread',reads:[false,true].map(includeTurns=>({includeTurns,code:-32600,errorSha256:'a'.repeat(64)})),creation:{phase:'created',inputId:null,turnId:null,executionLeases:0,submissions:0,queueInputs:0,turnAuthorities:0,inputAuthorities:0,inputOrigins:0,actorRequests:0,nativeRows:0}}]};
+  (native as any).hostColdUnavailable=policy;f.receipt.native=native;await f.save();
+  const config=f.receipt.configurationSha256,before=f.registry.get('restored'),owner=f.open();
+  assert.equal(owner.hostRestartPending()!.policyArchived,undefined);
+  await owner.importMaintenance(config,async()=>native);assert.deepEqual(owner.hostColdUnavailable(),policy);assert.equal(owner.hostRestartPending()!.policyArchived,true);
+  const input={expectedOwner:owner.owner,expectedEpoch:owner.snapshot().epoch,operationId:f.receipt.operationId,fence:f.receipt.fence,historicalUnknownSha256:owner.snapshot().historicalUnknownSha256};
+  await assert.rejects(owner.coldReady(input,config,async()=>({...native,hostColdUnavailable:{...policy,evidenceSha256:'f'.repeat(64)}})),/Host Native owner changed/);
+  const ready=await owner.coldReady(input,config,async()=>native);await owner.resume({...input,identity:ready.identity},config,async()=>native);
+  const state=f.registry.metadata('router-handoff')as any;
+  assert.equal(state.configuration,config);assert.deepEqual(state.pending,raw.pending);assert.deepEqual(f.registry.get('restored'),before);
+  const archive=f.registry.metadata(`router-history:${state.maintenanceSeal}`)as any;assert.deepEqual(archive.receipt.native.hostColdUnavailable,policy);assert.deepEqual(archive.receipt.sourceHandoff,raw);
+ }finally{await f.close();}
+});
+
+test('ordinary fence preserves an approved negative policy without retaining old physical Core binding',async()=>{
+ const {f,native}=await hostFixture();try{
+  const policy={version:1,kind:'host-cold-unavailable',source:{owner:f.receipt.source.owner,bootId:f.receipt.source.bootId},checkedAt:new Date().toISOString(),evidenceSha256:'e'.repeat(64),entries:[{generationId:'restored',incarnation:1,threadId:'kept-thread',reads:[false,true].map(includeTurns=>({includeTurns,code:-32600,errorSha256:'a'.repeat(64)})),creation:{phase:'created',inputId:null,turnId:null,executionLeases:0,submissions:0,queueInputs:0,turnAuthorities:0,inputAuthorities:0,inputOrigins:0,actorRequests:0,nativeRows:0}}]};
+  (native as any).hostColdUnavailable=policy;f.receipt.native=native;await f.save();const owner=f.open();await owner.importMaintenance(f.receipt.configurationSha256,async()=>native);
+  const args=()=>({expectedOwner:owner.owner,expectedEpoch:owner.snapshot().epoch,operationId:f.receipt.operationId,fence:f.receipt.fence,historicalUnknownSha256:owner.snapshot().historicalUnknownSha256});
+  const ready=await owner.coldReady(args(),f.receipt.configurationSha256,async()=>native);await owner.resume({...args(),identity:ready.identity},f.receipt.configurationSha256,async()=>native);
+  owner.fence(args());assert.equal(owner.hostRestartPending(),undefined,'ordinary fence does not inherit old Core process binding');
+  assert.deepEqual(owner.hostColdUnavailable(),policy,'already approved negative responsibility remains available after fence');
+ }finally{await f.close();}
+});
