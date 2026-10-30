@@ -1425,3 +1425,18 @@ Shared native `host/status` publishes only the protocol's failure code and
 recovery disposition. A native-local no-dispatch RPC id must never cross this
 boundary: another logical claim may have reused that numeric id for a write that
 was already admitted. Only the matching `host/send` rejection grants local proof.
+
+## Core health during history recovery
+
+Concurrent consumers of one Core control client share only the health request
+that is currently in flight. A completed response is never retained as a cache
+or as admission authority. Every generation-directory read still fetches its
+current directory and checks the routing epoch before using native storage.
+
+Each consumer owns its cancellation. Cancelling one waiter leaves other
+waiters intact; retiring the last waiter aborts the HTTP request. A replacement
+history slot cannot join the retired request. Health responses are copied for
+each consumer. History RPCs keep their independent sockets, payload limits and
+deadlines; sharing health never replays a request or resets execution. The
+concurrent read, cancellation and epoch regressions are in
+`tests/execution/core-read-recovery-burst.test.ts`.
