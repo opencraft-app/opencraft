@@ -222,3 +222,41 @@ All durable pending IDs and raw source uncertainty survive immutable archival an
 Generation identity and router configuration proofs may reuse a program file digest within one process. Every call opens the file and checks device, inode, size, mode, owner and nanosecond modification/change timestamps before and after observation, then verifies that the current path still selects that same file version. A write or replacement during observation rejects the proof. Content is streamed, and the cache retains at most 64 digests. Node, CLI, launcher and APP bundle artifacts share this cache, including aliases through process executable descriptors.
 
 This optimization never caches the registry, HOME, Native history, pending requests or owner observations. Each maintenance phase still reads current data and rechecks process identity and the approved historical failure policy. A digest match grants no lifecycle action or admission by itself.
+
+## Host restart recovery for a historical router
+
+A historical router remains closed after an ordinary restart. A whole-host restart
+requires an explicit `host-restart` maintenance receipt; it cannot reuse a receipt
+or physical-owner proof from the old kernel. The durable live-owner retains its
+original boot ID, PID, source artifact and unknown responsibilities. A live,
+current controller holding the deployment lock signs a fresh receipt against the
+exact current registry and a `host-restart-v1` Native proof.
+
+This proof requires a different old boot and fresh, quiet Core/APP/Native owners.
+Generation definitions, HOME, execution identity and program/CLI/launcher hashes
+remain fixed; only kernel process identities may change. The verifier reads the
+actual APP executable and bundle argv, unambiguous runtime selectors, and the
+Native parent and CODEX_HOME from the running processes, repeating these checks
+after history reads. Every durable Thread is
+cold-read under the existing exact historical-failure policy. The receipt records
+both previous and current runtime identities. Registry adoption, the unmodified
+source responsibility archive and the new handoff state commit in one owner
+transaction. Routes, incarnations and default selection do not change. Cold
+readiness and resume check the new physical owners again. Failure leaves the old
+state intact or recovers the already committed successor from current data;
+unknown work is never reclassified, answered or replayed.
+
+This is a recovery primitive, not automatic startup orchestration. A managed boot
+caller must use a fresh receipt for each actual boot transition, keep its real
+lock descriptors through recovery/readiness, and persist the effective startup
+selector. Re-running an old receipt, treating a current PID with the old number
+as the old process, or starting a historical router directly remains invalid.
+
+If resume committed before its reply or process was lost, offline inspection can
+identify the exact committed host-restart archive and current-boot live-owner.
+The controller binds that archive to its retained receipt before signing a fresh
+current-boot crash-recovery receipt. Original boot responsibility stays archived;
+an unrelated current-boot process or archive cannot authorize this transition.
+The minimal host primitive accepts an open source with existing historical
+archives and configuration; it does not promise recovery of every intermediate
+phase of a second power loss.

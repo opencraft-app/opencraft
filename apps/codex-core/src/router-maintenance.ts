@@ -20,7 +20,7 @@ export function processStamp(pid: number): string | null {
   catch (reason) { if ((reason as NodeJS.ErrnoException).code === "ENOENT") return null; throw reason; }
 }
 export interface RouterMaintenanceReceipt {
-  version: 1; kind: "router-maintenance"; mode: "fenced-source" | "crashed-source" | "interrupted-source";
+  version: 1; kind: "router-maintenance"; mode: "fenced-source" | "crashed-source" | "interrupted-source" | "host-restart";
   operationId: string; fence: string; issuedAt: string; expiresAt: string;
   controller: { pid: number; startTime: string; bootId: string; lock: string };
   source: { pid: number; startTime: string; bootId: string; owner: string; bundle: string; bundleSha256: string };
@@ -28,6 +28,18 @@ export interface RouterMaintenanceReceipt {
   sourceHandoff: Record<string, unknown>; registrySha256: string; configurationSha256: string;
   native: unknown; consumers: string[]; systemdScope: "system" | "user";
   payloadSha256: string[];
+}
+/** Read-only evidence that this host's import reached resume. This is not a
+ * restart permit: the controller must bind the archive to its retained receipt. */
+export function committedHostRestartArchive(metadata: Record<string, unknown>, bootId: string) {
+  const source = rpcRecord(metadata["router-live-owner"]), handoff = rpcRecord(metadata["router-handoff"]);
+  const archive = rpcRecord(metadata[`router-history:${handoff.maintenanceSeal}`]);
+  const receipt = archive.receipt as RouterMaintenanceReceipt | undefined;
+  if (source.bootId !== bootId || archive.version !== 1 || routerDigest(archive) !== handoff.maintenanceSeal
+    || !Array.isArray(handoff.history) || !handoff.history.includes(handoff.maintenanceSeal) || handoff.phase !== "open"
+    || receipt?.mode !== "host-restart" || receipt.source.bootId === bootId || receipt.controller.bootId !== bootId
+    || receipt.source.owner === source.owner || receipt.operationId !== handoff.operationId || receipt.fence !== handoff.fence) throw Error("Host restart has no exact committed successor archive");
+  return archive;
 }
 const sha = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(value);
@@ -79,21 +91,26 @@ export async function routerLocalJson(endpoint: string, token: string, path: str
 export function readRouterMaintenance(path: string, state: unknown, storage: string, payload: string, historicalPending = 0, historicalSha256?: string) {
   const value = privateRouterJson(path) as RouterMaintenanceReceipt;
   const now = Date.now(), issued = Date.parse(value?.issuedAt), expires = Date.parse(value?.expiresAt);
-  if (value?.version !== 1 || (value as RouterMaintenanceReceipt & { provisional?: boolean }).provisional || value.kind !== "router-maintenance" || !["fenced-source", "crashed-source", "interrupted-source"].includes(value.mode)
+  if (value?.version !== 1 || (value as RouterMaintenanceReceipt & { provisional?: boolean }).provisional || value.kind !== "router-maintenance" || !["fenced-source", "crashed-source", "interrupted-source", "host-restart"].includes(value.mode)
     || !identity(value.operationId) || !identity(value.fence) || !Number.isFinite(issued) || !Number.isFinite(expires)
     || issued > now + 1000 || expires <= now || expires - issued > 15 * 60_000
     || !sha(value.registrySha256) || !sha(value.configurationSha256) || !Array.isArray(value.payloadSha256)
     || !value.payloadSha256.length || value.payloadSha256.length > 2 || !value.payloadSha256.every(sha) || !value.payloadSha256.includes(payload)
     || !["system", "user"].includes(value.systemdScope)
     || !value.source || !identity(value.source.owner) || !isAbsolute(value.source.bundle) || !sha(value.source.bundleSha256)
-    || !/^\d+$/u.test(value.source.startTime) || value.source.bootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()
+    || !Number.isSafeInteger(value.source.pid) || value.source.pid<1 || !/^\d+$/u.test(value.source.startTime) || !identity(value.source.bootId)
+    || (value.mode === "host-restart" ? value.source.bootId === readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() : value.source.bootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim())
     || routerDigest(value.sourceHandoff) !== routerDigest(state) || value.registrySha256 !== storage) throw Error("Router maintenance receipt rejected");
   verifyRouterController(value); verifyRouterConsumers(value.consumers, value.systemdScope);
-  if (processStamp(value.source.pid) === value.source.startTime) throw Error("Router maintenance source is still present");
+  if (value.mode !== "host-restart" && processStamp(value.source.pid) === value.source.startTime) throw Error("Router maintenance source is still present");
   const raw = rpcRecord(state);
   const pending = raw.pending ?? [];
   if (raw.version !== 1 || !Array.isArray(pending) || !pending.every(identity) || new Set(pending).size !== pending.length
     || typeof raw.uncertain !== "boolean" || !["open", "fenced"].includes(String(raw.phase)) || !Number.isSafeInteger(raw.epoch)) throw Error("Invalid maintenance source state");
+  const host = rpcRecord(value.native);
+  if (value.mode === "host-restart" && (host.policy !== "host-restart-v1" || host.sourceBootId !== value.source.bootId
+    || host.recoveryBootId !== value.controller.bootId || raw.phase !== "open"
+    || !Array.isArray(raw.history) || !raw.history.length || !sha(raw.configuration) || raw.configuration !== value.configurationSha256)) throw Error("Invalid host restart proof");
   const continuing = rpcRecord(value.native).policy === "continuing-v1";
   if (value.mode === "interrupted-source" && (!continuing || raw.phase !== "fenced" || raw.sourceOwner !== value.source.owner
     || raw.operationId !== value.operationId || raw.fence !== value.fence)
@@ -124,6 +141,35 @@ export function routerNativeDigest(value: unknown) {
   if (native.version !== 1 || !Array.isArray(native.generations) || !core.owner || !Number.isSafeInteger(core.pid) || !Number.isSafeInteger(core.epoch)) throw Error("Invalid continuing Native proof");
   return routerDigest({ version: 1, policy: native.policy, core: { owner: core.owner, epoch: core.epoch, pid: core.pid },
     generations: native.generations.map(raw => { const g = rpcRecord(raw); return { generationId: g.generationId, incarnation: g.incarnation, identity: g.identity }; }) });
+}
+
+/** Same programs and authority, new kernel process identities. Old values remain
+ * evidence; only the registry owner may atomically install these new runtimes. */
+export function hostRestartRuntime(oldValue: unknown, currentValue: unknown) {
+  const old = rpcRecord(oldValue), current = rpcRecord(currentValue);
+  const stable = (value: Record<string, unknown>) => {
+    const { ownerPid, nativePid, ownerStart, nativeStart, launcher, ...programs } = value;
+    if (![ownerPid, nativePid].every(v => Number.isSafeInteger(v) && Number(v) > 0)
+      || ![ownerStart, nativeStart].every(v => typeof v === "string" && /^\d+$/u.test(v))) throw Error("Invalid host runtime identity");
+    if (typeof programs.unit !== "string" || !/^[a-zA-Z0-9_.@-]+\.service$/u.test(programs.unit)
+      || !sha(programs.cliSha256) || typeof programs.cliVersion !== "string" || !programs.cliVersion) throw Error("Invalid host Native program identity");
+    if (launcher !== undefined) {
+      const { childPid, childStart, ...files } = rpcRecord(launcher);
+      if (!Number.isSafeInteger(childPid) || Number(childPid) < 1 || typeof childStart !== "string" || !/^\d+$/u.test(childStart)) throw Error("Invalid host launcher identity");
+      if (![files.nodeSha256, files.entrypointSha256, files.wrapperSha256].every(sha) || typeof files.childExecutable !== "string" || !isAbsolute(files.childExecutable)) throw Error("Invalid host launcher program identity");
+      return { ...programs, launcher: files };
+    }
+    return programs;
+  };
+  if (routerDigest(stable(old)) !== routerDigest(stable(current))) throw Error("Host restart changed Native program or authority");
+  return current;
+}
+export function routerPhysicalNativeDigest(value: unknown) {
+  const native = rpcRecord(value), core = rpcRecord(native.core);
+  if (native.version !== 1 || !Array.isArray(native.generations) || !core.owner || !Number.isSafeInteger(core.pid) || !Number.isSafeInteger(core.epoch)) throw Error("Invalid host Native proof");
+  return routerDigest({ core: { owner: core.owner, epoch: core.epoch, pid: core.pid }, generations: native.generations.map(raw => {
+    const g = rpcRecord(raw); return { generationId: g.generationId, incarnation: g.incarnation, identity: g.identity, programs: g.programs };
+  }) });
 }
 
 async function quietLoadedThreads(peer: GenerationPeer) {
@@ -158,7 +204,9 @@ async function quietLoadedThreads(peer: GenerationPeer) {
 export async function inspectRouterNative(options: {
   generations: GenerationRecord[]; routes: { threadId: string; generationId: string }[]; metadata: Record<string, unknown>;
   unresolvedCreations: number; supervisor: GenerationSupervisor; coreEndpoint: string; token: string; failures: NativeHistoryFailures;
-}, continuing = false) {
+}, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string }) {
+  if (hostRestart && (continuing || hostRestart.sourceBootId === hostRestart.recoveryBootId
+    || hostRestart.recoveryBootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim())) throw Error("Invalid host restart boot transition");
   if ((!continuing && options.unresolvedCreations) || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
   const core = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreQuiet = (v: any) => v.handoff?.protocolVersion === 1 && v.handoff?.topology === "split" && v.handoff?.phase === "open" && v.handoff?.persistence === "ready"
@@ -174,7 +222,13 @@ export async function inspectRouterNative(options: {
   for (const g of options.generations.filter(g => g.state !== "discarded")) {
     const health = await options.supervisor.inspect!(g), identity = await options.supervisor.identify(g, health);
     const processesQuiet = await options.supervisor.processesQuiet(identity);
-    if (routerDigest(identity) !== routerDigest(options.metadata[`runtime:${g.id}`]) || health.callbackProtocolVersion !== 1
+    let programs: unknown;
+    if (hostRestart) {
+      hostRestartRuntime(options.metadata[`runtime:${g.id}`], identity);
+      if (!options.supervisor.verifyHostRestart) throw Error("Host APP program observation is unavailable");
+      programs = await options.supervisor.verifyHostRestart(g, health, identity);
+    }
+    if ((!hostRestart && routerDigest(identity) !== routerDigest(options.metadata[`runtime:${g.id}`])) || health.callbackProtocolVersion !== 1
       || ![health.pendingCallbacks, health.pendingOrchestrationMutations].every(n => Number.isSafeInteger(n) && n! >= 0)
       || !continuing && (health.pendingCallbacks !== 0 || health.pendingOrchestrationMutations !== 0 || !processesQuiet)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_ADMISSION_BUSY", "Native admission or process work is unresolved");
     let unexpected = false, disconnected = false;
@@ -212,14 +266,16 @@ export async function inspectRouterNative(options: {
       const after = await options.supervisor.inspect!(g);
       if (unexpected || disconnected || after.pid !== health.pid || after.codexPid !== health.codexPid || after.pendingCallbacks !== 0 || after.pendingOrchestrationMutations !== 0
         || !await options.supervisor.processesQuiet(identity)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_PROOF_CHANGED", "Native work changed during inspection");
-      generations.push({ generationId: g.id, incarnation: g.incarnation, identity, history, ...loaded });
+      if (hostRestart && routerDigest(await options.supervisor.verifyHostRestart!(g, after, identity)) !== routerDigest(programs)) throw Error("Host APP program observation changed");
+      generations.push({ generationId: g.id, incarnation: g.incarnation, identity, history, ...loaded,
+        ...(hostRestart ? { previousIdentity: options.metadata[`runtime:${g.id}`], programs } : {}) });
     } finally { peer.close(); }
   }
   const after = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreIdentity = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid, historicalUnknown: v.handoff?.uncertain });
   const stableCore = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid });
   if (routerDigest(continuing ? stableCore(after) : coreIdentity(after)) !== routerDigest(continuing ? stableCore(core) : coreIdentity(core)) || !coreQuiet(after)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROOF_CHANGED", "Core changed during inspection");
-  return { version: 1, ...(continuing ? { policy: "continuing-v1", observations: { coreCounts: after.proof.counts, unresolvedCreations: options.unresolvedCreations } } : {}), core: coreIdentity(after), generations };
+  return { version: 1, ...(hostRestart ? { policy: "host-restart-v1", ...hostRestart } : {}), ...(continuing ? { policy: "continuing-v1", observations: { coreCounts: after.proof.counts, unresolvedCreations: options.unresolvedCreations } } : {}), core: coreIdentity(after), generations };
 }
 
 export const readRouterRegistry = inspectGenerationRegistry;
