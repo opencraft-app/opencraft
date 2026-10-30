@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { constants, openSync, fstatSync, readFileSync, closeSync, lstatSync, readdirSync } from "node:fs";
-import { createReadStream } from "node:fs";
 import { isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
 import { request } from "node:http";
@@ -8,14 +7,13 @@ import { inspectGenerationRegistry, type GenerationRecord } from "./generation-r
 import type { GenerationSupervisor } from "./generation-supervisor.js";
 import { GenerationPeer, NativeGenerationError, rpcRecord } from "./generation-peer.js";
 import { readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
+import { generationArtifactDigest } from "./generation-artifact-digest.js";
 
 export const routerDigest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 class RouterMaintenanceBlocked extends Error {
   constructor(readonly code: string, message: string) { super(message); this.name = "RouterMaintenanceBlocked"; }
 }
-export async function routerFileDigest(path: string) {
-  const hash = createHash("sha256"); for await (const bytes of createReadStream(path)) hash.update(bytes); return hash.digest("hex");
-}
+export const routerFileDigest = (path: string) => generationArtifactDigest.sha256(path);
 export function processStamp(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) throw Error("Invalid maintenance process identity");
   try { const value = readFileSync(`/proc/${pid}/stat`, "utf8"); return value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19]!; }

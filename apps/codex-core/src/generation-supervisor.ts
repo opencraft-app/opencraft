@@ -4,6 +4,7 @@ import { readFile, readlink, stat, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { CodexCoreControlClient, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import { generationDirectory } from "./generation-files.js";
+import { generationArtifactDigest } from "./generation-artifact-digest.js";
 import type { GenerationRecord } from "./generation-registry.js";
 
 const execute = promisify(execFile);
@@ -126,7 +127,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     }
     const ownerStart = await start(pid), nativeStart = await start(h.codexPid);
     if (g.nativeLauncher) {
-      const digest = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
+      const digest = (path: string) => generationArtifactDigest.sha256(path);
       const args = (await readFile(`/proc/${h.codexPid}/cmdline`, "utf8")).split("\0");
       const ownerArgs = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0"), selector = ownerArgs.indexOf("--codex-executable");
       if (selector < 0 || await realpath(ownerArgs[selector + 1]!) !== await realpath(g.executable)
@@ -154,8 +155,8 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     const cached = this.identities.get(g.id);
     if (cached?.stamp === stamp) return cached.identity;
     const executable = await readlink(`/proc/${h.codexPid}/exe`);
-    const expected = createHash("sha256").update(await readFile(g.executable)).digest("hex");
-    const actual = createHash("sha256").update(await readFile(`/proc/${h.codexPid}/exe`)).digest("hex");
+    const expected = await generationArtifactDigest.sha256(g.executable);
+    const actual = await generationArtifactDigest.sha256(`/proc/${h.codexPid}/exe`);
     if (actual !== expected) throw new Error("Generation CLI differs from its fixed executable");
     const cliVersion = (await execute(executable, ["--version"], { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!(), cwd: g.cwd,
       env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
@@ -202,7 +203,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         let launcherChild = false;
         if (identity.launcher && Number(child) === identity.launcher.childPid && executable === identity.launcher.childExecutable) {
           const value = await readFile(`/proc/${child}/stat`, "utf8"), started = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19];
-          launcherChild = started === identity.launcher.childStart && createHash("sha256").update(await readFile(`/proc/${child}/exe`)).digest("hex") === identity.cliSha256;
+          launcherChild = started === identity.launcher.childStart && await generationArtifactDigest.sha256(`/proc/${child}/exe`) === identity.cliSha256;
           if (launcherChild) launcherSeen = true;
         }
         const codeModeDirectory = identity.launcher ? identity.launcher.childExecutable.replace(/\/[^/]+$/u, "") : nativeDirectory;
