@@ -315,7 +315,7 @@
     "esbuild": "0.28.2",
     "eslint": "10.13.0",
     "eslint-plugin-compat": "7.0.2",
-    "eslint-plugin-es-x": "9.7.0",
+    "eslint-plugin-es-x": "10.1.0",
     "expo": "58.0.19",
     "fake-indexeddb": "^6.2.6",
     "graceful-fs": "4.2.11",
