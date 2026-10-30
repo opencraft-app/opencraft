@@ -80,16 +80,17 @@
   // never resize Settings in the adjacent context column.
   --size-icon-navigation: var(--size-product-navigation-icon, var(--size-application-navigation-icon));
 }
-// Keep compact desktop controls local to the rail; labeled mobile rows retain
-// their original glyph size and density-aware 44px touch targets.
+// Bottom-row geometry follows shared density; labeled mobile rows retain
+// their own glyph size and density-aware touch targets.
 .shell-sidebar__column:not([data-navigation-layout="mobile"]) {
   // The context list and bottom actions occupy one continuous sidebar plane.
   background: var(--opencraft-sidebar-context-background, var(--color-surface));
   .shell-sidebar__context.sidecar-content-slot { background: transparent; }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
-    --size-application-navigation-hit-min: var(--height-navigation-row);
+    --size-application-navigation-hit-min: max(var(--height-application-navigation-row), var(--size-control-hit-min));
+    --height-navigation-row: var(--size-application-navigation-hit-min);
     align-self: end;
-    padding-block: calc(var(--spacing) * 2);
+    padding-block: var(--padding-shell-footer-block);
   }
   .shell-sidebar__navigation {
     padding-inline-start: var(--padding-shell-sidebar-inline);
@@ -100,6 +101,8 @@
     padding: 0;
     .shell-navigation__items--applications {
       display: flex;
+      flex-direction: row;
+      gap: max(var(--spacing), var(--gap-control-density-min));
       width: max-content;
       > button { flex: 0 0 var(--size-application-navigation-hit-min); }
     }
@@ -109,19 +112,23 @@
     .sidecar-shared-content { height: auto; }
     .shell-navigation__footer--unified {
       flex-direction: row;
-      gap: var(--spacing);
+      gap: max(var(--spacing), var(--gap-control-density-min));
       padding: 0;
     }
   }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
-    --size-application-navigation-icon: calc(var(--spacing) * 6);
+    --size-application-navigation-icon: var(--size-shell-footer-icon);
     --radius-application-navigation-control: var(--radius-md);
   }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
     --size-icon-navigation: var(--size-application-navigation-icon);
   }
   .shell-sidebar__rail-footer .shell-navigation__entrance {
-    .sidebar-account__avatar { width: 28px; height: 28px; flex-basis: 28px; }
+    .sidebar-account__avatar {
+      width: calc(var(--size-application-navigation-icon) + var(--spacing));
+      height: calc(var(--size-application-navigation-icon) + var(--spacing));
+      flex-basis: calc(var(--size-application-navigation-icon) + var(--spacing));
+    }
   }
 }
 

@@ -41,6 +41,8 @@ try {
     });
     assert.ok(Math.abs(geometry.context.width-geometry.column.width)<1,JSON.stringify(geometry));
     assert.ok(geometry.nav.y>=geometry.context.bottom-1);
+    assert.ok(geometry.nav.height>=44 && geometry.footer.height>=44,'compact footer retains its control and padding budget');
+    assert.ok(geometry.buttons.every(rect=>rect.width>=36 && rect.height===36),'compact footer uses the shared application target');
     assert.ok(Math.abs(geometry.nav.y-geometry.footer.y)<1);
     assert.ok(geometry.nav.right<=geometry.footer.x+1);
     assert.ok(geometry.buttons.every(rect=>Math.abs(rect.y-geometry.buttons[0].y)<1),'all destinations are horizontal');
