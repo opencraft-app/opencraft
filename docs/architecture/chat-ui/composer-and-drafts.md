@@ -62,7 +62,8 @@ client-message identity until settlement.
 ConversationRuntime waits for the exact server queue identity from either
 `thread/queue/add`'s receipt or the authoritative queue notification, then uses
 the existing atomic queue-to-active-turn command (or starts that queue item if
-idle). Canonical history consumption settles the intent without sending again.
+idle). An older ACK without a queue payload still confirms admission; exact
+custody comes from the subsequent queue baseline rather than an invented ID. Canonical history consumption settles the intent without sending again.
 Failure, unknown delivery and disposal retire the wait without replay. Offline
 waiting input and restored or uncertain delivery keep their existing fences.
 Promotion does not grant server membership or atomic-steering capability.

@@ -313,7 +313,9 @@ export function createAppServerConversationCommandPort(
           input: [...compiled.input],
           clientUserMessageId: intent.clientMessageId,
         }, requestOptions);
-        queuedSubmissionId = added.queuedSubmission.id;
+        // Older peers can acknowledge admission without returning queue custody.
+        // Keep that success; a subsequent queue baseline supplies the exact ID.
+        queuedSubmissionId = added.queuedSubmission?.id;
         turnId = null;
         break;
       }
