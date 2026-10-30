@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { readFile, readlink, stat } from 'node:fs/promises';
+import { readFile, readlink, realpath, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
@@ -53,6 +53,42 @@ export async function readCodexGitNatives(registry: DatabaseSync): Promise<Nativ
     try {
       const native = await readGitProcess(identity.nativePid), owner = await readGitProcess(identity.ownerPid);
       const uid = (await stat(`/proc/${native.pid}`)).uid;
+      if (definition.nativeLauncher || identity.launcher) {
+        const launcher = identity.launcher, fixed = definition.nativeLauncher;
+        if (!launcher || !fixed || native.startTicks !== identity.nativeStart || owner.startTicks !== identity.ownerStart
+          || native.parent !== owner.pid || uid !== (definition.executionUid ?? process.getuid?.())) continue;
+        const args = (await readFile(`/proc/${native.pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+        if (!args[1] || await realpath(args[1]) !== await realpath(fixed.entrypoint)
+          || await realpath(`/proc/${native.pid}/exe`) !== await realpath(definition.node)) continue;
+        const root = await resolveGitCodexToolRoot({ pid: native.pid, startTicks: native.startTicks,
+          incarnation: JSON.stringify([row.id, row.incarnation]), threadEnvironment: 'CODEX_THREAD_ID' });
+        if (root.pid !== launcher.childPid || root.startTicks !== launcher.childStart
+          || await realpath(`/proc/${root.pid}/exe`) !== launcher.childExecutable
+          || launcher.childExecutable !== await realpath(fixed.executable)) continue;
+        let valid = true;
+        for (const [name, path, hash] of [
+          ['node', `/proc/${native.pid}/exe`, launcher.nodeSha256],
+          ['entrypoint', fixed.entrypoint, launcher.entrypointSha256],
+          ['wrapper', definition.executable, launcher.wrapperSha256],
+          ['child', `/proc/${root.pid}/exe`, identity.cliSha256],
+        ]) {
+          const file = await stat(path, { bigint: true });
+          const stamp = JSON.stringify([path, hash, String(file.dev), String(file.ino), String(file.size), String(file.mtimeNs), String(file.ctimeNs)]);
+          const key = `${row.id}:${name}`;
+          if (cache.get(key) !== stamp) {
+            let check = pending.get(stamp);
+            if (!check) { check = readFile(path).then(bytes => createHash('sha256').update(bytes).digest('hex') === hash).catch(() => false); pending.set(stamp, check); }
+            const matches = await check; pending.delete(stamp);
+            if (!matches) { valid = false; break; }
+            cache.set(key, stamp);
+          }
+        }
+        if (valid && (await readGitProcess(owner.pid)).startTicks === owner.startTicks
+          && (await readGitProcess(native.pid)).startTicks === native.startTicks
+          && (await readGitProcess(root.pid)).startTicks === root.startTicks
+          && (await readGitProcess(root.pid)).parent === native.pid) natives.push(root);
+        continue;
+      }
       if (native.startTicks !== identity.nativeStart || owner.startTicks !== identity.ownerStart || native.parent !== owner.pid
         || uid !== (definition.executionUid ?? process.getuid?.()) || await readlink(`/proc/${native.pid}/exe`) !== definition.executable) continue;
       const file = await stat(`/proc/${native.pid}/exe`, { bigint: true });

@@ -97,9 +97,17 @@ test('registry npm transport resolves its native child while retaining generatio
   db.exec('CREATE TABLE generations(id TEXT,incarnation INTEGER,state TEXT,definition TEXT); CREATE TABLE routing_metadata(key TEXT,value TEXT)');
   const native = await readGitProcess(child.pid!), owner = await readGitProcess(process.pid);
   const executable = await readlink(`/proc/${native.pid}/exe`);
-  db.prepare('INSERT INTO generations VALUES(?,?,?,?)').run('npm-generation',7,'active',JSON.stringify({executable,executionUid:process.getuid!()}));
-  db.prepare('INSERT INTO routing_metadata VALUES(?,?)').run('runtime:npm-generation',JSON.stringify({nativePid:native.pid,nativeStart:native.startTicks,ownerPid:owner.pid,ownerStart:owner.startTicks,cliSha256:createHash('sha256').update(await readFile(executable)).digest('hex')}));
+  db.prepare('INSERT INTO generations VALUES(?,?,?,?)').run('npm-generation',7,'active',JSON.stringify({executable:cli,node:executable,nativeLauncher:{entrypoint:cli,executable},executionUid:process.getuid!()}));
+  db.prepare('INSERT INTO routing_metadata VALUES(?,?)').run('runtime:npm-generation',JSON.stringify({nativePid:native.pid,nativeStart:native.startTicks,ownerPid:owner.pid,ownerStart:owner.startTicks,cliSha256:createHash('sha256').update(await readFile(executable)).digest('hex'),launcher:{nodeSha256:createHash('sha256').update(await readFile(executable)).digest('hex'),entrypointSha256:createHash('sha256').update(await readFile(cli)).digest('hex'),wrapperSha256:createHash('sha256').update(await readFile(cli)).digest('hex'),childPid:nativePid,childStart:(await readGitProcess(nativePid)).startTicks,childExecutable:executable}}));
   assert.deepEqual(await readCodexGitNatives(db),[{pid:nativePid,startTicks:(await readGitProcess(nativePid)).startTicks,incarnation:'["npm-generation",7]',threadEnvironment:'CODEX_THREAD_ID'}]);
+  const metadata = JSON.parse(String(db.prepare('SELECT value FROM routing_metadata').get()!.value));
+  for (const field of ['nodeSha256','entrypointSha256','wrapperSha256','childStart','childPid','childExecutable']) {
+    db.prepare('UPDATE routing_metadata SET value=?').run(JSON.stringify({...metadata,launcher:{...metadata.launcher,[field]:'wrong'}}));
+    assert.deepEqual(await readCodexGitNatives(db),[], `mismatched ${field} must reject the launcher`);
+  }
+  db.prepare('UPDATE routing_metadata SET value=?').run(JSON.stringify({...metadata,cliSha256:'wrong'}));
+  assert.deepEqual(await readCodexGitNatives(db),[]);
+  db.prepare('UPDATE routing_metadata SET value=?').run(JSON.stringify(metadata));
   process.kill(nativePid); await new Promise(resolve=>setTimeout(resolve,50));
   assert.deepEqual(await readCodexGitNatives(db),[], 'missing native must not authorize npm transport as a tool root');
 });
