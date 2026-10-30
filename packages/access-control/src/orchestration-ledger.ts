@@ -83,6 +83,11 @@ export class ThreadOrchestrationLedger {
       runtimeStatus:r.runtime_status as ThreadRuntimeStatus,rootTurnId:r.root_turn_id as string|null,turnId:r.turn_id as string|null,
       delegationRevision:Number(r.delegation_revision),autoExchangeDepth:Number(r.auto_exchange_depth),hasDirectUserInput:r.has_direct_user_input===1,userInputExcerpt:r.user_input_excerpt as string|null} : null;
   }
+  children(parentThreadId: string, after: number, limit: number) {
+    return this.db.prepare(`SELECT rowid AS cursor,thread_id,server_id,driver_kind,visibility,
+      runtime_status,has_direct_user_input,updated_at_ms FROM opencraft_thread_relations
+      WHERE parent_thread_id=? AND rowid>? ORDER BY rowid LIMIT ?`).all(parentThreadId,after,limit);
+  }
   createThread(value: ThreadRelation): ThreadRelation {
     return this.transaction(() => {
       const prior = this.relation(value.threadId);

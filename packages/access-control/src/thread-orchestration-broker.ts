@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { encodeConversationRef, parseConversationRef } from '@opencraft/appserver-protocol/collaboration';
 import { ACTOR_INPUT_PREFIX, Collaboration, CollaborationError } from './collaboration.js';
@@ -49,6 +49,60 @@ export class ThreadOrchestrationBroker {
       senderConversation:this.reference(delegation.sourceThreadId),senderTurnId:turnId,operationId:operation.operationId,
       replyExpectation,delegationRevision:delegation.context.generation,usageSourceKind:'system',createdAtMs:this.now()};
   }
+  listChildren(threadId: string, turnId: string, args: Record<string,unknown>, delegationId?: string) {
+    fields(args,['threadId','cursor','limit']);
+    const delegation=this.collaboration.delegation(threadId,turnId,delegationId),parent=args.threadId===undefined?threadId:text(args.threadId);
+    this.authorize(delegation,parent,'conversation.read');
+    const limit=args.limit??20;
+    if(!Number.isInteger(limit)||Number(limit)<1||Number(limit)>100)throw new CollaborationError(400,'invalid_child_limit');
+    let after=0;
+    if(args.cursor!==undefined){
+      try{const cursor=JSON.parse(Buffer.from(text(args.cursor,2048),'base64url').toString());
+        if(cursor.parent!==parent||!Number.isSafeInteger(cursor.after)||cursor.after<0)throw Error();after=cursor.after;
+      }catch{throw new CollaborationError(400,'invalid_child_cursor');}
+    }
+    const rows=this.collaboration.orchestration.children(parent,after,Number(limit)+1),page=rows.slice(0,Number(limit));
+    const children=page.filter(row=>this.collaboration.conversationAllowed(delegation.context,
+      {serverId:String(row.server_id),threadId:String(row.thread_id)},'conversation.read')).map(row=>{
+      const ref={serverId:String(row.server_id),threadId:String(row.thread_id)},runtime=this.collaboration.orchestration.runtimeSnapshot(ref.threadId);
+      return {reference:encodeConversationRef(ref),threadId:ref.threadId,parentThreadId:parent,driver:String(row.driver_kind),
+        visibility:String(row.visibility),state:runtime?.state??String(row.runtime_status),hasDirectUserInput:row.has_direct_user_input===1,observedAt:Number(row.updated_at_ms)};
+    });
+    return {parentReference:encodeConversationRef(this.reference(parent)),children,
+      nextCursor:rows.length>Number(limit)?Buffer.from(JSON.stringify({parent,after:Number(page.at(-1)!.cursor)})).toString('base64url'):null};
+  }
+  async cli(session: {serverId:string;threadId:string;execution?:{inputId?:string;turnId?:string}}, request: Record<string,unknown>) {
+    fields(request,['command','arguments','idempotencyKey']);
+    if(session.serverId!==this.reference(session.threadId).serverId||!session.execution)throw new CollaborationError(403,'execution_delegation_required');
+    const {turnId,delegation}=this.collaboration.executionSource(session.threadId,session.execution);
+    this.authorize(delegation,session.threadId,'conversation.read');
+    const args=request.arguments??{};
+    if(!args||typeof args!=='object'||Array.isArray(args))throw new CollaborationError(400,'invalid_cli_arguments');
+    const input=args as Record<string,unknown>,command=text(request.command);
+    if(command==='context'){
+      fields(input,[]);
+      const parent=this.collaboration.orchestration.relation(session.threadId)?.parentThreadId;
+      return {reference:encodeConversationRef(this.reference(session.threadId)),parentReference:parent&&this.collaboration.conversationAllowed(delegation.context,this.reference(parent),'conversation.read')?encodeConversationRef(this.reference(parent)):null,
+        expiresAt:delegation.expiresAtMs};
+    }
+    if(command==='list')return this.listChildren(session.threadId,turnId,input,delegation.id);
+    const names:Record<string,string>={spawn:'thread_spawn',tell:'thread_tell',show:'thread_inspect',wait:'thread_wait'};
+    const name=names[command];if(!name)throw new CollaborationError(400,'unknown_thread_command');
+    const key=request.idempotencyKey===undefined?null:text(request.idempotencyKey,128);
+    if(['spawn','tell'].includes(command)&&!key)throw new CollaborationError(400,'idempotency_key_required');
+    const target=(value:unknown)=>{
+      const ref=parseConversationRef(text(value,2048));
+      if(!ref||ref.serverId!==this.reference(ref.threadId).serverId)throw new CollaborationError(400,'invalid_reference');return ref.threadId;
+    };
+    const mapped={...input};
+    if(command==='show'||command==='tell'){mapped.threadId=target(mapped.reference);delete mapped.reference;}
+    if(command==='wait'){
+      if(!Array.isArray(mapped.references))throw new CollaborationError(400,'invalid_wait_targets');
+      mapped.threadIds=mapped.references.map(target);delete mapped.references;
+    }
+    if(key)mapped.idempotencyKey=key;
+    return this.invoke(session.threadId,turnId,JSON.stringify(['cli',delegation.id,command,key??randomUUID()]),name,mapped,delegation.id);
+  }
   private async perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     if(['read_thread','send_message_to_thread','get_thread_delivery'].includes(name))return this.conversationTool(threadId,turnId,key,name,args,delegationId);
     if(!ORCHESTRATION_TOOL_NAMES.includes(name as typeof ORCHESTRATION_TOOL_NAMES[number]))throw new CollaborationError(400,'unknown_orchestration_tool');
@@ -69,6 +123,10 @@ export class ThreadOrchestrationBroker {
       this.authorize(delegation,target,'message.send');this.authorize(delegation,target,'execution.'+mode);
       if(target===threadId)throw new CollaborationError(409,'self_delivery_denied');
     }else if(name==='thread_inspect'){
+      if(args.children===true){
+        fields(args,['children','threadId','cursor','limit','idempotencyKey']);
+        const {children:_children,idempotencyKey:_key,...query}=args;return this.listChildren(threadId,turnId,query,delegation.id);
+      }
       fields(args,['threadId','includeRecentTurns','idempotencyKey']);target=text(args.threadId);this.authorize(delegation,target,'conversation.read');
       if(args.includeRecentTurns!==undefined&&(!Number.isInteger(args.includeRecentTurns)||Number(args.includeRecentTurns)<1||Number(args.includeRecentTurns)>5))throw new CollaborationError(400,'invalid_recent_turn_limit');
     }else{

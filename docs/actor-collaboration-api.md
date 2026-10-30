@@ -190,7 +190,6 @@ default to hidden subagents, reachable from their parent. Use explicit `visible`
 only for a user-requested independent, long-lived conversation; existing rows
 keep their stored visibility.
 
-
 ### 跨驱动准备与失败诊断
 
 Codex 的原生 permission profile ID 只在同驱动创建时继承。`sourceOnly`
@@ -204,3 +203,13 @@ MCP 返回 `orchestration_rejected`，模型工具保留对应状态。传输丢
 继续按原 receipt 对账，不改为成功或自动重放。Gateway 的
 `thread-orchestration` / `thread-orchestration-tool-failed` 诊断仅记录调用路径、
 operation/thread/turn ID、状态与数值 RPC code，不记录参数、prompt、凭据或原始异常正文。
+
+## Execution-bound conversation CLI
+
+The optional `thread_cli` Session capability opens a private launcher for an
+already admitted execution. `/thread-cli` on the existing capability listener
+requires an execution-signed scope and rejects session-only tokens and browser
+Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
+input delegation and the original write budget; it creates no parallel queue.
+The child's durable Broker parentage, rather than each engine's native lineage,
+is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).
