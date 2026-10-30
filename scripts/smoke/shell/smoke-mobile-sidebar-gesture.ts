@@ -963,6 +963,45 @@ try {
       assert.deepEqual(errors,[]); evidence.push({theme,reducedMotion,widths,passed:true});
       await context.close(); continue;
     }
+    if (process.env.OPENCRAFT_GESTURE_INTERRUPTION_ONLY === '1') {
+      const foreground = page.locator('.app-shell-row');
+      const x = async () => (await foreground.boundingBox())!.x;
+      for (const interrupt of ['blur', 'pagehide', 'visibilitychange', 'replacement']) {
+        for (const initiallyOpen of [false, true]) {
+          if (initiallyOpen) await drag(80,330);
+          const restingX = await x();
+          await touch('touchStart', initiallyOpen ? 250 : 120, 400);
+          await touch('touchMove', initiallyOpen ? 210 : 160, 400);
+          await page.waitForTimeout(70);
+          assert.ok(Math.abs(await x()-restingX)>20, 'held contact moves the real foreground');
+          if (interrupt === 'replacement') {
+            // Model a host swallowing the terminal event before the document.
+            await page.evaluate(() => window.addEventListener('touchend', e => e.stopImmediatePropagation(), {capture:true,once:true}));
+            await touch('touchEnd');
+            // A reserved native-only edge contact must retire the orphan too.
+            await touch('touchStart',10,400); await touch('touchEnd');
+          } else {
+            await page.evaluate(type => {
+              if (type === 'visibilitychange') {
+                Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+                document.dispatchEvent(new Event(type));
+                delete (document as any).visibilityState;
+              } else window.dispatchEvent(new Event(type));
+            }, interrupt);
+            assert.ok(Math.abs(await x()-restingX)<1, interrupt+' restores synchronously');
+            await touch('touchCancel');
+          }
+          await page.waitForTimeout(650);
+          assert.ok(Math.abs(await x()-restingX)<1, interrupt+' leaves no partial foreground');
+          if (initiallyOpen) { await opened(); await drag(240,65,400); }
+          await closed();
+          assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
+        }
+      }
+      await page.screenshot({path:`${output}/${theme}-${reducedMotion}-interruptions.png`});
+      assert.deepEqual(errors,[]); evidence.push({theme,reducedMotion,interruptions:true,passed:true});
+      await context.close(); continue;
+    }
     // Slow partial opening follows the finger then returns to closed.
     await touch('touchStart',120); await touch('touchMove',160); await page.waitForTimeout(70);
     const foreground=page.locator('.app-shell-row');

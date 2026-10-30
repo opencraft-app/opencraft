@@ -83,7 +83,10 @@ content; a leftward drag dismisses it, following the iOS direction convention.
 The Shell owns one progress MotionValue for direct manipulation, reversal and
 settling. Short slow gestures return to the starting intent; distance or a
 horizontal flick commits. Cancellation, multitouch and resize return to the
-starting intent. Vertical scrolling, editors, exclusive gesture regions,
+starting intent. Window blur, page hiding and replacement contacts also retire a
+held gesture synchronously, even when the host omits its terminal touch event;
+replacement editor/native contacts cannot strand a partial foreground.
+Vertical scrolling, editors, exclusive gesture regions,
 selection, menus and dialogs keep their own input. Unclaimed outer 24px contacts
 remain reserved for browser/OS gestures. A Runtime adapter may hand the original
 contact through the shared edge-input bridge; the same sidebar arbitration then

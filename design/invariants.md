@@ -58,7 +58,7 @@ for overflow, mobile boundaries and state continuity.
 - <a id="mobile-sidebar-theme-surface"></a>[Mobile Sidebar theme surface](invariants/navigation-and-sidebar.md#mobile-sidebar-theme-surface)
 - <a id="sidebar-scroll-ownership"></a>[Sidebar scroll ownership](invariants/navigation-and-sidebar.md#sidebar-scroll-ownership)
 - <a id="native-conversation-pinning"></a>[Native conversation pinning](invariants/navigation-and-sidebar.md#native-conversation-pinning)
-- <a id="mobile-sidebar-gestures"></a>[Mobile sidebar gestures](invariants/navigation-and-sidebar.md#mobile-sidebar-gestures)
+- <a id="mobile-sidebar-gestures"></a>[Mobile sidebar gestures](invariants/navigation-and-sidebar.md#mobile-sidebar-gestures), including synchronous retirement on host interruption or a replacement contact.
 - <a id="unified-sidebar-scroll"></a>[Unified sidebar scroll](invariants/navigation-and-sidebar.md#unified-sidebar-scroll)
 - <a id="application-navigation-restoration"></a>[Application navigation restoration](invariants/navigation-and-sidebar.md#application-navigation-restoration)
 - <a id="application-navigation-glyphs"></a>[Application navigation glyphs](invariants/navigation-and-sidebar.md#application-navigation-glyphs)

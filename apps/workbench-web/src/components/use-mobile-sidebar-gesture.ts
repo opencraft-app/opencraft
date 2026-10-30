@@ -109,6 +109,9 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       return true;
     };
     const start = (event: TouchEvent) => {
+      // A host can lose the old end/cancel on interruption. Retire its writer
+      // before admitting any new contact, including editor/native-only taps.
+      cancel(true);
       stopContentMotion();
       // A fresh deliberate tap must remain usable immediately after a swipe.
       suppressClick.current = 0;
@@ -244,9 +247,16 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
     document.addEventListener("touchmove", move, { passive: false, capture: true });
     document.addEventListener("touchend", end, { passive: false, capture: true });
     const cancelContact = () => cancel();
+    // Backgrounded WebViews may suspend animation frames and omit touchend.
+    // Restore the committed intent synchronously before yielding to the host.
+    const interruptContact = () => cancel(true);
+    const visibilityChanged = () => { if (document.visibilityState !== "visible") interruptContact(); };
     document.addEventListener("touchcancel", cancelContact, true);
     document.addEventListener("click", click, true);
     window.addEventListener("resize", cancelContact);
+    window.addEventListener("blur", interruptContact);
+    window.addEventListener("pagehide", interruptContact);
+    document.addEventListener("visibilitychange", visibilityChanged);
     // A modal appearing while the finger is held revokes the old gesture now,
     // rather than letting its later move/end write behind the foreground view.
     const foreground = new MutationObserver(() => { if (gesture.current || scrolling || (progress.get() > 0 && progress.get() < 1)) foregroundOwnsInput(); });
@@ -260,6 +270,9 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       document.removeEventListener("touchstart", start, true); document.removeEventListener("touchmove", move, true);
       document.removeEventListener("touchend", end, true); document.removeEventListener("touchcancel", cancelContact, true);
       document.removeEventListener("click", click, true); window.removeEventListener("resize", cancelContact);
+      window.removeEventListener("blur", interruptContact);
+      window.removeEventListener("pagehide", interruptContact);
+      document.removeEventListener("visibilitychange", visibilityChanged);
       gesture.current = null;
     };
   }, [enabled, overlay, root, progress, width]);
