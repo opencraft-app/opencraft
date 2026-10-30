@@ -602,3 +602,60 @@ test("a real Native turn automatically reconnects after Core maintenance without
     await f.close();
   }
 });
+
+
+test("ordinary Core cold boot tolerates a missing external credential and recovers it without replacing account state", async () => {
+  const f = await fixture(20);
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const contents = JSON.stringify({ auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } });
+    await writeFile(auth, contents, { mode: 0o600 });
+    const reference = JSON.stringify({ kind: "codex-auth-file", path: auth });
+    await writeFile(join(f.data, "secrets/account-a.json"), reference, { mode: 0o600 });
+    const unknown = [{ id: "historical-before-power-loss", route: "/v1/responses" }];
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 7, phase: "open", uncertain: unknown }), { mode: 0o600 });
+    const first = await f.start(); await f.stop(first.child);
+    await rm(auth);
+    const restarted = await f.start();
+    assert.equal(await f.account(), 200);
+    assert.equal((await restarted.adapter.snapshot()).handoff.phase, "open");
+    const unavailable = await f.model(); await unavailable.text();
+    assert.ok(unavailable.status >= 400); assert.equal(f.modelCalls(), 0);
+    assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
+    assert.equal(await readFile(join(f.data, "secrets/account-a.json"), "utf8"), reference);
+    await writeFile(auth, contents, { mode: 0o600 });
+    const available = await f.model(); assert.equal(available.status, 200); await available.text();
+    assert.equal(f.modelCalls(), 1);
+    assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
+    assert.equal((await f.accountRpc("list")).value.accounts.length, 1);
+    assert.equal((await restarted.adapter.snapshot()).pid, restarted.child.pid);
+  } finally { await f.close(); }
+});
+
+test("a released Core successor still rejects missing shared credentials without mutating its sealed state", async () => {
+  const f = await fixture();
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const contents = JSON.stringify({ auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } });
+    await writeFile(auth, contents, { mode: 0o600 });
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: auth }), { mode: 0o600 });
+    const source = await f.start(); await delay(50);
+    const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    await source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }); await f.stop(source.child);
+    const sealed = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    await rm(auth); await assert.rejects(f.start(), /ENOENT|credential/i);
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), sealed);
+    await writeFile(auth, contents, { mode: 0o600 });
+    const restored = await f.start(), cold = await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
+    await restored.adapter.releaseFence(f.input(cold), cold); assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("ordinary Core cold boot still refuses invalid Host authentication records", async () => {
+  const f = await fixture();
+  try {
+    const host = (await readdir(join(f.data, "secrets"))).find(name => name.startsWith("host-"))!;
+    await writeFile(join(f.data, "secrets", host), JSON.stringify({ hostId: "local-codex", token: "invalid" }), { mode: 0o600 });
+    await assert.rejects(f.start(), /Account credential validation failed/);
+  } finally { await f.close(); }
+});
