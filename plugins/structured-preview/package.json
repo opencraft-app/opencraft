@@ -14,7 +14,7 @@
     "@opencraft/file-preview-web": "0.1.0",
     "@opencraft/chat-render-web": "0.1.0",
     "@excalidraw/excalidraw": "0.18.1",
-    "@tanstack/react-virtual": "^3.14.22",
+    "@tanstack/react-virtual": "^3.14.23",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "@opencraft/design-system": "0.1.0",
