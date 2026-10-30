@@ -39,6 +39,7 @@ export interface ComposerQueueTrayItem {
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly steerable?: boolean;
   readonly dismissible?: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
@@ -63,12 +64,12 @@ export interface ComposerQueueTrayProps {
 
 /** The shortcut and row button must respect the same queue admission state. */
 export function canSteerQueueItem(
-  item: Pick<ComposerQueueTrayItem, "actionable" | "operation" | "pausedReason">,
+  item: Pick<ComposerQueueTrayItem, "actionable" | "steerable" | "operation" | "pausedReason">,
   isResponseInProgress: boolean,
   atomicSteer: boolean,
   blockedByUnconfirmedDelivery: boolean,
 ): boolean {
-  return item.actionable && item.operation === "idle"
+  return (item.steerable ?? item.actionable) && item.operation === "idle"
     && item.pausedReason !== "restored-after-host-restart"
     && !blockedByUnconfirmedDelivery
     && (!isResponseInProgress || atomicSteer);

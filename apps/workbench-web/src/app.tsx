@@ -2244,7 +2244,7 @@ export function App({
                         controller={composerController}
                         defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
                         availableFollowUpActions={followUpCapability?.queue === false && followUpCapability?.steer === false ? [] : snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true
-                          || snapshot.conversation.queuedSubmissions.some(item => item.local)
+                          || snapshot.conversation.queuedSubmissions.some(item => item.local && item.state === "unknown")
                           ? ["queue"]
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}

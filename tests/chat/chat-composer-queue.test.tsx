@@ -243,3 +243,14 @@ test("queue author photos replace the decorative leading arrow and survive proje
   assert.equal(queuedSubmissionPresentation({...source, sender: undefined}, true).sender, null);
   assert.deepEqual(queuedSubmissionPresentation(source, true).sender, {name: "alice", avatarUrl: null}, "unloaded resolver retains an honest named fallback");
 });
+
+test("pending queue accepts Steer independently of edit and delete custody", () => {
+  const render = (operation: "idle" | "starting") => renderToStaticMarkup(
+    <ComposerQueueTray items={[{ ...pendingItem, steerable: true, operation }]}
+      isResponseInProgress atomicSteer onSteer={async () => {}} />,
+  );
+  const ready = render("idle");
+  assert.match(ready, /aria-label="Steer with queued message"(?![^>]*disabled="")/u);
+  assert.match(ready, /aria-label="Delete queued message"[^>]*disabled=""/u);
+  assert.match(render("starting"), /aria-label="Steer with queued message"[^>]*disabled=""/u);
+});

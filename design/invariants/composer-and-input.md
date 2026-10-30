@@ -57,6 +57,17 @@ delivery. Queue edits and dictation keep their original paths. Autorepeat and
 concurrent queue actions cannot consume additional rows; late completion cannot
 clear a different conversation's input. Mobile software Return remains newline.
 
+## Steer before queue acknowledgement
+
+Healthy in-flight queue input accepts one immediate Steer intent. The runtime
+owns that intent and waits for exact queue custody rather than disabling the
+initial click or resubmitting the text. Add receipt and queue notification are
+alternative confirmations; canonical client-message history is proof of prior
+consumption. The operation indicator belongs to this row, leaving the next
+draft editable. Editing another row, missing atomic capability, offline waiting
+and unknown delivery retain their fences. Duplicate clicks join one operation;
+late acknowledgements never restore already consumed input.
+
 ## Desktop input ownership
 
 Desktop control presentation preserves the mounted control strip's geometry

@@ -703,6 +703,8 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  /** Accept Steer intent while queue custody is still being acknowledged. */
+  readonly steerable?: boolean;
   readonly dismissible?: boolean;
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
@@ -2187,6 +2189,9 @@ export const OpenCraftComposer = forwardRef<
               item.actionable &&
               (editingQueuedSubmissionId === null ||
                 item.id === editingQueuedSubmissionId),
+            steerable:
+              (item.steerable ?? item.actionable) &&
+              (editingQueuedSubmissionId === null || item.id === editingQueuedSubmissionId),
             dismissible:
               item.dismissible &&
               (editingQueuedSubmissionId === null ||

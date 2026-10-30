@@ -222,6 +222,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     let threadId: string;
     let turnId: string | null;
+    let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
 
     switch (intent.target.type) {
@@ -307,17 +308,19 @@ export function createAppServerConversationCommandPort(
       }
       case "enqueue-follow-up": {
         threadId = intent.target.key.threadId;
-        await config.client.request("thread/queue/add", {
+        const added = await config.client.request("thread/queue/add", {
           threadId,
           input: [...compiled.input],
           clientUserMessageId: intent.clientMessageId,
         }, requestOptions);
+        queuedSubmissionId = added.queuedSubmission.id;
         turnId = null;
         break;
       }
     }
 
     const receipt: SubmissionReceipt = {
+      ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,
       hostId,
