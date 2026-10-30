@@ -173,6 +173,14 @@ registry schema v1 记录不可变代定义、当前默认代/接纳 epoch、Thr
 
 退休用两阶段握手避免“读到空闲后又接纳”：routing owner 提交代次 fence；Host 同步拒绝该代新执行并以新 fence epoch 报告此前已接纳的全部工作，取消/暂停与读取仍可用。ACK 仍忙则撤 fence，继续原任务。ACK 空后才同步关闭该 runtime 准入，再核 Native、Host、RPC 与所有 Linux worker task 的子进程（含后台 shell）；持久记 `retiring` 后停止已验证的 unit，确认退出后记 `retired`。stop 失败保留 fence 与当前数据，重启继续该交接，不在旧 writer 尚活时打开 HOME。长期 goal/queue/schedule/unknown 不强制退休；新代继续接新 Thread。
 
+Linux 委派子树把 APP/native 放在 service 的 `app` 叶子，工具可位于同一 service 的其他子组。
+OS 工作观测必须递归整个 service；进程当前位于叶子并不缩小 owner 范围。
+原生子进程树仍检查所有 worker task；退休的最后核验还覆盖委派子树里的孤儿工具，
+不因工具已失去 Native 父进程而认证为空闲。目录或成员不可读保持 unknown/拒绝退休。
+服务级停止沿 `KillMode=control-group` 覆盖嵌套工具，不把工具迁到独立 tools slice。
+该观测兼容不自动启用 Delegate、不重启旧代，也不改变 Core 与 APP 的独立停止边界。
+
+
 旧 HOME 再被访问时，自动只向前升级可比较的稳定 CLI 版本；默认回退到较旧 CLI 时仍使用该 HOME 原固定 payload，未知版本也不猜测升级次序。先从已经退出的 HOME 制作备份与验证副本，逐 SQLite `quick_check`；验证 unit 启动前原子持久记录其身份，routing owner 重启先完成遗留验证 unit 的清理，失败保留交接记录。用当前 CLI 在私有 mount namespace 将副本绑定到**原绝对 HOME**，只执行 list/read 验证，避免 native 数据中的绝对 rollout 路径误读真实目录。验证成功后才用当前 payload 在原 HOME 独占冷启动并增加 incarnation。验证不执行 resume、Turn 或工具；兼容失败保留原目录/副本，返回不可用，不恢复旧快照。此冷验证目前要求 systemd 路径不含空白、冒号或反斜线。
 
 回退只 CAS 新建默认路由到仍就绪的原代；新代已创建 Thread 与数据继续保留并按其归属服务。原代已退休时，显式 activate 先验证并重开它保留的 payload/HOME。已冷升级的 HOME 不承诺旧 CLI 可读，不做 schema 降级。单代异常只通知 Host 受影响 Thread，沿现有恢复 owner 读实际状态、恢复订阅和必要的后继，不断开其它代、不盲重发 mutation。
@@ -392,3 +400,66 @@ Core-owned stores and reference files require the service UID. A root service ma
 explicitly configured private regular external auth file owned by its independent credential writer.
 The proof binds the external file's actual UID, mode and content digest; any change invalidates
 readiness. Core never takes ownership of or writes this external file.
+
+### Delegated tool memory guard (implementation, not activated)
+
+The opt-in Linux prototype in `scripts/server-deployment/tool-memory-guard.py`
+observes process fork/exec events outside native and adopts tools into child
+cgroups under an already delegated generation service. It does not modify native,
+create delegation on a running legacy owner, read command/session content, or
+reject commands based on a sum of tool limits. Helpers are adopted as tools too.
+Proc-connector thread events are filtered; loss/unavailability is reported before
+100ms polling fallback. Startup reconciliation recovers orphaned tools.
+
+New owners require `Delegate=yes`, `DelegateSubgroup=app`, finite owner limits and
+`OOMPolicy=continue`. The APP unit has `OOMScoreAdjust=-1000`; the guard sets native
+to -999 and adopted tools/descendants to 0. Native must remain killable if the guard
+fails. The guard is supervised independently with `Restart=always`; the per-tool
+cgroup has `memory.oom.group=1`. Adoption is best effort: earlier allocations remain
+charged to the owner leaf; its total limit covers both leaf and tool subtrees.
+Normal-load latency and sampled anonymous residue are measured, not universal
+allocation bounds. The package carries the guard, an operator-editable policy sample and an offline
+configuration renderer. Host activation remains opt-in and requires a new owner.
+
+The local-only real-CLI smokes are `smoke-tool-memory-native.py` (50 simultaneous
+built-in shell tools with a full-speed allocator) and `smoke-tool-memory-guard.ts`
+(real APP/native priority and guard-down OOM recovery). They use private synthetic
+accounts and loopback fixtures and must never run on the main server. Nested
+retirement/inventory tests continue to verify the entire owner subtree.
+
+Occupancy/inventory and delegated retirement compare two complete directory and
+membership snapshots. A changed snapshot cannot certify stable/idle work during
+adoption. Guard recovery removes empty groups before parsing their limits, since
+a crash between mkdir and controller setup can leave `memory.max=max`.
+
+
+The sample `config/tool-memory-guard.json` sets each tool (including helpers) to
+12GiB High / 16GiB Max. These are policy values, never reservations or a budget
+admission test. `toolPidsMax=max` adds no new task-count restriction; the owner's
+existing TasksMax still applies. A small owner's total may be below one tool's
+maximum. Operators must size a generation for its intended traffic.
+
+`opencraft-tool-memory-prepare` stages a versioned Python payload, policy,
+standalone `Restart=always` service and a precise `99-delegated-tool-memory.conf`.
+It never mutates host configuration. The deployment owner holds its normal lock,
+backs up existing files, verifies the target generation is not running and
+applies only to that new owner. The guard payload is an independent versioned
+regular file so release garbage collection cannot delete it. A running operator
+policy is preserved; policy updates require a controlled guard restart.
+
+The supervisor discovers native exec through proc connector and reconciles
+systemd units on startup/restart/loss; only finite, explicitly delegated `app`
+owners with continue/-1000 qualify. Workers adopt tools via fork/exec events.
+Missing connector support is reported before 100ms polling fallback. Legacy
+undelegated owners are skipped. Worker/guard failure never blocks tool exec.
+APP makes its native child -999 before publishing readiness if APP is -1000,
+so even an unavailable guard cannot leave the whole generation OOM-immune.
+
+High and OOM observations contain generation, kernel comm process names, peak
+bytes, UTC time, counter increments and cumulative counters. No argv, environment
+or session/tool content is read. High increments are aggregated per observation
+rather than producing an unbounded log storm; every kernel count remains in the
+delta. Group OOM occurrences and killed-process counts are distinct. Counters
+are read once more before group deletion; restart re-observation carries stable
+counter-based keys for deduplication. These are observed peaks; absent historical
+process names cannot be reconstructed after a crash.
