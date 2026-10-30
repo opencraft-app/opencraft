@@ -18,6 +18,26 @@ export interface GitOriginLeaseReader {
 export type GitOriginLeaseResolution = { status: 'unknown' } | { status: 'active' | 'expired' | 'unowned'; lease: { principal: { provider: string; subject: string } | null; executionId: string } };
 const verifiedExecutables = new WeakMap<DatabaseSync, Map<string, string>>();
 const executableChecks = new WeakMap<DatabaseSync, Map<string, Promise<boolean>>>();
+/** Resolve only the official persistent npm transport's unique direct child.
+ * Keep the caller's attested incarnation: leases belong to the managed owner. */
+export async function resolveGitCodexToolRoot(owner: NativeGitProcess): Promise<NativeGitProcess> {
+  const args = (await readFile(`/proc/${owner.pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+  if (!args[1]?.endsWith('/@openai/codex/bin/codex.js') || args[2] !== 'app-server') return owner;
+  const uid = (await stat(`/proc/${owner.pid}`)).uid;
+  const children = (await readFile(`/proc/${owner.pid}/task/${owner.pid}/children`, 'utf8')).trim().split(/\s+/u).filter(Boolean);
+  const matches = [];
+  for (const child of children) {
+    const native = await readGitProcess(Number(child));
+    const childArgs = (await readFile(`/proc/${native.pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+    if (native.parent === owner.pid && (await stat(`/proc/${native.pid}`)).uid === uid
+      && JSON.stringify(childArgs.slice(1)) === JSON.stringify(args.slice(2))) matches.push(native);
+  }
+  if (matches.length !== 1 || (await readGitProcess(owner.pid)).startTicks !== owner.startTicks) throw new Error('Codex transport changed');
+  const native = matches[0]!;
+  const after = await readGitProcess(native.pid);
+  if (after.startTicks !== native.startTicks || after.parent !== owner.pid) throw new Error('Codex native changed');
+  return { ...owner, pid: native.pid, startTicks: native.startTicks };
+}
 /** Read existing owner records. This reader never locks, migrates, or invents a generation. */
 export async function readCodexGitNatives(registry: DatabaseSync): Promise<NativeGitProcess[]> {
   let cache = verifiedExecutables.get(registry);
@@ -47,7 +67,7 @@ export async function readCodexGitNatives(registry: DatabaseSync): Promise<Nativ
         if (!valid) continue;
         cache.set(String(row.id), stamp);
       }
-      natives.push({ pid: native.pid, startTicks: native.startTicks, incarnation: JSON.stringify([row.id, row.incarnation]), threadEnvironment: 'CODEX_THREAD_ID' });
+      natives.push(await resolveGitCodexToolRoot({ pid: native.pid, startTicks: native.startTicks, incarnation: JSON.stringify([row.id, row.incarnation]), threadEnvironment: 'CODEX_THREAD_ID' }));
     } catch { /* A retired/restarted process cannot authorize a new job. */ }
   }
   return natives;
