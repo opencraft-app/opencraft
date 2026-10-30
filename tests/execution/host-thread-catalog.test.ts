@@ -27,9 +27,18 @@ function harness(initialProfile: HostConnectionProfile = profile) {
     assert.deepEqual(params, { cursor: null, limit: 50 });
     return { data: [{ id: "same-native-id" }], nextCursor: null };
   };
+  let connection: Promise<void> | null = null;
+  let connectDemands = 0;
   const runtime = {
     getSnapshot: () => ({ phase }),
-    async connect() { calls.push("connect"); phase = "connecting"; await connectGate; phase = "ready"; },
+    connect() {
+      connectDemands++;
+      // The runtime owns physical connection single-flight, as in AppServer runtime.
+      if (connection) return connection;
+      calls.push("connect"); phase = "connecting";
+      connection = connectGate.then(() => { phase = "ready"; }).finally(() => { connection = null; });
+      return connection;
+    },
     async dispose() { calls.push("dispose"); phase = "disposed"; },
     resources: { threads: { async list(params: { cursor: string | null; limit: number }) { calls.push("thread/list");
       await listGate; return listPage(params); } } },
@@ -37,7 +46,7 @@ function harness(initialProfile: HostConnectionProfile = profile) {
   const registry = new HostRuntimeRegistry([{ descriptor: { hostId: profile.hostId, label: "Fixture", kind: "remote-ssh",
     transportEndpoint: null, executionLocation: "Fixture", workspaceBrowseRoots: ["/remote"] }, createRuntime: () => runtime }]);
   const source = { getSnapshot: () => snapshot, getAuthorizationEpoch: () => authorizationEpoch, subscribe: () => () => {}, refresh: async () => {} };
-  return { calls, registry, source, read: (options: { onInitialPage?: (page: { data: readonly { id: string; pinned?: boolean }[] }) => void; signal?: AbortSignal } = {}) => readHostThreadCatalog({ profile: initialProfile, currentProfile: () => current, management: source, registry, ...options }),
+  return { calls, registry, source, getConnectDemands: () => connectDemands, read: (options: { onInitialPage?: (page: { data: readonly { id: string; pinned?: boolean }[] }) => void; signal?: AbortSignal } = {}) => readHostThreadCatalog({ profile: initialProfile, currentProfile: () => current, management: source, registry, ...options }),
     setCurrent: (value: HostConnectionProfile | undefined) => { current = value; },
     setSnapshot: (value: Partial<ManagedHostCatalogSnapshot>) => { snapshot = { ...snapshot, ...value }; },
     nextAuthorization: () => { authorizationEpoch++; },
@@ -156,6 +165,7 @@ test("an enabled but idle SSH recipe does not dial merely to discover history", 
 test("an explicitly open backend admits a logical catalog reader with no Thread activation", async () => {
   const h = harness(), gate = deferred(); h.holdConnect(gate.promise);
   const first = h.read(), second = h.read();
+  assert.equal(h.getConnectDemands(), 2);
   assert.deepEqual(h.calls, ["connect"]); gate.resolve();
   const pages = await Promise.all([first, second]);
   assert.equal(pages[0].data[0]?.id, "same-native-id");

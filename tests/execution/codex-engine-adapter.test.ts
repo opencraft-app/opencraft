@@ -1777,3 +1777,41 @@ test("a disconnected creator cannot leak its pending MCP reservation or send a l
     assert.equal((counts.result as any)["thread/start"] ?? 0, 0);
   } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+for (const method of ["thread/start", "thread/fork"] as const) test(`temporary ${method} sends consecutive turns without durable session tools`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-side-chat-tools-")), frames: Array<Record<string, unknown>> = [];
+  let preparations = 0, reservations = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => { preparations++; throw new Error("durable provider must not run for temporary chats"); },
+    async () => { reservations++; throw new Error("temporary creation must not reserve durable tools"); });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const created = await rpc("temporary", method, { threadId: "parent", cwd: root, ephemeral: true, testNoServerRequest: true });
+    assert.equal(created.error, undefined);
+    const threadId = (created.result as any).thread.id;
+    for (let index = 0; index < 2; index++) {
+      const reply = await rpc(`send-${index}`, "turn/start", { threadId, clientUserMessageId: `side-${index}`, input: [{ type: "text", text: "question" }] });
+      assert.equal(reply.error, undefined); assert.ok((reply.result as any).turn.id);
+      await rpc(`complete-${index}`, "test/completeTurn", { threadId });
+    }
+    assert.equal(preparations, 0); assert.equal(reservations, 0);
+    const counts = (await rpc("counts", "test/readMethodCounts", {})).result as any;
+    assert.equal(counts["turn/start"], 2);
+    // Fork reads the parent's choices; the temporary child must never resume
+    // from disk or retire its runtime to refresh durable tools.
+    assert.equal(counts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    assert.equal(counts["thread/unsubscribe"] ?? 0, 0);
+    const childCounts = (await rpc("child-counts", "test/readMethodCounts", { threadId })).result as any;
+    assert.equal(childCounts["turn/start"], 2);
+    assert.equal(childCounts["thread/resume"] ?? 0, 0);
+    assert.equal(childCounts["thread/unsubscribe"] ?? 0, 0);
+    const parentCounts = (await rpc("parent-counts", "test/readMethodCounts", { threadId: "parent" })).result as any;
+    assert.equal(parentCounts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    const rejected = await rpc("durable-send", "turn/start", { threadId: "durable", input: [{ type: "text", text: "question" }] });
+    assert.equal((rejected.error as any).data.code, "SESSION_TOOLS_UNAVAILABLE"); assert.equal(preparations, 1);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
