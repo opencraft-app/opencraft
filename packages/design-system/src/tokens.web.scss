@@ -76,6 +76,8 @@
   --height-navigation-row: max(34px, var(--size-control-hit-min));
   --height-application-navigation-row: 36px;
   --size-application-navigation-icon: 20px;
+  --size-shell-footer-icon: 20px;
+  --padding-shell-footer-block: var(--spacing);
   --size-application-navigation-hit-min: max(var(--height-application-navigation-row), var(--size-control-hit-min));
   --radius-application-navigation-control: 10px;
   --gap-application-navigation-items: 8px;
@@ -338,6 +340,8 @@
   --size-chrome-icon: var(--size-shell-header-icon-mobile);
   --size-icon-composer-input: 24px;
   --size-control-hit-min: 44px;
+  --size-shell-footer-icon: 24px;
+  --padding-shell-footer-block: calc(var(--spacing) * 3);
   // Compact accessories, independent of Goal and the editor's control density.
   --height-composer-rail-row: 32px;
   --height-composer-queue-row: 36px;
