@@ -227,13 +227,27 @@ export class AccountCoreOwner {
     await this.transition(() => this.save(this.state));
   };
   snapshot() { return { ...structuredClone(this.state), owner: this.owner, activeCalls: this.calls,
-    persistence: this.failed ? "unknown" : "ready", protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
+    persistence: this.failed ? "unknown" : "ready", maintenanceInterruption: 1, protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
   private check(input: AccountOwnerExpectation, existing = true) {
     if (this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
       || ![input.operationId, input.fence].every(v => typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(v))
       || existing && (input.operationId !== this.state.operationId || input.fence !== this.state.fence)) throw new Error("Account owner handoff conflict");
   }
   checkInspection(input: AccountOwnerExpectation) { this.check(input); }
+  checkMaintenance(input: AccountOwnerExpectation) {
+    this.check(input);
+    if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.sealedProcess) {
+      throw new Error("Account maintenance requires the fenced source owner");
+    }
+  }
+  async acceptMaintenanceUnknown(input: AccountOwnerExpectation, activeCount: number) {
+    this.checkMaintenance(input);
+    if (activeCount + this.calls !== 0 || input.historicalUnknown === undefined
+      || digest(input.historicalUnknown) !== digest(this.state.uncertain)) {
+      throw new Error("Account maintenance requires the final exact unknown list and completed handlers");
+    }
+    await this.save({ ...this.state, carriedUnknown: structuredClone(input.historicalUnknown) });
+  }
   private async save(state: State) {
     const bytes = this.serialized(state);
     const temporary = `${this.path}.${randomUUID()}.tmp`;

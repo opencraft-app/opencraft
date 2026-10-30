@@ -31,6 +31,8 @@ export function accountCoreOwner(descriptorPath) {
   };
   return {
     snapshot: () => rpc(), acquireFence: input => rpc('fence', input), abortFence: input => rpc('abort', input), inspectDrain: input => rpc('inspect', input),
+    interruptForMaintenance: input => rpc('maintenance-interrupt', input),
+    acceptMaintenanceUnknown: input => rpc('maintenance-accept-unknown', input),
     releaseWriter: input => rpc('release', input), coldReady: input => rpc('cold-ready', input),
     releaseFence: (input, ready) => rpc('resume', { ...input, identity: ready.ready.identity }),
   };
