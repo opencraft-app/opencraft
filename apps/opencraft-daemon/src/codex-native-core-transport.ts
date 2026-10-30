@@ -29,7 +29,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   get supportsOrchestration(): boolean { return this.callbackReady; }
   constructor(endpoint: string, token: string, callbackLaneId?: string) {
     this.control = new CodexCoreControlClient(endpoint, token);
-    this.reads = new CodexCoreReadIsolation(() => this.control.health());
+    this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal));
     this.connection = new CodexCoreSocket({
       callbackLaneId,
       health: async signal => {
