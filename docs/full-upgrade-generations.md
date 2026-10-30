@@ -215,3 +215,10 @@ The controller waits at most thirty seconds, fences admission, stops the selecte
 Continuing proofs require supported callback observations and unchanged physical Core/Native owners. Counts, loaded state, requests and progress are recorded rather than declared quiet. Approved historical failures remain exact. An additional Native read error is only tolerated for a Thread currently loaded by the original Native, and recorded as an unconfirmed read with code and digest. An unloaded binding error still rejects import. Cold-ready binds physical ownership rather than volatile progress.
 
 All durable pending IDs and raw source uncertainty survive immutable archival and visible global state. Interrupted pending conservatively sets global uncertainty. The controller neither replays work nor answers requests; the client Host uses its existing continuation protocol. Measure interruption, actually resumed Turns and retained unknown separately. Failure uses compatible recovery and current data under the same lock; a committed exact open successor stays running. The next ordinary fence clears this special proof and requires quiet work again.
+
+
+## Program artifact digest observations
+
+Generation identity and router configuration proofs may reuse a program file digest within one process. Every call opens the file and checks device, inode, size, mode, owner and nanosecond modification/change timestamps before and after observation, then verifies that the current path still selects that same file version. A write or replacement during observation rejects the proof. Content is streamed, and the cache retains at most 64 digests. Node, CLI, launcher and APP bundle artifacts share this cache, including aliases through process executable descriptors.
+
+This optimization never caches the registry, HOME, Native history, pending requests or owner observations. Each maintenance phase still reads current data and rechecks process identity and the approved historical failure policy. A digest match grants no lifecycle action or admission by itself.
