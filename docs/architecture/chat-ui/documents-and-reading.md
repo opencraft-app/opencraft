@@ -300,3 +300,5 @@ The reading surface owns width; wide references borrow only available prose
 space. Source-checked frame messages report bounded intrinsic height and enter
 existing document measurement transactions. Failed loads offer retry and the
 existing file-open action. Disposal aborts file work and ignores late results.
+
+Inline visualization renderer, sandbox generator and styles load on the first visualization directive through a React Suspense boundary. Ordinary chat startup does not load them; the startup resource policy rejects eager inclusion. The existing localized loading status remains visible until the renderer and its styles are ready.

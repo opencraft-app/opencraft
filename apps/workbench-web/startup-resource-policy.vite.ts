@@ -12,6 +12,7 @@ export interface StartupResourcePolicy {
   readonly demandOnlyModules?: readonly RegExp[];
 }
 const demandOnlyPatterns = [
+  /\/chat-render-web\/src\/renderers\/visualization\/(?:visualization\.tsx|sandbox\.ts)$/,
   /\/packages\/appserver-session\/src\/derived-history\.ts$/,
   /\/apps\/workbench-web\/src\/components\/modal\/adaptive-sheet-handle\.tsx$/,
   /\/chat-render-web\/src\/extensions\/katex\/katex-math\.tsx$/,

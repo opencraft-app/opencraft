@@ -3,7 +3,7 @@ import test from "node:test";
 import { requiredStartupModule, startupResourceBudget, startupJavaScriptChunkBudget, startupResourceViolations } from "../../apps/workbench-web/startup-resource-policy.vite";
 const report = (module: string, critical = true) => ({ critical: critical ? ["main.js"] : [], chunks: [{ file: "main.js", modules: [module] }], totals: { javascript: 1, css: 1, gzip: 1 } });
 test("startup gates reject on-demand modules even when byte budgets are met", () => {
-  for (const module of ["opencraft/apps/workbench-web/src/components/modal/adaptive-sheet-handle.tsx", "opencraft/packages/chat-render-web/src/extensions/katex/katex-math.tsx", "opencraft/node_modules/parse5/dist/index.js", "opencraft/node_modules/acorn/dist/acorn.mjs", "opencraft/plugins/cloud-desktop/src/panel.tsx"]) {
+  for (const module of ["opencraft/packages/chat-render-web/src/renderers/visualization/visualization.tsx", "opencraft/packages/chat-render-web/src/renderers/visualization/sandbox.ts", "opencraft/apps/workbench-web/src/components/modal/adaptive-sheet-handle.tsx", "opencraft/packages/chat-render-web/src/extensions/katex/katex-math.tsx", "opencraft/node_modules/parse5/dist/index.js", "opencraft/node_modules/acorn/dist/acorn.mjs", "opencraft/plugins/cloud-desktop/src/panel.tsx"]) {
     assert.equal(startupResourceViolations(report(module)).length, 1, module);
     assert.deepEqual(startupResourceViolations(report(module, false)), [], module);
   }
