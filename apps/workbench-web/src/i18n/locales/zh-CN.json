@@ -1138,5 +1138,12 @@
   "chat.visualization.navigationBlocked": "此视图不允许跳转页面",
   "chat.visualization.unavailable": "暂时无法显示内嵌视图",
   "chat.visualization.openFile": "打开文件",
-  "chat.visualization.loading": "正在加载视图…"
+  "chat.visualization.loading": "正在加载视图…",
+  "welcome.local.start": "在源码目录同时启动本机执行端与 Web，然后打开命令输出的地址。",
+  "welcome.nextStep": "下一步",
+  "welcome.models.required": "{host} 暂无可用模型。请配置模型，或联系服务器管理员。",
+  "welcome.models.failed": "无法从 {host} 加载模型，请重试。",
+  "welcome.connection.failed": "无法连接到 {host}，请检查连接或重试。",
+  "welcome.retry": "重试",
+  "welcome.connection.settings": "连接设置"
 }

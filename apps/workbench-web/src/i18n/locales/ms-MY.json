@@ -1116,5 +1116,12 @@
   "chat.visualization.navigationBlocked": "Navigasi visualisasi tidak dibenarkan",
   "chat.visualization.unavailable": "Visualisasi sebaris tidak tersedia",
   "chat.visualization.openFile": "Buka fail",
-  "chat.visualization.loading": "Memuatkan visualisasi…"
+  "chat.visualization.loading": "Memuatkan visualisasi…",
+  "welcome.local.start": "Dari direktori kod sumber, mulakan pelaksanaan setempat dan Web bersama, kemudian buka alamat yang dipaparkan.",
+  "welcome.nextStep": "Langkah seterusnya",
+  "welcome.models.required": "Tiada model yang boleh digunakan pada {host}. Konfigurasi model atau hubungi pentadbir pelayan.",
+  "welcome.models.failed": "Tidak dapat memuatkan model dari {host}. Cuba lagi.",
+  "welcome.connection.failed": "Tidak dapat menyambung ke {host}. Semak sambungan atau cuba lagi.",
+  "welcome.retry": "Cuba lagi",
+  "welcome.connection.settings": "Tetapan sambungan"
 }

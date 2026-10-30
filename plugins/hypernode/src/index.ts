@@ -9,6 +9,8 @@ import {
 
 export interface HyperNodeExtensionOptions {
   readonly hostId?: string;
+  /** Register the provider for saved profiles without creating a default target. */
+  readonly includeDefaultProfile?: boolean;
   readonly label?: string;
   readonly url: string;
   readonly workspaceBrowseRoots?: readonly string[];
@@ -49,7 +51,7 @@ export const HyperNodeHostConnectionProvider: HostConnectionProvider = Object.fr
   },
 });
 
-export function createHyperNodeExtension(options: HyperNodeExtensionOptions): TrustedExtensionDefinition {
+export function createHyperNodeProfile(options: HyperNodeExtensionOptions): HostConnectionProfile {
   const url = parseUrl(options.url);
   const parsed = new URL(url);
   const hostId = options.hostId?.trim() || "hypernode";
@@ -70,6 +72,11 @@ export function createHyperNodeExtension(options: HyperNodeExtensionOptions): Tr
     workspaceBrowseRoots: Object.freeze([...(options.workspaceBrowseRoots ?? ["/workspace/projects"])]),
     revision: 0,
   });
+  return profile;
+}
+
+export function createHyperNodeExtension(options: HyperNodeExtensionOptions): TrustedExtensionDefinition {
+  const profile = createHyperNodeProfile(options);
   return {
     manifest: {
       manifestVersion: 1,
@@ -84,7 +91,7 @@ export function createHyperNodeExtension(options: HyperNodeExtensionOptions): Tr
     },
     activate(api) {
       api.internal.register("hostConnectionProvider", HyperNodeHostConnectionProvider);
-      api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, { profile });
+      if (options.includeDefaultProfile !== false) api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, { profile });
     },
   };
 }

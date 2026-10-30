@@ -1116,5 +1116,12 @@
   "chat.visualization.navigationBlocked": "ไม่อนุญาตให้นำทางในภาพแสดงข้อมูล",
   "chat.visualization.unavailable": "ภาพแสดงข้อมูลแบบอินไลน์ไม่พร้อมใช้งาน",
   "chat.visualization.openFile": "เปิดไฟล์",
-  "chat.visualization.loading": "กำลังโหลดภาพแสดงข้อมูล…"
+  "chat.visualization.loading": "กำลังโหลดภาพแสดงข้อมูล…",
+  "welcome.local.start": "จากไดเรกทอรีซอร์สโค้ด เริ่มการทำงานในเครื่องและ Web พร้อมกัน แล้วเปิดที่อยู่ที่แสดง",
+  "welcome.nextStep": "ขั้นตอนถัดไป",
+  "welcome.models.required": "ไม่มีโมเดลที่พร้อมใช้งานบน {host} โปรดตั้งค่าโมเดลหรือติดต่อผู้ดูแลเซิร์ฟเวอร์",
+  "welcome.models.failed": "ไม่สามารถโหลดโมเดลจาก {host} ได้ โปรดลองอีกครั้ง",
+  "welcome.connection.failed": "ไม่สามารถเชื่อมต่อกับ {host} ได้ โปรดตรวจสอบการเชื่อมต่อหรือลองอีกครั้ง",
+  "welcome.retry": "ลองอีกครั้ง",
+  "welcome.connection.settings": "การตั้งค่าการเชื่อมต่อ"
 }

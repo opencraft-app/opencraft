@@ -24,6 +24,20 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
 | `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Configured public application ID, signed APK and filing text | Linux with JDK, Android SDK and release key |
 
+## Local source development
+
+`npm run dev` aliases `dev:local`: the existing pinned engine preparation,
+Local Agent Host, and Vite run together, with a same-origin `/appserver` proxy.
+The private Host URL stays in the Node process; proxy upgrades require the
+printed loopback Web origin. This is a local development entry, not a server
+installation or remote authentication bridge. `dev:web` remains frontend-only.
+Each checkout installs its own dependencies. Data defaults to
+`~/.opencraft/dev-local` (override `OPENCRAFT_DEV_DATA_DIRECTORY`); the existing
+storage owner claim rejects simultaneous writers. Startup failure and shutdown
+close both the Web server and the Host and release the claim. The runner uses
+`node --import tsx` so the tsx CLI signal relay cannot force termination before
+asynchronous cleanup finishes; repeated stop signals join the same cleanup.
+
 ## Repository-owned Electron source fork
 
 [`vendor/electron`](../vendor/electron/README.md) owns the fixed Electron source

@@ -1114,5 +1114,12 @@
   "chat.visualization.navigationBlocked": "Visualization navigation is not allowed",
   "chat.visualization.unavailable": "Inline visualization unavailable",
   "chat.visualization.openFile": "Open file",
-  "chat.visualization.loading": "Loading visualization…"
+  "chat.visualization.loading": "Loading visualization…",
+  "welcome.local.start": "From the source checkout, start local execution and Web together, then open the printed address.",
+  "welcome.nextStep": "Next step",
+  "welcome.models.required": "No usable models are available on {host}. Configure models or contact the server administrator.",
+  "welcome.models.failed": "Could not load models from {host}. Try again.",
+  "welcome.connection.failed": "Could not connect to {host}. Check the connection or retry.",
+  "welcome.retry": "Retry",
+  "welcome.connection.settings": "Connection settings"
 }

@@ -27,17 +27,27 @@ source tree is required. Do not copy `node_modules` from another computer.
 git clone https://github.com/opencraft-app/opencraft.git
 cd opencraft
 npm ci
-npm run dev:web
+npm run dev
 ```
 
 Private product assembly belongs to downstream workspaces. Trusted local build
 entries can compose the same complete client without making public installation
 depend on a private account provider. See [plugin architecture](docs/plugin-architecture.md).
 
-The browser UI starts without a configured model account. To execute agent
-tasks, connect an available Host or use the desktop app's built-in Local Agent;
-configure its models through the current Settings surface. Model credentials
-are runtime configuration, not build inputs and never part of this repository.
+`npm run dev` (also `npm run dev:local`) prepares the pinned DSH engine and
+starts local execution and Web together on a loopback address. Open the printed
+URL, choose **Configure models**, save your provider credentials/endpoint, then
+return to Chat. No OpenCraft account is required. Model credentials remain with
+the execution Host; they are never build inputs. Local development data persists
+in `~/.opencraft/dev-local`, independently of desktop/server installations.
+`OPENCRAFT_DEV_DATA_DIRECTORY` selects another isolated data directory and
+`OPENCRAFT_DEV_PORT` changes the Web port (default 5173). Stop with Ctrl+C.
+
+`npm run dev:web` starts only the frontend. Without an explicit endpoint or saved
+connection, it offers local-start instructions and an existing server address.
+Opening a server takes you to that server's own website and sign-in flow.
+Explicit `VITE_APPSERVER_HOSTS_JSON`, `VITE_APPSERVER_WS_URL`, and website deployment
+configuration remain supported; a temporary connection failure never clears them.
 
 ### Managed Web installation and public npm releases
 

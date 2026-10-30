@@ -1,0 +1,10 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+.draft-setup-notice {
+  box-sizing: border-box;
+  padding: calc(var(--spacing) * 4);
+  border: .5px solid var(--color-border-default);
+  border-radius: var(--radius-token-settings-card);
+  color: var(--color-text);
+  p { @include typography.role(body, secondary); margin: 0 0 calc(var(--spacing) * 3); }
+}
+.draft-setup-notice__actions { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2); }

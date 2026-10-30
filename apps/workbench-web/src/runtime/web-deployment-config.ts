@@ -55,7 +55,8 @@ export function parseWebDeploymentConfig(raw: string | null): WebDeploymentConfi
 
 export function resolveWebDeploymentConfig(
   runtime: WebDeploymentConfig | null,
-  build: { readonly hosts?: string; readonly builtinAgents?: string; readonly hypernode?: string; readonly extensions?: string },
+  build: { readonly hosts?: string; readonly builtinAgents?: string; readonly hypernode?: string; readonly extensions?: string; readonly appServerUrl?: string },
+  retainedHostId?: string | null,
 ) {
   return {
     ...((build.extensions !== undefined || runtime?.extensions !== undefined) ? { extensions: build.extensions !== undefined ? build.extensions.split(",").map(id => id.trim()).filter(Boolean) : runtime!.extensions! } : {}),
@@ -64,6 +65,6 @@ export function resolveWebDeploymentConfig(
     builtinAgents: build.builtinAgents === "enabled" ? true
       : build.builtinAgents === "disabled" ? false : runtime?.builtinAgents ?? false,
     hypernode: build.hypernode === "disabled" ? false
-      : build.hypernode === "enabled" ? true : runtime?.hypernode ?? true,
+      : build.hypernode === "enabled" ? true : runtime?.hypernode ?? Boolean(build.appServerUrl?.trim() || (!build.hosts?.trim() && retainedHostId === "hypernode")),
   };
 }
