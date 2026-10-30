@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
+import { threadCliProvider } from './thread-cli-provider.js';
 
 /** A stable signing key, never a model-visible global credential. Tokens bind a
  * single server/thread. Domain providers reauthorize independently on each call.
@@ -32,13 +33,20 @@ export class SessionCapabilityMcp {
   private readonly calls = new Set<Server>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
+  private readonly releaseCli?: () => void;
   private readonly executionReservations = new Map<string, {
     bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
     session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number;
   }>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
-      orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown> } = {}) {
+      orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;
+      cliDirectory?: string; threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
+    if(options.threadCli && options.cliDirectory)this.releaseCli=capabilities.register(threadCliProvider({directory:options.cliDirectory,
+      config:session=>{
+        if(!this.url||!session.execution)throw Error('Execution CLI unavailable');
+        return {url:new URL('/thread-cli',this.url).href,token:this.token(session)};
+      },context:session=>options.threadCli!(session,{command:'context'})}));
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
@@ -199,7 +207,7 @@ export class SessionCapabilityMcp {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (!["/mcp", "/admission", "/orchestration"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
+    if (!["/mcp", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     const authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -215,11 +223,12 @@ export class SessionCapabilityMcp {
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString()); }
     catch { response.writeHead(400); response.end(); return; }
-    if (request.url === "/orchestration") {
-      if (!authenticated.session || !this.options.orchestration) { response.writeHead(403); response.end(); return; }
+    if (request.url === "/orchestration" || request.url === "/thread-cli") {
+      const callback=request.url==='/thread-cli'?this.options.threadCli:this.options.orchestration;
+      if (!authenticated.session || !callback || request.url==='/thread-cli'&&!authenticated.session.execution) { response.writeHead(403); response.end(); return; }
       if (!body || typeof body !== "object" || Array.isArray(body)) { response.writeHead(400); response.end(); return; }
       try {
-        const result = await this.options.orchestration(authenticated.session, body as Record<string, unknown>);
+        const result = await callback(authenticated.session, body as Record<string, unknown>);
         response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ result }));
       } catch (cause) {
         const error = cause as { status?: number; code?: string };
@@ -269,6 +278,7 @@ export class SessionCapabilityMcp {
     await transport.handleRequest(request, response, body);
   }
   async close(): Promise<void> {
+    this.releaseCli?.();
     if (this.options.descriptorPath && !this.options.retainEndpoint) {
       try { const value = JSON.parse(await readFile(this.options.descriptorPath, "utf8")); if (value.url === this.url) await rm(this.options.descriptorPath); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }

@@ -481,6 +481,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     capabilityBindings = new CapabilityBindings(serverStorage);
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilitySigningKey(join(dataDirectory, "session-capabilities.key")), capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
+      cliDirectory:join(dataDirectory,'thread-cli'),
+      threadCli:(session,request)=>threadOrchestration.cli(session,request),
       authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
       orchestration: async (session, request) => {
         const fields = ['turnId','callId','name','arguments','inputId','incarnation','toolCallKey'];

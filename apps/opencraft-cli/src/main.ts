@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { threadCli } from '@opencraft/session-capabilities/thread-cli';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname, join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
@@ -15,6 +16,8 @@ export { CliError, classify } from './errors';
 interface Profile { sshAlias: string; instanceId: string; defaultServer?: string; sshConfig?: string; webUrl?: string }
 interface Connections { schemaVersion: 1; defaultConnection?: string; connections: Record<string, Profile> }
 const help = `Usage: opencraft <command> [options]
+For Agent parent/child orchestration, call thread_cli in your execution.
+Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNECTION).
   connection add <name> --ssh <alias> [--instance <id>] [--default]
   status
   server list
@@ -188,6 +191,11 @@ export async function run(argv: string[]) {
   } finally { await client.close(); }
 }
 export async function main(argv = process.argv.slice(2)) {
+  if (process.env.OPENCRAFT_THREAD_CLI_CONNECTION) {
+    try { await threadCli(argv); }
+    catch { process.stderr.write('Execution CLI failed; inspect state before retrying an uncertain write\n'); process.exitCode=1; }
+    return;
+  }
   try {
     const data = await run(argv);
     if ('help' in data && !argv.includes('--json')) process.stdout.write(data.help as string);

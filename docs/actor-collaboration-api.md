@@ -189,3 +189,13 @@ Tool completion and wait timeout cannot finish a child. New `thread_spawn` calls
 default to hidden subagents, reachable from their parent. Use explicit `visible`
 only for a user-requested independent, long-lived conversation; existing rows
 keep their stored visibility.
+
+## Execution-bound conversation CLI
+
+The optional `thread_cli` Session capability opens a private launcher for an
+already admitted execution. `/thread-cli` on the existing capability listener
+requires an execution-signed scope and rejects session-only tokens and browser
+Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
+input delegation and the original write budget; it creates no parallel queue.
+The child's durable Broker parentage, rather than each engine's native lineage,
+is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).

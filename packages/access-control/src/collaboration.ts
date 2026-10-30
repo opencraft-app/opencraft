@@ -305,6 +305,19 @@ export class Collaboration {
     return {id:String(row.id),context:{actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)},
       sourceThreadId:threadId,expiresAtMs:Number(row.expires_at)};
   }
+  executionSource(threadId: string, execution: {inputId?: string; turnId?: string}) {
+    const row = execution.inputId
+      ? this.database.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
+          UNION ALL SELECT a.* FROM conversation_authorities a JOIN opencraft_input_authorities i ON i.authority_id=a.id
+          WHERE i.thread_id=? AND i.input_id=? LIMIT 1`).get(threadId,execution.inputId,threadId,execution.inputId)
+      : execution.turnId ? this.#authority(threadId,execution.turnId) : null;
+    if (!row || typeof row.turn_id !== 'string') throw new CollaborationError(403,'execution_delegation_required');
+    const turnId = execution.turnId ?? row.turn_id;
+    if (execution.turnId && row.turn_id !== execution.turnId && !this.database.prepare(
+      'SELECT 1 FROM conversation_turn_authorities WHERE thread_id=? AND turn_id=? AND authority_id=?'
+    ).get(threadId,execution.turnId,String(row.id))) throw new CollaborationError(403,'execution_delegation_changed');
+    return {turnId,delegation:this.delegation(threadId,turnId,String(row.id))};
+  }
   #consumeToolBudget(authorityId: string): void {
     const root=this.database.prepare('SELECT root_authority_id FROM opencraft_delegation_roots WHERE authority_id=?').get(authorityId)?.root_authority_id??authorityId;
     const count=Number(this.database.prepare('SELECT sent FROM conversation_tool_budget WHERE authority_id=?').get(root)?.sent??0);
