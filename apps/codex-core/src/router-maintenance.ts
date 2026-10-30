@@ -113,6 +113,34 @@ export function readRouterMaintenance(path: string, state: unknown, storage: str
   return value;
 }
 
+async function quietLoadedThreads(peer: GenerationPeer) {
+  const value = rpcRecord(await peer.call("thread/loaded/list", {}));
+  if (!Array.isArray(value.data) || !value.data.every(id => typeof id === "string") || new Set(value.data).size !== value.data.length) throw Error("Native loaded coverage is unavailable");
+  const terminalSystemErrors = [];
+  for (const threadId of [...value.data as string[]].sort()) {
+    const thread = rpcRecord(rpcRecord(await peer.call("thread/read", { threadId, includeTurns: false })).thread);
+    if (thread.id !== threadId) throw Error("Native loaded identity changed");
+    if (rpcRecord(thread.status).type === "idle") continue;
+    if (rpcRecord(thread.status).type !== "systemError") throw new RouterMaintenanceBlocked("ROUTER_NATIVE_TURN_BUSY", "Native Turn is active or unknown");
+    const full = rpcRecord(rpcRecord(await peer.call("thread/read", { threadId, includeTurns: true })).thread);
+    if (full.id !== threadId || rpcRecord(full.status).type !== "systemError" || !Array.isArray(full.turns) || !full.turns.length) throw Error("Native terminal error coverage is unavailable");
+    const turns = full.turns.map(raw => {
+      const turn = rpcRecord(raw);
+      if (typeof turn.id !== "string" || !["completed", "failed", "interrupted"].includes(String(turn.status)) || !Array.isArray(turn.items)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_TURN_BUSY", "Native Turn is active or unknown");
+      const executions = [];
+      for (const rawItem of turn.items) {
+        const item = rpcRecord(rawItem);
+        const executable = ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "collabAgentToolCall"].includes(String(item.type));
+        if ((executable || "status" in item) && (typeof item.id !== "string" || !["completed", "failed", "declined", "interrupted"].includes(String(item.status)))) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_TURN_BUSY", "Native command is active or unknown");
+        if (executable) executions.push({ id: item.id, type: item.type, status: item.status });
+      }
+      return { id: turn.id, status: turn.status, executions };
+    });
+    terminalSystemErrors.push({ threadId, turns });
+  }
+  return { loaded: [...value.data as string[]].sort(), ...(terminalSystemErrors.length ? { terminalSystemErrors } : {}) };
+}
+
 /** Cross-owner zero-work proof; read-only and never resumes, answers or arms Native work. */
 export async function inspectRouterNative(options: {
   generations: GenerationRecord[]; routes: { threadId: string; generationId: string }[]; metadata: Record<string, unknown>;
@@ -139,19 +167,13 @@ export async function inspectRouterNative(options: {
       message(message) { if (message.id !== undefined && message.method) unexpected = true; }, disconnected() { disconnected = true; },
     });
     try {
-      const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
-      if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw Error("Native loaded coverage is unavailable");
-      for (const threadId of loaded.data as string[]) {
-        const thread = rpcRecord(rpcRecord(await peer.call("thread/read", { threadId, includeTurns: false })).thread);
-        if (thread.id !== threadId || rpcRecord(thread.status).type !== "idle") throw new RouterMaintenanceBlocked("ROUTER_NATIVE_TURN_BUSY", "Native Turn is active or unknown");
-        // Persistent goals/schedules remain owned by this exact Native. An
-        // enabled goal alone is not an executing Turn and is never re-armed.
-      }
+      const loaded = await quietLoadedThreads(peer);
       const history = await readNativeHistory(peer, g.id, durable.filter(r => r.generationId === g.id).map(r => r.threadId), options.failures.failures.filter(f => f.generationId === g.id));
+      if (routerDigest(await quietLoadedThreads(peer)) !== routerDigest(loaded)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_PROOF_CHANGED", "Native terminal evidence changed during inspection");
       const after = await options.supervisor.inspect!(g);
       if (unexpected || disconnected || after.pid !== health.pid || after.codexPid !== health.codexPid || after.pendingCallbacks !== 0 || after.pendingOrchestrationMutations !== 0
         || !await options.supervisor.processesQuiet(identity)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_PROOF_CHANGED", "Native work changed during inspection");
-      generations.push({ generationId: g.id, incarnation: g.incarnation, identity, history, loaded: [...loaded.data].sort() });
+      generations.push({ generationId: g.id, incarnation: g.incarnation, identity, history, ...loaded });
     } finally { peer.close(); }
   }
   const after = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
