@@ -337,6 +337,13 @@ Selection-to-chat is available only in compact layout. The existing `data-ui-den
 
 Web/Electron Conversation owns one Radix selection menu for its timeline. Selection must remain wholly inside one assistant/user chat document; sender metadata, composer, controls and cross-message ranges do not qualify. Activation revalidates the range and current composer target before insertion; scrolling, resize, Escape or navigation releases the floating surface. Markdown presentation controls are excluded and partial code selections never expand to a full block. ComposerController delegates appendQuote to the physical editor; unsupported, submitting, transient or detached Views reject it. The editor appends literal text as an undoable quote block followed by a normal paragraph, focuses its end and preserves existing draft/assets/context. Selection never submits a message. AppServer compilation uses the existing quote serialization contract.
 
+A submitted user message retains the quote boundary from its immutable document:
+sending, acknowledged and reopened history all use the user-message quote rail.
+The following request is a separate paragraph outside that quote. New-thread
+pending presentation and existing-thread optimistic presentation share the same
+core text projection. Plain queue previews and search remain flattened; quote
+insertion availability and selection ownership do not change.
+
 Selection quote anchors use a Range rectangle intersecting both the conversation scroll root and browser viewport. Long selections retain their full content while positioning at the first visible selected line; wholly offscreen selections expose no action. A DOM-visible but clipped/offscreen paragraph is not a valid floating anchor.
 Sidebar icon rail uses the shared frame width (60px) with centered 44px action
 targets, leaving about 8px on each side including the divider. Footer actions

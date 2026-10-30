@@ -1,11 +1,11 @@
-import { composerDocumentToPlainText, type SubmitIntent } from "@opencraft/composer-core";
+import { composerDocumentToMessageText, type SubmitIntent } from "@opencraft/composer-core";
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
 
 /** Immutable local presentation only; never an execution or author authority. */
 export function submittedMessageDisplay(submission: SubmitIntent): UserMessageTimelineBlock {
   return {
     type: "user-message", id: submission.clientMessageId, sourceItemIds: [],
-    message: composerDocumentToPlainText(submission.document), content: [],
+    message: composerDocumentToMessageText(submission.document), content: [],
     attachments: submission.attachments.map(attachment => ({
       type: "file", id: attachment.id, name: attachment.name,
       target: attachment.uri, mimeType: attachment.mimeType, startLine: null, endLine: null,

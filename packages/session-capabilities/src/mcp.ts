@@ -232,8 +232,11 @@ export class SessionCapabilityMcp {
         response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ result }));
       } catch (cause) {
         const error = cause as { status?: number; code?: string };
-        response.writeHead(error.status && error.status >= 400 && error.status <= 599 ? error.status : 503, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: typeof error.code === "string" ? error.code : "orchestration_outcome_unknown" }));
+        const status=error.status && error.status>=400 && error.status<=599?error.status:503;
+        console.error('[thread-orchestration]',JSON.stringify({event:'capability-request-failed',path:request.url,
+          threadId:authenticated.session.threadId,status,outcome:error.status===undefined?'unknown':'rejected'}));
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: typeof error.code === "string" ? error.code : error.status===undefined ? "orchestration_outcome_unknown" : "orchestration_rejected" }));
       }
       return;
     }
