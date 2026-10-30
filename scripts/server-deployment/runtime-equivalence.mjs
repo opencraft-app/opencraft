@@ -18,4 +18,3 @@ export function sameProcess(left, right) {
     && /^[0-9]+$/.test(left.startTicks || '')
     && left.pid === right.pid && left.bootId === right.bootId && left.startTicks === right.startTicks;
 }
-
