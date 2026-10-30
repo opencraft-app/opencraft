@@ -463,3 +463,12 @@ delta. Group OOM occurrences and killed-process counts are distinct. Counters
 are read once more before group deletion; restart re-observation carries stable
 counter-based keys for deduplication. These are observed peaks; absent historical
 process names cannot be reconstructed after a crash.
+
+A CLI launcher can fork native before its own score is changed. Protected APP
+startup therefore raises inherited -1000 across its owned native family
+parent-first, repeats after native readiness, and leaves score 0 unchanged.
+Launcher exit is failure immediately even if a grandchild still holds stdio;
+waiting only for ChildProcess close would defer recovery. The local forced-launcher
+smoke (`OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY=1`) verifies this before guard
+startup and bounds recovery with inherited open pipes. It also accepts a canonical
+APP bundle and packaged guard payload for artifact-level tests.

@@ -1,11 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmod, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
-import { nativeReady, removeStaleSocket } from "./native-process.js";
+import { makeNativeFamilyKillable, nativeReady, removeStaleSocket } from "./native-process.js";
 import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
 
 export interface CodexAppServerOptions {
@@ -90,16 +90,20 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     ownsNative = true;
     child.stdout.resume(); // Native stderr may contain tool output or private environment values.
     child.stderr.resume();
-    const failure = (error: Error) => { failed = true; if (!closing) options.onFailure?.(error); };
+    const failure = (error: Error) => { if (failed) return; failed = true; if (!closing) options.onFailure?.(error); };
     child.once("error", failure);
+    child.once("exit", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));
     child.once("close", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));
     // A protected APP must not pass OOM immunity to its native process. Do
     // this before publishing readiness, even when the external guard is down.
-    if (process.platform === "linux" && (await readFile("/proc/self/oom_score_adj", "utf8")).trim() === "-1000") {
+    const protectedApp = process.platform === "linux" && (await readFile("/proc/self/oom_score_adj", "utf8")).trim() === "-1000";
+    if (protectedApp) {
       if (!child.pid || child.pid === process.pid) throw new Error("Native process identity is unavailable");
-      await writeFile(`/proc/${child.pid}/oom_score_adj`, "-999");
+      await makeNativeFamilyKillable(child.pid);
     }
     authSocket = await nativeReady(nativeListener, child, launch.auth);
+    // The npm launcher may have forked native during its own initialization.
+    if (protectedApp) await makeNativeFamilyKillable(child.pid!);
     relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");

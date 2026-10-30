@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { unlink } from "node:fs/promises";
+import { unlink, readFile, readdir, writeFile } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import { chmod } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -77,4 +77,27 @@ export async function nativeReady(path: string, child: ChildProcessWithoutNullSt
     } catch { await delay(50); }
   }
   throw new Error("Codex AppServer Unix listener did not become ready");
+}
+
+
+/** Raise inherited immunity parent-first, including a CLI launcher's native child.
+ * Never lower a tool that the external guard has already assigned score 0.
+ */
+export async function makeNativeFamilyKillable(rootPid: number): Promise<void> {
+  const pending = [rootPid], seen = new Set<number>();
+  while (pending.length) {
+    const pid = pending.pop()!;
+    if (seen.has(pid) || pid === process.pid) continue;
+    seen.add(pid);
+    try {
+      if ((await readFile(`/proc/${pid}/oom_score_adj`, "utf8")).trim() === "-1000") await writeFile(`/proc/${pid}/oom_score_adj`, "-999");
+      // Future children inherit the new score; include earlier children forked
+      // on every worker thread, including the npm launcher's native process.
+      for (const task of await readdir(`/proc/${pid}/task`)) {
+        try {
+          for (const child of (await readFile(`/proc/${pid}/task/${task}/children`, "utf8")).trim().split(/\s+/u).filter(Boolean)) pending.push(Number(child));
+        } catch (error) { if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error; }
+      }
+    } catch (error) { if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error; }
+  }
 }

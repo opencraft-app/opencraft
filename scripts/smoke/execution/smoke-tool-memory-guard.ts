@@ -10,15 +10,22 @@ import { renderToolMemoryGuard } from "../../server-deployment/prepare-tool-memo
 import { AccountPoolStore, CodexCoreControlClient } from "@opencraft/account-pool-host";
 
 // Explicit opt-in real CLI, synthetic accounts, private HOME and local model only.
-const executable = process.env.OPENCRAFT_CODEX_EXECUTABLE;
+let executable = process.env.OPENCRAFT_CODEX_EXECUTABLE;
 if (!executable) throw new Error("Set OPENCRAFT_CODEX_EXECUTABLE to the fixed CLI under test");
 const root = await mkdtemp(join(process.env.OPENCRAFT_CORE_DRILL_ROOT ?? tmpdir(), "split-drill-"));
 await mkdir(join(root, "home"), { mode: 0o700 });
+if (process.env.OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY === "1") {
+  const original = executable;
+  const directory = join(root,"launcher"); await mkdir(directory);
+  executable = join(directory,"codex");
+  await writeFile(executable, `#!/usr/bin/python3\nimport os,sys,subprocess,pathlib\nreal=${JSON.stringify(original)}\nif 'app-server' not in sys.argv:\n os.execv(real,[real,*sys.argv[1:]])\nhelper=subprocess.Popen(['/bin/sleep','20'])\npathlib.Path('/proc/'+str(helper.pid)+'/oom_score_adj').write_text('0')\npathlib.Path(__file__).with_name('score-zero-pid').write_text(str(helper.pid))\nchild=subprocess.Popen([real,*sys.argv[1:]])\npathlib.Path('/proc/'+str(child.pid)+'/oom_score_adj').write_text('-1000')\nsys.exit(child.wait())\n`, {mode:0o700});
+}
 const cliVersion = execFileSync(executable, ["--version"], { encoding: "utf8" }).trim();
 const token = "synthetic-split-control-".repeat(3);
 const records: any[] = [], children = new Set<ChildProcess>();
 const units = new Map<ChildProcess, string>();
 const systemd = process.env.OPENCRAFT_CORE_DRILL_SYSTEMD === "1";
+if (!systemd) throw new Error("This local-only OOM drill requires OPENCRAFT_CORE_DRILL_SYSTEMD=1");
 let unitSequence = 0;
 const model = createServer((request, response) => {
   // command/exec does not need inference; reject accidental upstream work.
@@ -56,8 +63,9 @@ async function owner(kind: "core" | "runtime", options: object) {
   const cwd = resolve(import.meta.dirname, "../../..");
   const legacy = (kind === "runtime" && process.env.OPENCRAFT_DRILL_LEGACY_RUNTIME === "1")
     || (kind === "core" && process.env.OPENCRAFT_DRILL_LEGACY_CORE === "1");
-  const args = legacy ? [process.env.OPENCRAFT_DRILL_LEGACY_OWNER!, kind, config]
-    : ["--import", "tsx", "tests/fixtures/split-codex-owner.ts", kind, config];
+  const appBundle=process.env.OPENCRAFT_TOOL_MEMORY_APP_BUNDLE;
+  const tokenFile=join(root,"token"); await writeFile(tokenFile,token,{mode:0o600});
+  const args = kind === "runtime" && appBundle ? [appBundle,"--endpoint",runtimeOptions.endpoint,"--core-endpoint",runtimeOptions.coreEndpoint,"--token-file",tokenFile,"--data-directory",dataDirectory,"--runtime-directory",root,"--codex-executable",executable!] : legacy ? [process.env.OPENCRAFT_DRILL_LEGACY_OWNER!,kind,config] : ["--import","tsx","tests/fixtures/split-codex-owner.ts",kind,config];
   const unit = `oc-core-split-drill-${process.pid}-${++unitSequence}-${kind}.service`;
   const child = systemd ? spawn("systemd-run", ["--quiet", "--wait", "--pipe", "--collect", `--unit=${unit}`,
     "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity", `--working-directory=${cwd}`,
@@ -71,7 +79,7 @@ async function owner(kind: "core" | "runtime", options: object) {
   child.once("exit", () => { void writeFile(join(root, `${kind}-${child.pid}.log`), errors); });
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => finish(new Error(`Timed out: ${kind} startup`)), 20000);
-    const onData = () => { if (output.includes("ready\n")) finish(); };
+    const onData = () => { if ((output.includes("ready\n") || output.includes('"type":"codex-app-server-ready"'))) finish(); };
     const onExit = () => finish(new Error(errors || `${kind} exited during startup`));
     const finish = (error?: Error) => { clearTimeout(timer); child.stdout!.off("data", onData); child.off("exit", onExit); error ? reject(error) : resolve(); };
     child.stdout!.on("data", onData); child.once("exit", onExit); onData();
@@ -123,8 +131,24 @@ try {
   assert.equal((await readFile(`${unfinishedGroup}/memory.max`, "utf8")).trim(), "max");
   const score=(pid:number)=>readFile(`/proc/${pid}/oom_score_adj`,"utf8").then(s=>Number(s.trim()));
   assert.equal(await score(before.codexPid), -999, "APP must make native killable before any guard starts");
+  const pendingFamily=[before.codexPid], checkedFamily=new Set<number>();
+  while(pendingFamily.length) {
+    const pid=pendingFamily.pop()!; if(checkedFamily.has(pid)) continue; checkedFamily.add(pid);
+    try {
+      assert.notEqual(await score(pid),-1000,"no native launcher descendant may retain immunity before guard startup");
+      for(const task of await readdir(`/proc/${pid}/task`)) {
+        try { pendingFamily.push(...(await readFile(`/proc/${pid}/task/${task}/children`,"utf8")).trim().split(/\s+/u).filter(Boolean).map(Number)); }
+        catch(error) {if(!["ENOENT","ESRCH"].includes((error as NodeJS.ErrnoException).code??"")) throw error;}
+      }
+    } catch(error) {if(!["ENOENT","ESRCH"].includes((error as NodeJS.ErrnoException).code??"")) throw error;}
+  }
+  if(process.env.OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY==="1") {
+    const zeroPid=Number(await readFile(join(root,"launcher/score-zero-pid"),"utf8"));
+    assert.equal(await score(zeroPid),0,"startup recovery must preserve an existing tool score 0");
+  }
+  result.scenarios.push({name:"native family killable before guard",checkedProcesses:checkedFamily.size,forcedLauncherImmunity:process.env.OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY==="1"});
   const plan = renderToolMemoryGuard({ unit: appUnit, highMiB: 512, maxMiB: 512,
-    payload: await readFile(resolve("scripts/server-deployment/tool-memory-guard.py")),
+    payload: await readFile(process.env.OPENCRAFT_TOOL_MEMORY_GUARD_PAYLOAD ?? resolve("scripts/server-deployment/tool-memory-guard.py")),
     policy: { schemaVersion: 1, toolMemoryHighMiB: 64, toolMemoryMaxMiB: 256, toolPidsMax: 256,
       generationUnitPattern: `oc-core-split-drill-${process.pid}-*.service`, nativeExecutableNames: [executable!.split("/").at(-1)!] }, stateDirectory: root });
   const guardPayload = join(root, "guard.py"), guardConfig = join(root, "guard-policy.json");
@@ -168,6 +192,19 @@ try {
   assert.ok(memoryEvents.some((event:any)=>event.event==="tool-memory-high")); assert.ok(memoryEvents.some((event:any)=>event.event==="tool-memory-oom"));
   assert.ok(memoryEvents.every((event:any)=>event.generation===appUnit && event.command_name && event.timestamp && event.memory_peak_bytes>=0 && event.occurrences>0));
   result.scenarios.push({name:"configured High/OOM telemetry",highProbeMiB:64,pressureHighMiB:256,toolMaxMiB:256,eventCount:memoryEvents.length,allMetadataPresent:true});
+  if(process.env.OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY==="1") {
+    const prior=await runtimeControl.health(), restarts=Number(show(appUnit,"NRestarts")), start=Date.now();
+    process.kill(prior.codexPid,"SIGKILL"); native.socket.terminate();
+    await wait(async()=>{
+      if(Number(show(appUnit,"NRestarts"))<=restarts) return false;
+      const candidate=await connectNative();
+      try {
+        const reply=await candidate.rpc("command/exec",{command:["/bin/echo","launcher recovered"],cwd:root,sandboxPolicy:{type:"dangerFullAccess"},timeoutMs:2000});
+        if(reply.exitCode!==0) throw new Error("launcher recovery failed"); native=candidate; return true;
+      } catch(error) {candidate.socket.terminate();throw error;}
+    },"launcher exit recovery without waiting for inherited stdio",8000);
+    result.scenarios.push({name:"launcher exit with inherited stdio",elapsedMs:Date.now()-start,budgetMs:8000,restarted:true});
+  }
   execFileSync("systemctl",["stop",guardUnit]);assert.equal(show(guardUnit, "ActiveState"), "inactive");
   const fallbackBefore = await runtimeControl.health();
   const fallback=await pressure("unadopted");native.socket.terminate();
