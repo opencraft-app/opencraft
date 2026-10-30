@@ -97,7 +97,8 @@ export class CodexRouterOwner {
   private currentUnknown() { return this.state.currentUncertain === true || !!this.state.uncertain && !this.state.history?.length; }
   historicalUnknownSha256() { return this.state.history?.length ? digest(this.history()) : undefined; }
   maintenancePending() { return this.maintenance !== undefined; }
-  hostRestartPending() { const receipt = this.hostRestartReceipt(); return receipt ? { sourceBootId: receipt.source.bootId, recoveryBootId: this.bootId } : undefined; }
+  hostRestartPending() { const receipt = this.hostRestartReceipt(); return receipt ? { sourceBootId: receipt.source.bootId, sourceOwner: receipt.source.owner, recoveryBootId: this.bootId, ...(this.maintenance ? {} : { policyArchived: true }) } : undefined; }
+  hostColdUnavailable() { const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt; return (receipt?.native as { hostColdUnavailable?: import("./router-maintenance.js").HostColdUnavailablePolicy } | undefined)?.hostColdUnavailable; }
   private hostRestartReceipt() { const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt; return receipt?.mode === "host-restart" ? receipt : undefined; }
   continuingNative() {
     const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt;

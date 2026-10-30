@@ -260,3 +260,24 @@ an unrelated current-boot process or archive cannot authorize this transition.
 The minimal host primitive accepts an open source with existing historical
 archives and configuration; it does not promise recovery of every intermediate
 phase of a second power loss.
+
+### Explicit cold-unavailable evidence
+
+A host recovery may carry a separately approved negative proof for an empty
+Thread whose Native state no longer exists. This control input stays outside the
+original options/configuration digest and the ordinary historical-failure list.
+It records the original source owner and boot, exact generation/incarnation and
+Thread, both read modes with error codes and digests, and an authority's creation
+and zero-work evidence. Initial host inspection requires fresh evidence. It may
+neither infer that a Thread is ephemeral nor learn an exception from a candidate
+failure.
+
+The receipt binds this policy in the Native proof and archives it as
+coldUnavailable, separately from successful reads and existing failures.
+Each import/cold readiness/resume repeats the exact negative reads. Additional
+errors, changed errors, routes, incarnations or nonzero work reject recovery.
+Existing routes, retention, unknown work, history and configuration remain
+unchanged. Compatible same-boot recovery may retain the already archived
+negative policy while obtaining new Native observations; a later host boot must
+refresh creation and zero-work evidence under the explicitly approved policy.
+Normal strict recovery does not acquire new exceptions through this input.

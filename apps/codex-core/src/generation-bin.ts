@@ -2,6 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { startCodexGenerationService, inspectRouterMaintenanceService } from "./generation-service.js";
 import { readNativeHistoryFailures } from "./native-history-read.js";
+import { privateRouterJson, hostColdUnavailablePolicy } from "./router-maintenance.js";
 
 const argument = (name: string) => {
   const i = process.argv.indexOf(name), value = i >= 0 ? process.argv[i + 1]?.trim() : undefined;
@@ -24,10 +25,13 @@ async function main() {
     maintenanceFile: process.argv.includes("--router-maintenance-file") ? argument("--router-maintenance-file") : undefined,
     signal: startup.signal };
   if (process.argv.includes("--router-maintenance-inspect")) {
-    const value = await inspectRouterMaintenanceService(options, process.argv.includes("--router-maintenance-continuing"), process.argv.includes("--router-maintenance-provisional"), process.argv.includes("--router-maintenance-host-restart"));
+    // Freshness follows archive/operation verification in the collector. Parsing
+    // here must not expire an already committed recovery's historical evidence.
+    const unavailable = process.argv.includes("--router-host-cold-unavailable-file") ? hostColdUnavailablePolicy(privateRouterJson(argument("--router-host-cold-unavailable-file")), false) : undefined;
+    const value = await inspectRouterMaintenanceService(options, process.argv.includes("--router-maintenance-continuing"), process.argv.includes("--router-maintenance-provisional"), process.argv.includes("--router-maintenance-host-restart"), unavailable);
     await writeFile(argument("--router-maintenance-inspect"), JSON.stringify(value), { mode: 0o600, flag: "wx" }); return;
   }
-  if (process.argv.includes("--router-maintenance-continuing") || process.argv.includes("--router-maintenance-provisional") || process.argv.includes("--router-maintenance-host-restart")) throw Error("Continuing proof requires explicit read-only inspection");
+  if (process.argv.includes("--router-maintenance-continuing") || process.argv.includes("--router-maintenance-provisional") || process.argv.includes("--router-maintenance-host-restart") || process.argv.includes("--router-host-cold-unavailable-file")) throw Error("Continuing proof requires explicit read-only inspection");
   const service = await startCodexGenerationService(options);
   stop = async () => { await service.close(); process.exit(0); };
   if (startup.signal.aborted) { await stop(); return; }
