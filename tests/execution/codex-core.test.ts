@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createServer as createTcpServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import { AppServerRpcError } from "@opencraft/appserver-client";
 import WebSocket from "ws";
 import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -835,12 +836,12 @@ for (const overlays of [false, true]) test(`directory readers learn a committed 
   } finally { await f.close(); }
 });
 
-test("a never-dispatched creation keeps its native route and events through Host replacement without a history resume", async () => {
+for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched creation keeps its native route and events through Host replacement without a history resume (unsupported=${emptyHistoryUnsupported})`, async () => {
   const f = await fixture(async options => ({ ...options,
     appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
-      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", ...(emptyHistoryUnsupported ? { FAKE_EMPTY_HISTORY_UNSUPPORTED: "1" } : {}) }, stdio: ["pipe", "pipe", "pipe"] }),
   }));
   const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
   try {
@@ -1006,4 +1007,36 @@ test("creation storage upgrades v1 without inventing an environment owner", asyn
       assert.deepEqual(current.get("new")?.result, { thread: { id: "new", turns: [] } }); }
     finally { current.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+for (const state of ["created", "active-peer", "persisted", "attempted", "unloaded", "other-error"] as const) test(`unsupported empty native history requires positive creation evidence (${state})`, async () => {
+  const root = await mkdtemp(join(temporaryDirectory, "oc-empty-history-"));
+  const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
+  const store = new ProvisionalThreads(root);
+  const path = join(root, "rollout.jsonl");
+  const thread = { id: "new", turns: [], path, status: { type: state === "active-peer" ? "active" : "idle" } };
+  store.created("new", { thread });
+  if (state === "attempted") store.attempted("new", "uncertain-input");
+  if (state === "persisted") await writeFile(path, "existing history");
+  const calls: string[] = [];
+  const adapter: any = Object.create(CodexEngineAdapter.prototype);
+  Object.assign(adapter, { provisionalThreads: store, async requestPhysical(method: string, params: any) {
+    calls.push(method);
+    if (method === "thread/loaded/list") return { data: state === "unloaded" && calls.length > 1 ? [] : ["new"] };
+    if (state === "other-error" || params.includeTurns) throw new AppServerRpcError({code: state === "other-error" ? -32000 : -32601, message: "list_turns is not supported yet"});
+    return { thread };
+  } });
+  try {
+    if (state === "other-error") await assert.rejects(adapter.provisionalResult("new"), /list_turns/);
+    else {
+      if (state === "active-peer" || state === "persisted") {
+        await assert.rejects(adapter.provisionalResult("new"), /list_turns/);
+        return;
+      }
+      const result = await adapter.provisionalResult("new");
+      assert.equal(result?.thread.creationPhase ?? null, state === "created" ? "created" : null);
+      if (state === "attempted") assert.deepEqual(calls, [], "uncertain input must not be reclassified from history reads");
+      if (state === "persisted") assert.equal(store.get("new")?.phase, "persisted");
+    }
+  } finally { store.close(); await rm(root, {recursive:true,force:true}); }
 });

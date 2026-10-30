@@ -468,7 +468,7 @@ payloads, credentials or temporary title-helper conversations. The native
 Thread creation receipt is authoritative. The Server retains accepted but not
 yet indexed entries in its directory projection until native listing observes
 them; a lagging native index cannot erase an acknowledged creation. Codex allocation is retained until
-its declared first-Turn acceptance boundary. DSH lifecycle commits and Engine
+its declared first-Turn acceptance boundary. A loaded creation can lack a native Turn reader before its first input. Read current metadata before requesting history: only a positively recorded, never-attempted creation with matching idle native identity, an explicit absent rollout path and current loaded membership may use the saved creation result. A history probe can itself materialize a rollout, so unsupported-history errors are not evidence of emptiness. Attempted or accepted input, active peers, existing files, missing paths and unknown failures never become empty creation evidence. DSH lifecycle commits and Engine
 Host provider receipts (including Pi) use the same event contract.
 
 Hub routing delivers directory facts to admitted directory clients following

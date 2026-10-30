@@ -3318,9 +3318,15 @@ export class CodexEngineAdapter implements DuplexTransport {
     // A native peer can accept input while this Host is absent. Positive
     // current history always defeats the saved empty creation, even if this
     // Host never observed that peer's Turn acknowledgement.
-    let live: RpcRecord = thread;
+    let live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread);
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
+    // Metadata is safe before the first Turn; a history probe can fail and
+    // materialize a rollout. Only a positively located, idle, unmaterialized
+    // allocation may use creation evidence without asking for its history.
+    const allocated = string(record(live.status).type) === "idle"
+      && typeof live.path === "string" && live.path.length > 0 && !existsSync(live.path);
     try {
-      live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: true })).thread);
+      if (!allocated) live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: true })).thread);
       if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
       const turns = Array.isArray(live.turns) ? live.turns : [];
       if (turns.length) {
@@ -3329,10 +3335,15 @@ export class CodexEngineAdapter implements DuplexTransport {
         return null;
       }
     } catch (cause) {
-      if (!(cause instanceof AppServerRpcError) || cause.code !== -32600
-        || !/history_missing|no rollout|thread.*not found/iu.test(cause.message)) throw cause;
+      const nativeError = cause instanceof AppServerRpcError || cause instanceof OpenCraftQueueRpcError ? cause : null;
+      if (nativeError?.code !== -32600
+        || !/history_missing|no rollout|thread.*not found/iu.test(nativeError.message)) throw cause;
       const stillLoaded = record(await this.requestPhysical("thread/loaded/list", {}));
       if (!Array.isArray(stillLoaded.data) || !stillLoaded.data.includes(threadId)) return null;
+    }
+    if (allocated) {
+      const current = record(await this.requestPhysical("thread/loaded/list", {}));
+      if (!Array.isArray(current.data) || !current.data.includes(threadId)) return null;
     }
     if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created") return null;
     // Never hide a file that has appeared since creation. Normal history remains authoritative.
