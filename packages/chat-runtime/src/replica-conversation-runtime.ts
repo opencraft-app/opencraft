@@ -25,6 +25,7 @@ import {
 } from "@opencraft/chat-core";
 import {
   composerDocumentToPlainText,
+  composerDocumentToMessageText,
   type SubmissionReceipt,
   type SubmitIntent,
 } from "@opencraft/composer-core";
@@ -866,7 +867,7 @@ interface OptimisticSubmissionState extends PendingSubmission {
 
 function optimisticInput(intent: SubmitIntent): readonly UserInput[] {
   const input: UserInput[] = [];
-  const text = composerDocumentToPlainText(intent.document);
+  const text = composerDocumentToMessageText(intent.document);
   if (text.length > 0) input.push({ type: "text", text, text_elements: [] });
   for (const attachment of intent.attachments) {
     if (attachment.uri === null) continue;
