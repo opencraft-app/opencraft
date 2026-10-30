@@ -2144,7 +2144,11 @@ export class CodexEngineAdapter implements DuplexTransport {
           return this.options.collaboration.orchestration.tool(string(params.threadId),string(params.turnId),string(message.__opencraftToolCallKey),string(params.tool),record(params.arguments),string(message.__opencraftDelegationId)||undefined,string(message.__opencraftCallbackIncarnation)||undefined);
         }
         return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
-      }).then(value=>respond(true,value),(error:unknown)=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status:typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
+      }).then(value=>respond(true,value),(error:unknown)=>{
+        const status=typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503;
+        this.diagnostic({event:"thread-orchestration-tool-failed",threadId:string(params.threadId),turnId:string(params.turnId),tool:string(params.tool),status});
+        return respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status});
+      }).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
       return;
     }
     if (isHumanInteraction(message.method, message.params)) {

@@ -11,6 +11,11 @@ export function callConversationHost(appHost, binding, requestId, method, params
     let connection, receive, generation, finished = false;
     const finish = (error, result) => {
       if (finished) return; finished = true; clearTimeout(timer);
+      if (error && method.startsWith('opencraft/orchestration/')) {
+        console.error('[thread-orchestration]', JSON.stringify({event:'host-request-failed',method,operationId:requestId,
+          status:error.status ?? 503,rpcCode:typeof error.code==='number'?error.code:null,
+          outcome:error.status===undefined?'unknown':'rejected'}));
+      }
       try { connection?.close(); } catch { /* Lease cleanup cannot rewrite the engine result. */ }
       error ? reject(error) : resolve(result);
     };
@@ -33,7 +38,15 @@ export function callConversationHost(appHost, binding, requestId, method, params
               const frame = JSON.parse(message.frame);
               if (frame.method || !['init', 'operation'].includes(frame.id)) return;
               if (frame.error) return finish(Object.assign(new Error('Actor engine request rejected'), {
-                code: frame.error.code }));
+                code: frame.error.code,
+                // Creation may already have happened (for example a lost stable ID
+                // or a replaced Host). Only the Broker's committed rejection
+                // receipt can declare that mutation rejected.
+                ...(method!=='opencraft/orchestration/create' && frame.error.data?.resultUnknown!==true
+                  ? (typeof frame.error.code==='number' && frame.error.code>=400 && frame.error.code<=599)
+                    ? {status:frame.error.code}
+                    : [-32600,-32601,-32602].includes(frame.error.code) ? {status:400} : {}
+                  : {}) }));
               if (frame.id === 'init') send('operation', method, { ...params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });
               else finish(null, frame.result);
             } catch (error) { finish(error); }
