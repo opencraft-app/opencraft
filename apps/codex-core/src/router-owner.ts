@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { CodexGenerationRegistry } from "./generation-registry.js";
-import { routerDigest, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, type RouterMaintenanceReceipt } from "./router-maintenance.js";
+import { routerDigest, routerNativeDigest, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, type RouterMaintenanceReceipt } from "./router-maintenance.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type State = { version: 1; epoch: number; phase: "open" | "fenced" | "released" | "cold-ready";
@@ -84,7 +84,7 @@ export class CodexRouterOwner {
         || value.receipt.sourceHandoff.pending !== undefined && !Array.isArray(value.receipt.sourceHandoff.pending)) throw Error("Router historical responsibility changed");
       return { id, value };
     });
-    if (rows.some(row => row.value.receipt.sourceHandoff.uncertain === true) && !this.state.uncertain
+    if (rows.some(row => row.value.receipt.sourceHandoff.uncertain === true || (row.value.receipt.sourceHandoff.pending as unknown[] | undefined)?.length) && !this.state.uncertain
       || rows.flatMap(row => row.value.receipt.sourceHandoff.pending as string[] | undefined ?? []).some(id => !this.state.pending?.includes(id))) throw Error("Router historical responsibility was removed");
     return rows;
   }
@@ -97,6 +97,11 @@ export class CodexRouterOwner {
   private currentUnknown() { return this.state.currentUncertain === true || !!this.state.uncertain && !this.state.history?.length; }
   historicalUnknownSha256() { return this.state.history?.length ? digest(this.history()) : undefined; }
   maintenancePending() { return this.maintenance !== undefined; }
+  continuingNative() {
+    const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt;
+    return (receipt?.mode === "interrupted-source" || receipt?.mode === "crashed-source")
+      && (receipt.native as { policy?: string } | undefined)?.policy === "continuing-v1";
+  }
   currentResponsibilityConfirmed() { return !this.failed && !this.currentUnknown(); }
   async importMaintenance(configuration: string, readNative: () => Promise<unknown>) {
     const receipt = this.maintenance;
@@ -106,7 +111,7 @@ export class CodexRouterOwner {
     if (source && ["pid", "startTime", "bootId", "owner", "bundleSha256"].some(key => source[key] !== (receipt.source as unknown as Record<string, unknown>)[key])) throw Error("Durable router source identity changed");
     if (receipt.configurationSha256 !== configuration || await routerFileDigest(receipt.source.bundle) !== receipt.source.bundleSha256) throw Error("Router maintenance configuration or source payload changed");
     const native = await readNative();
-    if (digest(native) !== digest(receipt.native) || this.storage() !== receipt.registrySha256
+    if (routerNativeDigest(native) !== routerNativeDigest(receipt.native) || this.storage() !== receipt.registrySha256
       || digest(this.registry.metadata("router-handoff")) !== digest(receipt.sourceHandoff)) throw Error("Router maintenance current data or Native proof changed");
     verifyRouterController(receipt); verifyRouterConsumers(receipt.consumers, receipt.systemdScope);
     const archive = { version: 1, receipt }, id = digest(archive);
@@ -240,11 +245,16 @@ export class CodexRouterOwner {
     try {
       if (configuration !== this.state.configuration || this.storage() !== this.state.sealed) throw new Error("Router configuration or current registry changed");
       const native = await readNative();
+      if (this.continuingNative()) {
+        const receipt = this.history().find(row => row.id === this.state.maintenanceSeal)!.value.receipt;
+        if (routerNativeDigest(native) !== routerNativeDigest(receipt.native)) throw Error("Continuing Native owner changed after import");
+      }
       if (this.storage() !== this.state.sealed) throw new Error("Router registry changed during cold read");
       const value = { owner: this.owner, bootId: this.bootId, incarnation: this.incarnation, storageSha256: this.state.sealed,
         releaseKind: this.state.maintenanceSeal ? "legacy-maintenance" : "protocol", historicalUnknownSha256: this.historicalUnknownSha256(),
         manifestSha256: createHash("sha256").update(readFileSync(process.argv[1]!)).digest("hex"), configurationSelectorSha256: configuration,
-        capabilitySha256: digest({ protocol: 1, node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch, native }), storageOutcome: "ready" };
+        capabilitySha256: digest({ protocol: 1, node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch,
+          native: this.continuingNative() ? routerNativeDigest(native) : native }), storageOutcome: "ready" };
       const identity = digest(value);
       this.save({ ...this.state, phase: "cold-ready", ready: { owner: this.owner, identity } });
       return { ...value, identity, evidenceId: identity };
