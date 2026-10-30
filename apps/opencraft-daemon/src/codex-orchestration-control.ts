@@ -3,7 +3,7 @@ import { isAbsolute,resolve,sep } from 'node:path';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import type { RecoveryTurn } from '@opencraft/host-recovery';
 import type { AppServerThread } from '@opencraft/appserver-protocol';
-import { permissionModeProfileId } from '@opencraft/appserver-protocol';
+import { codexPermissionMode, permissionModeProfileId } from '@opencraft/appserver-protocol';
 
 const object=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 const text=(value:unknown)=>typeof value==='string'?value:'';
@@ -29,7 +29,7 @@ export class CodexOrchestrationControl {
     if(method==='opencraft/orchestration/status')return this.snapshot(threadId);
     if(method==='opencraft/orchestration/inspect')return {entries:await this.preview(threadId,Number(params.limit??1))};
     if(!this.port.supported()&&!this.port.routed?.())throw new OrchestrationControlError(503,'The independent Engine Host does not support callback replay');
-    if(method==='opencraft/orchestration/prepare')return this.prepare(threadId,object(params.arguments),text(params.callbackIncarnation),params.sourceSettings===undefined?undefined:object(params.sourceSettings));
+    if(method==='opencraft/orchestration/prepare')return this.prepare(threadId,object(params.arguments),text(params.callbackIncarnation),params.sourceSettings===undefined?undefined:object(params.sourceSettings),params.sourceOnly===true);
     if(method==='opencraft/orchestration/ack'){
       let acknowledged=true;for(const id of [operationId,operationId+':title']){const reply=object(await this.port.request(method,{operationId:id,creationOperationId:operationId}));acknowledged=acknowledged&&reply.acknowledged===true;}
       return {acknowledged};
@@ -45,7 +45,7 @@ export class CodexOrchestrationControl {
     if(orchestrationTitle)try{await this.port.request('thread/name/set',{threadId:childId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
     return {threadId:childId,durability:'pending_first_turn'};
   }
-  private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>):Promise<Record<string,unknown>>{
+  private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>,sourceOnly=false):Promise<Record<string,unknown>>{
     // The source is already executing this tool. Resume without overrides reads
     // its effective settings and subscribes; it never starts or interrupts a Turn.
     const live=sourceSettings??object(await this.port.request('thread/resume',{threadId,excludeTurns:true}));
@@ -68,7 +68,12 @@ export class CodexOrchestrationControl {
       if(profile!==permissionModeProfileId('full'))throw new OrchestrationControlError(403,'Cannot translate the source permission profile');
       start.sandbox='danger-full-access';
     }
-    else if(profile)start.permissions=profile;
+    else if(profile){
+      // Native IDs belong to Codex. Foreign drivers consume the shared profile
+      // contract; custom IDs remain unknown and cannot gain broader authority.
+      const mode=sourceOnly?codexPermissionMode(profile):null;
+      start.permissions=mode?permissionModeProfileId(mode):profile;
+    }
     else if(sourceSettings&&live.sandbox==='danger-full-access')start.sandbox='danger-full-access';
     else{
       const modes:Record<string,string>={dangerFullAccess:'danger-full-access',readOnly:'read-only',workspaceWrite:'workspace-write'};

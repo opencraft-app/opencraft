@@ -189,3 +189,18 @@ Tool completion and wait timeout cannot finish a child. New `thread_spawn` calls
 default to hidden subagents, reachable from their parent. Use explicit `visible`
 only for a user-requested independent, long-lived conversation; existing rows
 keep their stored visibility.
+
+
+### 跨驱动准备与失败诊断
+
+Codex 的原生 permission profile ID 只在同驱动创建时继承。`sourceOnly`
+准备将已知内建 profile 映射为共享 `opencraft:permission-mode:*`，供 DSH/ACP、Pi
+验证；未知自定义 profile 保持未知，不能据 sandbox 外观升级为 Full access。
+目的驱动仍独立验证权限及模型归属，模型参数使用目的驱动目录返回的精确模型 ID。
+
+准备等非创建调用的 Host 明确拒绝保留 HTTP 状态码及 JSON-RPC 参数校验状态；
+创建调用即使返回 409/502 也可能已执行，只有 Broker 持久化的明确拒绝回执才能判定失败；
+MCP 返回 `orchestration_rejected`，模型工具保留对应状态。传输丢失、超时和结果未知
+继续按原 receipt 对账，不改为成功或自动重放。Gateway 的
+`thread-orchestration` / `thread-orchestration-tool-failed` 诊断仅记录调用路径、
+operation/thread/turn ID、状态与数值 RPC code，不记录参数、prompt、凭据或原始异常正文。
