@@ -536,7 +536,7 @@ An existing conversation’s Composer advertises `/side` alongside its Host shor
 
 ### Inline command discovery
 
-Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text by default; explicit submission owns execution. The local `/side` action opts into immediate submission on selection when it is the entire draft without attachments or context. It opens the side chat directly without a second Send gesture; other commands retain editable insertion.
+Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text by default; explicit submission owns execution. The local `/side` action opts into immediate submission on selection when it is the entire draft without attachments or context. It consumes the command before the asynchronous action starts, without ever inserting a pending command token. Failure restores the command only to the same unmodified draft. It opens the side chat directly without a second Send gesture; other commands retain editable insertion.
 ### Side chat model display
 
 Side chat displays its fork’s current execution model as compact, non-interactive Composer metadata. It offers no model menu and submits no model, effort or service-tier override; the child conversation retains execution ownership. Main conversation model controls are unchanged.

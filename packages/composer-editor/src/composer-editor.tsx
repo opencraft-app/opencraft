@@ -1325,7 +1325,7 @@ export const OpenCraftComposer = forwardRef<
   }, [controller, finishQueueEdit]);
 
   const submit = useCallback(
-    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false) => {
+    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false, consumeSelectedCommand = false) => {
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
@@ -1374,10 +1374,27 @@ export const OpenCraftComposer = forwardRef<
       } catch {
         return;
       }
+      const submittedDraftId = controller.getSnapshot().draft.id;
+      let consumedDocument: ComposerDocument | null = null;
+      const restoreSelectedCommand = () => {
+        const draft = controller.getSnapshot().draft;
+        if (consumeSelectedCommand && draft.id === submittedDraftId
+          && encodeComposerTarget(draft.target) === encodeComposerTarget(intent.target)
+          && draft.document === consumedDocument
+          && draft.attachments.length === 0 && draft.context.length === 0) {
+          controller.dispatch({ type: "set-document", document: intent.document });
+        }
+      };
       const submissionToken = Symbol("composer-submission");
       pendingSubmissionRef.current = { controller, token: submissionToken };
       view.setProps({ editable: () => false });
       controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+      // Local commands are consumed before their async action starts. Keep the
+      // immutable intent for failure recovery instead of showing a pending chip.
+      if (consumeSelectedCommand) {
+        view.dispatch(view.state.tr.delete(0, view.state.doc.content.size).setMeta("addToHistory", false));
+        consumedDocument = controller.getSnapshot().draft.document;
+      }
       try {
         if (
           editingQueuedSubmissionId !== null &&
@@ -1403,6 +1420,7 @@ export const OpenCraftComposer = forwardRef<
           editingQueuedSubmissionId === null &&
           followUpAction !== null &&
           !awaitSubmission &&
+          !consumeSelectedCommand &&
           submission !== false
         ) {
           if (
@@ -1421,12 +1439,18 @@ export const OpenCraftComposer = forwardRef<
         const accepted = await submission;
         if (
           accepted !== false &&
+          (!consumeSelectedCommand || (controller.getSnapshot().draft.id === submittedDraftId
+            && controller.getSnapshot().draft.document === consumedDocument)) &&
           encodeComposerTarget(controller.getSnapshot().draft.target) ===
             encodeComposerTarget(intent.target)
         )
           clear();
-        else controller.dispatch({ type: "set-lifecycle", phase: "editing" });
+        else {
+          restoreSelectedCommand();
+          controller.dispatch({ type: "set-lifecycle", phase: "editing" });
+        }
       } catch (error) {
+        restoreSelectedCommand();
         controller.dispatch({
           type: "set-lifecycle",
           phase: "failed",
@@ -1530,6 +1554,21 @@ export const OpenCraftComposer = forwardRef<
     if (view == null || query == null || view.composing || !isCurrentSuggestion) return;
     const actualQuery = querySuggestion(view.state);
     if (actualQuery?.kind !== query.kind || actualQuery.from !== query.from || actualQuery.to !== query.to || actualQuery.query !== query.query) return;
+    const draft = controller.getSnapshot().draft;
+    const commandTransaction = suggestion.kind === "command" && suggestion.submitOnSelect
+      ? view.state.tr.insertText(`/${suggestion.label}`, query.from, query.to)
+      : null;
+    const commandDocument = commandTransaction === null ? null
+      : proseMirrorToComposerDocument(commandTransaction.doc);
+    if (commandTransaction !== null && commandDocument !== null && commandDocument.blocks.length === 1
+      && commandDocument.blocks[0]?.type === "paragraph"
+      && composerDocumentToPlainText(commandDocument).trim() === `/${suggestion.label}`
+      && draft.attachments.length === 0 && draft.context.length === 0) {
+      // Do not insert a token that would remain visible until the fork finishes.
+      view.dispatch(commandTransaction);
+      void submitActionRef.current(undefined, false, true);
+      return;
+    }
     const token = composerSchema.nodes.token.create({
       id: suggestion.id,
       kind: suggestion.kind,
@@ -1554,14 +1593,6 @@ export const OpenCraftComposer = forwardRef<
     );
     view.dispatch(transaction.scrollIntoView());
     view.focus();
-    const draft = controller.getSnapshot().draft;
-    const document = proseMirrorToComposerDocument(view.state.doc);
-    if (suggestion.kind === "command" && suggestion.submitOnSelect
-      && document.blocks.length === 1 && document.blocks[0]?.type === "paragraph"
-      && composerDocumentToPlainText(document).trim() === `/${suggestion.label}`
-      && draft.attachments.length === 0 && draft.context.length === 0) {
-      void submitActionRef.current();
-    }
   }, [controller]);
 
   const moveSuggestion = useCallback((delta: number) => {
