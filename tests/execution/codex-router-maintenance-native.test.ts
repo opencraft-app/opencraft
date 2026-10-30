@@ -11,12 +11,12 @@ import type { GenerationRecord } from "../../apps/codex-core/src/generation-regi
 
 async function fixture() {
   const root=await mkdtemp(join(tmpdir(),'router-maintenance-native-')),socket=join(root,'native.sock'),endpoint=join(root,'core.sock');
-  const work={core:0,oauth:0,callbacks:0,process:false,turn:false,goal:false,unexpected:false,changedIdentity:false};const calls:string[]=[];
+  const work={core:0,oauth:0,callbacks:0,process:false,turn:false,goal:false,unexpected:false,changedIdentity:false,systemError:false,busyCommand:false,missingTurns:false,missingItems:false,lateTurn:false,readTurns:0};const calls:string[]=[];
   const server=createServer(),wss=new WebSocketServer({server});
   wss.on('connection',ws=>ws.on('message',raw=>{const m=JSON.parse(String(raw));calls.push(m.method);if(m.id===undefined)return;
     const result=m.method==='initialize'?{}:m.method==='thread/loaded/list'?{data:['thread']}:
       m.method==='thread/goal/get'?{goal:work.goal?{status:'active'}:null}:
-      m.method==='thread/read'?{thread:{id:m.params.threadId,status:{type:work.turn?'active':'idle'}}}:{};
+      m.method==='thread/read'?{thread:{id:m.params.threadId,status:{type:work.turn?'active':work.systemError?'systemError':'idle'},...(m.params.includeTurns?{turns:work.missingTurns?[]:[{id:'turn',status:work.lateTurn&&work.readTurns++>0?'inProgress':'failed',...(work.missingItems?{}:{items:[{id:'command',type:'commandExecution',status:work.busyCommand?'inProgress':'completed'}]})}]}:{})}}:{};
     ws.send(JSON.stringify({id:m.id,result}));if(work.unexpected&&m.method==='thread/loaded/list')ws.send(JSON.stringify({id:77,method:'item/tool/call',params:{threadId:'thread'}}));
   }));await new Promise<void>(r=>server.listen(socket,r));
   const core=await startControlServer(endpoint,'synthetic',async()=>({status:200,value:{pid:2,handoff:{protocolVersion:1,topology:'split',phase:'open',persistence:'ready',owner:'core',epoch:4,uncertain:[{id:'keep-unknown',route:'/v1/responses'}]},proof:{coverage:'unknown',activeCount:null,counts:{oauth:work.oauth,proxy:work.core,refresh:0,requests:0,resetCredits:0,subscriptions:0}}}}));
@@ -43,3 +43,6 @@ test('unresolved creation and unsupported lifecycle do not become historical unk
 });
 
 test('independent Core OAuth work remains with Core while only proxy traffic blocks the router',async()=>{const f=await fixture();try{f.work.oauth=1;await inspectRouterNative(f.options);assert(!f.calls.some(m=>m.includes('login')));}finally{await f.close();}});
+
+test('terminal systemError Thread is quiet only with full terminal Turn and command evidence',async()=>{const f=await fixture();try{f.work.systemError=true;const proof=await inspectRouterNative(f.options);assert.deepEqual((proof.generations[0] as any).terminalSystemErrors,[{threadId:'thread',turns:[{id:'turn',status:'failed',executions:[{id:'command',type:'commandExecution',status:'completed'}]}]}]);assert(f.calls.filter(m=>m==='thread/read').length>=5);assert(f.calls.every(m=>['initialize','initialized','thread/loaded/list','thread/read'].includes(m)));}finally{await f.close();}});
+for(const field of ['busyCommand','missingTurns','missingItems','lateTurn','callbacks','unexpected','process']as const)test('systemError never hides unresolved work: '+field,async()=>{const f=await fixture();try{f.work.systemError=true;(f.work as any)[field]=field==='callbacks'?1:true;await assert.rejects(inspectRouterNative(f.options));assert(!f.calls.some(m=>m==='thread/resume'||m==='thread/unload'||m==='turn/interrupt'));}finally{await f.close();}});
