@@ -3487,6 +3487,23 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.sessionMcpInitial.delete(threadId);
   }
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
+    if (message.method === "thread/fork") {
+      const params = record(message.params);
+      // Native fork starts from Host defaults, even when its source is loaded.
+      // Copy only execution choices; credentials and tool configuration retain
+      // their own lifecycle. A path fork ignores threadId, so do not read it.
+      if (string(params.threadId) && !string(params.path)) {
+        const source = record(await this.requestPhysical("thread/resume", { threadId: params.threadId, excludeTurns: true }));
+        const inherited: RpcRecord = {};
+        for (const key of ["model", "modelProvider", "serviceTier"])
+          if (!Object.hasOwn(params, key) && source[key] !== undefined) inherited[key] = source[key];
+        const config = record(params.config);
+        if (!Object.hasOwn(config, "model_reasoning_effort") && source.reasoningEffort != null) {
+          inherited.config = { ...config, model_reasoning_effort: source.reasoningEffort };
+        }
+        message = { ...message, params: { ...params, ...inherited } };
+      }
+    }
     const initialEnvironment = this.environmentCreations.get(String(message.id));
     if (message.method === "thread/start" && initialEnvironment) {
       const params = record(message.params);
