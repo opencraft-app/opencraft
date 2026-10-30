@@ -52,7 +52,8 @@ try {
         const style = getComputedStyle(track), row = el.closest('.shell-sidebar__column')!.getBoundingClientRect();
         const footer = document.querySelector('.shell-sidebar__rail-footer')!.getBoundingClientRect();
         return { width: box.width, height: box.height, icon: icon.width, padding: style.paddingTop,
-          trackHeight: track.getBoundingClientRect().height, gap: getComputedStyle(el.parentElement!).gap,
+          trackHeight: track.getBoundingClientRect().height, footerHeight: footer.height,
+          footerControls: [...document.querySelectorAll('.shell-navigation__footer--unified > button')].map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })), gap: getComputedStyle(el.parentElement!).gap,
           noOverlap: track.getBoundingClientRect().right <= footer.left + 1,
           withinViewport: row.left >= 0 && row.right <= innerWidth };
       });
@@ -61,6 +62,8 @@ try {
       assert.equal(metrics.icon, expectedTouch ? 24 : 20);
       assert.equal(metrics.padding, expectedTouch ? "12px" : "4px");
       assert.equal(metrics.trackHeight, expectedTouch ? 68 : 44);
+      assert.equal(metrics.footerHeight, expectedTouch ? 68 : 44);
+      assert.ok(metrics.footerControls.length >= 2 && metrics.footerControls.every(control => control.width === (expectedTouch ? 44 : 36) && control.height === (expectedTouch ? 44 : 36)));
       assert.equal(metrics.gap, expectedTouch ? "8px" : "4px");
       assert.equal(metrics.noOverlap, true); assert.equal(metrics.withinViewport, true);
       if (touch) await home.tap(); else await home.click();
