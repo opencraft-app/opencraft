@@ -1810,24 +1810,6 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/hostless-workbench.tsx",
-      "kind": "jsx-text",
-      "text": "暂无可用 Agent",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/hostless-workbench.tsx",
-      "kind": "jsx-text",
-      "text": "你仍可以调整 OpenCraft 的设备设置。",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/hostless-workbench.tsx",
-      "kind": "jsx-text",
-      "text": "打开设置",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/components/hub-network-settings.tsx",
       "kind": "placeholder",
       "text": "https://hub.example.com",

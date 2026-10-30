@@ -11,12 +11,15 @@ import './desktop-welcome.scss';
 // Protocol example, identical in every locale.
 const SERVER_ADDRESS_EXAMPLE = 'https://workbench.example.com';
 
-/** First-use content is independent of automatic startup and Settings lifetime. */
-export function DesktopWelcome({ onDismiss, onConfigureLocal, onConnectServer }: {
-  readonly onDismiss: () => void;
+interface WelcomeChoicesProps {
+  readonly onDismiss?: () => void;
   readonly onConfigureLocal?: () => void;
+  readonly localStartCommand?: string;
   readonly onConnectServer?: (origin: string, signal: AbortSignal) => Promise<void>;
-}) {
+}
+
+/** Shared choices; the containing route or dialog owns placement and dismissal. */
+export function WelcomeChoices({ onDismiss, onConfigureLocal, onConnectServer, localStartCommand }: WelcomeChoicesProps) {
   const intl = useIntl();
   const notices = useAsyncNotices();
   const [address, setAddress] = useState('');
@@ -36,7 +39,7 @@ export function DesktopWelcome({ onDismiss, onConfigureLocal, onConnectServer }:
     request.current = controller;
     setConnecting(true);
     void onConnectServer(origin, controller.signal).then(() => {
-      if (request.current === controller) onDismiss();
+      if (request.current === controller) onDismiss?.();
     }).catch(error => {
       if (request.current === controller && !controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) notices.error({
         key: 'desktop-welcome-connect',
@@ -46,9 +49,7 @@ export function DesktopWelcome({ onDismiss, onConfigureLocal, onConnectServer }:
       if (request.current === controller) { request.current = null; setConnecting(false); }
     });
   };
-  return <ModalSurface label={title} presentation="fullscreen" className="desktop-welcome-modal" dismissOnOutsidePress={false}
-    closeLabel={intl.formatMessage({ id: 'welcome.close', defaultMessage: 'Close welcome page' })} onDismiss={onDismiss}>
-    <main className="desktop-welcome">
+  return <main className="desktop-welcome">
       <header className="desktop-welcome__heading">
         <div className="desktop-welcome__brand"><ApplicationBrand /></div>
         <h1>{title}</h1>
@@ -60,9 +61,12 @@ export function DesktopWelcome({ onDismiss, onConfigureLocal, onConnectServer }:
           <h2 id="welcome-local-title">{intl.formatMessage({ id: 'welcome.local.title', defaultMessage: 'Work on this device' })}</h2>
           <p>{intl.formatMessage({ id: 'welcome.local.description', defaultMessage: 'Connect an AI service and let OpenCraft work with files and tools on this device.' })}</p>
           <div className="desktop-welcome__local-action">
-            <SettingsButton variant="primary" disabled={!onConfigureLocal} onClick={onConfigureLocal}>
+            {localStartCommand ? <>
+              <p>{intl.formatMessage({ id: 'welcome.local.start', defaultMessage: 'From the source checkout, start local execution and Web together, then open the printed address.' })}</p>
+              <code>{localStartCommand}</code>
+            </> : <SettingsButton variant="primary" disabled={!onConfigureLocal} onClick={onConfigureLocal}>
               {intl.formatMessage({ id: 'welcome.local.configure', defaultMessage: 'Configure models' })}
-            </SettingsButton>
+            </SettingsButton>}
             <span className="desktop-welcome__hint">{intl.formatMessage({ id: 'welcome.local.hint', defaultMessage: 'No OpenCraft account required.' })}</span>
           </div>
         </section>
@@ -84,10 +88,19 @@ export function DesktopWelcome({ onDismiss, onConfigureLocal, onConnectServer }:
           </form>
         </section>
       </div>
-      <footer className="desktop-welcome__footer">
+      {onDismiss ? <footer className="desktop-welcome__footer">
         <span>{intl.formatMessage({ id: 'welcome.later.hint', defaultMessage: 'You can also configure everything later in Settings.' })}</span>
         <SettingsButton variant="quiet" onClick={onDismiss}>{intl.formatMessage({ id: 'welcome.later', defaultMessage: 'Set up later' })}</SettingsButton>
-      </footer>
-    </main>
+      </footer> : null}
+    </main>;
+}
+
+/** First-use content is independent of automatic startup and Settings lifetime. */
+export function DesktopWelcome(props: WelcomeChoicesProps & { readonly onDismiss: () => void }) {
+  const intl = useIntl();
+  return <ModalSurface label={intl.formatMessage({ id: 'welcome.title', defaultMessage: 'Welcome to OpenCraft' })}
+    presentation="fullscreen" className="desktop-welcome-modal" dismissOnOutsidePress={false}
+    closeLabel={intl.formatMessage({ id: 'welcome.close', defaultMessage: 'Close welcome page' })} onDismiss={props.onDismiss}>
+    <WelcomeChoices {...props} />
   </ModalSurface>;
 }

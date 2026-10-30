@@ -72,3 +72,22 @@ consent, permission, delivery and pending/error state. React consumes that unifi
 snapshot and invokes one explicit enable/disable action. The server alone observes execution and owns notification delivery.
 See [Web Push](../../web-push.md) for the subscription, authorization and outbox
 contract. Runtime or DOM identity never authorizes a push subscription on the server.
+
+## Standalone Web setup
+
+A truly unconfigured standalone Web client does not fabricate an execution Host.
+Explicit build/deployment recipes and browser-owned saved profiles stay authoritative;
+the HyperNode provider can remain registered without contributing a default profile.
+An explicit legacy WebSocket endpoint still opts into its existing HyperNode path.
+The zero-Host Chat surface shares the welcome choices: start `dev:local` from the
+checkout, or open an existing server's HTTPS origin (loopback HTTP is also accepted).
+Server login remains at that server's own origin, without copied cookies or tokens.
+
+The draft surface consumes the selected Host's catalog and, when its built-in model
+configuration page is available, a read-only configuration/credential readiness
+projection. An active catalog entry alone does not establish configured credentials.
+No external model probe, implicit default choice or provider enable occurs. Missing
+models link to the existing page resolved by `targetHostId`; catalog errors offer a
+retry and terminal connection errors offer reconnect/settings. Ordinary reconnect
+remains quiet. Setup feedback keeps the draft Composer mounted, preserving its
+content and owner while navigation or configuration changes occur.

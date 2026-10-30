@@ -229,6 +229,23 @@ test("HyperNode owns both its transport provider and ephemeral Host profile", as
   await providers.close();
 });
 
+test("provider-only HyperNode activation preserves saved-recipe support without creating a target", async () => {
+  const providers = new HostConnectionProviderRegistry();
+  const profiles = new HostProfileContributionRegistry();
+  const extensions = new ExtensionSupervisor({ platform: "web", internalContributions: {
+    hostConnectionProvider: createHostConnectionProviderContributionAdapter(providers),
+    [HOST_PROFILE_CONTRIBUTION_CHANNEL]: profiles.createAdapter(),
+  } });
+  await extensions.activate(createHyperNodeExtension({ url: "wss://node.example/appserver", includeDefaultProfile: false }));
+  assert.deepEqual(providers.getSnapshot().providers.map(({ id }) => id), ["opencraft.hypernode"]);
+  assert.deepEqual(profiles.list(), []);
+  const lease = providers.acquire("opencraft.hypernode", "web");
+  assert.deepEqual(lease.provider.validate({ url: "wss://saved.example/rpc" }, { platform: "web", hostId: "saved", profileRevision: 1 }), { url: "wss://saved.example/rpc" });
+  lease.release();
+  await extensions.dispose();
+  await providers.close();
+});
+
 test("headless server inherits the packaged Linux browse root instead of claiming a Mac folder", async () => {
   const providers = new HostConnectionProviderRegistry();
   const profiles = new HostProfileContributionRegistry();
@@ -414,9 +431,10 @@ test("explicit build configuration wins without merging runtime Hosts", () => {
   });
   assert.equal(resolveWebDeploymentConfig(deploymentRuntime, { hosts: " " }).hosts, JSON.stringify(deploymentRuntime.hosts));
 });
-test("static and Vite deployments retain existing defaults and explicit flags", () => {
+test("unconfigured Web has no implicit Host; explicit endpoints and deployment flags remain authoritative", () => {
   assert.equal(parseWebDeploymentConfig(null), null);
-  assert.deepEqual(resolveWebDeploymentConfig(null, {}), { hosts: undefined, builtinAgents: false, hypernode: true });
+  assert.equal(resolveWebDeploymentConfig(null, { appServerUrl: "ws://localhost/rpc" }).hypernode, true);
+  assert.deepEqual(resolveWebDeploymentConfig(null, {}), { hosts: undefined, builtinAgents: false, hypernode: false });
   assert.deepEqual(resolveWebDeploymentConfig(null, { builtinAgents: "enabled", hypernode: "disabled" }), {
     hosts: undefined, builtinAgents: true, hypernode: false,
   });

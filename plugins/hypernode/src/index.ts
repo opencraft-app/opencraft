@@ -9,6 +9,8 @@ import {
 
 export interface HyperNodeExtensionOptions {
   readonly hostId?: string;
+  /** Register the provider for saved profiles without creating a default target. */
+  readonly includeDefaultProfile?: boolean;
   readonly label?: string;
   readonly url: string;
   readonly workspaceBrowseRoots?: readonly string[];
@@ -84,7 +86,7 @@ export function createHyperNodeExtension(options: HyperNodeExtensionOptions): Tr
     },
     activate(api) {
       api.internal.register("hostConnectionProvider", HyperNodeHostConnectionProvider);
-      api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, { profile });
+      if (options.includeDefaultProfile !== false) api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, { profile });
     },
   };
 }

@@ -423,6 +423,7 @@ export function createWorkbenchWebConfig(
         "@opencraft/remote-interaction",
         "@opencraft/remote-interaction/touch",
         "@opencraft/remote-interaction/websocket",
+        "@opencraft/browser-core/metadata-limits",
         // Deep CJS shim entries need explicit prebundling with noDiscovery.
         "core-js/es/iterator/index.js",
         "core-js/es/promise/with-resolvers.js",

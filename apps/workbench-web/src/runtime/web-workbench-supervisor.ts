@@ -246,6 +246,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       websiteConfig,
       {
         hosts: import.meta.env.VITE_APPSERVER_HOSTS_JSON,
+        appServerUrl: import.meta.env.VITE_APPSERVER_WS_URL,
         builtinAgents: import.meta.env.VITE_WEB_BUILTIN_AGENTS,
         hypernode: import.meta.env.VITE_HYPERNODE_PLUGIN,
         extensions: import.meta.env.VITE_WEB_EXTENSIONS,
@@ -535,10 +536,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     }
     // Keep this expression direct: Vite can erase the entire dynamic-import
     // edge from product builds instead of merely disabling it at runtime.
-    if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false" && deployment.hypernode) {
+    if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false") {
       await extensions.loadOptional("opencraft.hypernode", async () => {
         const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
-        return createHyperNodeExtension({ url: appServerUrl() });
+        return createHyperNodeExtension({ url: appServerUrl(), includeDefaultProfile: deployment.hypernode });
       });
     }
     for (const definition of clientProduct?.extensions({
