@@ -78,7 +78,9 @@ test('host cold-unavailable proof retains exactly two approved zero-Turn binding
   assert.deepEqual(f.options.routes,routes);assert.equal(routerDigest(f.options.metadata),before);
   assert(f.calls.every(method=>['initialize','initialized','thread/loaded/list','thread/read'].includes(method)));
   await assert.rejects(inspectRouterNative(f.options,false,undefined,f.policy),'ordinary strict recovery does not acquire host exceptions');
-  const continuing=await inspectRouterNative(f.options,true,undefined,f.policy);assert.deepEqual(continuing.hostColdUnavailable,f.policy);
+  await assert.rejects(inspectRouterNative(f.options,true,undefined,f.policy),'unarchived continuing proof cannot learn an exception');
+  const ordinary=await inspectRouterNative(f.options,false,undefined,f.policy,true);assert.equal(ordinary.generations[0]!.history.coldUnavailable!.length,2);
+  const continuing=await inspectRouterNative(f.options,true,undefined,f.policy,true);assert.deepEqual(continuing.hostColdUnavailable,f.policy);
  }finally{await f.close();}
 });
 for(const failure of ['third','read-error','incarnation','source','has-input','has-turn','queue','evidence','stale']as const)test('host cold-unavailable rejects '+failure,async()=>{
@@ -102,7 +104,7 @@ test('archived negative evidence survives its timestamp while a new host proof s
   await assert.rejects(inspectRouterNative(f.options,false,f.host,f.policy),/Invalid host/);
   const proof=await inspectRouterNative(f.options,false,{...f.host,policyArchived:true},f.policy);
   assert.equal(proof.generations[0]!.history.coldUnavailable!.length,2);
-  const recovery=await inspectRouterNative(f.options,true,undefined,f.policy);assert.deepEqual(recovery.hostColdUnavailable,f.policy);
+  const recovery=await inspectRouterNative(f.options,true,undefined,f.policy,true);assert.deepEqual(recovery.hostColdUnavailable,f.policy);
   f.work.changedReadError=true;await assert.rejects(inspectRouterNative(f.options,false,{...f.host,policyArchived:true},f.policy));
  }finally{await f.close();}
 });

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { CodexGenerationRegistry } from "./generation-registry.js";
-import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, type RouterMaintenanceReceipt } from "./router-maintenance.js";
+import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, archivedHostColdUnavailable, type RouterMaintenanceReceipt } from "./router-maintenance.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type State = { version: 1; epoch: number; phase: "open" | "fenced" | "released" | "cold-ready";
@@ -98,7 +98,9 @@ export class CodexRouterOwner {
   historicalUnknownSha256() { return this.state.history?.length ? digest(this.history()) : undefined; }
   maintenancePending() { return this.maintenance !== undefined; }
   hostRestartPending() { const receipt = this.hostRestartReceipt(); return receipt ? { sourceBootId: receipt.source.bootId, sourceOwner: receipt.source.owner, recoveryBootId: this.bootId, ...(this.maintenance ? {} : { policyArchived: true }) } : undefined; }
-  hostColdUnavailable() { const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt; return (receipt?.native as { hostColdUnavailable?: import("./router-maintenance.js").HostColdUnavailablePolicy } | undefined)?.hostColdUnavailable; }
+  private archivedColdUnavailable() { return archivedHostColdUnavailable(this.state.history, key => this.registry.metadata(key)); }
+  hostColdUnavailable() { return (this.maintenance?.native as { hostColdUnavailable?: import("./router-maintenance.js").HostColdUnavailablePolicy } | undefined)?.hostColdUnavailable ?? this.archivedColdUnavailable(); }
+  hostColdUnavailableArchived() { const policy = this.hostColdUnavailable(), archived = this.archivedColdUnavailable(); return !!policy && !!archived && routerDigest(policy) === routerDigest(archived); }
   private hostRestartReceipt() { const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt; return receipt?.mode === "host-restart" ? receipt : undefined; }
   continuingNative() {
     const receipt = this.maintenance ?? this.history().find(row => row.id === this.state.maintenanceSeal)?.value.receipt;

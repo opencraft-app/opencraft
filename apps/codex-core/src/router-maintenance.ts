@@ -51,7 +51,7 @@ export interface HostColdUnavailablePolicy {
 export function hostColdUnavailablePolicy(input: unknown, requireFresh = true): HostColdUnavailablePolicy {
   const p = rpcRecord(input), source = rpcRecord(p.source), now = Date.now(), checked = Date.parse(String(p.checkedAt));
   if (p.version !== 1 || p.kind !== "host-cold-unavailable" || !identity(source.owner) || !identity(source.bootId)
-    || !sha(p.evidenceSha256) || !Number.isFinite(checked) || checked > now + 1000 || requireFresh && checked < now - 15 * 60_000
+    || !sha(p.evidenceSha256) || !Number.isFinite(checked) || requireFresh && (checked > now + 1000 || checked < now - 15 * 60_000)
     || !Array.isArray(p.entries) || !p.entries.length || p.entries.length > 128) throw Error("Invalid host cold-unavailable policy");
   nativeHistoryFailures({ version: 1, failures: p.entries });
   for (const entry of p.entries) {
@@ -60,6 +60,18 @@ export function hostColdUnavailablePolicy(input: unknown, requireFresh = true): 
       || ["executionLeases", "submissions", "queueInputs", "turnAuthorities", "inputAuthorities", "inputOrigins", "actorRequests", "nativeRows"].some(key => c[key] !== 0)) throw Error("Host cold-unavailable Thread has work or incomplete evidence");
   }
   return structuredClone(input) as HostColdUnavailablePolicy;
+}
+export function archivedHostColdUnavailable(history: unknown, read: (key: string) => unknown): HostColdUnavailablePolicy | undefined {
+  if (history === undefined) return undefined;
+  if (!Array.isArray(history) || new Set(history).size !== history.length) throw Error("Invalid cold-unavailable archive sequence");
+  const rows = history.map(id => {
+    if (!sha(id)) throw Error("Invalid cold-unavailable archive identity");
+    const row = rpcRecord(read(`router-history:${id}`));
+    if (row.version !== 1 || routerDigest(row) !== id) throw Error("Cold-unavailable archive changed");
+    return rpcRecord(rpcRecord(row.receipt).native).hostColdUnavailable;
+  });
+  const policy = rows.reverse().find(value => value !== undefined);
+  return policy === undefined ? undefined : hostColdUnavailablePolicy(policy, false);
 }
 export function privateRouterJson(path: string): unknown {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -227,12 +239,12 @@ async function quietLoadedThreads(peer: GenerationPeer) {
 export async function inspectRouterNative(options: {
   generations: GenerationRecord[]; routes: { threadId: string; generationId: string }[]; metadata: Record<string, unknown>;
   unresolvedCreations: number; supervisor: GenerationSupervisor; coreEndpoint: string; token: string; failures: NativeHistoryFailures;
-}, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string; sourceOwner?: string; policyArchived?: boolean }, coldUnavailable?: HostColdUnavailablePolicy) {
+}, continuing = false, hostRestart?: { sourceBootId: string; recoveryBootId: string; sourceOwner?: string; policyArchived?: boolean }, coldUnavailable?: HostColdUnavailablePolicy, unavailableArchived = false) {
   if (hostRestart && (continuing || hostRestart.sourceBootId === hostRestart.recoveryBootId
     || hostRestart.recoveryBootId !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim())) throw Error("Invalid host restart boot transition");
   if ((!continuing && options.unresolvedCreations) || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
   const unavailable = coldUnavailable ? hostColdUnavailablePolicy(coldUnavailable, !!hostRestart && !hostRestart.policyArchived) : undefined;
-  if (unavailable && (!hostRestart && !continuing || hostRestart && (unavailable.source.bootId !== hostRestart.sourceBootId || unavailable.source.owner !== hostRestart.sourceOwner))) throw Error("Host cold-unavailable source policy differs");
+  if (unavailable && (!hostRestart && !unavailableArchived || hostRestart && (unavailable.source.bootId !== hostRestart.sourceBootId || unavailable.source.owner !== hostRestart.sourceOwner))) throw Error("Host cold-unavailable source policy differs");
   const core = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreQuiet = (v: any) => v.handoff?.protocolVersion === 1 && v.handoff?.topology === "split" && v.handoff?.phase === "open" && v.handoff?.persistence === "ready"
     && typeof v.handoff?.owner === "string" && !!v.handoff.owner && Number.isSafeInteger(v.pid) && v.pid > 0

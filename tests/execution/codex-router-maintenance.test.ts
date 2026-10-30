@@ -214,3 +214,14 @@ test('host cold-unavailable responsibility is archived separately without changi
   const archive=f.registry.metadata(`router-history:${state.maintenanceSeal}`)as any;assert.deepEqual(archive.receipt.native.hostColdUnavailable,policy);assert.deepEqual(archive.receipt.sourceHandoff,raw);
  }finally{await f.close();}
 });
+
+test('ordinary fence preserves an approved negative policy without retaining old physical Core binding',async()=>{
+ const {f,native}=await hostFixture();try{
+  const policy={version:1,kind:'host-cold-unavailable',source:{owner:f.receipt.source.owner,bootId:f.receipt.source.bootId},checkedAt:new Date().toISOString(),evidenceSha256:'e'.repeat(64),entries:[{generationId:'restored',incarnation:1,threadId:'kept-thread',reads:[false,true].map(includeTurns=>({includeTurns,code:-32600,errorSha256:'a'.repeat(64)})),creation:{phase:'created',inputId:null,turnId:null,executionLeases:0,submissions:0,queueInputs:0,turnAuthorities:0,inputAuthorities:0,inputOrigins:0,actorRequests:0,nativeRows:0}}]};
+  (native as any).hostColdUnavailable=policy;f.receipt.native=native;await f.save();const owner=f.open();await owner.importMaintenance(f.receipt.configurationSha256,async()=>native);
+  const args=()=>({expectedOwner:owner.owner,expectedEpoch:owner.snapshot().epoch,operationId:f.receipt.operationId,fence:f.receipt.fence,historicalUnknownSha256:owner.snapshot().historicalUnknownSha256});
+  const ready=await owner.coldReady(args(),f.receipt.configurationSha256,async()=>native);await owner.resume({...args(),identity:ready.identity},f.receipt.configurationSha256,async()=>native);
+  owner.fence(args());assert.equal(owner.hostRestartPending(),undefined,'ordinary fence does not inherit old Core process binding');
+  assert.deepEqual(owner.hostColdUnavailable(),policy,'already approved negative responsibility remains available after fence');
+ }finally{await f.close();}
+});

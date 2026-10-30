@@ -281,3 +281,5 @@ unchanged. Compatible same-boot recovery may retain the already archived
 negative policy while obtaining new Native observations; a later host boot must
 refresh creation and zero-work evidence under the explicitly approved policy.
 Normal strict recovery does not acquire new exceptions through this input.
+
+An ordinary fence retires the old physical-owner maintenance seal, while an already approved negative policy remains in its verified responsibility archive. Later strict reads and 31b restarts may inherit that exact policy from the immutable archive, binding current Core/Native observations afresh. They cannot obtain a new exception from an unarchived input. This preserves normal restart compatibility without carrying an old Core process binding into a later handoff.
