@@ -277,3 +277,26 @@ clipboard write complete, then reports success only after the write resolves.
 A failure uses the same error owner, and a late completion after unmount removes
 the pending notice without reviving feedback. Menu closure does not cancel the
 operation; the existing per-thread busy guard prevents duplicate submissions.
+
+## Inline visualization content references
+
+Assistant documents recognize a standalone `visualize` content reference using
+U+E200 / U+E202 / U+E201 delimiters and a JSON object with an absolute HTML `path`,
+optional `title` and optional `mode: "wide"`. The compiler creates a directive;
+user-message dialect and code samples remain literal. Incomplete streaming
+references stay hidden until complete. Stored source is unchanged, so reopening
+history uses the same parsing and resource resolution.
+
+The Web renderer consumes the Host's existing resource policy and file byte
+lease. It reads only a local leased object, limits fragments to 1 MB and never
+inserts executable HTML into the Workbench DOM. The opaque iframe grants scripts
+without same-origin or host/device capabilities. Its CSP disallows connection,
+frames, workers, forms and objects; static resources use the visualization CDN
+allowlist. Theme aliases and a compact utility stylesheet are supplied by this
+renderer. The initial implementation exposes theme only, not MCP tools, follow-up
+messages or durable widget state APIs. It must not claim full host API parity.
+
+The reading surface owns width; wide references borrow only available prose
+space. Source-checked frame messages report bounded intrinsic height and enter
+existing document measurement transactions. Failed loads offer retry and the
+existing file-open action. Disposal aborts file work and ignores late results.
