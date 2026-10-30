@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -25,6 +26,7 @@ async function fixture() {
   const options={generations:[generation],routes:[{generationId:'old',threadId:'thread'},{generationId:'old',threadId:'ephemeral-old-binding'}],metadata:{'runtime:old':identity,'thread-retention:ephemeral-old-binding':'ephemeral'},unresolvedCreations:0,coreEndpoint:endpoint,token:'synthetic',failures:{version:1 as const,failures:[]},supervisor:{
     inspect:async()=>({protocolVersion:1 as const,pid:3,codexPid:4,dataDirectory:root,nativeSocket:socket,proxyBaseUrl:'http://127.0.0.1:1',callbackProtocolVersion:1 as const,pendingCallbacks:work.callbacks,pendingOrchestrationMutations:0}),
     identify:async()=>work.changedIdentity?{...identity,nativePid:88}:identity,processesQuiet:async()=>!work.process,
+    verifyHostRestart:async()=>({nodeSha256:'a'.repeat(64),bundleSha256:'b'.repeat(64),runtimeDataDirectory:root,codexHome:join(root,'runtime')}),
     start:async()=>{throw Error('must not start Native');},stop:async()=>{throw Error('must not stop Native');},discardUnready:async()=>{throw Error('must not discard Native');}
   }};
   return {work,options,calls,async close(){for(const ws of wss.clients)ws.terminate();await core.close();await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});}};
@@ -48,3 +50,11 @@ test('terminal systemError Thread is quiet only with full terminal Turn and comm
 for(const field of ['busyCommand','missingTurns','missingItems','lateTurn','callbacks','unexpected','process']as const)test('systemError never hides unresolved work: '+field,async()=>{const f=await fixture();try{f.work.systemError=true;(f.work as any)[field]=field==='callbacks'?1:true;await assert.rejects(inspectRouterNative(f.options));assert(!f.calls.some(m=>m==='thread/resume'||m==='thread/unload'||m==='turn/interrupt'));}finally{await f.close();}});
 
 test('required migration preserves active Native work and callbacks without answering or replaying',async()=>{const f=await fixture();try{Object.assign(f.work,{turn:true,core:1,callbacks:2,process:true,unexpected:true});f.options.unresolvedCreations=1;await assert.rejects(inspectRouterNative(f.options));const proof=await inspectRouterNative(f.options,true);assert.equal(proof.policy,'continuing-v1');assert.equal(proof.observations?.coreCounts.proxy,1);assert.equal(proof.observations?.unresolvedCreations,1);assert.equal(proof.generations[0]!.observations?.pendingCallbacks,2);assert.equal(proof.generations[0]!.observations?.processesQuiet,false);assert(f.calls.every(m=>['initialize','initialized','thread/loaded/list','thread/read'].includes(m)));const first=routerNativeDigest(proof);f.work.core=2;f.work.callbacks=3;assert.equal(routerNativeDigest(await inspectRouterNative(f.options,true)),first);await assert.rejects(inspectRouterNative(f.options));}finally{await f.close();}});
+
+
+test('host restart re-proves current physical identities without rewriting metadata',async()=>{
+ const f=await fixture();try{f.work.changedIdentity=true;f.options.metadata["runtime:old"].cliSha256="a".repeat(64);const before=routerDigest(f.options.metadata);const proof=await inspectRouterNative(f.options,false,{sourceBootId:'00000000-0000-4000-8000-000000000001',recoveryBootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim()});assert.equal(proof.policy,'host-restart-v1');assert.equal(proof.generations[0]!.identity.nativePid,88);assert.equal((proof.generations[0] as any).previousIdentity.nativePid,4);assert.equal(routerDigest(f.options.metadata),before);assert(f.calls.every(m=>['initialize','initialized','thread/loaded/list','thread/read'].includes(m)));}finally{await f.close();}
+});
+for(const field of ['core','callbacks','process','turn','unexpected']as const)test('host restart rejects current unresolved work: '+field,async()=>{
+ const f=await fixture();try{(f.work as any)[field]=['core','callbacks'].includes(field)?1:true;await assert.rejects(inspectRouterNative(f.options,false,{sourceBootId:'old-boot',recoveryBootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim()}));}finally{await f.close();}
+});

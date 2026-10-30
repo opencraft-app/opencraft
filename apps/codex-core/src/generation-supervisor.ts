@@ -24,6 +24,7 @@ export interface GenerationSupervisor {
   start(generation: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth>;
   discardUnready(generation: GenerationRecord): Promise<void>;
   identify(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity>;
+  verifyHostRestart?(generation: GenerationRecord, health: CodexAppServerHealth, identity: GenerationProcessIdentity): Promise<unknown>;
   stop(generation: GenerationRecord, identity: GenerationProcessIdentity): Promise<void>;
   processesQuiet(identity: GenerationProcessIdentity): Promise<boolean>;
 }
@@ -162,6 +163,39 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
     const identity = { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256: actual, cliVersion, unit: this.unit(g) };
     this.identities.set(g.id, { stamp, identity }); return identity;
+  }
+  /** A new kernel identity is adopted only after observing its actual program
+   * and Native HOME. Hashing the registered files alone is not this proof. */
+  async verifyHostRestart(g: GenerationRecord, h: CodexAppServerHealth, identity: GenerationProcessIdentity) {
+    const args = (await readFile(`/proc/${identity.ownerPid}/cmdline`, "utf8")).split("\0").filter(Boolean);
+    const selector = (name: string) => {
+      const indices = args.flatMap((value, index) => value === name || value.startsWith(name + "=") ? [index] : []);
+      if (!indices.length) return undefined;
+      if (indices.length !== 1 || args[indices[0]!] !== name || !args[indices[0]! + 1] || args[indices[0]! + 1]!.startsWith("--")) throw Error("Host APP selector is ambiguous");
+      return args[indices[0]! + 1]!;
+    };
+    const samePath = async (actual: string | undefined, expected: string) => !!actual && actual.startsWith("/") && await realpath(actual) === await realpath(expected);
+    const digest = (path: string) => generationArtifactDigest.sha256(path);
+    if (h.pid !== identity.ownerPid || h.codexPid !== identity.nativePid || !await samePath(args[1], g.bundle)
+      || !await samePath(`/proc/${identity.ownerPid}/exe`, g.node)
+      || await digest(`/proc/${identity.ownerPid}/exe`) !== await digest(g.node)) throw Error("Host APP program differs from its fixed definition");
+    const runtimeDataDirectory = await realpath(g.runtimeDataDirectory), codexHome = await realpath(`${runtimeDataDirectory}/runtime`);
+    if (!await samePath(selector("--runtime-data-directory") ?? selector("--data-directory"), runtimeDataDirectory)
+      || !await samePath(selector("--runtime-directory"), g.cwd)
+      || !await samePath(selector("--codex-executable"), g.executable)
+      || h.runtimeDataDirectory !== undefined && !await samePath(h.runtimeDataDirectory, runtimeDataDirectory)
+      || h.codexHome !== undefined && !await samePath(h.codexHome, codexHome)) throw Error("Host APP HOME or launch selectors differ from its fixed definition");
+    for (const [pid, parent, executable, started] of [
+      [identity.nativePid, identity.ownerPid, g.nativeLauncher ? g.node : g.executable, identity.nativeStart],
+      ...(identity.launcher ? [[identity.launcher.childPid, identity.nativePid, identity.launcher.childExecutable, identity.launcher.childStart]] : []),
+    ] as [number, number, string, string][]) {
+      const fields = (await readFile(`/proc/${pid}/stat`, "utf8")).replace(/^.*\)\s/u, "").trim().split(/\s+/u);
+      const homes = (await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").filter(entry => entry.startsWith("CODEX_HOME="));
+      if (Number(fields[1]) !== parent || fields[19] !== started || !await samePath(`/proc/${pid}/exe`, executable)
+        || homes.length !== 1 || !await samePath(homes[0]!.slice("CODEX_HOME=".length), codexHome)) throw Error("Host Native parent, program or HOME differs from its fixed definition");
+    }
+    if (JSON.stringify(await this.identify(g, h)) !== JSON.stringify(identity)) throw Error("Host APP changed during program observation");
+    return { nodeSha256: await digest(g.node), bundleSha256: await digest(g.bundle), runtimeDataDirectory, codexHome };
   }
   async stop(g: GenerationRecord, identity: GenerationProcessIdentity): Promise<void> {
     const unit = this.unit(g);

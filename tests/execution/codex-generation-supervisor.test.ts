@@ -55,7 +55,8 @@ test("packaged Node CLI adoption binds launcher, native child and fixed artifact
   await writeFile(wrapper, "#!/bin/sh\nexit 1\n");
   await writeFile(entrypoint, `const {spawn}=require('node:child_process'); const p=spawn('/bin/sleep',['120'],{stdio:'ignore'}); console.log(JSON.stringify({launcherPid:process.pid,childPid:p.pid})); process.stdin.on('data',()=>{const extra=spawn('/bin/sleep',['120'],{stdio:'ignore'});console.log(JSON.stringify({extraPid:extra.pid}));});`);
   await writeFile(ownerScript, `const {spawn}=require('node:child_process'); const p=spawn(process.execPath,[${JSON.stringify(entrypoint)},'app-server'],{stdio:['pipe','pipe','inherit']});p.stdout.pipe(process.stdout);process.stdin.pipe(p.stdin);`);
-  const owner = spawn(process.execPath, [ownerScript, "--codex-executable", wrapper], { detached: true, stdio: ["pipe", "pipe", "inherit"] });
+  await mkdir(join(root,"runtime"));
+  const owner = spawn(process.execPath, [ownerScript, "--codex-executable", wrapper, "--runtime-data-directory", root, "--runtime-directory", root], { detached: true, cwd:root, env:{...process.env,CODEX_HOME:join(root,"runtime")}, stdio: ["pipe", "pipe", "inherit"] });
   const lines: any[] = []; let buffer = "";
   owner.stdout.on("data", data => { buffer += String(data); let n; while ((n = buffer.indexOf("\n")) >= 0) { lines.push(JSON.parse(buffer.slice(0,n))); buffer = buffer.slice(n+1); } });
   const wait = async (predicate: () => boolean) => { for (let n=0;n<400&&!predicate();n++) await new Promise(resolve=>setTimeout(resolve,5)); assert.ok(predicate()); };
@@ -69,6 +70,11 @@ test("packaged Node CLI adoption binds launcher, native child and fixed artifact
     const identity = await supervisor.identify(generation,health);
     assert.equal(identity.nativePid,native.launcherPid);assert.equal(identity.launcher!.childPid,native.childPid);assert.match(identity.cliVersion,/sleep/u);
     assert.deepEqual(await supervisor.identify(generation,health),identity);assert.equal(await supervisor.processesQuiet(identity),true);
+    const programs=await supervisor.verifyHostRestart(generation,health,identity);
+    assert.equal(programs.codexHome,join(root,"runtime"));assert.match(programs.bundleSha256,/^[a-f0-9]{64}$/u);
+    await assert.rejects(supervisor.verifyHostRestart({...generation,bundle:entrypoint},health,identity),/APP program/u);
+    await assert.rejects(supervisor.verifyHostRestart(generation,{...health,runtimeDataDirectory:"/"},identity),/APP HOME/u);
+    await assert.rejects(supervisor.verifyHostRestart(generation,{...health,codexHome:root},identity),/APP HOME/u);
     await assert.rejects(supervisor.identify({...generation,nativeLauncher:{entrypoint:ownerScript,executable:"/bin/sleep"}},health),/launcher command/u);
     await assert.rejects(supervisor.identify({...generation,node:"/bin/false"},health),/launcher Node/u);
     await assert.rejects(supervisor.identify({...generation,nativeLauncher:{entrypoint,executable:"/bin/false"}},health),/CLI child/u);
@@ -81,5 +87,24 @@ test("packaged Node CLI adoption binds launcher, native child and fixed artifact
     assert.equal(owner.exitCode,null);
   } finally {
     process.env.PATH=originalPath; const exited=new Promise(resolve=>owner.once("exit",resolve));try{process.kill(-owner.pid!,"SIGKILL");}catch{}await exited;await rm(root,{recursive:true,force:true});
+  }
+});
+
+test("host adoption verifies actual Native HOME even when APP health claims the expected HOME", {skip:process.platform!=="linux"}, async()=>{
+  const root=await mkdtemp(join(temporaryDirectory,"oc-host-home-")),originalPath=process.env.PATH;
+  await mkdir(join(root,"runtime"));await mkdir(join(root,"wrong"));
+  const bundle=join(root,"app.cjs");
+  await writeFile(bundle,`const {spawn}=require('node:child_process');const p=spawn('/bin/sleep',['120'],{env:{...process.env,CODEX_HOME:${JSON.stringify(join(root,"wrong"))}},stdio:'ignore'});console.log(p.pid);`);
+  const owner=spawn(process.execPath,[bundle,"--data-directory",root,"--runtime-directory",root,"--codex-executable","/bin/sleep"],{detached:true,cwd:root,stdio:["ignore","pipe","inherit"]});
+  try{
+    const nativePid=await new Promise<number>((resolve,reject)=>{owner.stdout!.once('data',raw=>resolve(Number(String(raw).trim())));owner.once('error',reject);});
+    await writeFile(join(root,"systemctl"),`#!/bin/sh\nprintf 'MainPID=${owner.pid}\nLoadState=loaded\nActiveState=active\nUnitFileState=static\n'\n`,{mode:0o755});process.env.PATH=root;
+    const supervisor=new SystemdGenerationSupervisor({registryDirectory:root,coreEndpoint:join(root,'control.sock'),dataDirectory:root,tokenFile:join(root,'token'),token:'synthetic',scope:'system'});
+    const g={id:'host',state:'active',incarnation:1,externalUnit:'fixture.service',runtimeDataDirectory:root,cwd:root,executable:'/bin/sleep',bundle,node:process.execPath}as GenerationRecord;
+    const health={pid:owner.pid!,codexPid:nativePid,runtimeDataDirectory:root,codexHome:join(root,'runtime')}as any;
+    const identity=await supervisor.identify(g,health);
+    await assert.rejects(supervisor.verifyHostRestart(g,health,identity),/Native parent, program or HOME/u);
+  }finally{
+    process.env.PATH=originalPath;const exited=new Promise(resolve=>owner.once('exit',resolve));try{process.kill(-owner.pid!,'SIGKILL');}catch{}await exited;await rm(root,{recursive:true,force:true});
   }
 });
