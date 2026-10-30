@@ -79,7 +79,7 @@ export async function startCodexGenerationService(options: {
       metadata: Object.fromEntries([...runtime.registry.list().map(g => [`runtime:${g.id}`, runtime.registry.metadata(`runtime:${g.id}`)]),
         ...runtime.registry.routes().map(r => [`thread-retention:${r.threadId}`, runtime.registry.metadata(`thread-retention:${r.threadId}`)])]),
       unresolvedCreations: runtime.registry.list().reduce((n, g) => n + runtime.registry.unresolvedCreations(g.id), 0),
-      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! });
+      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, runtime.owner.continuingNative());
     const coldRead = () => runtime.owner.snapshot().history?.length ? nativeMaintenance() : runtime.coldReadNative();
     if (runtime.owner.maintenancePending()) await runtime.owner.importMaintenance(await configuration(), nativeMaintenance);
     const observation = async () => {
@@ -170,7 +170,7 @@ export async function routerConfiguration(options: Parameters<typeof startCodexG
 }
 
 /** Read-only collector; opens no routing socket and never takes the registry writer role. */
-export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0]) {
+export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0], continuing = false, provisional = false) {
   options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
   const launch = await new CodexCoreControlClient(options.coreEndpoint, options.token).appServerLaunch();
   if (await realpath(options.dataDirectory) !== launch.dataDirectory) throw Error("Router account data selector changed");
@@ -178,10 +178,12 @@ export async function inspectRouterMaintenanceService(options: Parameters<typeof
   const proxyBaseUrl: string = JSON.parse(base.slice(base.indexOf("=") + 1)), state = readRouterRegistry(options.registryDirectory);
   const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory: options.registryDirectory, coreEndpoint: options.coreEndpoint,
     dataDirectory: options.dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
-  const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! });
+  const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, continuing);
   const after = readRouterRegistry(options.registryDirectory);
-  if (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"])) throw Error("Router current registry changed during collection");
-  return { sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,
+  if (!provisional && (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"]))) throw Error("Router current registry changed during collection");
+  return { ...(provisional ? { provisional: true } : {}), sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,
+    unconfirmedRecords: Object.entries(state.metadata).filter(([key, value]) => key.startsWith("router-uncertainty:")
+      || key.startsWith("router-lease:") && !!(value as { uncertainty?: unknown } | null)?.uncertainty).map(([key, value]) => ({ key, value })),
     sourceProcess: state.metadata["router-live-owner"],
     configurationSha256: await routerConfiguration(options, state.generations, proxyBaseUrl) };
 }

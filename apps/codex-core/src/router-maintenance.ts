@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { request } from "node:http";
 import { inspectGenerationRegistry, type GenerationRecord } from "./generation-registry.js";
 import type { GenerationSupervisor } from "./generation-supervisor.js";
-import { GenerationPeer, rpcRecord } from "./generation-peer.js";
+import { GenerationPeer, NativeGenerationError, rpcRecord } from "./generation-peer.js";
 import { readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
 
 export const routerDigest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -22,7 +22,7 @@ export function processStamp(pid: number): string | null {
   catch (reason) { if ((reason as NodeJS.ErrnoException).code === "ENOENT") return null; throw reason; }
 }
 export interface RouterMaintenanceReceipt {
-  version: 1; kind: "router-maintenance"; mode: "fenced-source" | "crashed-source";
+  version: 1; kind: "router-maintenance"; mode: "fenced-source" | "crashed-source" | "interrupted-source";
   operationId: string; fence: string; issuedAt: string; expiresAt: string;
   controller: { pid: number; startTime: string; bootId: string; lock: string };
   source: { pid: number; startTime: string; bootId: string; owner: string; bundle: string; bundleSha256: string };
@@ -81,7 +81,7 @@ export async function routerLocalJson(endpoint: string, token: string, path: str
 export function readRouterMaintenance(path: string, state: unknown, storage: string, payload: string, historicalPending = 0, historicalSha256?: string) {
   const value = privateRouterJson(path) as RouterMaintenanceReceipt;
   const now = Date.now(), issued = Date.parse(value?.issuedAt), expires = Date.parse(value?.expiresAt);
-  if (value?.version !== 1 || value.kind !== "router-maintenance" || !["fenced-source", "crashed-source"].includes(value.mode)
+  if (value?.version !== 1 || (value as RouterMaintenanceReceipt & { provisional?: boolean }).provisional || value.kind !== "router-maintenance" || !["fenced-source", "crashed-source", "interrupted-source"].includes(value.mode)
     || !identity(value.operationId) || !identity(value.fence) || !Number.isFinite(issued) || !Number.isFinite(expires)
     || issued > now + 1000 || expires <= now || expires - issued > 15 * 60_000
     || !sha(value.registrySha256) || !sha(value.configurationSha256) || !Array.isArray(value.payloadSha256)
@@ -96,6 +96,10 @@ export function readRouterMaintenance(path: string, state: unknown, storage: str
   const pending = raw.pending ?? [];
   if (raw.version !== 1 || !Array.isArray(pending) || !pending.every(identity) || new Set(pending).size !== pending.length
     || typeof raw.uncertain !== "boolean" || !["open", "fenced"].includes(String(raw.phase)) || !Number.isSafeInteger(raw.epoch)) throw Error("Invalid maintenance source state");
+  const continuing = rpcRecord(value.native).policy === "continuing-v1";
+  if (value.mode === "interrupted-source" && (!continuing || raw.phase !== "fenced" || raw.sourceOwner !== value.source.owner
+    || raw.operationId !== value.operationId || raw.fence !== value.fence)
+    || continuing && value.mode === "fenced-source") throw Error("Explicit interrupted source identity required");
   if (value.mode === "fenced-source") {
     const snapshot = value.sourceSnapshot, h = snapshot?.handoff, proof = snapshot?.proof;
     if (raw.phase !== "fenced" || !h || !proof || snapshot!.pid !== value.source.pid || h.pid !== value.source.pid || h.owner !== value.source.owner
@@ -111,6 +115,17 @@ export function readRouterMaintenance(path: string, state: unknown, storage: str
       || Object.values(proof.counts).some(count => count !== 0)) throw Error("Router source maintenance coverage is incomplete");
   }
   return value;
+}
+
+/** Volatile progress stays with the original Native/Core owners. Only explicit
+ * required migration may seal their unchanged physical identities instead. */
+export function routerNativeDigest(value: unknown) {
+  const native = rpcRecord(value);
+  if (native.policy !== "continuing-v1") return routerDigest(value);
+  const core = rpcRecord(native.core);
+  if (native.version !== 1 || !Array.isArray(native.generations) || !core.owner || !Number.isSafeInteger(core.pid) || !Number.isSafeInteger(core.epoch)) throw Error("Invalid continuing Native proof");
+  return routerDigest({ version: 1, policy: native.policy, core: { owner: core.owner, epoch: core.epoch, pid: core.pid },
+    generations: native.generations.map(raw => { const g = rpcRecord(raw); return { generationId: g.generationId, incarnation: g.incarnation, identity: g.identity }; }) });
 }
 
 async function quietLoadedThreads(peer: GenerationPeer) {
@@ -145,13 +160,13 @@ async function quietLoadedThreads(peer: GenerationPeer) {
 export async function inspectRouterNative(options: {
   generations: GenerationRecord[]; routes: { threadId: string; generationId: string }[]; metadata: Record<string, unknown>;
   unresolvedCreations: number; supervisor: GenerationSupervisor; coreEndpoint: string; token: string; failures: NativeHistoryFailures;
-}) {
-  if (options.unresolvedCreations || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
+}, continuing = false) {
+  if ((!continuing && options.unresolvedCreations) || options.generations.some(g => !["active", "ready", "draining", "discarded"].includes(g.state))) throw new RouterMaintenanceBlocked("ROUTER_LIFECYCLE_BUSY", "Router lifecycle or creation work is unresolved");
   const core = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreQuiet = (v: any) => v.handoff?.protocolVersion === 1 && v.handoff?.topology === "split" && v.handoff?.phase === "open" && v.handoff?.persistence === "ready"
     && typeof v.handoff?.owner === "string" && !!v.handoff.owner && Number.isSafeInteger(v.pid) && v.pid > 0
     && v.proof?.counts && Object.keys(v.proof.counts).sort().join(",") === "oauth,proxy,refresh,requests,resetCredits,subscriptions"
-    && Object.values(v.proof.counts).every(n => Number.isSafeInteger(n) && Number(n) >= 0) && v.proof.counts.proxy === 0;
+    && Object.values(v.proof.counts).every(n => Number.isSafeInteger(n) && Number(n) >= 0) && (continuing || v.proof.counts.proxy === 0);
   // Core keeps OAuth, subscriptions and account maintenance. Only its actual
   // proxy admission/stream activity blocks this router-only transition.
   if (!coreQuiet(core)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROXY_BUSY", "Core has active or unobserved proxy work");
@@ -160,13 +175,39 @@ export async function inspectRouterNative(options: {
   if (options.failures.failures.some(f => !durable.some(r => r.generationId === f.generationId && r.threadId === f.threadId))) throw Error("Historical failure route changed");
   for (const g of options.generations.filter(g => g.state !== "discarded")) {
     const health = await options.supervisor.inspect!(g), identity = await options.supervisor.identify(g, health);
+    const processesQuiet = await options.supervisor.processesQuiet(identity);
     if (routerDigest(identity) !== routerDigest(options.metadata[`runtime:${g.id}`]) || health.callbackProtocolVersion !== 1
-      || health.pendingCallbacks !== 0 || health.pendingOrchestrationMutations !== 0 || !await options.supervisor.processesQuiet(identity)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_ADMISSION_BUSY", "Native admission or process work is unresolved");
+      || ![health.pendingCallbacks, health.pendingOrchestrationMutations].every(n => Number.isSafeInteger(n) && n! >= 0)
+      || !continuing && (health.pendingCallbacks !== 0 || health.pendingOrchestrationMutations !== 0 || !processesQuiet)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_ADMISSION_BUSY", "Native admission or process work is unresolved");
     let unexpected = false, disconnected = false;
     const { peer } = await GenerationPeer.open(health.nativeSocket, { clientInfo: { name: "opencraft-router-maintenance", version: "1" }, capabilities: { experimentalApi: true } }, {
       message(message) { if (message.id !== undefined && message.method) unexpected = true; }, disconnected() { disconnected = true; },
     });
     try {
+      if (continuing) {
+        const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
+        if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw Error("Native loaded coverage is unavailable");
+        const routes = durable.filter(r => r.generationId === g.id), expected = options.failures.failures.filter(f => f.generationId === g.id);
+        const retained = await readNativeHistory(peer, g.id, expected.map(row => row.threadId), expected);
+        const unconfirmedLoadedReads = [];
+        for (const route of routes.filter(r => !expected.some(f => f.threadId === r.threadId))) {
+          try {
+            const result = rpcRecord(await peer.call("thread/read", { threadId: route.threadId, includeTurns: false }, undefined, 2000));
+            if (rpcRecord(result.thread).id !== route.threadId) throw Error("Native historical identity changed");
+          } catch (error) {
+            if (!loaded.data.includes(route.threadId) || !(error instanceof NativeGenerationError)) throw error;
+            unconfirmedLoadedReads.push({ threadId: route.threadId, code: error.rpcError.code, errorSha256: routerDigest(error.rpcError), nativeRejection: error.nativeRejection });
+          }
+        }
+        // Active work and callbacks remain with this exact original Native. Do
+        // not answer, interrupt, resume or replay them from an operator probe.
+        const after = await options.supervisor.inspect!(g), afterIdentity = await options.supervisor.identify(g, after);
+        if (disconnected || routerDigest(afterIdentity) !== routerDigest(identity) || after.callbackProtocolVersion !== 1) throw Error("Continuing Native owner changed");
+        generations.push({ generationId: g.id, incarnation: g.incarnation, identity, loaded: [...loaded.data].sort(),
+          history: { historicalCount: routes.length, failures: retained.failures, unconfirmedLoadedReads },
+          observations: { pendingCallbacks: after.pendingCallbacks, pendingOrchestrationMutations: after.pendingOrchestrationMutations, processesQuiet, serverRequestObserved: unexpected } });
+        continue;
+      }
       const loaded = await quietLoadedThreads(peer);
       const history = await readNativeHistory(peer, g.id, durable.filter(r => r.generationId === g.id).map(r => r.threadId), options.failures.failures.filter(f => f.generationId === g.id));
       if (routerDigest(await quietLoadedThreads(peer)) !== routerDigest(loaded)) throw new RouterMaintenanceBlocked("ROUTER_NATIVE_PROOF_CHANGED", "Native terminal evidence changed during inspection");
@@ -178,8 +219,9 @@ export async function inspectRouterNative(options: {
   }
   const after = await routerLocalJson(options.coreEndpoint, options.token, "/owner-handoff");
   const coreIdentity = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid, historicalUnknown: v.handoff?.uncertain });
-  if (routerDigest(coreIdentity(after)) !== routerDigest(coreIdentity(core)) || !coreQuiet(after)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROOF_CHANGED", "Core changed during inspection");
-  return { version: 1, core: coreIdentity(core), generations };
+  const stableCore = (v: any) => ({ owner: v.handoff?.owner, epoch: v.handoff?.epoch, pid: v.pid });
+  if (routerDigest(continuing ? stableCore(after) : coreIdentity(after)) !== routerDigest(continuing ? stableCore(core) : coreIdentity(core)) || !coreQuiet(after)) throw new RouterMaintenanceBlocked("ROUTER_CORE_PROOF_CHANGED", "Core changed during inspection");
+  return { version: 1, ...(continuing ? { policy: "continuing-v1", observations: { coreCounts: after.proof.counts, unresolvedCreations: options.unresolvedCreations } } : {}), core: coreIdentity(after), generations };
 }
 
 export const readRouterRegistry = inspectGenerationRegistry;

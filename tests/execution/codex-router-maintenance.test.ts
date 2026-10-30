@@ -15,14 +15,14 @@ import { routerDigest, processStamp, readRouterMaintenance, verifyRouterConsumer
 
 const empty = { coverage: "complete" as const, activeCount: 0, historicalCount: 0, counts: {} };
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
-async function fixture(mode: "fenced-source" | "crashed-source" = "fenced-source") {
+async function fixture(mode: "fenced-source" | "crashed-source" | "interrupted-source" = "fenced-source") {
   const root = await mkdtemp(join(tmpdir(), "router-maintenance-")), lock = join(root, "deploy.lock");
   const controller = spawn("python3", ["-u", "-c", "import fcntl,sys,os; f=open(sys.argv[1],'a'); fcntl.flock(f,fcntl.LOCK_EX); print(os.getpid(),flush=True); sys.stdin.read()", lock], { stdio: ["pipe", "pipe", "inherit"] });
   await once(controller.stdout, "data");
   const source = spawn(process.execPath, ["-e", "setTimeout(()=>{},10000)"]); await once(source, "spawn");
   const sourcePid = source.pid!, startTime = processStamp(sourcePid)!; source.kill(); await once(source, "exit");
   let registry = new CodexGenerationRegistry(root);
-  const state = { version: 1, phase: mode === "fenced-source" ? "fenced" : "open", epoch: 9, uncertain: true,
+  const state = { version: 1, phase: mode !== "crashed-source" ? "fenced" : "open", epoch: 9, uncertain: true,
     operationId: "operation", fence: "fence", sourceOwner: "old-source", pending: Array.from({ length: 20 }, (_, n) => `pending-${n}`) };
   registry.setMetadata("router-handoff", state);
   const bundle = join(root, "old-router.cjs"); await writeFile(bundle, "synthetic old router artifact\n");
@@ -126,3 +126,6 @@ test("read-only collection rejects changed migration history before stopping a w
   assert.deepEqual(f.registry.metadata("router-handoff"),f.state);
  } finally {await f.close();}
 });
+
+test('explicit interrupted import retains unconfirmed active requests while original owners progress',async()=>{const f=await fixture('interrupted-source');try{const native={version:1,policy:'continuing-v1',core:{owner:'original-core',epoch:1,pid:2,historicalUnknown:['keep-core-unknown']},generations:[{generationId:'old',incarnation:1,identity:{ownerPid:3,nativePid:4},observations:{pendingCallbacks:1}}]};f.receipt.native=native;f.state.uncertain=false;f.registry.setMetadata('router-handoff',f.state);f.receipt.registrySha256=routerDigest(f.registry.coldSnapshot());await f.save();const owner=f.open();assert.equal(owner.continuingNative(),true);await owner.importMaintenance(f.receipt.configurationSha256,async()=>({...native,core:{...native.core,historicalUnknown:['keep-core-unknown','new-observation']}}));assert.deepEqual(owner.snapshot().pending,f.state.pending);assert.equal(owner.snapshot().uncertain,true);assert.equal(owner.snapshot().historicalUnknownSnapshots[0]!.sourceHandoff.uncertain,false);const input=()=>({expectedOwner:owner.owner,expectedEpoch:owner.snapshot().epoch,operationId:'operation',fence:'fence',historicalUnknownSha256:owner.snapshot().historicalUnknownSha256});await assert.rejects(owner.coldReady(input(),f.receipt.configurationSha256,async()=>({...native,core:{...native.core,pid:99}})),/owner changed/);let progress=0;const advancing=async()=>({...native,generations:[{...native.generations[0]!,observations:{pendingCallbacks:++progress}}]});const ready=await owner.coldReady(input(),f.receipt.configurationSha256,advancing);await owner.resume({...input(),identity:ready.identity},f.receipt.configurationSha256,advancing);assert(owner.isOpen());assert.deepEqual(owner.snapshot().pending,f.state.pending);owner.fence(input());assert.equal(owner.continuingNative(),false,'ordinary fence removes the migration policy');}finally{await f.close();}});
+test('provisional observations never authorize writer admission',async()=>{const f=await fixture('interrupted-source');try{(f.receipt as any).provisional=true;await f.save();assert.throws(()=>f.open(),/receipt rejected/);}finally{await f.close();}});

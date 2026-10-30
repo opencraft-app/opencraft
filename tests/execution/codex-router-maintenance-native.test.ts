@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
-import { inspectRouterNative, routerDigest } from "../../apps/codex-core/src/router-maintenance.js";
+import { inspectRouterNative, routerDigest, routerNativeDigest } from "../../apps/codex-core/src/router-maintenance.js";
 import type { GenerationRecord } from "../../apps/codex-core/src/generation-registry.js";
 
 async function fixture() {
@@ -46,3 +46,5 @@ test('independent Core OAuth work remains with Core while only proxy traffic blo
 
 test('terminal systemError Thread is quiet only with full terminal Turn and command evidence',async()=>{const f=await fixture();try{f.work.systemError=true;const proof=await inspectRouterNative(f.options);assert.deepEqual((proof.generations[0] as any).terminalSystemErrors,[{threadId:'thread',turns:[{id:'turn',status:'failed',executions:[{id:'command',type:'commandExecution',status:'completed'}]}]}]);assert(f.calls.filter(m=>m==='thread/read').length>=5);assert(f.calls.every(m=>['initialize','initialized','thread/loaded/list','thread/read'].includes(m)));}finally{await f.close();}});
 for(const field of ['busyCommand','missingTurns','missingItems','lateTurn','callbacks','unexpected','process']as const)test('systemError never hides unresolved work: '+field,async()=>{const f=await fixture();try{f.work.systemError=true;(f.work as any)[field]=field==='callbacks'?1:true;await assert.rejects(inspectRouterNative(f.options));assert(!f.calls.some(m=>m==='thread/resume'||m==='thread/unload'||m==='turn/interrupt'));}finally{await f.close();}});
+
+test('required migration preserves active Native work and callbacks without answering or replaying',async()=>{const f=await fixture();try{Object.assign(f.work,{turn:true,core:1,callbacks:2,process:true,unexpected:true});f.options.unresolvedCreations=1;await assert.rejects(inspectRouterNative(f.options));const proof=await inspectRouterNative(f.options,true);assert.equal(proof.policy,'continuing-v1');assert.equal(proof.observations?.coreCounts.proxy,1);assert.equal(proof.observations?.unresolvedCreations,1);assert.equal(proof.generations[0]!.observations?.pendingCallbacks,2);assert.equal(proof.generations[0]!.observations?.processesQuiet,false);assert(f.calls.every(m=>['initialize','initialized','thread/loaded/list','thread/read'].includes(m)));const first=routerNativeDigest(proof);f.work.core=2;f.work.callbacks=3;assert.equal(routerNativeDigest(await inspectRouterNative(f.options,true)),first);await assert.rejects(inspectRouterNative(f.options));}finally{await f.close();}});

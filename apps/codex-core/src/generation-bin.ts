@@ -24,9 +24,10 @@ async function main() {
     maintenanceFile: process.argv.includes("--router-maintenance-file") ? argument("--router-maintenance-file") : undefined,
     signal: startup.signal };
   if (process.argv.includes("--router-maintenance-inspect")) {
-    const value = await inspectRouterMaintenanceService(options);
+    const value = await inspectRouterMaintenanceService(options, process.argv.includes("--router-maintenance-continuing"), process.argv.includes("--router-maintenance-provisional"));
     await writeFile(argument("--router-maintenance-inspect"), JSON.stringify(value), { mode: 0o600, flag: "wx" }); return;
   }
+  if (process.argv.includes("--router-maintenance-continuing") || process.argv.includes("--router-maintenance-provisional")) throw Error("Continuing proof requires explicit read-only inspection");
   const service = await startCodexGenerationService(options);
   stop = async () => { await service.close(); process.exit(0); };
   if (startup.signal.aborted) { await stop(); return; }
