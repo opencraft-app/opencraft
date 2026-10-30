@@ -1325,7 +1325,7 @@ export const OpenCraftComposer = forwardRef<
   }, [controller, finishQueueEdit]);
 
   const submit = useCallback(
-    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false) => {
+    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false, consumeCommand = false) => {
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
@@ -1374,9 +1374,26 @@ export const OpenCraftComposer = forwardRef<
       } catch {
         return;
       }
+      // The local command is frozen in intent; it need not remain in the
+      // visible editor while its action opens. Keep the same draft owner so a
+      // rejection can restore it without overwriting a replacement draft.
+      const commandDraftId = controller.getSnapshot().draft.id;
+      const consumedDocument = consumeCommand && editingQueuedSubmissionId === null
+        ? proseMirrorToComposerDocument(composerSchema.topNodeType.createAndFill()!) : null;
+      const ownsConsumedCommand = () => {
+        const draft = controller.getSnapshot().draft;
+        return draft.id === commandDraftId && draft.document === consumedDocument
+          && encodeComposerTarget(draft.target) === encodeComposerTarget(intent.target);
+      };
+      const restoreCommand = () => {
+        if (consumedDocument && ownsConsumedCommand()) {
+          controller.dispatch({ type: "set-document", document: intent.document });
+        }
+      };
       const submissionToken = Symbol("composer-submission");
       pendingSubmissionRef.current = { controller, token: submissionToken };
       view.setProps({ editable: () => false });
+      if (consumedDocument) controller.dispatch({ type: "set-document", document: consumedDocument });
       controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
       try {
         if (
@@ -1419,6 +1436,8 @@ export const OpenCraftComposer = forwardRef<
         }
 
         const accepted = await submission;
+        if (consumedDocument && !ownsConsumedCommand()) return;
+        if (accepted === false) restoreCommand();
         if (
           accepted !== false &&
           encodeComposerTarget(controller.getSnapshot().draft.target) ===
@@ -1427,6 +1446,8 @@ export const OpenCraftComposer = forwardRef<
           clear();
         else controller.dispatch({ type: "set-lifecycle", phase: "editing" });
       } catch (error) {
+        if (consumedDocument && !ownsConsumedCommand()) return;
+        restoreCommand();
         controller.dispatch({
           type: "set-lifecycle",
           phase: "failed",
@@ -1530,6 +1551,18 @@ export const OpenCraftComposer = forwardRef<
     if (view == null || query == null || view.composing || !isCurrentSuggestion) return;
     const actualQuery = querySuggestion(view.state);
     if (actualQuery?.kind !== query.kind || actualQuery.from !== query.from || actualQuery.to !== query.to || actualQuery.query !== query.query) return;
+    const draft = controller.getSnapshot().draft;
+    const commandTransaction = view.state.tr.insertText(`/${suggestion.label}`, query.from, query.to);
+    const commandDocument = proseMirrorToComposerDocument(commandTransaction.doc);
+    if (suggestion.kind === "command" && suggestion.submitOnSelect
+      && commandDocument.blocks.length === 1 && commandDocument.blocks[0]?.type === "paragraph"
+      && composerDocumentToPlainText(commandDocument).trim() === `/${suggestion.label}`
+      && draft.attachments.length === 0 && draft.context.length === 0) {
+      // Do not insert a command chip just to immediately consume it.
+      view.dispatch(commandTransaction);
+      void submitActionRef.current(undefined, false, true);
+      return;
+    }
     const token = composerSchema.nodes.token.create({
       id: suggestion.id,
       kind: suggestion.kind,
@@ -1554,14 +1587,6 @@ export const OpenCraftComposer = forwardRef<
     );
     view.dispatch(transaction.scrollIntoView());
     view.focus();
-    const draft = controller.getSnapshot().draft;
-    const document = proseMirrorToComposerDocument(view.state.doc);
-    if (suggestion.kind === "command" && suggestion.submitOnSelect
-      && document.blocks.length === 1 && document.blocks[0]?.type === "paragraph"
-      && composerDocumentToPlainText(document).trim() === `/${suggestion.label}`
-      && draft.attachments.length === 0 && draft.context.length === 0) {
-      void submitActionRef.current();
-    }
   }, [controller]);
 
   const moveSuggestion = useCallback((delta: number) => {

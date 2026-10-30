@@ -532,7 +532,7 @@ in the child. Closing releases the child without changing parent history or draf
 
 ### Side chat slash command
 
-An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Selecting the standalone `/side` suggestion with Enter or a pointer immediately invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
+An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Selecting the standalone `/side` suggestion with Enter or a pointer immediately invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It consumes the visible standalone command immediately without inserting a blue command token while opening; rejection restores plain command text only while the same empty draft is still owned. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
 
 ### Inline command discovery
 
