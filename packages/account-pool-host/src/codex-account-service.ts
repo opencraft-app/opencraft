@@ -88,7 +88,7 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      if (options.ownerHandoff) service.validateCredentials();
+      if (options.ownerHandoff) service.validateCredentials(options.ownerHandoff.admissionOpen() === false);
       service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
         admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
       if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
@@ -117,12 +117,15 @@ export class CodexAccountService {
       loginReceipts: this.login.handoffReceipts() };
   }
 
-  validateCredentials(): void {
+  validateCredentials(requireAccountCredentials = true): void {
     try {
       const token = this.store.issueHostToken("local-codex");
       if (this.store.authenticateHostToken(token) !== "local-codex") throw new Error("Invalid account Host identity");
+      // Frozen successors attest external credentials before readiness. Open
+      // owners must keep control/login available when an external owner is down.
+      // Local records and Host authentication remain strict in both modes.
       for (const account of this.store.listAccounts()) {
-        if (account.credentialConfigured) this.store.readCredential(account.id);
+        if (account.credentialConfigured) this.store.validateCredential(account.id, requireAccountCredentials);
       }
       this.accountViews();
     } catch { throw new Error("Account credential validation failed"); }

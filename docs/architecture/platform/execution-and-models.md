@@ -450,6 +450,20 @@ An operator may bind an account to an existing OAuth `auth.json` owned by anothe
 
 Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
 
+An ordinary open account Core validates Host authentication and local credential
+records before serving, but does not require an external credential owner to be
+available at process startup. A temporarily absent mount or external auth file
+must not prevent control, login or account-management service from starting.
+Inference still rereads the external credential and fails closed for that account;
+when its owner restores the file, selection can recover without restarting Core.
+Frozen handoff successors retain strict external credential and sealed-storage
+validation before they can attest readiness or resume admission. Before sealing,
+the source validates external auth mode, token format and registered account
+identity against the very bytes included in the storage hash. Invalid external
+credentials therefore reject release while the source can still abort its fence;
+they are never sealed into a state that only a failing successor can open. Neither path
+copies a credential, edits the reference, clears unknown work or replays a request.
+
 The service must have read access to the source in its real mount namespace; do not assume root access, copy credentials, relax permissions globally or share the whole `CODEX_HOME`. Reference files use the existing private account-secret directory and file permissions. Removing the account removes its local reference, never the external source. Older readers do not understand references: remove the newly registered external account before rolling back to one, preserving all conversation and source data.
 
 ### Codex subscription windows and extra credits
