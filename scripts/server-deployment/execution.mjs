@@ -11,6 +11,7 @@ import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 import { browserRuntimeIdentity } from '../browser-runtime-identity.mjs';
 import { withGatewayUpdateIntent } from './gateway-update-intent.mjs';
+import { linuxProcessIdentity, sameProcess } from './runtime-equivalence.mjs';
 
 const exec = promisify(execFile);
 const daemonPayloadFiles = ['gateway.mjs', 'daemon.cjs', 'dsh-capability-plugin.mjs'];
@@ -155,6 +156,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     await grantExecutionAccess(release.releaseRoot, properties.User || 'root', dirname(link));
   },
   restart = () => exec('systemctl', ['restart', unit], { timeout: 60_000 }), timeout = 30_000,
+  runtimeProcess = async () => linuxProcessIdentity(Number((await unitProperties(unit)).MainPID)),
   statusTimeoutMs = 6_500 }) {
   if (!['daemon', 'headless'].includes(profile)) throw new Error('Invalid execution profile');
   if ((dshDescriptor || dshUnit) && (profile !== 'headless' || !isAbsolute(dshDescriptor || '')
@@ -218,33 +220,58 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     try { await symlink(root, temporary); await rename(temporary, link); }
     finally { await rm(temporary, { force: true }); }
   }
+  async function runningPayloadMatches(root, health) {
+    if (profile !== 'headless') return true;
+    const runtime = health?.runtimeReleaseRoot;
+    if (typeof runtime !== 'string' || !isAbsolute(runtime)) return false;
+    if (runtime === root) return true;
+    const identity = [...new Set([...await releaseIdentity(root), ...await releaseIdentity(runtime)])];
+    const [wanted, actual] = await Promise.all([computeExecutionHash(root, identity), computeExecutionHash(runtime, identity)]);
+    return !!wanted && wanted === actual;
+  }
   async function ready(release, before, dshBefore = null, engineBefore = null) {
     const deadline = Date.now() + timeout;
+    let attempts = 0; let stage = 'health-unreachable'; let lastReason = stage;
     while (Date.now() < deadline) {
       try {
-        const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
+        attempts++; stage = 'health-unreachable';
+        const response = await fetch(url, { signal: AbortSignal.timeout(statusTimeoutMs) });
+        stage = 'health-invalid';
         const health = await response.json();
+        lastReason = !response.ok ? `health-http-${response.status}` : !health.ok ? 'dependency-unavailable'
+          : profile === 'headless' && health.profile !== 'headless' ? 'profile-mismatch' : 'release-identity-mismatch';
         if (response.ok && health.ok && (profile !== 'headless' || health.profile === 'headless') && health.version === release.version && health.buildId === release.buildId) {
+          stage = 'runtime-payload-mismatch';
+          if (!await runningPayloadMatches(release.releaseRoot, health))
+            throw new Error('Execution runtime payload does not match selected release');
+          stage = 'core-health-unavailable';
           const after = await coreHealth(coreEndpoint, tokenPath);
           if (after.pid !== before.pid || after.codexPid !== before.codexPid || health.core?.pid !== before.pid || health.core?.codexPid !== before.codexPid)
             throw new Error('Codex core changed during execution update');
           if (dshBefore) {
+            stage = 'dsh-health-unavailable';
             const current = await dshHealth();
             if (current.pid !== dshBefore.pid || current.enginePid !== dshBefore.enginePid
               || health.dsh?.pid !== dshBefore.pid || health.dsh?.enginePid !== dshBefore.enginePid)
               throw new Error('DSH Host changed during execution update');
           }
           if (engineBefore) {
+            stage = 'engine-health-unavailable';
             const current = await engineHealth();
             if (current.pid !== engineBefore.pid || health.engineHost?.pid !== engineBefore.pid)
               throw new Error('Execution Host changed during execution update');
           }
           return health;
         }
-      } catch (error) { if (['Codex core changed during execution update', 'DSH Host changed during execution update', 'Execution Host changed during execution update'].includes(error.message)) throw error; }
+      } catch (error) {
+        if (['Codex core changed during execution update', 'DSH Host changed during execution update', 'Execution Host changed during execution update'].includes(error.message)) throw error;
+        lastReason = ['TimeoutError', 'AbortError'].includes(error.name) && stage === 'health-unreachable' ? 'health-timeout' : stage;
+      }
       await delay(100);
     }
-    throw new Error('Execution release failed readiness');
+    // Only bounded reason codes escape; dependency errors can contain credentials.
+    throw Object.assign(new Error(`Execution release failed readiness: ${lastReason} (${attempts} observations)`),
+      { code: 'EXECUTION_READINESS_FAILED', reason: lastReason, attempts });
   }
   async function retainRuntime(release, health, restarted = false) {
     if (restarted) { await pin([release.releaseRoot]); return; }
@@ -286,6 +313,24 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
   }
   return {
     inspect,
+    // Observe an already selected retained release. Never switch pointers or
+    // restart any owner to turn an unknown update into an apparent success.
+    async verifyRecovery(release) {
+      await inspect(release);
+      const root = resolve(link, '..', await readlink(link));
+      if (root !== release.releaseRoot) throw new Error('Recovery execution pointer mismatch');
+      const processBefore = await runtimeProcess();
+      if (!processBefore) throw new Error('Recovery execution process unavailable');
+      const before = await coreHealth(coreEndpoint, tokenPath);
+      const dshBefore = await dshHealth(); const engineBefore = await engineHealth();
+      await validate(before);
+      await ready(release, before, dshBefore, engineBefore);
+      if (resolve(link, '..', await readlink(link)) !== root
+        || !sameProcess(processBefore, await runtimeProcess())) throw new Error('Recovery execution changed during verification');
+      return { process: processBefore, core: { pid: before.pid, codexPid: before.codexPid },
+        ...(dshBefore ? { dsh: { pid: dshBefore.pid, enginePid: dshBefore.enginePid } } : {}),
+        ...(engineBefore ? { engineHost: { pid: engineBefore.pid } } : {}) };
+    },
     status() {
       // Concurrent updater readers share one observation, never an old success.
       if (statusOperation) return statusOperation;
