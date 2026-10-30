@@ -218,8 +218,9 @@ export async function startCodexAccountPoolServer(options: {
       progress.stage = "response-stream";
       if (response.body === null) outgoing.end();
       else await pipeline(
-        (incoming.url ?? "/").split("?", 1)[0] === "/v1/responses"
-          && response.ok && response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "text/event-stream"
+        // Providers may omit or mislabel MIME while still sending Responses SSE.
+        // The bounded protocol parser recognizes complete terminal records from bytes.
+        (incoming.url ?? "/").split("?", 1)[0] === "/v1/responses" && response.ok
           ? Readable.from(completedResponsesBody(response.body, event => {
             if (event === "completion") streamEvidence.completionObserved = true;
             else if (event === "eof") streamEvidence.upstreamEof = true;

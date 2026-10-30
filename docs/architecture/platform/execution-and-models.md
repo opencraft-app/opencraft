@@ -637,3 +637,12 @@ into routine updates. Native may retry the model stream within the same Turn;
 that retry is distinct from replaying a tool invocation or submitting a new Turn.
 Older source binaries do not gain this endpoint merely by installing a new Web
 package: callers must check source capability before using the protocol.
+
+
+Responses completion recognition uses complete protocol records on successful
+`/v1/responses` bodies, independently of the provider's Content-Type header.
+Some compatible providers omit or mislabel MIME while returning valid SSE.
+Waiting for HTTP EOF in that case misclassifies a client's normal close after
+`response.completed` as uncertain. The bounded parser preserves incomplete
+records and actual disconnect/read failures as unknown; non-SSE bodies continue
+unchanged to EOF. Historical unknown is never retroactively cleared.
