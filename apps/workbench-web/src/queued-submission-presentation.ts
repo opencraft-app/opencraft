@@ -51,6 +51,7 @@ export function queuedSubmissionPresentation(
     state: submission.state,
     operation: submission.operation,
     actionable: submission.serverSubmissionId !== null,
+    steerable: submission.steerable,
     dismissible: (submission.local === true && submission.state !== "submitting") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable,
     editableContent: restoreQueuedInput(submission.input),

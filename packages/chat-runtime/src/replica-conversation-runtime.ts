@@ -1275,6 +1275,11 @@ export function createReplicaConversationRuntime(
   });
   const listeners = new Set<() => void>();
   const queued = new Map<string, QueuedSubmission>();
+  const queuePromotions = new Map<string, {
+    commandId: string;
+    promise: Promise<TurnId>;
+    cancel: () => void;
+  }>();
   const submissionSenders = new Map<string, MessageSender>();
   const pendingSubmissions = new Map<string, OptimisticSubmissionState>();
   const confirmedSteers = new Map<string, OptimisticSubmissionState>();
@@ -1396,7 +1401,7 @@ export function createReplicaConversationRuntime(
     if (replica.authoritative && queued.size > 0) {
       const acknowledgedClientIds = sourceClientMessageIds(source);
       for (const [commandId, submission] of queued) {
-        if (submission.state === "unknown" && acknowledgedClientIds.has(submission.clientMessageId)) {
+        if (acknowledgedClientIds.has(submission.clientMessageId)) {
           queued.delete(commandId);
         }
       }
@@ -1539,7 +1544,13 @@ export function createReplicaConversationRuntime(
         ),
       ].map((submission) => {
         const sender = submissionSenders.get(submission.clientMessageId);
-        return submission.sender === undefined && sender ? { ...submission, sender: { ...sender } } : submission;
+        return {
+          ...submission,
+          ...(submission.sender === undefined && sender ? { sender: { ...sender } } : {}),
+          operation: queuePromotions.has(submission.clientMessageId) ? "starting" : submission.operation,
+          steerable: submission.serverSubmissionId !== null || (submission.state === "submitting"
+            && replica.authoritative && replica.phase === "live" && submission.error === null),
+        };
       }),
       unconfirmedSteers: [...steeringClaims.values()].filter(
         (item) => item.pausedReason === "steer-delivery-unconfirmed",
@@ -1591,7 +1602,7 @@ export function createReplicaConversationRuntime(
           commandId: intent.commandId,
           clientMessageId: intent.clientMessageId,
           serverSubmissionId: null,
-          input: [],
+          input: optimisticInput(intent),
           preview,
           state: "submitting",
           operation: "idle",
@@ -1646,8 +1657,8 @@ export function createReplicaConversationRuntime(
           queued.set(intent.commandId, {
             commandId: intent.commandId,
             clientMessageId: intent.clientMessageId,
-            serverSubmissionId: null,
-            input: [],
+            serverSubmissionId: receipt.queuedSubmissionId ?? null,
+            input: optimisticInput(intent),
             preview,
             state: "queued",
             operation: "idle",
@@ -1738,6 +1749,104 @@ export function createReplicaConversationRuntime(
     publish();
     queueMicrotask(() => outbox?.wake());
   }
+  const steerConfirmedQueueSubmission = async (previous: QueuedSubmission): Promise<TurnId> => {
+    const queuedSubmissionId = previous.serverSubmissionId;
+    const activeTurnId = snapshot.activeTurn?.turnId;
+    if (queuedSubmissionId === null) {
+      throw new Error(
+        `Queued submission ${queuedSubmissionId} is not steerable`,
+      );
+    }
+    if (activeTurnId === undefined) {
+      const turnId = await config.commands.startQueuedSubmission(
+        config.key,
+        queuedSubmissionId,
+      );
+      authoritativeQueue.delete(queuedSubmissionId);
+      queued.delete(previous.commandId);
+      localRevision += 1;
+      publish();
+      return turnId;
+    }
+    authoritativeQueue.delete(queuedSubmissionId);
+    queued.delete(previous.commandId);
+    pendingSubmissions.set(previous.commandId, {
+      commandId: previous.commandId,
+      clientMessageId: previous.clientMessageId,
+      turnId: activeTurnId,
+      preview: previous.preview,
+      state: "submitting",
+      createdAt: previous.createdAt,
+      error: null,
+      kind: "steer",
+      targetTurnId: activeTurnId,
+      predecessorTurnId: null,
+      input: [...previous.input],
+      attachments: [],
+    });
+    localRevision += 1;
+    publish();
+    try {
+      const turnId = await config.commands.steerQueuedSubmission(
+        config.key,
+        {
+          id: queuedSubmissionId,
+          clientUserMessageId: previous.clientMessageId,
+          input: [...previous.input],
+          createdAt: previous.createdAt,
+          pausedReason: previous.pausedReason,
+        },
+        activeTurnId,
+      );
+      return turnId;
+    } catch (error) {
+      pendingSubmissions.delete(previous.commandId);
+      authoritativeQueue.set(queuedSubmissionId, {
+        ...previous,
+        operation: "idle",
+        pausedReason: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    } finally {
+      localRevision += 1;
+      publish();
+    }
+  };
+  const promotePendingQueueSubmission = (submission: QueuedSubmission): Promise<TurnId> => {
+    const existing = queuePromotions.get(submission.clientMessageId);
+    if (existing) return existing.promise;
+    let cancel!: () => void;
+    let stop = () => {};
+    const custody = new Promise<QueuedSubmission | TurnId>((resolve, reject) => {
+      const fail = (error: Error) => { stop(); reject(error); };
+      const check = () => {
+        if (disposed) { fail(new Error("Conversation runtime is disposed")); return; }
+        // Native history may consume the queue before its add ACK reaches us.
+        for (const frame of snapshot.authoritative ? snapshot.timeline.frames : []) {
+          if (frame.blocks.some(block => block.type === "user-message" && block.clientId === submission.clientMessageId)) {
+            stop(); resolve(frame.turnId); return;
+          }
+        }
+        const confirmed = [...authoritativeQueue.values(), ...queued.values()].find(row =>
+          row.clientMessageId === submission.clientMessageId && row.serverSubmissionId !== null);
+        if (confirmed) { stop(); resolve(confirmed); return; }
+        const pending = snapshot.queuedSubmissions.find(row => row.clientMessageId === submission.clientMessageId);
+        if (!pending || pending.state === "failed" || pending.state === "unknown") {
+          fail(pending?.error ?? new Error("Queued message admission was not confirmed"));
+        }
+      };
+      stop = () => { listeners.delete(check); };
+      cancel = () => fail(new Error("Conversation runtime is disposed"));
+      listeners.add(check);
+      queueMicrotask(check);
+    });
+    const promise = custody.then(result => typeof result === "string" ? result : steerConfirmedQueueSubmission(result))
+      .finally(() => { stop(); queuePromotions.delete(submission.clientMessageId); localRevision++; publish(); });
+    queuePromotions.set(submission.clientMessageId, { commandId: submission.commandId, promise, cancel });
+    localRevision++; publish();
+    return promise;
+  };
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) {
@@ -2072,67 +2181,18 @@ export function createReplicaConversationRuntime(
         publish();
       }
     },
-    async steerQueuedSubmission(queuedSubmissionId) {
-      const previous = authoritativeQueue.get(queuedSubmissionId);
-      const activeTurnId = snapshot.activeTurn?.turnId;
-      if (previous === undefined || previous.serverSubmissionId === null) {
-        throw new Error(
-          `Queued submission ${queuedSubmissionId} is not steerable`,
-        );
-      }
-      if (activeTurnId === undefined) {
-        const turnId = await config.commands.startQueuedSubmission(
-          config.key,
-          queuedSubmissionId,
-        );
-        authoritativeQueue.delete(queuedSubmissionId);
-        localRevision += 1;
-        publish();
-        return turnId;
-      }
-      authoritativeQueue.delete(queuedSubmissionId);
-      pendingSubmissions.set(previous.commandId, {
-        commandId: previous.commandId,
-        clientMessageId: previous.clientMessageId,
-        turnId: activeTurnId,
-        preview: previous.preview,
-        state: "submitting",
-        createdAt: previous.createdAt,
-        error: null,
-        kind: "steer",
-        targetTurnId: activeTurnId,
-        predecessorTurnId: null,
-        input: [...previous.input],
-        attachments: [],
-      });
-      localRevision += 1;
-      publish();
-      try {
-        const turnId = await config.commands.steerQueuedSubmission(
-          config.key,
-          {
-            id: previous.serverSubmissionId,
-            clientUserMessageId: previous.clientMessageId,
-            input: [...previous.input],
-            createdAt: previous.createdAt,
-            pausedReason: previous.pausedReason,
-          },
-          activeTurnId,
-        );
-        return turnId;
-      } catch (error) {
-        pendingSubmissions.delete(previous.commandId);
-        authoritativeQueue.set(queuedSubmissionId, {
-          ...previous,
-          operation: "idle",
-          pausedReason: error instanceof Error ? error.message : String(error),
-          error: error instanceof Error ? error : new Error(String(error)),
-        });
-        throw error;
-      } finally {
-        localRevision += 1;
-        publish();
-      }
+    steerQueuedSubmission(queuedSubmissionId) {
+      const existing = [...queuePromotions.values()].find(item => item.commandId === queuedSubmissionId);
+      if (existing) return existing.promise;
+      const previous = authoritativeQueue.get(queuedSubmissionId)
+        ?? snapshot.queuedSubmissions.find(item => item.commandId === queuedSubmissionId || item.serverSubmissionId === queuedSubmissionId);
+      if (!previous) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is not steerable`));
+      const promotion = queuePromotions.get(previous.clientMessageId);
+      if (promotion) return promotion.promise;
+      if (previous.serverSubmissionId !== null) return steerConfirmedQueueSubmission(previous);
+      if (previous.steerable !== true || previous.operation !== "idle")
+        return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is not steerable`));
+      return promotePendingQueueSubmission(previous);
     },
     dismissFailedSubmission(commandId) {
       if (queued.get(commandId)?.state === "failed") {
@@ -2148,6 +2208,8 @@ export function createReplicaConversationRuntime(
     dispose() {
       if (disposed) return;
       disposed = true;
+      for (const promotion of queuePromotions.values()) promotion.cancel();
+      queuePromotions.clear();
       clearCapacityRetryTimer();
       removeReplicaListener();
       listeners.clear();

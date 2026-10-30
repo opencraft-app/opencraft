@@ -107,6 +107,8 @@ export interface SubmissionReceipt {
   readonly hostId: string;
   readonly threadId: string;
   readonly turnId: string | null;
+  /** Exact server queue custody from an add acknowledgement, before list refresh. */
+  readonly queuedSubmissionId?: string;
   readonly acceptedAt: number;
   readonly replayed: boolean;
   /** Where the Host durably admitted this submission. */

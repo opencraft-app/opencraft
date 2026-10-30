@@ -50,6 +50,24 @@ Reopening a document/process restores locally accepted input when its Runtime is
 reacquired; this is not cross-device delivery, and Web storage may be evicted.
 Background open conversations remain resident for recovery.
 
+## Queue-to-Steer admission continuity
+
+A live authoritative conversation accepts Steer intent on an in-flight queue
+submission before its add acknowledgement. This authority is separate from edit,
+delete and reorder custody. The row immediately becomes busy; the editor stays
+available for another draft and healthy local queue traffic does not remove the
+composer's direct Steer choice. Duplicate promotion requests join the same
+client-message identity until settlement.
+
+ConversationRuntime waits for the exact server queue identity from either
+`thread/queue/add`'s receipt or the authoritative queue notification, then uses
+the existing atomic queue-to-active-turn command (or starts that queue item if
+idle). An older ACK without a queue payload still confirms admission; exact
+custody comes from the subsequent queue baseline rather than an invented ID. Canonical history consumption settles the intent without sending again.
+Failure, unknown delivery and disposal retire the wait without replay. Offline
+waiting input and restored or uncertain delivery keep their existing fences.
+Promotion does not grant server membership or atomic-steering capability.
+
 ## Attachment staging during reconnect
 
 Browser file preparation (including large pastes converted to `pasted-text.txt`)
