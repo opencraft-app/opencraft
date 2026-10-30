@@ -4,7 +4,7 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from 
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AccountPoolUncertainDiagnostic, CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
-import { acquireCodexWriter, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
+import { acquireCodexWriter, parseCodexAuthFile, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -61,6 +61,7 @@ export async function readAccountStorage(directory: string) {
   for (const suffix of ["-wal", "-shm"]) await privateInfo(databasePath + suffix).catch(error => { if (error.code !== "ENOENT") throw error; });
   const db = new DatabaseSync(databasePath, { readOnly: true });
   const tables: { name: string; rows: number; sha256: string }[] = [];
+  const accountIdentities = new Map<string, string>();
   try {
     db.exec("BEGIN");
     if (db.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
@@ -68,6 +69,10 @@ export async function readAccountStorage(directory: string) {
     const schema = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()) {
       const name = String(row.name), rows = db.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`).all();
+      if (name === "pool_accounts") for (const account of rows) {
+        if (typeof account.id !== "string" || typeof account.upstream_account_id !== "string") throw new Error("Invalid account identity");
+        accountIdentities.set(account.id, account.upstream_account_id);
+      }
       tables.push({ name, rows: rows.length, sha256: digest(rows) });
     }
     tables.push({ name: "schema", rows: schema.length, sha256: digest(schema) });
@@ -91,9 +96,11 @@ export async function readAccountStorage(directory: string) {
         const reference = parseCodexAuthFileReference(value)!;
         // A configured reference grants a root reader access; its independent writer keeps ownership.
         const externalInfo = await privateInfo(reference.path, false, true);
-        const external = privateJson(await readFile(reference.path, "utf8"));
-        if (typeof external.tokens?.access_token !== "string" || !external.tokens.access_token) throw new Error("Unreadable external credential");
-        files.push({ path: `external:${digest(reference.path)}`, sha256: await fileDigest(reference.path), mode: externalInfo.mode & 0o777, uid: externalInfo.uid });
+        const expected = accountIdentities.get(relative.slice("secrets/account-".length, -".json".length));
+        if (expected === undefined) throw new Error("Unregistered external credential reference");
+        const external = await readFile(reference.path);
+        parseCodexAuthFile(external.toString("utf8"), expected);
+        files.push({ path: `external:${digest(reference.path)}`, sha256: createHash("sha256").update(external).digest("hex"), mode: externalInfo.mode & 0o777, uid: externalInfo.uid });
       } else if (!relative.startsWith("secrets/account-") || typeof value.accessToken !== "string" || !value.accessToken) {
         throw new Error("Unknown account credential file");
       }

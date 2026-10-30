@@ -457,7 +457,11 @@ must not prevent control, login or account-management service from starting.
 Inference still rereads the external credential and fails closed for that account;
 when its owner restores the file, selection can recover without restarting Core.
 Frozen handoff successors retain strict external credential and sealed-storage
-validation before they can attest readiness or resume admission. Neither path
+validation before they can attest readiness or resume admission. Before sealing,
+the source validates external auth mode, token format and registered account
+identity against the very bytes included in the storage hash. Invalid external
+credentials therefore reject release while the source can still abort its fence;
+they are never sealed into a state that only a failing successor can open. Neither path
 copies a credential, edits the reference, clears unknown work or replays a request.
 
 The service must have read access to the source in its real mount namespace; do not assume root access, copy credentials, relax permissions globally or share the whole `CODEX_HOME`. Reference files use the existing private account-secret directory and file permissions. Removing the account removes its local reference, never the external source. Older readers do not understand references: remove the newly registered external account before rolling back to one, preserving all conversation and source data.

@@ -20,11 +20,16 @@ export function parseCodexAuthFileReference(value: unknown): CodexAuthFileRefere
   return { kind: "codex-auth-file", path: record.path };
 }
 
-export function readCodexAuthFile(reference: CodexAuthFileReference, expectedAccountId?: string): {
+export function readCodexAuthFile(reference: CodexAuthFileReference, expectedAccountId?: string): ReturnType<typeof parseCodexAuthFile> {
+  try { return parseCodexAuthFile(readFileSync(reference.path, "utf8"), expectedAccountId); }
+  catch { throw new Error("Shared Codex credentials are unavailable or do not match this account"); }
+}
+
+/** Validate captured bytes so a storage seal hashes the same credential it checked. */
+export function parseCodexAuthFile(text: string, expectedAccountId?: string): {
   accountId: string; secret: AccountPoolSecret;
 } {
   try {
-    const text = readFileSync(reference.path, "utf8");
     if (text.length > 1024 * 1024) throw new Error();
     const auth = JSON.parse(text);
     const tokens = auth?.tokens;

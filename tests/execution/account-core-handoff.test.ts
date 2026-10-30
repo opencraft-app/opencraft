@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { AccountPoolStore, createCodexAccountPoolLaunch } from "@opencraft/account-pool-host";
+import { AccountPoolStore, CodexAccountService, createCodexAccountPoolLaunch } from "@opencraft/account-pool-host";
 import { accountCoreOwner } from "../../scripts/full-upgrade/account-core-owner.mjs";
 
 const token = "synthetic-private-account-owner-token";
@@ -657,5 +657,49 @@ test("ordinary Core cold boot still refuses invalid Host authentication records"
     const host = (await readdir(join(f.data, "secrets"))).find(name => name.startsWith("host-"))!;
     await writeFile(join(f.data, "secrets", host), JSON.stringify({ hostId: "local-codex", token: "invalid" }), { mode: 0o600 });
     await assert.rejects(f.start(), /Account credential validation failed/);
+  } finally { await f.close(); }
+});
+
+
+test("an open owner rejects invalid external credentials before sealing and remains abortable", async () => {
+  const f = await fixture(20);
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const good = { auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } };
+    await writeFile(auth, JSON.stringify(good), { mode: 0o600 });
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: auth }), { mode: 0o600 });
+    const source = await f.start(); await delay(50);
+    for (const invalid of [
+      { ...good, tokens: { ...good.tokens, account_id: "wrong-account" } },
+      { ...good, auth_mode: "apikey" },
+      { ...good, tokens: { ...good.tokens, access_token: "invalid\ncredential" } },
+    ]) {
+      await writeFile(auth, JSON.stringify(invalid), { mode: 0o600 });
+      const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+      await assert.rejects(source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }));
+      const state = await source.adapter.snapshot();
+      assert.equal(state.handoff.phase, "fenced"); assert.equal(state.pid, source.child.pid);
+      assert.deepEqual(state.handoff.uncertain, []);
+      await source.adapter.abortFence(f.input(state)); assert.equal(await f.account(), 200);
+    }
+    await writeFile(auth, JSON.stringify(good), { mode: 0o600 });
+    const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    await source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }); await f.stop(source.child);
+    const successor = await f.start(), cold = await successor.adapter.coldReady(f.input(await successor.adapter.snapshot()));
+    await successor.adapter.releaseFence(f.input(cold), cold); assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("the frozen account-service startup itself requires external credentials", async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: join(f.root, "missing-auth.json") }), { mode: 0o600 });
+    await assert.rejects(async () => {
+      // Exercise the service boundary directly: no owner storage read can reject
+      // the missing file before the frozen credential validation is reached.
+      const unexpected = await CodexAccountService.start({ ...f.options,
+        ownerHandoff: { admissionOpen: () => false, onUncertain: async () => {} } });
+      await unexpected.close();
+    }, /Account credential validation failed/);
   } finally { await f.close(); }
 });
