@@ -957,3 +957,15 @@ intent so the Web editor's direct failure transition and projected model
 selections retain it too. Editing content, submission settings, or execution
 placement creates a new identity. Retry state belongs to the owning Draft and is retired
 when acceptance settles, the Draft clears, or its controller is disposed.
+
+## Sent user-message quote continuity
+
+The immutable Composer document projects to timeline text with structural quote
+markers and separate top-level paragraphs. Both the optimistic existing-thread
+runtime and the pending/new-thread route use the same core projection; plain
+search and queue previews keep their original flattened contract. Native
+compilation prefixes every quoted line, including blank lines and nested blocks,
+while preserving non-text input entries. The existing user-message document
+renderer supplies the quote rail, with the user's following request outside it.
+Acknowledgement and reopening history retain the same quote boundary; they do
+not add a second quote block or fabricate a link to the source message.
