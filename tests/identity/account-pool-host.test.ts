@@ -1826,3 +1826,46 @@ test(`Responses completion with pending upstream cancellation: ${client}`, async
 });
 
 }
+
+for (const contentType of [undefined, "application/json"] as const) {
+ for (const outcome of ["completed", "client-disconnected", "upstream-failed"] as const) {
+ test(`Responses protocol completion with ${contentType ?? "missing Content-Type"}: ${outcome}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-sse-mime-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const diagnostics: AccountPoolUncertainDiagnostic[] = [];
+  const terminal = 'data: {"type":"response.completed","response":{"id":"resp-mime"}}\n\n';
+  const delta = 'data: {"type":"response.output_text.delta","delta":"fixture"}\n\n';
+  let stream!: ReadableStreamDefaultController<Uint8Array>, cancelled = false;
+  let server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  const abort = new AbortController();
+  try {
+    pool.addAccount({ id: "a", provider: "codex", label: "Fixture", upstreamAccountId: "a", priority: 1, enabled: true },
+      { accessToken: "fixture", refreshToken: null, expiresAt: null });
+    const token = pool.issueHostToken("local");
+    server = await startCodexAccountPoolServer({ proxy: new CodexAccountPoolProxy({ store: pool,
+      upstreamBaseUrl: "https://fixture.example.test", fetch: async (_input, init) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) { stream = controller; init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true }); controller.enqueue(new TextEncoder().encode(outcome === "completed" ? terminal : delta)); },
+        cancel() { cancelled = true; },
+      }), { headers: contentType === undefined ? {} : { "content-type": contentType } }) }),
+      onUncertain: (_route, diagnostic) => { diagnostics.push(diagnostic); } });
+    const response = await fetch(`${server.url}/v1/responses`, { method: "POST", signal: abort.signal,
+      headers: { "x-opencraft-account-pool-token": token }, body: "{}" });
+    if (outcome === "completed") {
+      assert.equal(await within(response.text(), "completion wrongly waited for EOF without SSE MIME"), terminal);
+      assert.equal(cancelled, true);
+    } else {
+      const reader = response.body!.getReader();
+      assert.equal(new TextDecoder().decode((await reader.read()).value), delta);
+      if (outcome === "client-disconnected") await reader.cancel();
+      else { stream.error(new Error("synthetic transport failure")); await assert.rejects(reader.read()); }
+      await within((async () => { while (server!.activeCount() !== 0) await new Promise(resolve => setTimeout(resolve, 1)); })(), "failure receipt not settled");
+    }
+    assert.equal(diagnostics.length, outcome === "completed" ? 0 : 1);
+    if (outcome !== "completed") {
+      assert.equal(diagnostics[0].reason, outcome);
+      assert.equal(diagnostics[0].completionObserved, false);
+    }
+  } finally { abort.abort(); await server?.close(); pool.close(); await rm(root, { recursive: true, force: true }); }
+ });
+ }
+}
