@@ -12,6 +12,7 @@ import { BaseCodeBlockRenderer } from "./renderers/code/code-block";
 import { createImageRenderer } from "./renderers/media/image-renderer";
 import { proseNodeKinds, ProseRenderer } from "./renderers/prose/prose-renderer";
 import { createFileCitationRenderer, createInlineMarkdownFileRenderer, createLinkRenderer, createMediaFileRenderer, createReferenceRenderer, mediaFilePath } from "./renderers/resource-link/resource-link";
+import { createVisualizationRenderer } from "./renderers/visualization/visualization";
 import { TableRenderer } from "./renderers/table/table-renderer";
 import { ChatEnhancementService } from "./services/chat-enhancement-service";
 
@@ -19,6 +20,8 @@ export type { ChatRenderRuntime } from "@opencraft/chat-render-react";
 
 const WebBuiltinRenderers = Object.assign(function WebBuiltinRenderers(ctx: Context): void {
   const remove = [
+    ctx.chatDirectives.register({ name: "visualize", priority: 0,
+      component: createVisualizationRenderer(ctx.chatResourcePolicies) }),
     ctx.chatNodeRenderers.register({
       name: "web-prose",
       priority: 0,

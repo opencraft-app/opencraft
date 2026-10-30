@@ -1111,5 +1111,10 @@
   "modelPolicy.efforts": "Blocked thinking levels",
   "modelPolicy.save": "Save",
   "modelPolicy.error": "Unable to save restrictions. Reload and try again.",
-  "modelPolicy.hint": "Some options are disabled by your administrator."
+  "modelPolicy.hint": "Some options are disabled by your administrator.",
+  "chat.visualization.title": "Visualisasi",
+  "chat.visualization.navigationBlocked": "Navigasi visualisasi tidak dibenarkan",
+  "chat.visualization.unavailable": "Visualisasi sebaris tidak tersedia",
+  "chat.visualization.openFile": "Buka fail",
+  "chat.visualization.loading": "Memuatkan visualisasi…"
 }

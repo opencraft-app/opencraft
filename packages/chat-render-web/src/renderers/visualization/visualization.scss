@@ -1,0 +1,14 @@
+@use "@opencraft/design-system/controls.web" as controls;
+@use "../../styles/wide-content";
+.chat-visualization {
+  width: 100%;
+  min-width: 0;
+  &[data-wide-block="true"] {
+    @include wide-content.bounds;
+    --wide-block-width: var(--wide-block-default-max-width);
+    width: var(--wide-block-width);
+    margin-left: calc((100% - var(--wide-block-width)) / 2);
+  }
+  button { @include controls.quiet-control; }
+  iframe { display: block; width: 100%; border: 0; background: transparent; }
+}
