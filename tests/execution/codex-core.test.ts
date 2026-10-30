@@ -12,7 +12,6 @@ import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@o
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src/main.js";
 import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
-import { resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
@@ -579,7 +578,7 @@ test("Headless core mode retains overlay stores, sender and unique owner across 
     const initialized = await a.rpc("a", "initialize");
     assert.equal(initialized.capabilities.extensions["opencraft/bot-conversations"], undefined);
     assert.equal(initialized.capabilities.extensions["vela/bot-conversations"], undefined);
-    assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === resolveStoreMigrations("opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS).at(-1)!.version));
+    assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version));
     assert.ok(!a.engine.storageOutcomes.some(row => row.name === "account-pool"), "core is the sole account owner");
     const { thread } = await a.rpc("a", "thread/start", { cwd: "/synthetic" });
     const sendId = "verified-send";
