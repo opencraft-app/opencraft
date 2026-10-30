@@ -34,7 +34,9 @@ installation or remote authentication bridge. `dev:web` remains frontend-only.
 Each checkout installs its own dependencies. Data defaults to
 `~/.opencraft/dev-local` (override `OPENCRAFT_DEV_DATA_DIRECTORY`); the existing
 storage owner claim rejects simultaneous writers. Startup failure and shutdown
-close both the Web server and the Host and release the claim.
+close both the Web server and the Host and release the claim. The runner uses
+`node --import tsx` so the tsx CLI signal relay cannot force termination before
+asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 
 ## Repository-owned Electron source fork
 

@@ -11,16 +11,18 @@ let child: ReturnType<typeof spawn> | undefined;
 let host: Awaited<ReturnType<typeof import('../apps/local-agent-host/src/main.js').startLocalAgentHost>> | undefined;
 let vite: import('vite').ViteDevServer | undefined;
 let releaseStorage: (() => Promise<void>) | undefined;
-let closing = false;
-async function close() {
-  if (closing) return;
-  closing = true;
-  child?.kill('SIGTERM');
-  try { await vite?.close(); } finally {
-    try { await host?.close(); } finally { await releaseStorage?.(); }
-  }
+let closeOperation: Promise<void> | undefined;
+function close(): Promise<void> {
+  return closeOperation ??= (async () => {
+    child?.kill('SIGTERM');
+    try { await vite?.close(); } finally {
+      try { await host?.close(); } finally { await releaseStorage?.(); }
+    }
+  })();
 }
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => {
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {
+  // npm/tsx and the terminal may forward the same shutdown more than once.
+  // Every signal joins the same cleanup before any handler exits the process.
   void close().then(() => process.exit(0), () => process.exit(1));
 });
 async function run(script: string) {

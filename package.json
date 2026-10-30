@@ -60,7 +60,7 @@
     "generate:typography": "node scripts/generate-typography.mjs",
     "check:typography": "node scripts/generate-typography.mjs --check && node scripts/check-ui-typography.mjs && node scripts/check-conversation-activity.mjs",
     "dev": "npm run dev:local",
-    "dev:local": "tsx scripts/dev-local.ts",
+    "dev:local": "node --import tsx scripts/dev-local.ts",
     "dev:web": "npm run build:preview-bridge && npm run dev --workspace @opencraft/workbench-web",
     "dev:expo": "npm run start --workspace @opencraft/mobile --",
     "dev:expo:web": "npm run web --workspace @opencraft/mobile --",

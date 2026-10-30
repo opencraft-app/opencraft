@@ -11,7 +11,7 @@ import { optionalWebAssets } from "./optional-web-assets";
 import { productPublicAssets } from "./product-public-assets.mjs";
 import { resolveServerProductEntry, resolveClientProductEntry, resolveEmbeddedProductEntry } from "./server-product-entry.mjs";
 import { randomBytes } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
@@ -423,7 +423,9 @@ export function createWorkbenchWebConfig(
         "@opencraft/remote-interaction",
         "@opencraft/remote-interaction/touch",
         "@opencraft/remote-interaction/websocket",
-        "@opencraft/browser-core/metadata-limits",
+        // Some source compositions export this optional CommonJS leaf.
+        ...(existsSync(fileURLToPath(new URL("../../packages/browser-core/src/metadata-limits.cjs", import.meta.url)))
+          ? ["@opencraft/browser-core/metadata-limits"] : []),
         // Deep CJS shim entries need explicit prebundling with noDiscovery.
         "core-js/es/iterator/index.js",
         "core-js/es/promise/with-resolvers.js",
