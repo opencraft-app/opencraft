@@ -16,6 +16,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
   let accounts: CodexAccountService | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let closing: Promise<void> | undefined;
+  let interrupting = false, maintenanceInterrupted = false;
   const close = () => closing ??= (async () => {
     let phase = "control";
     const startedAt = Date.now();
@@ -38,18 +39,32 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     control = await startControlServer(options.endpoint, options.authToken, async request => {
       if (request.method === "GET" && request.url === "/owner-handoff") {
         return { status: 200, value: { pid: process.pid, handoff: owner.snapshot(),
-          proof: owner.inspect(accounts?.handoffObservation()) } };
+          proof: owner.inspect(accounts?.handoffObservation()), maintenance: { interrupting, interrupted: maintenanceInterrupted } } };
       }
       if (request.method === "POST" && request.url === "/owner-handoff") {
         try {
           const input = await readControlJson(request);
+          if (interrupting) throw new Error("Account maintenance interruption is running");
+          if (input.action === "maintenance-interrupt") {
+            // Do not hold owner.transition while waiting: onUncertain must use
+            // that same queue to durably account for interrupted requests.
+            await owner.transition(async () => owner.checkMaintenance(input as unknown as AccountOwnerExpectation));
+            if (!accounts) throw new Error("Account writer already released");
+            interrupting = true;
+            try { await accounts.interruptForMaintenance(); maintenanceInterrupted = true; }
+            finally { interrupting = false; }
+            return { status: 200, value: { pid: process.pid, handoff: owner.snapshot(), proof: owner.inspect(accounts.handoffObservation()) } };
+          }
           return await owner.transition(async () => {
             const expected = input as unknown as AccountOwnerExpectation;
             let ready;
             switch (input.action) {
-              case "fence": await owner.fence(expected); break;
-              case "abort": await owner.abortFence(expected); break;
+              case "fence": await owner.fence(expected); maintenanceInterrupted = false; break;
+              case "abort": await owner.abortFence(expected); maintenanceInterrupted = false; break;
               case "inspect": owner.checkInspection(expected); break;
+              case "maintenance-accept-unknown":
+                if (!maintenanceInterrupted || !accounts) throw new Error("Account maintenance interruption is unconfirmed");
+                await owner.acceptMaintenanceUnknown(expected, accounts.handoffObservation().activeCount); break;
               case "release":
                 if (!accounts) throw new Error("Account writer already released");
                 await owner.release(expected, accounts.handoffObservation(), () => accounts!.retainedState(), async () => {

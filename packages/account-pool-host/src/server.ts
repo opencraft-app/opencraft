@@ -116,7 +116,7 @@ export interface AccountPoolUncertainDiagnostic {
   requestId: string;
   method: string;
   stage: string;
-  reason: "client-disconnected" | "upstream-failed" | "response-stream-failed";
+  reason: "client-disconnected" | "upstream-failed" | "response-stream-failed" | "maintenance-interrupted";
   acceptedAt: number;
   sentAt?: number;
   firstAt: number;
@@ -160,13 +160,13 @@ export async function startCodexAccountPoolServer(options: {
   readonly port?: number;
   readonly admissionOpen?: () => boolean;
   readonly onUncertain?: (route: string, diagnostic: AccountPoolUncertainDiagnostic) => void | Promise<void>;
-}): Promise<{ readonly url: string; activeCount(): number; close(): Promise<void> }> {
+}): Promise<{ readonly url: string; activeCount(): number; interruptForMaintenance(): Promise<void>; close(): Promise<void> }> {
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "::1") throw new TypeError("Account Pool server must bind to loopback");
   let consecutiveProxyFailures = 0;
   const upstreamLimiter = createConcurrencyLimiter(16);
-  const active = new Map<Promise<void>, { method: string; route: string; startedAt: number; stage: string }>();
-  const handle = async (incoming: IncomingMessage, outgoing: ServerResponse, progress: { stage: string }): Promise<void> => {
+  const active = new Map<Promise<void>, { method: string; route: string; startedAt: number; stage: string; interrupt(): void }>();
+  const handle = async (incoming: IncomingMessage, outgoing: ServerResponse, progress: { stage: string; interrupt(): void }): Promise<void> => {
     const requestStartedAt = Date.now();
     const requestId = randomUUID();
     const correlation = requestCorrelation(incoming);
@@ -180,6 +180,12 @@ export async function startCodexAccountPoolServer(options: {
     const abort = new AbortController();
     const onAborted = () => { firstFailure ??= "client-disconnected"; abort.abort(new Error("Account Pool client disconnected")); };
     const onOutgoingClose = () => { if (!outgoing.writableEnded) onAborted(); };
+    progress.interrupt = () => {
+      firstFailure ??= "maintenance-interrupted";
+      abort.abort(new Error("Account Pool maintenance interruption"));
+      // A partial body is not governed by the upstream AbortSignal.
+      incoming.destroy(); outgoing.destroy();
+    };
     incoming.once("aborted", onAborted);
     outgoing.once("close", onOutgoingClose);
     try {
@@ -276,7 +282,7 @@ export async function startCodexAccountPoolServer(options: {
     const progress = {
       method: ["GET", "POST", "HEAD", "DELETE"].includes(incoming.method ?? "GET") ? incoming.method ?? "GET" : "other",
       route: ["/v1/responses", "/v1/models", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(path) ? path : "other",
-      startedAt: Date.now(), stage: "read-body",
+      startedAt: Date.now(), stage: "read-body", interrupt: () => {},
     };
     const operation = handle(incoming, outgoing, progress);
     active.set(operation, progress);
@@ -298,6 +304,13 @@ export async function startCodexAccountPoolServer(options: {
   return {
     url: `http://${displayHost}:${address.port}`,
     activeCount: () => active.size,
+    interruptForMaintenance: async () => {
+      if (options.admissionOpen?.() !== false) throw new Error("Account Pool maintenance requires fenced admission");
+      const pending = [...active.entries()];
+      for (const [, request] of pending) request.interrupt();
+      // Includes onUncertain persistence. Failure must not become a drain proof.
+      await Promise.all(pending.map(([operation]) => operation));
+    },
     close: () => closing ??= (async () => {
       // Existing native Turns may need another model request while a different
       // Turn is still streaming. Keep accepting until the proxy is idle; then

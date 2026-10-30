@@ -606,3 +606,34 @@ metadata, credentials, response content or raw error strings. Old id/route-only
 records remain unchanged; cold handoff preserves each entire record, including
 optional evidence, in its exact historical manifest. These additions do not
 change admission, replay, cancellation or uncertainty classification.
+
+
+### Explicit account Core maintenance interruption
+
+Routine account Core shutdown still waits for active inference. A necessary
+migration may explicitly fence admission and invoke `maintenance-interrupt` on
+`/owner-handoff`, using the current source owner, epoch, operation and fence.
+This aborts accepted HTTP streams, including partially received request bodies,
+and waits for their handlers to persist any dispatched mutation as unknown.
+Its diagnostic reason is `maintenance-interrupted`; it never certifies delivery
+or replays a POST. It does not terminate the AppServer or Native process.
+The interruption runs outside the owner transition queue so uncertainty writes
+can finish. Concurrent lifecycle actions are rejected while it runs.
+
+The operator reads the final exact unknown list, then submits it explicitly as
+`historicalUnknown` with `maintenance-accept-unknown`. This action is available
+only after a completed maintenance interruption on the fenced source, and only
+when all account handlers have settled. It does not clear or rewrite unknown;
+it binds the exact list to the existing release/cold-ready/resume protocol.
+New uncertainty or a changed list invalidates release as before. Abort before
+release restores the source listener using current data. Account mutations and
+credential maintenance must finish recording their own results before release;
+this proxy interruption never abandons their storage writes.
+
+Callers hold deployment locks continuously across interruption, release,
+successor activation and any rollback. Natural drain has a caller-owned budget
+(e.g. 30 seconds); this API does not introduce an automatic interruption timeout
+into routine updates. Native may retry the model stream within the same Turn;
+that retry is distinct from replaying a tool invocation or submitting a new Turn.
+Older source binaries do not gain this endpoint merely by installing a new Web
+package: callers must check source capability before using the protocol.

@@ -141,6 +141,13 @@ export class CodexAccountService {
     return operation;
   }
 
+  async interruptForMaintenance(): Promise<void> {
+    if (this.options.ownerHandoff?.admissionOpen() !== false || this.closing) {
+      throw new Error("Account maintenance requires a fenced live owner");
+    }
+    await this.server!.interruptForMaintenance();
+  }
+
   close(): Promise<void> {
     return this.closing ??= (async () => {
       let phase = "account-requests";

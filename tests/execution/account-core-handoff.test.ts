@@ -10,18 +10,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { AccountPoolStore } from "@opencraft/account-pool-host";
+import { AccountPoolStore, createCodexAccountPoolLaunch } from "@opencraft/account-pool-host";
 import { accountCoreOwner } from "../../scripts/full-upgrade/account-core-owner.mjs";
 
 const token = "synthetic-private-account-owner-token";
-async function fixture() {
+async function fixture(streamDelayMs = 250, nativeCompletion = false) {
   const root = await mkdtemp(join(tmpdir(), "oc-acct-")), children: ChildProcess[] = [];
   const data = join(root, "data"); await mkdir(data, { mode: 0o700 });
   const store = new AccountPoolStore({ databasePath: join(data, "account-pool.sqlite"), secretsDirectory: join(data, "secrets") });
   store.addAccount({ id: "a", provider: "codex", label: "synthetic", upstreamAccountId: "a", priority: 0, enabled: true },
     { accessToken: "synthetic-access", refreshToken: null, expiresAt: null });
   const hostToken = store.issueHostToken("local-codex"); store.close();
-  let consumeCalls = 0;
+  let consumeCalls = 0, modelCalls = 0;
   const upstream = createServer((req, res) => {
     if (req.url === "/usage") { res.end('{"plan_type":"pro"}'); return; }
     if (req.url === "/images/generations") { res.end('{"ok":true}'); return; }
@@ -29,8 +29,27 @@ async function fixture() {
       { id: "credit-a", status: "available", is_supported_by_plan: true, reset_type: "codex_rate_limits", expires_at: null },
     ] })); return; }
     if (req.url === "/reset-credits/consume") { consumeCalls++; res.destroy(); return; }
+    modelCalls++;
     res.writeHead(200, { "content-type": "text/event-stream" });
-    res.write('data: first\n\n'); setTimeout(() => res.end('data: last\n\n'), 250);
+    if (nativeCompletion) {
+      const response = { id: "resp_fixture", object: "response", status: "in_progress", output: [] };
+      res.write(`data: ${JSON.stringify({ type: "response.created", response })}\n\n`);
+      if (modelCalls > 1) {
+        const item = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
+          content: [{ type: "output_text", text: "OK", annotations: [] }] };
+        for (const event of [
+          { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+          { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "OK" },
+          { type: "response.output_item.done", output_index: 0, item },
+          { type: "response.completed", response: { ...response, status: "completed", output: [item],
+            usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+        ]) res.write(`data: ${JSON.stringify(event)}\n\n`);
+        res.end();
+      }
+      return;
+    }
+    res.write('data: first\n\n'); const timer = setTimeout(() => res.end('data: last\n\n'), streamDelayMs);
+    res.once("close", () => clearTimeout(timer));
   });
   await new Promise<void>(r => upstream.listen(0, "127.0.0.1", r));
   const socket = join(root, "account.sock"), runtime = join(root, "app.sock");
@@ -77,7 +96,7 @@ async function fixture() {
     const code = await new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
     return { code, output, errors };
   }
-  return { root, data, start, stop, model, account, accountRpc, maintenance, consumeCalls: () => consumeCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
+  return { root, data, options, hostToken, start, stop, model, account, accountRpc, maintenance, consumeCalls: () => consumeCalls, modelCalls: () => modelCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
 }
 
 test("split account handoff drains full streams, freezes account RPC, preserves image affinity and repeats across owners", async () => {
@@ -474,4 +493,112 @@ test("legacy-shaped maintenance keeps exact unknown responsibility and refuses c
     await candidate.adapter.releaseFence(f.input(cold), cold);
     assert.deepEqual((await candidate.adapter.snapshot()).handoff.uncertain, snapshot.handoff.uncertain);
   } finally { await f.close(); }
+});
+
+
+test("explicit maintenance interrupts a live response, durably carries every unknown and resumes admission without replay", async () => {
+  const f = await fixture(60_000);
+  try {
+    const first = await f.start(), lost = await f.model(); await lost.body!.cancel();
+    let state: any;
+    for (let n = 0; n < 200; n++) {
+      state = await first.adapter.snapshot();
+      if (state.handoff.uncertain.length === 1 && state.proof.counts.proxy === 0) break;
+      await delay(10);
+    }
+    const historical = state.handoff.uncertain;
+    assert.equal(historical.length, 1);
+    const live = await f.model(), body = live.text();
+    // The rejection is observed immediately to avoid an unhandled client error.
+    const interruptedBody = body.then(() => false, () => true);
+    await assert.rejects(first.adapter.interruptForMaintenance(f.input(state)));
+    const fence = await first.adapter.acquireFence({ ...f.input(state), historicalUnknown: historical });
+    assert.ok(fence.proof.counts.proxy > 0);
+    const started = Date.now();
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fence));
+    assert.ok(Date.now() - started < 5000);
+    assert.equal(await interruptedBody, true);
+    assert.equal(interrupted.proof.counts.proxy, 0);
+    assert.equal(interrupted.proof.coverage, "unknown", "operator must explicitly accept the final exact list");
+    const exact = interrupted.handoff.uncertain;
+    assert.equal(exact.length, 2);
+    assert.deepEqual(exact[0], historical[0]);
+    assert.equal(exact[1].diagnostic.reason, "maintenance-interrupted");
+    assert.equal(JSON.parse(await readFile(join(f.data, "account-handoff.json"), "utf8")).uncertain.length, 2);
+    await assert.rejects(first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: historical }));
+    const carried = await first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: exact });
+    assert.equal(carried.proof.activeCount, 0);
+    await first.adapter.releaseWriter({ ...f.input(carried), proof: carried.proof.identity });
+    await f.stop(first.child);
+    const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, exact);
+    await next.adapter.releaseFence(f.input(cold), cold);
+    assert.deepEqual((await next.adapter.snapshot()).handoff.uncertain, exact);
+    assert.equal(f.modelCalls(), 2, "handoff must not replay the interrupted POST");
+    assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("maintenance interruption can abort back to the same owner without losing unknown or disabling its listener", async () => {
+  const f = await fixture(60_000);
+  try {
+    const first = await f.start(), live = await f.model(), body = live.text().catch(() => undefined);
+    const fence = await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fence));
+    await body;
+    assert.equal(interrupted.handoff.uncertain.length, 1);
+    await first.adapter.abortFence(f.input(interrupted));
+    assert.equal(await f.account(), 200);
+    const response = await f.model(); assert.equal(response.status, 200); await response.body!.cancel();
+    assert.equal(f.modelCalls(), 2);
+  } finally { await f.close(); }
+});
+
+
+test("a real Native turn automatically reconnects after Core maintenance without resubmitting the turn", {
+  skip: !process.env.OPENCRAFT_TEST_CODEX_EXECUTABLE, timeout: 60_000,
+}, async () => {
+  const f = await fixture(60_000, true);
+  let native: ChildProcess | undefined;
+  try {
+    const first = await f.start();
+    const launch = createCodexAccountPoolLaunch({ baseUrl: `http://127.0.0.1:${f.options.proxyPort}`, hostToken: f.hostToken });
+    await mkdir(join(f.root, "native-home"), { mode: 0o700 });
+    native = spawn(process.env.OPENCRAFT_TEST_CODEX_EXECUTABLE!, ["exec", ...launch.args,
+      "-c", "model_providers.opencraft-account-pool.requires_openai_auth=false",
+      "-c", 'model="fixture"', "--json", "--skip-git-repo-check", "-C", f.root, "Say OK"], {
+      cwd: f.root, env: { PATH: process.env.PATH, HOME: f.root, CODEX_HOME: join(f.root, "native-home"), ...launch.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "", errors = "";
+    native.stdout!.on("data", data => { output += data; });
+    native.stderr!.on("data", data => { errors += data; });
+    const finished = new Promise<number | null>((resolve, reject) => { native!.once("exit", resolve); native!.once("error", reject); });
+    for (let n = 0; n < 1000 && f.modelCalls() === 0 && native.exitCode === null; n++) await delay(10);
+    assert.equal(f.modelCalls(), 1, errors);
+    const before = await first.adapter.snapshot();
+    const fenced = await first.adapter.acquireFence({ ...f.input(before), historicalUnknown: before.handoff.uncertain });
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fenced));
+    const exact = interrupted.handoff.uncertain;
+    assert.equal(exact.length, 1);
+    assert.equal(exact[0].diagnostic.reason, "maintenance-interrupted");
+    const carried = await first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: exact });
+    await first.adapter.releaseWriter({ ...f.input(carried), proof: carried.proof.identity });
+    await f.stop(first.child);
+    const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    await next.adapter.releaseFence(f.input(cold), cold);
+    const exit = await Promise.race([finished, delay(20_000, undefined, { ref: false }).then(() => "timeout")]);
+    assert.equal(exit, 0, errors + output);
+    const events = output.trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(events.filter(event => event.type === "turn.started").length, 1);
+    assert.equal(events.filter(event => event.type === "turn.completed").length, 1);
+    assert.ok(events.some(event => event.type === "item.completed" && event.item?.text === "OK"));
+    assert.equal(f.modelCalls(), 2, "Native retries the model stream; Core never replays a tool or submits a new Turn");
+    assert.deepEqual((await next.adapter.snapshot()).handoff.uncertain, exact);
+  } finally {
+    if (native && native.exitCode === null && native.signalCode === null) {
+      native.kill("SIGKILL"); await once(native, "exit");
+    }
+    await f.close();
+  }
 });
