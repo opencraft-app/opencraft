@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "toolMemoryHighMiB": 12288,
+  "toolMemoryMaxMiB": 16384,
+  "toolPidsMax": "max",
+  "generationUnitPattern": "opencraft-codex-*.service",
+  "nativeExecutableNames": ["codex"]
+}

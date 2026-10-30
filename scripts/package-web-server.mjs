@@ -118,6 +118,12 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
         ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
     }
+    // Opt-in deployment tooling only; packaging never changes a host unit or policy.
+    await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
+    await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));
+    await cp(join(repositoryRoot, 'config/tool-memory-guard.json'), join(packageRoot, 'runtime/tool-memory-guard.sample.json'));
+    await chmod(join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'), 0o755);
+    manifest.bin['opencraft-tool-memory-prepare'] = 'runtime/prepare-tool-memory-guard.mjs';
     await buildPiShellRuntime(join(packageRoot, 'execution'));
     if (executionProfile === 'headless') {
       await packageBrowserRuntime(join(packageRoot, 'runtime/browser'));

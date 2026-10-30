@@ -27,6 +27,30 @@ export interface GenerationSupervisor {
   processesQuiet(identity: GenerationProcessIdentity): Promise<boolean>;
 }
 
+export async function collectDelegatedOwnerPids(root: string, io = {
+  members: (path: string) => readFile(`${path}/cgroup.procs`, "utf8"),
+  children: async (path: string) => (await readdir(path, { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name),
+}): Promise<Set<number> | null> {
+  const snapshot = async () => {
+    const records: [string, string[], number[]][] = [];
+    const members = new Set<number>();
+    const collect = async (path: string): Promise<void> => {
+      const children = (await io.children(path)).sort();
+      const pids = (await io.members(path)).trim().split(/\s+/u).filter(Boolean).map(Number).sort((a, b) => a - b);
+      for (const pid of pids) {
+        if (!Number.isSafeInteger(pid) || pid < 1) throw new Error("Invalid delegated cgroup member");
+        members.add(pid);
+      }
+      records.push([path, children, pids]);
+      for (const child of children) await collect(`${path}/${child}`);
+    };
+    await collect(root);
+    return { signature: JSON.stringify(records), members };
+  };
+  const first = await snapshot(), second = await snapshot();
+  return first.signature === second.signature ? second.members : null;
+}
+
 /** Units are siblings of the routing owner, so its replacement cannot kill native tasks. */
 export class SystemdGenerationSupervisor implements GenerationSupervisor {
   private readonly prefix: string;
@@ -161,6 +185,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   async processesQuiet(identity: GenerationProcessIdentity): Promise<boolean> {
     const pending = [identity.nativePid];
     let launcherSeen = !identity.launcher;
+    const allowed = new Set([identity.ownerPid, identity.nativePid]);
     const nativeDirectory = (await readlink(`/proc/${identity.nativePid}/exe`)).replace(/\/[^/]+$/u, "");
     while (pending.length) {
       const parent = pending.pop()!;
@@ -182,8 +207,17 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         }
         const codeModeDirectory = identity.launcher ? identity.launcher.childExecutable.replace(/\/[^/]+$/u, "") : nativeDirectory;
         if (!launcherChild && !(moduleIndex >= 0 && args[moduleIndex + 1] === "agent.transports.hermes_tools_mcp_server") && executable !== `${codeModeDirectory}/codex-code-mode-host`) return false;
+        allowed.add(Number(child));
         pending.push(Number(child));
       }
+    }
+    // A delegated tool may have daemonized and lost its Native parent. Keep
+    // retirement fail-closed over the whole owning service, not just the tree.
+    const relative = (await readFile(`/proc/${identity.nativePid}/cgroup`, "utf8")).trim().match(/^0::(\/[^\n]+)$/mu)?.[1];
+    const delegated = relative?.match(/^(\/.*\.service)\/app(?:\/.*)?$/u)?.[1];
+    if (delegated) {
+      const members = await collectDelegatedOwnerPids(`/sys/fs/cgroup${delegated}`);
+      if (!members || [...members].some(pid => !allowed.has(pid))) return false;
     }
     return launcherSeen;
   }
