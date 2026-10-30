@@ -124,9 +124,7 @@
     --size-icon-navigation: var(--size-application-navigation-icon);
   }
   .shell-sidebar__rail-footer .shell-navigation__entrance {
-    height: var(--size-application-navigation-hit-min);
-    min-height: var(--size-application-navigation-hit-min);
-    padding: 0;
+    @include controls.application-navigation-icon-control;
     .sidebar-account__avatar {
       width: calc(var(--size-application-navigation-icon) + var(--spacing));
       height: calc(var(--size-application-navigation-icon) + var(--spacing));

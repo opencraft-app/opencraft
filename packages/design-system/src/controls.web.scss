@@ -110,6 +110,14 @@
   &[aria-current="page"] { color: var(--color-text); }
 }
 
+// Icon-only application entrances share the rail's complete square hit area.
+@mixin application-navigation-icon-control {
+  @include application-navigation-control;
+  height: var(--size-application-navigation-hit-min);
+  min-height: var(--size-application-navigation-hit-min);
+  padding: 0;
+}
+
 // Footer entrances are sidebar items, not raised buttons. Keep the resting
 // row quiet; open/pinned states use the same soft fill as navigation rows.
 @mixin sidebar-entrance {

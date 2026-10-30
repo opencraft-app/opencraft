@@ -595,3 +595,8 @@ writable directory. Background reconciliation preserves row owners, draft,
 focus, menus and scrolling. `OPENCRAFT_SMOKE_CATALOG_LIVE_ONLY=1` on the existing
 `smoke-sidebar-thread-catalog` consumer checks blocked-page creation, late-read
 retention, removal and draft/focus in both themes.
+
+Icon-only application footer entrances select the shared
+`application-navigation-icon-control` role. Its design-system owner constrains
+height, minimum height and padding; Shell consumes density tokens without
+redeclaring those shared-control properties.
