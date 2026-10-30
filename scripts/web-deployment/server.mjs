@@ -1,3 +1,4 @@
+import { verifyCurrentRecovery } from './recover-current.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { upgradeBridge } from './full-upgrade.mjs';
 import { atomicJson as durableJson } from '../full-upgrade/durable.mjs';
@@ -232,7 +233,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         retire(candidate);
         if (execution) {
           try { await execution.apply(persisted.current); }
-          catch { throw new Error(`${error.message}; execution rollback failed; inspect the execution service`); }
+          catch (rollbackError) { throw new Error(`${error.message}; execution rollback failed (${rollbackError.code === 'EXECUTION_READINESS_FAILED' ? rollbackError.reason : 'execution-rollback-error'}); inspect the execution service`); }
         }
         throw error;
       }
@@ -389,6 +390,37 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             json(response, 202, { ok: true, jobId: persisted.job.id }); return;
           }
           if (operation || busy(persisted.job) || checking) { json(response, 409, { error: 'Another update operation is running' }); return; }
+          if (pathname === `${WEB_UPDATE_PATH}/recover-current`) {
+            // Reserve synchronously before any verification await. The server
+            // already owns the deployment writer lock; updates/handoffs wait.
+            if (!input || Object.keys(input).some(k => !['jobId', 'version', 'buildId'].includes(k))
+              || input.jobId !== persisted.job?.id || persisted.job?.phase !== 'failed'
+              || input.version !== persisted.current.version || input.buildId !== persisted.current.buildId) {
+              json(response, 409, { error: 'recovery-identity-mismatch' }); return;
+            }
+            if (recoveryMarker && existsSync(recoveryMarker)
+              && request.headers['x-opencraft-recovery-id'] !== readFileSync(recoveryMarker, 'utf8').trim()) {
+              json(response, 409, { error: 'Managed recovery maintenance is active' }); return;
+            }
+            const expected = persisted; const worker = active;
+            operation = (async () => {
+              const verified = await verifyCurrentRecovery({ directory, persisted: expected, execution,
+                trust: fullReleaseTrust, input,
+                active: () => !closed && active === worker && worker.alive && worker.release.releaseRoot === expected.current.releaseRoot });
+              // Commit evidence before the terminal child receipt. Either crash
+              // gap stays unknown and can be retried with the same exact job.
+              await writeDeploymentState(statePath, verified.next); persisted = verified.next;
+              await durableJson(join(directory, 'upgrade-children', input.jobId + '.json'), verified.child);
+              try { await upgrade?.({ action: 'web-child', operationId: input.jobId }); } catch { /* durable owner receipt reconciles later */ }
+            })().catch(async error => {
+              // Preserve the original install/rollback error and all unknown
+              // receipts. Never persist arbitrary dependency exception text.
+              persisted = { ...persisted, job: { ...persisted.job, recoveryError: /^recovery-(verifier-unavailable|identity-mismatch|child-mismatch|retained-identity-mismatch|retained-verification-failed|execution-verification-failed|owner-changed)$/.test(error.message) ? error.message : 'recovery-verification-failed' } };
+              await writeDeploymentState(statePath, persisted);
+            }).catch(() => console.error('[opencraft update] Recovery receipt requires inspection'))
+              .finally(() => { operation = null; });
+            json(response, 202, { ok: true, jobId: input.jobId }); return;
+          }
           if (await webRecoveryRequired(true)) { json(response, 409, { error: 'local-recovery-required' }); return; }
           // Recheck admission after the asynchronous recovery observation.
           if (pathname === `${WEB_UPDATE_PATH}/install` && persisted.job && input?.version === persisted.job.version

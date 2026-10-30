@@ -545,3 +545,35 @@ require a new release identity. A failed archive build must not reinstall or
 roll back a healthy running version. Consumers without this capability retain
 the existing archive installation path. Deployments must promote the pinned
 bootstrap once using a verified complete package before selecting this path.
+
+
+### Verified recovery of an uncertain Web rollback
+
+A failed installation whose execution rollback also failed remains unknown even
+when the retained release later becomes healthy. `page-reconcile` imports durable
+owner receipts; it does not repair processes or invent a successful rollback.
+
+The authenticated same-origin JSON `POST /__opencraft_updates/recover-current`
+accepts only the original failed `jobId` and exact retained `version`/`buildId`.
+It reserves the existing Web transaction writer and verifies the signed retained
+files, current revocations and replay watermark, selected execution pointer,
+running payload, gateway kernel process identity and stable Core/DSH/Engine Host
+identities. The active Web worker and persisted state must remain unchanged.
+Maintenance markers retain their existing exact-controller header requirement.
+No installation, pointer switch, service restart, snapshot restore or replay
+watermark reduction occurs in this operation.
+
+The owner persists recovery evidence alongside the original failure before
+writing the separate terminal child receipt. A crash between those writes stays
+unknown and can be retried for the same job. The upgrade agent binds both records
+to the retained signed identity and projects `rolled-back` with a `not-applied`
+receipt for the failed candidate. Missing or mismatching evidence remains unknown.
+`node scripts/recover-server-local.mjs --url <loopback> --state-directory <state>
+--origin <public-origin> --job-id <failed-job> --version <retained-version>
+--build-id <retained-build>` uses the existing local administrator key without
+printing it. The fixed Web handler must first support this endpoint; installing
+a regular application payload alone does not replace that handler or the agent.
+
+Execution readiness now uses the same per-request health budget as status
+observation and preserves a bounded last failure reason and observation count.
+Dependency errors and raw response bodies are never copied into that diagnostic.
