@@ -15,7 +15,7 @@ function quotedIntent(document: ComposerDocument) {
   return composer.createSubmitIntent();
 }
 const quote: ComposerDocument = { version: 1, blocks: [
-  { type: "quote", children: [{ type: "paragraph", children: [{ type: "text", text: "ProvisionInstanceBotIM 仍为 CREATED" }] }] },
+  { type: "quote", children: [{ type: "paragraph", children: [{ type: "text", text: "BackgroundJob 仍为 CREATED" }] }] },
   { type: "paragraph", children: [{ type: "text", text: "这是什么东西？" }] },
 ] };
 const parser = new ChatDocumentCompiler();
@@ -32,7 +32,7 @@ test("optimistic, acknowledged and reopened user messages preserve the quote bou
   const text = compiled.input.flatMap(item => item.type === "text" ? [item.text] : []).join("");
   assert.equal(composerDocumentToMessageText(quote), text);
   assert.equal(submittedMessageDisplay(intent).message, text, "new-thread and route-handoff presentation share quote semantics");
-  assert.equal(composerDocumentToPlainText(quote), "ProvisionInstanceBotIM 仍为 CREATED\n这是什么东西？", "plain previews retain their existing contract");
+  assert.equal(composerDocumentToPlainText(quote), "BackgroundJob 仍为 CREATED\n这是什么东西？", "plain previews retain their existing contract");
   let accept!: (value: SubmissionReceipt) => void;
   const listeners = new Set<() => void>();
   let entity: ReplicaJsonValue = { thread: { id: key.threadId, status: { type: "idle" } }, turns: [], pendingInteractions: [] };
