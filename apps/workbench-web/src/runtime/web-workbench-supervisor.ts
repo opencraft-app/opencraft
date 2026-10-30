@@ -239,6 +239,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const imageEditors = new ImageEditorContributionRegistry();
     const platform = currentWorkbenchPlatform();
+    const rawBootstrapLocation = readWorkbenchBootstrapLocation(
+      new URL(window.location.href), window.history.state, options.navigationMode,
+    );
+
     const websiteConfig = platform === "web" ? parseWebDeploymentConfig(
         document.getElementById("opencraft-deployment-config")?.textContent ?? null,
       ) : null;
@@ -251,6 +255,11 @@ export async function createWebWorkbenchApplicationSupervisor(
         hypernode: import.meta.env.VITE_HYPERNODE_PLUGIN,
         extensions: import.meta.env.VITE_WEB_EXTENSIONS,
       },
+      platform === "web" && workbenchProductId === "opencraft"
+        ? rememberedThreadId(window.localStorage, "hypernode", "configured") !== null ? "hypernode"
+          : rawBootstrapLocation?.kind === "thread" ? rawBootstrapLocation.key.hostId
+            : rawBootstrapLocation?.hostId ?? readLocalPreference(currentProductStorageKey("opencraft.active-host-id"))
+        : null,
     );
     const bootstrapDefinitions = parseWebHostDefinitions(
       platform === "web" ? deployment.hosts : import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
@@ -536,10 +545,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     }
     // Keep this expression direct: Vite can erase the entire dynamic-import
     // edge from product builds instead of merely disabling it at runtime.
+    let legacyHypernodeProfile: import("@opencraft/workbench-runtime").HostConnectionProfile | undefined;
     if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false") {
       await extensions.loadOptional("opencraft.hypernode", async () => {
-        const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
-        return createHyperNodeExtension({ url: appServerUrl(), includeDefaultProfile: deployment.hypernode });
+        const { createHyperNodeExtension, createHyperNodeProfile } = await import("@opencraft/plugin-hypernode");
+        const retainedDefault = deployment.hypernode && websiteConfig === null && !deployment.hosts
+          && !import.meta.env.VITE_APPSERVER_WS_URL?.trim() && import.meta.env.VITE_HYPERNODE_PLUGIN !== "enabled";
+        if (retainedDefault) legacyHypernodeProfile = createHyperNodeProfile({ url: appServerUrl() });
+        return createHyperNodeExtension({ url: appServerUrl(), includeDefaultProfile: deployment.hypernode && !retainedDefault });
       });
     }
     for (const definition of clientProduct?.extensions({
@@ -618,6 +631,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     databaseName: currentProductDatabaseName("opencraft-host-connections"),
     formerDatabaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
+    ...(legacyHypernodeProfile ? { fallback: legacyHypernodeProfile } : {}),
     ephemeral: [
       ...hostProfileContributions.list(),
       ...(options.ephemeralHostProfiles ?? []),
@@ -685,9 +699,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     && !configuredHostProfiles.getSnapshot().profiles.some(profile => profile.hostId === "hypernode");
   const resolveWebsiteLocation = restoreLegacyWebsite ? resolveLegacyWebsiteLocation : undefined;
   if (restoreLegacyWebsite) try { restoreLegacyWebsiteSelection(window.localStorage); } catch { /* unavailable legacy selection storage */ }
-  const rawBootstrapLocation = readWorkbenchBootstrapLocation(
-    new URL(window.location.href), window.history.state, options.navigationMode,
-  );
   const requestedBootstrapLocation = resolveWebsiteLocation?.(rawBootstrapLocation) ?? rawBootstrapLocation;
   if (!configuredHostProfiles.getSnapshot().profiles.some(profile => profile.enabled)) {
     await environmentDirectory.refresh().catch(() => undefined);

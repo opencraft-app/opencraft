@@ -91,3 +91,9 @@ models link to the existing page resolved by `targetHostId`; catalog errors offe
 retry and terminal connection errors offer reconnect/settings. Ordinary reconnect
 remains quiet. Setup feedback keeps the draft Composer mounted, preserving its
 content and owner while navigation or configuration changes occur.
+
+Legacy standalone clients could have used an activation-owned default HyperNode
+without an IDB recipe. In the absence of an explicit deployment/Host override,
+a retained HyperNode route or active selection keeps that existing target
+available. This compatibility read never deletes or rewrites recipes, history,
+or drafts; empty installations still receive no implicit target.

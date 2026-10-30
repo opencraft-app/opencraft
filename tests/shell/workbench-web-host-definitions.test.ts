@@ -7,7 +7,7 @@ import { parseWebDeploymentConfig, resolveWebDeploymentConfig, resolveLegacyWebs
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
 import { PlatformViewRendererRegistry } from "@opencraft/extension-react";
 import { createHeadlessServerExtension } from "@opencraft/plugin-builtin-agents";
-import { createHyperNodeExtension } from "@opencraft/plugin-hypernode";
+import { createHyperNodeExtension, createHyperNodeProfile } from "@opencraft/plugin-hypernode";
 import {
   HOST_PROFILE_CONTRIBUTION_CHANNEL,
   HostConnectionProviderRegistry,
@@ -440,6 +440,13 @@ test("unconfigured Web has no implicit Host; explicit endpoints and deployment f
   });
   assert.equal(resolveWebDeploymentConfig({ ...deploymentRuntime, hosts: [] }, {}).hosts, undefined);
 });
+test("legacy implicit Host selection is retained without overriding explicit deployment choices", () => {
+  assert.equal(resolveWebDeploymentConfig(null, {}, "hypernode").hypernode, true);
+  assert.equal(resolveWebDeploymentConfig(null, {}, "other").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(null, { hypernode: "disabled" }, "hypernode").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(null, { hosts: '[{"hostId":"local"}]' }, "hypernode").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(deploymentRuntime, {}, "hypernode").hypernode, false);
+});
 test("present but malformed runtime data fails instead of silently losing Hosts", () => {
   for (const raw of ['bad', 'null', '[]', '{}', '{"hosts":[],"builtinAgents":"true","hypernode":false}']) {
     assert.throws(() => parseWebDeploymentConfig(raw));
@@ -505,4 +512,19 @@ test("a saved same-instance relay endpoint is refreshed without resetting Host p
     if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
     else Reflect.deleteProperty(globalThis, "document");
   }
+});
+
+test("legacy default fallback never shadows a saved recipe or persists a phantom profile", async () => {
+  const fallback = createHyperNodeProfile({ url: "wss://legacy.example/rpc" });
+  const name = `legacy-fallback-${Date.now()}`;
+  let store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name, fallback });
+  assert.equal(store.getSnapshot().profiles[0]?.hostId, "hypernode");
+  store.close();
+  store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name });
+  assert.equal(store.getSnapshot().profiles.length, 0);
+  await store.put({ ...fallback, providerConfig: { url: "wss://saved.example/rpc" } });
+  store.close();
+  store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name, fallback });
+  assert.deepEqual(store.getSnapshot().profiles[0]?.providerConfig, { url: "wss://saved.example/rpc" });
+  store.close();
 });
