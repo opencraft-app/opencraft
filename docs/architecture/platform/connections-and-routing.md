@@ -487,3 +487,15 @@ page cursors; the tail is then released. Reconnection uses the existing Host
 query-recovery snapshot and a fresh publisher incarnation, not a durable cursor
 invented from a socket generation. Old clients retain the invalidation-only
 notification behavior.
+
+### Explicit navigation and suspended connection attempts
+
+HostRuntimeRegistry forwards each explicit connection demand to the idempotent
+runtime connection owner before reusing a startup promise. A resumed browser may
+have advanced past a connection deadline while its timer callback is still queued;
+reusing an outer pending promise must not bypass the owner's expiry check.
+Registry callers share a completion only for the same owner-issued attempt.
+Retired completion cleanup cannot clear the successor's operation, and Host
+removal still fences both completions by registry record identity. This applies
+to mouse and touch conversation selection without changing retry budgets,
+Thread authority, persisted drafts or server execution ownership.

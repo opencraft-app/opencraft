@@ -13,6 +13,7 @@ const turns = new Map();
 const threadTurns = new Map();
 const threadPaths = new Map();
 const methodCounts = {};
+const threadMethodCounts = new Map();
 const history = new Map();
 const acceptedInputs = [];
 const permissionRequests = [];
@@ -55,7 +56,14 @@ input.on("line", line => {
   if (typeof message.params?.permissions === "string") permissionRequests.push({ method: message.method, params: message.params });
   if (message.method === "test/readPermissionRequests") { send({ id: message.id, result: { data: permissionRequests } }); return; }
   if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
-  if (message.method === "test/readMethodCounts") { send({ id: message.id, result: methodCounts }); return; }
+  if (message.method && message.params?.threadId) {
+    const counts = threadMethodCounts.get(message.params.threadId) ?? {};
+    counts[message.method] = (counts[message.method] ?? 0) + 1;
+    threadMethodCounts.set(message.params.threadId, counts);
+  }
+  if (message.method === "test/readMethodCounts") {
+    send({ id: message.id, result: message.params?.threadId ? threadMethodCounts.get(message.params.threadId) ?? {} : methodCounts }); return;
+  }
   if (message.method === undefined && testTools.has(String(message.id))) {
     toolResults.push({id:message.id,...testTools.get(String(message.id)),result:message.result,error:message.error});testTools.delete(String(message.id));return;
   }
