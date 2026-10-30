@@ -138,6 +138,8 @@ export class WebBrowserPageRuntime {
     this.surfaces.setZoom?.(pageId,percent);
   }
   private newWindowHandler: ((pageId: BrowserPageId, url: string, background: boolean) => void) | null = null;
+  private sessionClosedHandler: ((pageId: BrowserPageId) => void) | null = null;
+  setSessionClosedHandler(handler: ((pageId: BrowserPageId) => void) | null) { this.sessionClosedHandler = handler; }
   setNewWindowHandler(handler: ((pageId: BrowserPageId, url: string, background: boolean) => void) | null) { this.newWindowHandler = handler; }
   async siteSettings(pageId: BrowserPageId, action: "permissions" | "clear-data"): Promise<void> {
     if (!this.surfaces.siteSettings) throw new Error("网站设置仅在桌面浏览器可用");
@@ -326,6 +328,7 @@ export class WebBrowserPageRuntime {
   }
 
   dispose(): void {
+    this.sessionClosedHandler = null;
     for (const record of this.pages.values()) record.listeners.clear();
     this.pages.clear();
     this.navigationGenerations.clear();
@@ -433,6 +436,11 @@ export class WebBrowserPageRuntime {
         };
         this.notify(record);
         this.persist();
+      },
+      onSessionClosed: () => {
+        if (this.pages.get(record.id) !== record) return;
+        this.sessionClosedHandler?.(record.id);
+        if (this.pages.get(record.id) === record) this.close(record.id);
       },
       onError: (message) => {
         if (this.pages.get(record.id) === record)

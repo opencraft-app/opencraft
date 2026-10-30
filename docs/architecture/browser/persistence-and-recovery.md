@@ -130,3 +130,15 @@ presentation lost
 - plugin registration 不在会反复挂载的内容组件里；
 - connection、Authority、Presentation、Layout generation 分别校验；
 - View claim/Backing owner 变更必须走幂等 command，不允许订阅回调同步反写同一个 Store。
+
+
+### Authoritative remote tab closure
+
+The remote surface forwards SESSION_CLOSED and the explicit server close reason
+to the logical Page owner. Workbench removes the corresponding tabs, panels and
+presentations rather than retaining an error that can reload a retired lease.
+An acknowledged remote close does not issue another discard or allocate a fresh
+lease. Metadata fences and transport callbacks check their connection identity;
+a stale callback cannot end a replacement connection. Ordinary disconnection
+and admission errors keep their separate recovery/error semantics. Server close
+notifications follow the durable retirement commit.
