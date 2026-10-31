@@ -171,6 +171,14 @@ Thread 元数据；queue 为同会话缓存串行等待；source 为来源解析
 到返回构造，Web RPC 终态包含往返与客户端接收；序列化及返回传输留在 Web 总耗时中。
 阶段可嵌套，不能相加阶段分位数或把 native RPC 再加进 reconcile。
 
+`history-read-stages` 另带低基数 `itemHydrationPath`：`cache-page` 表示缓存页
+拿到 `notLoaded` Turn 后按需取 Item，`adapter-oversize-fallback` 表示整页超限后
+由兼容降级路径按需取 Item，`none` 表示本次未触发 Item hydration。该字段用于区分
+读取路径，不包含会话或 Turn 身份。`turnCountBucket` 和 `lengthBucket` 在历史
+metadata 或分页头可用时尽早记录；长度只通过 `stat` 取字节规模，不读取 rollout 正文。
+这样取消、期限到达或后续 Item RPC 失败时，终态事件仍可保留已知规模桶。
+路径字段为受控诊断明细，不作为指标标签。
+
 原生 Codex 固定二进制没有导出内部文件读取、投影和分页的单独时间，原生往返仍包含
 其内部排队和处理，不能直接标为纯投影耗时。必须用同请求 router 和 Host 数据判断
 等待边界，必要时在原生源码 owner 增加内部探针。诊断不新增历史、模型或 Resume

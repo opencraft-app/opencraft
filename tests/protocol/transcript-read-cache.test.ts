@@ -52,6 +52,30 @@ test("601 native Turns: tail and older pages are lossless; warm hit performs no 
   assert.equal((await stat(join(f.cache.directory, `${id}.turns.jsonl`))).mode & 0o777, 0o600);
 });
 
+test("cold presentation hydration loads forty-six visible Turns through the shared four-read bound", async t => {
+  const f = await fixture(t, 46), port = f.port as NativeTranscriptPort;
+  let active = 0, maxActive = 0, itemCalls = 0;
+  port.listTurnHeaders = async (_threadId, cursor, limit) => {
+    const offset = cursor === null ? 0 : Number(cursor), ordered = f.source.slice().reverse();
+    const data = ordered.slice(offset, offset + limit).map(value => ({ ...structuredClone(value), items: [], itemsView: "notLoaded" as const }));
+    return { data, nextCursor: offset + limit < ordered.length ? String(offset + limit) : null };
+  };
+  port.listTurnItems = async (_threadId, turnId) => {
+    active++; itemCalls++; maxActive = Math.max(maxActive, active);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return structuredClone(f.source.find(value => value.id === turnId)!.items);
+    } finally { active--; }
+  };
+  const result = await f.cache.read(id, 46, undefined, "presentation");
+  assert.equal(result.thread.historyTurnCount, 46);
+  assert.equal(result.initialTurnsPage.data.length, 46);
+  assert.equal(itemCalls, 46);
+  assert.equal(maxActive, 4);
+  assert.deepEqual(result.initialTurnsPage.data.map(value => value.id), f.source.slice().reverse().map(value => value.id));
+  assert.ok(result.initialTurnsPage.data.every(value => value.itemsView === "full" && value.items.length === 2));
+});
+
 test("ascending Turn pages use the same bounded transcript index", async t => {
   const f = await fixture(t, 25);
   await f.cache.read(id);
@@ -508,6 +532,22 @@ test("601-turn cold index loads only requested native Item bodies and preserves 
   f.source.push(turn(601)); await appendFile(f.path, line("turn-601"));
   assert.equal((await f.cache.read(id, 1)).thread.historyTurnCount, 602);
   assert.deepEqual((await f.cache.page(id, older.nextCursor, 2)).data.map(turn => turn.id), ["turn-597", "turn-596"]);
+});
+
+test("a header-only compatibility page without a rollout hydrates only visible Turns", async t => {
+  const f = await fixture(t, 25), port = f.port as NativeTranscriptPort, hydrated: string[] = [];
+  port.readThread = async threadId => ({ id: threadId, turns: [], historyMode: "paginated" });
+  port.listTurns = async (_id, cursor, limit) => {
+    const offset = Number(cursor ?? 0), turns = f.source.slice().reverse().slice(offset, offset + limit);
+    return { data: turns.map(turn => ({ ...turn, items: [], itemsView: "notLoaded" as const })),
+      nextCursor: offset + limit < f.source.length ? String(offset + limit) : null };
+  };
+  port.listTurnItems = async (_id, turnId) => {
+    hydrated.push(turnId); return structuredClone(f.source.find(turn => turn.id === turnId)!.items);
+  };
+  const page = await f.cache.read(id, 2, undefined, "presentation");
+  assert.deepEqual(page.initialTurnsPage.data, f.source.slice(-2).reverse().map(turn => ({ ...turn, itemsView: "full" })));
+  assert.deepEqual(hydrated, ["turn-24", "turn-23"]);
 });
 
 test("a header-capable port returning full Turns remains compatible without Item paging", async t => {
