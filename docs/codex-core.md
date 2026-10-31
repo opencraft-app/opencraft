@@ -472,3 +472,78 @@ waiting only for ChildProcess close would defer recovery. The local forced-launc
 smoke (`OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY=1`) verifies this before guard
 startup and bounds recovery with inherited open pipes. It also accepts a canonical
 APP bundle and packaged guard payload for artifact-level tests.
+
+
+### Hash-aware fenced source compatibility (local qualification)
+
+`--seal-fenced-account-maintenance <receipt>` is an explicit offline compatibility
+entry, separate from the older pre-hash legacy importer. It accepts only a
+`fenced-account-maintenance` receipt: the original source snapshot and proof remain
+unmodified, including the complete unknown list, its hash/count, and the SHA-256
+of the durable fenced account state (`sourceStateSha256`). A live source or a
+changed state, storage, configuration, CLI, or history is rejected.
+
+A controller must hold its real kernel locks and complete outer admission barrier,
+obtain a fresh authenticated fenced source proof, and publish a durable, identity-
+bound maintenance stop permit before stopping the source. This command does not
+provide that controller, stop a source, or establish a migration time budget.
+It opens no account writer admission. Existing ordinary/legacy paths do not infer
+this mode from a failed fence or silently accept a new receipt kind.
+
+This entry supports **empty volatile responsibility only**: every source account
+count must be zero, retained arrays empty, and the proof historical count must
+exactly equal the current persistent `pool_affinity` row count. Zero active calls
+alone is insufficient. Image affinities and login/reset receipts may remain after
+calls finish; their presence must cause same-lock abort/recovery before a source
+stop permit, never fabricated empty arrays or deletion. The successor imports all
+unknowns unchanged from current data; no request, login, or tool is replayed.
+
+The purpose is compatibility with a fenced, hash-aware source whose control
+request limit cannot carry its full historical list. It does not make the
+original source's ordinary release accept a partial list or a digest reference.
+A separately qualified guardian, controlled recovery, actual Native continuation,
+and large-scale forward/recovery budget evidence are required before operational
+use; this local protocol implementation alone grants no lifecycle permission.
+
+
+### Complete retained exports for a request-limited source
+
+`--inspect-account-retained-export <file>` validates a private full export and
+returns only its digest, source identity and row counts without acquiring a writer
+or starting services. `--inspect-exported-account-maintenance <receipt>` additionally validates the
+complete projected successor state while the source is still alive: current
+storage/configuration/CLI, full retained state and both historical arrays must
+fit the 64 MiB state bound with 4096 bytes reserved for successor metadata. It
+does not acquire a writer or modify the source; capacity rejection remains
+abortable before any stop permit is used.
+
+`--seal-exported-account-maintenance <receipt>` consumes an
+explicit `exported-account-maintenance` receipt after the separately controlled
+source exit. The receipt binds the original fenced state byte hash, unchanged
+source snapshot, full historical unknown hash/count, and the complete identity-
+bound retained export. Image affinities, original login outcomes and reset-credit
+outcomes (including unknown) are restored exactly; missing arrays, duplicate IDs,
+invalid outcomes, changed source identities, digests or aggregate history fail
+before any sealed state is written. A partial export never becomes empty.
+
+The deployment owner must qualify its observer separately: collect from the
+original live owner while outer admission is closed and verify that persistent
+`pool_affinity` rows plus all three actual retained arrays equal the original
+historical count. The observer's `v8-side-effect-checked` provenance is supplied
+by that privileged controller, not inferred or authenticated from a client claim.
+The offline importer remains a private operator interface, never an end-user
+route. It neither attaches a debugger nor stops or interrupts any process.
+
+New Core owner-handoff JSON requests use the existing 64 MiB account-state bound,
+so a complete historical list can cross the next ordinary fence. Other private
+control JSON (including account mutations) retains its 1 MiB default. Original
+request-limited source bytes remain unchanged and require the explicit bridge;
+raising a successor limit cannot make an old source accept a large request.
+
+The exported sealer acquires the account writer before its strict import
+validation, and returns a detached copy of the inspection actually bound into
+that release seal. It avoids duplicate pre/post storage and fixed-CLI hashing;
+source-exit, full retained/schema, storage/configuration/CLI checks still run
+before writing, and load verifies current sealed storage again. Repeating the
+command on an already sealed operation performs a fresh inspection. Existing
+legacy and empty-retained entry points retain their original reads.

@@ -1,3 +1,4 @@
+import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
@@ -43,7 +44,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
       }
       if (request.method === "POST" && request.url === "/owner-handoff") {
         try {
-          const input = await readControlJson(request);
+          const input = await readControlJson(request, ACCOUNT_CORE_STATE_MAX_BYTES);
           if (interrupting) throw new Error("Account maintenance interruption is running");
           if (input.action === "maintenance-interrupt") {
             // Do not hold owner.transition while waiting: onUncertain must use
