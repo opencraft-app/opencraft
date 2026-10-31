@@ -246,6 +246,16 @@ export function createWorkbenchWebConfig(
   function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
     return {
       name: "opencraft-release-metadata",
+      configureServer(server) {
+        // generateBundle does not run in dev. Serve the same Worker URL used by
+        // the built site instead of allowing Vite's HTML fallback to answer it.
+        server.middlewares.use("/__opencraft/opencraft-host-proxy-sw.js", (request, response, next) => {
+          if (!["", "/"].includes(request.url?.split("?")[0] ?? "")) return next();
+          response.setHeader("content-type", "text/javascript; charset=utf-8");
+          response.setHeader("cache-control", "no-cache");
+          response.end(readFileSync(hostProxyServiceWorkerPath, "utf8"));
+        });
+      },
       transformIndexHtml: {
         order: "pre",
         handler() {

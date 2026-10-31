@@ -19,3 +19,12 @@ test('a connection changed during credential lookup cannot receive the captured 
  const doc=document();let requests=0;
  await assert.rejects(checkSavedModel({provider:'saved',model:'model',expectedRevision:3},{read:async()=>structuredClone(doc),credential:async()=>{doc.providers[0]!.baseUrl='https://other.invalid/v1';return 'synthetic'}},async()=>{requests++;return {ok:true,elapsedMs:1,model:'model'}}),/配置已更新/);assert.equal(requests,0);
 });
+
+
+test('explicit unauthenticated saved checks never resolve stored or ambient credentials',async()=>{
+ const doc=document();doc.providers[0]!.authentication='none';doc.providers[0]!.credentialRef=null;
+ let request:any;
+ await checkSavedModel({provider:'saved',model:'model',expectedRevision:3},{read:async()=>structuredClone(doc),credential:async()=>{throw Error('must not resolve a key')}},async params=>{request=params;return {ok:true,elapsedMs:1,model:params.model}});
+ assert.equal(Object.hasOwn(request,'apiKey'),false);
+ assert.equal(request.baseURL,doc.providers[0]!.baseUrl);
+});

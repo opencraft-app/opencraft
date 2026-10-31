@@ -77,3 +77,25 @@ test('legacy DSH import is one-way, preserves IDs and leaves secrets out of mode
   assert.equal((await migrateDshModels(repo,credentials,old)).migrated,false);
  }finally{await rm(root,{recursive:true,force:true})}
 });
+
+
+test('explicit no-auth persists across restart, excludes keys, and projects without resolving credentials',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'opencraft-no-auth-'));try{
+  const repo=new ModelConfigurationRepository(dir);await repo.initialize();
+  await repo.update(0,d=>d.providers.push({...provider,authentication:'none',credentialRef:null}));
+  const doc=await new ModelConfigurationRepository(dir).read();assert.equal(doc.providers[0]!.authentication,'none');
+  const writes:any[]=[];
+  const engine=new DshModelEngineAdapter({call:async(method:string,payload:any)=>{
+    if(method==='settings.describe')return {namespaces:[{ns:'llm-pi-ai',revision:1,value:{providers:{}}},{ns:'llm-deepseek',revision:1,value:{},base:{}},{ns:'agent-default-model',revision:1,value:{}}]};
+    if(method==='settings.mutate'){writes.push(payload);return {revision:2}};
+    throw Error('No credential operations expected');
+  }} as any);
+  await engine.apply(doc,{resolve:async()=>{throw Error('No credential resolution expected')}});
+  const projected=writes.find(v=>v.ns==='llm-pi-ai').ops.find((v:any)=>v.path[0]==='providers').value['custom-test'];
+  assert.equal(projected.authentication,'none');assert.equal(Object.hasOwn(projected,'apiKeyEnv'),false);
+  assert.equal(fromDshProfile('custom-test',projected,[]).authentication,'none');
+  await assert.rejects(repo.update(1,d=>{d.providers[0]!.credentialRef='SHARED_KEY'}));
+  await assert.rejects(repo.update(1,d=>{d.providers[0]!.protocol='anthropic-messages'}));
+  assert.equal((await repo.read()).revision,1);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});

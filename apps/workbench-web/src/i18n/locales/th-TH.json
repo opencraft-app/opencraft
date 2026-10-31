@@ -1119,9 +1119,11 @@
   "chat.visualization.loading": "กำลังโหลดภาพแสดงข้อมูล…",
   "welcome.local.start": "จากไดเรกทอรีซอร์สโค้ด เริ่มการทำงานในเครื่องและ Web พร้อมกัน แล้วเปิดที่อยู่ที่แสดง",
   "welcome.nextStep": "ขั้นตอนถัดไป",
-  "welcome.models.required": "ไม่มีโมเดลที่พร้อมใช้งานบน {host} โปรดตั้งค่าโมเดลหรือติดต่อผู้ดูแลเซิร์ฟเวอร์",
+  "welcome.models.required": "ตั้งค่าโมเดลที่ใช้งานได้บน {host} หรือเลือกโมเดลที่ตั้งค่าไว้แล้ว",
   "welcome.models.failed": "ไม่สามารถโหลดโมเดลจาก {host} ได้ โปรดลองอีกครั้ง",
   "welcome.connection.failed": "ไม่สามารถเชื่อมต่อกับ {host} ได้ โปรดตรวจสอบการเชื่อมต่อหรือลองอีกครั้ง",
   "welcome.retry": "ลองอีกครั้ง",
-  "welcome.connection.settings": "การตั้งค่าการเชื่อมต่อ"
+  "welcome.connection.settings": "การตั้งค่าการเชื่อมต่อ",
+  "modelServices.noAuth.title": "ไม่ต้องยืนยันตัวตน",
+  "modelServices.noAuth.description": "ใช้เฉพาะเมื่อปลายทางนี้ไม่ต้องใช้คีย์ API ระบบจะไม่ส่งคีย์ที่บันทึกไว้หรือคีย์จากสภาพแวดล้อม"
 }

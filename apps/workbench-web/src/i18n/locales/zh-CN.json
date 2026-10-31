@@ -1141,9 +1141,11 @@
   "chat.visualization.loading": "正在加载视图…",
   "welcome.local.start": "在源码目录同时启动本机执行端与 Web，然后打开命令输出的地址。",
   "welcome.nextStep": "下一步",
-  "welcome.models.required": "{host} 暂无可用模型。请配置模型，或联系服务器管理员。",
+  "welcome.models.required": "请在 {host} 配置可用模型，或选择已配置好的模型。",
   "welcome.models.failed": "无法从 {host} 加载模型，请重试。",
   "welcome.connection.failed": "无法连接到 {host}，请检查连接或重试。",
   "welcome.retry": "重试",
-  "welcome.connection.settings": "连接设置"
+  "welcome.connection.settings": "连接设置",
+  "modelServices.noAuth.title": "无需鉴权",
+  "modelServices.noAuth.description": "仅用于不需要 API Key 的接口；不会发送已保存或环境中的密钥。"
 }

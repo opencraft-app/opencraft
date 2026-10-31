@@ -140,6 +140,8 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   const isDefault = (model: string) => defaults?.provider === provider.provider && defaults.model === model;
   const testModel = models.has(draft.testModel) ? draft.testModel : models.keys().next().value ?? "";
   const change = (patch: Parameters<ModelServicesController["edit"]>[1], key?: string) => { controller.edit(provider, patch, key); };
+  const noAuthentication = draft.config.authentication === "none";
+  const intl = useIntl();
   const credentialUnknown = !!draft.config.credentialRef && draft.credentialSet === null;
   const configured = provider.configured && (!draft.config.credentialRef || draft.credentialSet === true);
   const expanded = draft.dirty || (draft.connectionExpanded ?? (!configured && !credentialUnknown));
@@ -201,11 +203,16 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
         {!provider.enabled && provider.configuration?.canToggle ? <SettingsButton className="model-services__enable-fallback" aria-label="启用提供商" disabled={!editable || !configured || draft.dirty} onClick={() => { void controller.toggle(provider, true); }}>启用</SettingsButton> : null}
         <SettingsButton variant="quiet" aria-expanded={expanded} aria-controls="model-service-connection" disabled={draft.dirty} onClick={() => setExpanded(!expanded)}>{expanded ? "收起" : "编辑"}{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</SettingsButton></div></div>
       <div id="model-service-connection" hidden={!expanded}>
-      <div className="model-services__row"><div><label htmlFor="model-service-key">API Key</label><p>{draft.credentialSet ? "已保存；留空保持当前密钥" : "填入提供商的 API Key"}</p></div>
+      {provider.configuration?.canUseWithoutAuthentication ? <div className="model-services__row"><div>
+        <label>{intl.formatMessage({id: "modelServices.noAuth.title", defaultMessage: "No authentication"})}</label>
+        <p>{intl.formatMessage({id: "modelServices.noAuth.description", defaultMessage: "Use only when this endpoint does not require an API key. Saved and environment keys will not be sent."})}</p>
+      </div><SettingsSwitch label={intl.formatMessage({id: "modelServices.noAuth.title", defaultMessage: "No authentication"})}
+        checked={noAuthentication} disabled={!editable} onCheckedChange={value => change({authentication: value ? "none" : undefined, credentialRef: ""})} /></div> : null}
+      {!noAuthentication ? <div className="model-services__row"><div><label htmlFor="model-service-key">API Key</label><p>{draft.credentialSet ? "已保存；留空保持当前密钥" : "填入提供商的 API Key"}</p></div>
         <div className="model-services__secret"><SettingsTextInput id="model-service-key" type={showKey ? "text" : "password"} autoComplete="new-password" spellCheck={false} value={draft.key} disabled={!editable || provider.provider === "openai-codex"} placeholder={draft.credentialSet ? "••••••••••••" : "请输入 API Key"} onChange={event => change({}, event.target.value)} />
           <SettingsIconButton label={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</SettingsIconButton>
         </div>
-      </div>
+      </div> : null}
       <div className="model-services__row"><div><label htmlFor="model-service-url">{speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址"}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
       {canTest ? <div className="model-services__row"><div><label htmlFor="model-service-test-model">连通性检查</label><p>{draft.dirty ? "请先保存修改，再检查连接" : "使用已保存的连接和密钥发送文本请求，可能计费"}</p></div>
         <div className="model-services__checker"><SettingsSelect id="model-service-test-model" value={testModel} disabled={!editable} onChange={event => { draft.testModel = event.target.value; draft.probe = null; controller.notify(); }}>

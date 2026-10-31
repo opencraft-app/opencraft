@@ -1280,13 +1280,18 @@ export function App({
     if (activeHostConnectionPhase === "ready") draftConnectionObservation.current.wasReady = true;
   }, [activeHostConnectionPhase, snapshot.hostId]);
   const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
-  const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.id === "opencraft.builtin-agents.model-services";
+  const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
+  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.model,
+    () => composerController.getSnapshot().draft.selections.model);
+  const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
+    ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
   const modelReadiness = useQuery({
-    queryKey: [...composerCapabilitiesKey(snapshot.hostId), "setup", snapshot.connectionGeneration],
+    queryKey: [...composerCapabilitiesKey(snapshot.hostId), "setup", snapshot.connectionGeneration, setupSelectedModel],
     enabled: draft !== null && supportsModelSetup && activeHostConnectionPhase === "ready",
     retry: false, staleTime: 60_000,
     queryFn: async ({ signal }) => {
-      const ready = await readHostModelReadiness((hostId, method, params) => hostCatalog.agentRuntimes.request(hostId, method, params), snapshot.hostId);
+      const ready = await readHostModelReadiness((hostId, method, params) => hostCatalog.agentRuntimes.request(hostId, method, params), snapshot.hostId, setupSelectedModel);
       signal.throwIfAborted();
       return ready;
     },
