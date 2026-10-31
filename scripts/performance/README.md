@@ -5,22 +5,36 @@ native Codex executable available (the fixture follows that executable's SQLite
 and event schema):
 
 ```sh
-python3 scripts/performance/history-cold-repro.py --native /path/to/codex
+python3 scripts/performance/history-cold-repro.py --native /path/to/codex --expect-slow
 ```
 
 The command creates an isolated native profile, seeds one shell command without
-inference, and constructs 601 synthetic Turns with 512-KiB tool outputs. It starts
-the real native process, Core, adapter, AppHost and client with a fresh disposable
-cache. No existing profile or user history is read. Native response bytes travel
-through an explicit 6-MiB/s local link, so a hidden 100-Turn full page reproduces
-8–13 seconds of transfer. A separate 26-second held tool preparation measures
-AppHost admission, Core work and the remaining client/transport time.
+inference, and constructs a synthetic 46-Turn conversation with 3-MiB tool
+outputs (about 138 MiB total). It starts the real native process, Core, adapter,
+AppHost and client with a fresh disposable cache. No existing profile or user
+history is read. The initial page requests 46 `notLoaded` Turns, through both
+cache hydration and the adapter's oversized-page compatibility fallback. Each
+Item response has a deterministic 100-ms local link latency and uses a bounded
+24-MiB/s transport. This makes the serial 46-call read land in the 8–13-second
+range while each individual call remains fast. `--expect-slow` validates this
+pre-fix red signal; omit it after the fix to require both paths to finish below
+10 seconds.
 
-Every measured cold/read/queue stage must finish within 10 seconds; detail
-expansion must equal the complete native Item and the total count must be 601.
-The original implementation times out cold and queues its next read for about
-27 seconds. The fixed implementation indexes all headers and hydrates only the
-visible body. This is a controlled synthetic regression, not natural telemetry.
+The initial page must contain all 46 turns, each Item must be returned without
+loss, the serialized public result must omit deferred large tool output, and the
+native history total must match the fixture. This is a controlled synthetic
+regression, not natural telemetry. To exercise larger header-index rebuilds,
+reuse a 601-Turn fixture with a larger initial history while keeping the visible
+page explicit:
+
+```sh
+python3 scripts/performance/history-cold-repro.py --native /path/to/codex \
+  --turns 601 --output-bytes 524288 --visible-turns 46 --load-path both \
+  --mib-per-second 24 --rpc-delay-ms 100
+python3 scripts/performance/history-cold-repro.py --native /path/to/codex \
+  --turns 1001 --output-bytes 131072 --visible-turns 46 --load-path both \
+  --mib-per-second 24 --rpc-delay-ms 175
+```
 
 Output JSON names a retained fixture and log directory. To compare a second
 checkout without changing the fixture, pass `--repo /path/to/other/opencraft`

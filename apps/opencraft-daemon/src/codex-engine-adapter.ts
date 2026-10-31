@@ -9,7 +9,7 @@ import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type Exe
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
 import { serializeHistoryReply, isHistoryResponseTooLargeError, AppServerRpcError, threadUnavailableReason } from "@opencraft/appserver-client";
-import { NativeItemPaginationUnsupported, TranscriptReadCache } from "@opencraft/native-history-node";
+import { historyLengthBucket, historyTurnCountBucket, NativeItemPaginationUnsupported, NativeItemReadScheduler, TranscriptReadCache, type HistoryReadContext, type ItemHydrationPath } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
@@ -27,7 +27,7 @@ import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
@@ -400,7 +400,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
   private transcriptCache: TranscriptReadCache | null = null;
-  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number }>();
+  private readonly historyItemReadScheduler = new NativeItemReadScheduler(4);
+  private readonly historyAdapterFallbackSignals = new WeakSet<AbortSignal>();
+  private readonly historyUnsupportedItemSignals = new WeakSet<AbortSignal>();
+  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string }>();
+  private readonly historyTurnCounts = new WeakMap<AbortSignal, number>();
   private cachedHistoryInFlight = 0;
   private readonly cachedHistoryReads = new Map<string, Map<AbortController, string>>();
   private readonly cachedHistoryFlights = new Map<string, { promise: Promise<RpcRecord>; controller: AbortController; readers: Set<object> }>();
@@ -501,6 +505,12 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private historyDiagnostic(event: Record<string, unknown>): void {
     try { this.diagnostic(event); } catch { /* Read settlement is independent of diagnostics. */ }
+  }
+
+  private noteHistoryReadContext(signal: AbortSignal | undefined, context: HistoryReadContext): void {
+    if (!signal) return;
+    const trace = this.historyReadTraces.get(signal);
+    if (trace) Object.assign(trace, context);
   }
 
   private diagnostic(event: Record<string, unknown>): void {
@@ -605,7 +615,9 @@ export class CodexEngineAdapter implements DuplexTransport {
     const adapter = this;
     const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
       () => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
-    const listTurnItems = async (threadId: string, turnId: string, signal?: AbortSignal) => {
+    const listTurnItems = async (threadId: string, turnId: string, signal?: AbortSignal, path: ItemHydrationPath = "adapter-oversize-fallback") => {
+      const actualPath = signal && this.historyAdapterFallbackSignals.has(signal) ? "adapter-oversize-fallback" : path;
+      this.noteHistoryReadContext(signal, { itemHydrationPath: actualPath });
       const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
       let itemCursor: string | null = null, budget = 100;
       const seen = new Set<string>();
@@ -633,38 +645,53 @@ export class CodexEngineAdapter implements DuplexTransport {
       return items;
     };
     const listTurns = async (threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection: "asc" | "desc" = "desc") => {
-        const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
-          threadId, cursor, limit, itemsView, sortDirection,
+        const request = (itemsView: "full" | "notLoaded", pageLimit: number) => this.requestPhysical("thread/turns/list", {
+          threadId, cursor, limit: pageLimit, itemsView, sortDirection,
         }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
-        let page, fullPageSizeError: unknown;
-        try { page = await request("full"); }
-        catch (error) {
-          if (!nativeHistoryTooLarge(error)) throw error;
-          fullPageSizeError = error;
-          const headers = await request("notLoaded");
-          page = { ...headers, data: headers.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
-            ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
-        }
-        for (const turn of page.data) if (turn.itemsView === "notLoaded") {
-          try { turn.items = await listTurnItems(threadId, turn.id, signal); }
-          catch (error) {
-            // Preserve the full-page byte failure so the cache can reduce its
-            // limit when an older native cannot page Items separately.
-            if (fullPageSizeError && [-32601, -32602].includes(Number(record(error).code))) throw fullPageSizeError;
-            throw error;
+        let pageLimit = limit, page;
+        for (;;) {
+          try { page = await request("full", pageLimit); break; }
+          catch (fullPageSizeError) {
+            if (!nativeHistoryTooLarge(fullPageSizeError)) throw fullPageSizeError;
+            let headers;
+            try { headers = await request("notLoaded", pageLimit); }
+            catch (headerError) {
+              if (![-32601, -32602].includes(Number(record(headerError).code))) throw headerError;
+              if (pageLimit === 1) throw fullPageSizeError;
+              pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+              continue;
+            }
+            // Once Item pagination is known to be unavailable, the cache must
+            // receive full Turns. Keep the original page-size error so its
+            // bounded page reduction can find a full page that fits.
+            if (signal && this.historyUnsupportedItemSignals.has(signal)) {
+              if (pageLimit === 1) throw fullPageSizeError;
+              pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+              continue;
+            }
+            page = { ...headers, data: headers.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
+              ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
+            if (signal) this.historyAdapterFallbackSignals.add(signal);
+            break;
           }
-          turn.itemsView = "full";
         }
+        if (signal) {
+          const count = (this.historyTurnCounts.get(signal) ?? 0) + page.data.length;
+          if (page.nextCursor === null) this.noteHistoryReadContext(signal, { turnCountBucket: historyTurnCountBucket(count) });
+        }
+        if (signal) this.historyTurnCounts.set(signal, (this.historyTurnCounts.get(signal) ?? 0) + page.data.length);
         return page;
       };
     this.transcriptCache = new TranscriptReadCache(dataRoot, {
       get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
       resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
-      listTurnItems: async (threadId, turnId, signal) => {
-        try { return await listTurnItems(threadId, turnId, signal); }
+      listTurnItems: async (threadId, turnId, signal, path) => {
+        try { return await listTurnItems(threadId, turnId, signal, path); }
         catch (error) {
-          if ([-32601, -32602].includes(Number(record(error).code)))
+          if ([-32601, -32602].includes(Number(record(error).code))) {
+            if (signal) this.historyUnsupportedItemSignals.add(signal);
             throw new NativeItemPaginationUnsupported("Native Item pagination is unavailable", { cause: error });
+          }
           throw error;
         }
       },
@@ -682,9 +709,15 @@ export class CodexEngineAdapter implements DuplexTransport {
           return listTurns(threadId, cursor, limit, signal);
         }
       },
-      readThread: async (threadId, signal) => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread as AppServerThread,
+      readThread: async (threadId, signal) => {
+        const thread = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread) as AppServerThread;
+        let bytes = -1;
+        try { if (typeof thread.path === "string") bytes = statSync(thread.path).size; } catch { /* Missing metadata stays unknown. */ }
+        this.noteHistoryReadContext(signal, { lengthBucket: historyLengthBucket(bytes) });
+        return thread;
+      },
       listTurns,
-    }, { measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
+    }, { itemReadScheduler: this.historyItemReadScheduler, measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
     try {
       const telemetry=new TokenUsageTelemetry();
       this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
@@ -1487,9 +1520,12 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async readCachedHistory(clientId: string, method: string, historyParams: RpcRecord, cachedRead: boolean, controller: AbortController): Promise<RpcRecord> {
     this.cachedHistoryInFlight++;
     const started = performance.now(), pairId = randomUUID();
-    const trace = { pairId, nativeRpcMs: 0, nativeRpcCount: 0 };
+    const trace = { pairId, nativeRpcMs: 0, nativeRpcCount: 0, itemHydrationPath: "none", turnCountBucket: "unknown", lengthBucket: "unknown" };
     const phases: Record<string, number> = {};
-    const measured = (phase: string, ms: number) => { phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms; };
+    const measured = (phase: string, ms: number, context?: HistoryReadContext) => {
+      if (phase !== "context") phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms;
+      if (context) Object.assign(trace, context);
+    };
     let outcome = "aborted";
     const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
     this.historyReadTraces.set(controller.signal, trace);
@@ -1508,6 +1544,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : record(historyParams.initialTurnsPage).itemsView === "presentation" ? "presentation" : "full", controller.signal, measured)
         : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : historyParams.itemsView === "presentation" ? "presentation" : "full",
           historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured, typeof historyParams.detailItemId === "string" ? historyParams.detailItemId : undefined);
+      const resultThread = record(record(result).thread);
+      const turnCount = Number(resultThread.historyTurnCount);
+      if (Number.isSafeInteger(turnCount) && turnCount >= 0) trace.turnCountBucket = historyTurnCountBucket(turnCount);
+      const rolloutPath = string(resultThread.path);
+      if (rolloutPath) {
+        try { trace.lengthBucket = historyLengthBucket(statSync(rolloutPath).size); }
+        catch { /* A missing/unavailable rollout size stays unknown. */ }
+      }
       if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
       const projectionStarted = performance.now();
@@ -1520,7 +1564,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       outcome = controller.signal.aborted ? "aborted" : "failed";
       return { error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } };
     } finally {
-      this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome, ...phases, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs: performance.now() - started });
+      this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome,
+        turnCountBucket: trace.turnCountBucket, lengthBucket: trace.lengthBucket, itemHydrationPath: trace.itemHydrationPath,
+        ...phases, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs: performance.now() - started });
       this.historyReadTraces.delete(controller.signal);
       clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);
       if (reads.size === 0 && this.cachedHistoryReads.get(clientId) === reads) this.cachedHistoryReads.delete(clientId);

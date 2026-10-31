@@ -63,9 +63,66 @@ export async function observeNativeTranscriptFiles(nativeHome: string, paths: re
   };
 }
 export type HistoryReadPhase = "metadata" | "queue" | "source" | "reconcile" | "page" | "scan";
-export type HistoryReadObserver = (phase: HistoryReadPhase, ms: number) => void;
+export type ItemHydrationPath = "cache-page" | "adapter-oversize-fallback";
+export type HistoryReadContext = { itemHydrationPath?: ItemHydrationPath; turnCountBucket?: string; lengthBucket?: string };
+export type HistoryReadObserver = (phase: HistoryReadPhase | "context", ms: number, context?: HistoryReadContext) => void;
 function observe(observer: HistoryReadObserver | undefined, phase: HistoryReadPhase, started: number): void {
   try { observer?.(phase, Math.max(0, performance.now() - started)); } catch { /* Diagnostics never own read settlement. */ }
+}
+function observeContext(observer: HistoryReadObserver | undefined, context: HistoryReadContext): void {
+  try { observer?.("context", 0, context); } catch { /* Diagnostics never own read settlement. */ }
+}
+export function historyTurnCountBucket(value: number): string {
+  return !Number.isSafeInteger(value) || value < 0 ? "unknown" : value === 0 ? "0" : value <= 10 ? "1-10"
+    : value <= 50 ? "11-50" : value <= 100 ? "51-100" : value <= 500 ? "101-500"
+      : value <= 1000 ? "501-1000" : "1001+";
+}
+export function historyLengthBucket(bytes: number): string {
+  return !Number.isSafeInteger(bytes) || bytes < 0 ? "unknown" : bytes < 1_048_576 ? "<1MiB"
+    : bytes < 10_485_760 ? "1-10MiB" : bytes < 52_428_800 ? "10-50MiB"
+      : bytes < 104_857_600 ? "50-100MiB" : bytes < 524_288_000 ? "100-500MiB" : "500MiB+";
+}
+export class NativeItemReadScheduler {
+  private active = 0;
+  private readonly waiters: Array<{ signal?: AbortSignal; resolve(): void; reject(error: Error): void; abort?: () => void }> = [];
+  constructor(readonly concurrency = 4) {
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("Invalid native Item read concurrency");
+  }
+  async run<T>(signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
+    await this.acquire(signal);
+    try { return await operation(); }
+    finally { this.release(); }
+  }
+  private acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled"));
+    if (this.active < this.concurrency) { this.active++; return Promise.resolve(); }
+    return new Promise<void>((resolve, reject) => {
+      const waiter = { signal, resolve, reject } as (typeof this.waiters)[number];
+      if (signal) {
+        waiter.abort = () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          signal.removeEventListener("abort", waiter.abort!);
+          reject(signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled"));
+        };
+        signal.addEventListener("abort", waiter.abort, { once: true });
+      }
+      this.waiters.push(waiter);
+    });
+  }
+  private release(): void {
+    while (this.waiters.length) {
+      const waiter = this.waiters.shift()!;
+      if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);
+      if (waiter.signal?.aborted) {
+        waiter.reject(waiter.signal.reason instanceof Error ? waiter.signal.reason : new Error("Transcript read cancelled"));
+        continue;
+      }
+      waiter.resolve();
+      return;
+    }
+    this.active--;
+}
 }
 
 export interface NativeTranscriptPort {
@@ -77,7 +134,7 @@ export interface NativeTranscriptPort {
   /** Optional paired native ports: index every Turn without projecting hidden
    * Item bodies, then materialize only the Turns a caller actually requests. */
   listTurnHeaders?(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal): Promise<NativePage>;
-  listTurnItems?(threadId: string, turnId: string, signal?: AbortSignal): Promise<AppServerTurn["items"]>;
+  listTurnItems?(threadId: string, turnId: string, signal?: AbortSignal, path?: ItemHydrationPath): Promise<AppServerTurn["items"]>;
 }
 function object(value: unknown): Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -186,12 +243,14 @@ export class TranscriptReadCache {
   private readonly schema: number;
   outcome: DatabaseOutcome | null = null;
   constructor(readonly dataDirectory: string, private readonly port: NativeTranscriptPort,
-    options: { projectionSchema?: number; measured?(event: { kind: "hit" | "rebuild" | "increment"; ms: number; nativeBytes: number }): void } = {}) {
+    options: { projectionSchema?: number; itemReadScheduler?: NativeItemReadScheduler; measured?(event: { kind: "hit" | "rebuild" | "increment"; ms: number; nativeBytes: number }): void } = {}) {
     this.directory = join(dataDirectory, "cache", "transcripts");
     this.databasePath = join(dataDirectory, "cache", "transcript-index.sqlite");
     this.schema = options.projectionSchema ?? TRANSCRIPT_PROJECTION_SCHEMA;
+    this.itemReadScheduler = options.itemReadScheduler ?? new NativeItemReadScheduler();
     this.measured = options.measured;
   }
+  private readonly itemReadScheduler: NativeItemReadScheduler;
   private readonly measured?: (event: { kind: "hit" | "rebuild" | "increment"; ms: number; nativeBytes: number }) => void;
   private database(): DatabaseSync {
     if (this.closed) throw new Error("Transcript cache closed");
@@ -300,7 +359,35 @@ export class TranscriptReadCache {
       ensureCurrent();
       if (!snapshotSource && (typeof thread.path !== "string" || !existsSync(thread.path))) {
         if (cursor?.startsWith("transcript:") || cursor?.startsWith("transcript-asc:")) throw new InvalidTranscriptCursor();
-        return awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
+        let page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
+        if (itemsView !== "notLoaded" && this.port.listTurnItems) {
+          const missing = page.data.filter(turn => turn.itemsView === "notLoaded");
+          if (missing.length) {
+            observeContext(observer, { itemHydrationPath: "cache-page" });
+            const hydrated = await Promise.allSettled(missing.map(async turn => {
+              const items = await this.itemReadScheduler.run(effectiveSignal, () => awaitWithAbort(
+                this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal));
+              ensureCurrent();
+              return { turn, items };
+            }));
+            const rejected = hydrated.find((result): result is PromiseRejectedResult => result.status === "rejected");
+            if (rejected) {
+              if (!(rejected.reason instanceof NativeItemPaginationUnsupported)) throw rejected.reason;
+              ensureCurrent();
+              this.headerPagesSupported = false;
+              // An older native can still return the same page as full Turns;
+              // after Item paging is rejected, let the adapter shrink that page
+              // to its supported byte budget and return the complete bodies.
+              page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
+            } else {
+              for (const result of hydrated) if (result.status === "fulfilled") {
+                result.value.turn.items = result.value.items;
+                result.value.turn.itemsView = "full";
+              }
+            }
+          }
+        }
+        return page;
       }
       const rollout = snapshotSource ? null : prepared ?? await prepareRollout();
       const source = rollout?.source, path = snapshotSource?.path ?? rollout!.path;
@@ -322,25 +409,34 @@ export class TranscriptReadCache {
           this.drop(threadId); continue;
         }
         if (itemsView !== "notLoaded" && this.port.listTurnItems) {
-          let hydrated = false;
-          for (const turn of page.data) if (turn.itemsView === "notLoaded") {
-            let items: AppServerTurn["items"];
-            try { items = await awaitWithAbort(this.port.listTurnItems(threadId, turn.id, effectiveSignal), effectiveSignal); }
-            catch (error) {
-              if (!(error instanceof NativeItemPaginationUnsupported)) throw error;
-              ensureCurrent();
-              // Some native protocols have Turn headers but no Item paginator.
-              // Reconstruct full native Turns instead of publishing empty bodies.
-              this.headerPagesSupported = false; this.drop(threadId);
-              attempt--; continue readAttempts;
-            }
+          const hydrationTurns = page.data.filter(turn => turn.itemsView === "notLoaded");
+          if (hydrationTurns.length) observeContext(observer, { itemHydrationPath: "cache-page",
+            turnCountBucket: historyTurnCountBucket(typeof page.totalTurnCount === "number" ? page.totalTurnCount : Number.NaN),
+            lengthBucket: historyLengthBucket(typeof thread.path === "string" ? (() => { try { const path = thread.path!; return statSync(path).size; } catch { return -1; } })() : -1) });
+          const hydrated = await Promise.allSettled(hydrationTurns.map(async turn => {
+            const items = await this.itemReadScheduler.run(effectiveSignal, () => awaitWithAbort(
+              this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal));
             ensureCurrent();
+            return { turn, items };
+          }));
+          const rejected = hydrated.find((result): result is PromiseRejectedResult => result.status === "rejected");
+          if (rejected) {
+            const error = rejected.reason;
+            if (!(error instanceof NativeItemPaginationUnsupported)) throw error;
+            ensureCurrent();
+            // Some native protocols have Turn headers but no Item paginator.
+            // Reconstruct full native Turns instead of publishing empty bodies.
+            this.headerPagesSupported = false; this.drop(threadId);
+            attempt--; continue readAttempts;
+          }
+          for (const result of hydrated) if (result.status === "fulfilled") {
+            ensureCurrent();
+            const { turn, items } = result.value;
             const row = this.database().prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId, turn.id) as Row | undefined;
             if (!row) throw new Error("Transcript Turn disappeared during hydration");
             transaction(this.database(), () => this.storeTurn(threadId, { ...turn, items, itemsView: "full" }, Number(row.turn_seq)));
-            hydrated = true;
           }
-          if (hydrated) page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
+          if (hydrationTurns.length) page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
         }
         await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
         observe(observer, "page", pageStarted);
