@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
 import { AccountPoolStore } from "./store.js";
 import { CodexAccountPoolProxy } from "./codex-proxy.js";
@@ -215,7 +216,10 @@ export class CodexAccountService {
       case "opencraft/codex/accounts/deviceLogin/start": result = await login.start(); break;
       case "opencraft/codex/accounts/deviceLogin/poll": {
         const polled = await login.poll(string(params.sessionId));
-        if (polled.status !== "complete") result = polled;
+        if (polled.status === "error") {
+          const reason = await deviceLoginMaintenanceReason(this.options.dataDirectory, string(params.sessionId), polled);
+          result = reason ? { ...polled, reason } : polled;
+        } else if (polled.status !== "complete") result = polled;
         else {
           const account = this.accountViews().find(candidate => candidate.id === polled.account.id);
           if (account === undefined) throw new Error("Codex account was not found after login");

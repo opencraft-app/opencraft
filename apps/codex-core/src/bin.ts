@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { startCodexCore, type CodexCoreOptions } from "./main.js";
-import { AccountCoreOwner, sealLegacyAccountMaintenance } from "./account-owner.js";
+import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
 import { isAbsolute } from "node:path";
 
 function argument(name: string): string {
@@ -26,12 +26,16 @@ async function main() {
   };
   const inspectMaintenance = process.argv.includes("--inspect-account-maintenance");
   const legacyReceipt = optional("--seal-legacy-account-maintenance");
-  if (inspectMaintenance || legacyReceipt) {
-    if (inspectMaintenance && legacyReceipt || !options.appServerEndpoint || options.appServerEndpoint === options.endpoint
+  const fencedReceipt = optional("--seal-fenced-account-maintenance");
+  const exportedReceipt = optional("--seal-exported-account-maintenance");
+  const inspectExport = optional("--inspect-account-retained-export");
+  const inspectCompatibility = optional("--inspect-exported-account-maintenance");
+  if (inspectMaintenance || legacyReceipt || fencedReceipt || exportedReceipt || inspectExport || inspectCompatibility) {
+    if ([inspectMaintenance, !!legacyReceipt, !!fencedReceipt, !!exportedReceipt, !!inspectExport, !!inspectCompatibility].filter(Boolean).length !== 1 || !options.appServerEndpoint || options.appServerEndpoint === options.endpoint
       || !Number.isSafeInteger(options.proxyPort) || options.proxyPort! < 1 || options.proxyPort! > 65535
       || ![options.endpoint, options.appServerEndpoint, options.dataDirectory,
       options.runtimeDirectory, options.nativeCodexHomeDirectory, options.executable].every(isAbsolute)
-      || options.authToken.length < 32 || legacyReceipt && !isAbsolute(legacyReceipt)) throw new Error("Invalid split account maintenance configuration");
+      || options.authToken.length < 32 || [legacyReceipt, fencedReceipt, exportedReceipt, inspectExport, inspectCompatibility].some(path => path !== undefined && !isAbsolute(path))) throw new Error("Invalid split account maintenance configuration");
   }
   if (inspectMaintenance) {
     console.log(JSON.stringify(await new AccountCoreOwner(options).inspectMaintenance()));
@@ -40,6 +44,19 @@ async function main() {
   if (legacyReceipt) {
     console.log(JSON.stringify(await sealLegacyAccountMaintenance(options, legacyReceipt)));
     return;
+  }
+  if (fencedReceipt) {
+    console.log(JSON.stringify(await sealFencedAccountMaintenance(options, fencedReceipt)));
+    return;
+  }
+  if (inspectExport) {
+    console.log(JSON.stringify(await inspectRetainedAccountExport(inspectExport))); return;
+  }
+  if (exportedReceipt) {
+    console.log(JSON.stringify(await sealExportedAccountMaintenance(options, exportedReceipt))); return;
+  }
+  if (inspectCompatibility) {
+    console.log(JSON.stringify(await new AccountCoreOwner(options).inspectExportedMaintenance(inspectCompatibility))); return;
   }
   const core = await startCodexCore(options);
   shutdown = async (code: number) => { await core.close(); process.exit(code); };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, chown, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
@@ -701,5 +701,188 @@ test("the frozen account-service startup itself requires external credentials", 
         ownerHandoff: { admissionOpen: () => false, onUncertain: async () => {} } });
       await unexpected.close();
     }, /Account credential validation failed/);
+  } finally { await f.close(); }
+});
+
+
+test("explicit fenced maintenance preserves fifty thousand unknowns without weakening legacy import", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const unknown = Array.from({ length: 50_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 50_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "fenced-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const path = join(f.root, "fenced-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const alive = await f.maintenance("maintenance-seal-fenced", path, source.environment);
+    assert.notEqual(alive.code, 0); assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    // Synthetic-source lifecycle only. A production controller needs its own
+    // qualified durable stop permit under the outer barrier and same locks.
+    await f.stop(source.child);
+    for (const [label, mutate] of [
+      ["state", (v: any) => { v.sourceStateSha256 = "0".repeat(64); }],
+      ["hash", (v: any) => { v.sourceSnapshot.proof.historicalUnknownSha256 = "0".repeat(64); }],
+      ["count", (v: any) => { v.sourceSnapshot.proof.historicalUnknownCount--; }],
+      ["volatile", (v: any) => { v.sourceSnapshot.proof.historicalCount++; }],
+      ["retained", (v: any) => { v.sourceSnapshot.handoff.retained = { imageAffinities: [{}], resetReceipts: [], loginReceipts: [] }; }],
+      ["active", (v: any) => { v.sourceSnapshot.proof.counts.oauth = 1; }],
+    ] as const) {
+      const changed = structuredClone(receipt); mutate(changed);
+      const changedPath = join(f.root, label + ".json"); await writeFile(changedPath, JSON.stringify(changed), { mode: 0o600 });
+      const rejected = await f.maintenance("maintenance-seal-fenced", changedPath, source.environment);
+      assert.notEqual(rejected.code, 0, label);
+      assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    }
+    const ordinary = await f.maintenance("maintenance-seal", path, source.environment); assert.notEqual(ordinary.code, 0);
+    const sealed = await f.maintenance("maintenance-seal-fenced", path, source.environment);
+    assert.equal(sealed.code, 0, sealed.errors);
+    const candidate = await f.start(), cold = await candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, unknown);
+    await candidate.adapter.releaseFence(f.input(cold), cold);
+    const resumed = await candidate.adapter.snapshot(); assert.deepEqual(resumed.handoff.uncertain, unknown);
+    const rebound = await candidate.adapter.acquireFence({ ...f.input(resumed), operationId: "next-large-handoff", fence: "next-large-fence", historicalUnknown: unknown });
+    assert.equal(rebound.proof.coverage, "complete");
+    assert.deepEqual(rebound.handoff.carriedUnknown, unknown);
+    await candidate.adapter.abortFence({ ...f.input(rebound), operationId: "next-large-handoff", fence: "next-large-fence" });
+  } finally { await f.close(); }
+});
+
+test("exported fenced maintenance preserves nonempty retained state and fifty thousand unknowns", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const retained = {imageAffinities: [["local-codex\0turn-a", {affinityId:"affinity-a",expiresAt:Date.now()+3600000}]],
+      resetReceipts: [{idempotencyKey:"reset_unknown",accountId:"a",creditId:"credit-a",outcome:"unknown"}],
+      loginReceipts: [["login-a",{expiresAt:Date.now()+3600000,result:{status:"error",message:"Synthetic login error"}}]]};
+    const unknown = Array.from({ length: 50_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown, retained }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 50_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "exported-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const retainedExport = {version:1,kind:"account-retained-export",readOnly:"v8-side-effect-checked",source:{pid:source.child.pid,owner:fenced.handoff.owner,epoch:fenced.handoff.epoch,operationId:fenced.handoff.operationId,fence:fenced.handoff.fence,bootId:fenced.handoff.bootId},retained};
+    Object.assign(receipt,{retainedExport,retainedExportSha256:createHash("sha256").update(JSON.stringify(retainedExport)).digest("hex")});
+    const path = join(f.root, "exported-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const alive = await f.maintenance("maintenance-seal-exported", path, source.environment);
+    assert.notEqual(alive.code, 0); assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    // Synthetic-source lifecycle only. A production controller needs its own
+    // qualified durable stop permit under the outer barrier and same locks.
+    const preview = await f.maintenance("maintenance-preview-exported", path, source.environment);
+    assert.equal(preview.code, 0, preview.errors); assert.equal(JSON.parse(preview.output).status, "passed");
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    await f.stop(source.child);
+    for (const [label, mutate] of [
+      ["state", (v: any) => { v.sourceStateSha256 = "0".repeat(64); }],
+      ["hash", (v: any) => { v.sourceSnapshot.proof.historicalUnknownSha256 = "0".repeat(64); }],
+      ["count", (v: any) => { v.sourceSnapshot.proof.historicalUnknownCount--; }],
+      ["volatile", (v: any) => { v.sourceSnapshot.proof.historicalCount++; }],
+      ["export-hash", (v: any) => { v.retainedExportSha256="0".repeat(64); }],
+      ["export-owner", (v: any) => { v.retainedExport.source.owner="different";v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["export-partial", (v: any) => { v.retainedExport.retained.imageAffinities=[];v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["export-malformed", (v: any) => { v.retainedExport.retained.resetReceipts[0].outcome="pending";v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["active", (v: any) => { v.sourceSnapshot.proof.counts.oauth = 1; }],
+    ] as const) {
+      const changed = structuredClone(receipt); mutate(changed);
+      const changedPath = join(f.root, label + ".json"); await writeFile(changedPath, JSON.stringify(changed), { mode: 0o600 });
+      const rejected = await f.maintenance("maintenance-seal-exported", changedPath, source.environment);
+      assert.notEqual(rejected.code, 0, label);
+      assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    }
+    const ordinary = await f.maintenance("maintenance-seal", path, source.environment); assert.notEqual(ordinary.code, 0);
+    const sealed = await f.maintenance("maintenance-seal-exported", path, source.environment);
+    assert.equal(sealed.code, 0, sealed.errors);
+    const sealReport = JSON.parse(sealed.output);
+    const freshInspection = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    assert.deepEqual(sealReport.inspection, freshInspection);
+    assert.equal(sealReport.inspection.storage.sha256, JSON.parse(await readFile(join(f.data,"account-handoff.json"),"utf8")).sealed.storage);
+    const candidate = await f.start(), cold = await candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, unknown);assert.deepEqual(cold.handoff.retained,retained);
+    await candidate.adapter.releaseFence(f.input(cold), cold);
+    const resumed = await candidate.adapter.snapshot(); assert.deepEqual(resumed.handoff.uncertain, unknown);
+    const rebound = await candidate.adapter.acquireFence({ ...f.input(resumed), operationId: "next-large-handoff", fence: "next-large-fence", historicalUnknown: unknown });
+    assert.equal(rebound.proof.coverage, "complete");
+    assert.deepEqual(rebound.handoff.carriedUnknown, unknown);
+    await candidate.adapter.abortFence({ ...f.input(rebound), operationId: "next-large-handoff", fence: "next-large-fence" });
+  } finally { await f.close(); }
+});
+
+test("preview rejects a successor state that would exceed capacity while keeping the source alive", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const retained = {imageAffinities: [["local-codex\0turn-a", {affinityId:"affinity-a",expiresAt:Date.now()+3600000}]],
+      resetReceipts: [{idempotencyKey:"reset_unknown",accountId:"a",creditId:"credit-a",outcome:"unknown"}],
+      loginReceipts: [["login-a",{expiresAt:Date.now()+3600000,result:{status:"error",message:"Synthetic login error"}}]]};
+    const unknown = Array.from({ length: 500_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown, retained }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 500_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "exported-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const retainedExport = {version:1,kind:"account-retained-export",readOnly:"v8-side-effect-checked",source:{pid:source.child.pid,owner:fenced.handoff.owner,epoch:fenced.handoff.epoch,operationId:fenced.handoff.operationId,fence:fenced.handoff.fence,bootId:fenced.handoff.bootId},retained};
+    Object.assign(receipt,{retainedExport,retainedExportSha256:createHash("sha256").update(JSON.stringify(retainedExport)).digest("hex")});
+    const path = join(f.root, "exported-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const preview = await f.maintenance("maintenance-preview-exported", path, source.environment);
+    assert.notEqual(preview.code, 0);
+    assert.match(preview.errors, /capacity|large|bound/i);
+    assert.equal(source.child.exitCode, null);
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    await source.adapter.abortFence(f.input(fenced));
+    assert.equal((await source.adapter.snapshot()).handoff.phase, "open");
+  } finally { await f.close(); }
+});
+
+test("an oversized ordinary fence leaves the live owner open and its durable state unchanged", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const unknown = Array.from({ length: 500_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({schemaVersion:1,epoch:0,phase:"open",uncertain:unknown,
+      retained:{imageAffinities:[],resetReceipts:[],loginReceipts:[]}}), {mode:0o600});
+    const source = await f.start(), before = await source.adapter.snapshot();
+    const fileHash = () => readFile(join(f.data,"account-handoff.json")).then(bytes => createHash("sha256").update(bytes).digest("hex"));
+    const beforeHash = await fileHash();
+    await assert.rejects(source.adapter.acquireFence({...f.input(before),historicalUnknown:unknown}));
+    const after = await source.adapter.snapshot();
+    assert.equal(after.handoff.phase,"open");assert.equal(after.handoff.epoch,0);
+    assert.equal(after.handoff.persistence,"ready");assert.deepEqual(after.handoff.uncertain,unknown);
+    assert.equal(await fileHash(),beforeHash);assert.equal(await f.account(),200);
+    const small = await source.adapter.acquireFence(f.input(after));
+    await source.adapter.abortFence(f.input(small));
+    const restored = await source.adapter.snapshot();assert.equal(restored.handoff.phase,"open");assert.deepEqual(restored.handoff.uncertain,unknown);
   } finally { await f.close(); }
 });

@@ -653,6 +653,38 @@ Older source binaries do not gain this endpoint merely by installing a new Web
 package: callers must check source capability before using the protocol.
 
 
+#### Device-login interruptions during necessary migrations
+
+A maintenance controller may cancel an active device login through the original
+owner's existing `deviceLogin/cancel` API, with new and accepted external ingress
+still closed. It sends at most one cancel per session and reconciles a lost reply
+with read-only polls. A caller-owned deadline bounds settlement. If a terminal
+receipt cannot be proved in time, the caller restores the original owner under
+the same deployment locks; it does not clear active counts or force release.
+The original login error receipt is carried unchanged with the other retained
+state. Natural success racing cancellation stays a success, not an interruption.
+
+A separate, account-owner-only presentation annotation may identify an observed
+`Login cancelled.` error as `maintenance-interrupted`. Its standard location is
+`device-login-maintenance/<session UUID>.json` under the account data directory.
+Version 1 records kind `device-login-maintenance`, the exact session ID, source
+owner/epoch/operation/fence, `cancelAttempted: true`, `terminal: true`, disposition
+`maintenance-interrupted`, the original result and its SHA-256 of canonical JSON
+(sorted object keys, no whitespace). It contains no credentials or device code.
+The same directory may hold unconfirmed cancel intents to prevent POST replay
+across maintenance operations; these do not assert a terminal result or add a
+display reason. This metadata is outside the original sealed account-storage hash and does not
+replace, rewrite or authorize a retained receipt. The reader accepts only a
+private owner file and an exact matching original error; absent, malformed or
+ambiguous metadata leaves the original error unchanged.
+
+The account poll response may add `reason: "maintenance-interrupted"`; existing
+clients can continue displaying `message`. The account Settings service displays
+“登录被维护中断，请重新登录” for this reason. Manual cancellation is unchanged. The
+projection never starts another login or repeats a cancellation. Cold successors
+and same-source rollback retain the original account result as their authority.
+
+
 Responses completion recognition uses complete protocol records on successful
 `/v1/responses` bodies, independently of the provider's Content-Type header.
 Some compatible providers omit or mislabel MIME while returning valid SSE.
