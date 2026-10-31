@@ -38,6 +38,8 @@ test("invalid model configuration declarations roll back activation; valid decla
   try {
     for (const invalid of [
       page("example.models.page", { targetHostId: undefined }),
+      page("example.models.page", { modelReadiness: true, modelConfiguration: false }),
+      page("example.models.page", { modelReadiness: "yes" as unknown as boolean }),
       page("example.models.page", { modelConfiguration: "yes" as unknown as boolean }),
     ]) {
       await assert.rejects(supervisor.activate(definition(invalid)), /model configuration/);

@@ -19,7 +19,7 @@ export interface LocalAgentSettingsSnapshot {
 }
 
 export interface RuntimeProviderConfiguration {
-  readonly baseURL: string; readonly credentialRef: string;
+  readonly baseURL: string; readonly credentialRef: string; readonly authentication?: "none";
   readonly displayName: string; readonly api?: RuntimeProviderProtocol;
   readonly models: readonly RuntimeDiscoveredModelView[];
 }
@@ -94,7 +94,8 @@ export class LocalAgentSettingsService {
       // empty declarations. Normalize the read projection, not the stored data.
       models: Array.isArray(profile.models) ? (profile.models as RuntimeDiscoveredModelView[]).map(model =>
         Array.isArray(model.input) && model.input.length === 0 ? { ...model, input: undefined } : model) : [],
-      credentialRef: typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.trim() !== ""
+      ...(profile.authentication === "none" ? { authentication: "none" as const } : {}),
+      credentialRef: profile.authentication === "none" ? "" : typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.trim() !== ""
         ? profile.apiKeyEnv.trim() : provider.configuration?.defaultCredentialRef ?? defaultCredentialRef(provider.provider),
     };
   }

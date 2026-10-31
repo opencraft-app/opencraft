@@ -1119,9 +1119,11 @@
   "chat.visualization.loading": "Memuatkan visualisasi…",
   "welcome.local.start": "Dari direktori kod sumber, mulakan pelaksanaan setempat dan Web bersama, kemudian buka alamat yang dipaparkan.",
   "welcome.nextStep": "Langkah seterusnya",
-  "welcome.models.required": "Tiada model yang boleh digunakan pada {host}. Konfigurasi model atau hubungi pentadbir pelayan.",
+  "welcome.models.required": "Sediakan model yang boleh digunakan pada {host}, atau pilih model yang telah dikonfigurasi.",
   "welcome.models.failed": "Tidak dapat memuatkan model dari {host}. Cuba lagi.",
   "welcome.connection.failed": "Tidak dapat menyambung ke {host}. Semak sambungan atau cuba lagi.",
   "welcome.retry": "Cuba lagi",
-  "welcome.connection.settings": "Tetapan sambungan"
+  "welcome.connection.settings": "Tetapan sambungan",
+  "modelServices.noAuth.title": "Tanpa pengesahan",
+  "modelServices.noAuth.description": "Gunakan hanya jika titik akhir ini tidak memerlukan kunci API. Kunci tersimpan dan persekitaran tidak akan dihantar."
 }

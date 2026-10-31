@@ -70,7 +70,12 @@ export class PiModelEngineAdapter implements ModelEnginePort {
       if (!provider.enabled || !selected.length) continue;
       const api = getApiProvider(provider.protocol as Api);
       if (!api) throw new ModelConfigurationApplyError('Pi不支持所配置的模型协议，请检查提供商配置。');
-      const key = provider.credentialRef ? await credentials.resolve(provider.credentialRef) : undefined;
+      const unauthenticated = provider.authentication === 'none';
+      const key = unauthenticated ? 'opencraft-no-auth' : provider.credentialRef ? await credentials.resolve(provider.credentialRef) : undefined;
+      const transport: typeof api = !unauthenticated ? api : {...api,
+        stream: (model, context, options) => api.stream(model, context, {...options, headers: {...options?.headers, authorization: null, 'x-api-key': null, 'api-key': null}}),
+        streamSimple: (model, context, options) => api.streamSimple(model, context, {...options, headers: {...options?.headers, authorization: null, 'x-api-key': null, 'api-key': null}}),
+      };
       // An unresolved reference never falls back to native files or process-global provider credentials.
       if (!key) continue;
       const id = bindings[provider.id]!;
@@ -94,7 +99,7 @@ export class PiModelEngineAdapter implements ModelEnginePort {
           maxTokens: model.maxTokens ?? known?.maxTokens ?? 16384,
           cost: known?.cost ?? {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}};
       });
-      providers.push(createProvider({id, name: provider.name, baseUrl, models, api,
+      providers.push(createProvider({id, name: provider.name, baseUrl, models, api: transport,
         auth: {apiKey: {name: 'OpenCraft configuration',
           check: async () => ({type: 'api_key', source: 'OpenCraft configuration'}),
           resolve: async () => ({auth: {apiKey: key}, source: 'OpenCraft configuration'})}}}));

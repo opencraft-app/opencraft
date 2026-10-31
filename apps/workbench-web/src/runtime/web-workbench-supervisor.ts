@@ -479,23 +479,22 @@ export async function createWebWorkbenchApplicationSupervisor(
       return createVoiceInputExtension(options.speechInputProvider, options.speechInputProvider
         ? {} : platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference, fetcher: serverFetch } } : {});
     });
+    const requestSettingsHost: Parameters<(typeof import("@opencraft/plugin-builtin-agents"))["createBuiltinAgentsExtension"]>[0]["requestHost"] = async (hostId, method, params) => {
+      const result = await agentRuntimes.request(hostId, method, params);
+      if (changesComposerCapabilities(method)) {
+        // Both local and server settings use the same Host-scoped catalog owner.
+        void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
+      }
+      return result;
+    };
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true"
       && (platform === "electron" || deployment.builtinAgents)) {
       await extensions.loadOptional("opencraft.builtin-agents", async () => {
         const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
-        const requestHost: Parameters<typeof createBuiltinAgentsExtension>[0]["requestHost"] = async (hostId, method, params) => {
-          const result = await agentRuntimes.request(hostId, method, params);
-          if (changesComposerCapabilities(method)) {
-            // UI requests start after application construction. Invalidate the
-            // existing host-scoped catalog owner, never a session's selection.
-            void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
-          }
-          return result;
-        };
         return platform === "web"
-          ? createBuiltinAgentsExtension({ platform: "web", requestHost, includeCodexAccounts: headlessAppHost === null })
+          ? createBuiltinAgentsExtension({ platform: "web", requestHost: requestSettingsHost, includeCodexAccounts: headlessAppHost === null })
           : createBuiltinAgentsExtension({
-            requestHost,
+            requestHost: requestSettingsHost,
             createTransport: (hostId) => {
               if (electronAppHost === null) throw new Error("Electron App Host is unavailable");
               return electronAppHost.createTransport(hostId);
@@ -509,7 +508,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         return createHeadlessModelServicesExtension({
           fetcher: serverFetch,
           hostId: "opencraft-server",
-          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          requestHost: requestSettingsHost,
         });
       });
     }
@@ -535,7 +534,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         const sshServers = await readSshServerCatalog();
         const { createHeadlessServerExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessServerExtension({
-          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          requestHost: requestSettingsHost,
           createTransport: hostId => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false ? remoteAppHost! : headlessAppHost).createTransport(hostId),
           workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
           sshServers: sshManagement!.getSnapshot().available !== false ? [] : sshServers,

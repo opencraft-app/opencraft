@@ -1117,9 +1117,11 @@
   "chat.visualization.loading": "Loading visualization…",
   "welcome.local.start": "From the source checkout, start local execution and Web together, then open the printed address.",
   "welcome.nextStep": "Next step",
-  "welcome.models.required": "No usable models are available on {host}. Configure models or contact the server administrator.",
+  "welcome.models.required": "Set up a usable model on {host}, or select one that is already configured.",
   "welcome.models.failed": "Could not load models from {host}. Try again.",
   "welcome.connection.failed": "Could not connect to {host}. Check the connection or retry.",
   "welcome.retry": "Retry",
-  "welcome.connection.settings": "Connection settings"
+  "welcome.connection.settings": "Connection settings",
+  "modelServices.noAuth.title": "No authentication",
+  "modelServices.noAuth.description": "Use only when this endpoint does not require an API key. Saved and environment keys will not be sent."
 }

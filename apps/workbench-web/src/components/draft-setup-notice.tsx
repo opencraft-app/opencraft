@@ -13,7 +13,7 @@ export function DraftSetupNotice({ kind, hostName, onConfigure, onRetry, onConne
   const intl = useIntl();
   return <section className="draft-setup-notice thread-layout-width" aria-label={intl.formatMessage({ id: 'welcome.nextStep', defaultMessage: 'Next step' })}>
     <p>{intl.formatMessage(kind === 'models'
-      ? { id: 'welcome.models.required', defaultMessage: 'No usable models are available on {host}. Configure models or contact the server administrator.' }
+      ? { id: 'welcome.models.required', defaultMessage: 'Set up a usable model on {host}, or select one that is already configured.' }
       : kind === 'catalog-error'
         ? { id: 'welcome.models.failed', defaultMessage: 'Could not load models from {host}. Try again.' }
         : { id: 'welcome.connection.failed', defaultMessage: 'Could not connect to {host}. Check the connection or retry.' }, { host: hostName })}</p>

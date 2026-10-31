@@ -19,7 +19,7 @@ function withOllamaCloud(directory:RuntimeProvidersListResponse):RuntimeProvider
     settingsNs:'llm-pi-ai',settingsPath:['providers',OLLAMA_CLOUD_ID],active:false,
   }]};
 }
-function profile(p:ConfiguredProvider){return {displayName:p.name,enabled:p.enabled,...(p.baseUrl?{baseURL:p.baseUrl}:{}),apiKeyEnv:p.credentialRef??'OPENCRAFT_UNBOUND',api:p.protocol,models:p.models.map(({enabled,...m})=>m)}}
+function profile(p:ConfiguredProvider){return {displayName:p.name,enabled:p.enabled,...(p.baseUrl?{baseURL:p.baseUrl}:{}),...(p.authentication==='none'?{authentication:'none'}:{apiKeyEnv:p.credentialRef??'OPENCRAFT_UNBOUND'}),api:p.protocol,models:p.models.map(({enabled,...m})=>m)}}
 
 /** Engine-specific format exists only in this adapter, never in models.json. */
 function sections(doc:ModelDocument,raw:RuntimeSettingsDescribeResponse){
@@ -36,7 +36,7 @@ function sections(doc:ModelDocument,raw:RuntimeSettingsDescribeResponse){
 function protocol(id:string){if(id==='anthropic')return 'anthropic-messages';if(id==='google')return 'google-generative-ai';return 'openai-completions'}
 export function fromDshProfile(id:string,value:unknown,disabled:unknown,catalogId?:string):ConfiguredProvider{
   const p=object(value), off=new Set(Array.isArray(disabled)?disabled:[]);
-  return {id,name:p.displayName|| (catalogId==='deepseek'?'DeepSeek':id),...(catalogId?{catalogId}:{}),protocol:p.api||protocol(id),baseUrl:p.baseURL||(catalogId==='deepseek'?'https://api.deepseek.com':''),credentialRef:p.apiKeyEnv||null,enabled:p.enabled!==false,
+  return {id,name:p.displayName|| (catalogId==='deepseek'?'DeepSeek':id),...(catalogId?{catalogId}:{}),protocol:p.api||protocol(id),baseUrl:p.baseURL||(catalogId==='deepseek'?'https://api.deepseek.com':''),credentialRef:p.authentication==='none'?null:p.apiKeyEnv||null,...(p.authentication==='none'?{authentication:'none' as const}:{}),enabled:p.enabled!==false,
     models:(Array.isArray(p.models)?p.models:[]).map((m:any)=>({id:m.id,...(m.type?{type:m.type}:{}),...(m.name?{name:m.name}:{}),enabled:!off.has(m.id),...(m.contextWindow?{contextWindow:m.contextWindow}:{}),...(m.maxTokens?{maxTokens:m.maxTokens}:{}),...((m.input??m.inputModalities)?.length?{input:m.input??m.inputModalities}:{}),...(m.reasoningEfforts!==undefined?{reasoningEfforts:m.reasoningEfforts}:{})}))};
 }
 
@@ -54,7 +54,7 @@ export class DshModelEngineAdapter implements ModelEnginePort {
     execution.providers=execution.providers.filter(p=>p.protocol!=='hunyuan-asr');
     for(const p of execution.providers)p.models=p.models.map(({type,...m})=>m);
     const wanted=new Map<string,string>();let missing=false;
-    for(const p of execution.providers){const value=p.credentialRef?await credentials.resolve(p.credentialRef):undefined;if(p.enabled&&!value)missing=true;if(p.credentialRef){const ref=`OPENCRAFT_EXEC_${createHash('sha256').update(p.credentialRef).digest('hex').toUpperCase()}`;if(value)wanted.set(ref,value);p.credentialRef=ref;}}
+    for(const p of execution.providers){if(p.authentication==='none')continue;const value=p.credentialRef?await credentials.resolve(p.credentialRef):undefined;if(p.enabled&&!value)missing=true;if(p.credentialRef){const ref=`OPENCRAFT_EXEC_${createHash('sha256').update(p.credentialRef).digest('hex').toUpperCase()}`;if(value)wanted.set(ref,value);p.credentialRef=ref;}}
     const oldProfiles=object(raw.namespaces.find(n=>n.ns==='llm-pi-ai')?.value).providers;
     const oldRefs=[...Object.values(object(oldProfiles)).map(p=>object(p).apiKeyEnv),object(raw.namespaces.find(n=>n.ns==='llm-deepseek')?.value).apiKeyEnv];
     for(const ref of new Set(oldRefs))if(typeof ref==='string'&&ref.startsWith('OPENCRAFT_EXEC_')&&!wanted.has(ref))await this.client.call('credentials.unset',{ref});
