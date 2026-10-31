@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AdaptiveInputWindow } from '@opencraft/remote-interaction';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
 
 test('transient failures keep recovering past five attempts without navigation or control', async t => {
@@ -21,8 +22,8 @@ test('transient failures keep recovering past five attempts without navigation o
   const originals = new Map(['WebSocket','window','location'].map(key => [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for (const [key,value] of Object.entries({WebSocket:FakeSocket,window:{},location:{href:'https://example.test/'}}))
     Object.defineProperty(globalThis,key,{configurable:true,value});
-  const host:any = new RemoteBrowserSurfaceHost({getItem:()=>null,setItem(){}},'proof');
-  const p:any={control:{epoch:0,active:false,controller:false,kind:null},controlGeneration:0,lease:'browser-12345678901234567890',connection:0,
+  const host:any = new RemoteBrowserSurfaceHost('mse',{getItem:()=>null,setItem(){}},'proof');
+  const p:any={inputPolicy:new AdaptiveInputWindow(),control:{epoch:0,active:false,controller:false,kind:null},controlGeneration:0,lease:'browser-12345678901234567890',connection:0,
     closed:false,displaced:false,viewportMeasured:false,pending:new Map(),retries:0,visible:true,navigation:0,url:'https://example.test/stale',
     events:{onError:(s:string)=>errors.push(s),onLoaded(){loaded++;},onNavigation(){}}};
   host.resetTransport=(page:any)=>{host.rejectPending(page);page.opened=false;};
@@ -58,5 +59,52 @@ test('transient failures keep recovering past five attempts without navigation o
   } finally {
     p.closed=true;if(p.reconnect)clearTimeout(p.reconnect);for(const s of sockets)s.close();host.rejectPending(p);
     for(const [key,descriptor] of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key];
+  }
+});
+
+test('only authoritative closure terminates the logical tab, fenced against old connections', async t => {
+  const sockets: FakeSocket[] = [];
+  class FakeSocket {
+    static OPEN = 1;
+    readyState = 1; sent: any[] = [];
+    onopen?: () => void; onclose?: (event: {code: number; reason: string}) => void; onmessage?: (event: {data: string}) => void;
+    constructor(_url: URL) { sockets.push(this); }
+    send(value: string) { this.sent.push(JSON.parse(value)); }
+    close(code = 1000, reason = '') { if (this.readyState === 3) return; this.readyState = 3; this.onclose?.({code, reason}); }
+    closedSession() { this.onmessage?.({data: JSON.stringify({type:'result',id:this.sent[0].id,
+      error:{code:'SESSION_CLOSED',message:'Browser tab is closed',retryable:false}})}); }
+  }
+  const originals = new Map(['WebSocket','window','location'].map(key => [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  for (const [key,value] of Object.entries({WebSocket:FakeSocket,window:{},location:{href:'https://example.test/'}}))
+    Object.defineProperty(globalThis,key,{configurable:true,value});
+  t.mock.timers.enable({apis:['setTimeout']});
+  const host:any = new RemoteBrowserSurfaceHost('mse',{getItem:()=>null,setItem(){}},'proof');
+  let closed = 0;
+  const p:any = {inputPolicy:new AdaptiveInputWindow(),control:{epoch:0,active:false,controller:false,kind:null},controlGeneration:0,
+    lease:'browser-12345678901234567890',connection:0,closed:false,displaced:false,viewportMeasured:false,pending:new Map(),retries:0,
+    events:{onError(){},onLoaded(){},onSessionClosed(){closed++;}},visible:true};
+  host.resetTransport=(page:any)=>host.rejectPending(page);
+  const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+  const connect=()=>{p.serverClosed=false;p.ready=host.connect(p);host.watchConnection(p);};
+  try {
+    connect();sockets[0].close(1006);await flush();assert.equal(closed,0);
+    clearTimeout(p.reconnect);p.reconnect=null;
+    connect();sockets[1].close(1008,'Browser admission expired');await flush();assert.equal(closed,0);
+    connect();const previous=sockets[2];connect();
+    previous.onclose?.({code:1000,reason:'Browser tab closed'});await flush();assert.equal(closed,0,'old generation cannot retire replacement');
+    sockets[3].close(1000,'Browser tab closed');await flush();assert.equal(closed,1);
+    connect();sockets[4].onopen?.();sockets[4].closedSession();await flush();assert.equal(closed,2,'retired lease open rejection also closes owner');
+    t.mock.timers.tick(60000);await flush();assert.equal(sockets.length,5,'retirement does not silently create a fresh lease');
+    p.serverClosed=false;
+    p.ready=Promise.reject(Object.assign(new Error('Browser tab is closed'),{code:'SESSION_CLOSED'}));
+    host.watchConnection(p);await flush();assert.equal(closed,3,'metadata fence failure before transport also reaches owner');
+    p.serverClosed=false;
+    let rejectOld!:(error:Error)=>void;
+    p.ready=new Promise<void>((_,reject)=>{rejectOld=reject;});host.watchConnection(p);
+    p.ready=Promise.resolve();rejectOld(Object.assign(new Error('old close'),{code:'SESSION_CLOSED'}));await flush();
+    assert.equal(closed,3,'old metadata fence cannot close replacement connection');
+  } finally {
+    p.closed=true;if(p.reconnect)clearTimeout(p.reconnect);for(const socket of sockets)socket.close();host.rejectPending(p);
+    for(const [key,value] of originals)if(value)Object.defineProperty(globalThis,key,value);else delete (globalThis as any)[key];
   }
 });
