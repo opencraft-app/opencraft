@@ -866,3 +866,23 @@ test("preview rejects a successor state that would exceed capacity while keeping
     assert.equal((await source.adapter.snapshot()).handoff.phase, "open");
   } finally { await f.close(); }
 });
+
+test("an oversized ordinary fence leaves the live owner open and its durable state unchanged", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const unknown = Array.from({ length: 500_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({schemaVersion:1,epoch:0,phase:"open",uncertain:unknown,
+      retained:{imageAffinities:[],resetReceipts:[],loginReceipts:[]}}), {mode:0o600});
+    const source = await f.start(), before = await source.adapter.snapshot();
+    const fileHash = () => readFile(join(f.data,"account-handoff.json")).then(bytes => createHash("sha256").update(bytes).digest("hex"));
+    const beforeHash = await fileHash();
+    await assert.rejects(source.adapter.acquireFence({...f.input(before),historicalUnknown:unknown}));
+    const after = await source.adapter.snapshot();
+    assert.equal(after.handoff.phase,"open");assert.equal(after.handoff.epoch,0);
+    assert.equal(after.handoff.persistence,"ready");assert.deepEqual(after.handoff.uncertain,unknown);
+    assert.equal(await fileHash(),beforeHash);assert.equal(await f.account(),200);
+    const small = await source.adapter.acquireFence(f.input(after));
+    await source.adapter.abortFence(f.input(small));
+    const restored = await source.adapter.snapshot();assert.equal(restored.handoff.phase,"open");assert.deepEqual(restored.handoff.uncertain,unknown);
+  } finally { await f.close(); }
+});

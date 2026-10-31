@@ -345,9 +345,13 @@ export class AccountCoreOwner {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
     if (input.historicalUnknown !== undefined && digest(input.historicalUnknown) !== digest(this.state.uncertain)) throw new Error("Account historical unknown list changed");
-    this.state = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
+    const fenced: State = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
       carriedUnknown: structuredClone(input.historicalUnknown ?? []) };
-    await this.save(this.state);
+    // Reject oversized bindings while the original in-memory owner is still
+    // open. Close admission before the first asynchronous persistence step.
+    this.serialized(fenced);
+    this.state = fenced;
+    await this.save(fenced);
   }
   async abortFence(input: AccountOwnerExpectation) {
     this.check(input);
