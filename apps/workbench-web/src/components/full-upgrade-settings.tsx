@@ -64,9 +64,9 @@ export function FullUpgradeSettings({ authenticated }: { authenticated: boolean 
     </>}
     <SettingsActions align="start">
       <SettingsButton disabled={pending || data?.unavailable} aria-busy={pending} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>
-      <SettingsButton variant="primary" disabled aria-describedby="full-upgrade-blocked"><FormattedMessage id="fullUpgrade.install" defaultMessage="Upgrade all components" /></SettingsButton>
+      <SettingsButton variant="primary" disabled={pending || !data?.fullStackExecutable || !plan?.executable} onClick={() => void action('start', { planDigest: plan?.planDigest, jobId: 'full-' + plan?.planDigest })} aria-describedby={!plan?.executable ? 'full-upgrade-blocked' : undefined}><FormattedMessage id="fullUpgrade.install" defaultMessage="Upgrade all components" /></SettingsButton>
     </SettingsActions>
-    <SettingsNotice id="full-upgrade-blocked"><FormattedMessage id="fullUpgrade.blocked" defaultMessage="Upgrade requirements not met" /></SettingsNotice>
+    {!plan?.executable && <SettingsNotice id="full-upgrade-blocked"><FormattedMessage id="fullUpgrade.blocked" defaultMessage="Upgrade requirements not met" /></SettingsNotice>}
     {data?.jobs.map(job => <SettingsGroup key={job.jobId}>
       <SettingsRow label={<FormattedMessage id="fullUpgrade.status" defaultMessage="Status" />} description={job.jobId}>{stateText(job.state)}</SettingsRow>
       <details className="full-upgrade-details"><summary><FormattedMessage id="fullUpgrade.details" defaultMessage="View details" /></summary>

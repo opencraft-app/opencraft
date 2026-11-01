@@ -15,7 +15,7 @@ export async function startAgent(config, entry = process.argv[1]) {
   await privateDirectory(config.stateRoot);
   const journal = await new Journal(join(config.stateRoot, 'agent')).open();
   const identity = await entryIdentity(entry), bootId = await bootIdentity();
-  // P3 adapters intentionally absent. Persisted uncertain work cannot acquire
+  // Persisted uncertain work cannot acquire
   // permission from a fresh process, a new boot, or a healthy website.
   for (const job of await journal.list()) {
     if (!['blocked', 'completed', 'rolled-back', 'active-draining', 'recovery-required', 'failed', 'deferred'].includes(job.state)) {
@@ -40,10 +40,15 @@ export async function startAgent(config, entry = process.argv[1]) {
       }).catch(() => {});
       return result;
     }
+    if (input.action.startsWith('full-')) {
+      invariant(identifier(input.operationId), 'invalid-operation');
+      return request(socketPath(config, 'helper'), input, 120000);
+    }
     if (input.action.startsWith('page-')) return pageControl(config, input, journal, bootId);
     if (input.action === 'web-admission') {
       await reconcileWebChildren(config, journal, bootId);
-      return { recoveryRequired: (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
+      const parents = config.fullRecipePath ? (await request(socketPath(config, 'helper'), { action: 'full-status' })).jobs : [];
+      return { recoveryRequired: parents.some(job => !['completed','rolled-back','deferred','active-draining'].includes(job.state) && job.steps.some(step => step.intent && !step.receipt)) || (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
     }
     if (input.action === 'web-child') return webChildControl(config, input, journal, bootId);
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,

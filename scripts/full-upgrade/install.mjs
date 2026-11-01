@@ -9,7 +9,7 @@ import { rootOwned } from './service-config.mjs';
 import { invariant, atomicJson, atomicBytes, command, acquireLock } from './durable.mjs';
 import { request } from './ipc.mjs';
 
-const names = ['agent', 'helper', 'watchdog', 'control'];
+const names = ['agent', 'helper', 'watchdog', 'control', 'parent'];
 const safePath = path => typeof path === 'string' && /^\/[A-Za-z0-9/._-]+$/.test(path) && !path.split('/').includes('..');
 export async function install(options) {
   invariant(process.getuid() === 0, 'root-installation-required');
@@ -86,9 +86,13 @@ export async function install(options) {
       config.ciRequest = options.ciRequest; config.ciObserve = options.ciObserve;
     }
     const configPath = join(configDir, 'config.json');
+    config.configPath = configPath; config.parentEntry = join(directory, 'upgrade-parent.mjs');
     let previousConfig;
     try { previousConfig = JSON.parse(await readFile(configPath, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (previousConfig) invariant(['mode', 'stateRoot', 'controlStateRoot', 'runtimeRoot', 'artifactRoot', 'deployLock', 'webState', 'serviceUser', 'node'].every(k => previousConfig[k] === config[k]), 'explicit-bootstrap-migration-required');
+    if (previousConfig?.fullRecipePath) {
+      await rootOwned(previousConfig.fullRecipePath); config.fullRecipePath = previousConfig.fullRecipePath; config.fullCiBeforeParent = previousConfig.fullCiBeforeParent === true;
+    }
     if (previousConfig?.generationRecipePath) {
       invariant(safePath(previousConfig.generationRecipePath), 'invalid-generation-recipe-path');
       await rootOwned(previousConfig.generationRecipePath);
