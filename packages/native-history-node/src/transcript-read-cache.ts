@@ -64,8 +64,11 @@ export async function observeNativeTranscriptFiles(nativeHome: string, paths: re
 }
 export type HistoryReadPhase = "metadata" | "queue" | "source" | "reconcile" | "page" | "scan";
 export type ItemHydrationPath = "cache-page" | "adapter-oversize-fallback";
-export type HistoryReadContext = { itemHydrationPath?: ItemHydrationPath; turnCountBucket?: string; lengthBucket?: string };
-export type HistoryReadObserver = (phase: HistoryReadPhase | "context", ms: number, context?: HistoryReadContext) => void;
+export type HistoryReadContext = { itemHydrationPath?: ItemHydrationPath; turnCountBucket?: string; lengthBucket?: string; itemQueueMs?: number; activePhase?: HistoryReadPhase | "projection" };
+export type HistoryReadObserver = (phase: HistoryReadPhase | "context" | "start", ms: number, context?: HistoryReadContext) => void;
+function observeStart(observer: HistoryReadObserver | undefined, phase: HistoryReadPhase): void {
+  try { observer?.("start", 0, { activePhase: phase }); } catch { /* Diagnostics never own read settlement. */ }
+}
 function observe(observer: HistoryReadObserver | undefined, phase: HistoryReadPhase, started: number): void {
   try { observer?.(phase, Math.max(0, performance.now() - started)); } catch { /* Diagnostics never own read settlement. */ }
 }
@@ -82,46 +85,78 @@ export function historyLengthBucket(bytes: number): string {
     : bytes < 10_485_760 ? "1-10MiB" : bytes < 52_428_800 ? "10-50MiB"
       : bytes < 104_857_600 ? "50-100MiB" : bytes < 524_288_000 ? "100-500MiB" : "500MiB+";
 }
+type NativeItemReadWaiter = { signal?: AbortSignal; resolve(): void; reject(error: Error): void; abort?: () => void };
 export class NativeItemReadScheduler {
   private active = 0;
-  private readonly waiters: Array<{ signal?: AbortSignal; resolve(): void; reject(error: Error): void; abort?: () => void }> = [];
+  private readonly waiters = new Map<string, NativeItemReadWaiter[]>();
+  private readonly readyScopes: string[] = [];
   constructor(readonly concurrency = 4) {
     if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("Invalid native Item read concurrency");
   }
-  async run<T>(signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
-    await this.acquire(signal);
-    try { return await operation(); }
-    finally { this.release(); }
+  async run<T>(scope: string, signal: AbortSignal | undefined, operation: () => Promise<T>, onWait?: (ms: number) => void): Promise<T> {
+    const started = performance.now();
+    let acquired = false;
+    let waitReported = false;
+    const reportWait = () => {
+      if (waitReported) return;
+      waitReported = true;
+      try { onWait?.(Math.max(0, performance.now() - started)); } catch { /* Diagnostics never own read settlement. */ }
+    };
+    try {
+      await this.acquire(scope, signal);
+      acquired = true;
+      reportWait();
+      if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled");
+      return await operation();
+    } catch (error) {
+      reportWait();
+      throw error;
+    } finally { if (acquired) this.release(); }
   }
-  private acquire(signal?: AbortSignal): Promise<void> {
+  private acquire(scope: string, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled"));
     if (this.active < this.concurrency) { this.active++; return Promise.resolve(); }
     return new Promise<void>((resolve, reject) => {
-      const waiter = { signal, resolve, reject } as (typeof this.waiters)[number];
+      const waiter: NativeItemReadWaiter = { signal, resolve, reject };
       if (signal) {
         waiter.abort = () => {
-          const index = this.waiters.indexOf(waiter);
-          if (index >= 0) this.waiters.splice(index, 1);
+          const queue = this.waiters.get(scope);
+          const index = queue?.indexOf(waiter) ?? -1;
+          if (queue && index >= 0) queue.splice(index, 1);
+          if (queue && queue.length === 0) {
+            this.waiters.delete(scope);
+            const ready = this.readyScopes.indexOf(scope);
+            if (ready >= 0) this.readyScopes.splice(ready, 1);
+          }
           signal.removeEventListener("abort", waiter.abort!);
           reject(signal.reason instanceof Error ? signal.reason : new Error("Transcript read cancelled"));
         };
         signal.addEventListener("abort", waiter.abort, { once: true });
       }
-      this.waiters.push(waiter);
+      const queue = this.waiters.get(scope);
+      if (queue) queue.push(waiter);
+      else { this.waiters.set(scope, [waiter]); this.readyScopes.push(scope); }
+      this.dispatch();
     });
   }
   private release(): void {
-    while (this.waiters.length) {
-      const waiter = this.waiters.shift()!;
+    this.active--;
+    this.dispatch();
+  }
+  private dispatch(): void {
+    while (this.active < this.concurrency && this.readyScopes.length) {
+      const scope = this.readyScopes.shift()!, queue = this.waiters.get(scope);
+      if (!queue?.length) { this.waiters.delete(scope); continue; }
+      const waiter = queue.shift()!;
+      if (queue.length) this.readyScopes.push(scope); else this.waiters.delete(scope);
       if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);
       if (waiter.signal?.aborted) {
         waiter.reject(waiter.signal.reason instanceof Error ? waiter.signal.reason : new Error("Transcript read cancelled"));
         continue;
       }
+      this.active++;
       waiter.resolve();
-      return;
     }
-    this.active--;
 }
 }
 
@@ -283,14 +318,17 @@ export class TranscriptReadCache {
     const key = this.fileKey(threadId);
     return { turns: join(this.directory, `${key}.turns.jsonl`), blobs: join(this.directory, `${key}.blobs`) };
   }
-  private async serialize<T>(id: string, run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  private async serialize<T>(id: string, run: () => Promise<T>, signal?: AbortSignal, onQueued?: (ms: number) => void): Promise<T> {
     const prior = this.jobs.get(id);
+    const queued = performance.now(); let reported = false;
+    const report = () => { if (reported) return; reported = true; try { onQueued?.(Math.max(0, performance.now() - queued)); } catch { /* Diagnostics never own read settlement. */ } };
     // Cancellation ends a reader's wait, never the serialization barrier of
     // its predecessor. Later writers must still queue behind actual cleanup.
-    const operation = (prior ?? Promise.resolve()).catch(() => {}).then(() => { throwIfAborted(signal); return run(); });
+    const operation = (prior ?? Promise.resolve()).catch(() => {}).then(() => { report(); throwIfAborted(signal); return run(); });
     this.jobs.set(id, operation);
     void operation.finally(() => { if (this.jobs.get(id) === operation) this.jobs.delete(id); }).catch(() => {});
-    return awaitWithAbort(operation, signal);
+    try { return await awaitWithAbort(operation, signal); }
+    catch (error) { report(); throw error; }
   }
   private drop(threadId: string): void {
     const db = this.database(), paths = this.paths(threadId);
@@ -316,8 +354,12 @@ export class TranscriptReadCache {
     const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
     const revision = this.revisions.get(threadId) ?? 0;
     const metadataStarted = performance.now();
-    const thread = await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
-    observe(observer, "metadata", metadataStarted);
+    observeStart(observer, "metadata");
+    let thread: AppServerThread;
+    try { thread = await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal); }
+    finally { observe(observer, "metadata", metadataStarted); }
+    observeContext(observer, { turnCountBucket: historyTurnCountBucket(Number(thread.historyTurnCount)),
+      lengthBucket: typeof thread.path === "string" ? historyLengthBucket((() => { try { return statSync(thread.path!).size; } catch { return -1; } })()) : "unknown" });
     throwIfAborted(effectiveSignal);
     if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
@@ -332,17 +374,21 @@ export class TranscriptReadCache {
     const revision = this.revisions.get(threadId) ?? 0;
     const ensureCurrent = () => { throwIfAborted(effectiveSignal); if (revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated"); };
     const metadataStarted = performance.now();
-    const thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
-    if (!metadata) observe(observer, "metadata", metadataStarted);
+    if (!metadata) observeStart(observer, "metadata");
+    let thread: AppServerThread;
+    try { thread = metadata ?? await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal); }
+    finally { if (!metadata) observe(observer, "metadata", metadataStarted); }
     ensureCurrent();
     if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
     const prepareRollout = async () => {
       const started = performance.now();
-      const source = this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId, thread.path!), effectiveSignal)
-        : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
-      const path = await awaitWithAbort(canonicalRolloutPath(thread.path!, source.nativeHome), effectiveSignal);
-      ensureCurrent(); observe(observer, "source", started);
-      return { source, path };
+      observeStart(observer, "source");
+      try {
+        const source = this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId, thread.path!), effectiveSignal)
+          : { nativeHome: this.port.nativeHome!, key: JSON.stringify(["single", this.port.nativeHome]), validate: async () => {} };
+        const path = await awaitWithAbort(canonicalRolloutPath(thread.path!, source.nativeHome), effectiveSignal);
+        ensureCurrent(); return { source, path };
+      } finally { observe(observer, "source", started); }
     };
     // Metadata and rollout path authorization cannot mutate the projection.
     // Snapshot-source observation stays inside the lane: its watermark must
@@ -350,14 +396,19 @@ export class TranscriptReadCache {
     const prepared = !this.port.observeSnapshotSource && typeof thread.path === "string" && existsSync(thread.path)
       ? await prepareRollout() : null;
     ensureCurrent();
-    const queued = performance.now();
+    observeStart(observer, "queue");
     return this.serialize(threadId, async () => {
-      observe(observer, "queue", queued);
       ensureCurrent();
       const sourceStarted = performance.now();
-      const snapshotSource = await awaitWithAbort(Promise.resolve(this.port.observeSnapshotSource?.(threadId)), effectiveSignal);
+      if (!prepared) observeStart(observer, "source");
+      let snapshotSource: NativeTranscriptSnapshotSource | null;
+      try { snapshotSource = (await awaitWithAbort(Promise.resolve(this.port.observeSnapshotSource?.(threadId)), effectiveSignal)) ?? null; }
+      finally { if (!prepared) observe(observer, "source", sourceStarted); }
       ensureCurrent();
       if (!snapshotSource && (typeof thread.path !== "string" || !existsSync(thread.path))) {
+        const pageStarted = performance.now();
+        observeStart(observer, "page");
+        try {
         if (cursor?.startsWith("transcript:") || cursor?.startsWith("transcript-asc:")) throw new InvalidTranscriptCursor();
         let page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
         if (itemsView !== "notLoaded" && this.port.listTurnItems) {
@@ -365,8 +416,9 @@ export class TranscriptReadCache {
           if (missing.length) {
             observeContext(observer, { itemHydrationPath: "cache-page" });
             const hydrated = await Promise.allSettled(missing.map(async turn => {
-              const items = await this.itemReadScheduler.run(effectiveSignal, () => awaitWithAbort(
-                this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal));
+              const items = await this.itemReadScheduler.run(threadId, effectiveSignal, () => awaitWithAbort(
+                this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal),
+                ms => observeContext(observer, { itemQueueMs: ms }));
               ensureCurrent();
               return { turn, items };
             }));
@@ -388,18 +440,23 @@ export class TranscriptReadCache {
           }
         }
         return page;
+        } finally { observe(observer, "page", pageStarted); }
       }
       const rollout = snapshotSource ? null : prepared ?? await prepareRollout();
       const source = rollout?.source, path = snapshotSource?.path ?? rollout!.path;
       ensureCurrent();
       // Rollout preparation already reported source time; snapshot observation
       // is measured here, inside its required serialization boundary.
-      if (snapshotSource) observe(observer, "source", sourceStarted);
       readAttempts: for (let attempt = 0; attempt < 2; attempt++) {
-        const started = performance.now(), observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal, observer);
-        observe(observer, "reconcile", started);
+        const started = performance.now();
+        observeStart(observer, "reconcile");
+        let observed: { kind: "hit" | "rebuild" | "increment"; nativeBytes: number };
+        try { observed = await this.reconcile(threadId, path, source, snapshotSource ?? undefined, effectiveSignal, observer); }
+        finally { observe(observer, "reconcile", started); }
         ensureCurrent();
         const pageStarted = performance.now();
+        observeStart(observer, "page");
+        try {
         let page: ThreadTurnsListResponse;
         try {
           page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
@@ -414,8 +471,9 @@ export class TranscriptReadCache {
             turnCountBucket: historyTurnCountBucket(typeof page.totalTurnCount === "number" ? page.totalTurnCount : Number.NaN),
             lengthBucket: historyLengthBucket(typeof thread.path === "string" ? (() => { try { const path = thread.path!; return statSync(path).size; } catch { return -1; } })() : -1) });
           const hydrated = await Promise.allSettled(hydrationTurns.map(async turn => {
-            const items = await this.itemReadScheduler.run(effectiveSignal, () => awaitWithAbort(
-              this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal));
+          const items = await this.itemReadScheduler.run(threadId, effectiveSignal, () => awaitWithAbort(
+              this.port.listTurnItems!(threadId, turn.id, effectiveSignal, "cache-page"), effectiveSignal),
+              ms => observeContext(observer, { itemQueueMs: ms }));
             ensureCurrent();
             return { turn, items };
           }));
@@ -439,12 +497,12 @@ export class TranscriptReadCache {
           if (hydrationTurns.length) page = this.readPage(threadId, cursor, limit, itemsView, sortDirection, detailItemId);
         }
         await awaitWithAbort((snapshotSource ?? source)!.validate(), effectiveSignal); ensureCurrent();
-        observe(observer, "page", pageStarted);
         this.measured?.({ ...observed, ms: performance.now() - started });
         return page;
+        } finally { observe(observer, "page", pageStarted); }
       }
       throw new Error("Transcript rebuild failed");
-    }, effectiveSignal);
+    }, effectiveSignal, ms => { try { observer?.("queue", ms); } catch { /* Diagnostics never own read settlement. */ } });
   }
   private readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded" | "presentation", sortDirection: "asc" | "desc", detailItemId?: string): ThreadTurnsListResponse {
     const db = this.database(), meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId)! as Row;
@@ -628,15 +686,16 @@ export class TranscriptReadCache {
     while (!snapshotSource && cursor < native.position) {
       throwIfAborted(signal);
       const scanStarted = performance.now();
-      const read = await readRolloutIncrement({ path, nativeHome: source!.nativeHome, source, cursor, identity,
+      observeStart(observer, "scan");
+      let read: Awaited<ReturnType<typeof readRolloutIncrement<string>>>;
+      try { read = await readRolloutIncrement<string>({ path, nativeHome: source!.nativeHome, source, cursor, identity,
         select: head => /"type"\s*:\s*"(?:event_msg|turn_context|compacted)"/.test(head),
         retain: (row: any) => {
           const p = object(row.payload);
           if (row.type === "compacted" || p.type === "thread_rolled_back") rebuild = true;
           return typeof p.turn_id === "string" ? p.turn_id : null;
         }, oversized: () => false,
-      });
-      observe(observer, "scan", scanStarted);
+      }); } finally { observe(observer, "scan", scanStarted); }
       bytes += read.bytes; identity = read.identity;
       for (const id of read.events) dirty.add(id);
       if (read.missing) rebuild = true;

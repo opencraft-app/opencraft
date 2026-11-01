@@ -171,6 +171,20 @@ Thread 元数据；queue 为同会话缓存串行等待；source 为来源解析
 到返回构造，Web RPC 终态包含往返与客户端接收；序列化及返回传输留在 Web 总耗时中。
 阶段可嵌套，不能相加阶段分位数或把 native RPC 再加进 reconcile。
 
+阶段计时在成功、失败和取消时均于阶段边界的 `finally` 记录；尚未取得的阶段保持缺失。
+终态写出前收束并快照阶段耗时与规模字段；异步资源采集期间到达的迟到回调不再修改该事件。
+`queueMs` 仍表示同一 Thread 的缓存串行等待。共享 Item 分页调度器按 Thread 轮转，保留
+全局四个在途请求及 Thread 内 FIFO；`itemQueueMs` 是本次读取中单个 Item 等待调度槽的
+最大耗时，作为独立字段记录，不能与 `queueMs` 混为一谈。router 对每次 `thread/read`
+记录 `history-route-stages`，即使原生 RPC 尚未发出也会记录；此时 `nativeRpcMs` 为 null，
+并带 `outcome`。事件只含请求 ID、方法、时长和结果，不含 Thread ID 或请求参数。
+仅保留安全整数 ID 或 Host 生成的有界 `opencraft:*` ID，其他 ID 用 null。
+
+当 `coreMs` 超过 5 秒时，`history-read-stages` 附带固定结构的 `resources`：
+`loadavg` 的 1/5/15 分钟平均值，以及 CPU、IO、内存 PSI 的 some/full avg10/avg60/avg300。
+仅从 `/proc/loadavg` 和 `/proc/pressure/{cpu,io,memory}` 提取数值，不记录原始文件、PID
+或 total 计数；不可读取时用 null 并标记 unavailable。资源字段只用于受控诊断明细。
+
 `history-read-stages` 另带低基数 `itemHydrationPath`：`cache-page` 表示缓存页
 拿到 `notLoaded` Turn 后按需取 Item，`adapter-oversize-fallback` 表示整页超限后
 由兼容降级路径按需取 Item，`none` 表示本次未触发 Item hydration。该字段用于区分

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA, type NativeTranscriptPort } from "@opencraft/native-history-node";
+import { NativeItemReadScheduler, TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA, type NativeTranscriptPort } from "@opencraft/native-history-node";
 import { readUsageIncrement } from "../../apps/opencraft-daemon/src/token-usage-derived-source.js";
 import { CodexNativeStorage } from "../../apps/opencraft-daemon/src/codex-native-storage.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
@@ -74,6 +74,93 @@ test("cold presentation hydration loads forty-six visible Turns through the shar
   assert.equal(maxActive, 4);
   assert.deepEqual(result.initialTurnsPage.data.map(value => value.id), f.source.slice().reverse().map(value => value.id));
   assert.ok(result.initialTurnsPage.data.every(value => value.itemsView === "full" && value.items.length === 2));
+});
+
+test("a large Thread's queued hydration yields to another Thread", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-transcript-fair-"));
+  const largeTurns = Array.from({ length: 12 }, (_, n) => ({ id: `large-${n}`, items: [], itemsView: "notLoaded" as const }));
+  const smallTurns = [{ id: "small-0", items: [], itemsView: "notLoaded" as const }];
+  let largeStarted = 0, smallStartedAt: number | null = null, blockLarge = true;
+  const largeReleases: Array<() => void> = [];
+  let resolveFourLarge!: () => void, resolveSmallStarted!: () => void;
+  const fourLargeStarted = new Promise<void>(resolve => { resolveFourLarge = resolve; });
+  const smallStarted = new Promise<void>(resolve => { resolveSmallStarted = resolve; });
+  const port: NativeTranscriptPort = {
+    async readThread(threadId) { return { id: threadId, path: "/missing-rollout", turns: [] }; },
+    async listTurns(threadId) {
+      const data = threadId === "large" ? largeTurns : smallTurns;
+      return { data: structuredClone(data), nextCursor: null };
+    },
+    async listTurnItems(threadId) {
+      if (threadId === "small") {
+        smallStartedAt = performance.now();
+        resolveSmallStarted();
+        return [];
+      }
+      largeStarted++;
+      if (largeStarted === 4) resolveFourLarge();
+      if (blockLarge) await new Promise<void>(resolve => largeReleases.push(resolve));
+      return [];
+    },
+  };
+  const cache = new TranscriptReadCache(root, port, { itemReadScheduler: new NativeItemReadScheduler(4) });
+  t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
+  const largeRead = cache.read("large", largeTurns.length, undefined, "presentation");
+  let smallRead: ReturnType<typeof cache.read> | undefined;
+  const smallItemQueueMs: number[] = [];
+  try {
+    await fourLargeStarted;
+    const smallQueuedAt = performance.now();
+    smallRead = cache.read("small", 1, undefined, "presentation", undefined, (phase, _ms, context) => {
+      if (phase === "context" && typeof context?.itemQueueMs === "number") smallItemQueueMs.push(context.itemQueueMs);
+    });
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    largeReleases.shift()!();
+    while (largeStarted < 5) await new Promise<void>(resolve => setImmediate(resolve));
+    largeReleases.shift()!();
+    await Promise.race([smallStarted, new Promise<void>(resolve => setTimeout(resolve, 100))]);
+    assert.notEqual(smallStartedAt, null, "the queued small Thread should get a slot before another large Thread item");
+    assert.ok(smallStartedAt! >= smallQueuedAt);
+    blockLarge = false;
+    for (const release of largeReleases.splice(0)) release();
+    await Promise.all([largeRead, smallRead]);
+    assert.equal(smallItemQueueMs.length, 1);
+    assert.ok(Number.isFinite(smallItemQueueMs[0]) && smallItemQueueMs[0]! >= 0);
+  } finally {
+    blockLarge = false;
+    for (const release of largeReleases.splice(0)) release();
+    await Promise.allSettled(smallRead ? [largeRead, smallRead] : [largeRead]);
+  }
+});
+
+test("failed native source resolution still reports its stage duration", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-source-stage-"));
+  const rollout = join(root, "rollout.jsonl"); await writeFile(rollout, "{}\n");
+  const events: Array<[string, number]> = [];
+  const port: NativeTranscriptPort = {
+    async readThread(threadId) { return { id: threadId, path: rollout }; },
+    async resolveSource() { await new Promise(resolve => setTimeout(resolve, 15)); throw new Error("source unavailable"); },
+    async listTurns() { return { data: [], nextCursor: null }; },
+  };
+  const cache = new TranscriptReadCache(join(root, "cache"), port);
+  t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
+  await assert.rejects(cache.read("thread", 10, undefined, "presentation", undefined, (phase, ms) => events.push([phase, ms])), /source unavailable/);
+  assert.ok(events.some(([phase, ms]) => phase === "metadata" && ms >= 0));
+  assert.ok(events.some(([phase, ms]) => phase === "source" && ms >= 10));
+});
+
+test("failed direct native page still reports page duration", async t => {
+  const root = await mkdtemp(join(tmpdir(), "oc-page-stage-"));
+  const events: Array<[string, number]> = [];
+  const port: NativeTranscriptPort = {
+    async readThread(threadId) { return { id: threadId, path: join(root, "missing-rollout") }; },
+    async listTurns() { await new Promise(resolve => setTimeout(resolve, 15)); throw new Error("native page failed"); },
+  };
+  const cache = new TranscriptReadCache(join(root, "cache"), port);
+  t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
+  await assert.rejects(cache.read("thread", 10, undefined, "presentation", undefined, (phase, ms) => events.push([phase, ms])), /native page failed/);
+  assert.ok(events.some(([phase, ms]) => phase === "page" && ms >= 10));
 });
 
 test("ascending Turn pages use the same bounded transcript index", async t => {
@@ -359,7 +446,7 @@ test("read diagnostics separate a held metadata read from the cache and isolate 
   const phases: Array<[string, number]> = [];
   const reading = f.cache.read(id, 10, undefined, "full", undefined, (phase, ms) => { phases.push([phase, ms]); });
   await new Promise(resolve => setTimeout(resolve, 30));
-  assert.deepEqual(phases, [], "unsettled native metadata is not mislabeled as a cache hit");
+  assert.deepEqual(phases, [["start", 0]], "the in-flight metadata stage is visible without claiming a completed cache result");
   release();
   await reading;
   const values = Object.fromEntries(phases);

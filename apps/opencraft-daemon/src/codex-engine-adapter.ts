@@ -48,6 +48,7 @@ import { CodexNativeCoreTransport } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
+import { readHistoryResourceMetadata } from "./history-resource-metadata.js";
 
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -164,6 +165,8 @@ interface SharedCodexRoutingOptions {
   readonly onStorageOpened?: (outcomes: readonly { name: string; outcome: DatabaseOutcome }[]) => void;
   readonly createThreadMetadata?: (database: import("node:sqlite").DatabaseSync, context: import("@opencraft/appserver-client").ThreadMetadataContext) => import("@opencraft/appserver-client").ThreadMetadataExtension;
   readonly logDiagnostic?: (event: Record<string, unknown>) => void;
+  /** Trusted Host hook for slow history-read resources; defaults to process metadata. */
+  readonly historyResourceMetadata?: () => Promise<Awaited<ReturnType<typeof readHistoryResourceMetadata>>>;
   readonly nativeSubscriptionGraceMs?: number;
   /** Trusted core authority for reserved collaboration inputs; absent means reject. */
   readonly collaborationInput?: {
@@ -403,7 +406,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly historyItemReadScheduler = new NativeItemReadScheduler(4);
   private readonly historyAdapterFallbackSignals = new WeakSet<AbortSignal>();
   private readonly historyUnsupportedItemSignals = new WeakSet<AbortSignal>();
-  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string }>();
+  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string; itemQueueMs?: number }>();
   private readonly historyTurnCounts = new WeakMap<AbortSignal, number>();
   private cachedHistoryInFlight = 0;
   private readonly cachedHistoryReads = new Map<string, Map<AbortController, string>>();
@@ -1520,11 +1523,28 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async readCachedHistory(clientId: string, method: string, historyParams: RpcRecord, cachedRead: boolean, controller: AbortController): Promise<RpcRecord> {
     this.cachedHistoryInFlight++;
     const started = performance.now(), pairId = randomUUID();
-    const trace = { pairId, nativeRpcMs: 0, nativeRpcCount: 0, itemHydrationPath: "none", turnCountBucket: "unknown", lengthBucket: "unknown" };
+    const trace: { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string; itemQueueMs?: number } =
+      { pairId, nativeRpcMs: 0, nativeRpcCount: 0, itemHydrationPath: "none", turnCountBucket: "unknown", lengthBucket: "unknown" };
     const phases: Record<string, number> = {};
+    const activePhases = new Map<string, number[]>();
+    let terminalSnapshotCreated = false;
     const measured = (phase: string, ms: number, context?: HistoryReadContext) => {
-      if (phase !== "context") phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms;
-      if (context) Object.assign(trace, context);
+      if (terminalSnapshotCreated) return;
+      if (phase === "start") {
+        const activePhase = context?.activePhase;
+        if (activePhase) { const starts = activePhases.get(activePhase) ?? []; starts.push(performance.now()); activePhases.set(activePhase, starts); }
+        return;
+      }
+      if (phase !== "context") {
+        phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms;
+        const starts = activePhases.get(phase); starts?.pop();
+        if (starts && starts.length === 0) activePhases.delete(phase);
+      }
+      if (context) {
+        if (typeof context.itemQueueMs === "number") trace.itemQueueMs = Math.max(Number(trace.itemQueueMs ?? 0), context.itemQueueMs);
+        const { itemQueueMs: _itemQueueMs, ...safeContext } = context;
+        Object.assign(trace, safeContext);
+      }
     };
     let outcome = "aborted";
     const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
@@ -1555,18 +1575,31 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
       const projectionStarted = performance.now();
-      const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
-      const reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
-      measured("projection", performance.now() - projectionStarted);
+      measured("start", 0, { activePhase: "projection" });
+      let reply: unknown;
+      try {
+        const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
+        reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
+      } finally { measured("projection", performance.now() - projectionStarted); }
       outcome = "ok";
       return { result: { ...record(reply), __opencraftHistoryTiming: { ...phases, ...trace, coreMs: performance.now() - started } } };
     } catch (error) {
       outcome = controller.signal.aborted ? "aborted" : "failed";
       return { error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } };
     } finally {
+      const finishedAt = performance.now();
+      for (const [phase, starts] of activePhases) phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0)
+        + starts.reduce((total, phaseStarted) => total + Math.max(0, finishedAt - phaseStarted), 0);
+      activePhases.clear();
+      const terminalPhases = { ...phases };
+      const terminalTrace = { ...trace };
+      terminalSnapshotCreated = true;
+      const coreMs = finishedAt - started;
+      const resources = coreMs > 5_000 ? await (this.options.historyResourceMetadata ?? readHistoryResourceMetadata)() : undefined;
       this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome,
-        turnCountBucket: trace.turnCountBucket, lengthBucket: trace.lengthBucket, itemHydrationPath: trace.itemHydrationPath,
-        ...phases, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs: performance.now() - started });
+        turnCountBucket: terminalTrace.turnCountBucket, lengthBucket: terminalTrace.lengthBucket, itemHydrationPath: terminalTrace.itemHydrationPath,
+        ...terminalPhases, itemQueueMs: terminalTrace.itemQueueMs, nativeRpcMs: terminalTrace.nativeRpcMs, nativeRpcCount: terminalTrace.nativeRpcCount, coreMs,
+        ...(resources ? { resources } : {}) });
       this.historyReadTraces.delete(controller.signal);
       clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);
       if (reads.size === 0 && this.cachedHistoryReads.get(clientId) === reads) this.cachedHistoryReads.delete(clientId);
