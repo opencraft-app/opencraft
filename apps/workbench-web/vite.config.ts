@@ -531,6 +531,9 @@ export function createWorkbenchWebConfig(
             // Keep the demand-loaded math renderer out of small shared protocol
             // chunks. Their CSS otherwise becomes part of every startup closure.
             { name: "math-renderer", test: /\/packages\/chat-render-web\/src\/extensions\/katex\/(?:katex-math\.tsx|katex\.scss)$/, includeDependenciesRecursively: false },
+            // Optional identity extensions change the small shared-module groups.
+            // Keep visualization's implementation behind its existing lazy boundary.
+            { name: "visualization-renderer", test: /\/packages\/chat-render-web\/src\/renderers\/visualization\/(?:visualization\.(?:tsx|scss)|sandbox\.ts)$/, includeDependenciesRecursively: false },
             // Keep small demand-loaded information styles out of the shared
             // platform chunk; entriesAware's merge threshold would hoist them.
             { name: "information-panel", test: /\/packages\/design-system\/src\/information-panel\.web\.scss$/, includeDependenciesRecursively: false },
