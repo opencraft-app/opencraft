@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { GitBrokerOwner } from './git-broker-owner.js';
 import { readFile } from 'node:fs/promises';
 import { EmployeeGitVaultStore, type GitVaultCredential } from './employee-git-vault-store.js';
 import { createMemoryGitSigner, createMemoryGitAuthenticator } from './git-identity-signer.js';
@@ -9,7 +10,7 @@ export type GitExecutionIdentity = { status: 'active'; account: string; executio
 export interface GitBrokerOptions {
   store: EmployeeGitVaultStore; hosts: readonly string[]; runtimeDirectory: string;
   resolve(peer: GitPeer, threadId: string): Promise<GitExecutionIdentity>;
-  ttlMs?: number;
+  ttlMs?: number; ownerStateFile?: string;
   httpsCredentialHosts?: readonly string[];
 }
 interface Session {
@@ -37,15 +38,17 @@ async function sameProcessTree(peer: GitPeer, session: Session): Promise<boolean
 /** Single-command capabilities carry no private key and cannot switch to another employee. */
 export class GitIdentityBroker {
   private readonly sessions = new Map<string, Session>();
+  readonly owner: GitBrokerOwner;
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(private readonly options: GitBrokerOptions) {
+    this.owner = new GitBrokerOwner(options.ownerStateFile);
     this.timer = setInterval(() => { void this.reap(); }, 5_000); this.timer.unref();
   }
   async request(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
     try {
       if (peer.uid !== process.getuid?.() || !input || typeof input !== 'object' || Array.isArray(input)) return { status: 'unavailable' };
       const request = input as Record<string, unknown>;
-      if (request.op === 'health') return { status: 'ready', commandSessions: this.sessions.size };
+      if (request.op === 'health') return { status: this.owner.admits() ? 'ready' : 'maintenance', commandSessions: this.sessions.size };
       if (request.op === 'open') {
         if (typeof request.threadId !== 'string' || !request.threadId || request.threadId.length > 512
           || typeof request.host !== 'string' || !this.options.hosts.includes(request.host)) return { status: 'unavailable' };
@@ -65,9 +68,9 @@ export class GitIdentityBroker {
           return current.status === 'active' && current.account === identity.account && current.executionId === identity.executionId
             && this.options.store.read(identity.account, request.host as string).revision === record.revision;
         };
-        const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
+        const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('sign', true)) : null;
         const authenticator = request.operation === 'push' && credential.sshAuth
-          ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
+          ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('ssh-auth', true)) : null;
         const id = randomUUID();
         this.sessions.set(id, { peer, startTicks: start.startTicks, account: identity.account, host: request.host,
           threadId, executionId: identity.executionId, revision: record.revision, credential, signer, authenticator, expires: performance.now() + (this.options.ttlMs ?? 300_000) });
@@ -90,9 +93,9 @@ export class GitIdentityBroker {
       return { status: 'configured', username: session.credential.identity.username, password: session.credential.token };
     } catch { return { status: 'unavailable' }; }
   }
-  async close(): Promise<void> { clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id))); }
+  async close(): Promise<void> { this.owner.close(); clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id))); }
   private async remove(id: string): Promise<void> {
-    const session = this.sessions.get(id); this.sessions.delete(id); await session?.signer?.close(); await session?.authenticator?.close();
+    const session = this.sessions.get(id); await session?.signer?.close(); await session?.authenticator?.close(); this.sessions.delete(id);
   }
   private async reap(): Promise<void> {
     for (const [id, session] of this.sessions) {
