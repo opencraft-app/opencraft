@@ -165,6 +165,8 @@ interface SharedCodexRoutingOptions {
   readonly onStorageOpened?: (outcomes: readonly { name: string; outcome: DatabaseOutcome }[]) => void;
   readonly createThreadMetadata?: (database: import("node:sqlite").DatabaseSync, context: import("@opencraft/appserver-client").ThreadMetadataContext) => import("@opencraft/appserver-client").ThreadMetadataExtension;
   readonly logDiagnostic?: (event: Record<string, unknown>) => void;
+  /** Trusted Host hook for slow history-read resources; defaults to process metadata. */
+  readonly historyResourceMetadata?: () => Promise<Awaited<ReturnType<typeof readHistoryResourceMetadata>>>;
   readonly nativeSubscriptionGraceMs?: number;
   /** Trusted core authority for reserved collaboration inputs; absent means reject. */
   readonly collaborationInput?: {
@@ -1525,7 +1527,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       { pairId, nativeRpcMs: 0, nativeRpcCount: 0, itemHydrationPath: "none", turnCountBucket: "unknown", lengthBucket: "unknown" };
     const phases: Record<string, number> = {};
     const activePhases = new Map<string, number[]>();
+    let terminalSnapshotCreated = false;
     const measured = (phase: string, ms: number, context?: HistoryReadContext) => {
+      if (terminalSnapshotCreated) return;
       if (phase === "start") {
         const activePhase = context?.activePhase;
         if (activePhase) { const starts = activePhases.get(activePhase) ?? []; starts.push(performance.now()); activePhases.set(activePhase, starts); }
@@ -1587,11 +1591,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       for (const [phase, starts] of activePhases) phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0)
         + starts.reduce((total, phaseStarted) => total + Math.max(0, finishedAt - phaseStarted), 0);
       activePhases.clear();
+      const terminalPhases = { ...phases };
+      const terminalTrace = { ...trace };
+      terminalSnapshotCreated = true;
       const coreMs = finishedAt - started;
-      const resources = coreMs > 5_000 ? await readHistoryResourceMetadata() : undefined;
+      const resources = coreMs > 5_000 ? await (this.options.historyResourceMetadata ?? readHistoryResourceMetadata)() : undefined;
       this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome,
-        turnCountBucket: trace.turnCountBucket, lengthBucket: trace.lengthBucket, itemHydrationPath: trace.itemHydrationPath,
-        ...phases, itemQueueMs: trace.itemQueueMs, nativeRpcMs: trace.nativeRpcMs, nativeRpcCount: trace.nativeRpcCount, coreMs,
+        turnCountBucket: terminalTrace.turnCountBucket, lengthBucket: terminalTrace.lengthBucket, itemHydrationPath: terminalTrace.itemHydrationPath,
+        ...terminalPhases, itemQueueMs: terminalTrace.itemQueueMs, nativeRpcMs: terminalTrace.nativeRpcMs, nativeRpcCount: terminalTrace.nativeRpcCount, coreMs,
         ...(resources ? { resources } : {}) });
       this.historyReadTraces.delete(controller.signal);
       clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);

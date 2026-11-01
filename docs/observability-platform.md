@@ -172,6 +172,7 @@ Thread 元数据；queue 为同会话缓存串行等待；source 为来源解析
 阶段可嵌套，不能相加阶段分位数或把 native RPC 再加进 reconcile。
 
 阶段计时在成功、失败和取消时均于阶段边界的 `finally` 记录；尚未取得的阶段保持缺失。
+终态写出前收束并快照阶段耗时与规模字段；异步资源采集期间到达的迟到回调不再修改该事件。
 `queueMs` 仍表示同一 Thread 的缓存串行等待。共享 Item 分页调度器按 Thread 轮转，保留
 全局四个在途请求及 Thread 内 FIFO；`itemQueueMs` 是本次读取中单个 Item 等待调度槽的
 最大耗时，作为独立字段记录，不能与 `queueMs` 混为一谈。router 对每次 `thread/read`

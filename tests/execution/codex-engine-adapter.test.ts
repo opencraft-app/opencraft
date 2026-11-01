@@ -32,7 +32,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void, resourceMetadata?: ConstructorParameters<typeof CodexEngineAdapter>[0]["historyResourceMetadata"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -47,6 +47,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     tokenUsage,
     sessionMcp,
     createSessionMcp,
+    historyResourceMetadata: resourceMetadata,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
@@ -82,6 +83,54 @@ test("aborted Item hydration includes the active page phase in the terminal diag
     assert.ok(Number(stage?.pageMs) > 0);
   } finally {
     await adapter.send(JSON.stringify({ id: "unpause-items", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("slow cancellation freezes phase timing before resource metadata completes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-slow-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  let enterResources!: () => void, releaseResources!: () => void;
+  const resourcesEntered = new Promise<void>(resolve => { enterResources = resolve; });
+  const resourcesGate = new Promise<void>(resolve => { releaseResources = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined,
+    event => diagnostics.push(event), async () => {
+      enterResources(); await resourcesGate;
+      const empty = { someAvg10: null, someAvg60: null, someAvg300: null, fullAvg10: null, fullAvg60: null, fullAvg300: null };
+      return { status: "unavailable", loadAvg1m: null, loadAvg5m: null, loadAvg15m: null, cpuPsi: empty, ioPsi: empty, memoryPsi: empty };
+    });
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should enter Item hydration before the slow cancellation");
+    await new Promise(resolve => setTimeout(resolve, 5_100));
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    await resourcesEntered;
+    await request("unpause-items", "test/pauseItemReads", { paused: false });
+    await new Promise(resolve => setImmediate(resolve));
+    releaseResources();
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.ok(Number(stage?.pageMs) > 0);
+    assert.ok(Number(stage?.coreMs) > 5_000);
+    assert.ok(Number(stage?.pageMs) <= Number(stage?.coreMs) + 50, `pageMs ${stage?.pageMs} must not be recounted after coreMs ${stage?.coreMs} is finalized`);
+  } finally {
+    releaseResources();
+    await adapter.send(JSON.stringify({ id: "unpause-items-cleanup", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
     await adapter.close(); await rm(root, { recursive: true, force: true });
   }
 });

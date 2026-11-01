@@ -64,8 +64,8 @@ export async function observeNativeTranscriptFiles(nativeHome: string, paths: re
 }
 export type HistoryReadPhase = "metadata" | "queue" | "source" | "reconcile" | "page" | "scan";
 export type ItemHydrationPath = "cache-page" | "adapter-oversize-fallback";
-export type HistoryReadContext = { itemHydrationPath?: ItemHydrationPath; turnCountBucket?: string; lengthBucket?: string; itemQueueMs?: number; activePhase?: HistoryReadPhase };
-export type HistoryReadObserver = (phase: HistoryReadPhase | "context" | "start", ms: number, context?: HistoryReadContext & { activePhase?: HistoryReadPhase }) => void;
+export type HistoryReadContext = { itemHydrationPath?: ItemHydrationPath; turnCountBucket?: string; lengthBucket?: string; itemQueueMs?: number; activePhase?: HistoryReadPhase | "projection" };
+export type HistoryReadObserver = (phase: HistoryReadPhase | "context" | "start", ms: number, context?: HistoryReadContext) => void;
 function observeStart(observer: HistoryReadObserver | undefined, phase: HistoryReadPhase): void {
   try { observer?.("start", 0, { activePhase: phase }); } catch { /* Diagnostics never own read settlement. */ }
 }
