@@ -1,3 +1,6 @@
+import { codexRouterOwner } from "../../scripts/full-upgrade/codex-router-owner.mjs";
+import { operatorLeaseClaim } from "../../scripts/full-upgrade/operator-lease.mjs";
+const operatorLease = await operatorLeaseClaim(30000);
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -57,10 +60,24 @@ for (const carriedHistory of [false, true]) test("real router service preserves 
       const chunks: Buffer[] = []; response.on("data", b => chunks.push(b)); response.on("end", () => resolve({ status: response.statusCode, ...JSON.parse(Buffer.concat(chunks).toString()) }));
     }); req.on("error", reject); req.end(value ? JSON.stringify(value) : undefined);
   });
-  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence", historicalUnknownSha256: h.historicalUnknownSha256 }; };
+  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { operatorLease, expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence", historicalUnknownSha256: h.historicalUnknownSha256 }; };
   const action = async (action: string, extra = {}) => rpc("/owner-handoff", { action, ...await input(), ...extra });
   try {
     service = await startCodexGenerationService(options);
+    if (!carriedHistory) {
+      const original = CodexGenerationRuntime.prototype.quiesceRouter;
+      const leaseToken = join(root, "lease-token"); await writeFile(leaseToken, token, { mode: 0o600 });
+      const adapter = codexRouterOwner(endpoint, leaseToken, { ttlMs: 1000, renewMs: 150 });
+      CodexGenerationRuntime.prototype.quiesceRouter = async function () {
+        await new Promise(resolve => setTimeout(resolve, 1400)); await original.call(this);
+      };
+      try {
+        const started = Date.now(), fenced = await adapter.acquireFence(await input());
+        assert.ok(Date.now() - started >= 1400);
+        assert.equal(fenced.handoff.phase, "fenced", "independent renewal keeps a slow real-service fence alive beyond TTL");
+        await adapter.abortFence(await input());
+      } finally { adapter.dispose(); CodexGenerationRuntime.prototype.quiesceRouter = original; }
+    }
     const state = await rpc("/generations");
     const retention = { id: "original", retained: true, expectedOwner: state.routingEpoch, expectedHost: state.preparationOwner,
       expectedEpoch: state.admissionEpoch, expectedIncarnation: state.generations[0].incarnation };
@@ -156,7 +173,7 @@ test("unsupported retired durable history blocks source release while abort rema
     for (const id of ["old","new"]) { runtime.registry.register({ id, endpoint: join(root,id,"control.sock"), runtimeDataDirectory: join(root,id,"data"), executable: process.execPath, bundle: process.argv[1]!, node: process.execPath, cwd: root }); runtime.registry.ready(id); }
     runtime.registry.activate("old",0); runtime.registry.discover("retired-history","old"); runtime.registry.activate("new",1);
     runtime.registry.fenceRetirement("old",1); runtime.registry.retire("old",1);
-    const input=()=>({ expectedOwner:runtime.owner.owner, expectedEpoch:runtime.owner.snapshot().epoch, operationId:"retired",fence:"fence" });
+    const input=()=>({ operatorLease, expectedOwner:runtime.owner.owner, expectedEpoch:runtime.owner.snapshot().epoch, operationId:"retired",fence:"fence" });
     runtime.owner.fence(input()); const observation=await runtime.handoffObservation();
     assert.ok(observation.counts.lifecycle>0);
     const proof=runtime.owner.inspect(input(),observation); assert.notEqual(proof.activeCount,0);

@@ -301,6 +301,30 @@ fence/inspect/release/cold-ready/resume lifecycle as other upgrade owners. Its
 fixed private descriptor contains the Unix endpoint, expected PID and control
 token. It is not a complete parent upgrade recipe.
 
+Core and registry-router advertise `operatorLeaseProtocolVersion: 1`. New fences
+require `operatorLease: { version: 1, id, controller: { pid, startTime, bootId },
+ttlMs }`, with a live same-boot Linux process and a 1–30 second TTL. The public
+adapters bind their own PID, renew every three seconds (default TTL 15 seconds),
+start renewal before awaiting potentially slow fence quiescence, and stop it after
+abort or release. A claim recorded as automatically terminated cannot fence again.
+`renew-operator-lease` carries the exact
+owner/epoch/operation/fence and original claim. It advances only this incarnation's
+monotonic deadline; it never replaces a drain proof or changes sealed data.
+Renewal remains available while an asynchronous maintenance interruption settles.
+Missing, dead, reused-PID, foreign-boot and expired bindings fail closed.
+
+While the original source can still abort, operator death or expiry automatically
+persists `phase: open` and an `operatorLeaseAborts` receipt containing the exact
+owner/epoch/operation/fence, claim, reason (`operator-exited` or `lease-expired`)
+and timestamp. Unknown outcomes, pending responsibilities, history and retained
+state are preserved. Source polling is 100 ms, subject to the process event loop
+and durable storage completing; persistence failure keeps admission unhealthy.
+The snapshot's `operatorLeaseStatus` is an ephemeral observation, not cold proof.
+An abort receipt proves only intrinsic admission was reopened. External network
+gates and consumer stop intents still require their controller's exact recovery.
+No lease timeout opens a released/cold-ready owner, an irreversibly closing writer,
+or an old fenced process after restart; those retain explicit cold recovery.
+
 The account authority owns OAuth and maintenance subprocesses, account mutations,
 HTTP request bodies, the upstream concurrency queue, credential refresh, complete
 response streams and affinity writes. Fence closes new proxy requests before body

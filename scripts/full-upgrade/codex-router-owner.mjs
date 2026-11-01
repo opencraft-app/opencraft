@@ -1,9 +1,10 @@
+import { leasedOwner } from "./operator-lease.mjs";
 import { request } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { invariant } from './durable.mjs';
 
 /** Local authenticated adapter. Caller owns deployment lock and consumer supervision. */
-export function codexRouterOwner(endpoint, tokenFile) {
+export function codexRouterOwner(endpoint, tokenFile, leaseOptions) {
   const rpc = async (action, input) => {
     const token = (await readFile(tokenFile, 'utf8')).trim();
     return new Promise((resolve, reject) => {
@@ -18,11 +19,12 @@ export function codexRouterOwner(endpoint, tokenFile) {
           } catch (error) { reject(error); }
         });
       });
-      req.setTimeout(15000, () => req.destroy(new Error('router-control-timeout'))); req.on('error', reject);
+      req.setTimeout(action === 'renew-operator-lease' ? 2000 : 15000, () => req.destroy(new Error('router-control-timeout'))); req.on('error', reject);
       req.end(action ? JSON.stringify({ action, ...input }) : undefined);
     });
   };
-  return { snapshot: () => rpc(), acquireFence: input => rpc('fence', input), inspectDrain: input => rpc('inspect', input),
-    abortFence: input => rpc('abort', input), releaseWriter: input => rpc('release', input), coldReady: input => rpc('cold-ready', input),
+  const lease = leasedOwner(rpc, leaseOptions);
+  return { dispose: lease.dispose, snapshot: () => rpc(), acquireFence: lease.acquireFence, inspectDrain: input => rpc('inspect', input),
+    abortFence: lease.abortFence, releaseWriter: lease.releaseWriter, coldReady: input => rpc('cold-ready', input),
     releaseFence: (input, ready) => rpc('resume', { ...input, identity: ready.ready.identity }) };
 }

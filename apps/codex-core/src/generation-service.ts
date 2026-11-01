@@ -69,7 +69,7 @@ export async function startCodexGenerationService(options: {
       retention: runtime.registry.metadata(`retention:${generation.id}`), retirementHistory: runtime.registry.metadata(`retirement-history:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
     fences: runtime.fences(true), storage: runtime.registry.outcome });
-  const close = () => closing ??= (async () => { await control?.close(); await socket?.close(); await runtime.close(); })();
+  const close = () => closing ??= (async () => { runtime.owner.dispose(); await control?.close(); await socket?.close(); await runtime.close(); })();
   try {
     if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
     socket = await startGenerationSocket(nativeSocket, router);
@@ -103,6 +103,7 @@ export async function startCodexGenerationService(options: {
         if (request.method === "POST") {
           const value = await readControlJson(request), input = value as unknown as RouterExpectation;
           if (value.action === "fence") { runtime.owner.fence(input); await runtime.quiesceRouter(); }
+          else if (value.action === "renew-operator-lease") runtime.owner.renewOperatorLease(input);
           else if (value.action === "abort") runtime.owner.abort(input);
           else if (value.action === "inspect") proof = runtime.owner.inspect(input, await observation());
           else if (value.action === "release") { const config = await configuration(); runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }

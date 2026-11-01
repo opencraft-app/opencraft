@@ -1,9 +1,10 @@
+import { leasedOwner } from "./operator-lease.mjs";
 import { request } from 'node:http';
 import { readPrivateJson, invariant } from './durable.mjs';
 import { ACCOUNT_CORE_RESPONSE_MAX_BYTES } from './account-core-limits.mjs';
 
 /** Local split-account adapter. Caller owns signed recipes, deployment lock and supervision. */
-export function accountCoreOwner(descriptorPath) {
+export function accountCoreOwner(descriptorPath, leaseOptions) {
   const rpc = async (action, input) => {
     const descriptor = await readPrivateJson(descriptorPath);
     invariant(descriptor.schemaVersion === 1 && typeof descriptor.endpoint === 'string' && descriptor.endpoint.startsWith('/')
@@ -25,15 +26,16 @@ export function accountCoreOwner(descriptorPath) {
           } catch (error) { reject(error); }
         });
       });
-      req.setTimeout(15000, () => req.destroy(new Error('account-core-control-timeout')));
+      req.setTimeout(action === 'renew-operator-lease' ? 2000 : 15000, () => req.destroy(new Error('account-core-control-timeout')));
       req.on('error', reject); req.end(action ? JSON.stringify({ action, ...input }) : undefined);
     });
   };
+  const lease = leasedOwner(rpc, leaseOptions);
   return {
-    snapshot: () => rpc(), acquireFence: input => rpc('fence', input), abortFence: input => rpc('abort', input), inspectDrain: input => rpc('inspect', input),
+    dispose: lease.dispose, snapshot: () => rpc(), acquireFence: lease.acquireFence, abortFence: lease.abortFence, inspectDrain: input => rpc('inspect', input),
     interruptForMaintenance: input => rpc('maintenance-interrupt', input),
     acceptMaintenanceUnknown: input => rpc('maintenance-accept-unknown', input),
-    releaseWriter: input => rpc('release', input), coldReady: input => rpc('cold-ready', input),
+    releaseWriter: lease.releaseWriter, coldReady: input => rpc('cold-ready', input),
     releaseFence: (input, ready) => rpc('resume', { ...input, identity: ready.ready.identity }),
   };
 }

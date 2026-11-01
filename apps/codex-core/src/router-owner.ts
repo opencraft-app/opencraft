@@ -3,12 +3,15 @@ import { readFileSync } from "node:fs";
 import type { CodexGenerationRegistry } from "./generation-registry.js";
 import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, archivedHostColdUnavailable, type RouterMaintenanceReceipt } from "./router-maintenance.js";
 
+import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
+
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type State = { version: 1; epoch: number; phase: "open" | "fenced" | "released" | "cold-ready";
   operationId?: string; fence?: string; sourceOwner?: string; sealed?: string; configuration?: string;
   ready?: { owner: string; identity: string }; pending?: string[]; uncertain: boolean;
+  operatorLease?: OperatorLeaseClaim; operatorLeaseAborts?: OperatorLeaseAbort[];
   history?: string[]; currentUncertain?: boolean; maintenanceSeal?: string };
-export interface RouterExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknownSha256?: string }
+export interface RouterExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknownSha256?: string; operatorLease?: OperatorLeaseClaim }
 export interface RouterObservation { coverage: "complete" | "unknown"; activeCount: number; historicalCount: number; counts: Record<string, number> }
 
 export interface RouterLeaseContext {
@@ -50,6 +53,7 @@ export class CodexRouterOwner {
   private failed = false;
   private calls = 0;
   private busy = false;
+  private operatorLease?: OperatorLease;
   private proof?: { identity: string; expires: number; storage: string };
   private maintenance?: RouterMaintenanceReceipt;
   constructor(private readonly registry: CodexGenerationRegistry, maintenanceFile?: string) {
@@ -137,7 +141,7 @@ export class CodexRouterOwner {
         if (this.registry.metadata(`router-history:${id}`) !== null) throw Error("Router maintenance receipt already exists");
         this.registry.setMetadata(`router-history:${id}`, archive);
         for (const row of adoptions) this.registry.setMetadata(row.key, row.value);
-        const next: State = { ...this.state, epoch: this.state.epoch + (this.state.phase === "open" ? 1 : 0), phase: "released",
+        const next: State = { ...this.state, epoch: this.state.epoch + (this.state.phase === "open" ? 1 : 0), phase: "released", operatorLease: undefined,
           operationId: receipt.operationId, fence: receipt.fence, sourceOwner: receipt.source.owner,
           history: [...(this.state.history ?? []), id], currentUncertain: false, maintenanceSeal: id,
           uncertain: this.state.uncertain || !!this.state.pending?.length,
@@ -146,6 +150,20 @@ export class CodexRouterOwner {
       });
       this.maintenance = undefined; this.busy = false;
     } catch (error) { this.failed = true; throw error; }
+  }
+  dispose() { this.operatorLease?.dispose(); this.operatorLease = undefined; }
+  private expireOperatorLease(lease: OperatorLease, reason: OperatorLeaseEnd) {
+    if (!lease.ended() || this.operatorLease !== lease || this.failed || this.busy || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner) return;
+    const receipt: OperatorLeaseAbort = { version: 1, owner: this.owner, epoch: this.state.epoch,
+      operationId: this.state.operationId!, fence: this.state.fence!, operatorLease: lease.claim, reason, abortedAt: new Date().toISOString() };
+    this.save({ ...this.state, phase: "open", operatorLease: undefined,
+      operatorLeaseAborts: [...(this.state.operatorLeaseAborts ?? []), receipt] });
+    this.proof = undefined; this.dispose();
+  }
+  renewOperatorLease(input: RouterExpectation) {
+    this.check(input);
+    if (this.busy || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || !this.operatorLease) throw Error("Operator lease unavailable");
+    this.operatorLease.renew(input.operatorLease);
   }
   isOpen = () => !this.failed && !this.busy && this.state.phase === "open";
   enter(reconciliation = false, context: RouterLeaseContext = {}): RouterLease {
@@ -217,7 +235,9 @@ export class CodexRouterOwner {
       throw error;
     }
   }
-  snapshot() { return { ...this.state, owner: this.owner, incarnation: this.incarnation, bootId: this.bootId,
+  snapshot() { return { ...this.state, operatorLease: this.state.operatorLease && structuredClone(this.state.operatorLease),
+    operatorLeaseAborts: this.state.operatorLeaseAborts && structuredClone(this.state.operatorLeaseAborts), owner: this.owner, incarnation: this.incarnation, bootId: this.bootId,
+    operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
     protocolVersion: 1, pid: process.pid, activeCalls: this.calls, persistence: this.failed ? "unknown" : "ready",
     releaseKind: this.state.maintenanceSeal ? "legacy-maintenance" : "protocol",
     historicalUnknownSha256: this.historicalUnknownSha256(), historicalPendingCount: this.historicalPending().size,
@@ -231,13 +251,17 @@ export class CodexRouterOwner {
   fence(input: RouterExpectation) {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
-    this.save({ ...this.state, version: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, maintenanceSeal: undefined,
+    const lease = new OperatorLease(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
+    this.save({ ...this.state, operatorLease: lease.claim, version: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, maintenanceSeal: undefined,
       fence: input.fence, sourceOwner: this.owner, pending: this.state.pending, uncertain: this.state.uncertain });
+    this.operatorLease = lease;
+    lease.start(reason => this.expireOperatorLease(lease, reason), () => { this.failed = true; lease.dispose(); });
   }
   abort(input: RouterExpectation) {
     this.check(input);
     if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.busy) throw new Error("Router source cannot abort after release");
-    this.save({ ...this.state, phase: "open" });
+    this.save({ ...this.state, phase: "open", operatorLease: undefined });
+    this.proof = undefined; this.dispose();
   }
   inspect(input: RouterExpectation, observation: RouterObservation) {
     this.check(input);
@@ -254,7 +278,10 @@ export class CodexRouterOwner {
     this.check(input);
     if (this.busy || this.state.phase !== "fenced" || this.currentUnconfirmed() || this.calls || observation.coverage !== "complete" || observation.activeCount
       || !this.proof || this.proof.identity !== input.proof || this.proof.expires <= Date.now() || this.storage() !== this.proof.storage) throw new Error("Router is not drained or exact proof changed");
-    this.save({ ...this.state, phase: "released", sealed: this.proof.storage, configuration });
+    if (!this.operatorLease) throw Error("Live operator lease required");
+    this.operatorLease.assertLive();
+    this.save({ ...this.state, operatorLease: undefined, phase: "released", sealed: this.proof.storage, configuration });
+    this.dispose();
   }
   async coldReady(input: RouterExpectation, configuration: string, readNative: () => Promise<unknown>) {
     this.check(input);
