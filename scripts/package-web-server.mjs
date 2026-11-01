@@ -21,11 +21,11 @@ import { sealPackage, npmPack } from './full-release/producer.mjs';
 import { fullComponents, prepareFullMetadata } from './full-release/components.mjs';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { packageFullRuntime } from './full-release/package-runtime.mjs';
+import { normalizeFullRuntimeEngines, packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false, prepareOnly = false }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, fullRuntimeEngines = undefined, completeRuntime = false, dryRun = false, prepareOnly = false }) {
   if (prepareOnly && !fullRelease) throw new Error('Prepared trees require a signed full release');
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
   assertPackageName(packageName); assertPackageName(resourcePackageName);
@@ -100,6 +100,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   manifest.bin['opencraft-observe']='runtime/observe-cli.mjs';
   await chmod(join(packageRoot,'runtime/observe-cli.mjs'),0o755);
   await writeFile(join(packageRoot,'package.json'),JSON.stringify(manifest,null,2));
+  const profileEngines = fullRuntimeEngines === undefined ? null : normalizeFullRuntimeEngines(fullRuntimeEngines);
   if (execution) {
     await buildGitIdentityRuntime(join(packageRoot, 'runtime'), additionalGitRuntimeEntries);
     await mkdir(join(packageRoot, 'execution'));
@@ -156,8 +157,15 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.engines.node = `>=${nodeMajor} <${nodeMajor + 1}`;
     manifest.os = [process.platform];
     manifest.cpu = [process.arch];
-    manifest.opencraftExecution = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
+    const executionManifest = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
       ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1, storageWriterProtocol: 2 } : {}) };
+    if (profileEngines) {
+      const executionEngines = profileEngines.filter(engine => engine === 'dsh' || engine === 'pi');
+      if (!executionEngines.length) throw new Error('Full runtime profile must enable an execution engine');
+      executionManifest.engines = executionEngines;
+      executionManifest.defaultEngine = executionEngines.includes('dsh') ? 'dsh' : 'pi';
+    }
+    manifest.opencraftExecution = executionManifest;
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
@@ -170,7 +178,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     if (!execution || executionProfile !== 'headless' || splitResources || (fullRelease && fullRelease.template.updater.bridge)) throw new Error('Full release requires an unsplit Headless package and non-bridge metadata');
     manifest.files.push('full/'); manifest.license = 'Apache-2.0';
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
-    await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: web.sourceRevision, buildId: web.buildId });
+    await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: web.sourceRevision, buildId: web.buildId, engines: fullRuntimeEngines });
     await prepareFullMetadata(packageRoot);
   }
   if (dryRun) {
@@ -199,7 +207,9 @@ export async function packageWebServerFromEnvironment(composition = {}) {
     execution: process.env.OPENCRAFT_PACKAGE_EXECUTION === '1',
     executionProfile: process.env.OPENCRAFT_EXECUTION_PROFILE || 'daemon',
     prepareOnly: process.env.OPENCRAFT_PACKAGE_PREPARE_ONLY === '1',
-    completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1', dryRun: process.env.OPENCRAFT_PACKAGE_DRY_RUN === '1',
+    completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1',
+    fullRuntimeEngines: process.env.OPENCRAFT_FULL_RUNTIME_ENGINES?.split(',').map(value => value.trim()).filter(Boolean),
+    dryRun: process.env.OPENCRAFT_PACKAGE_DRY_RUN === '1',
     output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT || join(repositoryRoot, '.local/web-packages'), ...composition });
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {

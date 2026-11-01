@@ -11,26 +11,45 @@ import { COMPONENT_LIMITS } from './components.mjs';
 import { prepareDshRuntime } from '../prepare-dsh-runtime.mjs';
 const exec = promisify(execFile);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const SUPPORTED_FULL_RUNTIME_ENGINES = Object.freeze(['pi', 'codex', 'dsh']);
+
+/**
+ * Normalize the engines represented by the optional full-runtime payload.
+ * Pi is already part of the server execution owner; Codex and DSH are
+ * independent runtimes and are included only when the selected release
+ * profile explicitly asks for them.
+ */
+export function normalizeFullRuntimeEngines(value = ['codex', 'dsh']) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error('Full runtime requires at least one engine');
+  const engines = [...new Set(value)];
+  if (engines.some(engine => !SUPPORTED_FULL_RUNTIME_ENGINES.includes(engine))) throw new Error('Unsupported full runtime engine');
+  return engines;
+}
 async function installRuntime(runtime, ignoreScripts = false) {
   try { await exec('npm', ['ci', '--prefix', runtime, '--workspaces=false', '--omit=dev', '--no-audit', '--no-fund', ...(ignoreScripts ? ['--ignore-scripts'] : [])], { cwd: runtime, maxBuffer: 1024 * 1024 }); }
   catch { throw new Error('Locked runtime installation failed; inspect the build environment'); }
 }
 
-export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision, buildId }) {
+export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision, buildId, engines = ['codex', 'dsh'] }) {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Full runtime currently requires Linux x64');
-  const full = join(packageRoot, 'full'); await mkdir(join(full, 'core'), { recursive: true });
+  const selectedEngines = normalizeFullRuntimeEngines(engines);
+  const enabled = new Set(selectedEngines);
+  const full = join(packageRoot, 'full');
   const bundledPackages = new Map();
-  for (const [source, name] of [['bin', 'main'], ['app-server-bin', 'app-server'], ['generation-bin', 'generations']]) {
-    const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + '.cjs'),
-      bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate'] });
-    for (const input of Object.keys(bundle.metafile.inputs)) {
-      if (!input.includes('node_modules/')) continue;
-      let directory = dirname(resolve(repositoryRoot, input));
-      while (directory.startsWith(repositoryRoot)) {
-        try { const manifest = JSON.parse(await readFile(join(directory, 'package.json')));
-          if (manifest.name && manifest.version) { bundledPackages.set(directory, manifest); break; }
-        } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        directory = dirname(directory);
+  if (enabled.has('codex')) {
+    await mkdir(join(full, 'core'), { recursive: true });
+    for (const [source, name] of [['bin', 'main'], ['app-server-bin', 'app-server'], ['generation-bin', 'generations']]) {
+      const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + '.cjs'),
+        bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate'] });
+      for (const input of Object.keys(bundle.metafile.inputs)) {
+        if (!input.includes('node_modules/')) continue;
+        let directory = dirname(resolve(repositoryRoot, input));
+        while (directory.startsWith(repositoryRoot)) {
+          try { const manifest = JSON.parse(await readFile(join(directory, 'package.json')));
+            if (manifest.name && manifest.version) { bundledPackages.set(directory, manifest); break; }
+          } catch (error) { if (error.code !== 'ENOENT') throw error; }
+          directory = dirname(directory);
+        }
       }
     }
   }
@@ -46,16 +65,20 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
     const record = { name: manifest.name, version: manifest.version, license: manifest.license || null, files: names };
     await writeFile(join(target, 'package-license.json'), JSON.stringify(record)); coreLicenses.push(record);
   }
-  await writeFile(join(full, 'core/identity.json'), JSON.stringify({ schemaVersion: 1, sourceRevision, buildId }));
+  if (enabled.has('codex')) await writeFile(join(full, 'core/identity.json'), JSON.stringify({ schemaVersion: 1, sourceRevision, buildId }));
   // Installation runs solely in the separately pinned runtime, never a live HOME.
-  const codex = join(repositoryRoot, 'runtime/codex');
-  const codexPackage = JSON.parse(await readFile(join(codex, 'package.json')));
-  const codexLock = JSON.parse(await readFile(join(codex, 'package-lock.json')));
-  const version = codexPackage.dependencies['@openai/codex'];
-  if (!/^\d+\.\d+\.\d+$/.test(version) || codexLock.packages['node_modules/@openai/codex']?.version !== version) throw new Error('CLI requires an exact lock');
+  let codex, codexPackage, codexLock;
+  if (enabled.has('codex')) {
+    codex = join(repositoryRoot, 'runtime/codex');
+    codexPackage = JSON.parse(await readFile(join(codex, 'package.json')));
+    codexLock = JSON.parse(await readFile(join(codex, 'package-lock.json')));
+    const version = codexPackage.dependencies['@openai/codex'];
+    if (!/^\d+\.\d+\.\d+$/.test(version) || codexLock.packages['node_modules/@openai/codex']?.version !== version) throw new Error('CLI requires an exact lock');
+  }
   const records = [];
   await mkdir(join(packageRoot, 'release/locks'), { recursive: true });
   for (const [name, roots] of [['codex', ['@openai/codex']], ['dsh', ['@deepseek-ai/dsh', 'ajv']]]) {
+    if (!enabled.has(name)) continue;
     const source = join(repositoryRoot, 'runtime', name), target = join(full, name);
     const versions = await cachedRuntime({ repositoryRoot, name, destination: target, build: async destination => {
       if (name === 'dsh') await prepareDshRuntime({ root: repositoryRoot, log: () => {}, install: runtime => installRuntime(runtime) });
@@ -67,11 +90,11 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
     await cp(join(repositoryRoot, 'LICENSE'), join(target, 'LICENSE'));
     records.push({ component: name, versions, lockfileSha256: digest(lock), packages: Object.fromEntries(Object.entries(JSON.parse(lock).packages).filter(([path]) => path).map(([path, p]) => [path, { version: p.version, integrity: p.integrity || null, resolved: p.resolved || null, license: p.license || null }])) });
   }
-  await cp(join(repositoryRoot, 'LICENSE'), join(full, 'core/LICENSE'));
+  if (enabled.has('codex')) await cp(join(repositoryRoot, 'LICENSE'), join(full, 'core/LICENSE'));
   const rootLock = await readFile(join(repositoryRoot, 'package-lock.json'));
   await writeFile(join(packageRoot, 'release/locks/workspace.json'), rootLock);
   await mkdir(join(packageRoot, 'release'), { recursive: true });
-  const provenance = { schemaVersion: 1, license: 'Apache-2.0', sourceRevision, buildId,
+  const provenance = { schemaVersion: 1, license: 'Apache-2.0', sourceRevision, buildId, engines: selectedEngines,
     target: { platform: process.platform, arch: process.arch, nodeAbi: Number(process.versions.modules) },
     rootLockfileSha256: digest(rootLock), coreLicenses, componentLimits: COMPONENT_LIMITS, runtimes: records,
     activation: 'Payload only. Independent Core, generations, DSH, Pi, ACP and broker owners require a compatible P2/P3 plan.' };
