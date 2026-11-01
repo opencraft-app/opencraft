@@ -398,3 +398,18 @@ The real Web consumer baseline preserves iframe/document/draft identity across
 remount, rapid switching, live resize and a device/floating presentation.
 Native teardown policy was observed through an explicit synthetic port, not a
 new Web Host capability.
+
+### Incremental Conversation binding owner
+
+The binding store offers a per-entity persistence port (`records.load/put/remove`) and
+`subscribeScope` alongside the legacy snapshot adapter. Register and promotion only
+persist the changed Scope; snapshots enumerate the catalog when explicitly requested.
+A canonical Thread Scope can be derived without writing another durable alias. Restored
+Draft aliases remain distinct identities even if they target the same Thread, with a
+separate preferred Scope index for activation. Removing one alias preserves the others.
+
+React display-key consumers subscribe to their own Scope. Connector lookup resolves an
+indexed Scope while retaining the Host check. This is the shared binding foundation;
+local and remote resource-record adapter rollout is a separate change. Existing clients
+that inject the legacy `save` port still serialize snapshots and do not gain constant
+update data size merely by adopting this API.
