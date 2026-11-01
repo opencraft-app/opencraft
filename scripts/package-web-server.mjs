@@ -79,7 +79,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     bundle: true, platform: 'node', format: 'esm', target: 'node24',
     define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)),
       'process.env.OPENCRAFT_FULL_UPGRADE_PROFILE_JSON': JSON.stringify(JSON.stringify(fullUpgradeProfile)) } });
-  for (const entry of ['agent', 'helper', 'watchdog', 'control', 'install', 'acp-host-owner', 'pi-host-owner']) {
+  for (const entry of ['agent', 'helper', 'watchdog', 'control', 'parent', 'install', 'acp-host-owner', 'pi-host-owner']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/full-upgrade/${entry}.mjs`)], outfile: join(packageRoot, `runtime/upgrade-${entry}.mjs`),
       bundle: true, platform: 'node', format: 'esm', target: 'node24',
       define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)) } });

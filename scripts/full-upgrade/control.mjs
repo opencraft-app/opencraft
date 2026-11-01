@@ -6,8 +6,8 @@ let [socket, action, operationId, role, artifactId] = process.argv.slice(2);
 if (socket === '--config') {
   const config = await readConfig(action);
   socket = socketPath(config, 'agent');
-  invariant(operationId === 'reconcile' && role && !artifactId, 'expected-reconcile-job');
-  operationId = role; role = undefined; action = 'page-reconcile';
+  invariant(['reconcile','full-inspect','full-start','full-recover'].includes(operationId) && role && !artifactId, 'expected-fixed-control-operation');
+  action = operationId === 'reconcile' ? 'page-reconcile' : operationId; operationId = role; role = undefined;
 }
 invariant(socket && action && process.argv.length <= 7, 'expected-socket-action-operation-role-artifact');
 request(socket, { action, ...(operationId ? { operationId } : {}), ...(role ? { role } : {}), ...(artifactId ? { artifactId } : {}) }, 120000)

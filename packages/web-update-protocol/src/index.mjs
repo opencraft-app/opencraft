@@ -48,9 +48,9 @@ const upgradeStates = new Set(['queued', 'checking', 'downloading', 'prepared', 
 const strings = value => Array.isArray(value) && value.length <= 256 && value.every(v => typeof v === 'string' && v.length <= 2048);
 export function parseFullUpgradeStatus(value) {
   const plan = value?.plan;
-  if (!object(value) || value.schemaVersion !== 1 || value.fullStackExecutable !== false
+  if (!object(value) || value.schemaVersion !== 1 || typeof value.fullStackExecutable !== 'boolean'
     || !(value.unavailable === undefined || typeof value.unavailable === 'boolean')
-    || !(plan === null || (object(plan) && plan.status === 'blocked' && plan.executable === false
+    || !(plan === null || (object(plan) && ['blocked', 'prepared'].includes(plan.status) && typeof plan.executable === 'boolean' && (plan.status === 'prepared') === plan.executable
       && ['planId', 'planDigest', 'releaseId', 'sourceRevision', 'channel', 'manifestSha256'].every(k => nullableString(plan[k]))
       && (plan.downloadBytes === null || Number.isSafeInteger(plan.downloadBytes) && plan.downloadBytes >= 0)
       && strings(plan.blockedReasons) && Array.isArray(plan.components) && plan.components.length <= 128

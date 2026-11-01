@@ -78,7 +78,8 @@ test('Web receipt mismatch requires local reconciliation, never installation rep
 test('HTTP parser rejects invented successful full plans and unknown owner states', () => {
   const value = { schemaVersion: 1, fullStackExecutable: false, plan: null, jobs: [] };
   assert.equal(parseFullUpgradeStatus(value), value);
-  assert.throws(() => parseFullUpgradeStatus({ ...value, fullStackExecutable: true }));
+  assert.equal(parseFullUpgradeStatus({ ...value, fullStackExecutable: true }).fullStackExecutable, true);
+  assert.throws(() => parseFullUpgradeStatus({ ...value, fullStackExecutable: 'yes' }));
   assert.throws(() => parseFullUpgradeStatus({ ...value, jobs: [{ state: 'green' }] }));
 });
 
