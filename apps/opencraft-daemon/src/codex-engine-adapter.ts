@@ -1,5 +1,6 @@
 import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { ProvisionalThreads } from "./provisional-threads.js";
+import { nativeEmptyCreation } from "./native-empty-creation.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
@@ -1957,7 +1958,9 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (internal.method === "turn/start" || internal.method === "turn/steer") this.options.collaboration?.started(string(internal.params.threadId),string(internal.params.clientUserMessageId),string(record(record(message.result).turn).id)||string(record(message.result).turnId));
           this.observeUsageAcceptance(internal.method,internal.params,message.result);
           this.observeMetadataResult(internal.method, internal.params, message.result);
-          internal.resolve(message.result);
+          if (internal.method === "thread/start")
+            void this.materializeCreation(message.result, internal.params).then(() => internal.resolve(message.result), internal.reject);
+          else internal.resolve(message.result);
         }
         // Metering metadata reads may have held the Host demand guard when a
         // turn completed. Re-evaluate release after the last internal RPC ends.
@@ -2050,6 +2053,11 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message && ["thread/archive", "thread/delete"].includes(pending.method) && this.transcriptCache)
           void this.transcriptCache.invalidate(string(pending.params.threadId)).then(emitReply, () => {
             if (this.validClientRequest(pending)) this.emit({ id: pending.originalId, error: { code: -32000, message: "Transcript cleanup failed" } }, pending.clientId);
+          });
+        else if ("result" in message && pending.method === "thread/start")
+          void this.materializeCreation(message.result, pending.params).then(emitReply, () => {
+            if (this.validClientRequest(pending)) this.emit({ id: pending.originalId,
+              error: { code: -32000, message: "Could not create this conversation" } }, pending.clientId);
           });
         else emitReply();
         if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
@@ -3388,6 +3396,22 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
   private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
   private sessionMcpGeneration = 0;
+  private async materializeCreation(value: unknown, params: RpcRecord): Promise<void> {
+    const thread = record(record(value).thread), threadId = string(thread.id), path = thread.path;
+    const store = this.provisionalThreads;
+    if (params.ephemeral === true || thread.ephemeral === true || store?.get(threadId)?.phase !== "created"
+      || typeof path !== "string" || !path || existsSync(path)) return;
+    try {
+      // Stock Native flushes its own session metadata before hydrating history.
+      // No input, model request, resume or file write is performed by the Host.
+      await this.requestPhysical("thread/read", { threadId, includeTurns: true });
+    } catch (cause) {
+      const fault = cause instanceof AppServerRpcError || cause instanceof OpenCraftQueueRpcError ? cause : null;
+      if (fault?.code !== -32601 || !/^list_turns is not supported yet$/u.test(fault.message)
+        || !nativeEmptyCreation(threadId, path)) throw cause;
+    }
+    if (this.provisionalThreads !== store || !existsSync(path)) throw new Error("Native creation was not persisted");
+  }
   private async provisionalResult(threadId: string, params: RpcRecord = {}): Promise<RpcRecord | null> {
     const store = this.provisionalThreads;
     const created = store?.get(threadId);
@@ -3407,7 +3431,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     // materialize a rollout. Only a positively located, idle, unmaterialized
     // allocation may use creation evidence without asking for its history.
     const allocated = string(record(live.status).type) === "idle"
-      && typeof live.path === "string" && live.path.length > 0 && !existsSync(live.path);
+      && typeof live.path === "string" && live.path.length > 0
+      && (!existsSync(live.path) || nativeEmptyCreation(threadId, live.path));
     try {
       if (!allocated) live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: true })).thread);
       if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
@@ -3427,10 +3452,12 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (allocated) {
       const current = record(await this.requestPhysical("thread/loaded/list", {}));
       if (!Array.isArray(current.data) || !current.data.includes(threadId)) return null;
+      if (!existsSync(live.path as string))
+        await this.materializeCreation({ ...result, thread: { ...thread, path: live.path } }, {});
     }
     if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created") return null;
     // Never hide a file that has appeared since creation. Normal history remains authoritative.
-    if (typeof live.path === "string" && existsSync(live.path)) {
+    if (typeof live.path === "string" && existsSync(live.path) && !nativeEmptyCreation(threadId, live.path)) {
       store!.persisted(threadId); return null;
     }
     return { ...result, thread: { ...thread, turns: [], creationPhase: "created" } };
