@@ -7,7 +7,7 @@ import {runParent,ensureParentDelivery,parentRecoverySocket} from '../../scripts
 const digest='a'.repeat(64);
 async function fixture(t,call){const root=await mkdtemp(join(tmpdir(),'full-parent-'));t.after(()=>rm(root,{recursive:true,force:true}));return {config:{stateRoot:root,deployLock:join(root,'lock')},deps:{recipe:async()=>({recipeSha256:digest,recipe:{steps:[{id:'provider',ownerId:'provider',sha256:digest},{id:'consumer',ownerId:'consumer',sha256:digest}]}}),target:async()=>({root,manifestSha256:digest,releaseId:'test-release'}),call}};}
 test('full parent runs dependency order under the real shared kernel lock and keeps receipts',async t=>{
- const calls=[];const f=await fixture(t,async(step,input,fd)=>{assert.match(await readFile('/proc/self/fdinfo/'+fd,'utf8'),/FLOCK/);calls.push(input.action+':'+step.id);return {...input,stepId:step.id,ownerId:step.ownerId,outcome:'applied',healthy:true};});
+ const calls=[];const f=await fixture(t,async(step,input,fd)=>{const info=await readFile('/proc/self/fdinfo/'+fd,'utf8');assert.match(info,/FLOCK/);assert.ok(info.split('\n').some(line=>line.startsWith('lock:')&&line.trim().split(/\s+/)[5]===String(input.lockAuthority.pid)));assert.match(await readFile('/proc/'+input.lockAuthority.pid+'/stat','utf8'),/python/);calls.push(input.action+':'+step.id);return {...input,stepId:step.id,ownerId:step.ownerId,outcome:'applied',healthy:true};});
  const r=await runParent(f.config,{operationId:'test-parent'},f.deps);assert.equal(r.job.state,'completed');assert.deepEqual(calls,['inspect:provider','inspect:consumer','apply:provider','apply:consumer']);
  calls.length=0;await runParent(f.config,{operationId:'test-parent'},f.deps);assert.deepEqual(calls,['inspect:provider','inspect:consumer']);
 });

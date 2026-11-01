@@ -65,6 +65,23 @@ export async function parentTarget(config, retainedRoot = null) {
     sourceRevision: accepted.record.release.source.revision, manifest: accepted.record };
 }
 
+/** Keep the kernel FLOCK owner alive as the parent transaction's guard.
+ * Short-lived flock(1) leaves its dead PID in fdinfo, which cannot authorize an
+ * owner receipt. The parent and ports retain the same open-file-description. */
+export async function holdParentLock(fd, path) {
+  const code = "import os,fcntl,json,sys;fcntl.flock(3,fcntl.LOCK_EX);p=os.getpid();s=open('/proc/self/stat').read().rsplit(')',1)[1].split()[19];b=open('/proc/sys/kernel/random/boot_id').read().strip();print(json.dumps(dict(pid=p,startTime=s,bootId=b,lock=sys.argv[1])),flush=True);sys.stdin.buffer.read()";
+  const child = spawn('/usr/bin/python3', ['-c', code, path], { stdio: ['pipe','pipe','ignore',fd] });
+  const authority = await new Promise((resolve, reject) => {
+    let buffer = '';
+    child.once('error', reject); child.once('exit', () => reject(Error('parent-lock-guard-exited')));
+    child.stdout.on('data', bytes => { buffer += bytes; if (buffer.includes('\n')) {
+      try { const value = JSON.parse(buffer.split('\n')[0]); invariant(value.pid === child.pid && value.lock === path && /^\d+$/.test(value.startTime), 'invalid-parent-lock-guard'); resolve(value); }
+      catch (error) { reject(error); }
+    } });
+  });
+  return { authority, async close() { child.stdin.end(); if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve)); } };
+}
+
 export async function controllerCall(config, step, input, lockFd) {
   // Only fixed controller files and interpreters from protected configuration.
   await rootOwned(step.controller);
@@ -156,11 +173,11 @@ async function runParentJournal(config, { operationId, inspect = false, recover 
   // recovers. Inherited FD 3 refers to this same locked open-file-description.
   const { open } = await import('node:fs/promises');
   const file = await open(config.deployLock, 'a+', 0o600);
-  const { command } = await import('./durable.mjs');
-  try { await command('/usr/bin/flock', ['3'], { fd: file.fd, timeout: 3600000 }); }
+  let lockGuard;
+  try { lockGuard = await holdParentLock(file.fd, config.deployLock); }
   catch (e) { await file.close(); throw e; }
   let safe = true, job;
-  const context = { operationId, targetRoot: target.root, manifestSha256: target.manifestSha256, releaseId: target.releaseId };
+  const context = { operationId, lockAuthority: lockGuard.authority, targetRoot: target.root, manifestSha256: target.manifestSha256, releaseId: target.releaseId };
   try {
     // Recheck official pointers after waiting for an in-flight CI transaction.
     invariant((await getTarget(config, recover ? retained?.targetRoot : null)).manifestSha256 === target.manifestSha256, 'parent-target-changed-under-lock');
@@ -231,7 +248,7 @@ async function runParentJournal(config, { operationId, inspect = false, recover 
       return await repaired;
     }
     throw e;
-  } finally { if (safe) { await file.close(); await journal.close(); } }
+  } finally { if (safe) { await lockGuard.close(); await file.close(); await journal.close(); } }
 }
 
 
