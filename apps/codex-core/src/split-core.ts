@@ -25,6 +25,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
       event: "shutdown-wait", phase, durationMs: Date.now() - startedAt,
     })), 15_000);
     timer.unref();
+    owner.dispose();
     try { await control?.close(); phase = "accounts"; await accounts?.close(); }
     finally { clearInterval(timer); release(); }
   })();
@@ -45,6 +46,11 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
       if (request.method === "POST" && request.url === "/owner-handoff") {
         try {
           const input = await readControlJson(request, ACCOUNT_CORE_STATE_MAX_BYTES);
+          if (input.action === "renew-operator-lease") {
+            owner.renewOperatorLease(input as unknown as AccountOwnerExpectation);
+            // Renewal must neither wait for interruption nor replace the drain proof.
+            return { status: 200, value: { pid: process.pid, handoff: owner.snapshot() } };
+          }
           if (interrupting) throw new Error("Account maintenance interruption is running");
           if (input.action === "maintenance-interrupt") {
             // Do not hold owner.transition while waiting: onUncertain must use

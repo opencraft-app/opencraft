@@ -7,6 +7,8 @@ import type { AccountPoolUncertainDiagnostic, CodexAccountRetainedState, CodexAc
 import { acquireCodexWriter, parseCodexAuthFile, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
+import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
+
 import { parseFencedRetained } from "./fenced-retained.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -67,6 +69,7 @@ type HistoricalUnknown = { id: string; route: string; diagnostic?: AccountPoolUn
 } }[];
 interface State {
   schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
+  operatorLease?: OperatorLeaseClaim; operatorLeaseAborts?: OperatorLeaseAbort[];
   retained?: CodexAccountRetainedState;
   sealed?: { storage: string; historicalCount: number;
     configurationSelectorSha256: string; cliSha256: string; historicalUnknownSha256?: string };
@@ -75,7 +78,7 @@ interface State {
   carriedUnknown?: HistoricalUnknown;
   legacyMaintenance?: { receiptSha256: string; sourceBundleSha256: string; sourcePid: number };
 }
-export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown }
+export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown; operatorLease?: OperatorLeaseClaim }
 
 async function privateInfo(path: string, directory = false, readOnlyExternal = false) {
   const info = await lstat(path);
@@ -149,6 +152,7 @@ export class AccountCoreOwner {
   private state: State = { schemaVersion: 1, epoch: 0, phase: "open", uncertain: [] };
   private failed = false;
   private sealedProcess = false;
+  private operatorLease?: OperatorLease;
   private transitioning = false;
   private activating = false;
   private calls = 0;
@@ -253,7 +257,7 @@ export class AccountCoreOwner {
       || value.storageSha256 !== inspection.storage.sha256
       || value.configurationSelectorSha256 !== inspection.configurationSelectorSha256
       || value.cliSha256 !== inspection.cliSha256) throw new Error("Legacy account current storage, volatile responsibility or configuration changed");
-    const released: State = { ...this.state, phase: "released",
+    const released: State = { ...this.state, phase: "released", operatorLease: undefined,
       retained: structuredClone(retained),
       carriedUnknown: structuredClone(this.state.uncertain),
       sealed: { storage: inspection.storage.sha256, historicalCount: proof.historicalCount,
@@ -283,6 +287,23 @@ export class AccountCoreOwner {
       stateLimitBytes: ACCOUNT_CORE_STATE_MAX_BYTES, reserveBytes: 4096,
       retainedSha256: digest(released.retained), unknownSha256: digest(released.uncertain) };
   }
+  dispose() { this.operatorLease?.dispose(); this.operatorLease = undefined; }
+  private async expireOperatorLease(lease: OperatorLease, reason: OperatorLeaseEnd) {
+    if (!lease.ended() || this.operatorLease !== lease || this.failed || this.sealedProcess || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner) return;
+    if (this.transitioning) return; // Retry after the current atomic transition; release checks liveness before closing.
+    await this.transition(async () => {
+      const receipt: OperatorLeaseAbort = { version: 1, owner: this.owner, epoch: this.state.epoch,
+        operationId: this.state.operationId!, fence: this.state.fence!, operatorLease: lease.claim, reason, abortedAt: new Date().toISOString() };
+      await this.save({ ...this.state, phase: "open", operatorLease: undefined,
+        operatorLeaseAborts: [...(this.state.operatorLeaseAborts ?? []), receipt] });
+      this.proof = undefined; this.dispose();
+    });
+  }
+  renewOperatorLease(input: AccountOwnerExpectation) {
+    this.checkMaintenance(input);
+    if (!this.operatorLease) throw Error("Operator lease unavailable");
+    this.operatorLease.renew(input.operatorLease);
+  }
   isOpen = () => !this.failed && !this.sealedProcess && !this.activating && this.state.phase === "open";
   retained() { return this.state.retained; }
   enter(reconciliation = false) {
@@ -303,6 +324,7 @@ export class AccountCoreOwner {
     await this.transition(() => this.save(this.state));
   };
   snapshot() { return { ...structuredClone(this.state), owner: this.owner, activeCalls: this.calls,
+    operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
     persistence: this.failed ? "unknown" : "ready", maintenanceInterruption: 1, protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
   private check(input: AccountOwnerExpectation, existing = true) {
     if (this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
@@ -338,25 +360,29 @@ export class AccountCoreOwner {
   }
   private serialized(state: State, reserve = 0) {
     const bytes = JSON.stringify(state);
-    if (Buffer.byteLength(bytes) + reserve > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained state exceeds protocol capacity");
+    if (Buffer.byteLength(bytes) + Math.max(reserve, state.phase === "fenced" && state.operatorLease ? 4096 : 0) > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained state exceeds protocol capacity");
     return bytes;
   }
   async fence(input: AccountOwnerExpectation) {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
     if (input.historicalUnknown !== undefined && digest(input.historicalUnknown) !== digest(this.state.uncertain)) throw new Error("Account historical unknown list changed");
-    const fenced: State = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
+    const lease = new OperatorLease(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
+    const fenced: State = { operatorLease: lease.claim, operatorLeaseAborts: this.state.operatorLeaseAborts, schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
       carriedUnknown: structuredClone(input.historicalUnknown ?? []) };
     // Reject oversized bindings while the original in-memory owner is still
     // open. Close admission before the first asynchronous persistence step.
     this.serialized(fenced);
     this.state = fenced;
     await this.save(fenced);
+    this.operatorLease = lease;
+    lease.start(reason => this.expireOperatorLease(lease, reason), () => { this.failed = true; lease.dispose(); });
   }
   async abortFence(input: AccountOwnerExpectation) {
     this.check(input);
     if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.sealedProcess) throw new Error("Account writer cannot resume after release began");
-    await this.save({ ...this.state, phase: "open" });
+    await this.save({ ...this.state, phase: "open", operatorLease: undefined });
+    this.proof = undefined; this.dispose();
   }
   inspect(observation: { activeCount: number; counts: unknown; historicalCount: number } | undefined) {
     const activeCount = (observation?.activeCount ?? 0) + this.calls;
@@ -377,9 +403,11 @@ export class AccountCoreOwner {
     this.check(input);
     if (this.state.phase !== "fenced" || observation.activeCount + this.calls !== 0 || !this.exactHistoricalUnknown()
       || !this.proof?.idle || this.proof.identity !== input.proof || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account Core is not drained or proof expired");
+    if (!this.operatorLease) throw Error("Live operator lease required");
+    this.operatorLease.assertLive();
     const carry = retained();
     const before = await readAccountStorage(this.options.dataDirectory);
-    const released: State = { ...this.state, phase: "released", legacyMaintenance: undefined, retained: carry, sealed: { storage: before.sha256,
+    const released: State = { ...this.state, phase: "released", operatorLease: undefined, legacyMaintenance: undefined, retained: carry, sealed: { storage: before.sha256,
       historicalCount: observation.historicalCount,
       configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable), historicalUnknownSha256: digest(this.state.uncertain) }, ready: undefined };
     // Reserve the successor's ready identity before closing anything. An
@@ -387,7 +415,10 @@ export class AccountCoreOwner {
     this.serialized(released, 4096);
     if (this.calls !== 0 || this.failed || !this.exactHistoricalUnknown() || released.sealed!.historicalUnknownSha256 !== digest(this.state.uncertain) || this.proof.identity !== input.proof
       || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account final drain proof changed");
+    if (!this.operatorLease) throw Error("Live operator lease required");
+    this.operatorLease.assertLive();
     this.sealedProcess = true;
+    this.dispose();
     await stop();
     const storage = await readAccountStorage(this.options.dataDirectory);
     if (storage.sha256 !== before.sha256) throw new Error("Account storage changed while closing writer");

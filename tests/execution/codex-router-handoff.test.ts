@@ -1,3 +1,5 @@
+import { operatorLeaseClaim } from "../../scripts/full-upgrade/operator-lease.mjs";
+const operatorLease = await operatorLeaseClaim(30000);
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,10 +11,10 @@ const empty: RouterObservation = { coverage: "complete", activeCount: 0, histori
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "oc-router-owner-"));
   let registry = new CodexGenerationRegistry(root), owner = new CodexRouterOwner(registry);
-  const input = () => ({ expectedOwner: owner.owner, expectedEpoch: owner.snapshot().epoch, operationId: "operation", fence: "fence" });
+  const input = () => ({ operatorLease, expectedOwner: owner.owner, expectedEpoch: owner.snapshot().epoch, operationId: "operation", fence: "fence" });
   return { root, get registry() { return registry; }, get owner() { return owner; }, input,
-    reopen() { registry.close(); registry = new CodexGenerationRegistry(root); owner = new CodexRouterOwner(registry); },
-    async close() { registry.close(); await rm(root, { recursive: true, force: true }); } };
+    reopen() { owner.dispose(); registry.close(); registry = new CodexGenerationRegistry(root); owner = new CodexRouterOwner(registry); },
+    async close() { owner.dispose(); registry.close(); await rm(root, { recursive: true, force: true }); } };
 }
 test("router fence counts accepted admission, rejects new calls, and releases only exact zero proof", async () => {
   const f = await fixture();
