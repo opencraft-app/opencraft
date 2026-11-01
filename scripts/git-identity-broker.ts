@@ -45,6 +45,20 @@ export class GitIdentityBroker {
     this.timer = setInterval(() => { void this.reap(); }, 5_000); this.timer.unref();
   }
   async request(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
+    const request = input && typeof input === 'object' ? input as Record<string, any> : {};
+    if (request.op === 'owner-handoff') {
+      if (peer.uid !== 0 || process.getuid?.() !== 0) return { status: 'denied' };
+      try { return { status: 'ready', handoff: this.owner.control(request, this.sessions.size, peer.pid), commandSessions: this.sessions.size }; }
+      catch { return { status: 'conflict' }; }
+    }
+    let finish: (() => void) | undefined;
+    if (['open', 'credential'].includes(String(request.op))) {
+      try { finish = this.owner.begin(String(request.op), request.op === 'credential'); }
+      catch { return { status: 'unavailable', reason: 'broker-unavailable' }; }
+    }
+    try { return await this.handleRequest(peer, input); } finally { finish?.(); }
+  }
+  private async handleRequest(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
     try {
       if (peer.uid !== process.getuid?.() || !input || typeof input !== 'object' || Array.isArray(input)) return { status: 'unavailable' };
       const request = input as Record<string, unknown>;
