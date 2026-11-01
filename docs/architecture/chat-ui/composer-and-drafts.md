@@ -886,12 +886,10 @@ ancestor scroll does not independently reject a click the browser accepted;
 pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
-leave a timer that starts recording over the editor later. An already-focused
-editor retires its pending voice hold on touch pointer release/cancellation as
-well as native touch end/cancellation. Pointer release must disarm the candidate
-even when touchend delivery is interrupted. An active recording still finishes
-on native touchend so pointer cancellation caused by the intentional editor blur
-does not cancel a valid recording.
+leave a timer that starts recording over the editor later. The editor has no voice hold candidate: touch, repeated taps and
+long presses retain native text editing. Only the explicit microphone action
+starts dictation; completion and cancellation retain the existing transient input
+transaction and draft ownership.
 
 
 ## New Draft creation after rejected Host admission
