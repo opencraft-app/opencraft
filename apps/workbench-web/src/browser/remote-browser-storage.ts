@@ -1,3 +1,4 @@
+import { browserMetadataValueLimit, browserMetadataWireLimit } from '@opencraft/browser-core/metadata-limits';
 import type { BrowserMetadataStorage, RemoteBrowserCatalog } from './desktop-browser-storage';
 import { serverStorageKey, serverUrl } from '../runtime/server-context';
 import { browserMetadataKeys, readBrowserMetadataValue } from '@opencraft/workbench-runtime/browser-metadata-identity';
@@ -47,7 +48,9 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       await admission?.(); signal?.throwIfAborted();
       if (this.closed) throw new Error('Browser storage closed');
       await this.connect();
-      const state = await this.call(); this.values = state.values; this.revision = state.revision; this.scope = state.scope; this.keyRevisions = state.keyRevisions ?? {};
+      const state = await this.call();
+      if (Object.entries(state.values).some(([key, value]) => typeof value !== 'string' || value.length > browserMetadataValueLimit(key))) throw new Error('Invalid browser state response');
+      this.values = state.values; this.revision = state.revision; this.scope = state.scope; this.keyRevisions = state.keyRevisions ?? {};
       // One-time promotion preserves existing tabs on upgraded installations.
       // These records carry no authority; the Server still scopes every tab
       // partition/command to the authenticated owner.
@@ -72,6 +75,7 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
     if (!keys[key]) throw new Error('Unknown remote browser storage key');
     if (this.failure) throw this.failure;
     if (this.closed) throw new Error('Browser storage closed');
+    if (typeof value !== 'string' || value.length > browserMetadataValueLimit(keys[key])) throw Object.assign(new Error('Browser metadata is too large'), { code: 'STATE_TOO_LARGE' });
     if (this.values[keys[key]] === value) return;
     this.values[keys[key]] = value;
     const mutationId = crypto.randomUUID();
@@ -122,10 +126,11 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
   }
   private call(input?: unknown, method = 'state'): Promise<any> {
     if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('Browser state disconnected'), { code: 'DISCONNECTED' }));
-    const id = crypto.randomUUID();
+    const id = crypto.randomUUID(), payload = JSON.stringify({ id, method, input });
+    if (new TextEncoder().encode(payload).byteLength > browserMetadataWireLimit) return Promise.reject(Object.assign(new Error('Browser metadata is too large'), { code: 'STATE_TOO_LARGE' }));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.socket?.close(); this.pending.delete(id); reject(Object.assign(new Error('Browser state timed out'), { code: 'DISCONNECTED' })); }, 25000);
-      this.pending.set(id, { resolve, reject, timer }); this.socket!.send(JSON.stringify({ id, method, input }));
+      this.pending.set(id, { resolve, reject, timer }); this.socket!.send(payload);
     });
   }
 }
