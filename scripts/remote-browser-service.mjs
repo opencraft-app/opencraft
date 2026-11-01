@@ -390,7 +390,6 @@ export class RemoteBrowserService {
     if (page.retirement) return page.retirement;
     page.closing = true; this.resetVisibility(page);
     clearTimeout(page.keyTimer); clearTimeout(page.slowKeyTimer); page.keyTimer = page.slowKeyTimer = null;
-    for (const ws of this.viewers(page).keys()) if (ws !== replying) ws.close(1000, 'Browser tab closed');
     this.retiredLeases.add(page.key);
     clearTimeout(page.retirementTimer); page.retirementTimer = null;
     page.retirement = (async () => {
@@ -399,6 +398,7 @@ export class RemoteBrowserService {
         const record = draft.pages.find(p => p.key === page.key);
         if (record) { record.lifecycle = 'closing'; record.closing = true; record.runtime = { ...record.runtime, kind: 'stopping', closeOperationId: record.runtime?.closeOperationId ?? randomUUID() }; }
       });
+      for (const ws of this.viewers(page).keys()) if (ws !== replying) ws.close(1000, 'Browser tab closed');
       // A close is a tab-owner operation, not a viewer reply. Once accepted it
       // must finish even if the viewer disconnects while native work awaits.
       if (page.creating) await page.creating.catch(() => {});
@@ -688,7 +688,7 @@ export class RemoteBrowserService {
             authorize();
             if (this.closed || ws.readyState !== WebSocket.OPEN) return;
             await this.load(); authorize();
-            if (this.retiredLeases.has(key)) throw new Error('Browser tab is closed');
+            if (this.retiredLeases.has(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
             const existing = this.pages.get(key);
             if (existing?.closing) throw new Error('Browser tab is closing');
             const modern = message.input.multiView === true;
@@ -698,7 +698,7 @@ export class RemoteBrowserService {
             }
             if (existing && this.viewers(existing).size >= 16) throw new Error('Browser viewer limit reached');
             await this.start(); authorize();
-            if (this.retiredLeases.has(key)) throw new Error('Browser tab is closed');
+            if (this.retiredLeases.has(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
             if (ws.readyState !== WebSocket.OPEN) return;
             const unknown = this.store.current.pages.find(p => p.key === key)?.runtime?.kind === 'unknown';
             if (unknown && existing && !existing.live) {
