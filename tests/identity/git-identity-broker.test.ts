@@ -501,6 +501,7 @@ test('broker fence includes pending admission, drains existing signer, and cold 
   input.expectedEpoch++;
   assert.equal((await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' })).status, 'unavailable');
   assert.equal((await call({ action: 'release', ...input })).status, 'conflict');
+  assert.ok((await call({ action: 'snapshot' })).handoff.pending.some((r: any) => r.kind === 'command-session'));
   assert.equal((await queryGitIdentityBroker(f.socket, { op: 'close', sessionId: session.sessionId })).status, 'closed');
   assert.equal((await call({ action: 'release', ...input })).handoff.phase, 'released');
   assert.equal((await call({ action: 'cold-ready', ...input })).handoff.phase, 'cold-ready');
