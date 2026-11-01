@@ -120,7 +120,7 @@ test("slow cancellation freezes phase timing before resource metadata completes"
     await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
     await resourcesEntered;
     await request("unpause-items", "test/pauseItemReads", { paused: false });
-    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setTimeout(resolve, 50));
     releaseResources();
     for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
     const stage = diagnostics.find(event => event.event === "history-read-stages");
