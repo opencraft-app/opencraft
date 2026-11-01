@@ -189,6 +189,24 @@ class RoutingSession {
     const route = this.registry.discover(id, matches[0]!); this.router.routesUpdated(); return route;
   }
   private async receive(message: RpcRecord, lease?: RouterLease): Promise<void> {
+    const method = text(message.method);
+    if (method !== "thread/read") return this.receiveRouted(message, lease);
+    const started = performance.now();
+    const timing: { nativeStarted?: number; nativeFinished?: number } = {};
+    let outcome = "failed";
+    try { await this.receiveRouted(message, lease, timing); outcome = "ok"; }
+    finally {
+      try {
+        const rawId = message.id;
+        const requestId = Number.isSafeInteger(rawId) ? String(rawId) : typeof rawId === "string" && /^opencraft:(?:host:)?\d{1,16}$/u.test(rawId) ? rawId : null;
+        console.info("[history-route-stages]", JSON.stringify({ requestId, method,
+          routeReadyMs: Math.max(0, (timing.nativeStarted ?? performance.now()) - started),
+          nativeRpcMs: timing.nativeStarted === undefined ? null : Math.max(0, (timing.nativeFinished ?? performance.now()) - timing.nativeStarted), outcome }));
+      } catch { /* Diagnostics never own request settlement. */ }
+    }
+  }
+
+  private async receiveRouted(message: RpcRecord, lease?: RouterLease, timing?: { nativeStarted?: number; nativeFinished?: number }): Promise<void> {
     const received = performance.now();
     const method = text(message.method), params = rpcRecord(message.params), id = message.id;
     if (method === "initialize") {
@@ -273,14 +291,11 @@ class RoutingSession {
       release = this.router.runtime.admit(ticket);
       if (id === undefined) { lease?.sent(); peer.notify(message); return; }
       const nativeStarted = performance.now();
+      if (method === "thread/read" && timing) timing.nativeStarted = nativeStarted;
       let result: unknown;
       try { result = await peer.call(method, params, nativeRequestId => { lease?.update({ nativeRequestId }); lease?.sent(); if (executing) { command?.release?.update({ nativeRequestId }); command?.release?.sent(); } if (spawning) { process?.release?.update({ nativeRequestId }); process?.release?.sent(); } sent = true; if (creation) this.registry.markSent(ticket); }, null); }
       finally {
-        if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)
-          && typeof id === "string" && /^opencraft:(?:host:)?\d{1,16}$/u.test(id)) {
-          console.info("[history-route-stages]", JSON.stringify({ requestId: id, method,
-            routeReadyMs: nativeStarted - received, nativeRpcMs: performance.now() - nativeStarted }));
-        }
+        if (method === "thread/read" && timing) timing.nativeFinished = performance.now();
       }
       if (executing && command) { command.active = false; command.release?.(); }
       if (spawning && process) process.pending = false;

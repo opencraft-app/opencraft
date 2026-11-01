@@ -30,6 +30,8 @@ const titleThreads = new Set();
 let nextTitleThread = 0;
 let threadReadsPaused = false;
 const heldThreadReads = [];
+let itemReadsPaused = false;
+const heldItemReads = [];
 const delayedThreadReads = new Set();
 const delayedReadWaiters = [];
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -45,6 +47,17 @@ function readThread(message) {
     }, metadata.readDelayMs);
     delayedThreadReads.add(timer);
   } else reply();
+}
+function readItems(message) {
+  if (unsupportedItemHistory.has(message.params.threadId)) {send({id:message.id,error:{code:-32601,message:"Item pagination unsupported"}});return;}
+  if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
+    send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
+  }
+  const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+  if (message.params.sortDirection === 'desc') items.reverse();
+  const offset = message.params.cursor ? Number(message.params.cursor) : 0;
+  const limit = message.params.limit ?? 100;
+  send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });
 }
 input.on("line", line => {
   const message = JSON.parse(line);
@@ -71,6 +84,11 @@ input.on("line", line => {
   if (message.method === "test/pauseThreadReads") {
     threadReadsPaused = message.params.paused;
     if (!threadReadsPaused) for (const read of heldThreadReads.splice(0)) readThread(read);
+    send({ id: message.id, result: {} }); return;
+  }
+  if (message.method === "test/pauseItemReads") {
+    itemReadsPaused = message.params.paused;
+    if (!itemReadsPaused) for (const read of heldItemReads.splice(0)) readItems(read);
     send({ id: message.id, result: {} }); return;
   }
   if (message.method === "test/setHistory") {seededHistory.add(message.params.threadId);if(message.params.unsupportedItems)unsupportedItemHistory.add(message.params.threadId);threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
@@ -144,15 +162,8 @@ input.on("line", line => {
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
-    if (unsupportedItemHistory.has(message.params.threadId)) {send({id:message.id,error:{code:-32601,message:"Item pagination unsupported"}});return;}
-    if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
-      send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
-    }
-    const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
-    if (message.params.sortDirection === 'desc') items.reverse();
-    const offset = message.params.cursor ? Number(message.params.cursor) : 0;
-    const limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });
+    if (itemReadsPaused) heldItemReads.push(message);
+    else readItems(message);
     return;
   }
   if (message.method === "turn/start") {

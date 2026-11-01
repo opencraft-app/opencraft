@@ -32,7 +32,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -42,7 +42,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     fetch: async () => Response.json({ ok: true }),
     spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env: { ...env, ...(autoTitles ? { OPENCRAFT_TEST_AUTO_TITLES: "1" } : {}), ...(nativeQueueSteerVersion ? { OPENCRAFT_TEST_NATIVE_QUEUE_STEER: String(nativeQueueSteerVersion) } : {}), ...(steerResponse ? { OPENCRAFT_TEST_STEER_RESPONSE: steerResponse } : {}) }, stdio: ["pipe", "pipe", "pipe"] }),
     createMaintenanceClient: async () => { throw new Error("not used"); },
-    logDiagnostic: () => undefined,
+    logDiagnostic: event => diagnostic?.(event),
     nativeSubscriptionGraceMs,
     tokenUsage,
     sessionMcp,
@@ -52,6 +52,39 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   return adapter;
 }
+
+test("aborted Item hydration includes the active page phase in the terminal diagnostic", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined, event => diagnostics.push(event));
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should reach lazy Item hydration before cancellation");
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.equal(typeof stage?.pageMs, "number", "the terminal event must flush the still-active page timer");
+    assert.ok(Number(stage?.pageMs) > 0);
+  } finally {
+    await adapter.send(JSON.stringify({ id: "unpause-items", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("a stop during the final asynchronous tool preparation prevents the automatic native send", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-final-recovery-admission-"));

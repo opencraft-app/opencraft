@@ -95,6 +95,29 @@ test("native routing keeps old work and accepted creations on their generation a
   } finally { await f.close(); }
 });
 
+test("thread/read route diagnostics include failures before native RPC without Thread identifiers", async () => {
+  const f = await fixture();
+  const originalInfo = console.info;
+  const events: string[] = [];
+  console.info = (...args: unknown[]) => { if (args[0] === "[history-route-stages]") events.push(String(args[1])); };
+  try {
+    const created = await f.rpc("thread/start");
+    f.fence("old");
+    const requestId = "sensitive-request-id";
+    f.client.send(JSON.stringify({ id: requestId, method: "thread/read", params: { threadId: created.thread.id } }));
+    for (let n = 0; n < 600 && !f.messages.some(message => message.id === requestId && !message.method); n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(f.messages.some(message => message.id === requestId && !message.method && message.error));
+    assert.equal(events.length, 1);
+    const event = JSON.parse(events[0]!);
+    assert.equal(event.method, "thread/read");
+    assert.equal(event.requestId, null);
+    assert.equal(event.outcome, "failed");
+    assert.equal(event.nativeRpcMs, null);
+    assert.ok(typeof event.routeReadyMs === "number");
+    assert.equal(JSON.stringify(event).includes(created.thread.id), false);
+  } finally { console.info = originalInfo; await f.close(); }
+});
+
 test("directory pages merge native ordering and resume existing unmapped Threads on the owning generation", async () => {
   const f = await fixture();
   try {
