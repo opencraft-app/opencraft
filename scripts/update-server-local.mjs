@@ -11,6 +11,38 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { headlessWebHostDefinitions } from './package-headless-linux.mjs';
 import { packageWebServer } from './package-web-server.mjs';
 
+// Installation may synchronously inventory/decompress/verify a large payload.
+// Only the accepted job's terminal state determines the outcome; an individual
+// status transport failure never authorizes another installation request.
+const updateObservationBudgetMs = 15 * 60_000;
+export async function observeLocalUpdate({ jobId, version, buildId, status, deadline,
+  now = () => performance.now(), sleep = delay }) {
+  if (typeof jobId !== 'string' || !jobId) throw new Error('Local update did not return a job identity');
+  while (now() < deadline) {
+    let current;
+    try {
+      current = await status(AbortSignal.timeout(Math.max(1, Math.ceil(deadline - now()))));
+    } catch {
+      // The entry can be temporarily unavailable while switching execution.
+      // The next read remains bound to this same job and the original deadline.
+    }
+    if (now() >= deadline) break;
+    if (current) {
+      if (current.job?.id !== jobId || current.job.version !== version)
+        throw new Error('Local update job identity changed before terminal observation');
+      if (current.job.phase === 'failed') throw new Error(current.job.error || 'Local update failed');
+      if (current.job.phase === 'completed') {
+        if (current.current?.version !== version || current.current.buildId !== buildId)
+          throw new Error('Local update completed with a different release identity');
+        return current;
+      }
+    }
+    const remaining = deadline - now();
+    if (remaining > 0) await sleep(Math.min(500, remaining));
+  }
+  throw new Error(`Update observation timed out for job ${jobId}; the server operation may still be running`);
+}
+
 export async function updateLocalServer({ version, archive, buildId, tree, manifestSha256,
   url = process.env.OPENCRAFT_WEB_UPDATE_URL || `http://127.0.0.1:${process.env.OPENCRAFT_WEB_PORT || 10000}`,
   stateDirectory = process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web'),
@@ -21,12 +53,12 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
     throw new Error('Local update URL must be loopback HTTP');
   const endpoint = `${address.origin}/__opencraft_updates`;
   let cookie = '';
-  const status = async () => {
-    const response = await fetch(endpoint, { headers: { cookie }, signal: AbortSignal.timeout(10_000) });
+  const status = async (signal = AbortSignal.timeout(10_000)) => {
+    const response = await fetch(endpoint, { headers: { cookie }, signal });
     if (!response.ok) throw new Error('Managed updater is unavailable'); return response.json();
   };
-  const post = async (action, input) => {
-    const response = await fetch(`${endpoint}/${action}`, { method: 'POST', headers: { origin, cookie, 'content-type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(10_000) });
+  const post = async (action, input, signal = AbortSignal.timeout(10_000)) => {
+    const response = await fetch(`${endpoint}/${action}`, { method: 'POST', headers: { origin, cookie, 'content-type': 'application/json' }, body: JSON.stringify(input), signal });
     const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Local update request failed');
     return { result, cookie: response.headers.get('set-cookie') };
   };
@@ -56,16 +88,13 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
     packed = await packageWebServer({ version, output, execution: initial.execution?.enabled === true, executionProfile });
   }
   const input = tree ? packed : { ...packed, archive: resolve(packed.archive), integrity: `sha512-${createHash('sha512').update(await readFile(packed.archive)).digest('base64')}` };
-  const receipt = await post(tree ? 'install-local-tree' : 'install-local', input);
-  const deadline = Date.now() + 360_000;
-  while (Date.now() < deadline) {
-    const current = await status();
-    if (current.job?.id === receipt.result.jobId && current.job.phase === 'failed') throw new Error(current.job.error || 'Local update failed');
-    if (current.current.version === version && current.job?.id === receipt.result.jobId && current.job.phase === 'completed')
-      return { version, buildId: current.current.buildId, execution: current.execution, ...(tree ? { tree: packed.tree, activationTransport: 'prepared-tree' } : { archive: packed.archive }) };
-    await delay(500);
-  }
-  throw new Error('Update status timed out; the server operation may still be running');
+  const deadline = performance.now() + updateObservationBudgetMs;
+  const receipt = await post(tree ? 'install-local-tree' : 'install-local', input,
+    AbortSignal.timeout(Math.max(1, Math.ceil(deadline - performance.now()))));
+  const current = await observeLocalUpdate({ jobId: receipt.result.jobId, version,
+    buildId: packed.buildId, status, deadline });
+  return { version, buildId: current.current.buildId, execution: current.execution,
+    ...(tree ? { tree: packed.tree, activationTransport: 'prepared-tree' } : { archive: packed.archive }) };
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };
