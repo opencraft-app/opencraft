@@ -111,22 +111,24 @@ export async function controllerCall(config, step, input, lockFd) {
 }
 
 export async function ensureParentDelivery(config, directory, dependencies = {}) {
-  if (!config.fullCiBeforeParent) return;
+  if (!config.fullCiBeforeParent && !config.fullLocalBeforeParent) return;
   const { command } = await import('./durable.mjs');
   const run = dependencies.command ?? command;
   const pause = dependencies.sleep ?? (ms => new Promise(r => setTimeout(r, ms)));
-  invariant(config.mode === 'ci' && Array.isArray(config.ciRequest) && Array.isArray(config.ciObserve), 'fixed-ci-required');
+  const request = config.mode === 'ci' ? config.ciRequest : config.localRequest;
+  const observe = config.mode === 'ci' ? config.ciObserve : config.localObserve;
+  invariant(['ci','local'].includes(config.mode) && Array.isArray(request) && Array.isArray(observe), 'fixed-delivery-required');
   const path = join(directory, 'delivery.json');
   let prior; try { prior = await readPrivateJson(path); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (!prior) {
     // Intent precedes the submission. A lost acknowledgement is observed,
     // never submitted a second time after a controller restart.
     await atomicJson(path, { state: 'requested', requestedAt: new Date().toISOString() });
-    await run(config.ciRequest[0], config.ciRequest.slice(1));
+    await run(request[0], request.slice(1));
   }
   const end = Date.now() + 45 * 60 * 1000;
   while (Date.now() < end) {
-    const value = JSON.parse(await run(config.ciObserve[0], config.ciObserve.slice(1)));
+    const value = JSON.parse(await run(observe[0], observe.slice(1)));
     invariant(value.admission?.status !== 'failed', 'official-delivery-failed');
     if (!value.manualPending && ['current', 'deployed', 'docs-only'].includes(value.admission?.status)) {
       await atomicJson(path, { state: 'completed', observedAt: new Date().toISOString(), deployedRevision: value.admission.deployedRevision ?? null }); return;
@@ -152,7 +154,7 @@ async function runParentJournal(config, { operationId, inspect = false, recover 
   const { recipe, recipeBytes, recipeSha256 } = await (dependencies.recipe ?? parentRecipe)(config);
   const getTarget = dependencies.target ?? parentTarget;
   let target = await getTarget(config, recover ? retained?.targetRoot : null);
-  if (!inspect && config.fullCiBeforeParent && !retained?.targetRoot) {
+  if (!inspect && (config.fullCiBeforeParent || config.fullLocalBeforeParent) && !retained?.targetRoot) {
     const initialDigest = sha256(Buffer.from(JSON.stringify([recipeSha256, target.manifestSha256])));
     invariant(!planDigest || planDigest === initialDigest, 'parent-plan-changed');
     if (!retained) {
