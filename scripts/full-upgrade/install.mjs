@@ -41,7 +41,7 @@ export async function install(options) {
     invariant(/lock:\s+\d+: FLOCK\s+ADVISORY\s+WRITE/.test(info), 'unlocked-delegation');
   } else {
     const {open}=await import('node:fs/promises'); const held=await open(options.deployLock,constants.O_RDWR|constants.O_CREAT|constants.O_NOFOLLOW,0o600);
-    try { invariant((await held.stat()).isFile(),'lock-file-required'); await command('/usr/bin/flock',['3'],{fd:held.fd,timeout:3600000}); } catch(error) { await held.close(); throw error; }
+    try { invariant((await held.stat()).isFile(),'lock-file-required'); await command('/usr/bin/flock',['-n','3'],{fd:held.fd}); } catch(error) { await held.close(); throw error; }
     delegatedFd=held.fd; unlock=()=>held.close();
   }
   try {
