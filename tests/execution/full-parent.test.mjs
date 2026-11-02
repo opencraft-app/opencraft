@@ -33,3 +33,10 @@ test('official delivery submission is observed to a terminal state and never rep
 test('recovery IPC path remains below the Unix socket limit for long operation IDs',()=>{
  assert.ok(Buffer.byteLength(parentRecoverySocket({runtimeRoot:'/run/opencraft-upgrade'},'full-'+digest))<108);
 });
+
+test('local full parent uses its installed package delivery adapter, never Main CI',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'parent-local-delivery-'));t.after(()=>rm(root,{recursive:true,force:true}));const calls=[];
+ const config={mode:'local',fullLocalBeforeParent:true,localRequest:['local-request'],localObserve:['local-observe']};
+ await ensureParentDelivery(config,root,{command:async name=>{calls.push(name);return name==='local-observe'?JSON.stringify({manualPending:false,admission:{status:'deployed'}}):'';}});
+ assert.deepEqual(calls,['local-request','local-observe']);
+});
