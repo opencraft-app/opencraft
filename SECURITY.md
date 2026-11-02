@@ -119,3 +119,22 @@ and release Node runtimes. Original product image sources remain unchanged;
 actual copied-asset comparisons distinguish encoded-byte differences from
 decoded-pixel differences. Public release, provenance and upstream acceptance
 remain separate checks.
+
+### Dependency security updates (2026-11-02)
+
+The root workspace overrides body-parser 2.4.0, qs 6.16.1, node-forge 1.4.1,
+zod 4.6.6, @hono/node-server 2.1.3, fast-uri 3.1.9, hono 4.13.11, ip-address
+10.7.4, minimatch 11.0.1, glob 14.0.2 and katex 0.19.0. The isolated DSH runtime
+selects body-parser 2.4.0, qs 6.16.1, zod 4.6.6, fast-uri 3.1.9,
+@hono/node-server 2.1.3, hono 4.13.13 and ip-address 10.7.4. The desktop
+toolchain moves Electron to 44.9.1 and @electron/universal and @electron/asar
+to 3.0.6 and 4.3.1. The major updates are exercised by workspace typechecks and
+the connector, MCP-app and DSH bridge suites.
+
+The root audit still reports deepmerge 4.3.1
+([GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4))
+because no patched release exists and the current Expo configuration keeps it.
+The DSH runtime still installs @deepseek-ai/dsh-client-connection 0.1.1-rc.2
+([GHSA-8m2g-8cgm-3vcp](https://github.com/advisories/GHSA-8m2g-8cgm-3vcp));
+the fix first appears in 0.1.2-alpha.1 and the 0.2 release line, which requires
+a separate DSH engine upgrade. Neither finding is represented as remediated.
