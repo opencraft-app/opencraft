@@ -12,9 +12,9 @@ import { request } from './ipc.mjs';
 const names = ['agent', 'helper', 'watchdog', 'control', 'parent'];
 const safePath = path => typeof path === 'string' && /^\/[A-Za-z0-9/._-]+$/.test(path) && !path.split('/').includes('..');
 // Product composition is opt-in, immutable package content, and runs under the
-// same inherited deployment lock. Existing recipes are handed off by the parent.
+// same inherited deployment lock. Adapters retain immutable recipes for active parents.
 export async function provisionProductParent({ profile, previousConfig, root, record, fd }, run = command) {
-  if (!profile.parentProvisioner || previousConfig?.fullRecipePath) return false;
+  if (!profile.parentProvisioner) return false;
   const relative = profile.parentProvisioner;
   invariant(typeof relative === 'string' && /^runtime\/[A-Za-z0-9/._-]+\.py$/.test(relative) && !relative.split('/').includes('..'), 'invalid-parent-provisioner');
   const script = join(root, relative), entry = record.components.flatMap(c => c.fileList).find(row => row[0] === relative);

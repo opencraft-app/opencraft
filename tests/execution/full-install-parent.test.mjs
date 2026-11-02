@@ -12,11 +12,11 @@ test('normal installation invokes the signed product adapter with its real deplo
  const record={components:[{fileList:[['runtime/product.py',sha256(bytes),bytes.length]]}],release:{source:{revision:'a'.repeat(40)}}};
  const calls=[];const run=async(...args)=>calls.push(args);const options={profile:{parentProvisioner:'runtime/product.py'},root,record,fd:9};
  assert.equal(await provisionProductParent(options,run),true);assert.equal(calls[0][2].fd,9);assert.deepEqual(calls[0][1],['OPENCRAFT_HELD_LOCK_FD=3','/usr/bin/python3',script,'a'.repeat(40)]);
- await writeFile(script,'modified');await assert.rejects(provisionProductParent(options,run),/unsigned-parent-provisioner/);assert.equal(calls.length,1);
+ assert.equal(await provisionProductParent({...options,previousConfig:{fullRecipePath:'/existing'}},run),true);
+ await writeFile(script,'modified');await assert.rejects(provisionProductParent(options,run),/unsigned-parent-provisioner/);assert.equal(calls.length,2);
 });
-test('existing parent and deployments without product composition retain their installation behavior',async()=>{
+test('deployments without product composition retain their installation behavior',async()=>{
  const run=()=>assert.fail('must not run a provisioner');
  assert.equal(await provisionProductParent({profile:{}},run),false);
- assert.equal(await provisionProductParent({profile:{parentProvisioner:'runtime/product.py'},previousConfig:{fullRecipePath:'/existing'}},run),false);
  await assert.rejects(provisionProductParent({profile:{parentProvisioner:'runtime/../escape.py'}},run),/invalid-parent-provisioner/);
 });
