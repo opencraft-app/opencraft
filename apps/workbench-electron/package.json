@@ -89,6 +89,7 @@
           "**/*"
         ]
       },
+      { "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs", "to": "runtime/terminal-pty-owner.mjs" },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
         "to": "runtime/opencraft-daemon.cjs"
