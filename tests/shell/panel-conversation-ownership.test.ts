@@ -30,7 +30,8 @@ test('terminal outlives panel cache eviction and only explicit tab close termina
   let killed = 0;
   let detached = 0;
   const registry = new WorkbenchTerminalSessionRegistry(() => ({ resources: { terminal: {
-    open: () => ({ processId: 'pty', terminate: async () => { killed++; }, dispose: async () => { detached++; } }),
+    open: () => ({ processId: 'pty', getSnapshot: () => ({ phase: 'running', exitCode: null, output: [] }),
+      subscribe: () => () => {}, terminate: async () => { killed++; }, dispose: async () => { detached++; } }),
   } } } as any));
   await runtime.install(createTerminalWorkbenchPanelPlugin(registry));
   try {
@@ -94,4 +95,68 @@ test('browser resource directory rebuilds an evicted closed panel projection', a
     if (previousWindow === undefined) delete (globalThis as { window?: unknown }).window;
     else Object.defineProperty(globalThis, 'window', previousWindow);
   }
+});
+
+
+test('late Host resource hydration cannot revive a released owner or replaced contribution', async () => {
+  const runtime = await createWorkbenchPanelReactRuntime();
+  const resolvers: Array<(tabs: any[]) => void> = [];
+  const tab = { id: 'late', kind: 'fixture', resource: 'pty', region: 'right' as const, title: 'Terminal', closable: true, preview: false };
+  const unregister = runtime.panels.register({ kind: 'fixture', createTab: () => tab,
+    hydrateTabs: () => new Promise(resolve => resolvers.push(resolve)) });
+  try {
+    runtime.panels.ensureOwner('released');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    runtime.panels.releaseOwner('released');
+    resolvers.shift()!([tab]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(runtime.panels.getOwnerSnapshot('released').right.tabs.length, 0);
+    runtime.panels.ensureOwner('replaced');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    unregister();
+    runtime.panels.register({ kind: 'fixture', createTab: () => tab });
+    resolvers.shift()!([tab]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(runtime.panels.getOwnerSnapshot('replaced').right.tabs.length, 0);
+  } finally { await runtime.dispose(); }
+});
+
+test('Host tab hydration preserves the selected tab and panel visibility', async () => {
+  const runtime = await createWorkbenchPanelReactRuntime();
+  const tab = { id: 'restored', kind: 'fixture', resource: 'pty', region: 'right' as const, title: 'Terminal', closable: true, preview: false };
+  try {
+    runtime.panels.register({ kind: 'fixture', createTab: () => tab, hydrateTabs: async () => [tab] });
+    runtime.panels.dispatch('owner', { type: 'open-tab', tab: { ...tab, id: 'existing', resource: 'existing' } });
+    const previous = runtime.panels.getOwnerSnapshot('owner');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const next = runtime.panels.getOwnerSnapshot('owner');
+    assert.equal(next.right.tabs.length, 2);
+    assert.equal(next.right.activeTabId, previous.right.activeTabId);
+    assert.equal(next.right.open, previous.right.open);
+  } finally { await runtime.dispose(); }
+});
+
+
+test('Host readiness retries hydration without resetting existing panel state', async () => {
+  const runtime = await createWorkbenchPanelReactRuntime();
+  let ready = false;
+  const tab = { id: 'recovered', kind: 'fixture', resource: 'pty', region: 'right' as const, title: 'Terminal', closable: true, preview: false };
+  try {
+    runtime.panels.register({ kind: 'fixture', createTab: () => tab, hydrateTabs: async () => {
+      if (!ready) throw new Error('Host unavailable');
+      return [tab];
+    } });
+    runtime.panels.ensureOwner('owner');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(runtime.panels.getOwnerSnapshot('owner').right.tabs.length, 0);
+    ready = true;
+    runtime.panels.refreshOwnerResources('owner');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const restored = runtime.panels.getOwnerSnapshot('owner');
+    assert.equal(restored.right.tabs[0]?.id, 'recovered');
+    assert.equal(restored.right.open, false);
+    runtime.panels.releaseOwner('owner');
+    runtime.panels.refreshOwnerResources('owner');
+    assert.equal(runtime.panels.getOwnerSnapshot('owner').right.tabs.length, 0);
+  } finally { await runtime.dispose(); }
 });

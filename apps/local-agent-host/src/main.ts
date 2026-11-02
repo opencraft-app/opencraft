@@ -38,7 +38,7 @@ import {
 } from "./dsh-capability-link.js";
 import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
-import { HostProcessService } from "./process-service.js";
+import { DurableHostProcessService } from "./durable-process-service.js";
 import { ProjectRepository } from "./project-repository.js";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
@@ -532,7 +532,7 @@ export async function startLocalAgentHost(options: {
     }
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
-  const processes = new HostProcessService();
+  const processes = new DurableHostProcessService(productDataRoot);
   cleanup.push(() => processes.close());
   const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null, storage.documents);
   cleanup.push(() => hostDocuments.close());
@@ -808,7 +808,7 @@ export async function startLocalAgentHost(options: {
           : PROFILE_SKILLS_METHODS.has(request.method as ProfileSkillsMethod)
           ? await profileSkills.handle(request.method as ProfileSkillsMethod, request.params)
           : request.method.startsWith("process/")
-          ? processes.dispatch(request.method, request.params)
+          ? await processes.dispatch(request.method, request.params)
           : request.method.startsWith("fs/")
           ? await fileRequest(request.method, request.params)
           : request.method.startsWith("thread/") || request.method === "turn/start"

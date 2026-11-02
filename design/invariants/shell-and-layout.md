@@ -566,3 +566,25 @@ and account triggers use icon content layout on the compact rail, so an avatar
 does not add row padding to the hit box. Moving to the labeled mobile drawer
 retains the action identity, portal, current route and original conversation state.
 See [navigation and sidebar](navigation-and-sidebar.md#consistent-compact-destination-controls).
+
+
+## Terminal resource continuity and limits
+
+The authenticated Host authorizes terminal access; a release-independent PTY owner
+retains processes, output and resource-owner/thread/project metadata.
+Renderer teardown detaches observers. Explicit tab close terminates the process;
+returning to a panel or rebuilding a client restores live resources to the same
+owner through list/attach. Unknown legacy ownership must never be guessed.
+Panel resource hydration is asynchronous, preserves selection and visibility,
+and rejects results after owner release or contribution replacement.
+The PTY owner enforces account/Host and aggregate process caps, bounded output replay,
+and bounded exited records. Detach, visibility and cache eviction do not reclaim
+running PTYs. Explicit termination releases active capacity. This contract does
+not provide OS process CPU/memory isolation or survival across the PTY owner's
+own failure or a machine restart. Host shutdown only disconnects; a replacement
+Host lists and attaches to the same owner. Managed Linux uses a separate systemd
+unit, because a detached child still dies with its parent's control-group.
+The private IPC and request queues are bounded; disconnected or timed-out
+mutations have unknown outcomes and must not be automatically replayed.
+Runtime JS and the native node-pty closure are retained outside release cleanup.
+Old PTYs created inside a pre-upgrade Host cannot be adopted retroactively.

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { buildTerminalOwnerRuntime } from '../../scripts/package-terminal-runtime.mjs';
 import { buildDshCapabilityPlugin } from '../../scripts/package-dsh-capability-runtime.mjs';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,7 @@ export function resolveDesktopIdentityConfig(environment = process.env) {
 
 /** Pure JS bundling only; native helpers and daemon remain owned by build:host. */
 export async function bundleDesktopHost({ environment = process.env, outdir = resolve(appRoot, "dist-host") } = {}) {
+  await buildTerminalOwnerRuntime(outdir);
   await buildDshCapabilityPlugin(resolve(appRoot, 'build/dsh-capability-plugin.mjs'));
   const [mainEntry, preloadEntry, identityEntry] = resolveDesktopProductEntries(environment);
   const identities = resolveDesktopIdentityConfig(environment);
