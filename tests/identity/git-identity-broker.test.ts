@@ -382,6 +382,26 @@ esac
   const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /broker unavailable/u);
 });
 
+test('installation launcher restores its broker connection when callers filter inherited environment', async t => {
+  const f = await managedRepository(t);
+  f.bind();
+  await f.native('remote', 'add', 'origin', 'https://github.com/synthetic/repo.git');
+  await writeFile(join(f.root, 'git-identity-wrapper.mjs'), await readFile(join(f.root, 'git.mjs')));
+  const prepared = renderGitIdentityInstallation({ installationDirectory: f.root, runtimeDirectory: f.root,
+    node: process.execPath, nativeGit: '/usr/bin/git', brokerSocket: f.socket,
+    hosts: ['github.com'], basePath: '/usr/bin:/bin' });
+  const launcher = join(f.root, 'installed-git');
+  await writeFile(launcher, prepared.launcher, { mode: 0o700 });
+  for (const removed of [['OPENCRAFT_GIT_BROKER_SOCKET'], Object.keys(f.managedEnv).filter(key => key.startsWith('OPENCRAFT_GIT_'))]) {
+    const env = { ...f.managedEnv };
+    for (const key of removed) delete env[key];
+    const result = await child(launcher, ['commit', '--allow-empty', '-m', 'through installed broker'], env, f.work);
+    assert.equal(result.code, 0, result.err);
+    assert.equal((await f.native('log', '-1', '--format=%an <%ae>')).out, 'Employee <employee@example.test>');
+  }
+  assert.ok(f.opens.includes('github.com'), 'the real wrapper must contact the installed broker');
+});
+
 test('installation launcher applies an explicit read policy to already-running callers', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-read-policy-install-')); t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'git-identity-wrapper.mjs'), 'process.stdout.write(JSON.stringify(process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS));');
