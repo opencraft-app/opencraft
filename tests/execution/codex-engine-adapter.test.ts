@@ -1986,3 +1986,75 @@ for (const state of ["not-found", "archived", "recovering"] as const)
       assert.equal(JSON.stringify(error).includes("/private/path"), false);
     } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
   });
+
+for (const transient of [true, false]) test(`queued tool-preflight rejection retains known custody (transient=${transient})`, { timeout: 10_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-tools-retry-")), frames: Array<Record<string, unknown>> = [];
+  let preparations = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => {
+    if (++preparations === 1 || !transient) throw new Error(transient ? "Codex AppServer closed" : "synthetic permanent configuration failure");
+    return null;
+  });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "same-input", input: [{ type: "text", text: "看看" }] })).result as any;
+    const id = queued.queuedSubmission.id;
+    await waitFor(frames, f => f.method === "thread/queue/changed" &&
+      (f.params as any).threadId === threadId && (adapter as any).queueStore().find(threadId, id)?.pausedReason ===
+      (transient ? "session-tools-recovering" : "session-tools-unavailable"));
+    assert.equal((adapter as any).queueStore().find(threadId, id).state, "queued");
+    assert.equal(((await rpc("before", "test/readAcceptedInputs", {})).result as any).data.length, 0);
+    if (transient) {
+      await waitFor(frames, f => f.method === "turn/started");
+      const inputs = ((await rpc("after", "test/readAcceptedInputs", {})).result as any).data;
+      assert.equal(inputs.length, 1); assert.equal(inputs[0].params.clientUserMessageId, "same-input");
+      assert.ok(preparations >= 2);
+    } else {
+      assert.equal((adapter as any).queuePreparationRetries.size, 0);
+      await (adapter as any).maintainQueue(threadId);
+      assert.equal(preparations, 1);
+    }
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("queue admission during native recovery proves it did not persist or dispatch input", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-admission-recovery-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    (adapter as any).assertDurableQueueThread = async () => { throw new Error("Codex AppServer is not initialized"); };
+    await adapter.send(JSON.stringify({ id: "enqueue", method: "thread/queue/add", params: {
+      threadId: "fixture", clientUserMessageId: "same-input", input: [{ type: "text", text: "看看" }],
+    }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const reply = await waitFor(frames, f => f.id === "enqueue");
+    assert.deepEqual((reply.error as any).data, { code: "QUEUE_NOT_READY", submissionOutcome: "rejected", retryable: true });
+    assert.deepEqual((adapter as any).queueStore().list("fixture"), []);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("a queued native send with a lost acknowledgement remains unknown and never schedules a retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-unknown-no-replay-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sends = 0;
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const request = (adapter as any).requestPhysical.bind(adapter);
+    (adapter as any).requestPhysical = async (method: string, ...args: any[]) => {
+      if (method === "turn/start") { sends++; throw new Error("Native acknowledgement was lost"); }
+      return request(method, ...args);
+    };
+    const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "uncertain", input: [{ type: "text", text: "one" }] })).result as any;
+    await waitFor(frames, f => f.method === "thread/queue/changed" &&
+      (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
+    assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});

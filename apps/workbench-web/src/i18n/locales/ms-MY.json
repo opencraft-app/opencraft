@@ -1029,6 +1029,7 @@
   "chat.steer.declined": "Tidak ditambahkan",
   "chat.queue.pausedAfterStop": "Dijeda selepas dihentikan. Sambung apabila sedia.",
   "chat.queue.pausedAfterFailure": "Mesej tidak dihantar. Sambung untuk mencuba lagi.",
+  "chat.queue.toolsRecovering": "Menunggu alat sesi pulih · diteruskan secara automatik",
   "localAccount.title": "Akaun dan ahli",
   "localAccount.description": "Log masuk ke pelayan ini dan urus ahlinya.",
   "localAccount.identity": "Identiti Human",

@@ -190,3 +190,42 @@ test("queued input tool-preflight failure is definitely not dispatched, never an
     (cause: unknown) => cause instanceof RecoveryNotSubmitted);
   assert(!f.calls.some(call => call.method === "turn/start"));
 });
+
+test("a queued retry resumes abandoned tool retirement without an observation resume", async () => {
+  const f = fixture(); f.setStatus("notLoaded");
+  f.adapter.sessionMcpRetirements.set("one", { model: "preserved" });
+  Object.assign(f.adapter, {
+    activeTurns: new Map(), pending: new Map(),
+    queueStore: () => ({ firstAwaitingAdmission: () => ({ id: "queued", state: "queued", pausedReason: "session-tools-recovering", clientUserMessageId: "same-input" }) }),
+    async reconcileQueue() {},
+    async dispatchQueuedStart() { await f.adapter.prepareSessionMcp("one", "same-input", "execution"); },
+  });
+  await f.adapter.maintainQueue("one");
+  assert.equal(applied(f).length, 1);
+  assert.equal(f.calls.filter(c => c.method === "thread/resume").length, 1);
+  assert.equal(f.calls.filter(c => c.method === "thread/unsubscribe").length, 0);
+  assert.equal(f.adapter.sessionMcpRetirements.size, 0);
+});
+
+for (const cancelled of [false, true]) test(`physical delivery timeout starts after tool preparation (cancelled=${cancelled})`, async () => {
+  const f = fixture(), gate = deferred(), entered = deferred(), controller = new AbortController();
+  let sends = 0;
+  Object.assign(f.adapter, { statusValue: { state: "open" }, physicalInitialized: true, child: {}, sequence: 0,
+    internalRequests: new Map(), historyReadTraces: new WeakMap(), hostState: null, tokenUsage: null,
+    async prepareSessionMcp() { entered.resolve(); await gate.promise; },
+    async writePhysical(message: any) {
+      sends++;
+      const pending = f.adapter.internalRequests.get(String(message.id));
+      f.adapter.internalRequests.delete(String(message.id)); clearTimeout(pending.timer);
+      pending.resolve({ turn: { id: "native-next" } });
+    } });
+  const request = (CodexEngineAdapter.prototype as any).requestPhysical.call(f.adapter,
+    "turn/start", { threadId: "one", clientUserMessageId: "next" }, 5, controller.signal);
+  const outcome = cancelled ? assert.rejects(request, (cause: unknown) => cause instanceof RecoveryNotSubmitted) : request;
+  await entered.promise;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(f.adapter.internalRequests.size, 0); assert.equal(sends, 0);
+  if (cancelled) controller.abort();
+  gate.resolve(); await outcome;
+  assert.equal(sends, cancelled ? 0 : 1);
+});
