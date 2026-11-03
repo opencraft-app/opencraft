@@ -663,6 +663,23 @@ export function AppShell({
     layoutMounted: desktopDockMounted,
     layoutResizing,
   });
+  // Reserve scroll content clearance without clipping its painted viewport.
+  useLayoutEffect(() => {
+    const column = mobileSidebarActionHost?.parentElement ?? floatingFooterHost?.parentElement;
+    if (!mobileSidebarEnabled || !column) return;
+    const hosts = [mobileSidebarActionHost, floatingFooterHost].filter((host): host is HTMLElement => host !== null);
+    const update = () => {
+      column.style.setProperty("--shell-mobile-footer-height", `${Math.max(0, ...hosts.map(host => host.offsetHeight))}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    hosts.forEach(host => observer.observe(host));
+    return () => {
+      observer.disconnect();
+      column.style.removeProperty("--shell-mobile-footer-height");
+    };
+  }, [mobileSidebarEnabled, mobileSidebarActionHost, floatingFooterHost]);
+
   const floatingRequestedRef = useRef(showFloatingSidebar);
   floatingRequestedRef.current = showFloatingSidebar;
   // A close intent starts the exit animation; it does not move the shared

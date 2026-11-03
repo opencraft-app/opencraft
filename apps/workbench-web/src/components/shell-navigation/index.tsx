@@ -247,7 +247,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   return <div ref={root} className={`shell-navigation__footer${unified ? " shell-navigation__footer--unified" : ""}`} aria-label="Application entrances">
     {unified ? <>
       {managedUpdateEntrance}
-      <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface="integrated" type="button" className="shell-navigation__entrance" data-surface="settings"
+      <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance" data-surface="settings"
         aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         aria-current={config.settingsActive ? "page" : undefined} onClick={() => {
@@ -262,7 +262,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
       const surfaceLabel = surface === "account" ? accountLabel! : intl.formatMessage(labels.applications);
       const directSignIn = surface === "account" && anonymousAccount;
       const applicationAction = surface === "applications" ? config.actions.find(action => action.id === "shell.applications") : undefined;
-      if (applicationAction) return <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface="integrated" key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
+      if (applicationAction) return <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
         aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
         onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></Button>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
