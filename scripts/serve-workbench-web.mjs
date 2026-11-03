@@ -293,6 +293,12 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
   const pendingConnects = new Set();
   let connection = null;
   let frameSequence = 0;
+  let probeSequence = 0;
+  let lastProbeObservedAt = -Infinity;
+  const probes = new Map();
+  const probeDetail = probe => ({ probeSequence: probe.sequence, eventAtMs: Date.now(),
+    elapsedMs: Math.max(0, performance.now() - probe.started),
+    readyState: client.readyState, bufferedBytes: client.bufferedAmount });
   const frameContext = () => ({ frameSequence, phase: connection === null ? "awaiting-hello" : "ready" });
   const port = {
     postMessage(message) {
@@ -300,7 +306,18 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       if (message?.type === "response" && pendingConnects.delete(message.requestId)) {
         logDiagnostic("host-connect", { ok: message.ok === true });
       }
-      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+      const probe = message?.type === "response" ? probes.get(message.requestId) : undefined;
+      if (probe) {
+        probes.delete(message.requestId);
+        const responseMs = Math.max(0, performance.now() - probe.started);
+        logDiagnostic("probe-response", { ...probeDetail(probe), responseMs, ok: message.ok === true });
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message), error => {
+            // A completed local write does not acknowledge browser receipt.
+            logDiagnostic("probe-written", { ...probeDetail(probe), responseMs, ok: !error });
+          });
+        }
+      } else if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -330,7 +347,23 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       client.close(1008, "Invalid App Host request");
       return;
     }
+    if (message.type === "connection/probe") {
+      const started = performance.now();
+      const sequence = ++probeSequence;
+      // Observe normal five-second probes, bounded even for a flooding peer.
+      if (started - lastProbeObservedAt >= 1000 && probes.size < 8 && !probes.has(message.requestId)) {
+        lastProbeObservedAt = started;
+        const probe = { sequence, started };
+        probes.set(message.requestId, probe);
+        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence });
+      }
+    }
     if (!authorize(message)) {
+      const probe = probes.get(message.requestId);
+      if (probe) {
+        probes.delete(message.requestId);
+        logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
+      }
       client.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
         error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
       return;
@@ -348,7 +381,11 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (message.type === "host/connect") pendingConnects.add(message.requestId);
     for (const listener of listeners) listener(message);
   });
-  client.once("close", () => connection?.close());
+  client.once("close", () => {
+    for (const probe of probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
+    probes.clear();
+    connection?.close();
+  });
   client.once("error", () => connection?.close());
 }
 
