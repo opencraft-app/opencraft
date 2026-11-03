@@ -131,10 +131,27 @@ toolchain moves Electron to 44.9.1 and @electron/universal and @electron/asar
 to 3.0.6 and 4.3.1. The major updates are exercised by workspace typechecks and
 the connector, MCP-app and DSH bridge suites.
 
-The root audit still reports deepmerge 4.3.1
-([GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4))
-because no patched release exists and the current Expo configuration keeps it.
+The root workspace vendors `deepmerge` 4.3.1 as `vendor/deepmerge` version
+4.3.2-opencraft.1 and pins it through a `file:` dependency and the
+`$deepmerge` override. Upstream has not published a release after 4.3.1. The
+backport writes `__proto__`, `constructor` and `prototype` keys as own data
+properties, so a source object cannot change the merged object's prototype
+([GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)).
+`npm ci`, the workspace dependency audit and Expo config resolution pass with
+the vendored package, and the lockfile records the non-vulnerable version.
+Remove the vendor copy once upstream publishes a fixed release or Expo stops
+depending on `deepmerge`.
+
 The DSH runtime still installs @deepseek-ai/dsh-client-connection 0.1.1-rc.2
-([GHSA-8m2g-8cgm-3vcp](https://github.com/advisories/GHSA-8m2g-8cgm-3vcp));
-the fix first appears in 0.1.2-alpha.1 and the 0.2 release line, which requires
-a separate DSH engine upgrade. Neither finding is represented as remediated.
+([GHSA-8m2g-8cgm-3vcp](https://github.com/advisories/GHSA-8m2g-8cgm-3vcp)).
+The advisory is fixed in 0.1.2-alpha.1, but every 0.1.2+ engine release also
+requires the DSH engine migration: browser launch-token authentication for the
+`/api` transport, Remote RPC names changed from dotted (`settings.describe`,
+`session.history`, `credentials.*`, `llm.*`) to slash names, and `llm.*` no
+longer exists. Engine 0.1.2-rc.1 crashes while watching `--patch` layers
+because the Cordis HMR service is absent; 0.1.7-rc.2 removed
+`ctx.jobs.onJobsChanged`, so the capability plugin cannot activate;
+0.1.6-alpha.2 boots that plugin but rejects the existing dotted calls (401
+without the launch token exchange, 404 after it). This finding is not
+remediated and needs a coordinated engine migration rather than a
+dependency-only update.

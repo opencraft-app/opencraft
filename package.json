@@ -301,6 +301,7 @@
     "check:storage": "node scripts/compile-storage-migrations.mjs --check"
   },
   "dependencies": {
+    "deepmerge": "file:vendor/deepmerge",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -345,6 +346,7 @@
     "ip-address": "10.7.4",
     "minimatch": "11.0.1",
     "katex": "0.19.0",
+    "deepmerge": "$deepmerge",
     "@electron/asar": "4.3.1",
     "@electron/universal": "3.0.6"
   }
