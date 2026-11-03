@@ -600,3 +600,7 @@ Icon-only application footer entrances select the shared
 `application-navigation-icon-control` role. Its design-system owner constrains
 height, minimum height and padding; Shell consumes density tokens without
 redeclaring those shared-control properties.
+
+### Sidebar bottom action surfaces
+
+New chat, Applications and Settings use the shared integrated ghost button surface, including the mobile drawer. Their resting background is transparent and has no glass backdrop or shadow; shared focus, pressed and current-state feedback and Shell-owned hit areas remain.
