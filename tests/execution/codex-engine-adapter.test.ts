@@ -1897,3 +1897,92 @@ for (const method of ["thread/start", "thread/fork"] as const) test(`temporary $
     assert.equal((rejected.error as any).data.code, "SESSION_TOOLS_UNAVAILABLE"); assert.equal(preparations, 1);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test("busy session tools report the actual state and correlate the rejected input without native dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-busy-tools-diagnostics-"));
+  const frames: Array<Record<string, unknown>> = [], diagnostics: Array<Record<string, unknown>> = [];
+  let configuration: Record<string, unknown> | null = null;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => configuration, undefined, event => diagnostics.push(event));
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    assert.equal((await rpc("first", "turn/start", { threadId, clientUserMessageId: "first", input: [] })).error, undefined);
+    configuration = { url: "http://fixture/mcp", http_headers: { Authorization: "Bearer fixture-secret" } };
+    const rejected = (await rpc("second", "turn/start", { threadId, clientUserMessageId: "second", input: [] })).error as any;
+    assert.match(rejected.message, /previous turn is still active/);
+    assert.equal(rejected.data.stage, "check-idle");
+    assert.equal(rejected.data.reason, "thread-busy");
+    assert.equal(rejected.data.nativeStatus, "active");
+    assert.equal(rejected.data.submissionOutcome, "rejected");
+    const event = diagnostics.find(event => event.diagnosticId === rejected.data.diagnosticId)!;
+    assert.equal(event.event, "session-mcp-preparation-failed");
+    assert.equal(event.threadId, threadId); assert.equal(event.inputId, "second");
+    assert.match(rejected.message, new RegExp(rejected.data.diagnosticId));
+    const accepted = (await rpc("inputs", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(accepted.data.length, 1);
+    assert.equal(JSON.stringify({ rejected, diagnostics }).includes("fixture-secret"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const [method, stage] of [["thread/read", "read-thread"], ["thread/unsubscribe", "unsubscribe"],
+  ["thread/resume", "apply-tools"], ["thread/settings/update", "restore-settings"]] as const)
+  test(`session tools preserve a safe native failure at ${stage}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-tools-native-diagnostics-"));
+    const diagnostics: Array<Record<string, unknown>> = [];
+    const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+      async () => ({ url: "http://fixture/mcp" }), undefined, event => diagnostics.push(event));
+    const internals = adapter as any;
+    let unloaded = false;
+    internals.requestPhysical = async (called: string, params: any) => {
+      if (called === method && (method !== "thread/resume" || params.config))
+        throw Object.assign(new Error("Bearer fixture-secret /private/path"), { code: -32005 });
+      if (called === "thread/read") return { thread: { status: { type: unloaded ? "notLoaded" : "idle" } } };
+      if (called === "thread/unsubscribe") { unloaded = true; return {}; }
+      return { model: "fixture-model" };
+    };
+    try {
+      let failure: unknown;
+      try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+      assert.ok(failure);
+      const error = internals.sessionMcpFailure(failure);
+      assert.equal(error.data.stage, stage); assert.equal(error.data.reason, "native-rpc-failed");
+      assert.equal(error.data.nativeCode, -32005); assert.equal(error.data.submissionOutcome, "rejected");
+      assert.equal(diagnostics[0]!.diagnosticId, error.data.diagnosticId);
+      assert.equal(JSON.stringify({ error, diagnostics }).includes("fixture-secret"), false);
+      assert.equal(JSON.stringify({ error, diagnostics }).includes("/private/path"), false);
+    } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+for (const state of ["not-found", "archived", "recovering"] as const)
+  test(`session tool diagnostic wrapping preserves ${state} classification`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-tools-classification-"));
+    const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+      async () => ({ url: "http://fixture/mcp" }));
+    const internals = adapter as any;
+    let retired = false;
+    internals.requestPhysical = async (method: string) => {
+      if (method === "thread/read") {
+        if (state !== "recovering") throw Object.assign(new Error(state === "archived"
+          ? "Thread fixture is archived /private/path" : "no rollout found for thread id fixture /private/path"), { code: -32600 });
+        return { thread: { status: { type: retired ? "active" : "idle" } } };
+      }
+      if (method === "thread/unsubscribe") retired = true;
+      return {};
+    };
+    try {
+      let failure: unknown;
+      try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+      assert.ok(failure);
+      const error = internals.sessionMcpFailure(failure);
+      assert.equal(error.data.code, state === "archived" ? "THREAD_ARCHIVED" : state === "not-found" ? "THREAD_NOT_FOUND" : "SESSION_TOOLS_RECOVERING");
+      assert.equal(error.data.retryable, state === "recovering");
+      assert.equal(error.data.reason, state === "recovering" ? "reconfiguration-pending" : `thread-${state}`);
+      assert.equal(error.data.submissionOutcome, "rejected");
+      assert.equal(JSON.stringify(error).includes("/private/path"), false);
+    } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+  });
