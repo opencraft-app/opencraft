@@ -46,6 +46,7 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
     // Product-local packages resolve first; this is a trusted build fallback.

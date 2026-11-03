@@ -246,3 +246,30 @@ The related contracts are grouped in the [architecture index](../../platform-arc
 ## Next feature rule
 
 The related contracts are grouped in the [architecture index](../../platform-architecture.md).
+
+
+## Network event loop and orchestration storage
+
+Connection admission, forwarding and control timers share the gateway event loop.
+Blocking filesystem/database operations and potentially blocking synchronous
+native calls must execute in a lifecycle-owned Worker or process. Wrapping a
+synchronous SQLite call in a Promise does not provide this isolation.
+
+Headless borrows its fenced, initialized Server WAL database to a dedicated
+orchestration runtime worker. The child does not create, migrate or take over the
+installation. Periodic target discovery, runtime observations, pending-ACK storage,
+and idle sweep reads use its asynchronous port. Unchanged runtime identities,
+states and direct-input facts do not update rows or persistent timestamps. These
+timestamps describe changes; they are not a durable polling heartbeat.
+
+An observation, the corresponding relationship state, and any resulting parent
+notification commit in one transaction before its promise resolves. Contention
+retries happen asynchronously in the child after rollback; errors propagate
+without a synchronous gateway fallback. The child drains before the Server owner
+releases its installation fence. Authorization remains with the original owners;
+the worker does not mutate permission tables or grant access.
+
+This isolates high-frequency observation storage. Existing foreground collaboration
+commands and the sweep's authorized notification-delivery/wait-settlement
+transactions still use the legacy owner and require subsequent migration. This
+change does not claim every gateway SQLite path is already off the main thread.
