@@ -1051,6 +1051,7 @@
   "chat.steer.declined": "未追加",
   "chat.queue.pausedAfterStop": "已停止，排队消息已保留，可随时继续。",
   "chat.queue.pausedAfterFailure": "消息未发送，点击继续可重试。",
+  "chat.queue.toolsRecovering": "等待会话工具恢复 · 将自动继续",
   "localAccount.title": "账号与成员",
   "localAccount.description": "登录此服务器并管理实例成员。",
   "localAccount.identity": "Human 身份",

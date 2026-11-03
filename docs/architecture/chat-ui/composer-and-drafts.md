@@ -4,6 +4,18 @@
 
 ## Browser reconnect outbox
 
+An existing online text submission can also enter this outbox after a structured
+Host tool-preparation rejection proves it was never dispatched and explicitly
+marks the reason retryable. The local owner must persist the unchanged intent
+before releasing its failed optimistic row, then transfer the same message ID
+to the Host queue. A queue-admission rejection may schedule a bounded retry while
+ready; disconnect, disposal or scope replacement fences that wakeup. Positive
+server queue custody supersedes a matching local row during acknowledgement
+handoff, so the Composer renders each input once. Unknown delivery, permanent
+configuration errors, creation and explicit steering retain their existing
+recovery policy. Unsupported attachment/context handles keep the original input
+for explicit retry rather than promise automatic persistence.
+
 Existing Web/Electron conversations can accept text while their Host is offline
 or their Replica baseline is recovering. `ConversationRuntime` owns a local
 outbox distinct from the Host execution queue. The platform injects

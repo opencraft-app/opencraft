@@ -38,7 +38,7 @@ import type {
   QueuedSubmission,
 } from "./models";
 import { createInterruptInteractionResponse } from "./interaction-lifecycle";
-import { ContinuationCommandError, SubmissionOutcomeUnknownError } from "./ports";
+import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "./ports";
 import type {
   ConversationCommandPort,
   ConversationHistoryPort,
@@ -1521,7 +1521,9 @@ export function createReplicaConversationRuntime(
                     : "pending",
             },
       pendingInteractions,
-      pendingSubmissions: [...pendingSubmissions.values()].map(
+      pendingSubmissions: [...pendingSubmissions.values()].filter(candidate =>
+        !localOutbox.some(row => row.commandId === candidate.commandId)
+        && ![...authoritativeQueue.values()].some(row => row.clientMessageId === candidate.clientMessageId)).map(
         ({
           kind: _kind,
           targetTurnId: _targetTurnId,
@@ -1533,7 +1535,7 @@ export function createReplicaConversationRuntime(
           submission,
       ),
       queuedSubmissions: [
-        ...localOutbox,
+        ...localOutbox.filter(candidate => ![...authoritativeQueue.values()].some(row => row.clientMessageId === candidate.clientMessageId)),
         ...authoritativeQueue.values(),
         ...[...queued.values()].filter(
           (candidate) =>
@@ -1881,7 +1883,16 @@ export function createReplicaConversationRuntime(
       if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
         || !snapshot.authoritative || config.canDispatchOutbox?.(intent) === false))
         return outbox.admit(intent);
-      return submitOnline(intent);
+      try { return await submitOnline(intent); }
+      catch (error) {
+        if (!outbox || intent.target.type !== "existing-thread" || !(error instanceof SubmissionNotDispatchedError)) throw error;
+        // Persist custody before retiring the failed optimistic row. The outbox
+        // uses the same immutable message ID and queues only after readiness.
+        const receipt = await outbox.admit(intent);
+        if (pendingSubmissions.get(intent.commandId)?.error === error) pendingSubmissions.delete(intent.commandId);
+        localRevision++; publish();
+        return receipt;
+      }
     },
     interrupt(turnId, provenance) {
       if (disposed) return Promise.reject(new Error("Conversation runtime is disposed"));

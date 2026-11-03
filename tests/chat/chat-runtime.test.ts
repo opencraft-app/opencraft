@@ -8,6 +8,7 @@ import {
   createReplicaConversationRuntime,
   ContinuationCommandError,
   SubmissionOutcomeUnknownError,
+  SubmissionNotDispatchedError,
   type ConversationCommandPort,
   type ConversationReplicaReader,
 } from "@opencraft/chat-runtime";
@@ -2860,4 +2861,55 @@ test("local outbox sending accepts Steer without blocking the next draft", async
   assert.deepEqual(f.steers, ["server-next"]);
   assert.equal(f.runtime.getSnapshot().queuedSubmissions.length, 0);
   f.runtime.dispose();
+});
+
+for (const reconnect of [false, true]) test(`an explicitly unsent online input transfers once to the durable queue (reconnect=${reconnect})`, async () => {
+  const replica = new FakeReplica(threadView());
+  const key = createConversationKey("local", "thread-one");
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
+  const calls: Array<{ type: string; id: string }> = [];
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
+    commands: commands({ async submit(input) {
+      calls.push({ type: input.target.type, id: input.clientMessageId });
+      if (input.target.type === "existing-thread") {
+        if (reconnect) replica.setAuthority(false);
+        throw new SubmissionNotDispatchedError();
+      }
+      return { ...receipt(input.commandId, input.clientMessageId), turnId: null, queuedSubmissionId: "host-queue" };
+    } }), history: { async loadOlder() {} },
+  });
+  try {
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "same-id" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "看看" }] }] } });
+    const input = composer.createSubmitIntent();
+    const accepted = await runtime.submit(input);
+    assert.equal(accepted.disposition, "local-queue");
+    if (reconnect) {
+      assert.equal(rows.length, 1); assert.equal(rows[0]!.intent.clientMessageId, input.clientMessageId);
+      assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+      replica.setAuthority(true);
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(calls, [{ type: "existing-thread", id: input.clientMessageId }, { type: "enqueue-follow-up", id: input.clientMessageId }]);
+    assert.equal(rows.length, 0);
+    assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+    assert.equal(runtime.getSnapshot().queuedSubmissions.some(row => row.state === "failed"), false);
+  } finally { runtime.dispose(); }
+});
+
+for (const unknown of [true, false]) test(`an uncertain or permanent online failure never enters the automatic queue (${unknown})`, async () => {
+  const key = createConversationKey("local", "thread-one");
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [], sends = 0;
+  const failure = unknown ? new SubmissionOutcomeUnknownError() : new Error("permanent rejection");
+  const runtime = createReplicaConversationRuntime({ key, replica: new FakeReplica(threadView()),
+    outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
+    commands: commands({ async submit() { sends++; throw failure; } }), history: { async loadOlder() {} },
+  });
+  try {
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "failure-id" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "keep this input" }] }] } });
+    await assert.rejects(runtime.submit(composer.createSubmitIntent()), error => error === failure);
+    assert.equal(rows.length, 0); assert.equal(sends, 1);
+  } finally { runtime.dispose(); }
 });

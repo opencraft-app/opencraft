@@ -1029,6 +1029,7 @@
   "chat.steer.declined": "ไม่ได้เพิ่ม",
   "chat.queue.pausedAfterStop": "หยุดชั่วคราวหลังจากหยุดงาน กดดำเนินการต่อเมื่อพร้อม",
   "chat.queue.pausedAfterFailure": "ยังไม่ได้ส่งข้อความ กดดำเนินการต่อเพื่อลองอีกครั้ง",
+  "chat.queue.toolsRecovering": "รอเครื่องมือเซสชันกู้คืน · ดำเนินการต่ออัตโนมัติ",
   "localAccount.title": "บัญชีและสมาชิก",
   "localAccount.description": "ลงชื่อเข้าใช้เซิร์ฟเวอร์นี้และจัดการสมาชิก",
   "localAccount.identity": "ตัวตน Human",

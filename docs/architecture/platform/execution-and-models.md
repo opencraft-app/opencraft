@@ -704,3 +704,22 @@ native status values are exposed; raw native exception text, credentials, MCP
 configuration and environment values are omitted. These diagnostics preserve
 missing/archived classification, recovery retryability and rejected-input semantics;
 they do not authorize automatic replay.
+
+### Recovering definitely unsent session inputs
+
+Tool preparation marks only controlled transient reasons (busy Thread, retired or
+closed connection, preparation timeout and retirement pending) as retryable. The
+response must also prove `submissionOutcome = rejected`. Existing text inputs
+may transfer to the durable client outbox with the original command/message ID;
+that owner enqueues them when the connection is ready instead of issuing another
+`turn/start`. Queue admission while the native connection is unavailable returns
+`QUEUE_NOT_READY` before persistence and dispatch. Creation and exact-Turn steering
+keep their existing semantics. Permanent tool/permission/environment faults and
+unknown execution outcomes do not enter automatic replay.
+
+A Host queue claim whose tool preparation raises `RecoveryNotSubmitted` returns
+to `queued`, not `unknown`. Transient preparation waits receive a scoped retry
+wakeup; permanent preparation errors pause for explicit correction. A new queued
+preparation may finish abandoned retirement after the previous owner exits,
+without an observation `thread/resume` reviving the old runtime. Lost native send
+acknowledgements remain `unknown` and never schedule a resend.

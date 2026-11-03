@@ -9,9 +9,9 @@ import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import type { InteractionResponse } from "./models";
 
-/** No request crossed the transport boundary; reconnect may safely retry it. */
+/** Positive proof the input was not dispatched; its current custodian may retain it. */
 export class SubmissionNotDispatchedError extends Error {
-  constructor() { super("Waiting for the current connection before sending"); this.name = "SubmissionNotDispatchedError"; }
+  constructor(readonly retryAfterMs?: number) { super("Waiting for the current connection before sending"); this.name = "SubmissionNotDispatchedError"; }
 }
 
 /** Transport adapters distinguish rejection from a lost acknowledgement. */

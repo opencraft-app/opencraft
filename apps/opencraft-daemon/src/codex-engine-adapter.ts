@@ -141,7 +141,7 @@ class SessionMcpPreparationFailure extends Error {
   readonly diagnosticId = randomUUID();
   constructor(readonly stage: SessionMcpStage, cause: unknown, readonly threadId: string,
     readonly inputId?: string, readonly nativeStatus?: string) {
-    super("Session tool preparation failed", { cause });
+    super(errorMessage(cause), { cause });
   }
 }
 // Only controlled local messages become public reasons. Native error messages can
@@ -151,14 +151,22 @@ function sessionMcpReason(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : "";
   switch (message) {
     case "Wait until the Codex thread is idle before changing its tools": return "thread-busy";
+    case "Codex AppServer closed": return "connection-closed";
+    case "Codex AppServer is not initialized": return "connection-not-ready";
     case "Thread creation belongs to an expired connection":
     case "Session tool preparation belongs to an expired connection": return "connection-expired";
     case "Environment belongs to another account or project; start a new session": return "environment-owner-mismatch";
     case "Environment variables require a Codex owner handoff": return "environment-handoff-required";
     case "Session tools require an attested execution": return "execution-unattested";
     case "Cannot preserve this Codex sandbox while refreshing tools": return "sandbox-unsupported";
-    default: return typeof record(cause).code === "number" ? "native-rpc-failed" : "preparation-failed";
+    default:
+      if (/^Codex thread\/(?:read|resume|unsubscribe|settings\/update) delivery outcome is unknown after timeout$/.test(message)) return "preparation-timeout";
+      return typeof record(cause).code === "number" ? "native-rpc-failed" : "preparation-failed";
   }
+}
+function sessionMcpRetryable(cause: unknown): boolean {
+  return ["thread-busy", "connection-closed", "connection-not-ready", "connection-expired",
+    "preparation-timeout", "reconfiguration-pending"].includes(sessionMcpReason(cause));
 }
 interface SharedCodexRoutingOptions {
   readonly executionEnvironment?: ExecutionEnvironmentRuntime;
@@ -1646,6 +1654,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     for (const reads of this.cachedHistoryReads.values()) for (const read of reads.keys()) read.abort(new Error("Codex AppServer closed"));
     this.cachedHistoryReads.clear();
     clearInterval(this.generationUsageTimer);
+    for (const timer of this.queuePreparationRetries.values()) clearTimeout(timer);
+    this.queuePreparationRetries.clear();
     for (const timer of this.generationReconciling.values()) if (timer) clearTimeout(timer);
     this.generationReconciling.clear();
     this.threadTitles?.close();
@@ -2673,6 +2683,16 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
     await this.checkModelPolicy(method, params);
+    // Tool retirement is pre-submission work. Start the physical delivery timer
+    // only after it settles; a timed-out preparation must never send later.
+    if (method === "turn/start") {
+      const threadId = string(params.threadId), inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
+      params = { ...params, clientUserMessageId: inputId };
+      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      try { await this.prepareSessionMcp(threadId, inputId, executionId); }
+      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
+    }
+    if (signal?.aborted) throw new RecoveryNotSubmitted("Codex preparation was cancelled before submission");
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
     const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
@@ -3015,6 +3035,16 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (cursor !== null) throw new Error("Codex Goal discovery exceeded its safety bound");
   }
 
+  private readonly queuePreparationRetries = new Map<string, ReturnType<typeof setTimeout>>();
+  private scheduleQueuePreparationRetry(threadId: string): void {
+    if (this.closeOperation || this.queuePreparationRetries.has(threadId)) return;
+    const timer = setTimeout(() => {
+      this.queuePreparationRetries.delete(threadId);
+      if (!this.closeOperation) this.scheduleQueueMaintenance(threadId);
+    }, 1_000);
+    timer.unref();
+    this.queuePreparationRetries.set(threadId, timer);
+  }
   private scheduleQueueMaintenance(threadId: string): void {
     if (!threadId || this.queue === null || this.initializeResult === null) return;
     void this.withThreadOperation(threadId, () => this.maintainQueue(threadId)).catch(error => {
@@ -3171,7 +3201,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
     const first = queue.firstAwaitingAdmission(threadId);
-    if (!first || first.state !== "queued" || first.pausedReason === "model-restricted") return;
+    if (!first || first.state !== "queued" || ["model-restricted", "session-tools-unavailable"].includes(first.pausedReason ?? "")) return;
     const recovery=this.recovery?.snapshot(threadId);
     if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake(); this.providerRetry?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
@@ -3186,7 +3216,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (mode === 'steer') return;
     }
     if ([...this.pending.values()].some(pending => pending.method === "turn/start" && pending.params.threadId === threadId)) return;
-    if (this.activeTurns.has(threadId) || !(await this.queueThreadIsIdle(threadId))) return;
+    if (this.activeTurns.has(threadId)) return;
+    if (this.sessionMcpRetirements.has(threadId) && !this.sessionMcpRefreshes.has(threadId)) {
+      // An earlier, definitively unsent preparation can leave retirement to
+      // finish. The queued input owns the next refresh; never resume to poll it.
+      if (!["idle", "systemError", "notLoaded"].includes(await this.threadStatus(threadId))) return;
+    } else if (!(await this.queueThreadIsIdle(threadId))) return;
     await this.dispatchQueuedStart(threadId, first.id);
   }
 
@@ -3232,7 +3267,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emitQueueChanged(threadId);
       return response;
     } catch (error) {
-      queue.settle(threadId, id, error instanceof ModelPolicyError ? "queued" : "unknown", error instanceof ModelPolicyError ? "model-restricted" : "steer-delivery-unconfirmed");
+      const unsent = error instanceof RecoveryNotSubmitted;
+      const preparation = unsent && error.cause instanceof SessionMcpPreparationFailure ? error.cause : null;
+      const retryable = unsent && (!preparation || sessionMcpRetryable(preparation.cause));
+      queue.settle(threadId, id, unsent || error instanceof ModelPolicyError ? "queued" : "unknown",
+        error instanceof ModelPolicyError ? "model-restricted" : unsent
+          ? retryable ? "session-tools-recovering" : "session-tools-unavailable" : "steer-delivery-unconfirmed");
+      if (retryable) this.scheduleQueuePreparationRetry(threadId);
       this.emitQueueChanged(threadId);
       throw error;
     }
@@ -3313,7 +3354,12 @@ export class CodexEngineAdapter implements DuplexTransport {
             .map(row => ({ ...this.queueProjection(row), targetTurnId: row.targetTurnId ?? "unknown" })) } : {}),
         };
       } else if (method === "thread/queue/add") {
-        await this.assertDurableQueueThread(threadId);
+        try { await this.assertDurableQueueThread(threadId); }
+        catch (cause) {
+          if (!sessionMcpRetryable(cause)) throw cause;
+          throw new OpenCraftQueueRpcError(-32000, "The session connection is recovering; input was not queued yet.",
+            { code: "QUEUE_NOT_READY", submissionOutcome: "rejected", retryable: true });
+        }
         if (actorClientId.startsWith('actor-input:')) {
           const mode = this.options.collaborationInput?.mode(actorClientId);
           if (!mode) throw new OpenCraftQueueRpcError(-32600, 'Actor request unavailable');
@@ -3411,7 +3457,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       message: `${message} [${stage}/${reason}; ref ${diagnosticId}]`,
       data: { code: unavailable === "archived" ? "THREAD_ARCHIVED" : unavailable ? "THREAD_NOT_FOUND"
         : recovering ? "SESSION_TOOLS_RECOVERING" : "SESSION_TOOLS_UNAVAILABLE",
-        submissionOutcome: "rejected", retryable: recovering, ...diagnostic } };
+        submissionOutcome: "rejected", retryable: !unavailable && sessionMcpRetryable(original), ...diagnostic } };
   }
 
   private readonly sessionMcpCreations = new Map<string, SessionMcpCreation>();
@@ -3716,7 +3762,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
       const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
       try { await this.prepareSessionMcp(threadId, inputId, executionId); }
-      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message)); }
+      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }
     if ((this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && (message.method === "turn/start" || message.method === "turn/steer")) {
       const params=record(message.params),delegationId=this.options.collaboration?.inputDelegation?.(string(params.threadId),string(params.clientUserMessageId),string(params.expectedTurnId)||undefined);

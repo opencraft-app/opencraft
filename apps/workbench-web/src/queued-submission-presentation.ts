@@ -33,7 +33,11 @@ export function queuedSubmissionPresentation(
   avatars: IdentityAvatarContribution | null = null,
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
-  const statusMessage = submission.pausedReason === "outbox-waiting"
+  const statusMessage = submission.pausedReason === "session-tools-recovering"
+    ? { id: "chat.queue.toolsRecovering", defaultMessage: "Waiting for session tools to recover · continues automatically" }
+    : submission.pausedReason === "session-tools-unavailable"
+      ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." }
+      : submission.pausedReason === "outbox-waiting"
     ? { id: "chat.outbox.waiting", defaultMessage: "Saved locally · sends automatically after reconnect" }
     : submission.pausedReason === "outbox-unconfirmed"
       ? { id: "chat.outbox.unconfirmed", defaultMessage: "Delivery unconfirmed · check the conversation before sending again" }

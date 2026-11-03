@@ -9,12 +9,14 @@ import type { Browser } from "playwright";
 const calls: { method: string; params: any }[] = [];
 let online = true;
 let holdAck = false;
+let rejectTools = false;
+let preparationQueue = false;
 let rows: any[] = [];
 const thread = { id: "thread-one", name: "Outbox fixture", cwd: "/fixture", status: { type: "active" },
   turns: [{ id: "active", status: "inProgress", items: [], params: { input: [] } }] };
 const sockets = new WebSocketServer({ noServer: true });
 const vite = await createServer({ root: process.cwd(), configFile: false, logLevel: "error",
-  resolve: { dedupe: ["react", "react-dom", "react-intl"] }, cacheDir: "node_modules/.vite-reconnect-outbox",
+  resolve: { dedupe: ["react", "react-dom", "react-intl"] }, cacheDir: process.env.OPENCRAFT_OUTBOX_VITE_CACHE ?? "node_modules/.vite-reconnect-outbox",
   optimizeDeps: { entries: ["tests/fixtures/reconnect-outbox-browser.tsx"] }, esbuild: { jsx: "automatic", target: "esnext" },
   server: { host: "127.0.0.1", port: 0, hmr: false }, plugins: [{ name: "outbox-fixture", configureServer(server) {
     server.middlewares.use((req, res, next) => {
@@ -47,10 +49,15 @@ try {
     else if (method === "thread/queue/list") result = { data: rows, nextCursor: null };
     else if (method === "thread/queue/add") {
       const entry = { id: `server-${params.clientUserMessageId}`, clientUserMessageId: params.clientUserMessageId,
-        input: params.input, createdAt: Date.now(), pausedReason: null };
+        input: params.input, createdAt: Date.now(), pausedReason: preparationQueue ? "session-tools-recovering" : null };
       if (!rows.some(row => row.clientUserMessageId === entry.clientUserMessageId)) rows.push(entry);
       result = { queuedSubmission: entry };
+      if (preparationQueue) ws.send(JSON.stringify({ method: "thread/queue/changed", params: { threadId: params.threadId } }));
       if (holdAck) { online = false; ws.close(1012, "ack lost"); return; }
+    } else if (method === "turn/start" && rejectTools) {
+      rejectTools = false;
+      ws.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "Session tools are temporarily recovering",
+        data: { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "rejected", retryable: true } } })); return;
     } else if (method === "turn/start") result = { turn: { id: "identity-turn", items: [], status: "inProgress", error: null } };
     else if (method === "model/list") result = { data: [{ id: "fixture", model: "fixture", displayName: "Fixture", description: "Synthetic", hidden: false, isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: "medium", inputModalities: ["text"], supportsPersonality: false, additionalSpeedTiers: [], serviceTiers: [] }], nextCursor: null };
     else if (method === "thread/dynamicTools/register") result = { registered: 0 };
@@ -150,7 +157,37 @@ try {
   await page.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.every((row: any) => !row.local));
   assert.equal(calls.filter(call => call.method === "thread/queue/add").length, before + 2);
   await page.close();
-  await writeFile(`${output}/results.json`, JSON.stringify({ results, identityRejectionKeepsDraft: true, lostAckReconciled: true, actualEngine: false }, null, 2));
+  // The View still looks idle while native tool preparation rejects this
+  // start. A single safe rejection transfers the same input to the Host queue.
+  thread.status.type = "idle"; thread.turns = [];
+  const preparationResults = [];
+  for (const width of [390, 1100]) for (const theme of ["light", "dark"] as const) {
+    online = true; rows = []; holdAck = false; rejectTools = true; preparationQueue = true;
+    const p = await browser.newPage({ viewport: { width, height: 840 }, hasTouch: width === 390, isMobile: width === 390 });
+    activePage = p;
+    const errors: string[] = []; p.on("pageerror", error => errors.push(error.message));
+    p.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    await p.addInitScript("window.__name = value => value"); await p.goto(origin);
+    await p.waitForSelector('[data-authoritative="true"]');
+    await p.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
+    const before = calls.length;
+    await p.locator(".opencraft-composer-editor").fill("看看工具恢复后继续");
+    await p.locator("[data-composer-primary-action]").click();
+    await p.waitForFunction(() => (window as any).fixture.snapshot().queuedSubmissions.some((row: any) => !row.local && row.state === "queued" && row.pausedReason === "session-tools-recovering"));
+    const submitted = calls.slice(before).filter(call => ["turn/start", "thread/queue/add"].includes(call.method));
+    assert.deepEqual(submitted.map(call => call.method), ["turn/start", "thread/queue/add"]);
+    assert.equal(submitted[0]!.params.clientUserMessageId, submitted[1]!.params.clientUserMessageId);
+    assert.deepEqual(submitted[0]!.params.input, submitted[1]!.params.input);
+    assert.equal(await p.locator(".opencraft-composer-queue-item").count(), 1);
+    await p.getByText("Waiting for session tools to recover · continues automatically", { exact: true }).waitFor({ state: "visible" });
+    assert.equal((await p.locator(".opencraft-composer-editor").innerText()).trim(), "");
+    assert.equal(await p.evaluate(() => (window as any).fixture.snapshot().pendingSubmissions.length), 0);
+    assert.deepEqual(errors, []);
+    await p.screenshot({ path: `${output}/${width}-${theme}-tools-recovery.png` });
+    preparationResults.push({ width, theme, safeRejectionQueuedOnce: true, sameInputIdentity: true });
+    await p.close();
+  }
+  await writeFile(`${output}/results.json`, JSON.stringify({ results, preparationResults, identityRejectionKeepsDraft: true, lostAckReconciled: true, actualEngine: false }, null, 2));
   console.log(JSON.stringify({ results, lostAckReconciled: true }));
 } catch (error) { console.error(JSON.stringify({ snapshot: await activePage?.evaluate(() => ({ text: document.body.innerText, message: (window as any).fixture?.snapshot().error?.message, queueErrors: (window as any).fixture?.snapshot().queuedSubmissions.map((row: any) => row.error?.message), state: (window as any).fixture?.snapshot(), host: (window as any).fixture?.runtime() })).catch(() => null), error: String(error), methods: calls.map(call => call.method) })); throw error; }
 finally { await browser?.close(); for (const ws of sockets.clients) ws.terminate(); await new Promise<void>(resolve => sockets.close(() => resolve())); await vite.close(); }
