@@ -9,13 +9,13 @@ import WebSocket,{WebSocketServer} from 'ws';
 import {CodexNativeCoreTransport} from '../../apps/opencraft-daemon/src/codex-native-core-transport';
 import { startOrchestrationCallbackRelay } from '../../apps/codex-core/src/orchestration-callback-lane';
 async function until(condition:()=>boolean) {const deadline=Date.now()+3000;while(!condition()){if(Date.now()>deadline)throw Error('Timed out');await delay(5);}}
-async function fixture(t:any,windowMs=1000) {
+async function fixture(t:any,windowMs=1000,requestPolicy?: (method:unknown,params:Record<string,unknown>)=>Promise<Record<string,unknown>>) {
  const root=await mkdtemp(join(tmpdir(),'oc-callback-')),nativePath=join(root,'native.sock'),proxy=join(root,'gateway.sock');
  const http=createServer(),wss=new WebSocketServer({server:http});
  await new Promise<void>(resolve=>http.listen(nativePath,resolve));
  const nativeSockets:WebSocket[]=[],requests:any[]=[];
  wss.on('connection',socket=>{nativeSockets.push(socket);socket.on('message',frame=>{const message=JSON.parse(String(frame));requests.push(message);if(message.method==='initialize')socket.send(JSON.stringify({id:message.id,result:{userAgent:'fixture'}}));});});
- const relay=await startOrchestrationCallbackRelay(proxy,nativePath,{disconnectWindowMs:windowMs});
+ const relay=await startOrchestrationCallbackRelay(proxy,nativePath,{disconnectWindowMs:windowMs,requestPolicy});
  const gateways:WebSocket[]=[];
  t.after(async()=>{for(const socket of gateways)socket.terminate();await relay.close();for(const socket of nativeSockets)socket.terminate();wss.close();await new Promise<void>(resolve=>http.close(()=>resolve()));await rm(root,{recursive:true,force:true});});
  async function connect(lane='gateway') {
@@ -113,4 +113,18 @@ test('all human waits arriving detached replay, retain submitted state and retir
  await until(()=>last.messages.some(m=>m.method==='turn/completed'));last.socket.terminate();await until(()=>last.socket.readyState===WebSocket.CLOSED);await delay(10);
  const settled=await f.connect();settled.send({id:'barrier',method:'fixture/barrier',params:{}});await until(()=>f.requests.some(m=>m.method==='fixture/barrier'));
  assert.equal(settled.messages.filter(m=>methods.includes(m.method)).length,0);
+});
+
+test('interrupt during sandbox preparation prevents a late turn from starting across client lanes', async t => {
+ let release!:()=>void,preparing=false;
+ const held=new Promise<void>(resolve=>{release=resolve;});
+ const f=await fixture(t,1000,async(method,params)=>{if(method==='turn/start'){preparing=true;await held;}return params;});
+ const input=await f.connect('input'),control=await f.connect('control');
+ input.send({id:'starting',method:'turn/start',params:{threadId:'thread',input:[]}});
+ await until(()=>preparing);
+ control.send({id:'stop',method:'turn/interrupt',params:{threadId:'thread',turnId:'turn'}});
+ await until(()=>f.requests.some(m=>m.method==='turn/interrupt'));
+ release();await until(()=>input.messages.some(m=>m.id==='starting'));
+ assert.equal(input.messages.find(m=>m.id==='starting').error.code,-32800);
+ assert.equal(f.requests.filter(m=>m.method==='turn/start').length,0);
 });

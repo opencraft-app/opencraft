@@ -109,6 +109,48 @@ export async function readCodexGitNatives(registry: DatabaseSync): Promise<Nativ
   return natives;
 }
 
+/** A systemd execution boundary preserves the attested generation, not PPID.
+ * Only the official exec-server binary bound to that live owner can be a root.
+ * This is a locator: existing boot-clock input leases still authorize the job. */
+async function sandboxNativeRoot(peer: GitPeer, natives: readonly NativeGitProcess[]): Promise<NativeGitProcess | undefined> {
+  const unitFor = async (pid: number) => (await readFile(`/proc/${pid}/cgroup`, "utf8")).trim().split("\n")
+    .find(line => line.startsWith("0::"))?.slice(3).split("/").reverse().find(part => part.endsWith(".service"));
+  const unit = await unitFor(peer.pid);
+  if (!unit || !/^opencraft-sandbox-[a-z0-9-]+\.service$/u.test(unit)) return;
+  const result = await promisify(execFile)("/usr/bin/systemctl", ["show", "--property=MainPID,BindsTo,ActiveState,Transient", "--", unit],
+    { timeout: 3000, maxBuffer: 4096, env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } });
+  const state = Object.fromEntries(result.stdout.trim().split("\n").map(line => { const i = line.indexOf("="); return [line.slice(0, i), line.slice(i + 1)]; }));
+  const pid = Number(state.MainPID);
+  if (state.ActiveState !== "active" || state.Transient !== "yes" || !Number.isSafeInteger(pid) || pid < 2 || await unitFor(pid) !== unit) return;
+  const root = await readGitProcess(pid), executable = await readlink(`/proc/${pid}/exe`);
+  const args = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0");
+  if (args[1] !== "exec-server") return;
+  const matches = [];
+  for (const native of natives) {
+    const owner = await unitFor(native.pid);
+    if (owner && state.BindsTo?.split(" ").includes(owner) && await readlink(`/proc/${native.pid}/exe`) === executable
+      && (await readGitProcess(native.pid)).startTicks === native.startTicks) matches.push(native);
+  }
+  if (matches.length !== 1) return;
+  return { ...matches[0]!, pid, startTicks: root.startTicks };
+}
+
+/** Select an attested engine before consulting thread-specific credential owners.
+ * The same systemd boundary used for authorization must be used by this gate. */
+export async function hasGitNativeRoot(peer: GitPeer, natives: readonly NativeGitProcess[]): Promise<boolean> {
+  if (peer.uid !== process.getuid?.()) return false;
+  try {
+    if (await sandboxNativeRoot(peer, natives)) return true;
+    let pid = peer.pid;
+    for (let i = 0; i < 128 && pid > 1; i++) {
+      const current = await readGitProcess(pid);
+      if (natives.some(native => native.pid === pid && native.startTicks === current.startTicks)) return true;
+      pid = current.parent;
+    }
+  } catch { /* A lost or unverified process is never an engine owner. */ }
+  return false;
+}
+
 export function createGitOriginResolver(options: {
   natives(threadId: string): Promise<readonly NativeGitProcess[]>; reader: GitOriginLeaseReader;
   account(principal: { provider: string; subject: string }): string | null;
@@ -117,7 +159,10 @@ export function createGitOriginResolver(options: {
   return async (peer: GitPeer, threadId: string): Promise<GitExecutionIdentity> => {
     if (peer.uid !== process.getuid?.() || options.reader.originClock !== 'boot-monotonic-v1') return { status: 'unknown' };
     try {
-      const natives = await options.natives(threadId), chain: Array<Awaited<ReturnType<typeof readGitProcess>>> = [];
+      const originals = await options.natives(threadId);
+      const sandbox = await sandboxNativeRoot(peer, originals);
+      const natives = sandbox ? [...originals, sandbox] : originals;
+      const chain: Array<Awaited<ReturnType<typeof readGitProcess>>> = [];
       let pid = peer.pid, found: NativeGitProcess | undefined;
       for (let i = 0; i < 128 && pid > 1; i++) {
         const process = await readGitProcess(pid); chain.push(process);
@@ -151,7 +196,9 @@ export function createGitOriginResolver(options: {
       const startedAtMs = Date.now() - uptime * 1000 + startedAtBootMs;
       const uncertaintyMs = 10 + 1000 / hz + (after - before) / 2;
       const result = await options.reader.resolveJobOrigin({ threadId, engineIncarnation: found.incarnation, startedAtMs, uncertaintyMs, bootId, startedAtBootMs });
-      const afterNatives = await options.natives(threadId);
+      const afterOriginals = await options.natives(threadId);
+      const afterSandbox = sandbox ? await sandboxNativeRoot(peer, afterOriginals) : undefined;
+      const afterNatives = afterSandbox ? [...afterOriginals, afterSandbox] : afterOriginals;
       if (!afterNatives.some(native => native.pid === found!.pid && native.startTicks === found!.startTicks && native.incarnation === found!.incarnation && native.threadEnvironment === found!.threadEnvironment)
         || (await readGitProcess(peer.pid)).startTicks !== chain.at(-1)!.startTicks
         || (await readGitProcess(job.pid)).startTicks !== job.startTicks

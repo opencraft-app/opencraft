@@ -2,6 +2,8 @@
 
 本设计适用于 OpenCraft 的会话执行边界。DSH 是首个具体实现；其他引擎通过自己的 adapter 实现相同语义，不必采用 DSH 的 Agent 对象或私有 bridge。
 
+Host 拥有的资源执行原语、默认 4 vCPU / 8 GiB 预算、Linux 后端与实际接入范围见 [execution sandbox](execution-sandbox.md)。该原语不改变 Thread/Turn authority，也不表示所有引擎与 SSH 作业已经完成资源隔离。
+
 会话存在、历史可读、运行实例已加载、工具访问权有效、某轮正在执行是不同事实。不得用一个 `ready` 或 `loading` 同时表达它们。
 
 身份与协作的上位原则见[原生主体与 Hub 协作设计纲领](architecture/actor-collaboration.md)：人类与持久 Agent/Bot/Session 都是主体，权限大小不决定主体性。本文继续规定执行对象、连接与租约的所有权；Runtime 的执行所有权不替代 Session 的主体身份。目标设计中的身份准入、Channel 与跨 Hub 授权仍待实现。

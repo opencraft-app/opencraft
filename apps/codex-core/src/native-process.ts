@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { unlink, readFile, readdir, writeFile } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
@@ -100,4 +101,23 @@ export async function makeNativeFamilyKillable(rootPid: number): Promise<void> {
       }
     } catch (error) { if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error; }
   }
+}
+
+/** A bounded read/initialization request on the existing authenticated owner lane. */
+export function nativeOwnerRequest(socket: WebSocket, method: string, params: unknown, timeoutMs = 10_000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const id = "sandbox-owner:" + randomUUID();
+    const cleanup = () => { clearTimeout(timer); socket.off("message", message); socket.off("close", unavailable); socket.off("error", unavailable); };
+    const unavailable = () => { cleanup(); reject(new Error("Native execution environment unavailable")); };
+    const message = (frame: WebSocket.RawData) => {
+      let value: { id?: unknown; error?: unknown; result?: unknown };
+      try { value = JSON.parse(String(frame)); } catch { unavailable(); return; }
+      if (value.id !== id) return;
+      cleanup(); value.error ? reject(new Error("Native execution environment rejected")) : resolve(value.result);
+    };
+    const timer = setTimeout(unavailable, timeoutMs);
+    socket.on("message", message); socket.once("close", unavailable); socket.once("error", unavailable);
+    if (socket.readyState !== WebSocket.OPEN) { unavailable(); return; }
+    socket.send(JSON.stringify({ id, method, params }), error => { if (error) unavailable(); });
+  });
 }

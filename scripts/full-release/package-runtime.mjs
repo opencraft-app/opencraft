@@ -22,7 +22,7 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const bundledPackages = new Map();
   for (const [source, name] of [['bin', 'main'], ['app-server-bin', 'app-server'], ['generation-bin', 'generations']]) {
     const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + '.cjs'),
-      bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate'] });
+      bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'] });
     for (const input of Object.keys(bundle.metafile.inputs)) {
       if (!input.includes('node_modules/')) continue;
       let directory = dirname(resolve(repositoryRoot, input));
@@ -34,6 +34,11 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
       }
     }
   }
+  // Retain the native executor transport with its independently switched Core payload.
+  // Codex uses pipes; terminal consumers use execution/native's packaged node-pty.
+  await build({ absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')],
+    outfile: join(full, 'core/sandbox-command.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node26',
+    external: ['node-pty'], banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
   const coreLicenses = [];
   for (const [directory, manifest] of bundledPackages) {
     const label = manifest.name.replaceAll('/', '_') + '-' + manifest.version;

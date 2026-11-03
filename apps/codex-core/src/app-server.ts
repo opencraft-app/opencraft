@@ -1,3 +1,4 @@
+import { configureCodexExecutionSandbox, codexSandboxRequestPolicy, type CodexExecutionSandbox } from "./execution-sandbox.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
@@ -5,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
-import { makeNativeFamilyKillable, nativeReady, removeStaleSocket } from "./native-process.js";
+import { makeNativeFamilyKillable, nativeReady, nativeOwnerRequest, removeStaleSocket } from "./native-process.js";
 import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
 
 export interface CodexAppServerOptions {
@@ -17,6 +18,7 @@ export interface CodexAppServerOptions {
   readonly runtimeDataDirectory?: string;
   readonly runtimeDirectory: string;
   readonly executable: string;
+  readonly executionSandbox?: CodexExecutionSandbox;
   readonly spawnAppServer?: CodexCoreOptions["spawnAppServer"];
   readonly onFailure?: (error: Error) => void;
   readonly waitForCore?: boolean;
@@ -82,6 +84,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     await removeStaleSocket(nativeListener);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     if (options.runtimeDataDirectory && await realpath(runtimeRoot) !== runtimeRoot) throw new Error("Generation HOME must not alias another directory");
+    if (options.executionSandbox) await configureCodexExecutionSandbox(runtimeRoot, options.executable, options.executionSandbox);
     const args = ["app-server", "--listen", `unix://${nativeListener}`, ...launch.args];
     const env = { ...process.env, ...launch.env, CODEX_HOME: runtimeRoot,
       OPENAI_API_KEY: undefined, CODEX_API_KEY: undefined, CODEX_ACCESS_TOKEN: undefined };
@@ -104,7 +107,10 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     authSocket = await nativeReady(nativeListener, child, launch.auth);
     // The npm launcher may have forked native during its own initialization.
     if (protectedApp) await makeNativeFamilyKillable(child.pid!);
-    relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener);
+    if (options.executionSandbox) await nativeOwnerRequest(authSocket, "environment/info", { environmentId: "opencraft" }, 50_000);
+    relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener, options.executionSandbox ? {
+      requestPolicy: codexSandboxRequestPolicy(threadId => nativeOwnerRequest(authSocket!, "thread/read", {threadId, includeTurns: false})),
+    } : undefined);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");
     await chmod(nativeSocket, 0o600);

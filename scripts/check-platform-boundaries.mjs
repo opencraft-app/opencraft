@@ -122,6 +122,7 @@ const purePackageRules = [
 
 for (const directory of [
   "packages/appserver-protocol/src",
+  "packages/sandbox/src",
   "packages/document-storage/src/contract.ts",
   "packages/identity-core/src",
   "packages/access-control/src",

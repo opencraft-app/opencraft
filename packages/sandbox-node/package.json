@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/sandbox-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./systemd": "./src/systemd.ts",
+    "./runtime": "./src/runtime.ts",
+    "./command": "./src/command.ts",
+    "./engine": "./src/engine.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/sandbox": "0.1.0",
+    "node-pty": "1.1.0"
+  }
+}

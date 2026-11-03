@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/sandbox": "0.1.0",
     "@opencraft/plugin-tasks": "0.1.0",
     "@opencraft/document-storage": "0.1.0",
     "@opencraft/connector-host": "0.1.0",

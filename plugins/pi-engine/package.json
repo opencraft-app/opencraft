@@ -20,7 +20,8 @@
     "@opencraft/session-capabilities": "0.1.0",
     "pi-interactive-shell": "0.17.1",
     "proper-lockfile": "^4.1.2",
-    "@opencraft/model-usage-policy": "0.1.0"
+    "@opencraft/model-usage-policy": "0.1.0",
+    "@opencraft/sandbox-node": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

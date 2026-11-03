@@ -120,6 +120,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs', 'esm'],
       ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs', 'esm'],
       ['scripts/server-deployment/acp-host.mjs', 'acp-host.mjs', 'esm'],
+      ['scripts/server-deployment/sandbox-command.mjs', 'sandbox-command.mjs', 'esm'],
+      ['scripts/server-deployment/dsh-terminal-agent.mjs', 'dsh-terminal-agent.mjs', 'esm'],
     ]) {
       await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(packageRoot, 'execution', target),
         bundle: true, platform: 'node', format, target: 'node22', define:{...executionModuleOptions(format).define,'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
