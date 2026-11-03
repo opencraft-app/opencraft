@@ -1,3 +1,4 @@
+import { createPagePauseDiagnostics, type PagePauseDiagnostic } from "./page-pause-diagnostics";
 import { serverFetch, serverUrl } from "./server-context";
 import { observeEvent } from "./observability";
 import { MessagePortAppHostClient } from "@opencraft/app-host-client";
@@ -10,25 +11,47 @@ type AppHostFailure = "socket-error" | "socket-close" | "handshake-timeout" | "p
 
 export interface AppHostRecoveryEvents {
   isVisible(): boolean;
+  diagnosticContext?(): PagePauseDiagnostic;
   subscribe(listener: () => void): () => void;
 }
 
+const browserPagePause = createPagePauseDiagnostics();
+const recordedPageEvents = new WeakSet<Event>();
 const browserRecoveryEvents: AppHostRecoveryEvents = {
   isVisible: () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  diagnosticContext: () => browserPagePause.snapshot(),
   subscribe(listener) {
     if (typeof window === "undefined") return () => undefined;
-    window.addEventListener?.("online", listener);
-    window.addEventListener?.("pageshow", listener);
-    globalThis.document?.addEventListener("visibilitychange", listener);
+    const record = (event: Event) => {
+      if (recordedPageEvents.has(event)) return;
+      recordedPageEvents.add(event);
+      if (["freeze", "pagehide"].includes(event.type)
+        || (event.type === "visibilitychange" && document.visibilityState === "hidden")) browserPagePause.pause();
+      else if (event.type === "resume" || event.type === "pageshow"
+        || (event.type === "visibilitychange" && document.visibilityState !== "hidden"))
+        browserPagePause.resume(event.type === "pageshow" && (event as PageTransitionEvent).persisted === true);
+    };
+    const wake = (event: Event) => { record(event); listener(); };
+    if (globalThis.document?.visibilityState === "hidden") browserPagePause.pause();
+    window.addEventListener?.("online", wake);
+    window.addEventListener?.("pageshow", wake);
+    globalThis.document?.addEventListener("visibilitychange", wake);
+    // Extra lifecycle events add context only; recovery policy is unchanged.
+    window.addEventListener?.("pagehide", record);
+    globalThis.document?.addEventListener("freeze", record);
+    globalThis.document?.addEventListener("resume", record);
     return () => {
-      window.removeEventListener?.("online", listener);
-      window.removeEventListener?.("pageshow", listener);
-      globalThis.document?.removeEventListener("visibilitychange", listener);
+      window.removeEventListener?.("online", wake);
+      window.removeEventListener?.("pageshow", wake);
+      globalThis.document?.removeEventListener("visibilitychange", wake);
+      window.removeEventListener?.("pagehide", record);
+      globalThis.document?.removeEventListener("freeze", record);
+      globalThis.document?.removeEventListener("resume", record);
     };
   },
 };
 
-interface AppHostConnectionDiagnostic {
+interface AppHostConnectionDiagnostic extends PagePauseDiagnostic {
   attemptId: string;
   failure: AppHostFailure;
   phase: AppHostConnectionPhase;
@@ -63,6 +86,9 @@ function reportAppHostConnectionFailure(diagnostic: AppHostConnectionDiagnostic)
     ...(diagnostic.lastProbeRttMs === undefined ? {} : { lastProbeRttMs: diagnostic.lastProbeRttMs }),
     ...(diagnostic.timeoutMs === undefined ? {} : { transportTimeoutMs: diagnostic.timeoutMs }),
     ...(diagnostic.timerLateMs === undefined ? {} : { timerLateMs: diagnostic.timerLateMs }),
+    ...(diagnostic.pagePauseMs === undefined ? {} : { pagePauseMs: diagnostic.pagePauseMs }),
+    ...(diagnostic.pageResumeAgoMs === undefined ? {} : { pageResumeAgoMs: diagnostic.pageResumeAgoMs }),
+    ...(diagnostic.pageHiddenForMs === undefined ? {} : { pageHiddenForMs: diagnostic.pageHiddenForMs }),
     measurementScope: "connection" });
   console.info("[opencraft apphost failure]", diagnostic);
   if (typeof globalThis.fetch !== "function") return;
@@ -107,6 +133,7 @@ class WebSocketAppHostPort {
     private readonly reportFailure = reportAppHostConnectionFailure,
     private readonly probeTimeoutMs = 5_000,
     private readonly isVisible: () => boolean = () => true,
+    private readonly pageContext: () => PagePauseDiagnostic = () => ({}),
   ) {
     this.socket = createSocket(url);
     this.handshakeTimer = globalThis.setTimeout(() => {
@@ -225,6 +252,7 @@ class WebSocketAppHostPort {
         ...(this.probe === null ? {} : { probeElapsedMs: Math.max(0, Date.now() - this.probe.startedAt) }),
         ...(this.lastProbeRttMs === undefined ? {} : { lastProbeRttMs: this.lastProbeRttMs }),
         ...timing,
+        ...this.pageContext(),
         ...(closeCode === undefined ? {} : { closeCode }),
       });
     } catch { /* Diagnostics must never alter transport behavior. */ }
@@ -489,6 +517,7 @@ export function connectWebSocketAppHost(
             options.reportFailure ?? reportAppHostConnectionFailure,
             options.probeTimeoutMs ?? 5_000,
             () => events.isVisible(),
+            () => events.diagnosticContext?.() ?? {},
           );
           try { current = { port, client: new MessagePortAppHostClient(port, id) }; }
           catch (error) { port.close(); throw error; }

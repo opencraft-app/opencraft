@@ -241,7 +241,7 @@ export function appHostFrameRejection(message) {
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
 const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
-const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs"];
+const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs", "pagePauseMs", "pageResumeAgoMs", "pageHiddenForMs"];
 const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode", "visibility", "networkState", "wasClean", ...appHostDiagnosticNumbers]);
 
 const recoveryDiagnosticKeys = new Set(["kind", "recoveryId", "stage", "attemptId", "eventAtMs", "method", "elapsedMs", "attempt", "delayMs", "demand", "durationMs", "requests", "responseBytes", "projectionMs", "extraConversations", "nativeReads", "nativeEvents", "displayVersion", "messages", "timestamps", "workClocks", "authoritative", "cacheHit", "storageFailure", "renderedTimes", "visibleTimes", "touch", "viewportWidth"]);

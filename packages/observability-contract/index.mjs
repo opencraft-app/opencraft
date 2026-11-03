@@ -41,7 +41,7 @@ export function sanitizeEvent(input, now = Date.now()) {
   }
   if (!event.eventId || !event.producerId) return null;
   if(event.errorCode && !/^(?:rpc:-?\d{1,10}|none|initialize|thread-list|timeout|connection|not-ready|unavailable|unknown)$/u.test(event.errorCode))return null;
-  for (const key of ['socketBufferedBytes','lastMessageAgoMs','probeElapsedMs','lastProbeRttMs','transportTimeoutMs','timerLateMs']) if (input[key] !== undefined) {
+  for (const key of ['socketBufferedBytes','lastMessageAgoMs','probeElapsedMs','lastProbeRttMs','transportTimeoutMs','timerLateMs','pagePauseMs','pageResumeAgoMs','pageHiddenForMs']) if (input[key] !== undefined) {
     if (!Number.isSafeInteger(input[key]) || input[key] < 0) return null;
     event[key] = input[key];
   }

@@ -27,14 +27,14 @@ test('transport failure metadata survives sanitization without accepting error t
   const input=event({kind:'client_signal',clientSignal:'transport_failure',attemptId:'physical-1',
     transportFailure:'probe-timeout',transportPhase:'ready',networkState:'online',visibility:'hidden',
     socketReadyState:1,socketCloseCode:1006,socketWasClean:0,socketBufferedBytes:4096,
-    lastMessageAgoMs:26000,probeElapsedMs:26000,lastProbeRttMs:40,transportTimeoutMs:5000,timerLateMs:21000,
+    lastMessageAgoMs:26000,probeElapsedMs:26000,lastProbeRttMs:40,transportTimeoutMs:5000,timerLateMs:21000,pagePauseMs:94000,pageResumeAgoMs:30,pageHiddenForMs:1200,
     reason:'secret-url-canary',url:'secret-url-canary'});
   const value=sanitizeEvent(input,now);
-  assert(value);assert.equal(value.probeElapsedMs,26000);assert.equal(value.timerLateMs,21000);
+  assert(value);assert.equal(value.pagePauseMs,94000);assert.equal(value.pageResumeAgoMs,30);assert.equal(value.pageHiddenForMs,1200);assert.equal(value.probeElapsedMs,26000);assert.equal(value.timerLateMs,21000);
   assert.equal(value.transportFailure,'probe-timeout');assert.equal(value.socketCloseCode,1006);
   assert(!JSON.stringify(value).includes('canary'));
   for(const extra of [{transportFailure:'secret-url-canary'},{transportPhase:'secret'},{socketCloseCode:5000},
-    {socketReadyState:4},{socketWasClean:2},{timerLateMs:-1},{probeElapsedMs:1.5},{attemptId:undefined}])
+    {socketReadyState:4},{socketWasClean:2},{timerLateMs:-1},{pagePauseMs:-1},{pageResumeAgoMs:0.5},{pageHiddenForMs:-1},{probeElapsedMs:1.5},{attemptId:undefined}])
     assert.equal(sanitizeEvent({...input,...extra},now),null);
 });
 test('queue drops without blocking, retains bounds and accepts valid event after invalid',()=>{
