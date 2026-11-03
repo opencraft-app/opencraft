@@ -1,5 +1,5 @@
-import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 #!/usr/bin/env node
+import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
