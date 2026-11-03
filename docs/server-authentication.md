@@ -225,3 +225,29 @@ SQLite 升级遵循[生命周期契约](sqlite-lifecycle.md)。成员库追加 v
 自然人和 Session 可通过[主体协作接口](actor-collaboration-api.md)共用持久消息与显式 queue / steer 请求。登录成功或创建 Session 不授予这些动作；需要目标 Actor 的具体 grant，运行绑定由 registry 管理者设置。此接口未放开 Session bearer 对旧共享入口的访问，也不改变各产品账号或既有匿名策略。
 
 管理命令与服务启动共享安装 fence。运行 `human-account` 或 `access-admin` 前先停止同数据目录的 Headless Server；命令自动完成存量导入并操作统一核心库。原 `access-admin /absolute/memberships.sqlite ...` 参数保留为同目录兼容入口，不再写旧成员库。
+
+
+## Owner-published permission projections
+
+Repositories borrowing the fenced Server storage owner load a complete in-memory
+projection of Actor state, bindings, membership, credential validity metadata
+(excluding token digests), and grants. Delivery checks, including missing rows,
+read this projection without SQLite calls, version probes or read-through misses.
+Generation, expiration and provider-policy decisions remain live. Verified-login
+bootstrap and compatibility membership import run at request admission, not in
+repeated role checks.
+
+The synchronous permission writer marks all projections of its owner unavailable,
+commits or rolls back, stages fresh projections on the control path, then publishes
+them before returning. Failed refreshes reject reads; they never serve an older
+authorization view or fall back to SQL. Each projection admits at most 100,000
+entries and 32 MiB of serialized key/row data; overflow fails closed. Close releases
+rows and detaches the owner view. Asynchronous continuations read the current
+published projection rather than a retained authorization decision.
+
+This optimization relies on the existing exclusive Server writer: all live
+permission mutations use its store APIs. Offline management still stops the
+Server before opening its owner. Legacy string-path repositories with independent
+writers retain live SQLite reads; they cannot safely adopt this projection without
+one write owner or a synchronous invalidation channel. No timer, TTL or filesystem
+watch is used as an authorization freshness guarantee.
