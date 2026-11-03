@@ -8,6 +8,7 @@ class FakeSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   readyState = FakeSocket.CONNECTING;
+  bufferedAmount = 0;
   readonly sent: string[] = [];
   private readonly listeners = new Map<string, Set<(event: { data?: string; code?: number }) => void>>();
 
@@ -41,6 +42,54 @@ class RecoveryEvents implements AppHostRecoveryEvents {
   fire(visible = true) { this.visible = visible; for (const listener of this.listeners) listener(); }
 }
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("probe failure captures delayed timers, recent traffic and buffer without changing retirement", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  let now = 100_000;
+  context.mock.method(Date, "now", () => now);
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/private-path" } } });
+  const socket = new FakeSocket(), events = new RecoveryEvents();
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
+    recoveryEvents: events, reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
+  });
+  try {
+    const transport = client.createTransport("private-host"), connected = transport.connect();
+    await flush(); socket.open();
+    socket.receive({ type: "ready", protocolVersion: 2, services: ["appserver"], capabilities: { connectionProbe: true } });
+    await flush();
+    const connect = socket.sent.map(frame => JSON.parse(frame)).find(message => message.type === "host/connect");
+    socket.receive({ type: "response", requestId: connect.requestId, ok: true, result: { hostId: "private-host", generation: 1 } });
+    await connected;
+    events.fire();
+    const first = JSON.parse(socket.sent.at(-1)!);
+    now += 40;
+    socket.receive({ type: "response", requestId: first.requestId, ok: true, result: null });
+    events.fire();
+    socket.bufferedAmount = 4096;
+    now += 26_000;
+    context.mock.timers.tick(5_000);
+    assert.equal(transport.status.state, "failed");
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0]!.failure, "probe-timeout");
+    assert.equal(diagnostics[0]!.probeElapsedMs, 26_000);
+    assert.equal(diagnostics[0]!.timerLateMs, 21_000);
+    assert.equal(diagnostics[0]!.timeoutMs, 5_000);
+    assert.equal(diagnostics[0]!.lastMessageAgoMs, 26_000);
+    assert.equal(diagnostics[0]!.lastProbeRttMs, 40);
+    assert.equal(diagnostics[0]!.bufferedBytes, 4096);
+    assert.equal(diagnostics[0]!.visibility, "visible");
+    assert.equal(diagnostics[0]!.eventAtMs, now);
+    assert(!JSON.stringify(diagnostics).includes("private"));
+    context.mock.timers.tick(60_000);
+    assert.equal(diagnostics.length, 1, "retired port emits only one failure");
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});
 
 test("a visible mobile route is probed without browser wake events, once per shared socket", async context => {
   context.mock.timers.enable({ apis: ["setTimeout"] });
