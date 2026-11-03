@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import type { ThreadOrchestrationSnapshot } from '@opencraft/appserver-protocol/collaboration';
 import type { ParentNotification, WaitTicket } from './orchestration-ledger.js';
+import type { ExecutionRequestState } from './execution-request-state.js';
 
 export interface OrchestrationRuntimeStorage {
   observe(snapshot: ThreadOrchestrationSnapshot, now: number): Promise<void>;
@@ -50,6 +51,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
   pendingAcks():Promise<string[]>{return this.request('pendingAcks');}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
+  updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
   close():Promise<void>{
     return this.closing??=(async()=>{
       this.stopping=true;

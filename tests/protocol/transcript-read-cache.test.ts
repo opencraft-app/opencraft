@@ -103,7 +103,16 @@ test("a large Thread's queued hydration yields to another Thread", async t => {
       return [];
     },
   };
-  const cache = new TranscriptReadCache(root, port, { itemReadScheduler: new NativeItemReadScheduler(4) });
+  const scheduler = new NativeItemReadScheduler(4);
+  let resolveSmallQueued!: () => void;
+  const smallQueued = new Promise<void>(resolve => { resolveSmallQueued = resolve; });
+  const run = scheduler.run.bind(scheduler);
+  scheduler.run = (scope, signal, operation, onWait) => {
+    const result = run(scope, signal, operation, onWait);
+    if (scope === "small") resolveSmallQueued();
+    return result;
+  };
+  const cache = new TranscriptReadCache(root, port, { itemReadScheduler: scheduler });
   t.after(async () => { await cache.close(); await rm(root, { recursive: true, force: true }); });
   const largeRead = cache.read("large", largeTurns.length, undefined, "presentation");
   let smallRead: ReturnType<typeof cache.read> | undefined;
@@ -114,7 +123,7 @@ test("a large Thread's queued hydration yields to another Thread", async t => {
     smallRead = cache.read("small", 1, undefined, "presentation", undefined, (phase, _ms, context) => {
       if (phase === "context" && typeof context?.itemQueueMs === "number") smallItemQueueMs.push(context.itemQueueMs);
     });
-    await new Promise<void>(resolve => setImmediate(resolve));
+    await smallQueued;
 
     largeReleases.shift()!();
     while (largeStarted < 5) await new Promise<void>(resolve => setImmediate(resolve));
