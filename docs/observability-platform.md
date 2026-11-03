@@ -447,3 +447,14 @@ most eight unanswered observations, and reports those as `probe-abandoned` when
 the socket closes. Access rejection is reported as `probe-rejected`. Request IDs,
 message bodies, URLs, credentials, and raw errors are excluded. The sequence is
 generated locally rather than copied from the request.
+
+
+### Web 页面暂停诊断（2026-11-03）
+
+手机页面可随时隐藏、冻结或进入往返缓存；错误回调的前台/在线状态不能排除先前暂停。
+连接失败沿原有有界诊断补充 pagePauseMs（最近一次观察到的暂停区间）、
+pageResumeAgoMs（距观察到恢复的时间）、pageHiddenForMs（当前未结束区间）。
+只记录已观察的页面生命周期；未见起点的缓存恢复不补造暂停时长，缺字段不按零解释。
+这些 wall-clock 区间不代表网络可用性或操作系统实际冻结时长；最后消息时间是 JS 回调时间。
+同一页面的多个物理连接共用记录，重复生命周期通知不重置起点。
+新增 pagehide/freeze/resume 监听仅记诊断，不改变原有超时、恢复、授权或 Relay 回收策略。

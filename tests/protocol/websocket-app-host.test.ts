@@ -829,3 +829,45 @@ test("synchronous connecting observer can revoke before admission or socket allo
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
   }
 });
+
+
+test("mobile pause context survives two socket owners and a cache restore before foreground failure", async context => {
+  let now = 100_000;
+  context.mock.method(Date, "now", () => now);
+  const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const page = Object.assign(new EventTarget(), { visibilityState: "visible" });
+  const browser = Object.assign(new EventTarget(), { location: { href: "https://example.test/" } });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: browser });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: page });
+  const sockets = [new FakeSocket(), new FakeSocket()];
+  const reports: Array<Record<string, unknown>> = [];
+  const owners = sockets.map(socket => connectWebSocketAppHost(() => socket as unknown as WebSocket, {
+    reportFailure: diagnostic => reports.push({ ...diagnostic }),
+  }));
+  try {
+    const transports = owners.map(owner => owner.createTransport("local"));
+    const connecting = transports.map(transport => transport.connect().catch(() => undefined));
+    await flush();
+    page.visibilityState = "hidden"; page.dispatchEvent(new Event("visibilitychange"));
+    browser.dispatchEvent(new Event("pagehide"));
+    now += 94_000;
+    page.visibilityState = "visible";
+    const shown = new Event("pageshow"); Object.defineProperty(shown, "persisted", { value: true });
+    browser.dispatchEvent(shown);
+    now += 30;
+    for (const socket of sockets) socket.fail();
+    await Promise.all(connecting);
+    assert.equal(reports.length, 2);
+    for (const report of reports) {
+      assert.equal(report.visibility, "visible");
+      assert.equal(report.pagePauseMs, 94_000);
+      assert.equal(report.pageResumeAgoMs, 30);
+      assert.equal(report.pageHiddenForMs, undefined);
+    }
+  } finally {
+    for (const owner of owners) owner.close();
+    if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow); else Reflect.deleteProperty(globalThis, "window");
+    if (oldDocument) Object.defineProperty(globalThis, "document", oldDocument); else Reflect.deleteProperty(globalThis, "document");
+  }
+});

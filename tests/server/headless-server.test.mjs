@@ -600,14 +600,14 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
   assert.deepEqual(diagnostics.find(item => item.event === "client-failure"), { serverProtocolVersion: 2, event: "client-failure", ...valid });
   const timing = { ...valid, failure: "probe-timeout", phase: "ready", readyState: 1,
     eventAtMs: Date.now(), visibility: "hidden", networkState: "offline", bufferedBytes: 123,
-    lastMessageAgoMs: 26000, probeElapsedMs: 26000, lastProbeRttMs: 40, timeoutMs: 5000, timerLateMs: 21000, wasClean: 0 };
+    lastMessageAgoMs: 26000, probeElapsedMs: 26000, lastProbeRttMs: 40, timeoutMs: 5000, timerLateMs: 21000, pagePauseMs: 94000, pageResumeAgoMs: 30, pageHiddenForMs: 1200, wasClean: 0 };
   const sendDiagnostic = body => fetch(`${origin}/__opencraft_apphost_diagnostic`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
   assert.equal((await sendDiagnostic(timing)).status, 202);
   assert.deepEqual(diagnostics.filter(item => item.event === "client-failure").at(-1),
     { serverProtocolVersion: 2, event: "client-failure", ...timing });
-  for (const extra of [{ networkState: "private-network" }, { bufferedBytes: -1 }, { timerLateMs: 1.5 },
+  for (const extra of [{ networkState: "private-network" }, { bufferedBytes: -1 }, { timerLateMs: 1.5 }, { pagePauseMs: -1 }, { pageResumeAgoMs: 1.5 }, { pageHiddenForMs: -1 },
     { wasClean: 2 }, { visibility: "unknown" }, { reason: "private-error-canary" }])
     assert.equal((await sendDiagnostic({ ...timing, ...extra })).status, 400);
   const recovery = { kind: "recovery", recoveryId: "recovery-test-1", stage: "history-started", attemptId: attempts[1], eventAtMs: 1792411504000, elapsedMs: 830, requests: 2, responseBytes: 4150, projectionMs: 0.4, extraConversations: 0 };
