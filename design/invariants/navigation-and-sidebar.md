@@ -603,4 +603,4 @@ redeclaring those shared-control properties.
 
 ### Sidebar bottom action surfaces
 
-New chat, Applications and Settings use the shared integrated ghost button surface, including the mobile drawer. Their resting background is transparent and has no glass backdrop or shadow; shared focus, pressed and current-state feedback and Shell-owned hit areas remain.
+Touch New chat, Applications and Settings retain their separate floating glass surfaces above a full-height scrollport. The footer hosts remain transparent. Shell measures both hosts and reserves their maximum height as scroll content padding, including safe areas and stacked update notices, so final rows can scroll above the buttons. Desktop surfaces and shared feedback remain.

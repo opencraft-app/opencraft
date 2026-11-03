@@ -458,7 +458,7 @@ function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const intl = useIntl();
   const shell = useShellPresentation();
   const button = <Button type="button" size="navigation" variant="ghost" contentLayout="row"
-    surface="integrated"
+    surface={shell?.mobileSidebar ? "floating" : "integrated"}
     className="sidebar-new-chat" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
     onNewTask();
     shell?.dismissSidebarAfterSelection();
