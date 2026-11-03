@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
@@ -42,6 +43,7 @@ export function headlessWebHostDefinitions() {
 }
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
+  await buildTranscriptCacheRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));

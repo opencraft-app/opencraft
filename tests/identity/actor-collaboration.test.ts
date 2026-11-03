@@ -277,3 +277,34 @@ test('busy requests do not starve later admissions when timestamps are equal', a
   await f.service.pump(); assert.equal(f.inputs.length, 32);
   await f.service.pump(); assert.equal(f.inputs.length, 40);
 });
+
+test('stable execution polling performs no update, while each durable transition commits in the Worker', async t => {
+  let now=1000;
+  const f=await fixture(t,()=>now);
+  const sent=f.send({execution:{mode:'queue'}});
+  await f.service.pump();
+  const before=f.service.getRequest(f.aContext,sent.requestId!);
+  assert.equal(before.state,'queued');
+  const reader=new DatabaseSync(join(f.root,'collaboration.sqlite'),{readOnly:true});
+  t.after(()=>reader.close());
+  const version=reader.prepare('PRAGMA data_version').get()!.data_version;
+  const prepare=DatabaseSync.prototype.prepare;
+  let mainUpdates=0;
+  DatabaseSync.prototype.prepare=function(sql:string){
+    if(/^\s*UPDATE actor_execution_requests/u.test(sql)){mainUpdates++;throw Error('Execution observation wrote on the main thread');}
+    return prepare.call(this,sql);
+  };
+  try {
+    now=2000;
+    for(let i=0;i<20;i++)await f.service.pump();
+    assert.equal(f.service.getRequest(f.aContext,sent.requestId!).updated_at,before.updated_at);
+    assert.equal(reader.prepare('PRAGMA data_version').get()!.data_version,version);
+    f.receipts.set(sent.requestId!,{id:'queue:'+sent.requestId,state:'delivered',targetTurnId:'final-turn'});
+    await f.service.pump();
+    const after=f.service.getRequest(f.aContext,sent.requestId!);
+    assert.equal(after.state,'submitted');assert.equal(after.turn_id,'final-turn');assert.equal(after.updated_at,now);
+    assert.equal(mainUpdates,0);
+  } finally {DatabaseSync.prototype.prepare=prepare;}
+  await f.restart();
+  assert.equal(f.service.getRequest(f.aContext,sent.requestId!).state,'submitted');
+});

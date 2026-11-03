@@ -273,3 +273,26 @@ This isolates high-frequency observation storage. Existing foreground collaborat
 commands and the sweep's authorized notification-delivery/wait-settlement
 transactions still use the legacy owner and require subsequent migration. This
 change does not claim every gateway SQLite path is already off the main thread.
+
+Execution-request polling now sends durable state transitions through that same
+Worker. A stable `(state, reason, queue_id, turn_id)` observation is rejected in
+memory before submitting SQL; a conditional UPDATE also prevents timestamp/WAL
+churn if storage already has that state. The handoff still commits `transferring`
+before dispatch and `queued` before steer. Cancellation and audit transactions
+remain together in the foreground control path; this does not clear all existing
+synchronous collaboration reads or control transactions. A standalone file-backed
+Collaboration owns and drains its lazy child; the Server borrows the installation
+Worker and closes it before releasing the storage fence. Failure never falls back
+to synchronous polling writes.
+
+The native transcript cache also has a dedicated, lazy storage Worker. It owns
+index creation/migration/recovery, offsets, blob files, page decoding and cache
+transactions. Native metadata/projection RPCs and the shared item scheduler stay
+with their adapter; native source file probes and reads use asynchronous file
+ports. Per-Thread serialization, invalidation revisions, cursor expiry, source
+validation, cancellation and lossless full-item reads retain their existing
+contracts. Storage messages finish their transaction without awaiting a native
+RPC. Missing/corrupt disposable files can be reconstructed, while storage errors
+are surfaced without a synchronous fallback. Worker queues are bounded and close
+orders behind accepted storage operations. Headless, daemon and Desktop builds
+ship the storage Worker alongside their calling bundle.
