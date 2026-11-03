@@ -692,3 +692,15 @@ Waiting for HTTP EOF in that case misclassifies a client's normal close after
 `response.completed` as uncertain. The bounded parser preserves incomplete
 records and actual disconnect/read failures as unknown; non-SSE bodies continue
 unchanged to EOF. Historical unknown is never retroactively cleared.
+
+### Session tool preparation diagnostics
+
+Tool-preparation errors expose a bounded `error.data.stage`, `reason`, `nativeCode`
+and opaque `diagnosticId`. The displayed error includes the same stage/reason and
+reference ID as the `session-mcp-preparation-failed` Host diagnostic, which also
+identifies the Thread and input when available. Busy Threads report that the
+previous Turn is still active. Only controlled local failure reasons and known
+native status values are exposed; raw native exception text, credentials, MCP
+configuration and environment values are omitted. These diagnostics preserve
+missing/archived classification, recovery retryability and rejected-input semantics;
+they do not authorize automatic replay.

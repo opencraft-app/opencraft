@@ -134,6 +134,32 @@ interface SessionMcpCreation {
 class SessionMcpRecoveryPending extends Error {
   constructor() { super("The previous reply is recovering; input was not sent. Retry shortly."); }
 }
+type SessionMcpStage = "initial-preparation" | "resolve-tools" | "resolve-environment" | "read-thread"
+  | "check-idle" | "capture-settings" | "preserve-permissions" | "unsubscribe" | "wait-for-unload"
+  | "apply-tools" | "restore-settings" | "release-initial";
+class SessionMcpPreparationFailure extends Error {
+  readonly diagnosticId = randomUUID();
+  constructor(readonly stage: SessionMcpStage, cause: unknown, readonly threadId: string,
+    readonly inputId?: string, readonly nativeStatus?: string) {
+    super("Session tool preparation failed", { cause });
+  }
+}
+// Only controlled local messages become public reasons. Native error messages can
+// contain credentials, environment values or paths and never cross this boundary.
+function sessionMcpReason(cause: unknown): string {
+  if (cause instanceof SessionMcpRecoveryPending) return "reconfiguration-pending";
+  const message = cause instanceof Error ? cause.message : "";
+  switch (message) {
+    case "Wait until the Codex thread is idle before changing its tools": return "thread-busy";
+    case "Thread creation belongs to an expired connection":
+    case "Session tool preparation belongs to an expired connection": return "connection-expired";
+    case "Environment belongs to another account or project; start a new session": return "environment-owner-mismatch";
+    case "Environment variables require a Codex owner handoff": return "environment-handoff-required";
+    case "Session tools require an attested execution": return "execution-unattested";
+    case "Cannot preserve this Codex sandbox while refreshing tools": return "sandbox-unsupported";
+    default: return typeof record(cause).code === "number" ? "native-rpc-failed" : "preparation-failed";
+  }
+}
 interface SharedCodexRoutingOptions {
   readonly executionEnvironment?: ExecutionEnvironmentRuntime;
   /** Trusted Host composition. Never accepted from renderer requests. */
@@ -1395,9 +1421,6 @@ export class CodexEngineAdapter implements DuplexTransport {
             const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
             await this.prepareSessionMcp(threadId, inputId, executionId);
           } catch (cause) {
-            const recovering = cause instanceof SessionMcpRecoveryPending;
-            this.diagnostic({ event: "session-mcp-preparation-failed", category: recovering ? "recovering" : "unavailable",
-              nativeCode: typeof record(cause).code === "number" ? record(cause).code : null });
             this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
             return;
           }
@@ -3366,17 +3389,31 @@ export class CodexEngineAdapter implements DuplexTransport {
   // Confirmed configuration belongs to this physical connection. The in-flight
   // map only coalesces preparation; neither map is a configuration authority.
   private sessionMcpFailure(cause: unknown): RpcRecord {
-    const detail = record(cause);
-    const reason = threadUnavailableReason(new AppServerRpcError({ code: typeof detail.code === "number" ? detail.code : -32000,
-      message: errorMessage(cause), data: detail.data }));
-    const recovering = cause instanceof SessionMcpRecoveryPending;
-    return { code: reason === "archived" ? -32071 : reason ? -32600 : -32000,
-      message: reason ? "This conversation is unavailable; input was not sent."
-        : recovering ? cause.message : "Session tools are unavailable; input was not sent. Reconnect and retry.",
-      data: { code: reason === "archived" ? "THREAD_ARCHIVED" : reason ? "THREAD_NOT_FOUND"
+    const failure = cause instanceof SessionMcpPreparationFailure ? cause : null;
+    const original = failure ? failure.cause : cause;
+    const detail = record(original);
+    const unavailable = threadUnavailableReason(new AppServerRpcError({ code: typeof detail.code === "number" ? detail.code : -32000,
+      message: errorMessage(original), data: detail.data }));
+    const recovering = original instanceof SessionMcpRecoveryPending;
+    const reason = unavailable ? `thread-${unavailable}` : sessionMcpReason(original);
+    const stage = failure?.stage ?? "initial-preparation";
+    const diagnosticId = failure?.diagnosticId ?? randomUUID();
+    const nativeCode = typeof detail.code === "number" ? detail.code : null;
+    const diagnostic = { diagnosticId, stage, reason, nativeCode,
+      ...(failure?.nativeStatus ? { nativeStatus: failure.nativeStatus } : {}) };
+    this.diagnostic({ event: "session-mcp-preparation-failed", category: recovering ? "recovering" : "unavailable",
+      ...diagnostic, ...(failure ? { threadId: failure.threadId, inputId: failure.inputId } : {}) });
+    const message = unavailable ? "This conversation is unavailable; input was not sent."
+      : recovering ? original.message
+      : reason === "thread-busy" ? "The previous turn is still active; input was not sent. Wait for it to finish and retry."
+      : "Session tools are unavailable; input was not sent. Reconnect and retry.";
+    return { code: unavailable === "archived" ? -32071 : unavailable ? -32600 : -32000,
+      message: `${message} [${stage}/${reason}; ref ${diagnosticId}]`,
+      data: { code: unavailable === "archived" ? "THREAD_ARCHIVED" : unavailable ? "THREAD_NOT_FOUND"
         : recovering ? "SESSION_TOOLS_RECOVERING" : "SESSION_TOOLS_UNAVAILABLE",
-        submissionOutcome: "rejected", retryable: recovering } };
+        submissionOutcome: "rejected", retryable: recovering, ...diagnostic } };
   }
+
   private readonly sessionMcpCreations = new Map<string, SessionMcpCreation>();
   private readonly sessionMcpInitial = new Map<string, { reservation: SessionMcpCreation; inputId?: string }>();
   private readonly sessionMcpRetirements = new Map<string, RpcRecord>();
@@ -3463,6 +3500,13 @@ export class CodexEngineAdapter implements DuplexTransport {
     return { ...result, thread: { ...thread, turns: [], creationPhase: "created" } };
   }
   private async prepareSessionMcp(threadId: string, inputId?: string, executionId?: string): Promise<void> {
+    try { await this.prepareSessionMcpInternal(threadId, inputId, executionId); }
+    catch (cause) {
+      throw cause instanceof SessionMcpPreparationFailure ? cause
+        : new SessionMcpPreparationFailure("initial-preparation", cause, threadId, inputId);
+    }
+  }
+  private async prepareSessionMcpInternal(threadId: string, inputId?: string, executionId?: string): Promise<void> {
     if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment || this.ephemeralThreads.has(threadId)) return;
     let keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
     let initial = this.sessionMcpInitial.get(threadId);
@@ -3515,98 +3559,119 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async refreshSessionMcp(threadId: string, generation: number, inputId?: string, executionId?: string): Promise<void> {
-    const current = () => {
-      if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
-    };
-    const configuration = structuredClone(await this.options.sessionMcp?.(threadId, inputId, executionId) ?? null);
-    let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
-    if (environment && !await this.canInjectEnvironment(threadId)) {
-      if (environment.toJSON().configured) throw new Error("Environment variables require a Codex owner handoff");
-      environment = undefined;
-    }
-    if (environment) environment.apply(process.env);
-    current();
-    const previous = this.sessionMcpConfigurations.get(threadId);
-    if (!this.sessionMcpRetirements.has(threadId)
-      && (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined))
-      && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)) return;
-    const request = async (method: string, params: RpcRecord): Promise<unknown> => {
+    let stage: SessionMcpStage = "resolve-tools";
+    let nativeStatus: string | undefined;
+    try {
+      const current = () => {
+        if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
+      };
+      stage = "resolve-tools";
+      const configuration = structuredClone(await this.options.sessionMcp?.(threadId, inputId, executionId) ?? null);
+      stage = "resolve-environment";
+      let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+      if (environment && !await this.canInjectEnvironment(threadId)) {
+        if (environment.toJSON().configured) throw new Error("Environment variables require a Codex owner handoff");
+        environment = undefined;
+      }
+      if (environment) environment.apply(process.env);
       current();
-      const result = await this.requestPhysical(method, params);
-      current();
-      return result;
-    };
-    const read = record(await request("thread/read", { threadId, includeTurns: false }));
-    const thread = record(read.thread);
-    if (thread.ephemeral === true) {
-      this.ephemeralThreads.add(threadId);
-      return;
-    }
-    let status = string(record(thread.status).type);
-    if (!["idle", "systemError", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
-    this.cancelNativeRelease(threadId);
-    const retirement = this.sessionMcpRetirements.get(threadId);
-    const waitForUnload = async () => {
-      // Native unsubscribe releases a subscription, not the Thread runtime.
-      // Keep this admitted input in preparation while native's retirement runs;
-      // never resubmit input or reattach the old runtime to poll readiness.
-      if (!this.options.executionEnvironment) {
-        const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
-        status = string(record(record(snapshot.thread).status).type);
-        if (status !== "notLoaded") throw new SessionMcpRecoveryPending();
+      const previous = this.sessionMcpConfigurations.get(threadId);
+      if (!this.sessionMcpRetirements.has(threadId)
+        && (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined))
+        && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)) return;
+      const request = async (method: string, params: RpcRecord): Promise<unknown> => {
+        current();
+        const result = await this.requestPhysical(method, params);
+        current();
+        return result;
+      };
+      stage = "read-thread";
+      const read = record(await request("thread/read", { threadId, includeTurns: false }));
+      const thread = record(read.thread);
+      if (thread.ephemeral === true) {
+        this.ephemeralThreads.add(threadId);
         return;
       }
-      const deadline = Date.now() + 90_000;
-      while (status !== "notLoaded") {
-        current();
-        if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
-        await new Promise<void>(resolve => setTimeout(resolve, 250));
-        const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
-        status = string(record(record(snapshot.thread).status).type);
-        if (!["idle", "systemError", "notLoaded"].includes(status)) throw new SessionMcpRecoveryPending();
+      stage = "check-idle";
+      let status = string(record(thread.status).type);
+      nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+      if (!["idle", "systemError", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
+      this.cancelNativeRelease(threadId);
+      const retirement = this.sessionMcpRetirements.get(threadId);
+      const waitForUnload = async () => {
+        stage = "wait-for-unload";
+        // Native unsubscribe releases a subscription, not the Thread runtime.
+        // Keep this admitted input in preparation while native's retirement runs;
+        // never resubmit input or reattach the old runtime to poll readiness.
+        if (!this.options.executionEnvironment) {
+          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
+          status = string(record(record(snapshot.thread).status).type);
+          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+          if (status !== "notLoaded") throw new SessionMcpRecoveryPending();
+          return;
+        }
+        const deadline = Date.now() + 90_000;
+        while (status !== "notLoaded") {
+          current();
+          if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
+          await new Promise<void>(resolve => setTimeout(resolve, 250));
+          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
+          status = string(record(record(snapshot.thread).status).type);
+          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+          if (!["idle", "systemError", "notLoaded"].includes(status)) throw new SessionMcpRecoveryPending();
+        }
+      };
+      if (retirement && status !== "notLoaded") await waitForUnload();
+      stage = "capture-settings";
+      const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
+      const resume: RpcRecord = {};
+      for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
+        if (live[key] !== undefined) resume[key] = live[key];
+      stage = "preserve-permissions";
+      const profile = string(record(live.activePermissionProfile).id);
+      if (profile) resume.permissions = profile;
+      else {
+        const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
+        if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
+        if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
       }
-    };
-    if (retirement && status !== "notLoaded") await waitForUnload();
-    const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
-    const resume: RpcRecord = {};
-    for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
-      if (live[key] !== undefined) resume[key] = live[key];
-    const profile = string(record(live.activePermissionProfile).id);
-    if (profile) resume.permissions = profile;
-    else {
-      const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
-      if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
-      if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
+      // Once native configuration can change, the old confirmation is no longer
+      // valid either. A partial failure must not make a later rollback look applied.
+      this.sessionMcpConfigurations.delete(threadId);
+      if (status !== "notLoaded") {
+        this.sessionMcpRetirements.set(threadId, live);
+        stage = "unsubscribe";
+        await request("thread/unsubscribe", { threadId });
+        this.nativeSubscribedThreads.delete(threadId);
+        await waitForUnload();
+      }
+      stage = "apply-tools";
+      await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
+        "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
+        ...(environment ? { 'shell_environment_policy.set': environment.overlay() } : {}),
+      } });
+      this.sessionMcpRetirements.delete(threadId);
+      if (Object.keys(live).length) {
+        const settings: RpcRecord = { threadId };
+        if (profile) settings.permissions = profile;
+        else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
+        for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
+          if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
+        if (live.reasoningEffort) settings.effort = live.reasoningEffort;
+        stage = "restore-settings";
+        await request("thread/settings/update", settings);
+      }
+      this.sessionMcpConfigurations.set(threadId, configuration);
+      if (environment) this.executionEnvironments.set(threadId, environment);
+      this.sessionMcpRetirements.delete(threadId);
+      stage = "release-initial";
+      this.sessionMcpInitial.get(threadId)?.reservation.cancel();
+      this.sessionMcpInitial.delete(threadId);
+    } catch (cause) {
+      throw new SessionMcpPreparationFailure(stage, cause, threadId, inputId, nativeStatus);
     }
-    // Once native configuration can change, the old confirmation is no longer
-    // valid either. A partial failure must not make a later rollback look applied.
-    this.sessionMcpConfigurations.delete(threadId);
-    if (status !== "notLoaded") {
-      this.sessionMcpRetirements.set(threadId, live);
-      await request("thread/unsubscribe", { threadId });
-      this.nativeSubscribedThreads.delete(threadId);
-      await waitForUnload();
-    }
-    await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
-      "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
-      ...(environment ? { 'shell_environment_policy.set': environment.overlay() } : {}),
-    } });
-    this.sessionMcpRetirements.delete(threadId);
-    if (Object.keys(live).length) {
-      const settings: RpcRecord = { threadId };
-      if (profile) settings.permissions = profile;
-      else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
-      for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
-        if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
-      if (live.reasoningEffort) settings.effort = live.reasoningEffort;
-      await request("thread/settings/update", settings);
-    }
-    this.sessionMcpConfigurations.set(threadId, configuration);
-    if (environment) this.executionEnvironments.set(threadId, environment);
-    this.sessionMcpRetirements.delete(threadId);
-    this.sessionMcpInitial.get(threadId)?.reservation.cancel();
-    this.sessionMcpInitial.delete(threadId);
   }
+
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
     if (message.method === "thread/fork") {
       const params = record(message.params);
