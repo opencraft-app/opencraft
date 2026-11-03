@@ -1,3 +1,4 @@
+import { withPermissionReads } from "./permission-read-cache.js";
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Principal } from '@opencraft/identity-core';
 import type { IdentityRequest } from '@opencraft/identity-core/node';
@@ -35,8 +36,10 @@ export class ActorAccess {
     return entry.context && this.current(entry.context, entry.principal) ? entry.context : null;
   }
   private current(context: ActorContext, principal: Principal | null) {
-    return this.store.isCurrent(context) && (!principal || (principal.expiresAt > this.store.now()
-      && (this.options.isHumanCurrent?.(principal) ?? true) && this.options.admitted(principal)));
+    return withPermissionReads(() => {
+      return this.store.isCurrent(context) && (!principal || (principal.expiresAt > this.store.now()
+        && (this.options.isHumanCurrent?.(principal) ?? true) && this.options.admitted(principal)));
+    });
   }
   /** Current authority without retaining an HTTP request or its credential headers. */
   lease(request: IdentityRequest): { readonly context: ActorContext; isCurrent(): boolean } | null {

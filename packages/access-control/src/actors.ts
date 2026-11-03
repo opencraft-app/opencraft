@@ -1,3 +1,4 @@
+import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -37,6 +38,7 @@ export class ActorStore {
   /** Trusted local resource adapters only; registration confers no grants. */
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
   readonly #db: DatabaseSync;
+  readonly #readCache: PermissionReadCache;
   readonly authority: string;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
@@ -44,6 +46,7 @@ export class ActorStore {
     const managed = openServerRepository(path, "actors");
     this.#closeDatabase = managed.close;
     this.#db = managed.database;
+    this.#readCache = new PermissionReadCache(this.#db, typeof path === "string" ? this.#db : path.database);
     this.outcome = managed.outcome;
     this.#db.exec('PRAGMA foreign_keys=ON');
     this.#db.prepare('INSERT OR IGNORE INTO actor_authority(singleton,id) VALUES(1,?)').run(randomUUID());
@@ -51,17 +54,18 @@ export class ActorStore {
   }
   get managementResource() { return `actor-registry://${this.authority}`; }
   get(id: string): Actor | null {
-    const row = this.#db.prepare('SELECT * FROM actors WHERE id=?').get(id);
+    const row = this.#readCache.get(JSON.stringify(['actor',id]), () => this.#db.prepare('SELECT * FROM actors WHERE id=?').get(id));
     return row ? actor(row) : null;
   }
   list(): Actor[] { return this.#db.prepare('SELECT * FROM actors ORDER BY created_at,id').all().map(actor); }
   /** Lookup only: an unrecognized verified identity is not registered by a read. */
   findHuman(verified: Pick<Principal, 'provider' | 'subject'>): Actor | null {
-    const row = this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(principalKey(verified));
+    const binding = principalKey(verified);
+    const row = this.#readCache.get(JSON.stringify(['binding',binding]), () => this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(binding));
     return row ? this.get(row.actor_id as string) : null;
   }
   bindings(actorId: string): Pick<Principal, 'provider' | 'subject'>[] {
-    return this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId)
+    return this.#readCache.get(JSON.stringify(['bindings',actorId]), () => this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId))
       .map(row => { const [provider, subject] = JSON.parse(row.binding as string); return { provider, subject }; });
   }
   /** Both arguments must come from trusted, independently verified authentication. */
@@ -89,7 +93,7 @@ export class ActorStore {
       this.#audit(owner.actorId, owner.actorId, 'unbind-identity', principalKey(binding));
     });
   }
-  #transaction<T>(run: () => T): T { return sqliteTransaction(this.#db, run); }
+  #transaction<T>(run: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, run)); }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')
@@ -202,7 +206,7 @@ export class ActorStore {
         .get(actorId, resource, action);
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
+  close() { this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {

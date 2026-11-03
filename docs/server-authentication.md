@@ -225,3 +225,24 @@ SQLite 升级遵循[生命周期契约](sqlite-lifecycle.md)。成员库追加 v
 自然人和 Session 可通过[主体协作接口](actor-collaboration-api.md)共用持久消息与显式 queue / steer 请求。登录成功或创建 Session 不授予这些动作；需要目标 Actor 的具体 grant，运行绑定由 registry 管理者设置。此接口未放开 Session bearer 对旧共享入口的访问，也不改变各产品账号或既有匿名策略。
 
 管理命令与服务启动共享安装 fence。运行 `human-account` 或 `access-admin` 前先停止同数据目录的 Headless Server；命令自动完成存量导入并操作统一核心库。原 `access-admin /absolute/memberships.sqlite ...` 参数保留为同目录兼容入口，不再写旧成员库。
+
+
+## Versioned permission read snapshots
+
+Server permission checks cache raw Actor, identity-binding, membership
+rows, including missing rows, in bounded per-repository LRU maps (1024
+entries). They never cache an authorization decision, credential proof or clock
+expiration. Each synchronous admission or message-projection scope validates
+`data_version`, `schema_version` and `total_changes()` before reusing rows; Actor
+and membership repositories borrowing one Server connection share that fence.
+The markers are captured before reading rows, so a concurrent commit invalidates
+the next scope. A scope defines one synchronous permission-read snapshot; it
+ends before a returned Promise resumes. Reads outside a scope remain live.
+
+Permission writes clear enclosing scope markers before and after mutation.
+Transactions bypass and invalidate cached rows, including reads later rolled
+back; close releases rows and prevents reuse. Another connection's committed
+changes are observed at the next admission/projection boundary, with no TTL or
+polling delay. Generation, expiration, provider policy and credential revocation
+checks still execute at their existing authority boundaries. This is a read
+optimization, not a new grant, persistent permission snapshot or replay owner.
