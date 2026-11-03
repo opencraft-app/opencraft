@@ -1,4 +1,5 @@
 import { serverFetch, serverUrl } from "./server-context";
+import { observeEvent } from "./observability";
 import { MessagePortAppHostClient } from "@opencraft/app-host-client";
 import type { RendererToAppHostMessage } from "@opencraft/app-host-protocol";
 import { captureTransportMessageScope, ClientObserverList, TransportStatusObservers } from "@opencraft/appserver-client/transport";
@@ -34,9 +35,36 @@ interface AppHostConnectionDiagnostic {
   readyState: number;
   ageMs: number;
   closeCode?: number;
+  eventAtMs: number;
+  visibility: "visible" | "hidden";
+  networkState: "online" | "offline" | "unknown";
+  bufferedBytes: number;
+  wasClean?: 0 | 1;
+  lastMessageAgoMs?: number;
+  probeElapsedMs?: number;
+  lastProbeRttMs?: number;
+  timeoutMs?: number;
+  timerLateMs?: number;
 }
 
 function reportAppHostConnectionFailure(diagnostic: AppHostConnectionDiagnostic): void {
+  // The queued observation survives temporary disconnection and is attributable
+  // to the same producer/physical attempt as recovery events. No error text/URL.
+  observeEvent({ kind: "client_signal", clientSignal: "transport_failure", outcome: "failed",
+    attemptId: diagnostic.attemptId, at: diagnostic.eventAtMs,
+    transportFailure: diagnostic.failure, transportPhase: diagnostic.phase,
+    socketReadyState: diagnostic.readyState, durationMs: diagnostic.ageMs,
+    visibility: diagnostic.visibility, networkState: diagnostic.networkState,
+    socketBufferedBytes: diagnostic.bufferedBytes,
+    ...(diagnostic.closeCode === undefined ? {} : { socketCloseCode: diagnostic.closeCode }),
+    ...(diagnostic.wasClean === undefined ? {} : { socketWasClean: diagnostic.wasClean }),
+    ...(diagnostic.lastMessageAgoMs === undefined ? {} : { lastMessageAgoMs: diagnostic.lastMessageAgoMs }),
+    ...(diagnostic.probeElapsedMs === undefined ? {} : { probeElapsedMs: diagnostic.probeElapsedMs }),
+    ...(diagnostic.lastProbeRttMs === undefined ? {} : { lastProbeRttMs: diagnostic.lastProbeRttMs }),
+    ...(diagnostic.timeoutMs === undefined ? {} : { transportTimeoutMs: diagnostic.timeoutMs }),
+    ...(diagnostic.timerLateMs === undefined ? {} : { timerLateMs: diagnostic.timerLateMs }),
+    measurementScope: "connection" });
+  console.info("[opencraft apphost failure]", diagnostic);
   if (typeof globalThis.fetch !== "function") return;
   try {
     void serverFetch("/__opencraft_apphost_diagnostic", {
@@ -58,8 +86,10 @@ class WebSocketAppHostPort {
   private closed = false;
   private socketCloseAccepted = false;
   private supportsProbe = false;
+  private lastMessageAt: number | undefined;
+  private lastProbeRttMs: number | undefined;
   private probeSequence = 0;
-  private probe: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  private probe: { id: string; startedAt: number; timer: ReturnType<typeof setTimeout> } | null = null;
 
   failureDiagnostic: TransportFailureDiagnostic | undefined;
 
@@ -80,7 +110,8 @@ class WebSocketAppHostPort {
   ) {
     this.socket = createSocket(url);
     this.handshakeTimer = globalThis.setTimeout(() => {
-      this.fail("App Host handshake timed out", "handshake-timeout");
+      this.fail("App Host handshake timed out", "handshake-timeout", undefined, undefined,
+        { timeoutMs: handshakeTimeoutMs, timerLateMs: Math.max(0, Date.now() - this.startedAt - handshakeTimeoutMs) });
     }, handshakeTimeoutMs);
     this.socket.addEventListener("open", () => {
       if (this.closed) return;
@@ -89,6 +120,7 @@ class WebSocketAppHostPort {
     });
     this.socket.addEventListener("message", event => {
       if (this.closed) return;
+      this.lastMessageAt = Date.now();
       try {
         const message = JSON.parse(String(event.data));
         if (message?.type === "ready") {
@@ -96,7 +128,9 @@ class WebSocketAppHostPort {
           this.supportsProbe = message.capabilities?.connectionProbe === true;
           this.clearHandshakeTimer();
         }
-        if (message?.type === "response" && message.requestId === this.probe?.id && message.ok === true) {
+        const probe = this.probe;
+        if (probe && message?.type === "response" && message.requestId === probe.id && message.ok === true) {
+          this.lastProbeRttMs = Math.max(0, Date.now() - probe.startedAt);
           this.cancelProbe();
           return;
         }
@@ -105,7 +139,7 @@ class WebSocketAppHostPort {
       catch { this.fail("Invalid App Host response", "invalid-response"); }
     });
     this.socket.addEventListener("close", event => {
-      if (!this.closed) this.fail("App Host connection closed", "socket-close", event.code);
+      if (!this.closed) this.fail("App Host connection closed", "socket-close", event.code, event.wasClean);
     });
     this.socket.addEventListener("error", () => this.fail("App Host connection failed", "socket-error"));
   }
@@ -131,13 +165,14 @@ class WebSocketAppHostPort {
   probeReachability(): void {
     if (this.closed || !this.supportsProbe || this.phase !== "ready" || this.probe !== null || !this.isVisible()) return;
     const id = `${this.attemptId}:probe:${++this.probeSequence}`;
+    const startedAt = Date.now();
     const timer = globalThis.setTimeout(() => {
       if (this.closed || this.probe?.id !== id) return;
-      this.probe = null;
-      if (!this.isVisible()) return;
-      this.fail("App Host reachability probe timed out", "probe-timeout");
+      if (!this.isVisible()) { this.probe = null; return; }
+      this.fail("App Host reachability probe timed out", "probe-timeout", undefined, undefined,
+        { timeoutMs: this.probeTimeoutMs, timerLateMs: Math.max(0, Date.now() - startedAt - this.probeTimeoutMs) });
     }, this.probeTimeoutMs);
-    this.probe = { id, timer };
+    this.probe = { id, timer, startedAt };
     try { this.postMessage({ type: "connection/probe", requestId: id }); }
     catch { this.fail("App Host connection failed", "socket-error"); }
   }
@@ -166,7 +201,8 @@ class WebSocketAppHostPort {
     for (const listener of this.listeners) listener(event);
   }
 
-  private fail(message: string, failure: AppHostFailure, closeCode?: number): void {
+  private fail(message: string, failure: AppHostFailure, closeCode?: number, wasClean?: boolean,
+    timing: { timeoutMs: number; timerLateMs: number } | undefined = undefined): void {
     if (this.closed) return;
     this.failureDiagnostic = {
       attemptId: this.attemptId, occurredAt: new Date().toISOString(),
@@ -180,6 +216,15 @@ class WebSocketAppHostPort {
         phase: this.phase,
         readyState: this.socket.readyState,
         ageMs: Math.max(0, Date.now() - this.startedAt),
+        eventAtMs: Date.now(), visibility: this.isVisible() ? "visible" : "hidden",
+        networkState: typeof navigator === "undefined" || typeof navigator.onLine !== "boolean"
+          ? "unknown" : navigator.onLine ? "online" : "offline",
+        bufferedBytes: this.socket.bufferedAmount ?? 0,
+        ...(wasClean === undefined ? {} : { wasClean: wasClean ? 1 as const : 0 as const }),
+        ...(this.lastMessageAt === undefined ? {} : { lastMessageAgoMs: Math.max(0, Date.now() - this.lastMessageAt) }),
+        ...(this.probe === null ? {} : { probeElapsedMs: Math.max(0, Date.now() - this.probe.startedAt) }),
+        ...(this.lastProbeRttMs === undefined ? {} : { lastProbeRttMs: this.lastProbeRttMs }),
+        ...timing,
         ...(closeCode === undefined ? {} : { closeCode }),
       });
     } catch { /* Diagnostics must never alter transport behavior. */ }

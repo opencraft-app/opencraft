@@ -14,7 +14,12 @@ export const origins = ['interactive', 'automation', 'operator', 'probe', 'unkno
 const id = /^[a-zA-Z0-9_.:-]{1,128}$/u;
 const revision = /^[a-zA-Z0-9_.:+-]{1,128}$/u;
 const ids = ['eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
-const enums = { lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
+const enums = {
+  clientSignal: ['transport_failure','rpc_loop_gap','catalog_query','visible','hidden','freeze','resume','pagehide','pageshow','online','offline','timer_gap','longtask','late_response'],
+  transportFailure: ['socket-error','socket-close','handshake-timeout','probe-timeout','invalid-response'],
+  transportPhase: ['connecting','socket-open','ready'], networkState: ['online','offline','unknown'],
+  socketReadyState: [0,1,2,3], socketWasClean: [0,1],
+ lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
   measurementScope: ['navigation','in_page','rpc','domain','process','client','connection'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
@@ -36,6 +41,15 @@ export function sanitizeEvent(input, now = Date.now()) {
   }
   if (!event.eventId || !event.producerId) return null;
   if(event.errorCode && !/^(?:rpc:-?\d{1,10}|none|initialize|thread-list|timeout|connection|not-ready|unavailable|unknown)$/u.test(event.errorCode))return null;
+  for (const key of ['socketBufferedBytes','lastMessageAgoMs','probeElapsedMs','lastProbeRttMs','transportTimeoutMs','timerLateMs']) if (input[key] !== undefined) {
+    if (!Number.isSafeInteger(input[key]) || input[key] < 0) return null;
+    event[key] = input[key];
+  }
+  if (input.socketCloseCode !== undefined) {
+    if (!Number.isSafeInteger(input.socketCloseCode) || input.socketCloseCode < 0 || input.socketCloseCode > 4999) return null;
+    event.socketCloseCode = input.socketCloseCode;
+  }
+  if (event.clientSignal === 'transport_failure' && (!event.attemptId || !event.transportFailure || !event.transportPhase)) return null;
   for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs','lastSuccessAt','consecutiveFailures']) if (input[key] !== undefined) {
     if (!Number.isFinite(input[key]) || input[key] < 0 || input[key] > Number.MAX_SAFE_INTEGER) return null;
     event[key] = input[key];

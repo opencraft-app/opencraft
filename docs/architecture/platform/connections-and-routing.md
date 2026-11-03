@@ -364,6 +364,24 @@ localized unknown label.
 
 ### Local connection diagnostic propagation
 
+Web AppHost failures also enter the bounded client observation queue as
+`client_signal/transport_failure`. The physical `attemptId`, original event time,
+failure kind and phase correlate with recovery; ingress applies the existing
+per-producer pseudonyms and verified actor attribution. A hidden-page failure
+retains its original visibility when uploaded after return. The legacy diagnostic
+POST and browser console remain available; a failed POST does not discard the
+queued observation. Queue bounds and retention still apply, so delivery is best effort.
+
+Failure snapshots include socket state/close code/clean-close flag when known,
+buffered bytes, time since the last received message, last successful probe RTT,
+pending probe elapsed time, configured deadline and timer lateness, page visibility
+and the browser's online hint. Timings are local wall-clock observations, not proof
+of network reachability, browser suspension or server processing time. A probe
+timeout means no matching successful probe reply was processed by the deadline;
+it does not identify the underlying cause. No URLs, close reasons, exception text,
+message bodies or credentials are reported. Diagnostics do not change readiness,
+timeouts, reconnect ownership or replay permissions.
+
 TransportFailureDisposition optionally carries immutable, locally generated
 connection diagnostic metadata. The browser renewable lease captures its exact
 WebSocket port when acquiring the lease, so a successor cannot replace the old

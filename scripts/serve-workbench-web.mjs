@@ -241,7 +241,8 @@ export function appHostFrameRejection(message) {
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
 const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
-const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode"]);
+const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs"];
+const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode", "visibility", "networkState", "wasClean", ...appHostDiagnosticNumbers]);
 
 const recoveryDiagnosticKeys = new Set(["kind", "recoveryId", "stage", "attemptId", "eventAtMs", "method", "elapsedMs", "attempt", "delayMs", "demand", "durationMs", "requests", "responseBytes", "projectionMs", "extraConversations", "nativeReads", "nativeEvents", "displayVersion", "messages", "timestamps", "workClocks", "authoritative", "cacheHit", "storageFailure", "renderedTimes", "visibleTimes", "touch", "viewportWidth"]);
 const recoveryStages = new Set(["display-load", "display-save", "display-paint", "transport-unavailable", "manual-block", "waiting", "backoff", "connecting", "initializing", "host-ready", "resources", "revalidate", "provider-history", "history-started", "history-backoff", "request-slow", "request-failed", "history-authoritative", "history-failed", "history-authoritative-failed", "capability-ready", "capability-ready-failed", "replica-ready", "replica-ready-failed", "settled"]);
@@ -279,7 +280,11 @@ function validAppHostDiagnostic(report) {
     && appHostFailureKinds.has(report.failure)
     && appHostPhases.has(report.phase)
     && Number.isInteger(report.readyState) && report.readyState >= 0 && report.readyState <= 3
-    && Number.isInteger(report.ageMs) && report.ageMs >= 0 && report.ageMs <= 86_400_000
+    && Number.isSafeInteger(report.ageMs) && report.ageMs >= 0
+    && appHostDiagnosticNumbers.every(key => report[key] === undefined || (Number.isSafeInteger(report[key]) && report[key] >= 0))
+    && (report.visibility === undefined || ["visible", "hidden"].includes(report.visibility))
+    && (report.networkState === undefined || ["online", "offline", "unknown"].includes(report.networkState))
+    && (report.wasClean === undefined || [0, 1].includes(report.wasClean))
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
@@ -677,9 +682,8 @@ export async function createWorkbenchWebServer({
           sendJson(response, 400, { ok: false, error: "Invalid App Host diagnostic" });
           return;
         }
-        emitAppHostDiagnostic({ event: "client-failure", attemptId: report.attemptId,
-          failure: report.failure, phase: report.phase, readyState: report.readyState,
-          ageMs: report.ageMs, ...(report.closeCode === undefined ? {} : { closeCode: report.closeCode }) });
+        // The closed validator above permits only local transport metadata.
+        emitAppHostDiagnostic({ event: "client-failure", ...report });
         sendJson(response, 202, { ok: true });
         return;
       }
