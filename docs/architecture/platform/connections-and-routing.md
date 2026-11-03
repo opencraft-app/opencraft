@@ -170,8 +170,12 @@ owns one five-second observation timer shared by its Host leases. It probes the
 current physical route through the existing negotiated `connection/probe`
 capability and reports recovery hints to the existing Host connection owners.
 This covers mobile network stalls and recovery without browser online or
-visibility events. A pending probe keeps its original five-second deadline;
-ticks do not extend it or allocate sockets. The Host owner retains retry
+visibility events. The five-second observation cadence is independent of liveness: a probe allows
+60 seconds without a complete application message, extending for recent valid
+messages up to a five-minute missing-reply ceiling. Ticks neither replace a
+pending probe nor allocate sockets. Browser JS cannot see partial frames or
+native Pong; the quiet allowance accommodates fragmented slow delivery and is
+not a universal guarantee for arbitrarily slow or large messages. The Host owner retains retry
 escalation, validation admission, active-attempt coalescing and manual blocks.
 Only the factory/port may retire its physical socket; probe success grants no
 Host or Thread authority. Hiding the page cancels the timer and probe; the last
@@ -517,3 +521,28 @@ Retired completion cleanup cannot clear the successor's operation, and Host
 removal still fences both completions by registry record identity. This applies
 to mouse and touch conversation selection without changing retry budgets,
 Thread authority, persisted drafts or server execution ownership.
+
+### WebSocket slow delivery and control-frame credit
+
+Web AppHost outbound messages preserve their standard text payload and FIFO
+order, using 16 KiB native continuation frames. Browser WebSocket reassembles
+UTF-8 before delivering one message; no application envelope or replay is added.
+A socket-owned sender admits at most 1024 messages / 128 MiB and requires a
+matching native Pong after every 256 KiB before sending more application bytes.
+The nonce is independent of heartbeat tokens. Local send callbacks only indicate
+local completion; native Pong bounds outstanding data across transparent proxies.
+This window trades maximum high-RTT throughput for bounded control-frame delay;
+small messages share accumulated credit, so many small responses cannot bypass it.
+Missing credit for 60 seconds terminates the socket and settles queued callbacks;
+authorization, unknown delivery outcomes and RPC deadlines retain their owners.
+
+Native heartbeat permits four intervals after local flush (normally 60 seconds).
+Incoming TCP activity, including partial frames, defers expiry up to twenty
+intervals (normally five minutes) without a matching Pong. ws still validates
+framing and closes invalid input. Receive activity is progress, not proof that
+requests or both directions work. Listener and timer ownership ends on close.
+Relay duplex retains stream backpressure and splits outgoing byte writes into
+16 KiB complete outer messages, so reassembly of an outer message cannot retain
+a huge inner message. This does not reorder inner bytes. Standalone relay builds
+need separate managed activation; package installation alone does not update them.
+The independent relay connection lifetime and all admission checks are unchanged.

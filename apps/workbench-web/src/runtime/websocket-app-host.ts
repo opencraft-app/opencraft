@@ -131,7 +131,7 @@ class WebSocketAppHostPort {
     createSocket: (url: string) => WebSocket = value => new WebSocket(value),
     handshakeTimeoutMs = 10_000,
     private readonly reportFailure = reportAppHostConnectionFailure,
-    private readonly probeTimeoutMs = 5_000,
+    private readonly probeTimeoutMs = 60_000,
     private readonly isVisible: () => boolean = () => true,
     private readonly pageContext: () => PagePauseDiagnostic = () => ({}),
   ) {
@@ -193,12 +193,20 @@ class WebSocketAppHostPort {
     if (this.closed || !this.supportsProbe || this.phase !== "ready" || this.probe !== null || !this.isVisible()) return;
     const id = `${this.attemptId}:probe:${++this.probeSequence}`;
     const startedAt = Date.now();
-    const timer = globalThis.setTimeout(() => {
+    const check = () => {
       if (this.closed || this.probe?.id !== id) return;
       if (!this.isVisible()) { this.probe = null; return; }
+      // Browser JS cannot observe partial messages or native Pong. Allow a full
+      // minute without application progress; a missing probe alone is not death.
+      const idleMs = Date.now() - Math.max(startedAt, this.lastMessageAt ?? startedAt);
+      if (idleMs < this.probeTimeoutMs && Date.now() - startedAt < this.probeTimeoutMs * 5) {
+        this.probe.timer = globalThis.setTimeout(check, Math.max(1, Math.min(this.probeTimeoutMs - idleMs, this.probeTimeoutMs * 5 - (Date.now() - startedAt))));
+        return;
+      }
       this.fail("App Host reachability probe timed out", "probe-timeout", undefined, undefined,
         { timeoutMs: this.probeTimeoutMs, timerLateMs: Math.max(0, Date.now() - startedAt - this.probeTimeoutMs) });
-    }, this.probeTimeoutMs);
+    };
+    const timer = globalThis.setTimeout(check, this.probeTimeoutMs);
     this.probe = { id, timer, startedAt };
     try { this.postMessage({ type: "connection/probe", requestId: id }); }
     catch { this.fail("App Host connection failed", "socket-error"); }
@@ -515,7 +523,7 @@ export function connectWebSocketAppHost(
             createSocket,
             options.handshakeTimeoutMs ?? 10_000,
             options.reportFailure ?? reportAppHostConnectionFailure,
-            options.probeTimeoutMs ?? 5_000,
+            options.probeTimeoutMs ?? 60_000,
             () => events.isVisible(),
             () => events.diagnosticContext?.() ?? {},
           );
