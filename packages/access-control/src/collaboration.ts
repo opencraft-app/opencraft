@@ -389,8 +389,7 @@ export class Collaboration {
       senderConversation:null,senderTurnId:fromTurnId,operationId:null,replyExpectation:'none',delegationRevision:Number(authority.generation),usageSourceKind:'system',createdAtMs:this.now()});
   }
   turnOrigin(threadId: string, turnId: string): OrchestrationMessageOrigin|null {
-    const authority=this.#authority(threadId,turnId);
-    return authority?.input_id?this.inputOrigin(threadId,String(authority.input_id)):null;
+    return this.orchestration.turnOrigin(threadId,turnId);
   }
   executionContinued(threadId: string, fromTurnId: string, turnId: string) {
     const authority = this.#authority(threadId,fromTurnId);
