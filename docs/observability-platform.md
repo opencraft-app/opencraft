@@ -429,3 +429,21 @@ truncated=false仅指聚合完整，不代表明细全量；baseline.compare拒�
 
 拨测状态与成功率的查询只读取 `kind=availability` 的事件，使用受管 v5 部分索引。
 既有观测库通过增量迁移保留事件及 v1–v4 迁移回执；健康、指标和看板刷新不得随其他类型历史事件量线性扫描。
+
+### Web AppHost reachability diagnostics
+
+The WebSocket bridge records `probe-received`, `probe-response`, and
+`probe-written` with the physical attempt ID and a server-local probe sequence.
+Wall-clock event time allows comparison with client failure reports; monotonic
+`responseMs` measures bridge receipt through response preparation, while
+`elapsedMs` on `probe-written` includes the local socket write callback. Socket
+state and buffered bytes describe the local output queue. A successful write
+does not acknowledge delivery to the browser. These records separate missing
+ingress, delayed response preparation, and delayed local output without changing
+probe deadlines or reconnection policy.
+
+Instrumentation admits at most one probe per second per connection, retains at
+most eight unanswered observations, and reports those as `probe-abandoned` when
+the socket closes. Access rejection is reported as `probe-rejected`. Request IDs,
+message bodies, URLs, credentials, and raw errors are excluded. The sequence is
+generated locally rather than copied from the request.
