@@ -11,6 +11,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
+import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -289,6 +290,7 @@ function validAppHostDiagnostic(report) {
 }
 
 function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }) {
+  const send = createWebSocketSender(client);
   const listeners = new Set();
   const pendingConnects = new Set();
   let connection = null;
@@ -312,12 +314,12 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
         const responseMs = Math.max(0, performance.now() - probe.started);
         logDiagnostic("probe-response", { ...probeDetail(probe), responseMs, ok: message.ok === true });
         if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(message), error => {
+          send(JSON.stringify(message), error => {
             // A completed local write does not acknowledge browser receipt.
             logDiagnostic("probe-written", { ...probeDetail(probe), responseMs, ok: !error });
           });
         }
-      } else if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+      } else if (client.readyState === WebSocket.OPEN) send(JSON.stringify(message));
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -338,11 +340,12 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (rejection !== null) {
       logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), ...rejection });
       if (rejection.reason === "protocol-version" && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: "fatal", error: {
+        send(JSON.stringify({ type: "fatal", error: {
           code: "APP_HOST_PROTOCOL_MISMATCH",
           message: "Client and server versions are incompatible. Update or reload the client to reconnect.",
           retryable: false,
-        } }));
+        } }), () => client.close(1008, "Invalid App Host request"));
+        return;
       }
       client.close(1008, "Invalid App Host request");
       return;
@@ -364,7 +367,7 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
         probes.delete(message.requestId);
         logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
       }
-      client.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+      send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
         error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
       return;
     }

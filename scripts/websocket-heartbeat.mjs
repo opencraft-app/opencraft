@@ -1,11 +1,15 @@
 /** Per-socket liveness. A queued Ping is not yet a probe of the peer. */
 export function trackSocketHeartbeat(socket, { intervalMs, now = Date.now, diagnostic = () => {} }) {
-  let sequence = 0, pending = null, closed = false, lastPongAt = now();
+  let sequence = 0, pending = null, closed = false, lastPongAt = now(), lastReceivedAt = now();
   const report = (event, extra = {}) => {
     try { diagnostic(event, { bufferedBytes: socket.bufferedAmount, lastPongAgeMs: now() - lastPongAt, ...extra }); } catch { /* Observation cannot close a connection. */ }
   };
   const stop = (event, extra) => { report(event, extra); closed = true; pending = null; socket.terminate(); };
-  socket.on('close', () => { closed = true; pending = null; });
+  // ws handles framing/validation; TCP activity includes partial frames that
+  // cannot yet produce a message event. Invalid frames still close via ws.
+  const received = () => { lastReceivedAt = now(); };
+  socket._socket?.on('data', received);
+  socket.on('close', () => { closed = true; pending = null; socket._socket?.off('data', received); });
   socket.on('pong', data => {
     if (!pending || String(data) !== pending.token) return;
     const probe = pending; pending = null; lastPongAt = now();
@@ -27,7 +31,10 @@ export function trackSocketHeartbeat(socket, { intervalMs, now = Date.now, diagn
         return;
       }
       // Even a newly admitted socket gets a full interval after Ping is flushed.
-      if (time - probe.sentAt < intervalMs) return;
+      // A local flush does not drain intermediate proxies. Partial inbound
+      // frames prove progress, while a missing matching Pong has a hard bound.
+      if (time - probe.sentAt < intervalMs * 4
+        || (time - lastReceivedAt < intervalMs * 4 && time - probe.sentAt < intervalMs * 20)) return;
       stop('heartbeat-timeout', { sequence: probe.sequence, queuedMs: probe.sentAt - probe.queuedAt, sentAgeMs: time - probe.sentAt });
       return;
     }
