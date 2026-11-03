@@ -1,4 +1,4 @@
-import { PermissionReadCache, withPermissionReads, withPermissionWrite } from "./permission-read-cache.js";
+import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -17,15 +17,22 @@ export interface InstanceAdmissionPolicy {
   allowsBinding(binding: Pick<Principal, 'provider' | 'subject'>): boolean;
 }
 export class MembershipStore {
+  readonly permissionProjectionEnabled: boolean;
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
   constructor(path: ServerDatabaseSource) {
+    this.permissionProjectionEnabled = typeof path !== "string";
     const managed = openServerRepository(path, "memberships");
     this.#closeDatabase = managed.close;
     this.#db = managed.database; this.outcome = managed.outcome;
-    this.#readCache = new PermissionReadCache(this.#db, typeof path === "string" ? this.#db : path.database);
+    this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
+  }
+  *#permissionRows(): Iterable<readonly [string, unknown]> {
+    for (const row of this.#db.prepare('SELECT binding,role,enabled FROM members').iterate()) yield [JSON.stringify(["member", row.binding]), row];
+    for (const row of this.#db.prepare('SELECT actor_id,role,enabled FROM actor_members').iterate()) yield [JSON.stringify(["actor-member", row.actor_id]), row];
+
   }
   membership(p: Pick<Principal, "provider" | "subject">): { role: MemberRole; enabled: boolean } | null {
     const binding = principalKey(p);
@@ -96,7 +103,7 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
-  #transaction<T>(write: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, write)); }
+  #transaction<T>(write: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); }
   close() { this.#readCache.close(); this.#closeDatabase(); }
 }
 export class InstanceAccess {
@@ -118,49 +125,58 @@ export class InstanceAccess {
     const accepted = identities.length === 1 || sameHuman ? identities[0] : null;
     const result = accepted?.identity ?? null;
     if (result && accepted) this.#sources.set(result, accepted.provider);
-    if (result && result.expiresAt > Date.now()) this.store.bindLegacyAlias(result);
+    if (result && result.expiresAt > Date.now()) {
+      this.store.bindLegacyAlias(result);
+      this.prepareActorMembership(result);
+    }
     this.#cache.set(request, result); return result;
   }
+  private prepareActorMembership(identity: Principal): void {
+    if (!this.actors || !this.isCurrent(identity) || this.admissionPolicy?.allows(identity) === false) return;
+    const entry = this.store.membership(identity);
+    if (entry && !entry.enabled) return;
+    const implicit = this.authenticatedMemberProviders.has(identity.provider);
+    let actor = this.actors.findHuman(identity);
+    if (!actor && (entry?.enabled || implicit)) {
+      const context = this.actors.resolveHuman(identity);
+      actor = context ? this.actors.get(context.actorId) : null;
+    }
+    if (!actor?.enabled || actor.kind !== 'human' || this.store.actorMembership(actor.id)) return;
+    const roles = this.actors.bindings(actor.id).map(binding => this.store.role(binding));
+    const inherited = roles.includes('admin') ? 'admin' : roles.includes('member') ? 'member' : null;
+    if (inherited) this.store.importActorMembership(actor.id, inherited);
+  }
   role(identity: Principal): MemberRole | null {
-    return withPermissionReads(() => {
-      if (!this.isCurrent(identity) || this.admissionPolicy?.allows(identity) === false) return null;
-      const entry = this.store.membership(identity);
-      const legacy = entry?.enabled ? entry.role : null;
-      // An explicit stable-subject revocation wins over the provider default.
-      if (entry && !entry.enabled) return null;
-      const implicit = this.authenticatedMemberProviders.has(identity.provider) ? 'member' as const : null;
-      if (!this.actors) return legacy ?? implicit;
-      let actor = this.actors.findHuman(identity);
-      if (!actor && (legacy || implicit)) {
-        const context = this.actors.resolveHuman(identity);
-        actor = context ? this.actors.get(context.actorId) : null;
-      }
-      if (!actor?.enabled || actor.kind !== 'human') return null;
-      if (!this.store.actorMembership(actor.id)) {
-        const roles = this.actors.bindings(actor.id).map(binding => this.store.role(binding));
-        const inherited = roles.includes('admin') ? 'admin' : roles.includes('member') ? 'member' : null;
-        if (inherited) this.store.importActorMembership(actor.id, inherited);
-      }
-      const membership = this.store.actorMembership(actor.id);
-      return membership ? (membership.enabled ? membership.role : null) : implicit;
-      });
+    if (!this.isCurrent(identity) || this.admissionPolicy?.allows(identity) === false) return null;
+    const entry = this.store.membership(identity);
+    const legacy = entry?.enabled ? entry.role : null;
+    // An explicit stable-subject revocation wins over the provider default.
+    if (entry && !entry.enabled) return null;
+    const implicit = this.authenticatedMemberProviders.has(identity.provider) ? 'member' as const : null;
+    if (!this.actors) return legacy ?? implicit;
+    if (!this.store.permissionProjectionEnabled) this.prepareActorMembership(identity);
+    const actor = this.actors.findHuman(identity);
+    if (!actor?.enabled || actor.kind !== 'human') return null;
+    const membership = this.store.actorMembership(actor.id);
+    if (membership) return membership.enabled ? membership.role : null;
+    // Compatibility grants are evaluated from memory; durable import stays in verified login.
+    const roles = this.actors.bindings(actor.id).map(binding => this.store.role(binding));
+    return roles.includes('admin') ? 'admin' : roles.includes('member') ? 'member' : implicit;
   }
   /** Stable membership recheck for work already admitted; never authenticates a login. */
   admitsActor(actorId: string): boolean {
-    return withPermissionReads(() => {
-      const actor = this.actors?.get(actorId);
-      if (!actor?.enabled) return false;
-      if (actor.kind === 'session') return true;
-      const bindings = this.actors!.bindings(actorId);
-      if (bindings.some(binding => this.admissionPolicy?.allowsBinding(binding) === false)) return false;
-      // Durable work has no live login to choose between aliases. An explicit
-      // binding revocation therefore fences it until an operator resolves access.
-      if (bindings.some(binding => this.store.membership(binding)?.enabled === false)) return false;
-      const member = this.store.actorMembership(actorId);
-      if (member) return member.enabled;
-      return bindings.some(binding => this.store.membership(binding)?.enabled === true
-        || this.authenticatedMemberProviders.has(binding.provider));
-      });
+    const actor = this.actors?.get(actorId);
+    if (!actor?.enabled) return false;
+    if (actor.kind === 'session') return true;
+    const bindings = this.actors!.bindings(actorId);
+    if (bindings.some(binding => this.admissionPolicy?.allowsBinding(binding) === false)) return false;
+    // Durable work has no live login to choose between aliases. An explicit
+    // binding revocation therefore fences it until an operator resolves access.
+    if (bindings.some(binding => this.store.membership(binding)?.enabled === false)) return false;
+    const member = this.store.actorMembership(actorId);
+    if (member) return member.enabled;
+    return bindings.some(binding => this.store.membership(binding)?.enabled === true
+      || this.authenticatedMemberProviders.has(binding.provider));
   }
   isCurrent(identity: Principal): boolean {
     return identity.expiresAt > Date.now() && (this.#sources.get(identity)?.isCurrent?.(identity) ?? true);

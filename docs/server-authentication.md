@@ -227,22 +227,27 @@ SQLite 升级遵循[生命周期契约](sqlite-lifecycle.md)。成员库追加 v
 管理命令与服务启动共享安装 fence。运行 `human-account` 或 `access-admin` 前先停止同数据目录的 Headless Server；命令自动完成存量导入并操作统一核心库。原 `access-admin /absolute/memberships.sqlite ...` 参数保留为同目录兼容入口，不再写旧成员库。
 
 
-## Versioned permission read snapshots
+## Owner-published permission projections
 
-Server permission checks cache raw Actor, identity-binding, membership
-rows, including missing rows, in bounded per-repository LRU maps (1024
-entries). They never cache an authorization decision, credential proof or clock
-expiration. Each synchronous admission or message-projection scope validates
-`data_version`, `schema_version` and `total_changes()` before reusing rows; Actor
-and membership repositories borrowing one Server connection share that fence.
-The markers are captured before reading rows, so a concurrent commit invalidates
-the next scope. A scope defines one synchronous permission-read snapshot; it
-ends before a returned Promise resumes. Reads outside a scope remain live.
+Repositories borrowing the fenced Server storage owner load a complete in-memory
+projection of Actor state, bindings, membership, credential validity metadata
+(excluding token digests), and grants. Delivery checks, including missing rows,
+read this projection without SQLite calls, version probes or read-through misses.
+Generation, expiration and provider-policy decisions remain live. Verified-login
+bootstrap and compatibility membership import run at request admission, not in
+repeated role checks.
 
-Permission writes clear enclosing scope markers before and after mutation.
-Transactions bypass and invalidate cached rows, including reads later rolled
-back; close releases rows and prevents reuse. Another connection's committed
-changes are observed at the next admission/projection boundary, with no TTL or
-polling delay. Generation, expiration, provider policy and credential revocation
-checks still execute at their existing authority boundaries. This is a read
-optimization, not a new grant, persistent permission snapshot or replay owner.
+The synchronous permission writer marks all projections of its owner unavailable,
+commits or rolls back, stages fresh projections on the control path, then publishes
+them before returning. Failed refreshes reject reads; they never serve an older
+authorization view or fall back to SQL. Each projection admits at most 100,000
+entries and 32 MiB of serialized key/row data; overflow fails closed. Close releases
+rows and detaches the owner view. Asynchronous continuations read the current
+published projection rather than a retained authorization decision.
+
+This optimization relies on the existing exclusive Server writer: all live
+permission mutations use its store APIs. Offline management still stops the
+Server before opening its owner. Legacy string-path repositories with independent
+writers retain live SQLite reads; they cannot safely adopt this projection without
+one write owner or a synchronous invalidation channel. No timer, TTL or filesystem
+watch is used as an authorization freshness guarantee.

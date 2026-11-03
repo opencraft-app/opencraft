@@ -39,6 +39,7 @@ export class ActorStore {
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
+  readonly #permissionProjectionEnabled: boolean;
   readonly authority: string;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
@@ -46,11 +47,25 @@ export class ActorStore {
     const managed = openServerRepository(path, "actors");
     this.#closeDatabase = managed.close;
     this.#db = managed.database;
-    this.#readCache = new PermissionReadCache(this.#db, typeof path === "string" ? this.#db : path.database);
+    this.#permissionProjectionEnabled = typeof path !== "string";
+    this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
     this.outcome = managed.outcome;
     this.#db.exec('PRAGMA foreign_keys=ON');
     this.#db.prepare('INSERT OR IGNORE INTO actor_authority(singleton,id) VALUES(1,?)').run(randomUUID());
     this.authority = this.#db.prepare('SELECT id FROM actor_authority WHERE singleton=1').get()!.id as string;
+  }
+  *#permissionRows(): Iterable<readonly [string, unknown]> {
+    for (const row of this.#db.prepare('SELECT * FROM actors').iterate()) yield [JSON.stringify(["actor", row.id]), row];
+    const bindings = new Map<string, Record<string, unknown>[]>();
+    for (const row of this.#db.prepare('SELECT binding,actor_id FROM actor_bindings').iterate()) {
+      yield [JSON.stringify(["binding", row.binding]), row];
+      const list = bindings.get(String(row.actor_id)) ?? []; list.push(row); bindings.set(String(row.actor_id), list);
+    }
+    for (const [id, rows] of bindings) yield [JSON.stringify(["bindings", id]), rows];
+    for (const row of this.#db.prepare('SELECT id,actor_id,generation,expires_at,enabled FROM actor_credentials').iterate())
+      yield [JSON.stringify(["credential", row.id]), row];
+    for (const row of this.#db.prepare('SELECT actor_id,resource,action FROM actor_grants WHERE enabled=1').iterate())
+      yield [JSON.stringify(["grant", row.actor_id, row.resource, row.action]), true];
   }
   get managementResource() { return `actor-registry://${this.authority}`; }
   get(id: string): Actor | null {
@@ -65,7 +80,7 @@ export class ActorStore {
     return row ? this.get(row.actor_id as string) : null;
   }
   bindings(actorId: string): Pick<Principal, 'provider' | 'subject'>[] {
-    return this.#readCache.get(JSON.stringify(['bindings',actorId]), () => this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId))
+    return (this.#readCache.get(JSON.stringify(['bindings',actorId]), () => this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId)) ?? [])
       .map(row => { const [provider, subject] = JSON.parse(row.binding as string); return { provider, subject }; });
   }
   /** Both arguments must come from trusted, independently verified authentication. */
@@ -93,7 +108,7 @@ export class ActorStore {
       this.#audit(owner.actorId, owner.actorId, 'unbind-identity', principalKey(binding));
     });
   }
-  #transaction<T>(run: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, run)); }
+  #transaction<T>(run: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, run), this.#readCache); }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')
@@ -109,6 +124,12 @@ export class ActorStore {
   resolveHuman(verified: Principal): ActorContext | null {
     const p = parsePrincipal(verified);
     if (p.expiresAt <= this.now()) return null;
+    if (this.#permissionProjectionEnabled) {
+      const existing = this.findHuman(p);
+      if (existing && (!existing.enabled || existing.kind !== 'human')) return null;
+      if (existing?.displayName === p.displayName)
+        return Object.freeze({ actorId: existing.id, generation: existing.generation, credentialId: null, expiresAt: p.expiresAt });
+    }
     let registered = false;
     const context = this.#transaction(() => {
       const key = principalKey(p);
@@ -176,7 +197,7 @@ export class ActorStore {
     const a = this.get(context.actorId);
     if (!a?.enabled || a.generation !== context.generation || !Number.isSafeInteger(context.expiresAt) || context.expiresAt <= this.now()) return false;
     if (context.credentialId === null) return a.kind === 'human';
-    const row = this.#db.prepare('SELECT * FROM actor_credentials WHERE id=?').get(context.credentialId);
+    const row = this.#readCache.get(JSON.stringify(['credential', context.credentialId]), () => this.#db.prepare('SELECT * FROM actor_credentials WHERE id=?').get(context.credentialId));
     return a.kind === 'session' && !!row && row.actor_id === a.id && row.enabled === 1
       && row.generation === a.generation && (row.expires_at as number) >= context.expiresAt;
   }
@@ -194,16 +215,14 @@ export class ActorStore {
   }
   can(context: ActorContext, resource: string, action: string): boolean {
     permission(resource, action);
-    return this.isCurrent(context) && !!this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1')
-      .get(context.actorId, resource, action);
+    return this.isCurrent(context) && !!this.#readCache.get(JSON.stringify(['grant', context.actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(context.actorId, resource, action));
   }
   /** Revalidate a durably admitted operation; never use this to authenticate a request. */
   canAdmitted(actorId: string, generation: number, resource: string, action: string): boolean {
     permission(resource, action);
     const current = this.get(actorId);
     return !!current?.enabled && current.generation === generation
-      && !!this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1')
-        .get(actorId, resource, action);
+      && !!this.#readCache.get(JSON.stringify(['grant', actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(actorId, resource, action));
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
   close() { this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
