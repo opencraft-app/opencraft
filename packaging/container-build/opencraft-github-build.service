@@ -1,0 +1,15 @@
+[Unit]
+Description=Build OpenCraft Docker image from GitHub main
+Documentation=https://github.com/opencraft-app/opencraft/tree/main/docker
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/opencraft-github-build.env
+ExecStart=/usr/local/libexec/opencraft-build-from-github
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h

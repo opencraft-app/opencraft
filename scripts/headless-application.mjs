@@ -16,13 +16,15 @@ import { SessionCapabilityMcp, capabilitySigningKey } from "../packages/session-
 import { RemoteBrowserService } from './remote-browser-service.mjs';
 import { createShutdownDiagnostics } from './shutdown-diagnostics.mjs';
 
+import { connectBrowserOwner } from './remote-browser-owner.mjs';
+
 import { createObservabilityIngress } from "./observability-ingress.mjs";
 import { existsSync } from "node:fs";
 
 import { access, chmod, mkdir, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import lockfile from "proper-lockfile";
@@ -247,6 +249,9 @@ async function secureDataDirectory(path) {
 }
 
 export async function startHeadlessServer(options = {}, composition = {}) {
+  const browserOwnerSocket = process.env.OPENCRAFT_BROWSER_OWNER_SOCKET;
+  if (browserOwnerSocket && !isAbsolute(browserOwnerSocket))
+    throw new Error('OPENCRAFT_BROWSER_OWNER_SOCKET must be an absolute private socket path');
   const localAccess = await loadLocalMachineAccess(options.localAccessFile);
   if (composition.createIdentity !== undefined && typeof composition.createIdentity !== "function") throw new Error("Invalid Headless identity factory");
   if (composition.close !== undefined && typeof composition.close !== "function") throw new Error("Invalid Headless composition shutdown");
@@ -849,7 +854,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       accountService: accountApplication ?? null,
       hubService: hubController,
       remoteBrowserService: remoteBrowser = new RemoteBrowserService({ root, dataDirectory,
-        allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1' }),
+        allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1',
+        ...(browserOwnerSocket ? {
+          ownerConnector: () => connectBrowserOwner(browserOwnerSocket),
+        } : {}),
+      }),
       speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
         new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });

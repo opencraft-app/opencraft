@@ -191,6 +191,17 @@ provides the shared host ceiling. A managed deployment must reconcile already
 running generation owners against this policy as well as using it for new
 owners; otherwise a prior transient limit can survive a package update.
 
+The three-container Docker assembly selects the `hands-unix` backend for Codex.
+AppServer and its writable `CODEX_HOME` remain in Brain; the sandbox runner opens
+a private authenticated Unix connection and Hands launches only the pinned
+`codex exec-server --listen stdio` vector. Hands rejects other commands, paths
+outside the mounted workspace, unexpected environment names, stale lease frames
+and resource declarations that differ from its verified 4-vCPU/8-GiB/4096-task
+cgroup. One connection is one non-replayable execution lease. Disconnect or
+owner shutdown terminates the whole process group; an unacknowledged create or
+cleanup remains unknown and retains admission capacity. Account, AppServer and
+Host databases are not mounted into Hands.
+
 A Linux `parentSlice` must already have finite CPU, memory and task limits. It
 provides a shared kernel ceiling across independent engine controllers; a
 per-process pool must not be described as global admission accounting. Optional

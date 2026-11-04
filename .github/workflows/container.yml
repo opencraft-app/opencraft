@@ -1,6 +1,30 @@
 name: Docker Compose
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docker/**
+      - .dockerignore
+      - .nvmrc
+      - package.json
+      - package-lock.json
+      - packaging/container-build/**
+      - apps/**
+      - packages/**
+      - runtime/**
+      - scripts/container-deployment/**
+      - scripts/remote-browser/**
+      - scripts/server-deployment/**
+      - scripts/headless-*.mjs
+      - scripts/package-*-runtime.mjs
+      - scripts/package-container.mjs
+      - scripts/package-headless-linux.mjs
+      - scripts/smoke/server/smoke-container.mjs
+      - tests/browser/remote-browser-owner.test.mjs
+      - tests/execution/hands-unix-sandbox.test.ts
+      - tests/server/container-deployment.test.mjs
+      - .github/workflows/container.yml
   pull_request:
     paths:
       - docker/**
@@ -8,6 +32,7 @@ on:
       - .nvmrc
       - package.json
       - package-lock.json
+      - packaging/container-build/**
       - apps/**
       - packages/**
       - runtime/**
@@ -27,7 +52,15 @@ concurrency:
   cancel-in-progress: true
 jobs:
   docker-compose:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,6 +69,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - run: node --test tests/server/container-deployment.test.mjs
-      - run: docker buildx build -f docker/Dockerfile --platform linux/arm64 --target runtime --tag opencraft:local --load .
+      - run: npm ci --no-audit --no-fund
+      - run: node --test tests/server/container-deployment.test.mjs tests/browser/remote-browser-owner.test.mjs
+      - run: node --import tsx --test tests/execution/hands-unix-sandbox.test.ts
+      - name: Build identified container candidate
+        run: |
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
+          docker buildx build -f docker/Dockerfile \
+            --platform "linux/${{ matrix.architecture }}" \
+            --build-arg "OPENCRAFT_BUILD_ID=github-${GITHUB_SHA}" \
+            --build-arg "OPENCRAFT_SOURCE_REVISION=${GITHUB_SHA}" \
+            --build-arg "SOURCE_DATE_EPOCH=${source_date_epoch}" \
+            --target runtime --tag opencraft:local --load .
       - run: node scripts/smoke/server/smoke-container.mjs

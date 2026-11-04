@@ -41,7 +41,10 @@ jobs:
       - name: Scan source
         run: '"${{ runner.temp }}/gitleaks" dir . --redact --no-banner --config .gitleaks.toml'
       - name: Scan reachable commit history
-        run: '"${{ runner.temp }}/gitleaks" git . --log-opts=--all --redact --no-banner --config .gitleaks.toml'
+        # checkout fetches every remote branch at depth 0. Scanning --all lets an
+        # unrelated branch fail every pull request; HEAD still covers the full
+        # history reachable from the pull request's synthetic merge commit.
+        run: '"${{ runner.temp }}/gitleaks" git . --log-opts=HEAD --redact --no-banner --config .gitleaks.toml'
 
   dependency-audit:
     needs: plan

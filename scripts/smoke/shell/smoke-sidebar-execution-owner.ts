@@ -18,7 +18,7 @@ const storage={load:async()=>null,save:async(_,value)=>value};const layout=await
 const now=Date.now()/1000;
 const local=threadServerOrigin({serverId:'local-server',label:'Local'});
 const hermes=threadServerOrigin({serverId:'remote-hermes',label:'Hermes Cloud'});
-const ssh=threadServerOrigin({serverId:'ssh-server:9.134.163.40',label:'Remote SSH'});
+const ssh=threadServerOrigin({serverId:'ssh-server:192.0.2.40',label:'Remote SSH'});
 const base={project:'opencraft',lineage:'root',time:'now',updatedAt:now,unread:false};
 const threads=[
  {...base,id:'local',title:'Local task',status:'ready',connectionHostId:'local',connectionHostLabel:'Local',serverOrigin:local,serverRouteLocality:'local'},
