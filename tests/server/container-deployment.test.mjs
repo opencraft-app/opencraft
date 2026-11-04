@@ -126,3 +126,20 @@ test('container candidates carry pinned bases, source identity and both public a
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
     assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
 });
+
+test('the local GitHub builder is locked, revision-pinned and advances its moving tag only after success', async () => {
+  const root = new URL('../..', import.meta.url);
+  const [builder, service, timer] = await Promise.all([
+    readFile(new URL('scripts/container-deployment/build-from-github.sh', root), 'utf8'),
+    readFile(new URL('packaging/container-build/opencraft-github-build.service', root), 'utf8'),
+    readFile(new URL('packaging/container-build/opencraft-github-build.timer', root), 'utf8'),
+  ]);
+  assert.match(builder, /flock -n 9/u);
+  assert.match(builder, /refs\/remotes\/origin\/\$branch\^\{commit\}/u);
+  assert.match(builder, /org\.opencontainers\.image\.revision/u);
+  assert.ok(builder.indexOf('docker build') < builder.indexOf('mv "$temporary_success" "$success_file"'));
+  assert.match(service, /Type=oneshot/u);
+  assert.match(service, /TimeoutStartSec=2h/u);
+  assert.match(timer, /OnCalendar=\*-\*-\* 02:00:00 Asia\/Shanghai/u);
+  assert.match(timer, /Persistent=true/u);
+});

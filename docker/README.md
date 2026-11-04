@@ -132,6 +132,39 @@ does not replace them. `docker compose down` stops all three owners and retains
 the bind-mounted state. For a cold backup, stop all three and copy the complete
 data and workspace directories with ownership and modes preserved.
 
+## Local scheduled builds from GitHub
+
+The optional systemd timer builds on the Docker host, not on a GitHub runner. It
+fetches `origin/main`, checks out the exact remote commit in an isolated detached
+worktree and builds `opencraft:git-<full-sha>`. Only a successful build advances
+the convenience tag `opencraft:main-local`; a failed build leaves the prior image
+intact. A lock prevents timer and manual invocations from overlapping.
+
+Install the tracked script, configuration and units as root:
+
+```sh
+install -D -o root -g root -m 0755 \
+  scripts/container-deployment/build-from-github.sh \
+  /usr/local/libexec/opencraft-build-from-github
+install -D -o root -g root -m 0600 \
+  packaging/container-build/opencraft-github-build.env.example \
+  /etc/opencraft-github-build.env
+install -D -o root -g root -m 0644 \
+  packaging/container-build/opencraft-github-build.service \
+  /etc/systemd/system/opencraft-github-build.service
+install -D -o root -g root -m 0644 \
+  packaging/container-build/opencraft-github-build.timer \
+  /etc/systemd/system/opencraft-github-build.timer
+systemctl daemon-reload
+systemctl enable --now opencraft-github-build.timer
+systemctl start opencraft-github-build.service  # optional immediate build
+```
+
+The default schedule is once daily at 02:00 Asia/Shanghai with up to ten minutes
+of randomized delay. `systemctl list-timers opencraft-github-build.timer` shows
+the next run; build logs are available through
+`journalctl -u opencraft-github-build.service`.
+
 ## Validation
 
 ```sh
