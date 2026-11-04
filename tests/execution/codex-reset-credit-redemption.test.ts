@@ -163,7 +163,7 @@ test("independent account owner exposes capability and both RPCs with synthetic 
   const owner = await CodexAccountService.start({ executable: process.execPath, dataDirectory: root,
     nativeCodexHomeDirectory: join(root, "native"), fetch: async (url, init) => {
       if (init?.method === "POST") { posts++; return Response.json({ outcome: "nothing_to_reset" }); }
-      return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details());
+      return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details([{ ...credit, expires_at: new Date(Date.now() + 86_400_000).toISOString() }]));
     } });
   try {
     const accounts = await owner.request("opencraft/codex/accounts/list", {}) as any;

@@ -8,7 +8,7 @@ type RecordValue = Record<string, any>;
 const record = (v: unknown): RecordValue => v && typeof v === "object" && !Array.isArray(v) ? v as RecordValue : {};
 const text = (v: unknown): string => typeof v === "string" ? v : "";
 const key = (v: RecordValue) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] ?? "", typeof v.id, v.id]);
-interface Pending { method: string; params: RecordValue; inputId: string; at: number; }
+interface Pending { method: string; params: RecordValue; inputId: string; at: number; goalAuthorization?: string; }
 
 /** Gateway receipt tracker for independently owned engine queues. The native
  * submission identity, rather than the person clicking start, binds execution. */
@@ -19,9 +19,22 @@ export class ExecutionLeaseTracker {
     const method = text(message.method), params = { ...record(message.params) }, threadId = text(params.threadId);
     const reads = ["thread/read", "thread/resume"].includes(method);
     const writes = ["turn/start", "turn/steer", "thread/queue/add", "thread/queue/start"].includes(method);
-    if (!reads && !writes) return message;
+    const goalWrite = ["thread/goal/set", "thread/goal/clear"].includes(method);
+    if (!reads && !writes && !goalWrite) return message;
     for (const [id, request] of this.pending) if (Date.now() - request.at > 300_000) this.pending.delete(id);
     if (this.pending.size >= 256 || this.pending.has(key(message))) throw new Error("Too many pending execution receipts");
+    if (goalWrite) {
+      if (!threadId) throw new Error("Goal Thread required");
+      context.resourceOwner?.assertCurrent();
+      const submission = snapshotExecutionSubmission(context);
+      delete params.__opencraftGoalAuthorization;
+      this.store.revokeGoal(threadId);
+      const terminal = params.status && params.status !== "active";
+      const authorization = method === "thread/goal/set" && !terminal ? this.store.prepareGoal(threadId, submission) : null;
+      if (authorization) params.__opencraftGoalAuthorization = authorization;
+      this.pending.set(key(message), { method, params, inputId: "", at: Date.now(), ...(authorization ? { goalAuthorization: authorization } : {}) });
+      return { ...message, params };
+    }
     if (reads) {
       this.pending.set(key(message), { method, params, inputId: "", at: Date.now() });
       return message;
@@ -39,6 +52,7 @@ export class ExecutionLeaseTracker {
     this.pending.set(key(message), { method, params, inputId, at: Date.now() });
     // Identity stays in trusted context/SQLite, never in Renderer or engine params.
     delete params.executionPrincipal;
+    delete params.__opencraftGoalExecution;
     return { ...message, params };
   }
   observe(message: RecordValue, native?: NativeExecutionProcess | null): void {
@@ -47,11 +61,16 @@ export class ExecutionLeaseTracker {
       if (method === "turn/started" && threadId && text(record(params.turn).id)) {
         const turn = record(params.turn);
         this.store.observedStart(threadId, text(turn.id), native?.incarnation);
+        this.store.goalContinuation(threadId, text(turn.id), params.__opencraftGoalExecution, native?.incarnation);
         for (const item of Array.isArray(turn.items) ? turn.items : []) if (item.type === "userMessage" && item.__opencraftMessageKind !== "steering") {
           const inputId = text(item.clientId) || text(item.clientUserMessageId) || text(item.client_id);
           if (inputId) this.store.observedInput(threadId, text(turn.id), inputId);
         }
       }
+      if (method === "opencraft/goal/authorized" && threadId && text(params.turnId) && text(params.authorizationId))
+        this.store.authorizeGoalFromTurn(threadId, text(params.turnId), text(params.authorizationId), text(params.inputId) || undefined);
+      if (method === "thread/goal/cleared" || method === "thread/goal/updated" && (record(params.goal).status !== "active" || record(record(params.goal).execution).activation === "disarmed"))
+        if (threadId) this.store.revokeGoal(threadId);
       if (method === "turn/completed" && threadId) this.store.finished(threadId, text(record(params.turn).id));
       if ((method === "item/started" || method === "item/completed") && threadId) {
         const item = record(params.item);
@@ -71,6 +90,8 @@ export class ExecutionLeaseTracker {
       return;
     }
     const result = record(message.result);
+    if (pending.goalAuthorization && result.__opencraftGoalAuthorization === pending.goalAuthorization
+      && record(result.goal).status === "active") this.store.confirmGoal(t, pending.goalAuthorization);
     if (["thread/read", "thread/resume"].includes(pending.method)) {
       const thread = record(result.thread);
       if (Array.isArray(thread.turns)) {

@@ -10,21 +10,33 @@ import { projectAppServerThread, legacyDirectServerProjectionFromHost } from "@o
 import { SidebarLayoutStore } from "@opencraft/sidebar-layout";
 import { initializeAppearanceTheme, setThemePreference } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
+import { ClientResources } from "@opencraft/document-storage/client-resources";
+import { openIndexedDbClientResources } from "../../apps/workbench-web/src/runtime/indexeddb-client-resources";
+import { catalogReplicaResource, restoreCatalogReplica, saveCatalogReplica } from "../../apps/workbench-web/src/runtime/thread-catalog-replica-cache";
 const params = new URL(location.href).searchParams;
 initializeAppearanceTheme(); setThemePreference(params.get("theme") === "dark" ? "dark" : "light");
 const layout = await SidebarLayoutStore.open({ load: async () => null, save: async () => {} });
 const client = new QueryClient({ defaultOptions: { queries: { retryDelay: 5, refetchOnWindowFocus: false } } });
 let notify: (notification: any) => void = () => {};
-bindThreadCatalogNotifications({ subscribeNotification: listener => { notify = listener; return () => {}; } }, "fixture", client);
+const initialization = { capabilities: { extensions: params.has("versioned") ? {
+  "opencraft/thread-directory-snapshots": { version: 1 }, "opencraft/thread-directory-updates": { version: 1 },
+} : {} } };
+bindThreadCatalogNotifications({ initializeResult: initialization as any, subscribeNotification: listener => { notify = listener; return () => {}; } }, "fixture", client);
 const profile = { hostId: "fixture", hostKind: "local", enabled: true, includeInSidebar: true, autoConnect: true, revision: 1 } as any;
 let current = profile;
 let phase = "ready";
 const calls: unknown[] = [];
-const runtime = { getSnapshot: () => ({ phase }), resources: { threads: { async list(options: unknown) {
+if (params.has("merkle")) Object.assign(initialization.capabilities.extensions, { "opencraft/thread-directory-merkle": { version: 1 } });
+const replicaOwner = params.has("merkle") ? new ClientResources(openIndexedDbClientResources("catalog-merkle-browser", indexedDB), "fixture/account") : null;
+const replicaParts = replicaOwner ? Array.from({ length: 8 }, (_, part) => replicaOwner.remote(catalogReplicaResource, `fixture:${part}`)) : [];
+let persisted = Promise.resolve();
+const runtime = { getSnapshot: () => ({ phase }), resources: { host: { getInitializeResult: () => initialization }, threads: { async list(options: unknown) {
   calls.push(options);
   const response = await fetch('/catalog-page?' + new URLSearchParams({ scenario: params.get('scenario') ?? 'success', host: 'fixture' }), { method: 'POST', body: JSON.stringify(options) });
   if (!response.ok) throw Object.assign(new Error('Catalog unavailable'), { status: response.status });
-  return response.json();
+  const value = await response.json();
+  if (value.error) throw Object.assign(new Error(value.error.message), { code: value.error.code });
+  return value;
 } } } } as any;
 const registry = { peekRuntime: () => runtime, ensureConnected: async () => runtime } as any;
 function useLegacy(inputs: any[]) { return useQueries({ queries: inputs.map(input => ({ queryKey: input.queryKey, enabled: input.enabled, queryFn: () => readHostThreadCatalog(input), staleTime: 30_000 })) }); }
@@ -37,7 +49,14 @@ function App() {
   const [revision, setRevision] = useState(1);
   const [enabled, setEnabled] = useState(true);
   const key = sidebarThreadCatalogQueryKey('fixture', { revision, authorizationEpoch: null });
-  const [query] = useCatalog([{ profile: { ...profile, revision }, currentProfile: () => current, management: null, registry, enabled, queryKey: key }]);
+  const [query] = useCatalog([{ profile: { ...profile, revision }, currentProfile: () => current, management: null, registry, enabled, queryKey: key,
+    loadRecoveryBase: async () => { await Promise.all(replicaParts.map(r => r.ready)); return restoreCatalogReplica(replicaParts); } }]);
+  React.useEffect(() => {
+    const data = query!.data as any;
+    if (replicaParts.length && query!.isSuccess && !query!.isFetching && !query!.hasNextPage && data?.__opencraftCatalogRawRows) {
+      persisted = saveCatalogReplica(replicaParts, { ...data, data: data.__opencraftCatalogRawRows }, { isCurrent: () => enabled && current.enabled });
+    }
+  }, [query!.data, query!.isFetching, query!.hasNextPage]);
   const rows = enabled ? query!.data?.data ?? [] : [];
   const threads = rows.map((thread: any) => ({ ...projectAppServerThread(thread), ...legacyDirectServerProjectionFromHost({ hostId: 'fixture', hostKind: 'local', label: 'Fixture' }), connectionHostId: 'fixture', connectionHostLabel: 'Fixture', interactionAvailable: enabled && phase === 'ready' }));
   const catalog = { hostId: 'fixture', label: 'Fixture', phase: threadCatalogPhase({ admitted: enabled, status: query!.status, isFetching: query!.isFetching, partial: "hasNextPage" in query! ? query!.hasNextPage : query!.isPlaceholderData }), partial: "hasNextPage" in query! ? query!.hasNextPage : query!.isPlaceholderData };
@@ -51,6 +70,9 @@ function App() {
     });
   }, [rows.length, query!.isFetching, query!.isPlaceholderData, query!.status]);
   (window as any).catalogEntry = { observations, calls, actions, started, metrics, snapshot: () => observations.at(-1),
+    persisted: () => persisted,
+    replica: () => replicaParts.map(r => ({ rows: r.getSnapshot().value?.rows.length, error: String(r.getSnapshot().error), loading: r.getSnapshot().loading })),
+    event: notify, displayed: () => rows,
     notify: () => notify({ method: "turn/started", params: { threadId: "t0" } }),
     refresh: () => client.invalidateQueries({ queryKey: key }),
     cached: () => { const value = client.getQueryData<any>(key); return value?.pages ? { ...value.pages[0], data: [...new Map(value.pages.flatMap((page: any) => page.data).map((row: any) => [row.id, row])).values()] } : value; },

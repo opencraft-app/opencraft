@@ -142,3 +142,36 @@ test('settled active-draining stop defers later steps through the live agent wit
   const settled = await agent.journal.load(job.operationId);
   assert.equal(settled.state, 'deferred'); assert.deepEqual(settled.steps, job.steps);
 });
+
+// The waiting policy is copied from the accepted Web owner into its one child,
+// not promoted into a new plan or activation authorization by the journal.
+test('initial budget preserves original owner/child deadline through journal retry', async t => {
+  const { config, journal } = await fixture(t);
+  const { initialReadinessPolicy, selectInitialReadinessBudget } = await import('../../scripts/server-deployment/initial-readiness-budget.mjs');
+  const target = { version: '2.0.0', buildId: 'build2', manifestSha256: hash, releaseSequence: 7 };
+  const release = { ...target, fullRelease: { ...target, authorization: 'verified-installation' } };
+  const budget = await selectInitialReadinessBudget('/policy', release, 'budget-child', null,
+    { now: 1000, readPolicy: async () => ({ policy: initialReadinessPolicy(target), policySha256: 'b'.repeat(64) }) });
+  const child = { schemaVersion: 1, id: 'budget-child', version: target.version, buildId: target.buildId,
+    phase: 'starting', manifestSha256: hash, initialReadinessBudget: budget, startedAt: '2026-11-03T00:00:00Z' };
+  const deployment = { current: { version: '1.0.0', buildId: 'build1' },
+    job: { id: child.id, phase: 'starting', initialReadinessBudget: budget } };
+  const childPath = join(config.webState, 'upgrade-children/budget-child.json');
+  await writeFile(childPath, JSON.stringify(child));
+  await writeFile(join(config.webState, 'deployment.json'), JSON.stringify(deployment));
+  await webChildControl(config, { operationId: child.id }, journal, 'boot1');
+  const original = await journal.load('web-' + child.id);
+  assert.deepEqual(JSON.parse(JSON.stringify(original.initialReadinessBudget)), budget);
+  await webChildControl(config, { operationId: child.id }, journal, 'boot2');
+  assert.equal((await journal.load(original.operationId)).revision, original.revision);
+  for (const change of [b => b.jobId = 'other', b => b.target.buildId = 'other',
+    b => b.target.manifestSha256 = 'c'.repeat(64), b => { b.selectedAt++; b.deadlineAt++; }]) {
+    const bad = structuredClone(child); change(bad.initialReadinessBudget);
+    await writeFile(childPath, JSON.stringify(bad));
+    await assert.rejects(webChildControl(config, { operationId: child.id }, journal, 'boot2'));
+    assert.deepEqual((await journal.load(original.operationId)).initialReadinessBudget, original.initialReadinessBudget);
+  }
+  const unrelated = await create(journal, 'unrelated');
+  unrelated.initialReadinessBudget = budget;
+  await assert.rejects(journal.save(unrelated), /readiness-attempt-identity-conflict/);
+});

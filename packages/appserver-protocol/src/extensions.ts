@@ -44,6 +44,7 @@ export interface OpenCraftThreadQueueCapability {
   readonly unconfirmedSteerDiscard?: true;
   /** Whether pause reasons are durable queue-item state rather than UI state. */
   readonly perItemPause: boolean;
+  readonly modelSettings?: boolean;
 }
 
 export function supportsAtomicQueuedSteer(value: unknown): value is OpenCraftThreadQueueCapability {
@@ -113,6 +114,19 @@ export interface OpenCraftResumeHistoryCapability {
   /** Paginated hosts may return a full initial page in thread/resume. */
   readonly initialTurnsPage?: boolean;
   readonly boundedRecovery?: boolean;
+}
+
+/** Read-only display history, independently negotiated from native Resume. */
+export interface OpenCraftReadHistoryCapability {
+  /** Explicit bounded source observations; never a cached display snapshot. */
+  readonly sourceRead?: boolean;
+  readonly version: 1;
+  readonly initialTurnsPage?: boolean;
+  readonly itemDetails?: boolean;
+  /** Stored snapshots and committed updates carry exact version coverage. */
+  readonly versionedUpdates?: boolean;
+  readonly boundedRecovery?: boolean;
+  readonly cancellation?: boolean;
 }
 
 /**

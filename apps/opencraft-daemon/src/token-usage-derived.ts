@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { openManagedDatabase, createSchemaValidator, SqliteLifecycleError } from "@opencraft/sqlite-node";
+import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
 import { TOKEN_USAGE_STATE_MIGRATIONS, TOKEN_USAGE_RECENCY_INDEX } from "./token-usage-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageCounts } from "./token-usage-ledger.js";
 import { tokenModelKey } from "./token-usage-allocation.js";
@@ -56,8 +56,7 @@ function openCache(path: string): DatabaseSync {
     }finally{probe.close();}
     if(incompatible)for(const suffix of ["","-wal","-shm"])rmSync(path+suffix,{force:true});
   }
-  const options = { path, legacyPolicy: "reject-unknown" as const, migrations: CACHE_MIGRATIONS,
-    validateSchema: createSchemaValidator(CACHE_MIGRATIONS.map(m => m.sql).join("\n")) };
+  const options = { schemaId: "token-usage-cache" as const, path, legacyPolicy: "reject-unknown" as const, migrations: CACHE_MIGRATIONS };
   try {
     const db = openManagedDatabase(options).database;
     if (db.prepare("SELECT version FROM usage_cache_version").get()?.version === DERIVED_CACHE_VERSION) return db;
@@ -102,8 +101,8 @@ export class RolloutDerivedTokenUsage {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.source = new DatabaseSync(options.databasePath, { readOnly: true });
     this.source.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=0");
-    this.retained = openManagedDatabase({ path: join(directory, "token-usage-retained.sqlite"), legacyPolicy: "reject-unknown",
-      migrations: [{ version: 1, name: "retained-native-usage-evidence", sql: RETAINED_SQL }], validateSchema: createSchemaValidator(RETAINED_SQL) }).database;
+    this.retained = openManagedDatabase({ schemaId: "token-usage-retained", path: join(directory, "token-usage-retained.sqlite"), legacyPolicy: "reject-unknown",
+      migrations: [{ version: 1, name: "retained-native-usage-evidence", sql: RETAINED_SQL }] }).database;
     this.database = openCache(join(directory, "token-usage-derived.sqlite"));
     this.hadCache=!!this.statement(this.database,"SELECT 1 FROM token_usage_turns LIMIT 1").get();
     this.copyCoverage();

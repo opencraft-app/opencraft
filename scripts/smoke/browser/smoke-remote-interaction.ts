@@ -28,6 +28,7 @@ service.receive = message => { if (message.type === 'frame') { frames++; streamB
 const source = `
 import {RemoteBrowserStorage} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/remote-browser-storage.ts'))};
 import {RemoteBrowserSurfaceHost} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/remote-browser-surface-host.ts'))};
+import {selectBrowserVideoDecoder} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/browser-video-decoder.ts'))};
 import {WebBrowserPageRuntime} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/web-browser-runtime.ts'))};
 import {BrowserPresentationCoordinator} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/browser-presentation-coordinator.ts'))};
 import {BrowserWorkbenchCoordinator} from ${JSON.stringify(join(root, 'apps/workbench-web/src/browser/browser-workbench-coordinator.ts'))};
@@ -35,8 +36,9 @@ import {WebBrowserDynamicToolHost} from ${JSON.stringify(join(root, 'apps/workbe
 import {createConversationBindingStore} from '@opencraft/workbench-runtime';
 import {createConversationKey} from '@opencraft/chat-core';
 void(async()=>{
+const decoder=await selectBrowserVideoDecoder();if(!decoder)throw new Error('No supported H264 decoder');
 const storage=await RemoteBrowserStorage.create();
-const surfaces=new RemoteBrowserSurfaceHost(storage,'opencraft.remote-browser-storage.v1'); surfaces.setRoot(document.getElementById('root'));
+const surfaces=new RemoteBrowserSurfaceHost(decoder,storage,'opencraft.remote-browser-storage.v1'); surfaces.setRoot(document.getElementById('root'));
 const pages=new WebBrowserPageRuntime(surfaces,null,()=>null,storage);
 const presentations=new BrowserPresentationCoordinator(pages,surfaces);
 const bindings=createConversationBindingStore();bindings.bind('scope',createConversationKey('host','thread'));

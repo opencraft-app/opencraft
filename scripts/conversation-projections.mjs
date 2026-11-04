@@ -55,3 +55,44 @@ export async function readConversationPage(invoke, ref, cursor) {
     role: item.type === 'userMessage' ? 'user' : 'assistant', offset: position.offset, text }],
     watermark, latestTurnId: tail.data?.[0]?.turnId ?? null, nextCursor, truncated: nextCursor !== null };
 }
+
+/** Latest N Turns, bounded independently of total history. Each native request is
+ * one descending page. Do not fence against unrelated appends: this is a recent
+ * observation, not a multi-request immutable transcript snapshot. */
+export async function readConversationTail(invoke, ref, limit, signal) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 5) throw fault(400, 'invalid_tail');
+  signal?.throwIfAborted();
+  const metadata = (await invoke('thread/read', { includeTurns: false, sourceRead: true })).thread;
+  signal?.throwIfAborted();
+  if (metadata?.id !== ref.threadId) throw fault(404, 'conversation_unavailable');
+  const turns = await invoke('thread/turns/list', { limit, cursor: null, sortDirection: 'desc', itemsView: 'notLoaded', sourceRead: true });
+  signal?.throwIfAborted();
+  if (!Array.isArray(turns.data) || turns.data.length > limit || turns.data.some(turn => typeof turn.id !== 'string')) throw fault(503, 'invalid_history_page');
+  const entries = [];
+  let bytes = 2, truncated = turns.nextCursor != null;
+  const partialTurnIds = [];
+  turns: for (const turn of turns.data) {
+    signal?.throwIfAborted();
+    const page = await invoke('thread/items/list', { turnId: turn.id, limit: 30, cursor: null, sortDirection: 'desc', sourceRead: true });
+    signal?.throwIfAborted();
+    if (!Array.isArray(page.data) || page.data.length > 30) throw fault(503, 'invalid_history_page');
+    if (page.nextCursor != null) { truncated = true; partialTurnIds.push(turn.id); }
+    for (const source of page.data) {
+      const item = source?.item;
+      if (!item || !['userMessage', 'agentMessage'].includes(item.type)) continue;
+      if (typeof item.id !== 'string' || source.turnId != null && source.turnId !== turn.id) throw fault(503, 'invalid_history_page');
+      const content = item.type === 'agentMessage' ? item.text : (item.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('\n');
+      if (typeof content !== 'string') throw fault(503, 'invalid_history_page');
+      const points = Array.from(content), offset = Math.max(0, points.length - 2000);
+      const entry = { turnId: turn.id, itemId: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', offset,
+        text: points.slice(offset).join(''), partial: offset > 0 };
+      const size = Buffer.byteLength(JSON.stringify(entry)) + (entries.length ? 1 : 0);
+      if (bytes + size > 24000) { truncated = true; if (!partialTurnIds.includes(turn.id)) partialTurnIds.push(turn.id); break turns; }
+      bytes += size; truncated ||= entry.partial;
+      if (entry.partial && !partialTurnIds.includes(turn.id)) partialTurnIds.push(turn.id);
+      entries.unshift(entry);
+    }
+  }
+  return { entries, nextCursor: null, watermark: digest([ref, entries]), latestTurnId: turns.data[0]?.id ?? null,
+    truncated, partialTurnIds, tailTurns: limit, observedAt: Date.now() };
+}

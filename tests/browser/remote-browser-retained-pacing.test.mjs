@@ -20,3 +20,23 @@ test('late unsupported result cannot disable pacing on a replacement native gene
   host.displayPace(p); host.child = {}; host.resetVisibility(p);
   reject(new Error('Unsupported browser command')); await settle(); assert.equal(p.displayRateUnsupported, false);
 });
+
+test('one page retirement fences its late pacing result while the pool transport remains intact', async () => {
+  const host = Object.create(RemoteBrowserService.prototype); host.child = {};
+  const p = { id: 'page', live: true }; host.viewers = () => new Map([[{}, { visible: true }]]);
+  let reject; host.request = () => new Promise((_resolve, fail) => { reject = fail; });
+  const transport = host.child; host.displayPace(p); host.resetVisibility(p); p.displayFps = 10;
+  reject(new Error('Unsupported browser command')); await settle();
+  assert.equal(host.child, transport); assert.equal(p.displayRateUnsupported, false); assert.equal(p.displayFps, 10);
+});
+
+test('an older transient failure cannot invalidate a newer acknowledged pacing update', async () => {
+  const host = Object.create(RemoteBrowserService.prototype); host.child = {};
+  const p = { id: 'page', live: true }, viewer = { visible: true, decodeFps: 30 };
+  host.viewers = () => new Map([[{}, viewer]]); const jobs = [];
+  host.request = (_page, _method, input) => new Promise((resolve, reject) => jobs.push({ ...input, resolve, reject }));
+  host.displayPace(p); viewer.decodeFps = 10; host.displayPace(p);
+  assert.deepEqual(jobs.map(job => job.fps), [30, 10]);
+  jobs[1].resolve(); await settle(); jobs[0].reject(new Error('Temporary transport failure')); await settle();
+  host.displayPace(p); assert.equal(jobs.length, 2); assert.equal(p.displayFps, 10);
+});

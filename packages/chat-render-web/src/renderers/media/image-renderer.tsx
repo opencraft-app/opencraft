@@ -1,7 +1,7 @@
 import { useIntl } from "@opencraft/i18n/react";
 import { CloseIcon as SharedCloseIcon, ChevronLeftIcon as SharedChevronLeftIcon, ChevronRightIcon as SharedChevronRightIcon } from "@opencraft/design-system-web/action-icons";
-import { chatMediaPresentationKey, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { chatMediaPresentationKey, useChatMediaSource, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { usePreviewFocusOrigin } from "../../preview-focus-origin";
 import { ZoomableImage } from "../../zoomable-image";
@@ -23,6 +23,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
   return function ImageRenderer({ node, context }: ChatNodeRendererProps) {
     const intl = useIntl();
     const [gallery, setGallery] = useState<ImageGalleryState | null>(null);
+    const [attempt, setAttempt] = useState(0);
     const [mediaState, setMediaState] = useState<{
       readonly key: string;
       readonly source: string | null;
@@ -33,9 +34,12 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     if (node.kind !== "image") return null;
     // anchor policy rejects every data: URL. Keep that exception local to the
     // image renderer so it cannot weaken link navigation safety.
-    const decision = /^data:image\//iu.test(node.src)
+    const standardDecision = /^data:image\//iu.test(node.src)
       ? { allowed: true as const, kind: "external" as const, target: node.src }
       : resources.resolve(node.src, context);
+    const hostFile = standardDecision.allowed && standardDecision.kind === "external" && standardDecision.target !== null
+      ? context.loadMediaSource?.resolveFileSource?.(standardDecision.target) : null;
+    const decision = hostFile ? { allowed: true as const, kind: "file" as const, target: hostFile } : standardDecision;
     const loadKey = chatMediaPresentationKey(node.src, decision, context);
     const activeGallery = gallery?.key === loadKey ? gallery : null;
     useEffect(() => {
@@ -56,60 +60,51 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     const directSource = decision.allowed && decision.target !== null && !mustLoadThroughHost
       ? decision.target
       : null;
-    const effectiveState = useMemo(() => {
-      if (mediaState?.key === loadKey && mediaState.status === "unavailable") return mediaState;
-      if (!mustLoadThroughHost) {
-        return directSource === null
-          ? { key: loadKey, source: null, status: "unavailable" as const }
-          : { key: loadKey, source: directSource, status: "ready" as const };
-      }
-      return mediaState?.key === loadKey
-        ? mediaState
-        : { key: loadKey, source: null, status: "loading" as const };
-    }, [directSource, loadKey, mediaState, mustLoadThroughHost]);
+    // Shared consumers retain their subscription while the resource owner
+    // invalidates bytes. Only legacy providers need a new request identity.
+    const legacyAttempt = context.loadMediaSource?.getSnapshot ? 0 : attempt;
+    const request = useMemo(() => !mustLoadThroughHost || decision.target === null ? null : ({
+      source: node.src, resolvedTarget: decision.target, resourceKind: decision.kind!,
+      documentId: context.documentId, conversationId: context.conversationId ?? null,
+      hostId: context.hostId ?? null, cwd: context.cwd ?? null,
+    }), [mustLoadThroughHost, decision.target, decision.kind, node.src, context.documentId, context.conversationId, context.hostId, context.cwd, legacyAttempt]);
+    const media = useChatMediaSource(context.loadMediaSource, request);
+    const sourceKind = /^data:image\//iu.test(node.src) ? "data"
+      : decision.kind === "workspace-file" || decision.kind === "file" ? "file"
+      : decision.kind === "resource" ? "resource" : decision.kind === "external" ? "external" : "other";
+    const reportMedia = (phase: "policy" | "source" | "decode", outcome: "ok" | "failed", error?: unknown) => {
+      try { context.onMediaDiagnostic?.({ documentId: context.documentId, phase, outcome, sourceKind,
+        transport: mustLoadThroughHost ? "host" : "direct", contentType: media.value?.contentType, readAttempts: media.value?.readAttempts, error }); } catch { /* Diagnostics cannot affect presentation. */ }
+    };
     useEffect(() => {
-      if (!mustLoadThroughHost || decision.target === null || context.loadMediaSource === undefined) return;
-      let active = true;
-      const controller = new AbortController();
-      let release: (() => void) | undefined;
-      setMediaState({ key: loadKey, source: null, status: "loading" });
-      void context.loadMediaSource({
-        signal: controller.signal,
-        source: node.src,
-        resolvedTarget: decision.target,
-        resourceKind: decision.kind!,
-        documentId: context.documentId,
-        conversationId: context.conversationId ?? null,
-        hostId: context.hostId ?? null,
-        cwd: context.cwd ?? null,
-      }).then((result) => {
-        if (!active) { result?.release?.(); return; }
-        release = result?.release;
-        setMediaState({
-          key: loadKey,
-          source: result?.source ?? null,
-          status: result === null ? "unavailable" : "ready",
-        });
-        context.requestMeasurement?.({ geometryChanged: true, reason: "resource-resolve" });
-      }, () => {
-        if (!active) return;
-        setMediaState({ key: loadKey, source: null, status: "unavailable" });
-        context.requestMeasurement?.({ geometryChanged: true, reason: "resource-resolve" });
-      });
-      return () => { active = false; controller.abort(); release?.(); };
-    }, [
-      context.conversationId,
-      context.cwd,
-      context.documentId,
-      context.hostId,
-      context.requestMeasurement,
-      context.loadMediaSource,
-      decision.kind,
-      decision.target,
-      loadKey,
-      mustLoadThroughHost,
-      node.src,
-    ]);
+      if (!decision.allowed || decision.target === null) {
+        try { context.onMediaDiagnostic?.({ documentId: context.documentId, phase: "policy", outcome: "failed",
+          sourceKind, transport: mustLoadThroughHost ? "host" : "direct", policy: "resource" }); } catch { /* Observer isolation. */ }
+      }
+      else if (!mustLoadThroughHost || media.status !== "loading") {
+        reportMedia("source", mustLoadThroughHost && media.status !== "ready" ? "failed" : "ok", media.error);
+      }
+    }, [context.onMediaDiagnostic, context.documentId, sourceKind, decision.allowed, decision.target, mustLoadThroughHost, media.status, media.error, media.value?.contentType, media.value?.readAttempts]);
+    const candidateSource = mustLoadThroughHost ? media.value?.source ?? null : directSource;
+    useLayoutEffect(() => {
+      if (!candidateSource || !context.onMediaDiagnostic) return;
+      const blocked = (event: SecurityPolicyViolationEvent) => {
+        if (event.effectiveDirective !== "img-src" || event.disposition !== "enforce"
+          || !(event.blockedURI === candidateSource || (["blob", "data"].includes(event.blockedURI) && candidateSource.startsWith(event.blockedURI + ":")))) return;
+        try { context.onMediaDiagnostic?.({ documentId: context.documentId, phase: "policy", outcome: "failed",
+          sourceKind, transport: mustLoadThroughHost ? "host" : "direct", policy: "csp" }); } catch { /* Observer isolation. */ }
+      };
+      document.addEventListener("securitypolicyviolation", blocked);
+      return () => document.removeEventListener("securitypolicyviolation", blocked);
+    }, [candidateSource, context.onMediaDiagnostic, context.documentId, sourceKind, mustLoadThroughHost]);
+    const effectiveState = mediaState?.key === loadKey && mediaState.status === "unavailable"
+      && mediaState.source === (mustLoadThroughHost ? media.value?.source ?? null : directSource)
+      ? mediaState
+      : mustLoadThroughHost ? { source: media.value?.source ?? null, status: media.status }
+      : { source: directSource, status: directSource ? "ready" : "unavailable" };
+    useEffect(() => {
+      if (mustLoadThroughHost && media.status !== "loading") context.requestMeasurement?.({ geometryChanged: true, reason: "resource-resolve" });
+    }, [media, mustLoadThroughHost, context.requestMeasurement]);
     if (!decision.allowed || decision.target === null) {
       return <span className="chat-markdown-media-unavailable" role="img" title={decision.reason}>{node.alt || intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>;
     }
@@ -117,12 +112,18 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
       return <span aria-label={node.alt || intl.formatMessage({ id: "chat.image.loading", defaultMessage: "Loading image…" })} className="chat-markdown-media-placeholder" data-state="loading" role="img" />;
     }
     if (effectiveState.status === "unavailable" || effectiveState.source === null) {
-      return <span className="chat-markdown-media-unavailable" role="img">{node.alt || intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>;
+      const canRetry = !mustLoadThroughHost || !context.loadMediaSource?.getSnapshot || context.loadMediaSource.retry !== undefined;
+      return <span className="chat-markdown-media-unavailable"><span role="img" aria-label={node.alt || intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}>{node.alt || intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>{canRetry && <button className="chat-markdown-media-retry" type="button" onClick={() => {
+        setMediaState(null);
+        setAttempt(value => value + 1);
+        if (request) void context.loadMediaSource?.retry?.(request).catch(() => { /* The shared snapshot retains the failure. */ });
+      }}>{intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}</button>}</span>;
     }
     const imageSource = effectiveState.source;
     const close = () => setGallery(null);
     const markUnavailable = () => {
-      setMediaState({ key: loadKey, source: null, status: "unavailable" });
+      reportMedia("decode", "failed");
+      setMediaState({ key: loadKey, source: imageSource, status: "unavailable" });
       context.requestMeasurement?.({ geometryChanged: true, reason: "image-load" });
     };
     const openGallery = (trigger: HTMLButtonElement) => {
@@ -144,11 +145,12 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
       <>
         <button aria-label={node.alt || intl.formatMessage({ id: "chat.image.openPreview", defaultMessage: "Preview image" })} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => { previewFocus.recordOpen(event); openGallery(event.currentTarget); }} onKeyDown={previewFocus.onTriggerKeyDown} onPointerCancel={previewFocus.onTriggerPointerCancel} onPointerDown={previewFocus.onTriggerPointerDown} type="button">
           <img
+            key={attempt}
             alt={node.alt}
             className="chat-markdown-image"
             loading="lazy"
             onError={markUnavailable}
-            onLoad={() => context.requestMeasurement?.({ geometryChanged: true, reason: "image-load" })}
+            onLoad={() => { reportMedia("decode", "ok"); context.requestMeasurement?.({ geometryChanged: true, reason: "image-load" }); }}
             src={imageSource}
             title={node.title ?? undefined}
           />

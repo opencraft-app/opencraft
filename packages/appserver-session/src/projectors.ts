@@ -569,6 +569,25 @@ export function registerBuiltinThreadProjectors(ctx: Context): () => void {
           turn.turnStartedAtMs = previous?.turnStartedAtMs
             ?? turn.turnStartedAtMs
             ?? (typeof turn.startedAt === "number" ? turn.startedAt * 1_000 : Date.now());
+        } else if (notification.method === "turn/completed") {
+          // Some live completion notifications omit the aggregate duration,
+          // while the later history read includes it. Derive the same stable
+          // value from the protocol clocks when both endpoints are present so
+          // backgrounded tabs do not need a refresh to reveal the label.
+          const previous = view.turns.find((candidate) => candidate.id === turn.id);
+          const startedAtMs = previous?.turnStartedAtMs
+            ?? previous?.startedAtMs
+            ?? (typeof previous?.startedAt === "number" ? previous.startedAt * 1_000 : null)
+            ?? turn.turnStartedAtMs
+            ?? (typeof turn.startedAt === "number" ? turn.startedAt * 1_000 : null);
+          const completedAtMs = turn.completedAtMs
+            ?? (typeof turn.completedAt === "number" ? turn.completedAt * 1_000 : null);
+          if (turn.turnStartedAtMs == null && startedAtMs !== null) turn.turnStartedAtMs = startedAtMs;
+          if (turn.durationMs == null && startedAtMs !== null && completedAtMs !== null) {
+            const start = Number(startedAtMs);
+            const end = Number(completedAtMs);
+            if (Number.isFinite(start) && Number.isFinite(end)) turn.durationMs = Math.max(0, end - start);
+          }
         }
         const ownsFullItemMembership = notification.method === "turn/completed"
           && turn.itemsView === "full";

@@ -23,7 +23,7 @@ try {
   await rpc("initialize", { clientInfo: { name: "tasks-v1-smoke", version: "1" } });
   const content = { description: "Original description", projectId: null, projectServerId: null, acceptanceCriteria: "Verify the complete workflow" };
   await rpc("opencraft/tasks/create", { ...content, id: "harness", title: "Harness baseline", kind: "harness", status: "backlog" });
-  await rpc("opencraft/tasks/create", { ...content, id: "growth", title: "Growth baseline", kind: "growth", status: "todo" });
+  await rpc("opencraft/tasks/create", { ...content, id: "growth", title: "Growth baseline", kind: "growth", status: "backlog" });
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(15000);
   await page.addInitScript(() => localStorage.setItem("opencraft.appearance-theme", "system"));
@@ -33,6 +33,10 @@ try {
   await page.reload();
   await page.locator('[data-task-id="harness"]').waitFor();
   const column = page.locator('.tasks-column[data-column="technical_backlog"]');
+  const growthColumn = page.locator('.tasks-column[data-column="growth_backlog"]');
+  await growthColumn.locator('[data-task-id="growth"]').waitFor();
+  assert.equal(await page.locator('.tasks-column').count(), 8);
+  assert.equal(await page.locator('.tasks-column[data-column="product_backlog"] [data-task-id="growth"]').count(), 0);
   await column.getByRole("button", { name: "Add an item", exact: true }).click();
   const inline = column.getByLabel("Enter a title, then press Enter");
   await inline.fill("Inline new item");
@@ -73,7 +77,7 @@ try {
     await page.setViewportSize({ width, height: width === 320 ? 640 : 900 }); await page.emulateMedia({ colorScheme: theme });
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
     await page.waitForFunction(() => (document.querySelector(".tasks-viewport")?.getBoundingClientRect().width ?? 0) >= Math.min(innerWidth - 20, 290));
-    if (await page.locator(".tasks-statuses").isVisible()) await page.locator(".tasks-statuses").getByRole("radio", { name: /^Product backlog/ }).click();
+    if (await page.locator(".tasks-statuses").isVisible()) await page.locator(".tasks-statuses").getByRole("radio", { name: /^Growth backlog/ }).click();
     await page.locator('[data-task-id="harness"] .tasks-card__title').click();
     dialog = page.locator('.tasks-dialog'); await dialog.waitFor();
     assert.equal(await dialog.getByLabel("Title", { exact: true }).inputValue(), "Unsaved during progress");

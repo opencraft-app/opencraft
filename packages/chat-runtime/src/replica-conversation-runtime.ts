@@ -1062,7 +1062,17 @@ function mergeOptimisticSubmissions(
       state,
       turn: {
         id: state.turnId ?? asTurnId(`optimistic:${state.commandId}`),
-        status: state.state === "failed" ? "failed" : "pending",
+        // This synthetic Turn is only a display owner until AppServer returns
+        // a concrete Turn id. Keeping it live would make the renderer announce
+        // "Thinking" and expose an activeTurn before execution was admitted.
+        // Delivery truth remains on the optimistic UserMessage; an
+        // authoritative Turn (or an accepted receipt with its Turn id) restores
+        // the normal pending/streaming execution projection.
+        status: state.state === "failed"
+          ? "failed"
+          : state.state === "accepted" && state.turnId !== null
+            ? "pending"
+            : "complete",
         startedAtMs: state.createdAt,
         params: {
           clientUserMessageId: state.clientMessageId,
@@ -1291,6 +1301,7 @@ export function createReplicaConversationRuntime(
   let localRevision = 0;
   let loadingOlder = false;
   let historyError: Error | null = null;
+  let historyErrorAuthorityLost = false;
   let interruptingTurnId: TurnId | null = null;
   const interruptions = new Map<TurnId, Promise<void>>();
   // The statement "You stopped" belongs to this client's command intent,
@@ -1371,6 +1382,7 @@ export function createReplicaConversationRuntime(
     const replica = config.replica.getSnapshot();
     const entity = replica.entities.get(config.key.threadId);
     const view = isRecord(entity) ? entity : {};
+    const authoritative = replica.authoritative && view.historySyncRequired !== true;
     const thread = isRecord(view.thread) ? view.thread : {};
     const execution = isRecord(view.execution) ? view.execution : {};
     const activePermissionProfile = isRecord(execution.activePermissionProfile)
@@ -1385,7 +1397,7 @@ export function createReplicaConversationRuntime(
       // Native history may retain inProgress across a process restart. Only
       // a later authoritative Turn proves it has been superseded. Thread status
       // travels independently and may still be idle when a new Turn starts.
-      if (replica.authoritative && turn.status === "streaming" &&
+      if (authoritative && turn.status === "streaming" &&
         index < history.length - 1) {
         let recovered = recoveredHistoryTurns.get(original);
         if (!recovered) {
@@ -1399,7 +1411,7 @@ export function createReplicaConversationRuntime(
       if (!interrupted) { interrupted = { ...turn, interruptedByThisClient: true }; interruptedTurns.set(turn, interrupted); }
       return interrupted;
     });
-    if (replica.authoritative && queued.size > 0) {
+    if (authoritative && queued.size > 0) {
       const acknowledgedClientIds = sourceClientMessageIds(source);
       for (const [commandId, submission] of queued) {
         if (acknowledgedClientIds.has(submission.clientMessageId)) {
@@ -1407,12 +1419,12 @@ export function createReplicaConversationRuntime(
         }
       }
     }
-    if (replica.authoritative) outbox?.reconcile(new Set([
+    if (authoritative) outbox?.reconcile(new Set([
       ...sourceClientMessageIds(source), ...[...authoritativeQueue.values()].map(item => item.clientMessageId),
     ]));
     resolveOptimisticTurnPlacements(
       source,
-      replica.authoritative,
+      authoritative,
       pendingSubmissions,
     );
     rebaseOptimisticTurnPlacements(source, pendingSubmissions);
@@ -1445,7 +1457,7 @@ export function createReplicaConversationRuntime(
         key: config.key,
         revision: replica.revision,
         phase: phase(replica.phase),
-        authoritative: replica.authoritative,
+        authoritative: authoritative,
         turns,
       },
       projectors,
@@ -1464,12 +1476,21 @@ export function createReplicaConversationRuntime(
     const turnsPagination = isRecord(view.turnsPagination)
       ? view.turnsPagination
       : {};
+    if (historyError !== null && !authoritative) historyErrorAuthorityLost = true;
+    const olderCursor = string(turnsPagination.olderCursor);
+    const hasOlder = authoritative
+      && boolean(turnsPagination.hasLoadedOldest) !== true
+      && olderCursor !== null;
+    if (historyError !== null && authoritative && (historyErrorAuthorityLost || !hasOlder)) {
+      historyError = null;
+      historyErrorAuthorityLost = false;
+    }
     const active = [...turns]
       .reverse()
       .find((turn) => turn.status === "streaming" || turn.status === "pending");
     const error = replica.lastError;
     const latest = source.at(-1);
-    if (replica.authoritative && latest && continuedFromTurnId !== null &&
+    if (authoritative && latest && continuedFromTurnId !== null &&
       latest.id !== continuedFromTurnId) {
       continuedFromTurnId = null;
       continuationError = null;
@@ -1481,7 +1502,7 @@ export function createReplicaConversationRuntime(
         block.type === "error" && block.recovery === "terminal" &&
         block.code === "serverOverloaded"));
     const threadActive = isRecord(thread.status) && thread.status.type === "active";
-    const canContinue = replica.authoritative && replica.phase === "live" &&
+    const canContinue = authoritative && replica.phase === "live" &&
       error === null && !threadActive && active === undefined &&
       !continuationPending && pendingSubmissions.size === 0 &&
       pendingInteractions.length === 0 &&
@@ -1491,7 +1512,7 @@ export function createReplicaConversationRuntime(
       key: config.key,
       revision: replica.revision + localRevision,
       phase: error === null ? phase(replica.phase) : "error",
-      authoritative: replica.authoritative,
+      authoritative: authoritative,
       title: string(thread.name) ?? string(thread.title),
       threadStatus: thread.status ?? null,
       execution: {
@@ -1552,19 +1573,17 @@ export function createReplicaConversationRuntime(
           ...(submission.sender === undefined && sender ? { sender: { ...sender } } : {}),
           operation: queuePromotions.has(submission.clientMessageId) ? "starting" : submission.operation,
           steerable: submission.serverSubmissionId !== null || (submission.state === "submitting"
-            && replica.authoritative && replica.phase === "live" && submission.error === null),
+            && authoritative && replica.phase === "live" && submission.error === null),
         };
       }),
       unconfirmedSteers: [...steeringClaims.values()].filter(
         (item) => item.pausedReason === "steer-delivery-unconfirmed",
       ),
       history: {
-        hasOlder:
-          replica.authoritative &&
-          boolean(turnsPagination.hasLoadedOldest) !== true,
+        hasOlder,
         loading:
-          loadingOlder || boolean(turnsPagination.isLoadingOlder) === true,
-        cursor: string(turnsPagination.olderCursor),
+          hasOlder && (loadingOlder || boolean(turnsPagination.isLoadingOlder) === true),
+        cursor: olderCursor,
         error: historyError,
       },
       error,

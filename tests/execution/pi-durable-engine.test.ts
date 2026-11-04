@@ -1285,3 +1285,145 @@ test("older mixed-Host pages can read an empty Pi approval baseline without acqu
   assert.deepEqual(await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools), snapshot);
   await assert.rejects(f.engine.request("opencraft/interactions/respond", { threadId: thread.id, interactionId: "missing" }, noTools), /does not support/);
 });
+
+test("Goal admission carries a native nonce and round after the initiating client disconnects", async t => {
+  const f = await fixture(t, [
+    fauxAssistantMessage([fauxToolCall("update_goal", { status: "complete" }, { id: "done" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("goal completed"),
+  ]);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1") }, noTools);
+  const events: Array<{ method: string; params: any }> = [];
+  f.engine.subscribe((method, params) => events.push({ method, params }));
+  assert.deepEqual(await f.engine.request("thread/goal/get", { threadId: thread.id }, noTools), { goal: null });
+  const done = completed(f.engine);
+  const result = await f.engine.request("thread/goal/set", { threadId: thread.id, objective: "Finish the authorized work", status: "active", __opencraftGoalAuthorization: "native-test-nonce" }, noTools);
+  assert.equal(result.__opencraftGoalAuthorization, "native-test-nonce");
+  f.engine.disconnect(noTools);
+  await done;
+  const started = events.find(event => event.method === "turn/started")!;
+  assert.deepEqual(started.params.__opencraftGoalExecution, { authorizationId: "native-test-nonce", round: 1 });
+  assert.equal((await f.engine.request("thread/goal/get", { threadId: thread.id }, noTools)).goal.status, "complete");
+});
+
+test("native create_goal authorizes only its exact current execution; paused Goals never continue", async t => {
+  const f = await fixture(t, [
+    fauxAssistantMessage([fauxToolCall("create_goal", { objective: "Complete the full requested work" }, { id: "create" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("update_goal", { status: "paused" }, { id: "pause" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("paused by explicit user request"),
+  ]);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1") }, noTools);
+  const authorized: any[] = [], starts: any[] = [];
+  f.engine.subscribe((method, params) => { if (method === "opencraft/goal/authorized") authorized.push(params); if (method === "turn/started") starts.push(params); });
+  const done = completed(f.engine);
+  const result = await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: "human-origin", input: [{ type: "text", text: "Create a goal and pause it explicitly" }] }, noTools);
+  await done;
+  assert.equal(authorized.length, 1);
+  assert.equal(authorized[0].turnId, result.turn.id);
+  assert.equal(typeof authorized[0].authorizationId, "string");
+  const goal = (await f.engine.request("thread/goal/get", { threadId: thread.id }, noTools)).goal;
+  assert.equal(goal.status, "paused");
+  assert.equal(starts.length, 1);
+});
+
+test("server Goal observer grants an employee lease with no browser connection or Thread attachment", async t => {
+  const { ThreadIdentityDatabase } = await import("../../apps/opencraft-daemon/src/thread-identity-database.js");
+  const { ExecutionLeaseStore } = await import("../../apps/opencraft-daemon/src/execution-lease-store.js");
+  const { ExecutionLeaseTracker } = await import("../../apps/opencraft-daemon/src/execution-ownership-transport.js");
+  const { GoalExecutionObserver } = await import("../../apps/opencraft-daemon/src/goal-execution-observer.js");
+  const { observeNativeExecutionProcess } = await import("../../apps/opencraft-daemon/src/native-execution-origin.js");
+  let checkLease!: () => Promise<void>;
+  const f = await fixture(t, [async () => {
+    await checkLease();
+    return fauxAssistantMessage([fauxToolCall("update_goal", { status: "complete" }, { id: "done" })], { stopReason: "toolUse" });
+  }, fauxAssistantMessage("done")]);
+  const db = new ThreadIdentityDatabase(join(f.directory, "identity"));
+  const store = new ExecutionLeaseStore(db.database), tracker = new ExecutionLeaseTracker(store);
+  const host = await startEngineHost({ providers: [f.engine], defaultEngine: "pi" });
+  let ready!: () => void;
+  const initialized = new Promise<void>(resolve => { ready = resolve; });
+  const observer = new GoalExecutionObserver({ url: async () => host.websocketUrl, store,
+    native: () => observeNativeExecutionProcess(process.pid), onReady: ready });
+  t.after(async () => { await observer.close(); await host.close(); db.close(); });
+  observer.start(); await initialized;
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1") }, noTools);
+  checkLease = async () => {
+    for (let i = 0; i < 200; i++) {
+      const row = db.database.prepare("SELECT execution_id FROM execution_goal_rounds LIMIT 1").get();
+      if (row) {
+        const lease = store.resolve({ threadId: thread.id, executionId: String(row.execution_id) });
+        assert.equal(lease.status, "active");
+        if (lease.status === "active") { assert.equal(lease.lease.principal?.subject, "employee-A"); assert.ok(lease.lease.engineIncarnation); }
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.fail("Goal execution lease was never admitted by the background observer");
+  };
+  const prepared = tracker.prepare({ id: 1, method: "thread/goal/set", params: { threadId: thread.id, objective: "finish", status: "active" } },
+    { sender: { kind: "employee", loginName: "A" }, executionPrincipal: { provider: "employee", subject: "employee-A" }, validUntil: Date.now() + 10000 });
+  const done = completed(f.engine);
+  const result = await f.engine.request("thread/goal/set", prepared.params, noTools);
+  tracker.observe({ id: 1, result });
+  f.engine.disconnect(noTools);
+  await done;
+  assert.equal(db.database.prepare("SELECT COUNT(*) n FROM execution_goal_rounds").get()!.n, 1);
+});
+
+test("Goal dispatch waits for an identity lease ACK and disarms before model execution when denied", async t => {
+  let calls=0;
+  const f=await fixture(t,[()=>{calls++;return fauxAssistantMessage("must not execute");}]);
+  f.engine.setGoalExecutionAdmission({authorize:async()=>true,admit:async()=>false});
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  const disarmed=new Promise<void>(resolve=>{
+    const stop=f.engine.subscribe((method,params)=>{if(method==="thread/goal/updated"&&params.goal.execution?.activation==="disarmed"){stop();resolve();}});
+  });
+  await f.engine.request("thread/goal/set",{threadId:thread.id,objective:"work",status:"active",__opencraftGoalAuthorization:"denied"},noTools);
+  await disarmed;
+  assert.equal(calls,0);
+  const goal=(await f.engine.request("thread/goal/get",{threadId:thread.id},noTools)).goal;
+  assert.equal(goal.status,"active");assert.equal(goal.execution.activation,"disarmed");
+});
+
+test("native owner restart resumes an armed Goal from its durable nonce without a browser", async t => {
+  const f=await fixture(t,[]);
+  f.engine.setGoalExecutionObservation(false);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  await f.engine.request("thread/goal/set",{threadId:thread.id,objective:"finish",status:"active",__opencraftGoalAuthorization:"survives-owner"},noTools);
+  await f.engine.close();
+  const engine=new PiEngine({directory:f.directory,cwd:f.directory,models:fixtureModels([
+    fauxAssistantMessage([fauxToolCall("update_goal",{status:"complete"},{id:"done"})],{stopReason:"toolUse"}),fauxAssistantMessage("done"),
+  ]).models});t.after(()=>engine.close());
+  let proof:any;engine.subscribe((method,params)=>{if(method==="turn/started")proof=params.__opencraftGoalExecution;});
+  const done=completed(engine);await engine.start();await done;
+  assert.deepEqual(proof,{authorizationId:"survives-owner",round:1});
+});
+
+test("a reserved Goal round without a native submission receipt disarms after owner restart", async t => {
+  const f=await fixture(t,[]);
+  f.engine.setGoalExecutionObservation(false);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  await f.engine.request("thread/goal/set",{threadId:thread.id,objective:"finish",status:"active",__opencraftGoalAuthorization:"unknown-admission"},noTools);
+  const native=(f.engine as any).sessions.get(thread.id).native;
+  assert.equal((await native.reserveGoal("unknown-admission")).pending,true);
+  await f.engine.close();
+  let calls=0;
+  const engine=new PiEngine({directory:f.directory,cwd:f.directory,models:fixtureModels([()=>{calls++;return fauxAssistantMessage("must not execute");}]).models});t.after(()=>engine.close());
+  await engine.start();
+  const goal=(await engine.request("thread/goal/get",{threadId:thread.id},noTools)).goal;
+  assert.equal(goal.status,"active");assert.equal(goal.execution.activation,"disarmed");assert.equal(calls,0);
+});
+
+test("an older Goal round cannot complete a replacement Goal after its authorization changes", async t => {
+  let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;});const gate=new Promise<void>(resolve=>{release=resolve;});t.after(()=>release());
+  const f=await fixture(t,[async()=>{entered();await gate;return fauxAssistantMessage([fauxToolCall("update_goal",{status:"complete"},{id:"stale-complete"})],{stopReason:"toolUse"});},
+    context=>{assert.match(JSON.stringify(context.messages),/Goal authorization changed/);return fauxAssistantMessage("Left the replacement Goal unchanged");}]);
+  const {thread}=await f.engine.request("thread/start",{model:piModel("faux","faux-1")},noTools);
+  const done=completed(f.engine);
+  await f.engine.request("thread/goal/set",{threadId:thread.id,objective:"first objective",status:"active",__opencraftGoalAuthorization:"first-grant"},noTools);
+  await started;
+  await f.engine.request("thread/goal/set",{threadId:thread.id,objective:"replacement objective",status:"paused"},noTools);
+  release();await done;
+  const goal=(await f.engine.request("thread/goal/get",{threadId:thread.id},noTools)).goal;
+  assert.equal(goal.objective,"replacement objective");assert.equal(goal.status,"paused");
+});

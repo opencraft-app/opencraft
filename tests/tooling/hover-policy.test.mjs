@@ -65,3 +65,23 @@ test("entry handlers distinguish mouse while portal dismissal continuity remains
   assert.deepEqual(inspectHoverHandlers('<button onPointerEnter={event => {if(event.pointerType !== "mouse")return;setOpen(true)}}/>', 'fixture.tsx'), []);
   assert.deepEqual(inspectHoverHandlers('<Menu.Content onMouseEnter={cancelDismiss}/>', 'fixture.tsx'), []);
 });
+
+test("JavaScript style construction never treats intervening code as CSS", () => {
+  const source = `let html = "<style>"; for (let i=0;i<sheets.length;i++) html += sheets[i].cssText; html += '</style>';`;
+  assert.deepEqual(inspectHoverSource(source, "viewer-static.min.js"), []);
+  assert.deepEqual(inspectHoverSource('// <style>broken " CSS</style>\nconst value = 1;', "fixture.ts"), []);
+  assert.throws(() => inspectHoverSource('<style>a {content:"unterminated}</style>', 'document.html'));
+});
+test("complete JavaScript documents retain escaped CSS and actual source locations", () => {
+  const source = String.raw`const html = "<style>\na:hover{content:\"text\"}</style>";`;
+  const issues = inspectHoverSource(source, 'fixture.js');
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].line, 1);
+  assert.equal(issues[0].selector, 'a:hover');
+});
+test("template expressions cannot hide adjacent unguarded hover", () => {
+  const source = 'const html = `\n<style>\na:hover {color:${color}}\n\nbutton:hover {color:red}\n</style>`;';
+  const issues = inspectHoverSource(source, 'template.ts');
+  assert.deepEqual(issues.map(issue => [issue.selector, issue.line]), [['a:hover', 3], ['button:hover', 5]]);
+  assert.equal(inspectHoverSource('const html = `<div>${`<style>a:hover{color:red}</style>`}</div>`;', 'nested.ts').length, 1);
+});

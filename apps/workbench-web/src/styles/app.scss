@@ -151,6 +151,10 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   &, body { position: static; inset: auto; height: 100vh; }
   body { position: relative; }
   .app-shell-root { position: relative; }
+  // Keep the immersive paint canvas while bounding interactive content by the
+  // CSS dynamic viewport. A larger vh canvas must not carry the Composer below
+  // the exposed window; keyboard contraction still belongs to the viewport port.
+  .app-shell-row { max-height: 100dvh; }
   .app-shell-floating-overlay-root { position: absolute; }
   :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
     right: auto;
@@ -2677,6 +2681,10 @@ svg[data-sidebar-toggle-icon-state] {
   letter-spacing: var(--typography-label-tracking);
 }
 
+.settings-page__navigation--sidebar .settings-page__navigation-heading {
+  padding-inline: var(--offset-navigation-content-inline);
+}
+
 .settings-page__navigation .ui-navigation-group > .settings-page__navigation-heading,
 .settings-page__navigation .ui-navigation-group > div > .settings-page__navigation-heading {
   padding-top: 18px;
@@ -3654,7 +3662,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 @media (max-width: 720px) {
-  .settings-page__navigation {
+  .settings-page__navigation:not(.settings-page__navigation--sidebar) {
     padding-inline: 8px;
   }
   .settings-page__content {
@@ -7034,10 +7042,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   color: var(--color-text-tertiary);
 }
 
-.thread-reasoning .thread-activity-item__summary {
-  flex-shrink: 0;
-}
-
 .thread-activity-item__detail {
   min-width: 0;
   flex: 1 1 auto;
@@ -8977,14 +8981,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   color: var(--color-text);
 }
 
-.opencraft-composer-connection-hint {
-  margin: 6px 0 0;
-  padding-inline: 12px;
-  font: var(--typography-metadata-font);
-  color: var(--color-text-tertiary);
-  letter-spacing: var(--typography-metadata-tracking);
-}
-
 .opencraft-composer-shell {
   --composer-surface-filter: none;
   position: relative;
@@ -9539,6 +9535,36 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   inset-inline: 0;
   color: var(--color-text-tertiary);
   pointer-events: none;
+}
+
+
+// Keep the empty paragraph natively editable; generated copy never adds a caret boundary.
+.opencraft-composer-placeholder[data-placeholder-pending="true"]::after {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  width: fit-content;
+  max-width: 100%;
+  pointer-events: none;
+  color: transparent;
+  background: linear-gradient(90deg, transparent 40%, var(--color-text-working-highlight, var(--color-text)) 50%, transparent 60%) 100% 0 / 300% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: composer-placeholder-shimmer var(--working-shimmer-cycle-duration, 3s) linear var(--working-shimmer-first-delay, 800ms) infinite;
+}
+
+@keyframes composer-placeholder-shimmer {
+  // Move the highlight two text widths, avoiding the old six-width sprint.
+  0% { background-position: 100% 0; }
+  66.6667%, 100% { background-position: 0% 0; }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .opencraft-composer-placeholder[data-placeholder-pending="true"]::after {
+    content: none;
+    animation: none;
+  }
 }
 
 .opencraft-composer-token {
@@ -10895,39 +10921,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.terminal-panel__paste-entry {
-  display: flex;
-  width: min(320px, calc(100vw - 40px));
-  max-width: 100%;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
-  background: var(--color-background-elevated-primary);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
-  color: var(--color-text);
-
-  label { font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking); }
-
-  textarea {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 88px;
-    resize: vertical;
-    padding: 8px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 6px;
-    background: var(--color-background-input, var(--color-background-surface));
-    color: var(--color-text);
-    font: inherit;
-  }
+.terminal-panel__toolbar {
+  flex-direction: row;
 }
 
-.terminal-panel__paste-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+.terminal-panel__clipboard-status[data-touch-toolbar] {
+  bottom: calc(var(--right-panel-composer-overlay-reserve, 0px) + 10px);
 }
 
 .terminal-panel__status {
@@ -12939,6 +12938,7 @@ html[data-window-host="browser"] body {
 
 .thread-live-changes .thread-turn-diff-live { @include controls.density-target; }
 
+.sidebar-access-description { padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 2); @include typography.role(metadata, secondary); }
 
 .workspace-file-viewer__external-error {
   margin: 0;

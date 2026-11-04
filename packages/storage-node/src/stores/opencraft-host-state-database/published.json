@@ -1,0 +1,18 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1793322246816,
+    "version": 0,
+    "sqlChecksum": "8f31b77b1bb630c1cd8b910d2d84dcf530c2f45af6e8a185ae2033be8ed0274f",
+    "snapshotChecksum": "017a2fbfcd28626388bd3481eb95391d7209704715ae9b426e10f0858a813699",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_misty_micromax",
+    "when": 1793325058511,
+    "version": 17,
+    "sqlChecksum": "5dca41adc8c607b015496581284077fbe7689a114dca2e26bdf14bf73755f621",
+    "snapshotChecksum": "8e9ca8d39a93fdd89ef62c67c90176e7b989596279b105af54a2ff8c029e67ee",
+    "compiledChecksum": "197dbc83ec9e8db0b0173e4d7dc6d4095f56e0548aa7c2f6ae173990d1422996"
+  }
+]

@@ -51,6 +51,9 @@ function createTabId(): BrowserTabId {
 /** Logical-tab owner. Pages own navigation; panels own chrome; Presentations own geometry. */
 export class BrowserWorkbenchCoordinator {
   private readonly tabs = new Map<BrowserTabId, BrowserTabSnapshot>();
+  private readonly tabsByOwner = new Map<string, Set<BrowserTabId>>();
+  private readonly tabsByConversation = new Map<string, Set<BrowserTabId>>();
+  private readonly tabsByPage = new Map<string, Set<BrowserTabId>>();
   private readonly tabListeners = new Map<BrowserTabId, Set<() => void>>();
   private readonly pageSubscriptions = new Map<BrowserTabId, () => void>();
   /** Panel projections are cache entries. Browser tabs remain application-owned. */
@@ -69,7 +72,10 @@ export class BrowserWorkbenchCoordinator {
   ) {
     this.restoreTabs();
     this.pages.setSessionClosedHandler(pageId => {
-      for (const tab of [...this.tabs.values()]) if (tab.pageId === pageId) this.close(tab.ownerId, tab.id);
+      for (const id of [...(this.tabsByPage.get(pageId) ?? [])]) {
+        const tab = this.tabs.get(id);
+        if (tab) this.close(tab.ownerId, id);
+      }
     });
     this.unsubscribeBindings = bindings.subscribe(() => {
       for (const key of this.resourceListeners.keys()) {
@@ -77,8 +83,24 @@ export class BrowserWorkbenchCoordinator {
         this.publishResources(hostId, threadId);
       }
     });
+    this.unsubscribeBindings = bindings.subscribe(change => {
+      if(change){
+        for (const id of this.tabsByOwner.get(change.scopeId) ?? []) {
+          const previous = change.previous?.conversationKey;
+          if (previous) this.tabsByConversation.get(encodeConversationKey(previous))?.delete(id);
+          this.indexConversation(this.tabs.get(id)!);
+        }
+        const keys=[change.previous?.conversationKey,change.current?.conversationKey];
+        for(const key of keys)if(key)this.publishResources(key.hostId,key.threadId);
+      }else {
+        this.tabsByConversation.clear();
+        for (const tab of this.tabs.values()) this.indexConversation(tab);
+        for(const key of this.resourceListeners.keys()){
+        const [hostId,threadId]=JSON.parse(key);this.publishResources(hostId,threadId);
+      }}
+    });
     this.pages.setNewWindowHandler((pageId, url, background) => {
-      const source = [...this.tabs.values()].find(tab => tab.pageId === pageId);
+      const source = this.tabs.get(this.tabsByPage.get(pageId)?.values().next().value!);
       if (!source) return;
       this.open(source.ownerId, { initialUrl: url, background });
     });
@@ -101,8 +123,9 @@ export class BrowserWorkbenchCoordinator {
   setViewportMode(tabId: BrowserTabId, viewportMode: BrowserViewportMode): void {
     const current = this.requireTab(tabId);
     this.tabs.set(tabId, { ...current, viewportMode });
+    this.pages.requestViewportControl(current.pageId);
     this.notifyTab(tabId);
-    this.persistTabs();
+    this.persistTabs(tabId);
   }
 
   pageForTab(tabId: BrowserTabId): BrowserPageSnapshot | null {
@@ -111,8 +134,7 @@ export class BrowserWorkbenchCoordinator {
   }
 
   listForOwner(ownerId: string): readonly BrowserTabWithPage[] {
-    return [...this.tabs.values()]
-      .filter((tab) => tab.ownerId === ownerId)
+    return [...(this.tabsByOwner.get(ownerId) ?? [])].map(id => this.tabs.get(id)!)
       .sort((left, right) => left.createdAt - right.createdAt)
       .flatMap((tab) => {
         const page = this.pages.getSnapshot(tab.pageId);
@@ -123,10 +145,11 @@ export class BrowserWorkbenchCoordinator {
   /** Metadata only: listing a row must never initialize a browser surface. */
   getConversationTabs(hostId: string, threadId: string): readonly BrowserConversationTab[] {
     const key = JSON.stringify([hostId, threadId]);
-    const ownerId = this.bindings.findScope(createConversationKey(hostId, threadId));
-    const next = ownerId === null ? EMPTY_CONVERSATION_TABS : this.listForOwner(ownerId).map(({ tab, page }) => ({
-      tabId: tab.id, ownerId: tab.ownerId, title: page.title, url: page.navigation.currentUrl,
-    }));
+    const next = [...(this.tabsByConversation.get(key) ?? [])].map(id => this.tabs.get(id)!)
+      .sort((a,b) => a.createdAt-b.createdAt).flatMap(tab => {
+        const page = this.pages.getSnapshot(tab.pageId);
+        return page ? [{tabId:tab.id,ownerId:tab.ownerId,title:page.title,url:page.navigation.currentUrl}] : [];
+      });
     const previous = this.resourceSnapshots.get(key) ?? EMPTY_CONVERSATION_TABS;
     if (previous.length === next.length && previous.every((tab, i) => {
       const other = next[i]!;
@@ -244,7 +267,8 @@ export class BrowserWorkbenchCoordinator {
         viewportMode: DEFAULT_BROWSER_VIEWPORT_MODE,
       };
       this.tabs.set(tab.id, tab);
-      this.persistTabs();
+      this.indexTab(tab);
+      this.persistTabs(tab.id);
     } else {
       tab = existingTab;
     }
@@ -313,6 +337,20 @@ export class BrowserWorkbenchCoordinator {
     this.tabListeners.clear();
   }
 
+  private indexConversation(tab: BrowserTabSnapshot): void {
+    const conversation = this.bindings.resolve(tab.ownerId as ConversationScopeId)?.conversationKey;
+    if (!conversation) return;
+    const key = encodeConversationKey(conversation), ids = this.tabsByConversation.get(key) ?? new Set<BrowserTabId>();
+    ids.add(tab.id); this.tabsByConversation.set(key, ids);
+  }
+
+  private indexTab(tab: BrowserTabSnapshot): void {
+    for (const [index,key] of [[this.tabsByOwner,tab.ownerId],[this.tabsByPage,tab.pageId]] as const) {
+      const ids = index.get(key) ?? new Set<BrowserTabId>(); ids.add(tab.id); index.set(key,ids);
+    }
+    this.indexConversation(tab);
+  }
+
   private requireTab(tabId: BrowserTabId): BrowserTabSnapshot {
     const tab = this.tabs.get(tabId);
     if (tab === undefined) throw new Error(`Browser tab ${tabId} is unavailable`);
@@ -352,11 +390,15 @@ export class BrowserWorkbenchCoordinator {
     this.stopObserving(tabId);
     this.panelOwners.delete(tabId);
     this.tabs.delete(tabId);
+    this.tabsByOwner.get(tab.ownerId)?.delete(tabId);
+    this.tabsByPage.get(tab.pageId)?.delete(tabId);
+    const conversation = this.bindings.resolve(tab.ownerId as ConversationScopeId)?.conversationKey;
+    if (conversation) this.tabsByConversation.get(encodeConversationKey(conversation))?.delete(tabId);
     this.tabListeners.get(tabId)?.clear();
     this.tabListeners.delete(tabId);
-    if (![...this.tabs.values()].some((candidate) => candidate.pageId === tab.pageId))
+    if (!this.tabsByPage.get(tab.pageId)?.size)
       this.pages.close(tab.pageId);
-    this.persistTabs();
+    this.persistTabs(tab.id);
     this.publishOwnerResources(tab.ownerId);
   }
 
@@ -380,7 +422,11 @@ export class BrowserWorkbenchCoordinator {
     for (const listener of this.tabListeners.get(tabId) ?? []) listener();
   }
 
-  private persistTabs(): void {
+  private persistTabs(id: BrowserTabId): void {
+    if(this.storage?.records){
+      try{const tab=this.tabs.get(id);if(tab)this.storage.records.put('tabs',id,tab);else this.storage.records.remove('tabs',id);}catch{}
+      return;
+    }
     const stored: StoredBrowserTab[] = [...this.tabs.values()];
     try {
       (this.storage ?? window.localStorage).setItem(STORAGE_KEY, JSON.stringify(stored));
@@ -409,7 +455,7 @@ export class BrowserWorkbenchCoordinator {
         createdAt: row.createdAt,
         viewportMode: normalizeBrowserViewportMode(row.viewportMode),
       };
-      if (!this.tabs.has(tab.id)) this.tabs.set(tab.id, tab);
+      if (!this.tabs.has(tab.id)) { this.tabs.set(tab.id, tab); this.indexTab(tab); }
     }
   }
 }

@@ -51,6 +51,23 @@ export async function startAgent(config, entry = process.argv[1]) {
       return { recoveryRequired: parents.some(job => !['completed','rolled-back','deferred','active-draining'].includes(job.state) && job.steps.some(step => step.intent && !step.receipt)) || (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
     }
     if (input.action === 'web-child') return webChildControl(config, input, journal, bootId);
+    if (input.action === 'web-resume-admission') {
+      invariant(identifier(input.operationId), 'invalid-child-id');
+      const job = await journal.load('web-' + input.operationId);
+      const child = JSON.parse(await readFile(join(config.webState, 'upgrade-children', input.operationId + '.json'), 'utf8'));
+      const step = job.steps[0];
+      const parents = config.fullRecipePath ? (await request(socketPath(config, 'helper'), { action: 'full-status' })).jobs : [];
+      const others = (await journal.list()).filter(other => other.operationId !== job.operationId);
+      const unresolved = other => !['completed', 'rolled-back', 'deferred', 'active-draining'].includes(other.state)
+        && (!['failed', 'blocked'].includes(other.state) || other.steps.some(s => s.intent && !s.receipt));
+      return { allowed: job.state === 'recovery-required' && !job.stopRequested
+        && job.steps.length === 1 && step.action === 'official-web-transaction' && step.ownerId === 'web-execution'
+        && step.fence === child.id && step.intent?.childJobId === child.id && !step.receipt
+        && child.id === input.operationId && child.phase === 'recovery-required'
+        && job.targetVersion === child.version && job.targetBuildId === child.buildId
+        && job.manifestSha256 === child.manifestSha256 && job.releaseId === child.releaseId
+        && !others.some(unresolved) && !parents.some(unresolved) };
+    }
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,
       mode: config.mode, ownerAdapters: config.generationRecipePath ? ['codex-generation', 'acp-generation'] : [], jobs: await journal.list() };
     if (input.action === 'request-ci') {

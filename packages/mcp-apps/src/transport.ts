@@ -211,6 +211,9 @@ export class McpAppsTransport implements DuplexTransport {
       for (const listener of this.messages) listener(projected);
     });
   }
+  watchConversation(threadId: string, clientId: string, current: () => boolean): () => void {
+    return this.inner?.watchConversation?.(threadId, clientId, current) ?? (() => {});
+  }
   get status() {
     return this.inner.status;
   }

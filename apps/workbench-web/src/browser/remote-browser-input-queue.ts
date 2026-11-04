@@ -19,9 +19,9 @@ export function mergeRemoteInput(previous: any, next: any): any | null {
 }
 
 export class RemoteBrowserInputQueue {
-  private queued: ({ input: any } | { run: () => Promise<any>; resolve: (value: any) => void; reject: (error: Error) => void })[] = [];
+  private queued: ({ input: any } | { run: (current: () => boolean) => Promise<any>; group?: string; resolve: (value: any) => void; reject: (error: Error) => void })[] = [];
   private active = 0;
-  private exclusive = false;
+  private exclusive: boolean | string = false;
   private generation = 0;
   private waiters: ((drained: boolean) => void)[] = [];
   constructor(private readonly send: (input: any, current: () => boolean) => Promise<unknown>, private readonly overflow: () => void,
@@ -41,23 +41,27 @@ export class RemoteBrowserInputQueue {
     if (this.queued.length > 128) { this.reset(); this.overflow(); return; }
     this.pump();
   }
-  barrier<T>(run: () => Promise<T>): Promise<T> {
-    const result = new Promise<T>((resolve, reject) => this.queued.push({ run, resolve, reject }));
+  barrier<T>(run: (current: () => boolean) => Promise<T>, group?: string): Promise<T> {
+    const result = new Promise<T>((resolve, reject) => this.queued.push({ run, group, resolve, reject }));
     if (this.queued.length > 128) { this.reset(); this.overflow(); }
     else this.pump();
     return result;
   }
   private pump() {
-    while (!this.exclusive && this.active < Math.max(2, Math.min(12, this.limit())) && this.queued.length) {
+    while (this.active < Math.max(2, Math.min(12, this.limit())) && this.queued.length) {
       const job = this.queued[0], generation = this.generation;
-      if ('run' in job && this.active) break;
+      // Same-transaction native commands share the ACK window. The server
+      // already orders their execution; don't add one RTT per IME phase.
+      const group = 'run' in job ? job.group : undefined;
+      if (this.exclusive && (!group || this.exclusive !== group)) break;
+      if ('run' in job && this.active && !this.exclusive) break;
       this.queued.shift();
-      this.exclusive = 'run' in job;
+      if ('run' in job) this.exclusive = group ?? true;
       ++this.active;
       void Promise.resolve().then(async () => {
         if (generation !== this.generation) { if ('reject' in job) job.reject(new Error('Browser interaction ended')); return; }
         if ('input' in job) return this.send(job.input, () => generation === this.generation);
-        try { job.resolve(await job.run()); } catch (error) { job.reject(error as Error); }
+        try { job.resolve(await job.run(() => generation === this.generation)); } catch (error) { job.reject(error as Error); }
       })
         .catch(error => {
           if (generation !== this.generation) return;
@@ -65,7 +69,7 @@ export class RemoteBrowserInputQueue {
         })
         .finally(() => {
           if (generation !== this.generation) return;
-          --this.active; if ('run' in job) this.exclusive = false; this.pump();
+          --this.active; if (!this.active) this.exclusive = false; this.pump();
           if (!this.busy) for (const resolve of this.waiters.splice(0)) resolve(true);
         });
     }

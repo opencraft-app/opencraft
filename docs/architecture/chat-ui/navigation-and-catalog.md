@@ -164,6 +164,8 @@ A fresh invalidation then reconciles metadata; it does not serialize subsequent
 events behind network latency. Disposal fences queued callbacks. Neither unknown
 rows nor selected-route execution state are invented to force a group placement.
 Running precedes attention, pins and recent in the existing task-flow projection.
+The default Sidebar places the private Mine section after pinned conversations
+and before Recent. Contributed grouping modes retain their independent Mine section.
 
 The row container paints one continuous selected/hover background across title,
 project, status, participants and actions. Server marks are omitted; provenance
@@ -248,13 +250,16 @@ Customization drag keeps the source slot in layout and paints a noninteractive, 
 
 `packages/workbench-panels-react` provides `ConversationSummaryService`, a single trusted
 renderer contribution with fiber-scoped registration/disposal. The built-in
-`plugins/thread-summary` consumes its public readonly context rather than application internals.
+`plugins/thread-summary` consumes its public context and optional captured note transport rather than application internals.
 `createWebWorkbenchApplication({threadSummary: false})` omits this module and its entry point.
 The host projects the displayed timeline and the existing goal resource, scopes view state by
 account/Host/thread, and supplies guarded semantic open-resource/open-thread callbacks.
 It owns actual-container layout, the toolbar and existing Radix ModalSurface; the plugin owns
-section content and typography. No additional subscription, summary model service, execution
-owner, persistence store or inference request is introduced. History may be partial; only
+section content and typography. The first section is a collaborative Markdown note when the
+Host advertises the note capability. Yjs synchronization and the independent gateway store
+are described in [shared conversation notes](../platform/storage-and-preferences.md#shared-conversation-notes).
+Existing history projections remain read-only and follow the note; no inference request or
+new execution owner is introduced. History may be partial; only
 structured plan/file records and explicit agent states contribute. Terminal completion never
 implies completion of a background process. Desktop and narrow presentation reuse the same
 controlled disclosure/scroll state while the conversation DOM stays mounted.
@@ -282,3 +287,157 @@ and keys documents by server and conversation identity supplied by the trusted h
 Pending edits are retained within the current page session, with no claim of
 durable offline drafts across reload. Remote edits wait during IME composition
 and preserve selection through Yjs relative positions.
+
+## Versioned directory reads and live facts
+
+Hosts advertising `opencraft/thread-directory-snapshots` version 1 accept
+`opencraft-catalog-snapshot-v1:start` as the initial `thread/list` cursor. A
+`catalogSnapshot` contains a read ID and `{source, revision}` checkpoints shared
+by every page. An EOF proves absence only when source coverage is complete.
+The view still traverses existing reader admission and result projection; a
+cursor is never a grant. Views expire after two minutes and each owner retains
+at most sixteen. Expiry uses RPC code `-32086`; the sidebar starts a new read,
+retaining known rows as partial, at most twice per minute before ordinary Retry.
+
+Memory-backed `ThreadDirectory` projections keep an immutable balanced ordered
+index derived from their existing authority. A commit applies captured metadata
+changes to affected index paths before notifying consumers; it adds no SQL reads.
+Each capture retains roots, and later mutations cannot move rows between pages.
+EngineHost captures its independent admitted source roots together.
+
+File-backed directories use a dedicated read-only worker instead: it captures
+ordered metadata, coverage and the persisted row-revision watermark in one SQL
+read transaction, then releases the transaction before parsing or sending pages.
+The source's notification revision is the persisted watermark minus its startup
+watermark: both advance once per committed changed row. No projection writer is
+added. Recovery after a changed revision may read all local metadata; continuations
+reuse retained arrays and return page-sized replies. SQL and metadata parsing do
+not run on the network thread, worker failure has no synchronous fallback, and
+pending requests are bounded. No schema migration or network-held SQL transaction
+is introduced. Existing source scanning/projection writes still have synchronous
+SQLite debt; this capability does not claim that all legacy directory IO has moved
+out of the network thread.
+
+The local Codex history path also supports versioned directory reads. Its
+independent SQL reader captures metadata in one read transaction and reuses the
+immutable index while the catalog revision is unchanged. A capture after a changed
+revision can read the full local metadata projection; this is a recovery cost,
+not an O(changes) claim. It neither reads transcript bodies nor holds the SQL
+transaction across network pages. Known partial source directories continue
+reconciling in bounded background batches, rather than certifying EOF from the
+currently cached subset. No Server database migration is required.
+
+Canonical notifications carry `authority: directory`. A bounded `batch` mutation
+contains at most 256 upsert/patch/remove facts at one commit revision. The sidebar
+applies every member before notifying readers, rejects duplicates, and retires
+older facts using matching snapshot checkpoints. A complete new incarnation also
+retires pre-read facts from retired publishers, while events received after the
+read boundary remain pending. Once negotiated, duplicate legacy publishers do not
+override the canonical stream. Hosts without this capability retain V1 equality
+and invalidation behavior. Per-reader authorization filtering may skip source
+revisions: a numeric gap alone does not prove event loss.
+
+History readers opt into batches by opening a versioned read. Metadata-only
+commits emit authorized upserts and deletions; coverage, archive, incomplete or
+large commits may invalidate instead. Live execution status remains owned by its
+existing execution projection and is applied over stored metadata. The same
+revision is meaningful only within its source. Current recovery is explicitly
+`snapshot`: there is no claim of durable notification replay or ACKs across a
+native process restart. Stable metadata IDs/order fields, live notification
+ordering and recovery checkpoints are separate concepts.
+
+Pin discovery and provisional creations are presentation decorations on the
+first page. They never change certified rows or acknowledge their own live facts.
+Canonical later pages supersede stale pin titles; complete absence removes stale
+backfill. Failed coverage is an error with ordinary Retry and a thirty-second
+background interval, rather than indefinite cold loading and two-second polling.
+Warming coverage can continue polling without clearing usable rows.
+
+DSH dirty batches first read requested attached sessions through the native
+`sessionProjections.snapshot` seam. Only directory fields and the title projection
+cross the private bridge; no unrelated projections, event bodies, session
+activation or persistence listing are used. A missing live session/projection or
+an older bridge falls back to one shared in-flight `session.list` call. Cold and
+periodic full scans remain supported. The diagnostic `thread-directory-source`
+records mode, requested/live/fallback counts and duration, never titles or IDs.
+
+
+## Merkle catalog recovery after foreground return
+
+Online updates still use the canonical directory notification stream. Hosts that
+implement `opencraft/thread-directory-merkle` version 1 additionally support
+bounded comparison through `thread/list` opaque snapshot cursors. Old Hosts and
+clients retain versioned full snapshot recovery.
+
+A complete raw client baseline is compared with one immutable, admitted Server
+snapshot. SHA-256 of the stable Thread ID selects one of 256 buckets in a fixed
+two-level radix tree. Bucket hashes cover canonical stable directory metadata in
+ID order; branch hashes cover their ordered child hashes. Display ordering,
+insertion order, source incarnations, live execution status and pin/provisional
+decorations do not define content identity. Identical roots finish with no
+metadata rows. Different roots return a bounded bucket-hash vector; the client
+requests only differing buckets, pages their current rows, replaces those entire
+buckets (including empty ones for deletion), and verifies the reconstructed root
+and count before publishing. There is no requirement to retain old Server roots,
+tombstones or every intervening notification revision. Unchanged rows sharing a
+changed bucket are retransmitted; this is a bounded coarse-grained tree rather
+than a per-record minimal-delta claim.
+
+Comparison handles are reader/owner local, partition-bound, capped at sixteen
+and expire after two minutes. Every request traverses the existing admission
+lane. Partial/failed coverage cannot certify equality or absence. More than 128
+changed buckets, or changes covering more than sixty percent of current rows
+(with a 64-row floor), use ordinary snapshots. Malformed/corrupt replies cannot
+retire live facts; expired handles use the existing bounded snapshot restart.
+Concurrent post-boundary notifications remain in the existing overlay, and the
+new snapshot checkpoints retire only covered older facts. Formerly active IDs
+and the bounded current active set refresh through the ordinary execution-status
+projector even when the stable metadata root is equal. This is metadata recovery,
+not a replacement for execution-state synchronization.
+
+Memory directories incrementally maintain immutable bucket paths from committed
+metadata. Merged EngineHost roots reuse unchanged leaf inputs. File-backed SQL
+directories construct/cache the tree in the dedicated read-only worker; version
+changes may still require a full local metadata read. Merkle reduces wire/JSON
+recovery work but does not claim to remove existing source scanning or SQL read
+amplification. The client yields while building a first baseline and reuses its
+index for later reads. A completed verified result preserves normal sorting,
+pin decorations and the current view; no special recovery page is mounted.
+
+The existing account-scoped ClientResources owner stores a separate disposable
+replica in eight bounded parts, keyed by Host, profile revision, authorization
+epoch and part. Only matching complete generations form a baseline. Each part
+stays below 900,000 encoded bytes, at most 20,000 records total; eviction, quota
+failure, incomplete writes, lost cache or oversized lists fall back to snapshots.
+Replica records contain directory metadata only, without transcript turns,
+execution credentials or mutable execution authority. Logout revokes the old
+namespace and clears remote copies. The older 300-row presentation cache remains
+a display aid and cannot certify Merkle equality. Physical phone behavior and
+latency require device measurement; touch-browser tests are recorded separately.
+
+Foreground `visibilitychange`, network return and persisted `pageshow` invalidate
+active directory readers even inside the ordinary 30-second freshness window.
+The listener is shared per QueryClient, coalesces hints within 500 ms and retains
+in-flight recovery. Hidden/unmounted/disabled readers do not initiate a Host read.
+
+Merkle identity is the **admitted reader projection**, not the shared storage
+row. The history worker obtains a batched allow/deny and authoritative
+shared/private classification from the existing policy owner before opening its
+snapshot transaction. It hashes only admitted records with their projected
+`accessMode`; that field remains part of the checksum. The directory revision is
+fenced across admission, and the parent rechecks permissions and modes before
+returning a reply. Admission never waits across an open SQL transaction.
+Opaque comparison handles additionally bind to the logical reader incarnation,
+with the same shared sixteen-view budget; another reader cannot reuse a handle.
+The access layer rejects unprojected summaries with a content-free fallback and
+removes the capability from engines lacking this admitted-reader seam. Private
+record counts/hashes are not exposed and do not participate in another reader's
+equality check. This currently performs an ID-only admission pass and rebuilds
+the authorized tree in the reader worker on a new comparison; it saves network
+traffic without claiming O(changes) Server authorization/CPU cost.
+
+For history-backed reads, the execution-status owner also supplies its bounded
+current active-ID set before a Merkle head read. The worker admits these IDs and
+the normal status projector refreshes them; a newly active conversation is not
+missed merely because both cached and stored metadata previously said idle. An
+active-set overflow falls back to the ordinary snapshot.

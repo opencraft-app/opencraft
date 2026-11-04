@@ -6,7 +6,9 @@ import { randomUUID } from 'node:crypto';
  * uses the same queue; native work never holds it. Publish only after fsync and
  * atomic replacement. A failed draft cannot leak into another writer's commit. */
 export class BrowserStateFile {
-  constructor(directory, saved) {
+  constructor(directory, saved, filename = 'tabs.json') {
+    if (!['tabs.json', 'owner-pool.json'].includes(filename)) throw new Error('Invalid browser state filename');
+    this.filename = filename;
     this.directory = directory;
     this.current = saved ?? { schemaVersion: 1, pages: [], retired: [], states: [] };
     this.tail = Promise.resolve();
@@ -21,7 +23,7 @@ export class BrowserStateFile {
       try {
         file = await open(temporary, 'wx', 0o600);
         await file.writeFile(JSON.stringify(draft)); await file.sync(); await file.close(); file = null;
-        await rename(temporary, join(this.directory, 'tabs.json'));
+        await rename(temporary, join(this.directory, this.filename));
         // Rename has committed: never publish an older snapshot after this point.
         this.current = draft;
         const directory = await open(this.directory, 'r');

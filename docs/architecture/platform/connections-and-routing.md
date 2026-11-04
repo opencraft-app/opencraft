@@ -67,11 +67,20 @@ still consumes the controller's complete progress snapshot; authorization and
 physical/configuration changes remain immediate, without another writable store.
 Runtime
 uses the shared read boundary for native indexed SSH discovery, not rollout
-reconciliation. Each admitted Host query owns loading/failure and scoped retry;
+reconciliation. An enabled, sidebar-visible durable WebSocket on the current website may establish
+a logical metadata reader even when its saved `autoConnect` is false and another
+engine is selected. This same-origin directory read does not Resume a Thread or
+activate execution. Other origins, credential-bearing URLs and remote SSH retain
+their existing connection admission rules; reconnect/error recovery stays with the runtime.
+Each admitted Host query owns loading/failure and scoped retry;
 the sidebar never substitutes an empty success for pending/error or lets one
 failed Host erase the others. Reading admission and cached-row visibility are separate: temporary physical
 connecting/reconnecting/idle/error states retain already loaded rows in the same
 recipe and authorization scope without authorizing new requests or execution.
+The catalog observes runtime registration, replacement and removal as well as
+phase changes. A successor that is already ready must revalidate the directory
+and cached-row interaction without waiting for another transport event. Initial
+subscription to an unchanged ready runtime and ordinary streaming updates remain quiet.
 Lock/logout, removal, disablement and recipe/authorization changes revoke
 visibility immediately; scoped query keys prevent reuse across incarnations, and expansion discloses hidden remote rows within the fetched catalog.
 The per-Host metadata index uses TanStack infinite-query pages. Each successful

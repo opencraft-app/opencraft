@@ -64,15 +64,19 @@ Expo Layout/Navigation 拥有：
 
 ### Newera mobile browser chrome
 
-The unified touch experience uses bottom browser chrome when a narrow window
-presents an active full-width browser panel. Compact density, wide windows and
-non-browser panels retain their existing chrome. The installation's density
+The unified touch experience uses a shared bottom rail when a narrow window
+presents a full-width panel, regardless of tab kind. Its leftmost action returns
+to the workspace directly. Browser history back lives in browser utilities.
+Compact density and wide windows retain their existing chrome. The installation's density
 projection and Shell's actual full-width state select presentation; neither
 changes the remote page's shared viewport or device profile.
 
 BrowserPanel owns local address editing and consumes the original Page commands.
-RightPanel projects its existing tabs/actions through PanelNavigationContext for
-the mobile overview, including non-browser tabs; overview cards display actual
+RightPanel projects its existing tabs, plugin creation actions and close capabilities
+through PanelNavigationContext. PanelMobileToolbar owns the shared rail and mobile
+overview for browser, terminal, file and extension-defined tabs. BrowserPanel fills
+its address, keyboard and utility slots; ordinary panels show the active title
+and their contributed utilities. Overview navigation entries display actual
 metadata rather than pretending to be live screenshots. Radix ModalSurface owns
 focus, dismissal and input exclusion. Opening the overview does not create a
 second browser page or close the active logical resource.
@@ -81,8 +85,9 @@ The browser renderer and mobile-specific chrome/styles load on demand from the
 registered panel type; registering navigation must not eagerly load its UI into
 the startup graph. Existing startup resource budgets remain unchanged.
 
-The existing FloatingComposer owner initializes each Newera mobile browser to
-on-demand presentation once. Agent reveals the same editor and latest-turn
+The existing FloatingComposer owner initializes each Newera touch panel to
+on-demand presentation once. All touch tab kinds share the measured body-level
+plane and rail reservation, so Agent cannot cover the return or tab controls. Agent reveals the same editor and latest-turn
 renderer; hiding, resizing and switching chrome preserve drafts. A direct keyboard
 button consumes the existing native editing capability and invokes showKeyboard
 synchronously in its local gesture. No remote async notification forces a Web
@@ -258,6 +263,16 @@ Conversation rows expose the logical tabs held by their canonical Host+Thread bi
 
 The row resource menu lists tab titles, opens an existing tab in its original scope, and offers explicit close-all for that conversation. It shares the Sidebar's exclusive menu owner. Leaving the conversation or dismissing this menu does not destroy tabs or take input control. Counts describe retained logical tabs, not measured CPU or memory, native liveness or viewer/controller ownership.
 
+### Explicit viewport editing authority
+
+User device-preset, rotation and dimension edits in BrowserPanel request human
+control through the existing remote Surface authority path. Tab mode publication
+and Presentation measurement remain the geometry source; the grant applies the
+latest measured size through the existing bounded resize queue. Restoring tabs,
+opening a viewer and passive layout measurements never request control. Local
+hosts need no authority adapter. A hidden, closed, replaced or superseded pending
+request cannot acquire control later; failures use scoped input feedback.
+
 ### Remote surface admission during offline Shell startup
 
 A restored panel can mount before authenticated remote browser metadata is ready.
@@ -267,6 +282,7 @@ or open a physical browser connection before admission. After admission it resto
 the authoritative lease mapping, commits metadata and then connects. Authentication
 failure follows the surface error path; closing the surface before admission prevents
 late admission from reopening it.
+
 ### Remote browser metadata budgets
 
 Conversation binding aliases cover the catalog rather than only open browser tabs.

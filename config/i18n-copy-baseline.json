@@ -2369,18 +2369,6 @@
     },
     {
       "file": "apps/workbench-web/src/components/thread-composer-presentation.tsx",
-      "kind": "jsx-expression",
-      "text": "Working",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/thread-composer-presentation.tsx",
-      "kind": "jsx-expression",
-      "text": "Latest turn",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/thread-composer-presentation.tsx",
       "kind": "aria-label",
       "text": "Hide chat input",
       "count": 1
@@ -5212,18 +5200,6 @@
       "count": 1
     },
     {
-      "file": "plugins/tasks/src/ai-follow-up.tsx",
-      "kind": "jsx-text",
-      "text": "Owner",
-      "count": 1
-    },
-    {
-      "file": "plugins/tasks/src/ai-follow-up.tsx",
-      "kind": "title",
-      "text": "Owner: ${…}",
-      "count": 1
-    },
-    {
       "file": "plugins/tasks/src/view.tsx",
       "kind": "jsx-text",
       "text": "Beta",
@@ -5239,30 +5215,6 @@
       "file": "plugins/terminal/src/index.tsx",
       "kind": "jsx-text",
       "text": "This PTY belongs to an earlier AppServer connection.",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-text",
-      "text": "粘贴",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-text",
-      "text": "粘贴或输入文字",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-text",
-      "text": "发送到终端",
-      "count": 1
-    },
-    {
-      "file": "plugins/terminal/src/index.tsx",
-      "kind": "jsx-text",
-      "text": "取消",
       "count": 1
     },
     {

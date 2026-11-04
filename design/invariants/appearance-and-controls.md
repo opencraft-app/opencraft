@@ -112,6 +112,12 @@ while explicit tap/keyboard selection is persistent and accessible through
 native buttons and aria-pressed. The daily table remains available.
 
 
+Embedded HTML styles are inspected within one JavaScript string or template AST
+node. Executable code between independently constructed style-tag strings is not
+CSS. Literal escapes and template expressions retain source-line diagnostics;
+static hover rules around dynamic values remain subject to the same policy.
+Malformed complete styles still fail parsing.
+
 ## Window appearance projection
 
 The existing appearance owner resolves one `WindowAppearanceIntent`: source and

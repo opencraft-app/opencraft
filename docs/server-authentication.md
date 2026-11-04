@@ -226,6 +226,20 @@ SQLite 升级遵循[生命周期契约](sqlite-lifecycle.md)。成员库追加 v
 
 管理命令与服务启动共享安装 fence。运行 `human-account` 或 `access-admin` 前先停止同数据目录的 Headless Server；命令自动完成存量导入并操作统一核心库。原 `access-admin /absolute/memberships.sqlite ...` 参数保留为同目录兼容入口，不再写旧成员库。
 
+The optional `sshAccess.isScopedUsername(username)` port reserves known names
+for dynamic authority even when their current key list is empty. Headless passes
+this decision to SSH ingress as `isScopedUsername`; matching static keys cannot
+bypass dynamic revocation for those names. Independently configured maintenance
+names remain on the static path. The adapter owns which names are scoped; core
+does not infer a provider or create an identity from a username.
+
+`MembershipStore.revocationRevision(actorId, bindings)` exposes the last durable
+disable event across an Actor and its verified bindings, independent of current
+enabled state. Credential adapters may bind this revision at enrollment and
+recheck it on live connections; a fast disable/enable pair cannot restore the
+previous credential authority merely because an observer missed the disabled
+state. The read does not create Actors, grant membership or mutate generations.
+
 
 ## Owner-published permission projections
 
@@ -251,3 +265,6 @@ Server before opening its owner. Legacy string-path repositories with independen
 writers retain live SQLite reads; they cannot safely adopt this projection without
 one write owner or a synchronous invalidation channel. No timer, TTL or filesystem
 watch is used as an authorization freshness guarantee.
+
+Headless explicitly binds the separate Thread policy repository to the same fenced
+Server lifecycle; its delivery projection uses the same owner-publish rules.

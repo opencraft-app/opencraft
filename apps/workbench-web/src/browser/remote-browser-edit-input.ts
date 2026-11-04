@@ -4,7 +4,8 @@ export class RemoteBrowserEditInput {
   private handled: string | null = null;
   constructor(private readonly receiver: HTMLInputElement,
     private readonly available: () => boolean, private readonly composing: () => boolean,
-    private readonly commit: (text: string) => void, private readonly key: (key: string) => void) {}
+    private readonly commit: (text: string) => void, private readonly key: (key: string) => void,
+    private readonly edit?: (command: string) => void) {}
   retire() { this.handled = null; }
   beforeInput(event: InputEvent) {
     this.handled = null;
@@ -23,6 +24,9 @@ export class RemoteBrowserEditInput {
     return this.composing() || event.isComposing || event.inputType.includes('Composition') || !this.available();
   }
   private apply(event: InputEvent, fallback: boolean) {
+    const command = ({ historyUndo: 'undo', historyRedo: 'redo', deleteWordBackward: 'deleteWordBackward',
+      deleteWordForward: 'deleteWordForward' } as Record<string, string>)[event.inputType];
+    if (command && this.edit) { this.edit(command); return true; }
     const key = ({ deleteContentBackward: 'Backspace', deleteContentForward: 'Delete',
       insertLineBreak: 'Return', insertParagraph: 'Return' } as Record<string, string>)[event.inputType];
     if (key) { this.key(key); return true; }

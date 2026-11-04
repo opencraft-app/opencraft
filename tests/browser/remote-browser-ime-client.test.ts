@@ -55,3 +55,29 @@ test('late terminal and cancellation retain their original editor identity', asy
   ime.start(); ime.retire(); await tick();
   assert(calls.filter(c=>c.id===calls.at(-1).id).every(c=>c.editor==='search-field'));
 });
+
+test('an empty ongoing preedit clears the remote composition before later text in the same transaction', async () => {
+ const f=fixture();f.ime.start();f.calls[0].resolve();await tick();
+ f.ime.update('ni');await tick();f.calls[1].resolve();await tick();
+ f.ime.update('');await tick();
+ assert.deepEqual(f.calls.map(c=>[c.input.type,c.input.text]),[['begin',undefined],['compose','ni'],['compose','']]);
+ f.ime.update('hao');f.calls[2].resolve();await tick();
+ assert.equal(f.calls[3].input.text,'hao');assert(f.calls.every(c=>c.input.id===f.calls[0].input.id));
+});
+
+test('unknown-first composition keeps its original native activation when editor metadata arrives later',async()=>{
+ const receiver={value:''} as HTMLInputElement,calls:any[]=[];let editor:string|null=null,activation='native-event-A';
+ const ime=new RemoteBrowserIme(receiver,async input=>{calls.push(input)},()=>true,()=>{},()=>editor,()=>activation);
+ ime.start();editor='new-hint';activation='native-event-B';ime.update('你');ime.end('你');await tick();
+ assert(calls.filter(call=>call.type!=='cancel').every(call=>call.activation==='native-event-A'&&call.editor===null));
+ ime.start();ime.end('好');await tick();assert.equal(calls.filter(call=>call.type==='begin').at(-1).activation,'native-event-B');
+});
+test('late failure identifies its original transaction without retiring the newer activation',async()=>{
+ const receiver={value:''} as HTMLInputElement,calls:any[]=[],failures:any[]=[];let activation='native-event-A';
+ const ime=new RemoteBrowserIme(receiver,input=>new Promise((resolve,reject)=>calls.push({input,resolve,reject})),()=>true,(_message,_error,origin)=>failures.push(origin),()=>null,()=>activation);
+ ime.commit('旧');activation='native-event-B';ime.start();receiver.value='new';calls[0].reject(new Error('old rejected'));await tick();
+ assert.equal(ime.currentActivation,'native-event-B');assert.equal(receiver.value,'new');assert.equal(failures[0].activation,'native-event-A');assert.equal(failures[0].wasCurrent,false);ime.retire();
+});
+test('oversized final text never enters a native commit or the transport queue',()=>{
+ const f=fixture();f.ime.commit('x'.repeat(16385));assert(!f.calls.some(call=>call.input.type==='commit'));assert(f.errors.some(error=>error.includes('too long')));assert.equal(f.receiver.value,'');
+});

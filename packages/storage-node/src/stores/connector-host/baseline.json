@@ -1,0 +1,25 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "managed-connectors",
+      "checksum": "80905a13caa56f35bcde53dceea9e33ae972425403c9c22644b88b03e14da840"
+    }
+  ],
+  "tableOptions": {
+    "connector_credentials": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "connector_instances": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "connector_oauth_transactions": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "16521a22be366caaf95b8bd386029b8f6df65fe9fa12557a03ec5f6049562d0b",
+  "baselineSnapshotChecksum": "828f3663c2990aabd491c16757d5eb7787a843ca843983a524f536539c13e59c"
+}

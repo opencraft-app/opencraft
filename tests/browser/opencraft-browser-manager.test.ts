@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createImplementation } from "../../apps/workbench-web/src/browser/opencraft/presentation-transition.js";
 import { createOpenCraftBrowserManager } from "../../apps/workbench-web/src/browser/opencraft-browser-manager";
+import { BrowserPresentationCoordinator } from "../../apps/workbench-web/src/browser/browser-presentation-coordinator";
 import { OpenCraftPresentationHost } from "../../apps/workbench-web/src/browser/opencraft-presentation-host";
 
 test("local host fences old refs and does not focus staged/blocked guest", () => {
@@ -171,6 +172,52 @@ test("replaced unregistered host stays parked when its registration completes la
   } finally { env.close(); }
 });
 
+
+for (const authority of ['server', undefined] as const) {
+  test(`resource use preserves ${authority === 'server' ? 'server input and viewport authority' : 'legacy local input exclusion'}`, async () => {
+    const env = environment();
+    let coordinator: BrowserPresentationCoordinator | undefined;
+    try {
+      let use!: () => () => void, closed = 0, parked = 0;
+      const container = { style: { pointerEvents: 'auto' }, isConnected: true } as unknown as HTMLElement;
+      const commits: any[] = [];
+      const port = { container, guest: { focus() {} } as unknown as HTMLElement,
+        ready: Promise.resolve(), commit(layout: any, visible: boolean) {
+          commits.push({ layout, visible }); container.style.pointerEvents = visible ? 'auto' : 'none';
+        }, park() { parked++; }, close() { closed++; }, clearCover() {}, cover() {} };
+      coordinator = new BrowserPresentationCoordinator({ getSnapshot: () => ({ ownerId: 'owner', navigation: { currentUrl: 'https://example.test/' } }), prepareSurface() {} } as any,
+        { inputAuthority: authority, presentationPort: () => port, setUseFactory(factory: any) { use = factory && (() => factory('page')); } } as any);
+      const manager = coordinator.manager;
+      const host = manager.getWebview('owner', 'page', '') as OpenCraftPresentationHost;
+      host.markRegistered();
+      const layout = { visualBounds: state.bounds, stageBounds: state.bounds,
+        viewportSize: { width: 390, height: 844 }, scale: 1 };
+      const ref = {};
+      host.sync({ ...state, layout }, ref);
+      const release = use();
+      assert.equal(manager.isBrowserUseActive('owner', 'page'), true);
+      assert.equal(manager.isBrowserUseTab('owner', 'page'), true);
+      assert.equal(container.style.pointerEvents, authority === 'server' ? 'auto' : 'none');
+      assert.deepEqual(manager.browserUseViewportSizes.get('owner\0page'), authority === 'server' ? undefined : { width: 1280, height: 800 });
+      assert.throws(use, /busy/, 'a use claim still excludes a competing automation resource claim');
+      host.detach(ref, 1);
+      host.setBrowserUseActive(true);
+      assert.equal(host.isPainted(), false);
+      assert.equal(manager.isBrowserUseActive('owner', 'page'), true, 'hiding presentation does not release resource use');
+      assert.equal(manager.getWebview('owner', 'page', ''), host);
+      assert.equal(closed, 0, 'hidden backing remains resident');
+      if (authority === 'server') {
+        assert(parked > 0); assert(commits.every(c => c.layout.viewportSize.width === 390));
+      } else assert(commits.some(c => !c.visible && c.layout.viewportSize.width === 1280));
+      release(); release();
+      assert.equal(manager.isBrowserUseActive('owner', 'page'), false);
+      assert.equal(manager.isBrowserUseTab('owner', 'page'), false);
+      assert.equal(closed, 0, 'releasing use does not close a logical page');
+      const next = use(); next();
+      assert.equal(manager.isBrowserUseActive('owner', 'page'), false);
+    } finally { coordinator?.dispose(); env.close(); }
+  });
+}
 
 test("page input boundary survives guest commits and automation release without retiring the resource", () => {
   const env = environment();

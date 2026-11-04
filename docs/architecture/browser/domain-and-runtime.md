@@ -413,3 +413,28 @@ indexed Scope while retaining the Host check. This is the shared binding foundat
 local and remote resource-record adapter rollout is a separate change. Existing clients
 that inject the legacy `save` port still serialize snapshots and do not gain constant
 update data size merely by adopting this API.
+
+### 持久资源记录与绑定（2026-10-30）
+
+Browser Page、Tab、storage lease 和 Draft→Thread alias 是独立实体，不是一个可整体替换的
+JSON 文档。共享 `BrowserRecordPort` 以 collection/id 提供投影和写入；生产 owner 只写变化的
+实体。Web 使用既有 ClientResourcePersistence/IndexedDB，Electron 使用既有 Main SQLite
+bridge，Remote 使用经过认证的 `records` RPC。Node adapter 由
+`@opencraft/workbench-storage-node` 持有 SQLite 生命周期、实体 revision、tombstone 和幂等收据。
+验证过的调用主体决定 owner，客户端 scope 只用于识别账户变化，不授予访问权限。
+
+每个命令携带 expectedRevision/mutationId，实体和收据在同一事务提交；断线重试使用原命令。
+一个实体冲突不会污染其他实体的队列。关闭后保留 tombstone，即使有限收据压缩也不能让旧
+创建命令复活。Page 的物理连接只等待自身 Page/Tab/storage 的提交，不等待整张 alias 表。
+资源关闭还在同一事务退役对应 Session，原生清理继续由现有生命周期 owner 执行。
+
+Scope 是草稿和 View 连续性的身份，ThreadKey 是稳定业务归属。普通已有 Thread 的 canonical
+Scope 可以从 ThreadKey 推导，不为每次打开新增持久 alias；旧草稿 alias 保留。服务端 Session
+保存 typed ownerRef（thread/draft），Draft promotion 与关联 Session 归属在同一事务更新。
+客户端资源目录按 owner、ThreadKey 和 Page 建索引，binding 变化只重建该 Scope 的关联项；
+React 订阅单 Scope，快照列表只在显式请求时生成。
+
+单次 binding 更新的内存索引/通知成本为 O(1)+受影响订阅者；数据库索引写入为 O(log n)，
+网络和序列化只包含变化实体，不再每次处理 n 条 alias，连续 n 次新增不再累计 O(n²) 数据量。
+首次恢复仍有 O(n) 的旧 alias 分页读取，各页256条；这不是按需加载全部历史已完成的承诺。
+有界原生进程池的 placement checkpoint 仍沿用其原 owner，不与无界业务目录混合。

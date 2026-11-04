@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { TokenUsageStateDatabase, TOKEN_USAGE_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/token-usage-state-database.js";
-import { openManagedDatabase, createSchemaValidator } from "../../packages/sqlite-node/src/index.js";
+import { openManagedDatabase, createSchemaValidator, resolveStoreMigrations } from "../../packages/sqlite-node/src/index.js";
 import { OpenCraftTokenUsageLedger } from "../../apps/opencraft-daemon/src/token-usage-ledger.js";
 import { CodexTokenUsageRuntime } from "../../apps/opencraft-daemon/src/token-usage-runtime.js";
 import { readTeamUsage } from "../../apps/opencraft-daemon/src/token-usage-team-query.js";
@@ -79,7 +79,7 @@ test("v1 dedicated store upgrades its thread index without changing facts, alloc
   old.database.close();
   let upgraded = new TokenUsageStateDatabase(directory);
   try {
-    assert.equal(upgraded.outcome.appliedVersion, 3);
+    assert.equal(upgraded.outcome.appliedVersion, resolveStoreMigrations("token-usage-state-database",TOKEN_USAGE_STATE_MIGRATIONS).length);
     assert.equal(upgraded.outcome.status, "migrated");
     assert.ok(upgraded.outcome.backupPath);
     assert.deepEqual(upgraded.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), migration);
@@ -306,11 +306,31 @@ test("v2 source recency upgrade preserves facts and installed history and avoids
  seed(owner);const facts=old.database.prepare('SELECT * FROM token_usage_sources').all(),history=old.database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();old.database.close();
  const state=new TokenUsageStateDatabase(directory);
  try{
-  assert.equal(state.outcome.appliedVersion,3);assert.deepEqual(state.database.prepare('SELECT * FROM token_usage_sources').all(),facts);
+  assert.equal(state.outcome.appliedVersion,resolveStoreMigrations("token-usage-state-database",TOKEN_USAGE_STATE_MIGRATIONS).length);assert.deepEqual(state.database.prepare('SELECT * FROM token_usage_sources').all(),facts);
   assert.deepEqual(state.database.prepare('SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version').all(),history);
   const sql='SELECT max(observed_ms) AS at FROM token_usage_sources WHERE server_id=?';
   assert.equal(state.database.prepare(sql).get('server')!.at,1000);
   const plan=state.database.prepare('EXPLAIN QUERY PLAN '+sql).all('server');
   assert.ok(plan.some(row=>String(row.detail).includes('token_usage_sources_observed_query')),JSON.stringify(plan));
  }finally{state.close();}
+}));
+
+
+test("gap index migration upgrades populated previous owner and no-match replay never takes the writer",()=>fixture(directory=>{
+  const path=join(directory,"token-usage.sqlite");
+  const migrations=resolveStoreMigrations("token-usage-state-database",TOKEN_USAGE_STATE_MIGRATIONS);
+  const old=openManagedDatabase({path,migrations:migrations.slice(0,-1),legacyPolicy:"reject-unknown"});
+  const db=old.database;
+  db.exec("INSERT INTO token_usage_gaps VALUES('server','keep','thread',NULL,'invalid-source',1000,NULL)");
+  const before=db.prepare("SELECT * FROM schema_migrations").all();db.close();
+  const state=new TokenUsageStateDatabase(directory);
+  try{
+    assert.deepEqual(state.database.prepare("SELECT * FROM schema_migrations WHERE version<?").all(migrations.length),before);
+    assert.equal(state.database.prepare("SELECT reason FROM token_usage_gaps").get()!.reason,"invalid-source");
+    const plan=state.database.prepare("EXPLAIN QUERY PLAN SELECT 1 FROM token_usage_gaps WHERE server_id=? AND thread_id=? AND ends_ms IS NULL LIMIT 1").all("server","none");
+    assert.ok(plan.some(row=>String(row.detail).includes("token_usage_gaps_thread")),JSON.stringify(plan));
+    const ledger=new OpenCraftTokenUsageLedger(state,"server");
+    state.transaction=()=>{throw new Error("empty update acquired writer");};
+    ledger.resolveReplayGaps("none");ledger.resolveReplayGaps("thread");
+  }finally{state.close();}
 }));

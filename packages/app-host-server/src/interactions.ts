@@ -1,3 +1,4 @@
+import { structuredInteractionResult, type StructuredInteractionSubmission } from "@opencraft/appserver-protocol";
 import { randomUUID } from "node:crypto";
 import type { InteractionSourceRequest, SharedInteraction, SharedInteractionSnapshot } from "@opencraft/appserver-protocol";
 
@@ -20,7 +21,7 @@ export class InteractionFault extends Error {
 /** Producer-scoped human wait projection. Native execution owns actual resolution.
  * A response admission is synchronous; delivery never removes a pending source. */
 export class HostInteractions {
-  private readonly epoch = randomUUID();
+  private epoch = randomUUID();
   private readonly entries = new Map<string, Entry>();
   private readonly nativeIds = new Map<string, string>();
   private readonly revisions = new Map<string, number>();
@@ -90,6 +91,31 @@ export class HostInteractions {
     if (!key) return;
     await this.respond(String(this.entries.get(key)!.value.params.threadId), key, submissionId, result, write, validate);
   }
+  async respondStructured(threadId: string, submission: StructuredInteractionSubmission,
+    write: (source: InteractionSourceRequest, result: Record<string, unknown>) => Promise<void>, assertCurrent: () => void = () => {}): Promise<"submitted" | "already-submitted" | "resolved"> {
+    assertCurrent();
+    if (submission.expectedEpoch !== this.epoch) throw new InteractionFault({code:"SOURCE_CHANGED"}, "Interaction producer changed");
+    if (!Number.isSafeInteger(submission.expectedRevision) || submission.expectedRevision < 0)
+      throw new InteractionFault({code:"INVALID_RESPONSE"}, "Invalid revision");
+    const entry = this.entries.get(submission.interactionId);
+    if (!entry) {
+      if (this.resolved.get(submission.interactionId) === threadId) return "resolved";
+      throw new InteractionFault({code:"NOT_FOUND"}, "Interaction is no longer available");
+    }
+    if (entry.value.params.threadId !== threadId) throw new InteractionFault({code:"SCOPE"}, "Interaction belongs to another conversation");
+    if (entry.value.state === "pending" && submission.expectedRevision !== (this.revisions.get(threadId) ?? 0))
+      throw new InteractionFault({code:"SOURCE_CHANGED"}, "Interaction snapshot changed; read again");
+    let result: Record<string, unknown>;
+    try { result = structuredInteractionResult(entry.value, submission.response); }
+    catch { throw new InteractionFault({code:"INVALID_RESPONSE"}, "Invalid or unsupported structured response"); }
+    return this.respond(threadId, submission.interactionId, submission.submissionId, result,
+      async (source, answer) => { assertCurrent(); await write(source, answer); }, () => {
+        assertCurrent();
+        if (submission.expectedEpoch !== this.epoch || this.entries.get(submission.interactionId) === entry && entry.value.state === "pending"
+          && submission.expectedRevision !== (this.revisions.get(threadId) ?? 0))
+          throw new InteractionFault({code:"SOURCE_CHANGED"}, "Interaction source changed during validation");
+      });
+  }
   async respond(threadId: string, id: string, submissionId: string, result: Record<string, unknown>,
     write: (source: InteractionSourceRequest, result: Record<string, unknown>) => Promise<void>,
     validate?: (source: InteractionSourceRequest, result: Record<string, unknown>) => void): Promise<"submitted" | "already-submitted" | "resolved"> {
@@ -142,7 +168,7 @@ export class HostInteractions {
   resolveTurn(threadId: string, turnId: string): void {
     for (const e of [...this.entries.values()]) if (e.source.params.threadId === threadId && e.source.params.turnId === turnId) this.resolveNative(e.source.id, threadId);
   }
-  clear(): void { this.entries.clear(); this.nativeIds.clear(); this.resolved.clear(); this.revisions.clear(); }
+  clear(): void { this.epoch = randomUUID(); this.entries.clear(); this.nativeIds.clear(); this.resolved.clear(); this.revisions.clear(); }
   private publish(threadId: string): void {
     this.revisions.set(threadId, (this.revisions.get(threadId) ?? 0) + 1);
     for (const listener of [...this.listeners]) { try { listener(threadId); } catch { /* An observer cannot own native settlement. */ } }

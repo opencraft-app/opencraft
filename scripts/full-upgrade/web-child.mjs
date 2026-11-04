@@ -1,3 +1,4 @@
+import { validateInitialReadinessAttempt } from '../server-deployment/initial-readiness-budget.mjs';
 // The official Web transaction owns installation, previous and rollback. This
 // adapter only journals its durable receipt; it cannot submit/replay an install.
 import { readFile } from 'node:fs/promises';
@@ -28,6 +29,7 @@ export async function webChildControl(config, input, journal, bootId) {
   if (!job) job = await journal.create({ operationId: id, planDigest: digest, manifestSha256: child.manifestSha256 ?? null,
     inventoryFingerprint: digest, bootId, steps: [{ stepId: 'web', ownerId: 'web-execution', action: 'official-web-transaction', epoch: 0, fence: child.id }] });
   invariant(job.planDigest === digest, 'child-identity-conflict');
+  invariant(!job.manifestSha256 || !child.manifestSha256 || job.manifestSha256 === child.manifestSha256, 'child-manifest-conflict');
   if (job.state === 'completed' && child.phase === 'completed' && job.steps[0].receipt?.outcome === 'applied') return projectJob(job, config);
   const recovery = child.recovery;
   const recoveryDigest = recovery ? sha256(JSON.stringify(recovery)) : null;
@@ -47,6 +49,19 @@ export async function webChildControl(config, input, journal, bootId) {
   if (recovery && !recovered) child.phase = 'recovery-required';
   const before = JSON.stringify(job);
   job.releaseId = child.releaseId ?? null; job.targetVersion = child.version; job.targetBuildId = child.buildId;
+  if (Object.hasOwn(child, 'initialReadinessBudget')) {
+    invariant(deployment.job?.id === child.id
+      && JSON.stringify(deployment.job.initialReadinessBudget) === JSON.stringify(child.initialReadinessBudget),
+    'child-readiness-owner-conflict');
+    validateInitialReadinessAttempt(child.initialReadinessBudget, {
+      version: child.version, buildId: child.buildId,
+      fullRelease: { authorization: 'verified-installation', manifestSha256: child.manifestSha256,
+        releaseSequence: child.initialReadinessBudget.target?.releaseSequence },
+    }, child.id);
+    invariant(!job.initialReadinessBudget || JSON.stringify(job.initialReadinessBudget) === JSON.stringify(child.initialReadinessBudget),
+      'child-readiness-attempt-conflict');
+    job.initialReadinessBudget = child.initialReadinessBudget;
+  }
   const step = job.steps[0];
   if (!['completed', 'failed'].includes(child.phase)) step.receipt = null;
   if (child.manifestSha256) job.manifestSha256 = child.manifestSha256;

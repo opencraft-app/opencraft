@@ -131,13 +131,23 @@ test('document identity is captured at admission and checked before native dispa
 
 test('native coalescing preserves only the real bounded single-finger tail and its release time', async () => {
  const {createTouchInput}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
- let release;const gate=new Promise(r=>release=r),seen=[];
- const touch=createTouchInput(async input=>{seen.push(input);if(seen.length===1)await gate},()=>1700000000000);
- const dispatch=createControls(message=>touch.apply(message.input));
+ let release,wall=1700000000000;const gate=new Promise(r=>release=r),seen=[];
+ const touch=createTouchInput(async input=>{seen.push(input);if(seen.length===1)await gate},()=>wall);
+ const dispatch=createControls(message=>touch.apply(message.input),undefined,()=>wall);
  const sample=(type,time)=>({page:'timed',method:'input',input:{type,time,touchPoints:type==='touchEnd'?[]:[{id:0,x:time,y:50}]}});
  const results=[dispatch(sample('touchStart',0))];await tick();
- for(let time=16;time<=480;time+=16)results.push(dispatch(sample('touchMove',time)));
- results.push(dispatch(sample('touchEnd',496)));release();await Promise.all(results);
- assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,464,480,496]);
+ for(let time=16;time<=480;time+=16){wall=1700000000000+time;results.push(dispatch(sample('touchMove',time)));}
+ wall=1700000000496;results.push(dispatch(sample('touchEnd',496)));wall+=4;release();await Promise.all(results);
+ assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[-2,462,478,494]);
  assert.deepEqual(seen.slice(1,-1).map(v=>v.touchPoints[0].x),[464,480]);
+});
+
+test('queued timed input includes native wait without crossing a merged sample admission',async()=>{
+ let wall=0,release;const seen=[],gate=new Promise(r=>release=r);
+ const dispatch=createControls(async message=>{seen.push(message);if(seen.length===1)await gate},undefined,()=>wall);
+ const input=(time,age)=>({page:'waiting',method:'input',input:{type:'touchMove',time,age,touchPoints:[{id:1,x:time,y:0}]}});
+ const held=dispatch({page:'waiting',method:'control',input:{token:'grant'}});await tick();
+ wall=100;const one=dispatch(input(50,50));wall=130;const two=dispatch(input(100,30));
+ wall=1800;release();await Promise.all([held,one,two]);
+ assert.equal(seen[1].input.age,1700);assert.equal(seen[1].input.time,100);
 });

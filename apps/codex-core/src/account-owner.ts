@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,6 +8,8 @@ import { acquireCodexWriter, parseCodexAuthFile, parseCodexAuthFileReference } f
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 
 import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
+
+import { AccountHandoffStore, type HistorySummary } from "./account-handoff-store.js";
 
 import { parseFencedRetained } from "./fenced-retained.js";
 
@@ -48,9 +50,9 @@ async function sealAccountMaintenance(options: ConstructorParameters<typeof Acco
     const state = owner.snapshot();
     if (state.phase !== "released" || !state.legacyMaintenance) throw new Error("Legacy account maintenance was not sealed");
     return { phase: state.phase, legacyMaintenance: state.legacyMaintenance,
-      unknownCount: state.uncertain.length, inspection: kind === "exported-account-maintenance"
+      unknownCount: state.historicalUnknownSummary.count, inspection: kind === "exported-account-maintenance"
         ? owner.inspectionAtSeal() ?? await owner.inspectMaintenance() : await owner.inspectMaintenance() };
-  } finally { release(); }
+  } finally { owner.closeStorage(); release(); }
 }
 /** Existing pre-hash legacy importer stays strict and separate. */
 export const sealLegacyAccountMaintenance = (options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) =>
@@ -63,12 +65,15 @@ export const sealFencedAccountMaintenance = (options: ConstructorParameters<type
 export const sealExportedAccountMaintenance = (options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) =>
   sealAccountMaintenance(options, receipt, "exported-account-maintenance");
 
+export interface AccountLaunchReference { manifestSha256: string; configurationSelectorSha256: string; cliSha256: string }
+
 type Phase = "open" | "fenced" | "released" | "cold-ready";
 type HistoricalUnknown = { id: string; route: string; diagnostic?: AccountPoolUncertainDiagnostic & {
   owner: string; bootId: string; incarnation: string; pid: number; ownerEpoch: number;
 } }[];
 interface State {
-  schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
+  schemaVersion: 1; revision?: number; acceptedHistory?: HistorySummary; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
+  launch?: AccountLaunchReference; handoffLaunch?: { source: AccountLaunchReference; target: AccountLaunchReference };
   operatorLease?: OperatorLeaseClaim; operatorLeaseAborts?: OperatorLeaseAbort[];
   retained?: CodexAccountRetainedState;
   sealed?: { storage: string; historicalCount: number;
@@ -78,7 +83,7 @@ interface State {
   carriedUnknown?: HistoricalUnknown;
   legacyMaintenance?: { receiptSha256: string; sourceBundleSha256: string; sourcePid: number };
 }
-export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown; operatorLease?: OperatorLeaseClaim }
+export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown; historicalUnknownSummary?: HistorySummary; targetLaunch?: AccountLaunchReference; preflightLaunch?: AccountLaunchReference; expectedRevision?: number; operatorLease?: OperatorLeaseClaim }
 
 async function privateInfo(path: string, directory = false, readOnlyExternal = false) {
   const info = await lstat(path);
@@ -159,8 +164,9 @@ export class AccountCoreOwner {
   private proof?: { identity: string; expiresAt: string; idle: boolean };
   private bootId = "";
   private readonly path: string;
+  private store?: AccountHandoffStore;
   private sealedInspection?: Awaited<ReturnType<AccountCoreOwner["inspectMaintenance"]>>;
-  constructor(private readonly options: CodexAccountServiceOptions & { endpoint: string; appServerEndpoint?: string; authToken: string; runtimeDirectory: string }) {
+  constructor(private readonly options: CodexAccountServiceOptions & { endpoint: string; appServerEndpoint?: string; authToken: string; runtimeDirectory: string; accountHandoffStorage?: "sqlite" }) {
     this.path = join(options.dataDirectory, "account-handoff.json");
   }
   async load(legacyMaintenanceReceipt?: string, maintenanceKind: MaintenanceKind = "legacy-account-maintenance") {
@@ -168,7 +174,20 @@ export class AccountCoreOwner {
     this.sealedInspection = undefined;
     await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
     this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+    if (existsSync(join(this.options.dataDirectory, "account-handoff.sqlite"))) {
+      this.store = new AccountHandoffStore(this.options.dataDirectory);
+      const checkpoint = this.store.checkpoint<Omit<State, "uncertain" | "carriedUnknown" | "schemaVersion"> & { schemaVersion: 2 }>();
+      if (!checkpoint) { this.store.close(); this.store = undefined; }
+      else {
+        if (checkpoint.schemaVersion !== 2 || !Number.isSafeInteger(checkpoint.epoch) || checkpoint.epoch < 0
+          || !["open", "fenced", "released", "cold-ready"].includes(checkpoint.phase)
+          || checkpoint.phase !== "open" && ![checkpoint.operationId, checkpoint.fence, checkpoint.sourceOwner].every(v => typeof v === "string" && v)
+          || ["released", "cold-ready"].includes(checkpoint.phase) && (!checkpoint.sealed || !checkpoint.retained)) throw Error("Invalid account handoff checkpoint");
+        this.state = { ...checkpoint, schemaVersion: 1, uncertain: this.store.records() as HistoricalUnknown };
+      }
+    }
     try {
+      if (!this.store) {
       const file = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         const info = await file.stat();
@@ -184,6 +203,7 @@ export class AccountCoreOwner {
             || !Number.isSafeInteger(value.legacyMaintenance.sourcePid) || value.legacyMaintenance.sourcePid < 1)) throw new Error("Invalid account handoff state");
         this.state = value;
       } finally { await file.close(); }
+      }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     if (this.state.phase === "fenced" && legacyMaintenanceReceipt) await this.importLegacyMaintenance(legacyMaintenanceReceipt, maintenanceKind);
     if (legacyMaintenanceReceipt) {
@@ -198,11 +218,39 @@ export class AccountCoreOwner {
     if (this.state.phase !== "open" && (await readAccountStorage(this.options.dataDirectory)).sha256 !== this.state.sealed!.storage) {
       throw new Error("Account handoff current storage changed");
     }
+    const actualLaunch = this.store || this.options.accountHandoffStorage === "sqlite" ? await this.launchReference() : undefined;
+    if (this.store && this.state.launch) {
+      const allowed = this.state.phase === "open" ? [this.state.launch]
+        : [this.state.handoffLaunch?.source ?? this.state.launch, this.state.handoffLaunch?.target ?? this.state.launch];
+      if (!allowed.some(launch => digest(launch) === digest(actualLaunch))) throw Error("Account current launch differs from installed checkpoint");
+    }
+    if (this.store) { this.store.recover(); this.state.uncertain = this.store.records() as HistoricalUnknown; }
+    if (!this.store && this.options.accountHandoffStorage === "sqlite") {
+      // Keep the v1 release authority recoverable until the candidate has
+      // validated the sealed history, current data and actual startup config.
+      if (this.state.phase !== "open") await this.readiness();
+      this.state.launch = actualLaunch!;
+      if (this.state.carriedUnknown && digest(this.state.uncertain.slice(0, this.state.carriedUnknown.length)) !== digest(this.state.carriedUnknown)) throw Error("Account legacy carried history is not an exact prefix");
+      this.store = new AccountHandoffStore(this.options.dataDirectory);
+      this.state.acceptedHistory = this.state.carriedUnknown === undefined ? undefined
+        : { count: this.state.carriedUnknown.length, sha256: digest(this.state.carriedUnknown) };
+      const { uncertain, carriedUnknown: _carried, ...checkpoint } = this.state;
+      this.store.import({ ...checkpoint, schemaVersion: 2 }, uncertain);
+      this.state.carriedUnknown = undefined;
+    }
+    // Retire the legacy authority only after the complete transactional import.
+    // Old binaries must fail closed instead of reopening a stale v1 checkpoint.
+    if (this.store) await this.writePrivate({ schemaVersion: 2, authority: "account-handoff.sqlite" });
+  }
+  async launchReference(): Promise<AccountLaunchReference> {
+    return { manifestSha256: await fileDigest(await realpath(process.argv[1]!)),
+      configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable) };
   }
   /** Read-only preflight; callers retain the source fence and deployment lock. */
   async inspectMaintenance() {
+    const launch = await this.launchReference();
     return { storage: await readAccountStorage(this.options.dataDirectory),
-      configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable) };
+      configurationSelectorSha256: launch.configurationSelectorSha256, cliSha256: launch.cliSha256, launch };
   }
   /** Explicit offline maintenance, not a cooperative release from the old owner. */
   private async legacyReleasedState(path: string, kind: MaintenanceKind, requireSourceExit: boolean): Promise<State> {
@@ -312,22 +360,58 @@ export class AccountCoreOwner {
     this.calls++;
     let done = false; return () => { if (!done) { done = true; this.calls--; } };
   }
-  uncertain = async (route: string, diagnostic?: AccountPoolUncertainDiagnostic) => {
-    // Delivery uncertainty blocks handoff. It is not a storage failure and must
-    // not disable unrelated account traffic in an otherwise open owner.
-    this.state.uncertain.push({ id: randomUUID(), route: ["/v1/responses", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(route) ? route : "other",
-      ...(diagnostic ? { diagnostic: { ...diagnostic, owner: this.owner, bootId: this.bootId,
-        incarnation: this.incarnation, pid: process.pid, ownerEpoch: this.state.epoch } } : {}) });
-    // This write participates in the same transition queue as the fence. A
-    // request remains active until its uncertainty is durable.
-    while (this.transitioning) await new Promise(resolve => setTimeout(resolve, 1));
-    await this.transition(() => this.save(this.state));
+  private historySummary(): HistorySummary { return this.store?.summary() ?? { count: this.state.uncertain.length, sha256: digest(this.state.uncertain) }; }
+  historyPage(snapshot: HistorySummary, after?: number, maxBytes?: number) {
+    if (!this.store) throw Error("Account history unavailable");
+    return this.store.page(snapshot, after, maxBytes);
+  }
+  dispatchAttempt = (id: string, route: string) => {
+    if (this.sealedProcess || this.failed) throw Error("Account attempt writer unavailable");
+    if (!this.store) return;
+    try { this.store.dispatch(id, this.owner, route); } catch (error) { this.failed = true; throw error; }
   };
-  snapshot() { return { ...structuredClone(this.state), owner: this.owner, activeCalls: this.calls,
-    operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
-    persistence: this.failed ? "unknown" : "ready", maintenanceInterruption: 1, protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
+  terminalAttempt = (id: string, result: "completed" | "failed") => {
+    if (!this.store) return;
+    try { this.store!.terminal(id, this.owner, result); } catch (error) { this.failed = true; throw error; }
+  };
+  settleAttempt = (id: string) => {
+    if (!this.store) return;
+    try {
+      const count = this.store!.summary().count;
+      this.store!.settle(id, this.owner);
+      if (this.store!.summary().count !== count) this.state.uncertain = this.store!.records() as HistoricalUnknown;
+    } catch (error) { this.failed = true; throw error; }
+  };
+  uncertain = async (route: string, diagnostic?: AccountPoolUncertainDiagnostic) => {
+    while (this.transitioning) await new Promise(resolve => setTimeout(resolve, 1));
+    await this.transition(async () => {
+      const record = { id: diagnostic?.requestId ?? randomUUID(), route: ["/v1/responses", "/v1/images/generations", "/v1/images/edits", "/api/codex/ps/mcp"].includes(route) ? route : "other",
+        ...(diagnostic ? { diagnostic: { ...diagnostic, owner: this.owner, bootId: this.bootId,
+          incarnation: this.incarnation, pid: process.pid, ownerEpoch: this.state.epoch } } : {}) };
+      try {
+        if (this.store) {
+          const count = this.store.summary().count; this.store.appendUnknown(record);
+          if (this.store.summary().count !== count) this.state.uncertain.push(record);
+        } else { this.state.uncertain.push(record); await this.save(this.state); }
+      } catch (error) { this.failed = true; throw error; }
+    });
+  };
+  closeStorage() { this.store?.close(); this.store = undefined; }
+  snapshot(compact = false) {
+    const { uncertain, carriedUnknown: _carried, retained, operatorLeaseAborts, ...checkpoint } = this.state;
+    const history = this.historySummary();
+    return { ...structuredClone(checkpoint), ...(compact ? { retainedSummary: retained && {
+      sha256: digest(retained), imageAffinities: retained.imageAffinities.length, resetReceipts: retained.resetReceipts.length, loginReceipts: retained.loginReceipts.length },
+      operatorLeaseAbortSummary: { count: operatorLeaseAborts?.length ?? 0, sha256: digest(operatorLeaseAborts ?? []) } } : { retained: structuredClone(retained), operatorLeaseAborts: structuredClone(operatorLeaseAborts), uncertain: structuredClone(uncertain),
+      carriedUnknown: structuredClone(this.state.acceptedHistory ? uncertain.slice(0, this.state.acceptedHistory.count) : this.state.carriedUnknown ?? []) }),
+      historicalUnknownSummary: history, revision: this.state.revision ?? 0, summaryProtocolVersion: 1, historyPaging: !!this.store,
+      owner: this.owner, activeCalls: this.calls,
+      operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
+      persistence: this.failed ? "unknown" : "ready", maintenanceInterruption: 1, protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation };
+  }
   private check(input: AccountOwnerExpectation, existing = true) {
     if (this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
+      || input.expectedRevision !== undefined && input.expectedRevision !== (this.state.revision ?? 0)
       || ![input.operationId, input.fence].every(v => typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(v))
       || existing && (input.operationId !== this.state.operationId || input.fence !== this.state.fence)) throw new Error("Account owner handoff conflict");
   }
@@ -340,36 +424,58 @@ export class AccountCoreOwner {
   }
   async acceptMaintenanceUnknown(input: AccountOwnerExpectation, activeCount: number) {
     this.checkMaintenance(input);
-    if (activeCount + this.calls !== 0 || input.historicalUnknown === undefined
-      || digest(input.historicalUnknown) !== digest(this.state.uncertain)) {
+    if (activeCount + this.calls !== 0 || !this.acceptsHistory(input)) {
       throw new Error("Account maintenance requires the final exact unknown list and completed handlers");
     }
-    await this.save({ ...this.state, carriedUnknown: structuredClone(input.historicalUnknown) });
+    await this.save({ ...this.state, ...(this.store ? { acceptedHistory: this.historySummary(), carriedUnknown: undefined }
+      : { carriedUnknown: structuredClone(input.historicalUnknown ?? this.state.uncertain) }) });
   }
   private async save(state: State) {
-    const bytes = this.serialized(state);
+    state = { ...state, revision: (this.state.revision ?? 0) + 1 };
+    if (this.store) {
+      this.serialized(state);
+      const { uncertain: _unknown, carriedUnknown: _carried, ...checkpoint } = state;
+      const acceptedHistory = state.acceptedHistory ?? (state.carriedUnknown && { count: state.carriedUnknown.length, sha256: digest(state.carriedUnknown) });
+      try { this.store.save({ ...checkpoint, schemaVersion: 2, acceptedHistory }); this.state = { ...state, acceptedHistory, carriedUnknown: undefined }; }
+      catch (error) { this.failed = true; throw error; }
+      return;
+    }
+    await this.writePrivate(state); this.state = state;
+  }
+  private async writePrivate(value: unknown) {
+    const bytes = JSON.stringify(value);
     const temporary = `${this.path}.${randomUUID()}.tmp`;
     let file;
     try {
       file = await open(temporary, "wx", 0o600); await file.writeFile(bytes); await file.sync(); await file.close(); file = undefined;
       await rename(temporary, this.path);
       const dir = await open(this.options.dataDirectory, "r"); try { await dir.sync(); } finally { await dir.close(); }
-      this.state = state;
     } catch (error) { this.failed = true; throw error; }
     finally { await file?.close(); await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
   }
   private serialized(state: State, reserve = 0) {
-    const bytes = JSON.stringify(state);
+    const { uncertain: _unknown, carriedUnknown: _carried, ...checkpoint } = state;
+    const bytes = JSON.stringify(this.store ? checkpoint : state);
     if (Buffer.byteLength(bytes) + Math.max(reserve, state.phase === "fenced" && state.operatorLease ? 4096 : 0) > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained state exceeds protocol capacity");
     return bytes;
   }
   async fence(input: AccountOwnerExpectation) {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
-    if (input.historicalUnknown !== undefined && digest(input.historicalUnknown) !== digest(this.state.uncertain)) throw new Error("Account historical unknown list changed");
+    if ((input.historicalUnknown !== undefined || input.historicalUnknownSummary !== undefined) && !this.acceptsHistory(input)) throw new Error("Account historical unknown list changed");
+    let handoffLaunch: State["handoffLaunch"];
+    if (this.store) {
+      const actual = await this.launchReference();
+      if (!input.targetLaunch || !input.preflightLaunch || digest(input.targetLaunch) !== digest(input.preflightLaunch)
+        || !Object.values(input.targetLaunch).every(value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value))
+        || Object.keys(input.targetLaunch).sort().join(",") !== "cliSha256,configurationSelectorSha256,manifestSha256"
+        || digest(actual) !== digest(this.state.launch)) throw Error("Account launch preflight mismatch");
+      handoffLaunch = { source: actual, target: input.targetLaunch };
+    }
     const lease = new OperatorLease(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
-    const fenced: State = { operatorLease: lease.claim, operatorLeaseAborts: this.state.operatorLeaseAborts, schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
-      carriedUnknown: structuredClone(input.historicalUnknown ?? []) };
+    const fenced: State = { launch: this.state.launch, handoffLaunch, operatorLease: lease.claim, operatorLeaseAborts: this.state.operatorLeaseAborts, schemaVersion: 1, revision: this.state.revision, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
+      ...(this.store ? { acceptedHistory: this.acceptsHistory(input) ? this.historySummary() : undefined }
+        : { carriedUnknown: structuredClone(input.historicalUnknown ?? (input.historicalUnknownSummary ? this.state.uncertain : [])) }) };
     // Reject oversized bindings while the original in-memory owner is still
     // open. Close admission before the first asynchronous persistence step.
     this.serialized(fenced);
@@ -391,9 +497,14 @@ export class AccountCoreOwner {
       bootId: this.bootId, incarnation: this.incarnation, expiresAt: new Date(Date.now() + 15_000).toISOString(),
       coverage: unknown ? "unknown" : "complete", activeCount: unknown ? null : activeCount,
       historicalCount: observation?.historicalCount ?? this.state.sealed?.historicalCount ?? 0, counts: observation?.counts,
-      historicalUnknownSha256: digest(this.state.uncertain), historicalUnknownCount: this.state.uncertain.length };
-    this.proof = { identity: digest(proof), expiresAt: proof.expiresAt, idle: proof.coverage === "complete" && proof.activeCount === 0 };
-    return { ...proof, identity: this.proof.identity };
+      historicalUnknownSha256: this.historySummary().sha256, historicalUnknownCount: this.historySummary().count };
+    const identity = digest(proof);
+    return { ...proof, identity };
+  }
+  issueDrainPermit(observation: Parameters<AccountCoreOwner["inspect"]>[0]) {
+    const proof = this.inspect(observation);
+    this.proof = { identity: proof.identity, expiresAt: proof.expiresAt, idle: proof.coverage === "complete" && proof.activeCount === 0 };
+    return proof;
   }
   async transition<T>(operation: () => Promise<T>) {
     if (this.transitioning) throw new Error("Account handoff transition is busy");
@@ -431,13 +542,23 @@ export class AccountCoreOwner {
       appServerEndpoint: this.options.appServerEndpoint, proxyPort: this.options.proxyPort, upstream: this.options.upstreamBaseUrl,
       nativeCodexHomeDirectory: this.options.nativeCodexHomeDirectory, runtimeDirectory: this.options.runtimeDirectory, token: digest(this.options.authToken) });
   }
-  private exactHistoricalUnknown() { return digest(this.state.uncertain) === digest(this.state.carriedUnknown ?? []); }
+  private acceptsHistory(input: AccountOwnerExpectation) {
+    const expected = input.historicalUnknownSummary ?? (input.historicalUnknown && { count: input.historicalUnknown.length, sha256: digest(input.historicalUnknown) });
+    return !!expected && expected.count === this.historySummary().count && expected.sha256 === this.historySummary().sha256;
+  }
+  private exactHistoricalUnknown() {
+    const accepted = this.state.acceptedHistory ?? { count: this.state.carriedUnknown?.length ?? 0, sha256: digest(this.state.carriedUnknown ?? []) };
+    const actual = this.historySummary(); return accepted.count === actual.count && accepted.sha256 === actual.sha256;
+  }
   private async readiness() {
     const storage = await readAccountStorage(this.options.dataDirectory);
     if (!this.state.sealed || storage.sha256 !== this.state.sealed.storage || !this.exactHistoricalUnknown()
       || this.state.sealed.historicalUnknownSha256 !== undefined && this.state.sealed.historicalUnknownSha256 !== digest(this.state.uncertain)) throw new Error("Account current storage or historical unknown differs from release receipt");
-    const cliSha256 = await fileDigest(this.options.executable), configurationSelectorSha256 = this.configuration();
-    if (this.state.sealed.cliSha256 !== cliSha256 || this.state.sealed.configurationSelectorSha256 !== configurationSelectorSha256) {
+    const actual = await this.launchReference();
+    const cliSha256 = actual.cliSha256, configurationSelectorSha256 = actual.configurationSelectorSha256;
+    const expectedLaunch = this.state.handoffLaunch;
+    if (expectedLaunch ? ![expectedLaunch.source, expectedLaunch.target].some(launch => digest(launch) === digest(actual))
+      : this.state.sealed.cliSha256 !== cliSha256 || this.state.sealed.configurationSelectorSha256 !== configurationSelectorSha256) {
       throw new Error("Account handoff configuration or fixed CLI changed");
     }
     return { owner: this.owner, bootId: this.bootId, incarnation: this.incarnation, storage,
@@ -453,7 +574,7 @@ export class AccountCoreOwner {
     this.check(input);
     if (!["released", "cold-ready"].includes(this.state.phase) || this.state.sourceOwner === this.owner) throw new Error("Cold account successor required");
     const proof = await this.readiness(), identity = digest(proof);
-    await this.save({ ...this.state, phase: "cold-ready", ready: { owner: this.owner, identity } });
+    await this.save({ ...this.state, launch: await this.launchReference(), phase: "cold-ready", ready: { owner: this.owner, identity } });
     return { ...proof, identity, evidenceId: identity };
   }
   async resume(input: AccountOwnerExpectation & { identity?: string }, activate: () => Promise<void> = async () => {}) {

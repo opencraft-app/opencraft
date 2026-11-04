@@ -22,7 +22,7 @@ test('transient failures keep recovering past five attempts without navigation o
   const originals = new Map(['WebSocket','window','location'].map(key => [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for (const [key,value] of Object.entries({WebSocket:FakeSocket,window:{},location:{href:'https://example.test/'}}))
     Object.defineProperty(globalThis,key,{configurable:true,value});
-  const host:any = new RemoteBrowserSurfaceHost('mse',{getItem:()=>null,setItem(){}},'proof');
+  const host:any = new RemoteBrowserSurfaceHost('mse', {getItem:()=>null,setItem(){}},'proof');
   const p:any={inputPolicy:new AdaptiveInputWindow(),control:{epoch:0,active:false,controller:false,kind:null},controlGeneration:0,lease:'browser-12345678901234567890',connection:0,
     closed:false,displaced:false,viewportMeasured:false,pending:new Map(),retries:0,visible:true,navigation:0,url:'https://example.test/stale',
     events:{onError:(s:string)=>errors.push(s),onLoaded(){loaded++;},onNavigation(){}}};

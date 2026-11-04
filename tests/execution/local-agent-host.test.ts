@@ -4,6 +4,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { SandboxBackend, SandboxExit } from "@opencraft/sandbox";
 
 import WebSocket from "ws";
 import { WebSocketServer } from "ws";
@@ -486,6 +487,57 @@ test("DSH questions cross the real mux and AppServer WebSocket, survive reconnec
     socket.send(JSON.stringify({ jsonrpc: "2.0", method: "initialized" }));
     assert.ok(await request(socket, 3, "thread/list", {}));
   } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
+});
+
+test("sandbox provider failure does not prevent Core RPC or silently execute a bare terminal", async () => {
+  let attempts = 0;
+  const backend: SandboxBackend = { id: "offline-remote", async initialize() { attempts++; throw Error("private SDK diagnostic"); },
+    async create() { throw Error("must not provision"); }, async close() {} };
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", processSandbox: {
+    policy: { id: "offline-test", capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 } }, backend,
+  } });
+  const socket = await connect(host.websocketUrl);
+  try {
+    assert.equal(attempts, 0); assert.ok(await request(socket, 1, "project/list", {}));
+    await assert.rejects(request(socket, 2, "process/spawn", { processHandle: "blocked", command: ["/bin/echo", "must-not-execute"], cwd: "/remote/workspace", tty: true, size: { cols: 80, rows: 24 } }),
+      error => (error as { message: string }).message === "Execution environment provider could not initialize");
+    assert.equal(attempts, 1); assert.deepEqual(await request(socket, 3, "process/list", {}), { processes: [] });
+    assert.ok(await request(socket, 4, "project/list", {}));
+  } finally { socket.close(); await host.close(); }
+});
+
+test("process RPC uses a remote sandbox across reconnect without exposing backend process objects", async () => {
+  let starts = 0, destroyed = 0, backendClosed = false;
+  let exit!: (value: SandboxExit) => void;
+  const exited = new Promise<SandboxExit>(resolve => { exit = resolve; });
+  const backend: SandboxBackend = {
+    id: "remote-protocol-test", async initialize() {}, async close() { backendClosed = true; },
+    async create(_, resources) {
+      return { resources, capabilities: { terminal: true },
+        async spawn(command, output) {
+          starts++; assert.equal(command.cwd, "/remote/workspace");
+          output?.({ stream: "stdout", data: new TextEncoder().encode("remote-before-reply") });
+          return { id: "remote-command-opaque-id", kind: "terminal", exited,
+            async writeStdin() {}, async resize() {}, async terminate() { exit({ code: 143 }); } };
+        }, async close() { destroyed++; exit({ code: 0 }); },
+      };
+    },
+  };
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", processSandbox: {
+    policy: { id: "remote-host-test", capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 } }, backend,
+  } });
+  let socket = await connect(host.websocketUrl);
+  try {
+    const params = { processHandle: "remote-shell", command: ["shell"], cwd: "/remote/workspace", tty: true, size: { cols: 80, rows: 24 } };
+    assert.deepEqual(await request(socket, 1, "process/spawn", params), { processHandle: "remote-shell" });
+    await new Promise<void>(resolve => { socket.once("close", () => resolve()); socket.close(); });
+    socket = await connect(host.websocketUrl);
+    const snapshot = await request(socket, 2, "process/attach", { processHandle: "remote-shell", afterSequence: 0 });
+    assert.equal(snapshot.phase, "running");
+    assert.equal(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), "remote-before-reply");
+    assert.equal(starts, 1); await request(socket, 3, "process/kill", { processHandle: "remote-shell" }); assert.equal(destroyed, 1);
+  } finally { socket.close(); await host.close(); }
+  assert.equal(backendClosed, true);
 });
 
 test("process RPC survives WebSocket replacement without contacting the Agent harness", async () => {

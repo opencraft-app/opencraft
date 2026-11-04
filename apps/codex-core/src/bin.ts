@@ -21,6 +21,7 @@ async function main() {
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
     appServerEndpoint: optional("--app-server-endpoint"),
+    accountHandoffStorage: process.argv.includes("--account-handoff-sqlite") ? "sqlite" : undefined,
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   };

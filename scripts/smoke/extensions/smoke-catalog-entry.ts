@@ -83,6 +83,41 @@ try {
       console.log(JSON.stringify({ legacy, firstVisible, count: state.count, complete: state.observations.at(-1).ms })); await page.close();
     }
   } else {
+    // Status facts for unloaded pages survive old snapshots without restarting
+    // the metadata crawl. Exercise the actual hook, notification handler and Sidebar.
+    for (const width of [390, 1100]) for (const theme of ['light', 'dark']) {
+      hold = true; fail = false; release = undefined;
+      const page = await browser.newPage({ viewport: { width, height: 850 }, hasTouch: width === 390 });
+      const errors: string[] = []; page.on('pageerror', (error: Error) => errors.push(error.message));
+      await page.addInitScript('window.__name=value=>value'); await page.goto(`${origin}/?theme=${theme}`);
+      await page.waitForFunction(() => (window as any).catalogEntry?.calls.length === 2);
+      await page.evaluate(() => {
+        const entry = (window as any).catalogEntry;
+        for (let revision = 1; revision <= 10; revision++) {
+          const status = { type: 'active', activeFlags: ['waitingOnUserInput'] };
+          entry.event({ method: 'opencraft/thread-catalog/changed', params: { version: 1, source: 'smoke-execution', revision,
+            change: { type: 'patch', threadId: 't75', status } } });
+          entry.event({ method: 'thread/status/changed', params: { threadId: 't75', status } });
+        }
+      });
+      await page.waitForTimeout(150);
+      assert.equal(await page.evaluate(() => (window as any).catalogEntry.calls.length), 2);
+      assert.ok(await page.locator('.sidebar-activity-item').count() > 0);
+      hold = false; release?.();
+      await page.waitForFunction(() => (window as any).catalogEntry.displayed().length === 222 && !(window as any).catalogEntry.snapshot().fetching);
+      const status = await page.evaluate(() => {
+        const entry = (window as any).catalogEntry;
+        return { raw: entry.cached().data.find((row: any) => row.id === 't75').status,
+          displayed: entry.displayed().find((row: any) => row.id === 't75').status, calls: entry.calls.length };
+      });
+      assert.equal(status.raw.type, 'idle');
+      assert.deepEqual(status.displayed, { type: 'active', activeFlags: ['waitingOnUserInput'] });
+      assert.equal(status.calls, 5, 'only the five initial pages are read');
+      await page.getByText('Conversation 75', { exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${output}/status-pagination-${width}-${theme}.png` });
+      assert.deepEqual(errors, []); evidence.push({ scenario: 'status-pagination-no-refetch', width, theme, ...status, errors });
+      await writeFile(`${output}/status-results.json`, JSON.stringify(evidence, null, 2)); await page.close();
+    }
     for (const width of [390, 1100]) for (const theme of ['light', 'dark']) {
       hold = true; fail = false; release = undefined;
       const page = await browser.newPage({ viewport: { width, height: 850 }, hasTouch: width === 390 });

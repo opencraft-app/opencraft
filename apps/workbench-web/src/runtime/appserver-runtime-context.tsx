@@ -1,3 +1,8 @@
+import { threadDirectoryIncomplete } from "@opencraft/appserver-protocol";
+import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
+import { catalogReplicaResource, CATALOG_REPLICA_PARTS, restoreCatalogReplica, saveCatalogReplica } from "./thread-catalog-replica-cache";
+import { noteCatalogCause, observeCatalogQueries, catalogPageTrace } from "./catalog-request-observation";
+import { startConversationReturnRecovery } from "./conversation-return-events";
 import { beginObservedOperation } from "./observability";
 import { ThreadPinWriter } from "./thread-pin-writer";
 import type { HostScheduleCatalog } from "./scheduled-task-catalog-context";
@@ -198,29 +203,11 @@ export function AppServerRuntimeProvider({
   const runtime = coordinator.getRuntime();
   const activeThreadLease = coordinator.getActiveThreadLease();
   const returnProbe = useRef(createConversationReturnProbe()).current;
-  useEffect(() => {
-    const revalidate = () => {
-      if (document.visibilityState === "hidden" || coordinator.getRuntime().getSnapshot().phase !== "ready") return;
-      const lease = coordinator.getActiveThreadLease();
-      if (lease) void lease.retryRestore().catch(() => undefined);
-    };
-    const visibility = () => {
-      coordinator.getActiveThreadLease()?.setRecoveryVisibility(document.visibilityState !== "hidden");
-      if (document.visibilityState === "hidden") returnProbe.background(Date.now());
-      else if (returnProbe.foreground(Date.now())) revalidate();
-    };
-    const offline = () => returnProbe.offline();
-    const online = () => { if (returnProbe.online(Date.now())) revalidate(); };
-    activeThreadLease?.setRecoveryVisibility(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("offline", offline);
-    window.addEventListener("online", online);
-    return () => {
-      document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("offline", offline);
-      window.removeEventListener("online", online);
-    };
-  }, [coordinator, returnProbe, activeThreadLease]);
+  useEffect(() => startConversationReturnRecovery({
+    probe: returnProbe,
+    ready: () => coordinator.getRuntime().getSnapshot().phase === "ready",
+    lease: () => coordinator.getActiveThreadLease(),
+  }), [coordinator, returnProbe, activeThreadLease]);
   const activeConversationScopeId = conversationActivation.scopeIdFor(coordinatorSnapshot.location);
   const activeConversationViewId = coordinatorSnapshot.viewId;
   if (activeConversationViewId === null) throw new Error("Active Conversation View has no identity");
@@ -532,14 +519,20 @@ export function useThreadCatalog(): {
 } {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerHostSnapshot();
+  const queryClient=useQueryClient(); observeCatalogQueries(queryClient);
+  const catalogKey=useMemo(()=>["appserver",snapshot.hostId,"threads","updated_at","desc",false] as const,[snapshot.hostId]);
   const query = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "threads", "updated_at", "desc", false] as const,
+    queryKey: catalogKey, meta:{requestCaller:"thread-catalog"},
     enabled: snapshot.phase === "ready" || snapshot.phase === "reconnecting",
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => runtime.resources.threads.list({ cursor: pageParam, limit: 30 }),
+    queryFn: ({ pageParam }) => runtime.resources.threads.list({ cursor: pageParam, limit: 30 },{trace:catalogPageTrace(queryClient,catalogKey,pageParam)}),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 30_000,
   });
+  const fetchNextPage=useCallback(() => {
+    noteCatalogCause(queryClient,{queryKey:catalogKey,exact:true},"explicit-next-page");
+    return query.fetchNextPage();
+  },[queryClient,catalogKey,query.fetchNextPage]);
   const protocolThreads = useMemo(
     () => mergeThreadCatalogPages(query.data?.pages ?? []),
     [query.data],
@@ -549,7 +542,7 @@ export function useThreadCatalog(): {
     protocolThreads,
     threads,
     hasNextPage: query.hasNextPage,
-    fetchNextPage: query.fetchNextPage,
+    fetchNextPage,
     isPending: query.isPending,
     isFetching: query.isFetching,
     isError: query.isError,
@@ -614,6 +607,10 @@ export function useMultiHostThreadCatalog(): {
     JSON.stringify([host.hostId, application.profiles.find(profile => profile.hostId === host.hostId)!.revision]))),
   [application.clientResources, resourceScope, resourceProfiles]);
   const savedCatalogs = useClientResourceSnapshots(catalogResources);
+  const replicaResources = useMemo(() => hosts.map(host => Array.from({ length: CATALOG_REPLICA_PARTS }, (_, part) =>
+    application.clientResources.remote(catalogReplicaResource, JSON.stringify([host.hostId, application.profiles.find(profile => profile.hostId === host.hostId)!.revision,
+      host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null, part])))),
+    [application.clientResources, resourceScope, resourceProfiles, management?.authenticated, application.managedHostCatalog?.getAuthorizationEpoch()]);
   // A credential boundary can precede the old socket's teardown. Require a new
   // ready incarnation before reading/caching through that socket for a new scope.
   const catalogScopeFence = useRef({ epoch: resourceScope,
@@ -630,6 +627,7 @@ export function useMultiHostThreadCatalog(): {
     hostId => {
       setReadinessRevision(value => value + 1);
       if (application.registry.peekRuntime(hostId)?.getSnapshot().phase === "ready") {
+        noteCatalogCause(queryClient,{ queryKey: ["appserver", hostId, "threads"] },"connection-ready");
         void queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
       }
     },
@@ -655,6 +653,11 @@ export function useMultiHostThreadCatalog(): {
       currentProfile: () => application.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === host.hostId),
       management: application.managedHostCatalog,
       registry: application.registry,
+      loadRecoveryBase: async () => {
+        const resources = replicaResources[index]!;
+        await Promise.all(resources.map(r => r.ready));
+        return restoreCatalogReplica(resources);
+      },
     })),
   );
   // One projection per admitted Host, independent of visible rows and selected conversation.
@@ -749,12 +752,16 @@ export function useMultiHostThreadCatalog(): {
           && canReadHostThreadCatalog(current, currentRuntime?.getSnapshot().phase,
             application.managedHostCatalog?.getSnapshot() ?? null);
       } };
+      if (!query.hasNextPage && !threadDirectoryIncomplete(query.data)) {
+        const raw = (query.data as ThreadListResponse & { __opencraftCatalogRawRows?: ThreadListResponse["data"] }).__opencraftCatalogRawRows;
+        if (raw) void saveCatalogReplica(replicaResources[index]!, { ...query.data, data: raw }, fence).catch(() => undefined);
+      }
       // A first successful page is useful immediately, but is not a complete directory.
       void catalogResources[index]!.observe(cacheThreadCatalog(mergeCachedCatalogRows(
         query.data.data.map(thread => projectAppServerThread(thread)),
         catalogResources[index]!.getSnapshot().value, !query.hasNextPage), !query.hasNextPage), fence).catch(() => undefined);
     });
-  }, [catalogResources, querySignature]);
+  }, [catalogResources, replicaResources, querySignature]);
   const goalSources = useMemo(() => hosts.flatMap((host, index): SidebarGoalSource[] => {
     const profile = application.profiles.find(value => value.hostId === host.hostId)!;
     const runtime = application.registry.peekRuntime(host.hostId);
@@ -933,6 +940,7 @@ export function useMultiHostThreadCatalog(): {
       const profile = application.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === hostId);
       const currentManagement = application.managedHostCatalog?.getSnapshot() ?? management;
       if (!profile || !canReadHostThreadCatalog(profile, application.registry.peekRuntime(hostId)?.getSnapshot().phase, currentManagement)) return;
+      noteCatalogCause(queryClient,{queryKey:["appserver",hostId,"threads"]},"explicit-retry");
       await queryClient.refetchQueries({ queryKey: sidebarThreadCatalogQueryKey(hostId, {
         clientEpoch: resourceScope,
         revision: profile.revision,

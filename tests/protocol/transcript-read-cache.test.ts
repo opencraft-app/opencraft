@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { NativeItemReadScheduler, TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA, type NativeTranscriptPort } from "@opencraft/native-history-node";
+import { NativeItemPaginationUnsupported, NativeItemReadScheduler, TranscriptReadCache, TRANSCRIPT_PROJECTION_SCHEMA, type NativeTranscriptPort } from "@opencraft/native-history-node";
 import { readUsageIncrement } from "../../apps/opencraft-daemon/src/token-usage-derived-source.js";
 import { CodexNativeStorage } from "../../apps/opencraft-daemon/src/codex-native-storage.js";
 import type { AppServerTurn } from "@opencraft/appserver-protocol";
@@ -701,4 +701,101 @@ test("header rebuild keeps a partial rollout record pending until the next appen
   const appended = await f.cache.read(id, 1);
   assert.equal(appended.thread.historyTurnCount, 21);
   assert.deepEqual(appended.initialTurnsPage.data.map(turn => turn.id), ["turn-20"]);
+});
+
+test('latest headers without a rollout never hydrate whole Turn bodies',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'tail-headers-'));let full=0,headers=0;
+ const cache=new TranscriptReadCache(root,{
+   nativeHome:root,readThread:async()=>({id:'t',turns:[],path:null}),
+   listTurns:async()=>{full++;throw Error('full Turn hydration forbidden');},
+   listTurnHeaders:async(_id,cursor,limit)=>{headers++;assert.equal(cursor,null);assert.equal(limit,1);return {data:[{id:'live',items:[],itemsView:'notLoaded'}],nextCursor:'older'};},
+ });
+ t.after(async()=>{await cache.close();await rm(root,{recursive:true,force:true});});
+ const result=await cache.page('t',null,1,undefined,'notLoaded','desc');
+ assert.equal(result.data[0].id,'live');assert.equal(full,0);assert.equal(headers,1);
+});
+
+test('recent headers skip a cold rollout index and observe appends with one native page', async t => {
+  const f = await fixture(t), port = f.port as NativeTranscriptPort;
+  const limits:number[]=[];
+  port.listRecentTurnHeaders = async (_id,limit,signal) => {
+    signal?.throwIfAborted();limits.push(limit);
+    return {data:f.source.slice(-limit).reverse().map(turn=>({...turn,items:[],itemsView:'notLoaded' as const})),nextCursor:'older'};
+  };
+  const cache = new TranscriptReadCache(join(f.root,'recent'),port);t.after(()=>cache.close());
+  const first=await cache.recentHeaders(id,2);
+  assert.deepEqual(first.data.map(t=>t.id),['turn-600','turn-599']);
+  f.source.push(turn(601));await appendFile(f.path,line('turn-601'));
+  assert.equal((await cache.recentHeaders(id,1)).data[0].id,'turn-601');
+  assert.deepEqual(limits,[2,1]);assert.deepEqual(f.calls,['thread/read','thread/read']);
+  await assert.rejects(stat(cache.directory),{code:'ENOENT'},'no index or mirror is created');
+  const abort=new AbortController();abort.abort();await assert.rejects(cache.recentHeaders(id,1,abort.signal),{name:'AbortError'});
+  assert.deepEqual(limits,[2,1]);
+});
+
+test('recent headers reject old ports and full-body responses without legacy fallback', async t => {
+  const f=await fixture(t);
+  await assert.rejects(f.cache.recentHeaders(id,1),{message:'Recent native headers are unavailable'});
+  assert.deepEqual(f.calls,[]);
+  (f.port as NativeTranscriptPort).listRecentTurnHeaders=async()=>({data:[turn(600)],nextCursor:null});
+  await assert.rejects(f.cache.recentHeaders(id,1),{message:'Invalid recent native headers'});
+  assert.deepEqual(f.calls,['thread/read']);
+});
+
+test('exact result retains target across append/reopen and paginates final Unicode only',async t=>{
+ const f=await fixture(t,2);f.source.forEach(turn=>turn.itemsView='full');
+ f.source[0]!.items=[{type:'agentMessage',id:'c',phase:'commentary',text:'hidden'},...Array.from({length:40},(_,i)=>({type:'commandExecution',id:'tool'+i,aggregatedOutput:'hidden tool'})),{type:'agentMessage',id:'f',phase:'final_answer',text:'🦉'.repeat(4501)},{type:'agentMessage',id:'f2',phase:'final_answer',text:'done'}];
+ let page=await f.cache.result(id,'turn-0',true,null);const wm=page.watermark,old=page.nextCursor;
+ assert.equal(page.matched,true);assert.equal(page.complete,false);assert.equal(Array.from(page.entries[0]!.text).length,2000);
+ f.source.push(turn(2));await appendFile(f.path,line('turn-2'));await f.reopen();
+ let text=page.entries[0]!.text,cursor=page.nextCursor;
+ while(cursor){page=await f.cache.result(id,'turn-0',true,cursor);assert.equal(page.watermark,wm);text+=page.entries[0]!.text;cursor=page.nextCursor;}
+ assert.equal(text,'🦉'.repeat(4501)+'done');assert.equal(page.complete,true);
+ assert.equal((await f.cache.result(id,'turn-1',true,null)).finalUnavailable,true);
+ f.source[0]!.items![41]={type:'agentMessage',id:'f',phase:'final_answer',text:'changed'};await appendFile(f.path,line('turn-0'));
+ await assert.rejects(f.cache.result(id,'turn-0',true,old),{code:'history_changed'});
+});
+test('exact result never substitutes idle/latest and distinguishes Native terminal states',async t=>{
+ const f=await fixture(t,3);f.source.forEach(turn=>turn.itemsView='full');
+ for(const state of ['inProgress','failed','interrupted'] as const){f.source[0]!.status=state;await appendFile(f.path,line('turn-0'));const r=await f.cache.result(id,'turn-0',false,null);assert.equal(r.turnState,state);assert.equal(r.matched,state!=='inProgress');}
+ const r=await f.cache.result(id,'missing',true,null);assert.equal(r.matched,false);assert.equal(r.complete,false);assert.equal(r.turnState,'unknown');
+});
+test('exact result cursor binds target and replaced source',async t=>{
+ const f=await fixture(t,2);f.source.forEach(turn=>turn.itemsView='full');f.source[0]!.items=[{type:'agentMessage',id:'f',phase:'final_answer',text:'a'.repeat(4500)}];
+ const r=await f.cache.result(id,'turn-0',true,null);
+ await assert.rejects(f.cache.result(id,'turn-1',true,r.nextCursor),{code:'history_changed'});
+ const original=await readFile(f.path);await rm(f.path);await writeFile(f.path,original);
+ await assert.rejects(f.cache.result(id,'turn-0',true,r.nextCursor),{code:'history_changed'});
+});
+
+test('exact result marks missing phase unavailable even when another final is known',async t=>{const f=await fixture(t,1);f.source.forEach(turn=>turn.itemsView='full');f.source[0]!.items=[{type:'agentMessage',id:'unknown',text:'cannot classify'},{type:'agentMessage',id:'known',phase:'final_answer',text:'known'}];const r=await f.cache.result(id,'turn-0',true,null);assert.equal(r.finalUnavailable,true);assert.equal(r.complete,false);assert.equal(r.entries[0]!.text,'known');});
+
+test('exact result bounds cold lookup without building the history index and never calls resume or send',async t=>{const f=await fixture(t,50);f.source.forEach(turn=>turn.itemsView='full');const r=await f.cache.result(id,'turn-0',true,null);assert.equal(r.matched,false);assert.equal(f.calls.filter(c=>c==='thread/turns/list').length,20);assert.equal((await readdir(f.root)).includes('cache'),false);});
+
+test('exact result rejects Native generation changes and honours the total source budget',async t=>{
+ const f=await fixture(t,1);f.source[0]!.itemsView='full';f.source[0]!.items=[{type:'agentMessage',id:'f',phase:'final_answer',text:'x'.repeat(4001)}];
+ let generation='one';(f.port as NativeTranscriptPort).resolveSource=async()=>({nativeHome:f.home,key:generation,validate:async()=>{}});
+ const first=await f.cache.result(id,'turn-0',true,null);generation='two';await assert.rejects(f.cache.result(id,'turn-0',true,first.nextCursor),{code:'history_changed'});
+ const abort=new AbortController();f.port.listTurns=()=>new Promise(()=>{});const timer=setTimeout(()=>abort.abort(new Error('test source timeout')),15);
+ try{await assert.rejects(f.cache.result(id,'turn-0',true,null,abort.signal),{code:'HISTORY_READ_UNAVAILABLE'});}finally{clearTimeout(timer);}
+});
+
+test('exact result tolerates a new Turn shifting native page positions during a source read',async t=>{
+ const f=await fixture(t,1);f.source[0]!.itemsView='full';f.source[0]!.items=[{type:'agentMessage',id:'f',phase:'final_answer',text:'x'.repeat(4001)}];
+ (f.port as NativeTranscriptPort).listTurnHeaders=async(_thread,cursor)=>{const index=Number(cursor??0),ordered=f.source.slice().reverse();return {data:ordered.slice(index,index+1).map(t=>({...t,items:[],itemsView:'notLoaded' as const})),nextCursor:index+1<ordered.length?String(index+1):null};};
+ const first=await f.cache.result(id,'turn-0',true,null);const read=f.port.listTurns;let shift=true;
+ f.port.listTurns=async(...args)=>{if(shift){shift=false;f.source.push({...turn(1),itemsView:'full'});}return read(...args);};
+ const continued=await f.cache.result(id,'turn-0',true,first.nextCursor);assert.equal(continued.watermark,first.watermark);assert.equal(continued.entries[0]!.offset,2000);
+});
+
+test('exact result distinguishes unavailable source or full hydration from unsupported native headers',async t=>{
+ const f=await fixture(t,1);f.source[0]!.itemsView='full';
+ await rm(f.path);await assert.rejects(f.cache.result(id,'turn-0',true,null),{code:'HISTORY_READ_UNAVAILABLE'});
+ await writeFile(f.path,line('turn-0'));f.source[0]!.itemsView='notLoaded';
+ (f.port as NativeTranscriptPort).listTurnItems=async()=>{throw new NativeItemPaginationUnsupported('items unsupported');};
+ await assert.rejects(f.cache.result(id,'turn-0',true,null),{code:'HISTORY_READ_UNAVAILABLE'});
+ f.port.listTurns=async()=>{throw Object.assign(new Error('native cursor invalid'),{code:-32602});};
+ await assert.rejects(f.cache.result(id,'turn-0',false,null),{code:'HISTORY_READ_UNAVAILABLE'});
+ f.port.listTurns=async()=>{throw Object.assign(new Error('native headers unsupported'),{code:-32601});};
+ await assert.rejects(f.cache.result(id,'turn-0',false,null),NativeItemPaginationUnsupported);
 });

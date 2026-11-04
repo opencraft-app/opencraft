@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -118,7 +118,7 @@ export class SshConnectionStore {
           }
         } finally { reader.close(); }
       }
-      const managed = openManagedDatabase({ path, legacyPolicy: "reject", validateSchema: createSchemaValidator(SCHEMA), migrations: SSH_CONNECTION_MIGRATIONS });
+      const managed = openManagedDatabase({ schemaId: "ssh-connection-store", path, legacyPolicy: "reject",  migrations: SSH_CONNECTION_MIGRATIONS });
       this.db = managed.database;
       this.outcome = managed.outcome;
     } catch (error) { this.key.fill(0); throw error; }

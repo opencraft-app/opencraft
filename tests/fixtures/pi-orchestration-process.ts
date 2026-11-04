@@ -51,7 +51,7 @@ if (kind === "host") {
     } else if (command === "identity") result = { pid: process.pid, incarnation: engine.orchestrationIncarnation };
     else throw new Error("Unknown isolated Host command");
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ result }));
-  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: String(error) })); }); });
+  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: error instanceof Error ? error.message : "Fixture request failed" })); }); });
   await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
   await writeFile(join(root, "pi-host.json"), JSON.stringify({ controlUrl: `http://127.0.0.1:${(control.address() as any).port}`, token,
     websocketUrl: host.websocketUrl }), { mode: 0o600 });
@@ -132,7 +132,7 @@ if (kind === "host") {
       origins: service.database.prepare("SELECT thread_id,input_id,origin_json FROM opencraft_input_origins").all() };
     else throw new Error("Unknown isolated Gateway command");
     process.send?.({ id, result });
-  })().catch(error => process.send?.({ id: raw.id, error: String(error) })); });
+  })().catch(error => process.send?.({ id: raw.id, error: error instanceof Error ? error.message : "Fixture request failed" })); });
   process.once("SIGTERM", () => void (async () => { await mcp.close(); await renderer?.close(); appHostClient?.close(); await appHost?.close(); await broker.close(); await service.close(); actors.close(); process.exit(0); })());
   process.send?.({ ready: true, pid: process.pid });
 } else throw new Error("Unknown isolated process kind");

@@ -20,7 +20,7 @@ function fixture(t: any) {
     setItem(_key: string, value: string) { assert(ready); writes.push(value); },
     async flush() { assert(ready); },
   };
-  const host: any = new RemoteBrowserSurfaceHost(storage, 'fixture', () => ready, () => admission);
+  const host: any = new RemoteBrowserSurfaceHost('mse', storage, 'fixture', () => ready, () => admission);
   host.bindInput = () => () => {};
   host.connectTransport = async (p: any) => { connections.push(p.lease); p.serverInitialNavigation = true; };
   const id = 'page' as BrowserPageId;

@@ -1,5 +1,5 @@
 import { Context, Service } from "@deepseek-ai/cordis";
-import { isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
+import { AppServerRpcError, isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import type {
   AppServerThread,
@@ -186,15 +186,27 @@ export async function readTurnsPage(
   limit = 10,
 ): Promise<ThreadTurnsListResponse> {
   let pageLimit = limit;
+  let requestCursor = cursor, recovered = false;
   const compact = executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.itemDetails === true;
   const request = (itemsView: "full" | "notLoaded" | "presentation") => context.client.request("thread/turns/list", {
-    threadId: context.threadId, cursor, limit: pageLimit, itemsView, sortDirection: "desc",
+    threadId: context.threadId, cursor: requestCursor, limit: pageLimit, itemsView, sortDirection: "desc",
   }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
+  const read = async (view: "full" | "notLoaded" | "presentation") => {
+    try { return await request(view); }
+    catch (error) {
+      const data = error instanceof AppServerRpcError && error.code === -32602 && isRecord(error.data) ? error.data : null;
+      if (recovered || requestCursor === null || data?.code !== "HISTORY_CURSOR_EXPIRED" || data.retryable !== true
+        || typeof data.replacementCursor !== "string" || !data.replacementCursor || data.replacementCursor.length > 16384
+        || data.replacementCursor === requestCursor) throw error;
+      recovered = true; requestCursor = data.replacementCursor;
+      return request(view);
+    }
+  };
   while (true) {
-    try { return requireTurnsPage(await request(compact ? "presentation" : "full"), "thread/turns/list"); }
+    try { return requireTurnsPage(await read(compact ? "presentation" : "full"), "thread/turns/list"); }
     catch (error) {
       if (!isHistoryResponseTooLargeError(error)) throw error;
-      if (pageLimit <= 1) return requireTurnsPage(await request("notLoaded"), "thread/turns/list");
+      if (pageLimit <= 1) return requireTurnsPage(await read("notLoaded"), "thread/turns/list");
       pageLimit = Math.max(1, Math.floor(pageLimit / 2));
     }
   }

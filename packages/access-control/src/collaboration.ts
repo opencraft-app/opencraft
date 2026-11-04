@@ -1,12 +1,25 @@
+import {projectContext,projectCommands,type ConversationContext,type ConversationCommands} from '@opencraft/appserver-protocol/collaboration';
 import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
 import { updateExecutionRequest } from './execution-request-state.js';
-import { sqliteTransaction } from "@opencraft/sqlite-node";
+import type {ConversationThreadCount,RecordedThreadCountRead,RecordedThreadCountSet} from '@opencraft/appserver-protocol/collaboration';
+import {publicTextQuery,PUBLIC_TEXT_SEARCH_MODE,type PublicTextRead,type PublicTextWindow,type PublicTextFence,type ConversationTextSearch} from '@opencraft/appserver-protocol/collaboration';
+import {recordedNameQuery,THREAD_SEARCH_MODE,type RecordedNameRead,type RecordedNameWindow,type ConversationThreadSearch} from '@opencraft/appserver-protocol/collaboration';
+import {parseMessageAttachmentQuery,projectMessageAttachmentPage,type MessageAttachmentQuery,type ConversationMessageAttachments} from '@opencraft/appserver-protocol';
+import {THREAD_DEFAULTS_SCOPE,parseThreadDefaults,unknownThreadDefaults,type ThreadDefaultsBundle,type ThreadDefaultsResult,type ThreadDefaultsObservation} from '@opencraft/appserver-protocol/collaboration';
+import {projectTurnConfigurationObservation,unobservedTurnConfiguration,parseConversationSettings,type ConversationInputSettings,type NativeConfirmedConfiguration} from '@opencraft/appserver-protocol/collaboration';
+import { parseSharedInteractionSnapshot, projectStructuredInteraction, type SharedInteractionSnapshot, type StructuredInteractionSubmission } from "@opencraft/appserver-protocol";
+import type { TransportSubmissionContext, ConversationCommandContext } from '@opencraft/appserver-client/transport';
+import type { ConversationCreateTarget, ConversationInitialOptions, ConversationInitialObservation, ConversationCreation, ConversationCreationLookup, ConversationProjects, ConversationModels, ConversationOptions } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationExactResult, ConversationTurnResult, ConversationTurnConfiguration, TurnConfigurationObservation } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationStopResult, ConversationStopObservation, ConversationCancelResult } from '@opencraft/appserver-protocol/collaboration';
+import { captureSqliteReadGuard, sqliteTransaction } from "@opencraft/sqlite-node";
 import { conversationRef, encodeConversationRef, parseConversationRef, type ConversationRef, type ConversationMetadata, type ConversationDiscovery, type ConversationServer, type ConversationReceipt, type ConversationLookup } from '@opencraft/appserver-protocol/collaboration';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
+import type { ConversationInputAdmissionPort } from '@opencraft/appserver-client/transport';
 import type { ActorContext } from '@opencraft/identity-core/actors';
 import type { ActorStore } from './actors.js';
 import type { ActorAccess } from './actor-access.js';
@@ -18,6 +31,14 @@ export type InputMode = 'queue' | 'steer';
 export interface RunBinding { actorId: string; hostId: string; threadId: string; epoch: number; serverId?: string; mode?: InputMode }
 export interface ExecutionReceipt { id: string; state: string; targetTurnId: string | null }
 export interface ConversationExecutionPort {
+  context?(ref:ConversationRef,context:TransportSubmissionContext):Promise<ConversationContext>;
+  commands?(ref:ConversationRef,context:TransportSubmissionContext):Promise<ConversationCommands>;
+  threadCount?(serverId:string,request:RecordedThreadCountRead,context:TransportSubmissionContext,signal:AbortSignal):Promise<RecordedThreadCountSet>;
+  publicTextSearch?(serverId:string,request:PublicTextRead,context:TransportSubmissionContext,signal:AbortSignal):Promise<PublicTextWindow>;
+  threadSearch?(serverId:string,request:RecordedNameRead,context:TransportSubmissionContext,signal:AbortSignal):Promise<RecordedNameWindow>;
+  messageAttachments?(ref:ConversationRef,query:MessageAttachmentQuery,context:TransportSubmissionContext,signal:AbortSignal):Promise<ConversationMessageAttachments>;
+
+  threadDefaults?(ref:ConversationRef,bundle:ThreadDefaultsBundle|null,context:TransportSubmissionContext):Promise<ThreadDefaultsResult|ThreadDefaultsObservation>;
   readonly serverId?: string;
   readonly hostId: string;
   owns?(serverId: string): boolean;
@@ -25,17 +46,33 @@ export interface ConversationExecutionPort {
   serverForThread?(threadId: string): string;
   discover?(search: string, cursor: string | null): Promise<unknown>;
   directory?(): { instanceId: string; servers: ConversationServer[] };
+  projects?(serverId: string, cursor: string | null): Promise<ConversationProjects>;
+  models?(serverId: string, cursor: string | null): Promise<ConversationModels>;
+  options?(ref: ConversationRef): Promise<ConversationOptions>;
+  stop?(ref: ConversationRef, expectedTurnId: string, context: TransportSubmissionContext): Promise<ConversationStopResult>;
+  observeStop?(ref: ConversationRef, expectedTurnId: string, context: TransportSubmissionContext): Promise<ConversationStopObservation>;
   metadata?(ref: ConversationRef): Promise<ConversationMetadata>;
   discoverMetadata?(options: ConversationDiscovery): Promise<{ conversations: ConversationMetadata[]; nextCursor: string | null }>;
   read?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
   readBounded?(ref: ConversationRef, cursor: string | null): Promise<unknown>;
+  prepareSettings?(serverId: string, settings: ConversationInputSettings, context?: TransportSubmissionContext): Promise<void>;
+  prepareCreate?(target: ConversationCreateTarget, context: TransportSubmissionContext): Promise<{ cwd: string; runtimeWorkspaceRoots: string[]; inputSettings?: ConversationInputSettings; nativeConfirmedConfiguration?: NativeConfirmedConfiguration; initialOptions?: ConversationInitialOptions; nativeInitialObservation?: ConversationInitialObservation | null }>;
+  create?(target: ConversationCreateTarget, settings: { cwd: string; runtimeWorkspaceRoots: string[]; inputSettings?: ConversationInputSettings; nativeConfirmedConfiguration?: NativeConfirmedConfiguration; initialOptions?: ConversationInitialOptions }, context: TransportSubmissionContext): Promise<{ threadId: string; nativeConfirmedConfiguration?: NativeConfirmedConfiguration; nativeInitialObservation?: ConversationInitialObservation }>;
+  interactions?(ref: ConversationRef, context: TransportSubmissionContext): Promise<SharedInteractionSnapshot>;
+  respondInteraction?(ref: ConversationRef, submission: StructuredInteractionSubmission, context: TransportSubmissionContext): Promise<{disposition:'submitted'|'already-submitted'|'resolved';snapshot:SharedInteractionSnapshot}>;
+  turnConfigurationObservation?(ref: ConversationRef, turnId: string): Promise<TurnConfigurationObservation>;
+  exactResult?(ref: ConversationRef, turnId: string, output: boolean, cursor: string | null): Promise<ConversationTurnResult>;
+  readTail?(ref: ConversationRef, limit: number): Promise<unknown>;
   validate(binding: RunBinding): Promise<void>;
   receipt(binding: RunBinding, requestId: string): Promise<ExecutionReceipt | null>;
   /** Null is an explicit, safe deferral before any native input attempt. */
   add(binding: RunBinding, requestId: string, input: string, canAdmit?: () => boolean): Promise<ExecutionReceipt | null>;
   steer(binding: RunBinding, requestId: string, queueId: string, expectedTurnId: string): Promise<void>;
-  cancel(binding: RunBinding, requestId: string, queueId: string): Promise<boolean>;
+  cancel(binding: RunBinding, requestId: string, queueId: string, assertAdmission?: () => void): Promise<boolean>;
 }
+export type CountAuthorityCapture = (context:ActorContext,check:()=>void) => Promise<{
+  admitted:boolean; allows:(ref:ConversationRef)=>boolean; validate:()=>boolean;
+} | null>;
 export class CollaborationError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
@@ -74,21 +111,25 @@ export function actorChannelId(a: string, b: string): string {
 /** Single-Hub collaboration authority. Stores communication facts, never a second runnable queue. */
 export class Collaboration {
   private readonly database: DatabaseSync;
+  private readonly settingsStorage: boolean;
   readonly #unregisterAuthority: () => void;
   readonly outcome;
   readonly orchestration: ThreadOrchestrationLedger;
   private ownedExecutionStorage?: OrchestrationRuntimeWorker;
   #closed = false;
   #cursor = 0;
+  // Read cursors belong to this owner lifetime, never to a login or persisted authority.
+  readonly #queueCursorKey = randomBytes(32);
   #pump: Promise<void> | null = null;
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution">) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true, readonly countAuthority?: CountAuthorityCapture, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution">) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
     const managed = openServerRepository(path, "actor-collaboration");
     this.#closeDatabase = managed.close;
     this.database = managed.database; this.outcome = managed.outcome;
+    this.settingsStorage = !!this.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_input_settings'").get();
     this.orchestration = new ThreadOrchestrationLedger(this.database, now);
     this.#unregisterAuthority = actors.registerResourceAuthority(resource => { const ref = parseConversationRef(resource); return !!ref && this.#owns(ref.serverId); });
   }
@@ -103,6 +144,7 @@ export class Collaboration {
     await this.#operations; await this.ownedExecutionStorage?.close(); this.#unregisterAuthority(); this.#closeDatabase();
   }
   get available() { return !this.#closed; }
+  get modelSettingsAvailable() { return this.settingsStorage && !this.#closed; }
   binding(actorId: string): RunBinding | null {
     const r = this.database.prepare('SELECT * FROM actor_run_bindings WHERE actor_id=?').get(actorId);
     return r ? { actorId, hostId: r.host_id as string, threadId: r.thread_id as string, epoch: r.epoch as number } : null;
@@ -164,7 +206,7 @@ export class Collaboration {
     });
   }
   conversationAllowed(context: ActorContext, ref: ConversationRef, action: string): boolean {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.#owns(ref.serverId)) return false;
+    if (this.#closed || !this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.#owns(ref.serverId) || !this.resourceAccess(context,ref)) return false;
     const owned = this.orchestration.relation(ref.threadId);
     if (owned?.serverId === ref.serverId) return owned.ownerActorId === context.actorId || this.actors.can(context, encodeConversationRef(ref), action);
     // Historical conversations retain their explicitly shared instance scope.
@@ -194,12 +236,289 @@ export class Collaboration {
     if (!this.execution.directory) throw new CollaborationError(409, 'unsupported_capability');
     return { ...this.execution.directory(), actor: { id: actor.id, kind: actor.kind, generation: context.generation } };
   }
+  async catalog(context: ActorContext, kind: 'projects' | 'models', serverId: string, cursor: string | null) {
+    this.#createActor(context, serverId);
+    const port = this.execution[kind];
+    if (!port) throw new CollaborationError(409, 'unsupported_capability');
+    const result = kind === 'projects' ? await this.execution.projects!(serverId,cursor) : await this.execution.models!(serverId,cursor);
+    this.#createActor(context, serverId);
+    return result;
+  }
+  async threadObservation(context:ActorContext,value:unknown,action:'context'|'commands',trusted?:ConversationCommandContext) {
+    const current=()=>{this.servers(context);trusted?.submission?.resourceOwner?.assertCurrent();return this.#conversation(context,value,'conversation.read');};
+    const ref=current(), capability=action==='context'?'contextUsage':'threadCommands';
+    if(!this.execution[action]||!this.execution.directory?.().servers.some(s=>s.serverId===ref.serverId&&s.capabilities[capability]===true))throw new CollaborationError(409,'unsupported_capability');
+    const submission:TransportSubmissionContext={sender:null,actorContext:context,validUntil:Math.min(context.expiresAt,trusted?.submission?.validUntil??Infinity),resourceOwner:{id:'thread-observation',assertCurrent:()=>{current();}}};
+    try {
+      const result=await this.execution[action]!(ref,submission);current();
+      return action==='context'?{...projectContext(result),ref}:projectCommands(result,ref);
+    } catch(error) {current();if(error instanceof CollaborationError)throw error;
+      if((error as {code?:unknown}).code==='unsupported_capability')throw new CollaborationError(409,'unsupported_capability');
+      if(action==='context')return {...projectContext({status:'unknown',reason:'source-unavailable'}),ref};
+      throw new CollaborationError(503,'commands_unavailable');
+    }
+  }
+  async options(context: ActorContext, value: unknown) {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    if (!this.execution.options) throw new CollaborationError(409, 'unsupported_capability');
+    const result = await this.execution.options(ref);
+    this.#conversation(context, ref, 'conversation.read');
+    return result;
+  }
+  assertThreadDefaultsAccess(context:ActorContext,ref:ConversationRef):void {
+    this.servers(context);
+    if(this.#closed||!this.#owns(ref.serverId)||!this.resourceAccess(context,ref))throw new CollaborationError(403,'thread_defaults_denied');
+  }
+  assertMessageAttachmentsAccess(context:ActorContext,ref:ConversationRef):void {
+    this.servers(context);this.#conversation(context,ref,'conversation.read');
+  }
+  async messageAttachments(context:ActorContext,value:unknown,raw:unknown,command?:ConversationCommandContext):Promise<ConversationMessageAttachments>{
+    const incoming=command?.submission;
+    const assertCurrent=()=>{this.servers(context);incoming?.resourceOwner?.assertCurrent();const ref=this.#conversation(context,value,'conversation.read');
+      if(!incoming?.resourceOwner||incoming.actorContext?.actorId!==context.actorId||incoming.actorContext.generation!==context.generation||incoming.validUntil!==undefined&&incoming.validUntil<=this.now())throw new CollaborationError(403,'conversation_action_denied');return ref;};
+    const ref=assertCurrent();let query:MessageAttachmentQuery;try{query=parseMessageAttachmentQuery(raw);}catch{throw new CollaborationError(400,'invalid_attachment_query');}
+    if(!this.execution.messageAttachments||!this.execution.directory?.().servers.some(s=>s.serverId===ref.serverId&&s.capabilities.messageAttachments===true))throw new CollaborationError(409,'unsupported_capability');
+    const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+    const submission:TransportSubmissionContext={sender:null,actorContext:context,validUntil:Math.min(context.expiresAt,incoming!.validUntil??Infinity),resourceOwner:{id:'message-attachments',assertCurrent:()=>{assertCurrent();}}};
+    try{
+      const value=await Promise.race([this.execution.messageAttachments(ref,query,submission,controller.signal),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new CollaborationError(503,'attachment_metadata_unavailable'));},1000);timer.unref();})]);
+      const page=projectMessageAttachmentPage(value,ref);assertCurrent();controller.signal.throwIfAborted();return page;
+    }catch(error){assertCurrent();const e=error as {code?:unknown};if(e.code==='attachment_cursor_invalid')throw new CollaborationError(409,'attachment_cursor_invalid');if(e.code==='unsupported_capability')throw new CollaborationError(409,'unsupported_capability');if(error instanceof CollaborationError)throw error;throw new CollaborationError(503,'attachment_metadata_unavailable');}
+    finally{clearTimeout(timer);controller.abort();}
+  }
+  async threadDefaults(context:ActorContext,value:unknown,scope:unknown,bundleValue:unknown,trusted?:ConversationCommandContext,observeOnly=false) {
+    const incoming=trusted?.submission;
+    const assertCurrent=()=>{
+      this.servers(context);incoming?.resourceOwner?.assertCurrent();
+      if(!incoming?.resourceOwner||incoming.actorContext?.actorId!==context.actorId||incoming.actorContext.generation!==context.generation
+        ||incoming.interactionScope||incoming.collaborationRequestId||incoming.orchestrationOperationId
+        ||incoming.validUntil!==undefined&&incoming.validUntil<=this.now())throw new CollaborationError(403,'thread_defaults_denied');
+      let ref:ConversationRef;try{ref=typeof value==='string'?parseConversationRef(value)!:conversationRef(value);}catch{throw new CollaborationError(400,'invalid_reference');}
+      // The accepted raw Thread resource-use lane, not read grants or Hub orchestration ownership.
+      if(!ref)throw new CollaborationError(400,'invalid_reference');this.assertThreadDefaultsAccess(context,ref);
+      return ref;
+    };
+    const ref=assertCurrent();let bundle:ThreadDefaultsBundle|null=null;
+    if(!observeOnly){if(scope!==THREAD_DEFAULTS_SCOPE)throw new CollaborationError(400,'invalid_thread_defaults_scope');try{bundle=parseThreadDefaults(bundleValue);}catch{throw new CollaborationError(400,'invalid_thread_defaults');}}
+    const port=this.execution.threadDefaults;if(!port||!this.execution.directory?.().servers.some(s=>s.serverId===ref.serverId&&s.capabilities[observeOnly?'threadDefaultsObserve':'threadDefaults']===true))throw new CollaborationError(409,'unsupported_capability');
+    const submission:TransportSubmissionContext={sender:null,actorContext:context,validUntil:incoming!.validUntil,resourceOwner:{id:'thread-defaults',assertCurrent:()=>{assertCurrent();}}};
+    try{const result=await port.call(this.execution,ref,bundle,submission);assertCurrent();return result;}
+    catch(error){assertCurrent();const f=error as {status?:number;code?:unknown};if(f.code==='unsupported_capability')throw new CollaborationError(409,'unsupported_capability');
+      if(f.status&&[400,401,403,404,409].includes(f.status))throw new CollaborationError(f.status,typeof f.code==='string'?f.code:'thread_defaults_denied');
+      if(observeOnly)throw new CollaborationError(503,'thread_defaults_observation_unavailable');
+      return {ref,scope:THREAD_DEFAULTS_SCOPE,requested:bundle!,requestState:'unknown',includesAlreadyAcceptedInputs:true,includesOtherParticipantsInputs:true,observation:unknownThreadDefaults(ref),actualTurnSettings:null} satisfies ThreadDefaultsResult;
+    }
+  }
+  async controlStop(context: ActorContext, value: unknown, expectedTurnId: string, observeOnly=false): Promise<ConversationStopResult | ConversationStopObservation> {
+    const target=text(expectedTurnId);
+    const assertCurrent=()=>{this.servers(context);return this.#conversation(context,value,observeOnly?'conversation.read':'execution.steer');};
+    const ref=assertCurrent(),port=observeOnly?this.execution.observeStop:this.execution.stop;
+    if (!port) throw new CollaborationError(409,'unsupported_capability');
+    const trusted: TransportSubmissionContext={sender:null,actorContext:context,validUntil:context.expiresAt,
+      resourceOwner:{id:'hub-stop',assertCurrent:()=>{assertCurrent();}}};
+    try {
+      const result=observeOnly?await this.execution.observeStop!(ref,target,trusted):await this.execution.stop!(ref,target,trusted);assertCurrent();return result;
+    } catch(error) {
+      assertCurrent();
+      const fault=error as {status?:number;code?:string};
+      if (fault.code==='unsupported_capability') throw new CollaborationError(409,'unsupported_capability');
+      if (fault.status && [400,401,403,404,409].includes(fault.status)) throw new CollaborationError(fault.status,fault.status===409?'stale_turn':'conversation_control_denied');
+      if (observeOnly) throw new CollaborationError(503,'stop_observation_unavailable');
+      return {ref,targetTurnId:target,requestState:'unknown',observation:{ref,targetTurnId:target,turnState:'unknown',activeTurnId:null,source:'unknown',observedAt:this.now()}};
+    }
+  }
+  cancelConversation(context: ActorContext, value: unknown, requestId: string): Promise<ConversationCancelResult> {
+    return this.#serial(async()=>{
+      const assertCurrent=()=>{
+        this.servers(context);const ref=this.#conversation(context,value,'execution.queue');
+        const row=this.getRequest(context,requestId);
+        if (row.requester_id!==context.actorId || row.target_kind!=='conversation' || row.server_id!==ref.serverId || row.thread_id!==ref.threadId)
+          throw new CollaborationError(404,'missing');
+        if (row.mode!=='queue') throw new CollaborationError(409,'not_queue_request');
+        return {ref,row};
+      };
+      const {ref,row}=assertCurrent();
+      if (!this.execution.directory?.().servers.some(server=>server.serverId===ref.serverId && server.capabilities.queueCancel===true)) throw new CollaborationError(409,'unsupported_capability');
+      if (row.state!=='cancelled') {
+        if (row.state==='unknown') throw new CollaborationError(409,'execution_outcome_unknown');
+        try { await this.#cancel(context,requestId,()=>{assertCurrent();}); }
+        catch(error) {
+          if (error instanceof CollaborationError) throw error;
+          if ((error as {code?:unknown}).code===-32601 || (error as {code?:unknown}).code==='unsupported_capability') throw new CollaborationError(409,'unsupported_capability');
+          // The existing request ledger retains uncertainty; a lost delete ACK
+          // never authorizes another deletion or changes the frozen submission.
+          this.#update(requestId,'unknown','cancel_outcome_unknown');
+        }
+      }
+      assertCurrent();const receipt=this.conversationDelivery(context,ref,requestId);
+      return {ref,requestId,cancellationState:receipt.deliveryState==='cancelled'?'cancelled':'unknown',receipt};
+    });
+  }
   async metadata(context: ActorContext, value: unknown) {
     const ref = this.#conversation(context, value, 'conversation.read');
     if (!this.execution.metadata) throw new CollaborationError(409, 'unsupported_capability');
     const result = await this.execution.metadata(ref);
     this.#conversation(context, ref, 'conversation.read');
-    return result;
+    // Host project IDs are deliberately not passed to Native thread/start.
+    // Read the durable CLI creation association after checking current access.
+    const creation = this.database.prepare("SELECT DISTINCT project_id FROM actor_conversation_creations WHERE server_id=? AND thread_id=? AND creation_state='created' LIMIT 2").all(ref.serverId, ref.threadId);
+    return creation.length === 1 ? {...result, projectId: String(creation[0]!.project_id)} : result;
+  }
+  async publicTextSearch(context:ActorContext,serverId:string,queryValue:unknown,cursor:string|null):Promise<ConversationTextSearch> {
+    const started=performance.now(),signal=AbortSignal.timeout(9000);
+    const current=()=>{this.servers(context);if(this.#closed||!this.#owns(serverId))throw new CollaborationError(403,'conversation_action_denied');
+      if(signal.aborted||performance.now()-started>=9000)throw new CollaborationError(503,'text_search_unavailable');};
+    current();let query:string;try{query=publicTextQuery(queryValue);}catch{throw new CollaborationError(400,'invalid_query');}
+    if(!this.execution.publicTextSearch||!this.execution.directory?.().servers.some(s=>s.serverId===serverId&&s.capabilities.publicTextSearch===true))
+      throw new CollaborationError(409,'unsupported_capability');
+    const binding=JSON.stringify(['public-text',PUBLIC_TEXT_SEARCH_MODE,context.actorId,context.generation,serverId,createHash('sha256').update(query).digest('hex'),false]);
+    let prior:PublicTextFence|null=null;
+    if(cursor!==null)try {
+      if(!cursor.startsWith('thread-text:'))throw Error();const token=cursor.slice(12);
+      if(!/^[A-Za-z0-9_-]{40,8179}$/u.test(token))throw Error();const bytes=Buffer.from(token,'base64url');if(bytes.toString('base64url')!==token)throw Error();
+      const cipher=createDecipheriv('aes-256-gcm',this.#queueCursorKey,bytes.subarray(0,12));cipher.setAuthTag(bytes.subarray(12,28));
+      const decoded=JSON.parse(Buffer.concat([cipher.update(bytes.subarray(28)),cipher.final()]).toString());
+      if(!Array.isArray(decoded)||decoded.length!==2||decoded[0]!==binding)throw Error();prior=decoded[1];
+    }catch{throw new CollaborationError(409,'text_search_cursor_invalid');}
+    const submission:TransportSubmissionContext={sender:null,actorContext:context,collaborationRequestId:'thread-text-search',
+      resourceOwner:{id:'thread-text-search',assertCurrent:current},validUntil:Date.now()+Math.max(0,9000-(performance.now()-started))};
+    const call=async(read:PublicTextRead)=>{current();const result=await this.execution.publicTextSearch!(serverId,read,submission,signal);current();return result;};
+    const validFence=(f:PublicTextFence)=>f&&typeof f.lifetime==='string'&&f.lifetime.length<=512&&Number.isSafeInteger(f.revision)
+      &&Number.isSafeInteger(f.upper)&&Number.isSafeInteger(f.position)&&f.revision>=0&&f.position>=0&&f.position<=f.upper;
+    try {
+      const batch=await call({kind:'window',cursor:prior}),f=batch?.fence,start=prior?.position??0;
+      if(!validFence(f)||f.position!==Math.min(f.upper,start+128)||!Array.isArray(batch.candidates)||batch.candidates.length>128)throw Error('Invalid window');
+      const positions:number[]=[],refs=new Map<number,ConversationRef>();let previous=start,index=0;
+      for(const row of batch.candidates) {
+        if(++index%16===0)await new Promise<void>(resolve=>setImmediate(resolve));current();
+        if(!Number.isSafeInteger(row.position)||row.position<=previous||row.position>f.position)throw Error('Invalid candidate');previous=row.position;
+        const ref=conversationRef({serverId,threadId:row.threadId});
+        if(this.conversationAllowed(context,ref,'conversation.read')){positions.push(row.position);refs.set(row.position,ref);}
+      }
+      for(const ref of refs.values()){current();if(!this.conversationAllowed(context,ref,'conversation.read'))throw new CollaborationError(403,'conversation_action_denied');}
+      const project=await call({kind:'project',cursor:{...f,position:start},query:queryValue as string,positions}),next=project?.fence;
+      if(!validFence(next)||next.lifetime!==f.lifetime||next.revision!==f.revision||next.upper!==f.upper||next.position<start||next.position>f.position
+        ||!Array.isArray(project.entries)||project.entries.length>30||!Number.isFinite(project.observedAt))throw Error('Invalid projection');
+      const entries:ConversationTextSearch['entries']=[];previous=start;
+      for(const row of project.entries) {
+        const ref=refs.get(row.position);current();
+        if(!ref||row.position<=previous||row.position>next.position||row.threadId!==ref.threadId||!['user','assistant'].includes(row.role)
+          ||typeof row.snippet!=='string'||row.snippet.length>1024||typeof row.turnId!=='string'||!row.turnId||row.turnId.length>4096
+          ||typeof row.itemId!=='string'||!row.itemId||row.itemId.length>4096)throw Error('Invalid public text item');
+        previous=row.position;
+        if(!this.conversationAllowed(context,ref,'conversation.read'))throw new CollaborationError(403,'conversation_action_denied');
+        entries.push({ref,turnId:row.turnId,itemId:row.itemId,role:row.role,snippet:row.snippet});
+      }
+      if(project.entries.length<30&&next.position!==f.position)throw Error('Incomplete projection');
+      const validated=await call({kind:'validate',cursor:next});
+      if(JSON.stringify(validated.fence)!==JSON.stringify(next))throw Error('Source changed');
+      for(const ref of refs.values()){current();if(!this.conversationAllowed(context,ref,'conversation.read'))throw new CollaborationError(403,'conversation_action_denied');}current();
+      let nextCursor:string|null=null;
+      if(next.position<next.upper){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.#queueCursorKey,iv);
+        const encrypted=Buffer.concat([cipher.update(JSON.stringify([binding,next])),cipher.final()]);nextCursor='thread-text:'+Buffer.concat([iv,cipher.getAuthTag(),encrypted]).toString('base64url');}
+      return {serverId,field:'text',mode:PUBLIC_TEXT_SEARCH_MODE,scope:'authorized-imported-public-text',source:'server-conversation-history',
+        coverage:'indexed-recorded-only',consistency:'revision-bound',observedAt:project.observedAt,entries,nextCursor,traversalComplete:nextCursor===null,
+        count:{status:'unknown',value:null,unit:'items'}};
+    }catch(error){if(error instanceof CollaborationError)throw error;const code=(error as {code?:string}).code;
+      if(code==='unsupported_capability')throw new CollaborationError(409,code);
+      if(code==='text_search_unknown')throw new CollaborationError(503,code);
+      if(code==='text_search_changed')throw new CollaborationError(409,code);throw new CollaborationError(503,'text_search_unavailable');}
+  }
+  async threadCount(context:ActorContext, serverId:string, readCurrent:()=>boolean=()=>true):Promise<ConversationThreadCount> {
+    // Budget starts at this authenticated count authority, excluding inherited SSH checks.
+    const started=performance.now(),signal=AbortSignal.timeout(9000);
+    const check=()=>{if(!readCurrent()||signal.aborted||performance.now()-started>=9000)throw Object.assign(Error('count_budget'),{code:'count_unknown'});
+      if(this.#closed||!this.actors.isCurrent(context))throw new CollaborationError(401,'actor_authentication_required');};
+    check();if(this.actors.get(context.actorId)?.kind!=='human')throw new CollaborationError(403,'conversation_action_denied');
+    if(!this.#owns(serverId))throw new CollaborationError(403,'conversation_action_denied');
+    const directory=this.execution.directory?.(),instanceId=directory?.instanceId??'';
+    if(!this.execution.threadCount||!directory?.servers.some(s=>s.serverId===serverId&&s.capabilities.threadCount===true))throw new CollaborationError(409,'unsupported_capability');
+    const result=(value:number|null):ConversationThreadCount=>({instanceId,serverId,unit:'threads',scope:'authorized-recorded-threads',source:'host-thread-directory',
+      coverage:'recorded-only',archived:false,consistency:'authorized-stable-window',observedAt:this.now(),status:value===null?'unknown':'exact',value});
+    try {
+      const ledger=captureSqliteReadGuard(this.database,()=>!this.#closed);
+      const authority=await this.countAuthority?.(context,check);check();
+      if(!ledger||!authority||!authority.validate())return result(null);
+      if(!authority.admitted)throw new CollaborationError(403,'conversation_action_denied');
+      const current=()=>{check();if(!authority.validate()||!ledger()||!this.#owns(serverId)
+        ||this.execution.directory?.().instanceId!==instanceId)throw Object.assign(Error('count_changed'),{code:'count_unknown'});};
+      const submission:TransportSubmissionContext={sender:null,actorContext:context,collaborationRequestId:'thread-count',
+        resourceOwner:{id:'thread-count',assertCurrent:current},validUntil:Date.now()+Math.max(0,9000-(performance.now()-started))};
+      current();const source=await this.execution.threadCount(serverId,{kind:'capture'},submission,signal);current();
+      if(source.status!=='complete')return result(null);
+      if(source.ids.length>16384||new Set(source.ids).size!==source.ids.length)return result(null);
+      let total=0,bytes=0;
+      for(let i=0;i<source.ids.length;i++){
+        current();const threadId=source.ids[i];
+        if(typeof threadId!=='string'||!threadId||threadId.length>4096)return result(null);
+        bytes+=Buffer.byteLength(threadId);if(bytes>4*1024*1024)return result(null);
+        const ref={serverId,threadId};
+        if(authority.allows(ref)){
+          const owner=this.orchestration.countOwnership(threadId,serverId,context.actorId);
+          if(owner!=='other'||this.actors.can(context,encodeConversationRef(ref),'conversation.discover'))total++;
+        }
+        if(i%128===127)await new Promise<void>(resolve=>setImmediate(resolve));
+      }
+      current();const validated=await this.execution.threadCount(serverId,{kind:'validate',ticket:source.ticket},submission,signal);current();
+      return result(validated.status==='validated'?total:null);
+    }catch(error){
+      if(error instanceof CollaborationError)throw error;
+      const status=(error as {status?:number}).status;
+      if(status===401||status===403)throw new CollaborationError(status,'actor_authentication_required');
+      const code=(error as {code?:unknown}).code;
+      if(code==='unsupported_capability')throw new CollaborationError(409,'unsupported_capability');
+      if(signal.aborted||code==='count_unknown'||code==='thread_count_unknown')return result(null);
+      throw new CollaborationError(503,'thread_count_unavailable');
+    }
+  }
+  async threadSearch(context:ActorContext,serverId:string,field:unknown,queryValue:unknown,cursor:string|null):Promise<ConversationThreadSearch> {
+    const started=performance.now(), signal=AbortSignal.timeout(9000);
+    const current=()=>{if(this.#closed)throw new CollaborationError(503,'thread_search_unavailable');this.servers(context);if(!this.#owns(serverId))throw new CollaborationError(404,'conversation_unavailable');
+      if(signal.aborted||performance.now()-started>=9000)throw new CollaborationError(503,'thread_search_unavailable');};
+    current();
+    if(field!=='name')throw new CollaborationError(400,'invalid_field');
+    let query:string;try{query=recordedNameQuery(queryValue);}catch{throw new CollaborationError(400,'invalid_query');}
+    if(!this.execution.threadSearch||!this.execution.directory?.().servers.some(s=>s.serverId===serverId&&s.capabilities.threadSearch===true))throw new CollaborationError(409,'unsupported_capability');
+    const binding=JSON.stringify(['thread-search',THREAD_SEARCH_MODE,context.actorId,context.generation,serverId,'name','NFC-case-sensitive',false,query]);
+    let prior:RecordedNameRead['cursor']=null;
+    if(cursor!==null)try{
+      if(!cursor.startsWith('thread-names:'))throw Error();const token=cursor.slice(13);
+      if(!/^[A-Za-z0-9_-]{40,8179}$/u.test(token))throw Error();
+      const bytes=Buffer.from(token,'base64url');if(bytes.toString('base64url')!==token)throw Error();
+      const cipher=createDecipheriv('aes-256-gcm',this.#queueCursorKey,bytes.subarray(0,12));cipher.setAuthTag(bytes.subarray(12,28));
+      const decoded=JSON.parse(Buffer.concat([cipher.update(bytes.subarray(28)),cipher.final()]).toString());
+      if(!Array.isArray(decoded)||decoded.length!==2||decoded[0]!==binding)throw Error();prior=decoded[1];
+    }catch{throw new CollaborationError(409,'thread_search_cursor_invalid');}
+    const submission:TransportSubmissionContext={sender:null,actorContext:context,collaborationRequestId:'thread-name-search',
+      resourceOwner:{id:'thread-name-search',assertCurrent:current},validUntil:Date.now()+Math.max(0,9000-(performance.now()-started))};
+    try{
+      const page=await this.execution.threadSearch(serverId,{kind:'window',query,cursor:prior},submission,signal);current();
+      const fence=page?.fence;
+      if(!fence||typeof fence.lifetime!=='string'||typeof fence.sync!=='string'||!Number.isSafeInteger(fence.revision)
+        ||!Number.isSafeInteger(fence.upper)||!Number.isSafeInteger(fence.position)||fence.position<0||fence.position>fence.upper
+        ||!Array.isArray(page.entries)||page.entries.length>1024||!Number.isFinite(page.observedAt))throw Error('Invalid search window');
+      const entries:ConversationThreadSearch['entries']=[];let position=prior?.position??0;
+      if(fence.position>Math.min(fence.upper,position+1024)||fence.position<position)throw Error('Invalid search position');
+      for(const row of page.entries){
+        current();if(!Number.isSafeInteger(row.position)||row.position<=position||row.position>fence.position||typeof row.name!=='string'
+          ||row.name.length>8192||[...row.name].length>4096||!row.name.normalize('NFC').includes(query))throw Error('Invalid search entry');
+        position=row.position;
+        const ref=conversationRef({serverId,threadId:row.threadId});
+        if(this.conversationAllowed(context,ref,'conversation.discover'))entries.push({ref,name:row.name});
+        if(entries.length===30)break;
+      }
+      const next={...fence,position:entries.length===30?position:fence.position};
+      const validated=await this.execution.threadSearch(serverId,{kind:'validate',cursor:next},submission,signal);current();
+      if(!validated||JSON.stringify(validated.fence)!==JSON.stringify(next)||validated.entries?.length!==0||validated.observedAt!==page.observedAt)throw Error('Source validation changed');
+      for(const row of entries)if(!this.conversationAllowed(context,row.ref,'conversation.discover'))throw new CollaborationError(403,'conversation_action_denied');
+      current();let nextCursor:string|null=null;
+      if(next.position<next.upper){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.#queueCursorKey,iv);
+        const ciphertext=Buffer.concat([cipher.update(JSON.stringify([binding,next])),cipher.final()]);nextCursor='thread-names:'+Buffer.concat([iv,cipher.getAuthTag(),ciphertext]).toString('base64url');}
+      return {serverId,field:'name',mode:THREAD_SEARCH_MODE,scope:'authorized-recorded-names',source:'host-thread-directory',coverage:'recorded-only',
+        consistency:'revision-bound',observedAt:page.observedAt,entries,nextCursor,complete:nextCursor===null,count:{status:'unknown',value:null,unit:'threads'}};
+    }catch(error){if(error instanceof CollaborationError)throw error;
+      const e=error as {code?:string;status?:number};if(['thread_search_changed','thread_search_cursor_invalid'].includes(e.code??''))throw new CollaborationError(409,e.code!);
+      if(e.code==='unsupported_capability')throw new CollaborationError(409,e.code);throw new CollaborationError(503,'thread_search_unavailable');}
   }
   async discoverMetadata(context: ActorContext, options: ConversationDiscovery) {
     this.servers(context);
@@ -209,13 +528,111 @@ export class Collaboration {
     this.servers(context);
     return { ...result, conversations: result.conversations.filter(row => this.conversationAllowed(context, row.ref, 'conversation.discover')) };
   }
-  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false) {
+  async readConversation(context: ActorContext, value: unknown, cursor: string | null = null, bounded = false, tail?: number) {
     const ref = this.#conversation(context, value, 'conversation.read');
     const read = bounded ? this.execution.readBounded : this.execution.read;
-    if (!read) throw new CollaborationError(409, 'unsupported_capability');
-    const result = await read.call(this.execution, ref, cursor);
+    if (tail !== undefined && (!bounded || cursor !== null || !Number.isInteger(tail) || tail < 1 || tail > 5)) throw new CollaborationError(400, 'invalid_tail');
+    if (tail !== undefined && !this.execution.readTail) throw new CollaborationError(409, 'unsupported_capability');
+    if (tail === undefined && !read) throw new CollaborationError(409, 'unsupported_capability');
+    const result = tail === undefined ? await read!.call(this.execution, ref, cursor) : await this.execution.readTail!(ref, tail);
     this.#conversation(context, ref, 'conversation.read');
     return {ref, externalContext: true, history: result};
+  }
+  async interactions(context: ActorContext, value: unknown, id?: string, cursor?: string) {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    if (!this.execution.interactions || this.execution.directory?.().servers.find(s=>s.serverId===ref.serverId)?.capabilities.interactions !== true) throw new CollaborationError(409,'unsupported_capability');
+    const snapshot = parseSharedInteractionSnapshot(await this.execution.interactions(ref, {sender:null,actorContext:context,
+      interactionScope:{threadId:ref.threadId,respond:this.actors.get(context.actorId)?.kind==='human' && this.conversationAllowed(context,ref,'interaction.respond')},resourceOwner:{id:'interaction-read:'+context.actorId,assertCurrent:()=>{this.#conversation(context,ref,'conversation.read');}}}));
+    this.#conversation(context, ref, 'conversation.read');
+    if (!snapshot || snapshot.threadId !== ref.threadId) throw new CollaborationError(503,'invalid_interaction_snapshot');
+    let offset = 0;
+    if (cursor) {
+      try {
+        const c=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));
+        if (c.epoch!==snapshot.epoch || c.revision!==snapshot.revision || c.serverId!==ref.serverId || c.threadId!==ref.threadId || !Number.isSafeInteger(c.offset) || c.offset<0 || c.offset>snapshot.requests.length) throw Error();
+        offset=c.offset;
+      } catch { throw new CollaborationError(409,'interaction_changed'); }
+    }
+    const rows = id ? snapshot.requests.filter(r=>r.id===id) : snapshot.requests.slice(offset,offset+30);
+    if (id && !rows.length) throw new CollaborationError(404,'interaction_unavailable');
+    const next = offset+rows.length;
+    return {ref,epoch:snapshot.epoch,revision:snapshot.revision,canRespond:snapshot.canRespond,
+      interactions:rows.map(r=>{const p=projectStructuredInteraction(r);return id ? p : {...p,prompt:null};}),
+      nextCursor:!id && next<snapshot.requests.length ? Buffer.from(JSON.stringify({...ref,epoch:snapshot.epoch,revision:snapshot.revision,offset:next})).toString('base64url') : null};
+  }
+  async respondInteraction(context: ActorContext, value: unknown, args: Record<string, unknown>, trusted?: ConversationCommandContext) {
+    const ref = this.#conversation(context, value, 'interaction.respond');
+    if (this.actors.get(context.actorId)?.kind !== 'human') throw new CollaborationError(403,'conversation_action_denied');
+    if (!this.execution.respondInteraction || this.execution.directory?.().servers.find(s=>s.serverId===ref.serverId)?.capabilities.interactionRespond !== true) throw new CollaborationError(409,'unsupported_capability');
+    const interactionId=text(args.interactionId,512), submissionId=text(args.submissionId,128), expectedEpoch=text(args.expectedEpoch,256);
+    if (!Number.isSafeInteger(args.expectedRevision) || Number(args.expectedRevision)<0) throw new CollaborationError(400,'invalid_revision');
+    const response=record(args.response);
+    if (JSON.stringify(response).length>24000) throw new CollaborationError(400,'invalid_response');
+    const submission: StructuredInteractionSubmission={interactionId,submissionId:'human:'+createHash('sha256').update(JSON.stringify([context.actorId,context.generation,ref,submissionId])).digest('hex'),
+      expectedEpoch,expectedRevision:Number(args.expectedRevision),response:response as unknown as StructuredInteractionSubmission['response']};
+    const assertCurrent=()=>{trusted?.submission.resourceOwner?.assertCurrent();this.#conversation(context,ref,'interaction.respond');};
+    // A Native interaction result is not a new message or execution attribution.
+    const authority:TransportSubmissionContext={interactionScope:{threadId:ref.threadId,respond:true},sender:null,actorContext:context,validUntil:context.expiresAt,
+      resourceOwner:{id:'interaction:'+context.actorId,assertCurrent}};
+    let disposition: 'submitted'|'already-submitted'|'resolved'|'unknown';
+    try { disposition=(await this.execution.respondInteraction(ref,submission,authority)).disposition; }
+    catch (error) {
+      assertCurrent();
+      if ((error as {status?:number}).status) throw error;
+      disposition='unknown';
+    }
+    assertCurrent();
+    return {ref,interactionId,submissionId,disposition,executionState:'unknown' as const};
+  }
+  #resultTarget(context:ActorContext, ref:ConversationRef, targetValue:unknown) {
+    const target = record(targetValue);
+    const keys = Object.keys(target);
+    if (keys.length !== 1 || !['requestId','operationKey','turnId'].includes(keys[0]!)) throw new CollaborationError(400, 'invalid_result_target');
+    const id = text(target[keys[0]!], keys[0] === 'operationKey' ? 128 : 256);
+    let receipt: ConversationReceipt | null = null;
+    let turnId: string | null = null;
+    if (keys[0] === 'turnId') turnId = id;
+    else if (keys[0] === 'requestId') receipt = this.conversationDelivery(context, ref, id);
+    else {
+      const lookup = this.lookupConversation(context, ref, id);
+      if (lookup.found) receipt = lookup.receipt;
+      else if(this.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='actor_conversation_creations'").get()) {
+        const creation = this.lookupCreation(context,ref.serverId,id);
+        if (creation.found) {
+          const createdRef = creation.operation.ref;
+          if (createdRef && (createdRef.serverId !== ref.serverId || createdRef.threadId !== ref.threadId)) throw new CollaborationError(404,'missing');
+          receipt = creation.operation.firstMessage;
+        }
+      }
+    }
+    if (receipt) turnId = receipt.targetTurnId;
+    return {receipt,turnId,keys};
+  }
+  async turnConfigurationObservation(context:ActorContext,value:unknown,targetValue:unknown):Promise<ConversationTurnConfiguration> {
+    const ref=this.#conversation(context,value,'conversation.read');
+    const {receipt,turnId,keys}=this.#resultTarget(context,ref,targetValue);
+    let observation=unobservedTurnConfiguration(turnId,turnId?'unsupported':receipt?'pending':'unknown');
+    if(turnId&&this.execution.turnConfigurationObservation&&this.execution.directory?.().servers.find(s=>s.serverId===ref.serverId)?.capabilities.turnConfigurationObservation===true) {
+      try { observation=projectTurnConfigurationObservation(await this.execution.turnConfigurationObservation(ref,turnId),turnId); }
+      catch { observation=unobservedTurnConfiguration(turnId,'unavailable'); }
+      if(observation.turnId!==turnId)observation=unobservedTurnConfiguration(turnId);
+    }
+    this.#conversation(context,ref,'conversation.read');
+    if(receipt)this.conversationDelivery(context,ref,receipt.requestId);
+    return {ref,receipt,requestId:receipt?.requestId??null,deliveryState:receipt?.deliveryState??(keys[0]==='turnId'?null:'unknown'),turnConfigurationObservation:observation};
+  }
+  async exactResult(context: ActorContext, value: unknown, targetValue: unknown, output: boolean, cursor: string | null): Promise<ConversationExactResult> {
+    const ref = this.#conversation(context, value, 'conversation.read');
+    if (!this.execution.exactResult || this.execution.directory?.().servers.find(s => s.serverId === ref.serverId)?.capabilities.exactResult !== true)
+      throw new CollaborationError(409, 'unsupported_capability');
+    const {receipt,turnId,keys} = this.#resultTarget(context,ref,targetValue);
+    if (!turnId && cursor) throw new CollaborationError(409, 'history_changed');
+    const result: ConversationTurnResult = turnId ? await this.execution.exactResult(ref, turnId, output, cursor)
+      : {turnId:null,turnState:'unknown',matched:false,source:null,watermark:null,entries:[],nextCursor:null,complete:false,finalUnavailable:false,observedAt:this.now()};
+    this.#conversation(context, ref, 'conversation.read');
+    // A revocation or request/ref mismatch may not leak a late result.
+    if (receipt) this.conversationDelivery(context, ref, receipt.requestId);
+    return {...result,ref,requestId:receipt?.requestId ?? null,deliveryState:receipt?.deliveryState ?? (keys[0] === 'turnId' ? null : 'unknown'),taskOutcome:'unknown'};
   }
   async discover(context: ActorContext, search: string, cursor: string | null) {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || this.actors.get(context.actorId)?.kind !== 'human') throw new CollaborationError(403, 'conversation_action_denied');
@@ -225,14 +642,148 @@ export class Collaboration {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId)) throw new CollaborationError(403, 'conversation_action_denied');
     return result;
   }
-  sendConversation(context: ActorContext, body: Record<string, unknown>, source: ConversationRef | null = null, delegationId: string | null = null, countBudget = true) {
-    fields(body, ['reference', 'content', 'idempotencyKey', 'execution']);
+  #parseSettings(value:unknown) {
+    if(value===undefined)return undefined;
+    try{return parseConversationSettings(value);}catch{throw new CollaborationError(400,'invalid_model_settings');}
+  }
+  async #prepareSettings(context:ActorContext,serverId:string,settings:ConversationInputSettings,trusted?:ConversationCommandContext){
+    if(!this.settingsStorage||this.actors.get(context.actorId)?.kind!=='human'||trusted?.inputAdmission?.modelSettings!==true||trusted.inputAdmission.serverId!==serverId||!this.execution.prepareSettings)
+      throw new CollaborationError(409,'unsupported_capability');
+    await this.execution.prepareSettings(serverId,settings,trusted?.submission);
+  }
+  #readSettings(requestId:string):ConversationInputSettings|null {
+    // Legacy standalone repositories cannot store explicit settings. Consolidated
+    // Server7 always reads the table; a read failure must propagate.
+    if(!this.settingsStorage)return null;
+    const row=this.database.prepare('SELECT * FROM conversation_input_settings WHERE request_id=?').get(requestId);
+    return row?parseConversationSettings({... (row.model===null?{}:{model:row.model}),...(row.reasoning_effort===null?{}:{reasoningEffort:row.reasoning_effort})}):null;
+  }
+  inputSettings(threadId:string,inputId:string,serverId=this.execution.serverId):ConversationInputSettings|null {
+    const row=this.#request(inputId.startsWith(ACTOR_INPUT_PREFIX)?inputId.slice(ACTOR_INPUT_PREFIX.length):'');
+    if(!row||row.mode!=='queue'||row.thread_id!==threadId||!this.#allowed(row)
+      || (row.target_kind==='conversation'?row.server_id!==serverId:serverId!==this.execution.serverId))throw new CollaborationError(403,'input_settings_unavailable');
+    const settings=this.#readSettings(String(row.id));
+    // Legacy Actor-to-Actor inputs have no settings. They retain their original
+    // authorization and binding; explicit overrides are conversation-only.
+    if(row.target_kind!=='conversation' && settings)throw new CollaborationError(403,'input_settings_unavailable');
+    return settings;
+  }
+  #createActor(context: ActorContext, serverId: string) {
+    this.servers(context); // Same admitted, current human instance scope as the UI.
+    if (!this.#owns(serverId)) throw new CollaborationError(404, 'conversation_unavailable');
+  }
+  #creation(context: ActorContext, row: Row): ConversationCreation {
+    const ref = row.thread_id ? {serverId: String(row.server_id), threadId: String(row.thread_id)} : null;
+    if (ref) this.#conversation(context, ref, 'conversation.read');
+    const settings=JSON.parse(String(row.settings_json));
+    return {...(settings.initialOptions ? {requestedInitialOptions:settings.initialOptions,nativeInitialObservation:settings.nativeInitialObservation ?? null} : {}),operationId: String(row.operation_id), operationKey: String(row.idempotency_key),
+      serverId: String(row.server_id), projectId: String(row.project_id), cwd: String(row.cwd),
+      creationState: row.creation_state as ConversationCreation['creationState'], ref,
+      reference: ref ? encodeConversationRef(ref) : null,
+      firstMessageState: row.first_message_state as ConversationCreation['firstMessageState'],
+      firstMessage: ref && row.request_id ? this.conversationDelivery(context, ref, String(row.request_id)) : null,
+      requestedSettings: JSON.parse(String(row.settings_json)).inputSettings??null,nativeConfirmedConfiguration:JSON.parse(String(row.settings_json)).nativeConfirmedConfiguration??null,actualTurnSettings:null,
+      observedAt: this.now(), taskOutcome: 'unknown'};
+  }
+  lookupCreation(context: ActorContext, serverId: string, key: string): ConversationCreationLookup {
+    this.#createActor(context, serverId); text(key, 128);
+    const row = this.database.prepare('SELECT * FROM actor_conversation_creations WHERE actor_id=? AND idempotency_key=?').get(context.actorId,key);
+    if (!row) return {found:false, serverId, operationKey:key, creationState:'unknown', taskOutcome:'unknown'};
+    if (row.server_id !== serverId) throw new CollaborationError(404, 'missing');
+    return {found:true, operation:this.#creation(context,row)};
+  }
+  async createConversation(context: ActorContext, body: Record<string, unknown>, command?: ConversationCommandContext): Promise<ConversationCreation> {
+    const submission = command?.submission;
+    fields(body, ['serverId','projectId','cwd','content','idempotencyKey','settings','initialOptions']);
+    const inputSettings=this.#parseSettings(body.settings);
+    let initialOptions: ConversationInitialOptions | undefined;
+    if (body.initialOptions !== undefined) {
+      const initial=record(body.initialOptions);
+      if (Object.keys(initial).some(key=>key!=='permissionMode')) throw new CollaborationError(409,'unsupported_initial_option');
+      if (typeof initial.permissionMode!=='string' || !['read-only','accept-edits','full'].includes(initial.permissionMode)) throw new CollaborationError(409,'unsupported_permission_mode');
+      initialOptions={permissionMode:initial.permissionMode as ConversationInitialOptions['permissionMode']};
+    }
+    const target = {serverId:text(body.serverId), projectId:text(body.projectId), cwd:text(body.cwd,4096)};
+    const content = text(body.content,16384), key = text(body.idempotencyKey,128);
+    if (!target.cwd.startsWith('/') || /[\x00-\x1f]/u.test(target.cwd)) throw new CollaborationError(400,'absolute_cwd_required');
+    this.#createActor(context,target.serverId);
+    // Fingerprint the requested identity before resolving paths. A later symlink,
+    // catalog edit or model default cannot turn a repeated key into a new operation.
+    const fingerprint = createHash('sha256').update(JSON.stringify(['create',target,content,...(inputSettings?[inputSettings]:[]),...(initialOptions?[initialOptions]:[])])).digest('hex');
+    const prior = () => this.database.prepare('SELECT * FROM actor_conversation_creations WHERE actor_id=? AND idempotency_key=?').get(context.actorId,key);
+    const replay = (row: Row) => {
+      if (row.fingerprint !== fingerprint) throw new CollaborationError(409,'idempotency_key_reused');
+      return this.#creation(context,row);
+    };
+    const existing = prior(); if (existing) return replay(existing);
+    if (!this.execution.prepareCreate || !this.execution.create || this.execution.directory?.().servers.find(s=>s.serverId===target.serverId)?.capabilities.create !== true)
+      throw new CollaborationError(409,'unsupported_capability');
+    const creationOperationId = randomUUID();
+    const trusted: TransportSubmissionContext = {...submission, sender:submission?.sender ?? null, actorContext:context,
+      controlObservation:{traceId:creationOperationId,control:"create"},
+      resourceOwner:{id:'conversation-create:'+context.actorId, assertCurrent:()=>{
+        submission?.resourceOwner?.assertCurrent(); this.#createActor(context,target.serverId);
+      }}, validUntil:context.expiresAt};
+    if(inputSettings) await this.#prepareSettings(context,target.serverId,inputSettings,command);
+    if(initialOptions && this.execution.directory?.().servers.find(s=>s.serverId===target.serverId)?.capabilities.initialPermissionMode !== true)
+      throw new CollaborationError(409,'unsupported_capability');
+    // Model settings and initial permissions retain their separate owners.
+    const settings = {...await this.execution.prepareCreate({...target,...(initialOptions ? {initialOptions} : {})},trusted),
+      ...(inputSettings ? {inputSettings} : {}),...(initialOptions ? {initialOptions} : {})};
+    trusted.resourceOwner!.assertCurrent();
+    const admitted = this.#transaction(() => {
+      const row = prior(); if (row) return {row, fresh:false};
+      if (this.database.prepare('SELECT 1 FROM actor_send_keys WHERE actor_id=? AND idempotency_key=?').get(context.actorId,key)) throw new CollaborationError(409,'idempotency_key_reused');
+      const id = creationOperationId;
+      this.database.prepare("INSERT INTO actor_conversation_creations VALUES(?,?,?,?,?,?,?,?,'unknown',NULL,'unknown',NULL,?)")
+        .run(context.actorId,key,id,fingerprint,target.serverId,target.projectId,settings.cwd,JSON.stringify(settings),this.now());
+      this.database.prepare('INSERT INTO actor_send_keys VALUES(?,?,?,NULL,NULL)').run(context.actorId,key,fingerprint);
+      this.#audit('conversation.create',context.actorId,id,JSON.stringify({serverId:target.serverId,projectId:target.projectId,cwd:settings.cwd}));
+      return {row:prior()!, fresh:true};
+    });
+    if (!admitted.fresh) return replay(admitted.row);
+    const update = (sql: string, ...values: (string|number|null)[]) => this.database.prepare(sql+' WHERE actor_id=? AND idempotency_key=?').run(...values,context.actorId,key);
+    // This invocation owns the only native attempt. A crash or lost response
+    // leaves unknown; neither another create nor lookup replays it.
+    let threadId: string;
+    try {
+      trusted.resourceOwner!.assertCurrent();
+      const created=await this.execution.create(target,settings,trusted);
+      threadId = text(created.threadId);
+      if(created.nativeConfirmedConfiguration)settings.nativeConfirmedConfiguration=created.nativeConfirmedConfiguration;
+      if(initialOptions)settings.nativeInitialObservation=created.nativeInitialObservation ?? null;
+    } catch (error) {
+      const known = (error as {threadId?:unknown}).threadId;
+      if (typeof known === 'string' && known.length > 0 && known.length <= 512 && !/[\x00-\x20]/u.test(known))
+        update('UPDATE actor_conversation_creations SET thread_id=?,updated_at=?',known,this.now());
+      return this.#creation(context,prior()!);
+    }
+    update("UPDATE actor_conversation_creations SET creation_state='created',thread_id=?,settings_json=?,updated_at=?",threadId,JSON.stringify(settings),this.now());
+    try {
+      // Save first-input admission and the creation pointer in one transaction.
+      this.#transaction(() => {
+        trusted.resourceOwner!.assertCurrent();
+        const sent = this.sendConversation(context,{reference:{serverId:target.serverId,threadId},content,
+          idempotencyKey:'create-first:'+admitted.row.operation_id,execution:{mode:'queue'},...(inputSettings?{settings:inputSettings}:{})},null,null,true,command?.inputAdmission);
+        update("UPDATE actor_conversation_creations SET first_message_state='accepted',request_id=?,updated_at=?",sent.requestId!,this.now());
+      });
+    } catch (error) {
+      if (error instanceof CollaborationError && error.status<500)
+        update("UPDATE actor_conversation_creations SET first_message_state='rejected',updated_at=?",this.now());
+    }
+    void this.pump().catch(()=>{});
+    return this.#creation(context,prior()!);
+  }
+  sendConversation(context: ActorContext, body: Record<string, unknown>, source: ConversationRef | null = null, delegationId: string | null = null, countBudget = true, admission?: ConversationInputAdmissionPort) {
+    fields(body, ['reference', 'content', 'idempotencyKey', 'execution', 'settings']);
+    const inputSettings=this.#parseSettings(body.settings);
     const ref = this.#conversation(context, body.reference, 'message.send'), content = text(body.content, 16384);
     const intent = body.execution === undefined ? {mode: 'queue' as const} : executionIntent(body.execution);
     this.#conversation(context, ref, 'execution.' + intent.mode);
+    if(inputSettings && (!this.settingsStorage || source || delegationId || intent.mode!=='queue' || this.actors.get(context.actorId)?.kind!=='human' || admission?.modelSettings!==true || admission.serverId!==ref.serverId))throw new CollaborationError(409,'unsupported_capability');
     const target = encodeConversationRef(ref);
     if (source && encodeConversationRef(source) === target) throw new CollaborationError(409, 'self_delivery_denied');
-    return this.#dedupe(context, body.idempotencyKey, ['conversation', ref, content, intent, source, delegationId], () => {
+    return this.#dedupe(context, body.idempotencyKey, ['conversation', ref, content, intent, source, delegationId,...(inputSettings?[inputSettings]:[])], () => {
       if (delegationId && countBudget) this.#consumeToolBudget(delegationId);
       const messageId = randomUUID(), requestId = randomUUID(), now = this.now();
       const seq = Number(this.database.prepare('SELECT COALESCE(MAX(seq),0)+1 AS seq FROM actor_messages').get()!.seq);
@@ -241,7 +792,13 @@ export class Collaboration {
       this.database.prepare("INSERT INTO actor_execution_requests(id,requester_id,requester_generation,target_id,target_generation,binding_epoch,thread_id,mode,expected_turn_id,state,created_at,updated_at,target_kind,host_id,server_id,credential_id,expires_at) VALUES(?,?,?,?,0,0,?,?,?,'accepted',?,?,'conversation',?,?,?,?)")
         .run(requestId,context.actorId,context.generation,target,ref.threadId,intent.mode,intent.mode === 'steer' ? intent.expectedTurnId ?? null : null,now,now,null,ref.serverId,context.credentialId,context.expiresAt);
       this.database.prepare('INSERT INTO actor_execution_inputs VALUES(?,?,0)').run(requestId,messageId);
+      if(inputSettings)this.database.prepare('INSERT INTO conversation_input_settings VALUES(?,?,?)').run(requestId,inputSettings.model??null,inputSettings.reasoningEffort??null);
       const inputId=ACTOR_INPUT_PREFIX+requestId, automated=source!==null || this.actors.get(context.actorId)?.kind==='session';
+      // Freeze at the execution owner before committing acceptance. A failed Hub
+      // transaction may leave an inert snapshot, but no request can dispatch it.
+      // Dedupe never calls this again; pump/recovery never infer a new identity.
+      if (!automated && !delegationId && intent.mode === 'queue' && admission?.serverId === ref.serverId)
+        admission.capture(ref.threadId, inputId);
       this.recordInputOrigin(ref.threadId,inputId,{kind:automated?'agent':'user',clientMessageId:inputId,authorActorId:automated?null:context.actorId,
         delegatorActorId:delegationId?context.actorId:null,delegationId,senderConversation:source,senderTurnId:null,operationId:null,replyExpectation:'none',
         delegationRevision:context.generation,usageSourceKind:automated?'system':'human',createdAtMs:now});
@@ -471,8 +1028,28 @@ export class Collaboration {
     const relation = this.orchestration.relation(threadId);
     return relation ? {parentThreadId:relation.parentThreadId,visibility:relation.visibility} : null;
   }
-  async command(context: ActorContext, body: Record<string, unknown>) {
+  async command(context: ActorContext, body: Record<string, unknown>, trusted?: ConversationCommandContext) {
     const {action,...args} = body;
+    if(action==='publicTextSearch'){fields(args,['serverId','query','cursor']);return this.publicTextSearch(context,text(args.serverId),args.query,args.cursor===undefined?null:text(args.cursor,8192));}
+    if(action==='threadCount'){fields(args,['serverId']);return this.threadCount(context,text(args.serverId),trusted?.countReadCurrent);}
+    if (action === 'threadSearch') {fields(args,['serverId','field','query','cursor']);return this.threadSearch(context,text(args.serverId),args.field,args.query,args.cursor===undefined?null:text(args.cursor,8192));}
+    if(action==='messageAttachments'){fields(args,['reference','clientMessageId','cursor','limit']);const {reference,...query}=args;return this.messageAttachments(context,reference,query,trusted);}
+    if (action === 'queueRequests') { fields(args,['reference','cursor','limit']); return this.queueRequests(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.limit as number | undefined); }
+    if (action === 'interactions') { fields(args,['reference','interactionId','cursor']); if(args.interactionId!==undefined && args.cursor!==undefined) throw new CollaborationError(400,'invalid_field'); return this.interactions(context,args.reference,args.interactionId===undefined?undefined:text(args.interactionId,512),args.cursor===undefined?undefined:text(args.cursor,4096)); }
+    if (action === 'respondInteraction') { fields(args,['reference','interactionId','submissionId','expectedEpoch','expectedRevision','response']); return this.respondInteraction(context,args.reference,args,trusted); }
+    if (action === 'turnConfigurationObservation') { fields(args,['reference','target']); return this.turnConfigurationObservation(context,args.reference,args.target); }
+    if (action === 'exactResult') { fields(args,['reference','target','output','cursor']); if (typeof args.output !== 'boolean') throw new CollaborationError(400,'invalid_field'); return this.exactResult(context,args.reference,args.target,args.output,args.cursor === undefined ? null : text(args.cursor,4096)); }
+    if (action === 'create') return this.createConversation(context,args,trusted);
+    if (action === 'createLookup') { fields(args,['serverId','idempotencyKey']); return this.lookupCreation(context,text(args.serverId),text(args.idempotencyKey,128)); }
+    if (action === 'projects' || action === 'models') {
+      fields(args, ['serverId','cursor']);
+      return this.catalog(context, action, text(args.serverId), args.cursor === undefined ? null : text(args.cursor,4096));
+    }
+    if(action==='context'||action==='commands'){fields(args,['reference']);return this.threadObservation(context,args.reference,action,trusted);}
+    if (action === 'options') { fields(args, ['reference']); return this.options(context,args.reference); }
+    if(action==='threadDefaults'||action==='threadDefaultsObserve'){fields(args,action==='threadDefaults'?['reference','scope','bundle']:['reference']);return this.threadDefaults(context,args.reference,args.scope,args.bundle,trusted,action==='threadDefaultsObserve');}
+    if (action === 'stop' || action === 'stopObserve') { fields(args,['reference','expectedTurnId']); return this.controlStop(context,args.reference,text(args.expectedTurnId),action==='stopObserve'); }
+    if (action === 'queueCancel') { fields(args,['reference','requestId']); return this.cancelConversation(context,args.reference,text(args.requestId)); }
     if (action === 'servers') { fields(args, []); return this.servers(context); }
     if (action === 'metadata') { fields(args, ['reference']); return this.metadata(context, args.reference); }
     if (action === 'discover' && args.metadataOnly === true) {
@@ -486,12 +1063,14 @@ export class Collaboration {
     if (action === 'orchestration') { fields(args,['threadId','calls']); return this.orchestrationView(context,text(args.threadId),args.calls); }
     if (action === 'reference') { fields(args,['threadId']); return this.reference(context,text(args.threadId)); }
     if (action === 'read') {
-      fields(args,['reference','cursor','bounded']);
+      fields(args,['reference','cursor','bounded','tail']);
+      if (args.tail !== undefined && typeof args.tail !== 'number') throw new CollaborationError(400, 'invalid_tail');
       if (args.bounded !== undefined && typeof args.bounded !== 'boolean') throw new CollaborationError(400, 'invalid_field');
-      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true);
+      return this.readConversation(context,args.reference,args.cursor === undefined ? null : text(args.cursor,4096),args.bounded === true,args.tail as number | undefined);
     }
     if (action === 'discover') { fields(args,['search','cursor']); return this.discover(context,args.search === undefined ? '' : String(args.search),args.cursor === undefined ? null : text(args.cursor,2048)); }
-    if (action === 'send') { const result = this.sendConversation(context,args); void this.pump().catch(()=>{}); return result; }
+    if (action === 'send') { if(args.settings!==undefined && !(typeof args.idempotencyKey==='string' && this.database.prepare('SELECT 1 FROM actor_send_keys WHERE actor_id=? AND idempotency_key=?').get(context.actorId,args.idempotencyKey))){const ref=this.#conversation(context,args.reference,'execution.queue');await this.#prepareSettings(context,ref.serverId,this.#parseSettings(args.settings)!,trusted);}
+      const result = this.sendConversation(context,args,null,null,true,trusted?.inputAdmission); void this.pump().catch(()=>{}); return result; }
     if (action === 'lookup') { fields(args, ['reference', 'idempotencyKey']); return this.lookupConversation(context, args.reference, text(args.idempotencyKey, 128)); }
     if (action === 'delivery' && args.metadataOnly === true) {
       fields(args, ['reference', 'requestId', 'metadataOnly']);
@@ -552,7 +1131,69 @@ export class Collaboration {
     if (!key?.message_id) throw new CollaborationError(404, 'missing');
     return { ref, operationKey: String(key.idempotency_key), messageId: String(key.message_id), requestId,
       mode: row.mode as ConversationReceipt['mode'], deliveryState: row.state as ConversationReceipt['deliveryState'],
+      requestedSettings:this.#readSettings(requestId),nativeConfirmedConfiguration:null,actualTurnSettings:null,
       targetTurnId: row.turn_id == null ? null : String(row.turn_id), observedAt: this.now(), taskOutcome: 'unknown' };
+  }
+  /** One numeric rowid window, no key/body scan, Native call or request maintenance. */
+  queueRequests(context: ActorContext, value: unknown, cursor: string | null = null, limit = 50): import('@opencraft/appserver-protocol/collaboration').ConversationQueueRequests {
+    try {
+    const started = performance.now();
+    const assertCurrent = () => { this.servers(context); return this.#conversation(context, value, 'conversation.read'); };
+    const ref = assertCurrent();
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new CollaborationError(400, 'invalid_limit');
+    const binding = JSON.stringify([1, context.actorId, context.generation, ref, 'queue', ['accepted','transferring','queued','unknown']]);
+    let upper: number, position = 0;
+    if (cursor !== null) {
+      try {
+        if (!/^[A-Za-z0-9_-]{40,4096}$/u.test(cursor)) throw Error();
+        const bytes = Buffer.from(cursor, 'base64url');
+        if (bytes.toString('base64url') !== cursor) throw Error();
+        const decipher = createDecipheriv('aes-256-gcm', this.#queueCursorKey, bytes.subarray(0, 12));
+        decipher.setAuthTag(bytes.subarray(12, 28));
+        const decoded = JSON.parse(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString('utf8'));
+        if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== binding
+          || !Number.isSafeInteger(decoded[1]) || !Number.isSafeInteger(decoded[2]) || decoded[2] < 0 || decoded[2] >= decoded[1]) throw Error();
+        upper = decoded[1]; position = decoded[2];
+      } catch { throw new CollaborationError(409, 'queue_cursor_invalid'); }
+    } else {
+      // ORDER BY rowid DESC LIMIT 1 is a B-tree endpoint lookup, not a count/filtered scan.
+      upper = Number(this.database.prepare('SELECT rowid AS upper FROM actor_execution_requests ORDER BY rowid DESC LIMIT 1').get()?.upper ?? 0);
+      if (!Number.isSafeInteger(upper) || upper < 0) throw new CollaborationError(503, 'queue_read_unavailable');
+    }
+    // Unique integer rowids prove at most 1024 examined request rows, even with no matches.
+    // NOT INDEXED prevents the state index from defeating the bounded rowid range.
+    const end = Math.min(upper, position + 1024);
+    const rows = this.database.prepare(`SELECT rowid AS cursor,id,state,turn_id,created_at,updated_at
+      FROM actor_execution_requests NOT INDEXED WHERE rowid > ? AND rowid <= ?
+      AND requester_id=? AND target_kind='conversation' AND server_id=? AND thread_id=?
+      AND mode='queue' AND state IN ('accepted','transferring','queued','unknown')
+      ORDER BY rowid LIMIT ?`).all(position, end, context.actorId, ref.serverId, ref.threadId, limit);
+    const checkBudget = () => { if (performance.now() - started > 100) throw new CollaborationError(503, 'queue_read_unavailable'); };
+    checkBudget();
+    const entries = rows.map(row => {
+      checkBudget();
+      return { requestId: String(row.id),
+        // request_id is not indexed in actor_send_keys. Do not scan all Actor keys
+        // per row, guess an internal create key, or derive one from message text.
+        operationKey: null, mode: 'queue' as const,
+        deliveryState: row.state as 'accepted' | 'transferring' | 'queued' | 'unknown',
+        targetTurnId: row.turn_id == null ? null : String(row.turn_id), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+        requestedSettings: this.#readSettings(String(row.id)), nativeConfirmedConfiguration: null, actualTurnSettings: null, taskOutcome: 'unknown' as const };
+    });
+    const next = rows.length === limit ? Number(rows.at(-1)!.cursor) : end;
+    let nextCursor: string | null = null;
+    if (next < upper) {
+      const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', this.#queueCursorKey, iv);
+      const encrypted = Buffer.concat([cipher.update(JSON.stringify([binding, upper, next]), 'utf8'), cipher.final()]);
+      nextCursor = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64url');
+    }
+    assertCurrent(); checkBudget();
+    return { ref, scope: 'own-hub-queue-requests', source: 'hub-request-ledger', observedAt: this.now(),
+      consistency: 'bounded-membership-live-state', entries, nextCursor, complete: nextCursor === null };
+    } catch (error) {
+      if (error instanceof CollaborationError) throw error;
+      throw new CollaborationError(503, 'queue_read_unavailable');
+    }
   }
   /** A missing key does not establish that an in-flight send cannot commit later. */
   lookupConversation(context: ActorContext, value: unknown, operationKey: string): ConversationLookup {
@@ -594,6 +1235,7 @@ export class Collaboration {
   #update(id: string, state: string, reason: string | null = null, receipt?: ExecutionReceipt) {
     updateExecutionRequest(this.database, {id,state,reason,queueId:receipt?.id??null,turnId:receipt?.targetTurnId??null,now:this.now()});
   }
+
   async #runtimeStorage() {
     if (!this.executionStorage) {
       const path = this.database.location();
@@ -621,7 +1263,7 @@ export class Collaboration {
     if (terminal.has(current.state as string)) throw new CollaborationError(409, 'execution_already_settled');
     const receipt = await this.execution.receipt(binding, id); assertAdmission();
     if (row.requester_id !== context.actorId) this.#require(context, row.target_id as string, 'execution.cancel');
-    if (receipt && (receipt.state !== 'queued' || !await this.execution.cancel(binding, id, receipt.id))) throw new CollaborationError(409, 'execution_already_claimed');
+    if (receipt && (receipt.state !== 'queued' || !await this.execution.cancel(binding, id, receipt.id,assertAdmission))) throw new CollaborationError(409, 'execution_already_claimed');
     if (!receipt && current.state !== 'accepted') throw new CollaborationError(409, 'execution_outcome_unknown');
     this.#transaction(() => { this.#update(id, 'cancelled'); this.#audit('execution.cancel', context.actorId, id, '{}'); });
   }
@@ -651,6 +1293,10 @@ export class Collaboration {
         if (receipt?.state === 'delivered' || receipt?.state === 'steering') {
           await update(id, receipt.state === 'delivered' ? (snapshot.mode === 'queue' ? 'submitted' : 'injected') : 'unknown', null, receipt); continue;
         }
+        // A queued/discarded receipt cannot identify the outcome of our lost
+        // cancellation ACK. Keep the durable barrier across pump and restart;
+        // only the committed execution fact above may settle it.
+        if (snapshot.reason === 'cancel_outcome_unknown') continue;
         const row = this.#request(id)!;
         if (!this.#allowed(row)) {
           if (receipt?.state === 'queued' && !await this.execution.cancel(binding, id, receipt.id)) {
@@ -678,6 +1324,9 @@ export class Collaboration {
         }
       } catch (error) {
         if (this.#closed) return;
+        // Reading a receipt failed before the success-path barrier. Neither
+        // generic errors nor RPC rejection reconciliation can retry a cancel.
+        if (snapshot.reason === 'cancel_outcome_unknown') continue;
         const code = (error as { code?: unknown }).code;
         if (code === -32600 || code === -32601 || code === -32602) {
           // A native rejection can still leave a claimed/ambiguous delivery. Its receipt wins.

@@ -1,14 +1,16 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ThreadIdentity } from "@opencraft/workbench-runtime";
-type Catalog = { data?: Array<{ id: string; name?: string | null }>; pages?: Catalog[] };
+type Catalog = { data?: Array<{ id: string; name?: string | null; preview?: string }>; pages?: Catalog[] };
 export function readCachedThreadName(query: QueryClient, key: ThreadIdentity): string {
+  let preview = "";
   for (const [, data] of query.getQueriesData<Catalog>({ queryKey: ["appserver", key.hostId, "threads"] })) {
     for (const page of data?.pages ?? [data]) {
       const thread = page?.data?.find(thread => thread.id === key.threadId);
-      if (typeof thread?.name === "string") return thread.name;
+      if (thread?.name?.trim()) return thread.name;
+      preview ||= thread?.preview?.trim() ?? "";
     }
   }
-  return "New chat";
+  return preview || "New chat";
 }
 export function writeCachedThreadName(query: QueryClient, key: ThreadIdentity, name: string): void {
   const patch = (data: Catalog | undefined): Catalog | undefined => data && {

@@ -120,7 +120,10 @@ export async function startCodexGenerationService(options: {
         return { status: 200, value: runtime.directory(query.searchParams.get("threadId") ?? undefined) };
       }
       if (request.method === "GET" && request.url === "/health") {
-        const current = runtime.registry.current(), execution = await runtime.ensure(current.generation.id);
+        const current = runtime.registry.current();
+        // Health observes an existing owner; it must never start or recover one.
+        const execution = await runtime.inspectHealth(current.generation.id);
+        if (runtime.registry.current().generation.id !== current.generation.id || runtime.registry.epoch() !== current.epoch) throw new Error("Execution owner changed during health observation");
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
           appServerPid: execution.pid, codexPid: execution.codexPid, nativeSocket, dataDirectory, proxyBaseUrl,
           environmentRoutingVersion: 1, orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,

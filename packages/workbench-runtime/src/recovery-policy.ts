@@ -266,6 +266,7 @@ export interface ConversationReturnProbe {
   foreground(now: number): boolean;
   offline(): void;
   online(now: number): boolean;
+  pageshow(now: number): boolean;
 }
 
 export function createConversationReturnProbe(input: {
@@ -287,8 +288,9 @@ export function createConversationReturnProbe(input: {
     foreground(now) {
       const duration = backgroundAt === null ? 0 : Math.max(0, now - backgroundAt);
       backgroundAt = null;
-      if (disconnected || duration < minimumBackgroundMs) return false;
-      return admit(now);
+      const needsProbe = disconnected || duration >= minimumBackgroundMs;
+      disconnected = false;
+      return needsProbe && admit(now);
     },
     offline() { disconnected = true; },
     online(now) {
@@ -296,5 +298,6 @@ export function createConversationReturnProbe(input: {
       disconnected = false;
       return admit(now);
     },
+    pageshow(now) { disconnected = false; backgroundAt = null; return admit(now); },
   };
 }

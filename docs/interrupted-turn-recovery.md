@@ -67,3 +67,13 @@ The read-only notice contains the original/current turn IDs, attempt count,
 limit, system source and continued/exhausted/unconfirmed state. The Composer's
 existing attached rail displays one short notice. Reconnection rehydrates this
 server projection; user input clears it. This adds no second execution owner.
+
+## Exact CLI stop boundary
+
+The Codex CLI control port serializes an exact-target stop under the existing Host
+thread operation owner. `handled(threadId, "user_stop", expectedTurnId)` and the
+provider retry equivalent update only the matching tracked Turn. An intervening
+new Turn must retain its own recovery chain. Existing UI calls retain their
+contract; this optional target guard adds no schema or historical backfill.
+An interrupt ACK is not terminal evidence. Read-only reconciliation observes only
+Native header status, never relaunches recovery or repeats an uncertain interrupt.

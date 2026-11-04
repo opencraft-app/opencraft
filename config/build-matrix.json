@@ -63,6 +63,13 @@
       "description": "Intel macOS DMG; requires the macOS sips/disk-image toolchain"
     },
     {
+      "id": "electron-windows-x64-nsis",
+      "platforms": ["win32"],
+      "command": ["npm", "run", "package:electron:win:x64"],
+      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-win-x64.exe"],
+      "description": "Windows x64 NSIS installer; build natively on Windows with the bundled native modules"
+    },
+    {
       "id": "electron-linux-x64-appimage",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:appimage"],

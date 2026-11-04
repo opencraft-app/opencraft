@@ -13,6 +13,8 @@ import { nativeReady, removeStaleSocket } from "./native-process.js";
 import { startSplitCodexCore } from "./split-core.js";
 
 export interface CodexCoreOptions extends CodexAccountServiceOptions {
+  /** Explicit one-way migration; managed controller must qualify recovery first. */
+  accountHandoffStorage?: "sqlite";
   readonly endpoint: string;
   readonly authToken: string;
   readonly runtimeDirectory: string;

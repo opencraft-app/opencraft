@@ -1,7 +1,10 @@
+import {observePendingRpcLoop} from "./rpc-loop-observation";
+import {compactRequestTrace} from "@opencraft/appserver-protocol";
 import { createClientId } from "@opencraft/composer-core";
 import type { AppServerClient } from '@opencraft/appserver-client';
 import type { TrustedExtensionDefinition } from '@opencraft/extension-runtime';
 import { serverFetch, serverUrl } from './server-context';
+import { observeClientLifecycle } from './client-lifecycle-observation';
 
 type Event = Record<string, string | number | null>;
 let enabled = false;
@@ -49,7 +52,16 @@ export function observeEvent(fields: Event) {
   const event: Event = { schemaVersion:1,component:'web',producerId,eventId:createClientId(),at:Date.now(),
     ...(fields.outcome==='failed'||fields.outcome==='timeout'?{incidentRef:createClientId()}:{}),
     buildId,sourceRevision,visibility:document.visibilityState==='visible'?'visible':'hidden',originClass:'interactive',dropped,...fields };
-  const size = new TextEncoder().encode(JSON.stringify(event)).length;
+  for(const [key,value] of Object.entries(event)) if(typeof value === "number" && Number.isFinite(value) && !Number.isInteger(value)) event[key]=Math.round(value*1000)/1000;
+  const encoder=new TextEncoder();
+  if(event.kind === "rpc" && (event.notificationId || event.gatewayIngressToReplyMs !== undefined)) {
+    // Reserve 256 bytes for the ingress's existing identity pseudonyms.
+    for(const key of ["historyProjectionMs","historyCoreMs","historyQueueMs","historyNativeRpcMs","gatewayDependencyMs","gatewayInitializeMs","storageAuthorizeMs","storageBusyRetries","storageBusyMs","storageDependencyMs","storageExecuteMs","storageQueueMs"]) {
+      if(encoder.encode(JSON.stringify(event)).length<=1792)break;
+      if(key in event) {delete event[key];event.diagnosticTrimmed=Number(event.diagnosticTrimmed ?? 0)+1;}
+    }
+  }
+  const size = encoder.encode(JSON.stringify(event)).length;
   if (size > 2048 || pending.length >= 2048 || pendingBytes + size > 262144) { dropped++; return; }
   pending.push({event,size});pendingBytes += size;recent.push({event,size});recentBytes += size;
   while (recent.length > 128 || recentBytes > 131072) recentBytes -= recent.shift()!.size;
@@ -68,26 +80,47 @@ export function beginObservedOperation(operationType: string, fields: Event = {}
 }
 export function installClientObservation(client: AppServerClient) {
   const clientId=createClientId();
-  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; historySource?: string; operationId?: string }>();
+  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; historySource?: string; trace?: import("@opencraft/appserver-protocol").RequestTrace; operationId?: string; pending: number; timeoutMs: number }>();
+  const loop=observePendingRpcLoop({now:()=>performance.now(),isVisible:()=>enabled && document.visibilityState === "visible",
+    schedule:(run,delay)=>{const timer=setTimeout(run,delay);return()=>clearTimeout(timer);},
+    onDelay:(delay,count)=>{const trace=historyRequests.values().next().value?.trace;
+      observeEvent({kind:"client_signal",clientSignal:"rpc_loop_gap",hostId:clientId,...(trace ? compactRequestTrace(trace) : {}),
+        clientLoopDelayMs:delay,requestPending:count,measurementScope:"client"});},
+  });
+  const onVisibility=()=>loop.setPending(historyRequests.size);
+  document.addEventListener("visibilitychange",onVisibility);
+  const stopEnabled=subscribeObservationEnabled(onVisibility);
   const unsubscribe = client.subscribeRequestLifecycle(event => {
-    if (event.type === 'started' && ['thread/read','thread/turns/list'].includes(event.method)) {
+    if (event.type === 'late-response') {
+      observeEvent({kind:'client_signal',clientSignal:'late_response',hostId:clientId,count:1,measurementScope:'client'});
+      return;
+    }
+    if (event.type === 'started') {
       const params = event.params as { threadId?: unknown } | null;
-      historyRequests.set(event.id, { webSentAt: event.startedAtMs, clientQueueMs: event.queueWaitMs,
-        historySource: event.historySource,
+      historyRequests.set(event.id, { webSentAt: event.startedAtMs, clientQueueMs: event.queueWaitMs, pending: historyRequests.size + 1, timeoutMs: event.timeoutMs,
+        historySource: event.historySource, trace: event.trace,
         operationId: typeof params?.threadId === 'string' ? historyOperations.get(JSON.stringify([event.hostId, params.threadId])) : undefined });
+      loop.setPending(historyRequests.size);
       return;
     }
     if (!['completed','failed','timed-out','aborted'].includes(event.type)) return;
     if (!('durationMs' in event)) return;
     const history = historyRequests.get(event.id);
+    loop.setPending(Math.max(0,historyRequests.size-(history ? 1 : 0)));
     historyRequests.delete(event.id);
     const diagnostic: Event = {};
     if (history) {
+      if (history.trace) Object.assign(diagnostic, compactRequestTrace(history.trace), {traceRole:"client-rpc"});
       if (history.historySource) diagnostic.historyReadSource = history.historySource;
       const responseBytes = "responseBytes" in event ? event.responseBytes : undefined;
       if (responseBytes !== undefined) diagnostic.bytes = responseBytes;
       if ("decodeMs" in event && event.decodeMs !== undefined) diagnostic.historyDecodeMs = event.decodeMs;
       diagnostic.webSentAt = history.webSentAt; diagnostic.clientQueueMs = history.clientQueueMs;
+      diagnostic.requestPending = history.pending;
+      diagnostic.clientBudgetMs = history.timeoutMs;
+      diagnostic.clientWallMs = Math.max(0, event.endedAtMs - history.webSentAt);
+      if ("receivedAtMs" in event && event.receivedAtMs !== undefined) diagnostic.clientReceivedAt = event.receivedAtMs;
+      if ("receiveToSettleMs" in event && event.receiveToSettleMs !== undefined) diagnostic.clientReceiveToSettleMs = event.receiveToSettleMs;
       if (history.operationId) diagnostic.operationId = history.operationId;
       const timing = event.type === 'completed' ? (event.result as { __opencraftHistoryTiming?: Record<string, unknown> } | null)?.__opencraftHistoryTiming : undefined;
       if (timing && typeof timing.pairId === 'string' && /^[a-zA-Z0-9_.:-]{1,128}$/u.test(timing.pairId)) {
@@ -99,12 +132,22 @@ export function installClientObservation(client: AppServerClient) {
         }
       }
     }
-    observeEvent({kind:'rpc',...diagnostic,requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
+    const gateway = event.type === 'completed' ? (event.result as { __opencraftGatewayTiming?: Record<string, unknown> } | null)?.__opencraftGatewayTiming : event.type === 'failed' ? (event.error as { data?: { __opencraftGatewayTiming?: Record<string, unknown> } }).data?.__opencraftGatewayTiming : undefined;
+    if (gateway && typeof gateway.gatewayPairId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(gateway.gatewayPairId)) {
+      diagnostic.gatewayPairId = gateway.gatewayPairId;
+      for (const key of ['gatewayIngressAt','gatewayIngressQueueMs','gatewayRpcAccessMs','gatewayIngressToReadMs','gatewayIngressToReplyMs','gatewayReplyAt','gatewayTimingVersion','gatewayMs','gatewayDependencyMs','gatewayStorageMs','gatewayInitializeMs','gatewaySourceMs','storageDependencyMs','storageQueueMs','storageExecuteMs','storageBusyMs','storageBusyRetries','storageAuthorizeMs','historyCoreMs','historyQueueMs','historyNativeRpcMs','historyProjectionMs']) {
+        const value = gateway[key];
+        if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER) diagnostic[key] = value;
+      }
+    }
+    if(typeof diagnostic.gatewayIngressToReplyMs === "number") diagnostic.clientOutsideGatewayMs=Math.max(0,event.durationMs-diagnostic.gatewayIngressToReplyMs);
+    // Opaque connection identity permits per-connection fanout analysis without exporting a Host recipe.
+    observeEvent({kind:'rpc',hostId:clientId,...diagnostic,requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
       ...(event.type==='failed'&&Number.isSafeInteger((event.error as Error & {code?:number}).code)?{errorCode:`rpc:${(event.error as Error & {code?:number}).code}`}:{ }),
       outcome:event.type==='completed'?'ok':event.type==='timed-out'?'timeout':event.type==='aborted'?'aborted':'failed',
       durationMs:event.durationMs,measurementScope:'rpc'});
   });
-  return () => { unsubscribe(); historyRequests.clear(); };
+  return () => { unsubscribe();stopEnabled();document.removeEventListener("visibilitychange",onVisibility);loop.dispose();historyRequests.clear(); };
 }
 export function observeRecovery(event: Readonly<Record<string,string|number>>) {
   const nativeStage = String(event.stage);
@@ -149,6 +192,10 @@ export function createObservabilityExtension(title = 'Platform monitoring'): Tru
     const onOnline=()=>schedule();window.addEventListener('online',onOnline);
     api.signal.addEventListener('abort',()=>{enabled=false;clearTimeout(timer);timer=undefined;pending=[];recent=[];recoveryContexts.clear();connectionOutages.clear();usableHosts.clear();pendingBytes=recentBytes=0;document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('online',onOnline);},{once:true});
     observeEvent({kind:'producer'});
+    if (enabled) {
+      const stopLifecycle = observeClientLifecycle(document, window, observeEvent);
+      api.signal.addEventListener('abort', stopLifecycle, {once:true});
+    }
     if(enabled){
       for(const listener of enabledListeners)listener();
       const navigation=performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
@@ -157,13 +204,13 @@ export function createObservabilityExtension(title = 'Platform monitoring'): Tru
     }
     let longTasks: PerformanceObserver | undefined;
     if (PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
-      longTasks = new PerformanceObserver(list => { for (const entry of list.getEntries()) observeEvent({kind:'client_signal',durationMs:entry.duration,measurementScope:'client'}); });
+      longTasks = new PerformanceObserver(list => { for (const entry of list.getEntries()) observeEvent({kind:'client_signal',clientSignal:'longtask',at:Math.round(performance.timeOrigin+entry.startTime),durationMs:entry.duration,measurementScope:'client'}); });
       longTasks.observe({type:'longtask'});
       api.signal.addEventListener('abort',()=>longTasks?.disconnect(),{once:true});
     }
     if(capability.available!==true)return;
     api.commands.register({id:'opencraft.observability.open',title},()=>{window.open(serverUrl('/__opencraft_observe/grafana/d/opencraft-overview'),'_blank','noopener,noreferrer');});
-    api.navigation.register({id:'opencraft.observability.navigation',title,surface:'sidebar-footer',icon:'activity',order:40,
+    api.navigation.register({id:'opencraft.observability.navigation',title,surface:'sidebar-primary',icon:'activity',order:40,
       platforms:['web'],target:{kind:'command',commandId:'opencraft.observability.open'}});
   }};
 }

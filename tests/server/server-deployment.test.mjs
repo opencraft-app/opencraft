@@ -6,6 +6,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
 import { once } from 'node:events';
 import { build } from 'esbuild';
+import { Worker } from 'node:worker_threads';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -26,6 +28,19 @@ test('independent DSH rejects legacy candidates and rollback baselines before ch
     await writeFile(join(webRoot, 'index.html'), '<html><head></head><body>fixture</body></html>');
     await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'fixture', headlessServer: true, headlessHostId: 'opencraft-server' }));
     const packed = await packageWebServer({ version: '1.0.0', webRoot, output: join(root, 'packed'), execution: true, executionProfile: 'headless' });
+    // Both server package layouts must ship worker URLs beside their gateway.
+    // Exercise the actual managed-Web artifact without source or tsx resolution.
+    const workerFile = join(packed.packageRoot, 'execution/conversation-history-worker.mjs');
+    execFileSync('tar', ['-tzf', packed.archive, 'package/execution/conversation-history-worker.mjs'], {stdio:'pipe'});
+    const workerDatabase = join(root,'worker-smoke.sqlite');
+    const database = new DatabaseSync(workerDatabase);
+    database.exec('PRAGMA journal_mode=WAL; CREATE TABLE schema_migrations(version INTEGER)');database.close();
+    const worker = new Worker(workerFile,{workerData:{path:workerDatabase},execArgv:[]});
+    try {
+      assert.equal((await once(worker,'message'))[0].type,'ready');
+      const closed=once(worker,'message'), exited=once(worker,'exit');
+      worker.postMessage({id:1,method:'close'});assert.equal((await closed)[0].id,1);await exited;
+    } finally { await worker.terminate(); }
     // Query the required member instead of buffering the entire execution payload listing.
     const files = execFileSync('tar', ['-tzf', packed.archive, 'package/opencraft-dsh-host.service', 'package/opencraft-engine-host.service'], { encoding: 'utf8' }).split('\n');
     assert.ok(files.includes('package/opencraft-dsh-host.service'), 'npm archive must carry the independent Host unit');
@@ -265,7 +280,7 @@ test('execution health retains identity, budgets dependent checks and fences poi
     if(mode==='invalid'){response.end('{');return;}
     const health=await observeExecutionHealth({version:'1',buildId:'one',core:async()=>{if(mode==='core-failed')throw Error('synthetic private path');return {pid:11,codexPid:12};},
       dsh:async()=>{if(mode==='dsh-failed')throw Error('synthetic private token');return {pid:21,enginePid:22};}});
-    response.writeHead(health.ok?200:503);response.end(JSON.stringify(health));
+    response.writeHead(health.ok?200:503);response.end(JSON.stringify({...health,runtimeReleaseRoot:release}));
   });
   await new Promise(done=>server.listen(0,'127.0.0.1',done));
   const settings={link,unit:'execution.service',coreUnit:'core.service',coreEndpoint:join(root,'core.sock'),tokenPath:join(root,'token'),

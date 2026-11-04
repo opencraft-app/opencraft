@@ -15,13 +15,15 @@ import { ConversationToolbarSizing } from "./components/toolbar-dock-state";
 import { conversationToolbarActionIds } from "./components/toolbar-dock-model";
 import { useConversationDisplay } from "./runtime/use-conversation-display";
 import { displayTimingCounts } from "./runtime/display-timing-diagnostics";
-import { reportDisplayEvent } from "./runtime/recovery-diagnostics";
+import { canReportDisplayEvent } from "./runtime/recovery-diagnostics";
+import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
 import { useAsyncNotices } from "./components/async-notices";
 import { ContinuationFailureNotice } from "./components/continuation-failure-notice";
 import { useObservedReadiness } from './runtime/observability-react';
+import { observeEvent } from './runtime/observability';
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { ScheduledTaskCatalogContext } from "./runtime/scheduled-task-catalog-context";
 import { SIDE_CHAT_COMPOSER_COMMAND, runSideChatComposerCommand } from "./panels/side-chat-composer-command";
@@ -34,7 +36,8 @@ import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel } f
 import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
-import { OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { projectMiniApps, OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { ApplicationsSidebarFrame } from "./components/applications-sidebar";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { IdentityAvatarContext } from "@opencraft/extension-react";
@@ -131,12 +134,15 @@ import {
 import {
   Conversation,
   type ConversationInteractionAction,
+  type ConversationHistoryViewportDiagnostic,
   type ConversationRestoreSnapshot,
   type ConversationScrollApi,
 } from "./components/conversation";
 import {
+  connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
+  ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
   conversationRecoveryIsUnstable,
@@ -313,11 +319,14 @@ export function App({
   const notices = useAsyncNotices();
   const modelSelectionPolicy = embedded?.modelSelectionPolicy ?? (embedded ? "host-default" : "user");
   const internalDeveloperMode = useInternalDeveloperMode();
+  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
+  const applicationsSelected = sidebarDestination === "applications";
   const [accountOpen, setAccountOpen] = useState(false);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [conversationSearchTarget, setConversationSearchTarget] = useState<(ConversationSearchTarget & { hostId: string; threadId: string }) | null>(null);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
+  const [restoringArchivedThread, setRestoringArchivedThread] = useState(false);
   const appearanceTheme = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const portalContainer = useWorkbenchPresentationRoot();
@@ -402,7 +411,7 @@ export function App({
   const loadMediaSource = useMemo(
     () =>
       createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
-    [blobs, runtime, snapshot.hostId],
+    [blobs, runtime, snapshot.hostId, snapshot.connectionGeneration],
   );
   const resolveActiveHostAttachment = useCallback(
     (file: File, pending: ComposerAttachment, signal?: AbortSignal) =>
@@ -541,7 +550,13 @@ export function App({
   const conversationSurfaceVisible = conversationRouteOpen
     || (managementSettingsOpen && !standaloneManagementOpen);
   const shellSidebarOpen = presentation.contextSidebar ? sidebarOpen : false;
+  const openConversationSidebar = useCallback(() => {
+    setSidebarDestination("context");
+    workbenchNavigation.openChat();
+  }, [workbenchNavigation]);
+  useEffect(() => { if (routeSettingsOpen) setSidebarDestination("context"); }, [routeSettingsOpen]);
   const openSettingsFromConversation = useCallback((slug?: string) => {
+    setSidebarDestination("context");
     const focusedElement = document.activeElement;
     if (
       focusedElement instanceof HTMLElement &&
@@ -592,6 +607,10 @@ export function App({
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
+  const miniAppSettingsOpen = projectMiniApps(settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
+    type => hostCatalog.platformViewRenderers.resolve(type) !== null).some(app => app.target.kind === "settings"
+      && workbenchNavigationSnapshot.applicationRoute.kind === "settings"
+      && app.target.pageId === workbenchNavigationSnapshot.applicationRoute.slug);
   const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
     { hostId: hostCatalog.selectedHostId, scopeId: conversationViewIdentity.scopeId }, extensionProjection.manageConnectors);
   const composerEndActions = (
@@ -748,9 +767,16 @@ export function App({
   const { selection: display, scope: displayScope, hasSubmission } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline);
   const displayHostId = displayKey?.hostId ?? null;
   const displayThreadId = displayKey?.threadId ?? null;
-  const visibleTimeline = useThreadOrchestrationTimeline(display.timeline,runtime.resources.orchestration,
-    displayHostId === snapshot.hostId && snapshot.transport.state === "open");
-  const showingDisplayCache = display.source !== "history" && display.source !== "empty";
+  const unavailableHostId = displayHostId ?? snapshot.hostId;
+  const unavailableThreadId = displayThreadId ?? activeThreadId;
+  const unavailableThreadReason = unavailableHostId === snapshot.hostId && unavailableThreadId !== null
+    ? runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null
+    : null;
+  const visibleTimeline = useThreadOrchestrationTimeline(
+    unavailableThreadReason === null ? display.timeline : null, runtime.resources.orchestration,
+    unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
+  const showingDisplayCache = unavailableThreadReason === null
+    && display.source !== "history" && display.source !== "empty";
   const historyPaintObserver = workbenchNavigation.historyFirstPaint;
   const historyPaintAttempt = useSyncExternalStore(historyPaintObserver.subscribe, historyPaintObserver.getSnapshot, historyPaintObserver.getSnapshot);
   useEffect(() => {
@@ -769,30 +795,18 @@ export function App({
   }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine]);
   useEffect(() => {
     if (!historyPaintAttempt || !historyPaintOwnsView) return;
-    if (snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
+    if (unavailableThreadReason !== null || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
       historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
       historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     }
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns]);
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, unavailableThreadReason]);
 
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
   useEffect(() => {
-    if (!displayCounts.messages) return;
-    const frame = requestAnimationFrame(() => {
-      const times = [...document.querySelectorAll(".thread-user-message time, [data-assistant-message-sent-time]")];
-      const visibleTimes = times.filter(element => {
-        const rect = element.getBoundingClientRect();
-        if (!rect.width || !rect.height) return false;
-        for (let node: Element | null = element; node; node = node.parentElement) {
-          const style = getComputedStyle(node);
-          if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
-        }
-        return true;
-      }).length;
-      reportDisplayEvent("display-paint", { ...displayCounts, renderedTimes: times.length, visibleTimes });
-    });
+    if (!displayCounts.messages || !canReportDisplayEvent()) return;
+    const frame = requestAnimationFrame(() => reportDisplayPaint(displayCounts));
     return () => cancelAnimationFrame(frame);
     // The signature reports coverage transitions, not every streaming delta.
   }, [displaySignature, displayScope, displayHostId, displayThreadId]);
@@ -833,8 +847,7 @@ export function App({
   });
   const conversationRecovering = activeThreadId !== null
     && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate);
-  const connectionRecovering = snapshot.phase === "connecting" || snapshot.phase === "reconnecting"
-    || (snapshot.phase === "error" && conversationRecoveryIsPending("cold-error", recoveryDiagnostic, recoveryRequiresUpdate));
+  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate);
   const recoveryPlaceholder = connectionRecovering
     ? intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
     : conversationRecovering
@@ -852,8 +865,8 @@ export function App({
   }, [recoveryPresentation, snapshot.hostId, activeThreadId, snapshot.phase, conversationViewActivation.phase]);
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
-    () => findPendingInteraction(timeline),
-    [timeline],
+    () => unavailableThreadReason === null ? findPendingInteraction(timeline) : null,
+    [timeline, unavailableThreadReason],
   );
   const isStreaming =
     snapshot.conversation?.activeTurn !== null &&
@@ -1412,6 +1425,16 @@ export function App({
     await hostCatalog.threadManagement.unarchive(hostId, threadId);
     await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
   }, [hostCatalog.threadManagement, queryClient]);
+  const restoreUnavailableThread = useCallback(async () => {
+    if (unavailableThreadReason !== "archived" || unavailableThreadId === null || restoringArchivedThread) return;
+    setRestoringArchivedThread(true);
+    try {
+      await restoreArchivedThread(unavailableHostId, unavailableThreadId);
+      await hostCatalog.selectConversation(createWorkbenchThreadLocation(unavailableHostId, unavailableThreadId));
+    } finally {
+      setRestoringArchivedThread(false);
+    }
+  }, [hostCatalog, restoreArchivedThread, restoringArchivedThread, unavailableHostId, unavailableThreadId, unavailableThreadReason]);
   const loadArchivedThreads = useCallback(async (hostId: string) => {
     return hostCatalog.threadManagement.listArchived(hostId);
   }, [hostCatalog.threadManagement]);
@@ -1560,6 +1583,7 @@ export function App({
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
   const selectSettingsSection = useCallback((section: string, mode?: "push" | "replace") => {
+    setSidebarDestination("context");
     workbenchNavigation.openSettings(section, mode);
   }, [workbenchNavigation]);
   const workNavigationActions = useWorkbenchToolActions({
@@ -1567,18 +1591,18 @@ export function App({
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen ? (
+  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={settingsSection}
+        section={sidebarDestination === "settings" ? "" : settingsSection}
         onSectionChange={selectSettingsSection}
         extensionContributions={hostCatalog.extensionContributions}
         profiles={hostCatalog.profiles}
         machines={machines}
         activeHostId={snapshot.hostId}
         showArchivedConversations={archivedConversationsAvailable}
-        onBack={closeSettings}
-        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
+        onBack={openConversationSidebar}
+        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
@@ -1802,6 +1826,10 @@ export function App({
     conversationContribution?.refreshHistory === true && snapshot.phase === "ready", refreshConversationCatalog);
   const headerThreadId = activeThreadId ?? "";
   const conversationToolbarProps: import("./components/conversation-task-menu").ConversationTaskMenuProps = {
+    access: headerThreadId ? {
+      read:() => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/read",{threadId:headerThreadId}),
+      set:(accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/set",{threadId:headerThreadId,accessMode,expectedRevision}),
+    } : undefined,
     port: hostCatalog.tasks ?? undefined,
     schedules: schedulesAvailable ? { request: (method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params) } : undefined,
     scope: displayScope,
@@ -1838,13 +1866,38 @@ export function App({
   const summary = useConversationSummary(summaryScopeKey, conversationSurfaceVisible && draft === null && displayThreadId !== null);
   const summaryGoal = useSummaryGoal(runtime.resources.goals, displayHostId === snapshot.hostId && displayThreadId === activeThreadId ? displayThreadId : null);
   const summaryCurrent = !showingDisplayCache && snapshot.phase === "ready" && visibleTimeline?.authoritative === true;
+  const noteAccount = extensionProjection.account;
+  const noteAccountKey = JSON.stringify([noteAccount?.provider.id, noteAccount?.snapshot.phase === "anonymous", noteAccount?.snapshot.identity?.id, noteAccount?.snapshot.readStateScope]);
+  const noteAccountCurrent = useRef(noteAccountKey);
+  noteAccountCurrent.current = noteAccountKey;
+  const summaryNotePorts = useMemo(() => new Map<string, {exchange(update: string, vector: string): Promise<{update: string}>}>(), [hostCatalog, noteAccountKey]);
+  const summaryNoteSupported = (runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-note"] as {version?: unknown} | undefined)?.version === 1;
+  const summaryNote = useMemo(() => {
+    if (!summaryNoteSupported || !displayHostId || !displayThreadId) return undefined;
+    const existing = summaryNotePorts.get(summaryScopeKey);
+    if (existing) return existing;
+    const port = {
+      exchange: async (update: string, vector: string) => {
+        const assertAccount = () => {
+          const account = noteAccount?.provider.getSnapshot();
+          if (noteAccountCurrent.current !== noteAccountKey || JSON.stringify([noteAccount?.provider.id, account?.phase === "anonymous", account?.identity?.id, account?.readStateScope]) !== noteAccountKey) throw new Error("Note account changed");
+        };
+        assertAccount();
+        const result = await hostCatalog.agentRuntimes.request(displayHostId, "opencraft/thread-note/exchange", {threadId:displayThreadId, update, vector});
+        assertAccount();
+        return result;
+      },
+    };
+    summaryNotePorts.set(summaryScopeKey, port);
+    return port;
+  }, [hostCatalog, summaryScopeKey, noteAccountKey, summaryNoteSupported, summaryNotePorts]);
   const conversationMenuSizing = <ConversationToolbarSizing scope={displayScope} actionIds={conversationToolbarActionIds(conversationToolbarProps)} />;
   const conversationActionSizing = <span className="conversation-header-actions">{summary.enabled ? <ButtonPlaceholder className="chrome-button" /> : null}{conversationMenuSizing}</span>;
   const header = (
     <AppShellHeader
       conversationHeader={conversationSurfaceVisible}
       subtitle={conversationContribution?.subtitle}
-      navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={workbenchNavigation.openChat} /> : undefined}
+      navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
       headerActionSizing={conversationActionSizing}
       headerAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
         <Suspense fallback={conversationMenuSizing}>
@@ -1883,6 +1936,7 @@ export function App({
       onToggleRightPanel={toggleRightPanel}
       onHome={invokeHeaderHome}
       onBack={workbenchNavigation.back}
+
       onForward={workbenchNavigation.forward}
       navigationActions={presentedHeaderNavigationActions}
       routeHeaderActive={routeHeader.active}
@@ -1916,6 +1970,8 @@ export function App({
     onRetryThreadCatalog: hostId => { void multiHostCatalog.retry(hostId); },
     onRetryThreadCatalogDiscovery: () => { void multiHostCatalog.retryDiscovery(); },
     threadActions: {
+      onReadAccess: target => hostCatalog.agentRuntimes.request(target.hostId,"opencraft/thread-access/read",{threadId:target.threadId}),
+      onSetAccess: (target,accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(target.hostId,"opencraft/thread-access/set",{threadId:target.threadId,accessMode,expectedRevision}),
       onCopyReference: target => copyConversationReference(body=>hostCatalog.agentRuntimes.request(target.hostId,"opencraft/collaboration",body),window.location.href,target),
       onSetPinned: async (target, pinned) => {
         await threadPinWriter.set(target, pinned);
@@ -1979,16 +2035,17 @@ export function App({
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
-            settingsActive: routeSettingsOpen,
-            updatesActive: routeSettingsOpen && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
+            applicationsInSidebar: true,
+            settingsInSidebar: true,
+            settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+            updatesActive: routeSettingsOpen && !applicationsSelected && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
             actions: [
-              { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen,
-                onInvoke: workbenchNavigation.openChat },
-              ...extensionProjection.primaryActions, ...extensionProjection.footerActions, ...workNavigationActions,
+              { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen && sidebarDestination === "context",
+                onInvoke: openConversationSidebar },
               { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
-                icon: "grid", active: extensionViewOpen && workbenchNavigationSnapshot.applicationRoute.kind === "extension-view"
-                  && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID,
-                onInvoke: () => workbenchNavigation.openExtensionView(OVERHOME_VIEW_ID) },
+                icon: "grid", active: applicationsSelected,
+                onInvoke: () => setSidebarDestination("applications") },
+              ...extensionProjection.footerActions, ...workNavigationActions,
               { id: "shell.search", title: intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) + ` (${shortcutLabel("search")})`, icon: "search", onInvoke: () => setConversationSearchOpen(true) },
             ],
             account: extensionProjection.account === null ? null : {
@@ -2002,7 +2059,7 @@ export function App({
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
             },
-            onOpenSettings: () => openSettingsFromConversation(),
+            onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
             onOpenUpdates: () => openSettingsFromConversation('updates'),
           }}
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
@@ -2034,7 +2091,7 @@ export function App({
           header={embedded !== undefined && draft !== null && draft.submission === null && !presentation.rightPanel ? null : header}
           floatingSidebarHeader={(onDock) => !presentation.contextSidebar ? null : (
             <AppShellNavigationControls
-              brand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={workbenchNavigation.openChat} /> : undefined}
+              brand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
               hostRole="transient"
               sidebarOpen={false}
               canGoBack={canGoBack}
@@ -2042,12 +2099,16 @@ export function App({
               onToggleSidebar={onDock}
               onHome={invokeHeaderHome}
               onBack={workbenchNavigation.back}
+
               onForward={workbenchNavigation.forward}
               actions={presentedHeaderNavigationActions}
             />
           )}
-          leftPanel={!presentation.contextSidebar ? null : (
-            routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
+          leftPanel={!presentation.contextSidebar ? null : <ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar}
+            selected={applicationsSelected} actions={extensionProjection.primaryActions}
+            contributions={hostCatalog.extensionContributions} renderers={hostCatalog.platformViewRenderers}
+            host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
+            {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
               threads={multiHostCatalog.threads}
               threadCatalogs={multiHostCatalog.catalogs}
@@ -2079,8 +2140,8 @@ export function App({
                   : null
               }
 
-            /> : null
-          )}
+            /> : null}
+          </ApplicationsSidebarFrame>}
           rightPanel={panelHost ? null : rightPanelView}
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
@@ -2111,7 +2172,8 @@ export function App({
               id: "chat.companionHeading",
               defaultMessage: "What would you like to do together today?",
             }) : undefined}
-            placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
+            placeholderPending={recoveryPlaceholder !== undefined}
+                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
               id: "chat.companionPlaceholder",
               defaultMessage: "Share your thoughts, or ask me to help with something",
             }) : undefined)}
@@ -2182,7 +2244,11 @@ export function App({
                     if (activeThreadId !== null) hostCatalog.threadAttention.acknowledge(
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
-                  emptyState={draft !== null ? <PendingConversationPage
+                  emptyState={unavailableThreadReason !== null ? <ConversationUnavailableState
+                      reason={unavailableThreadReason}
+                      onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
+                      restoring={restoringArchivedThread}
+                    /> : draft !== null ? <PendingConversationPage
                       embedded
                       conversation={draft}
                       documentContext={{ conversationId: null, cwd: draft.target.execution.workspace.cwd,
@@ -2215,7 +2281,7 @@ export function App({
                         }) : undefined,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={draft === null ? visibleTimeline : null}
+                  timeline={draft === null && unavailableThreadReason === null ? visibleTimeline : null}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
                   searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
@@ -2237,7 +2303,35 @@ export function App({
                       ? loadOlderConversation
                       : undefined
                   }
-                  loadingOlder={!showingDisplayCache && snapshot.conversation?.history.loading === true}
+                  onHistoryViewportDiagnostic={showingDisplayCache ? undefined : (event: ConversationHistoryViewportDiagnostic) => {
+                    const history = snapshot.conversation?.history;
+                    observeEvent({
+                      kind: "history_viewport",
+                      phase: event.phase,
+                      reason: event.reason ?? null,
+                      generation: event.generation,
+                      timelineRevision: event.timelineRevision,
+                      renderedTurnCount: event.renderedTurnCount,
+                      historyTurnCount: event.historyTurnCount,
+                      loadingOlder: Number(event.loadingOlder),
+                      authoritative: Number(snapshot.conversation?.authoritative === true),
+                      historyHasOlder: Number(history?.hasOlder === true),
+                      historyLoading: Number(history?.loading === true),
+                      historyCursorPresent: Number(history?.cursor !== null && history?.cursor !== undefined),
+                      historyError: Number(history?.error !== null && history?.error !== undefined),
+                      beforeDistanceFromBottomPx: event.before.distanceFromBottomPx,
+                      beforeViewportHeightPx: event.before.viewportHeightPx,
+                      beforeScrollHeightPx: event.before.scrollHeightPx,
+                      ...(event.after === undefined ? {} : {
+                        afterDistanceFromBottomPx: event.after?.distanceFromBottomPx ?? null,
+                        afterViewportHeightPx: event.after?.viewportHeightPx ?? null,
+                        afterScrollHeightPx: event.after?.scrollHeightPx ?? null,
+                      }),
+                    });
+                  }}
+                  loadingOlder={!showingDisplayCache
+                    && snapshot.conversation?.history.loading === true
+                    && snapshot.conversation.history.hasOlder === true}
                   onOpenSubagent={showingDisplayCache ? undefined : (threadId) => {
                     void hostCatalog.navigate(
                       createWorkbenchThreadLocation(snapshot.hostId, threadId),
@@ -2257,7 +2351,7 @@ export function App({
                     conversationScrollApiRef.current = api;
                   }}
                   surfaceCapabilities={timelineSurfaceCapabilities}
-                  footer={
+                  footer={unavailableThreadReason !== null ? null : (
                     <ThreadComposerPresentation
                       key={panelOwnerId}
                       scopeId={panelOwnerId}
@@ -2295,9 +2389,9 @@ export function App({
                           ? ["queue"]
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
-                        isUnstable={activeThreadId !== null
-                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic)}
-                        isRecovering={conversationRecovering}
+                        isUnstable={snapshot.phase === "reconnecting" || (activeThreadId !== null
+                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic))}
+                        isRecovering={connectionRecovering || conversationRecovering}
                         isStreaming={draft === null && isStreaming}
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission
@@ -2337,6 +2431,7 @@ export function App({
                         entryActions={composerDesktopEntry}
                         endActions={composerEndActions}
                         modelSelectionPolicy={modelSelectionPolicy}
+                        placeholderPending={recoveryPlaceholder !== undefined}
                         placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
                           id: "chat.companionFollowupPlaceholder",
                           defaultMessage: "Tell me what you'd like to do next",
@@ -2371,10 +2466,10 @@ export function App({
                     {conversationContribution?.afterComposer}
                     </div>
                     </ThreadComposerPresentation>
-                  }
+                  )}
                 />
             </div>
-            <ConversationSummarySurface controller={summary} context={{ scopeKey: summaryScopeKey, title: activeThread?.title ?? undefined, timeline: visibleTimeline, goal: summaryGoal, current: summaryCurrent,
+            <ConversationSummarySurface controller={summary} context={{ scopeKey: summaryScopeKey, title: activeThread?.title ?? undefined, timeline: visibleTimeline, goal: summaryGoal, current: summaryCurrent, note: summaryNote,
               onOpenResource: path => { if (summaryCurrent) panelRuntime.panels.open(panelOwnerId, "resource", { resource: path }); },
               onOpenThread: threadId => { if (summaryCurrent && displayHostId) hostCatalog.navigate(createWorkbenchThreadLocation(displayHostId, threadId)); },
             }} />

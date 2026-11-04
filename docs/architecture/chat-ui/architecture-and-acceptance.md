@@ -4,7 +4,7 @@
 
 ## Target
 
-OpenCraft models conversations as `Thread -> Turn -> Item` across Host engines.
+The current AppServer compatibility path models conversations as `Thread -> Turn -> Item` across Host engines. Platform-owned display facts retain source associations without requiring every engine or UI to adopt that grouping.
 The connected Authority owns business writes; native engine adapters translate
 their protocols into that shared model. ChatUI consumes one normalized
 Conversation Read Model: a V4 ReplicaClient for a V4-native Authority, or a

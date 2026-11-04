@@ -331,16 +331,10 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       const paint = location.kind === "thread" ? historyFirstPaint.begin(pendingViewId, "cold", location.key) : undefined;
       const promise = Promise.resolve().then(() => routerOptions.restoreViewId!(location)).then(viewId => {
         if (!ownsIntent(epoch, origin)) return false;
-        if (viewId !== undefined) {
-          if (paint) historyFirstPaint.bindView(paint, viewId, "warm");
-          activation.mountInitial(location, viewId);
-          activeLocation = location; activeScope = viewId;
-          commitRoute(() => navigation.push(location, { routeScopeId: viewId }),
-            () => rememberPresentedView(location, viewId));
-          resumeReadiness(navigation.getSnapshot(), epoch);
-          return true;
-        }
-        return navigate(location, "push", undefined, paint);
+        // A saved editor identity is a normal destination after bootstrap.
+        // Reuse its View ID while acquiring the destination's resource lease;
+        // mountInitial is reserved for the application's first presentation.
+        return navigate(location, "push", viewId, paint);
       }).catch(error => {
         if (paint) historyFirstPaint.settle(paint, "failed");
         throw error;

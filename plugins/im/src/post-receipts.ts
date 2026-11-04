@@ -1,4 +1,4 @@
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 
 const schema = `CREATE TABLE im_post_receipts (
  scope TEXT NOT NULL, request_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
@@ -10,9 +10,9 @@ export type PostReceipt = { fingerprint: string; state: "sending" | "delivered" 
 export class ImPostReceipts {
   private readonly managed;
   constructor(path: string) {
-    this.managed = openManagedDatabase({ path, legacyPolicy: "reject",
+    this.managed = openManagedDatabase({ schemaId: "post-receipts", path, legacyPolicy: "reject",
       migrations: [{ version: 1, name: "im-channel-post-receipts", sql: schema }],
-      validateSchema: createSchemaValidator(schema) });
+      });
     // An interrupted write cannot be proved absent from the provider.
     this.managed.database.prepare("UPDATE im_post_receipts SET state='unknown', updated_at=? WHERE state='sending'").run(Date.now());
   }

@@ -1,0 +1,1706 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "981f682d-8961-40ad-9283-890d06793715",
+  "prevId": "382d3151-def9-48b4-a60b-406603bc7e6e",
+  "tables": {
+    "token_usage_actor_daily": {
+      "name": "token_usage_actor_daily",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day": {
+          "name": "day",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_filter": {
+          "name": "model_filter",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_key": {
+          "name": "model_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turns": {
+          "name": "turns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_actor_daily_server_id_actor_id_day_model_filter_model_key_pk": {
+          "columns": [
+            "server_id",
+            "actor_id",
+            "day",
+            "model_filter",
+            "model_key"
+          ],
+          "name": "token_usage_actor_daily_server_id_actor_id_day_model_filter_model_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_actor_daily_check_0": {
+          "name": "token_usage_actor_daily_check_0",
+          "value": "model_filter IN (0,1)"
+        },
+        "token_usage_actor_daily_check_1": {
+          "name": "token_usage_actor_daily_check_1",
+          "value": "turns>=0"
+        }
+      }
+    },
+    "token_usage_admissions": {
+      "name": "token_usage_admissions",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_id": {
+          "name": "input_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observed_ms": {
+          "name": "observed_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_admissions_turn": {
+          "name": "token_usage_admissions_turn",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_admissions_server_id_thread_id_input_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "input_id"
+          ],
+          "name": "token_usage_admissions_server_id_thread_id_input_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_allocations": {
+      "name": "token_usage_allocations",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_key": {
+          "name": "model_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_allocations_actor": {
+          "name": "token_usage_allocations_actor",
+          "columns": [
+            "server_id",
+            "actor_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_allocations_server_id_thread_id_turn_id_model_key_actor_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "model_key",
+            "actor_id"
+          ],
+          "name": "token_usage_allocations_server_id_thread_id_turn_id_model_key_actor_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_attempts": {
+      "name": "token_usage_attempts",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_id": {
+          "name": "input_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submitted_ms": {
+          "name": "submitted_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_attempts_input": {
+          "name": "token_usage_attempts_input",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "input_id",
+            "outcome"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_attempts_server_id_attempt_id_pk": {
+          "columns": [
+            "server_id",
+            "attempt_id"
+          ],
+          "name": "token_usage_attempts_server_id_attempt_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_attempts_check_0": {
+          "name": "token_usage_attempts_check_0",
+          "value": "mode IN ('start','steer')"
+        },
+        "token_usage_attempts_check_1": {
+          "name": "token_usage_attempts_check_1",
+          "value": "actor_kind IN ('human','session','unknown')"
+        },
+        "token_usage_attempts_check_2": {
+          "name": "token_usage_attempts_check_2",
+          "value": "source_kind IN ('human','system','unknown')"
+        },
+        "token_usage_attempts_check_3": {
+          "name": "token_usage_attempts_check_3",
+          "value": "outcome IN ('pending','accepted','rejected','unknown')"
+        }
+      }
+    },
+    "token_usage_buckets": {
+      "name": "token_usage_buckets",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_key": {
+          "name": "model_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_buckets_query": {
+          "name": "token_usage_buckets_query",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "model_key",
+            "tokens",
+            "provider",
+            "model"
+          ],
+          "isUnique": false
+        },
+        "token_usage_buckets_model": {
+          "name": "token_usage_buckets_model",
+          "columns": [
+            "server_id",
+            "model_key",
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_buckets_server_id_thread_id_turn_id_model_key_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "model_key"
+          ],
+          "name": "token_usage_buckets_server_id_thread_id_turn_id_model_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_checkpoints": {
+      "name": "token_usage_checkpoints",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lineage": {
+          "name": "lineage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_checkpoints_server_id_lineage_pk": {
+          "columns": [
+            "server_id",
+            "lineage"
+          ],
+          "name": "token_usage_checkpoints_server_id_lineage_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_coverage": {
+      "name": "token_usage_coverage",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_ms": {
+          "name": "starts_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_ms": {
+          "name": "ends_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_coverage_scope": {
+          "name": "token_usage_coverage_scope",
+          "columns": [
+            "server_id",
+            "starts_ms",
+            "ends_ms"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_daily": {
+      "name": "token_usage_daily",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day": {
+          "name": "day",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_filter": {
+          "name": "model_filter",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_key": {
+          "name": "model_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "allocation_state": {
+          "name": "allocation_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turns": {
+          "name": "turns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "missing_usage": {
+          "name": "missing_usage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unknown_models": {
+          "name": "unknown_models",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_daily_server_id_day_model_filter_model_key_allocation_state_pk": {
+          "columns": [
+            "server_id",
+            "day",
+            "model_filter",
+            "model_key",
+            "allocation_state"
+          ],
+          "name": "token_usage_daily_server_id_day_model_filter_model_key_allocation_state_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_daily_check_0": {
+          "name": "token_usage_daily_check_0",
+          "value": "model_filter IN (0,1)"
+        }
+      }
+    },
+    "token_usage_gaps": {
+      "name": "token_usage_gaps",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gap_key": {
+          "name": "gap_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_ms": {
+          "name": "starts_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_ms": {
+          "name": "ends_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_gaps_thread": {
+          "name": "token_usage_gaps_thread",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "ends_ms"
+          ],
+          "isUnique": false
+        },
+        "token_usage_gaps_open": {
+          "name": "token_usage_gaps_open",
+          "columns": [
+            "server_id",
+            "ends_ms",
+            "starts_ms"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_gaps_server_id_gap_key_pk": {
+          "columns": [
+            "server_id",
+            "gap_key"
+          ],
+          "name": "token_usage_gaps_server_id_gap_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_input_conflicts": {
+      "name": "token_usage_input_conflicts",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_id": {
+          "name": "input_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_input_conflicts_server_id_thread_id_input_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "input_id"
+          ],
+          "name": "token_usage_input_conflicts_server_id_thread_id_input_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_inputs": {
+      "name": "token_usage_inputs",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_id": {
+          "name": "input_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "admission": {
+          "name": "admission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "token_usage_inputs_actor_query": {
+          "name": "token_usage_inputs_actor_query",
+          "columns": [
+            "server_id",
+            "actor_id",
+            "actor_kind",
+            "admission",
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": false
+        },
+        "token_usage_inputs_participants_query": {
+          "name": "token_usage_inputs_participants_query",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "admission",
+            "actor_kind",
+            "actor_id"
+          ],
+          "isUnique": false
+        },
+        "token_usage_inputs_turn": {
+          "name": "token_usage_inputs_turn",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "admission"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_inputs_server_id_thread_id_input_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "input_id"
+          ],
+          "name": "token_usage_inputs_server_id_thread_id_input_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_inputs_check_0": {
+          "name": "token_usage_inputs_check_0",
+          "value": "actor_kind IN ('human','session','unknown')"
+        },
+        "token_usage_inputs_check_1": {
+          "name": "token_usage_inputs_check_1",
+          "value": "mode IN ('start','steer')"
+        },
+        "token_usage_inputs_check_2": {
+          "name": "token_usage_inputs_check_2",
+          "value": "admission IN ('confirmed','pending','rejected')"
+        }
+      }
+    },
+    "token_usage_legacy_import": {
+      "name": "token_usage_legacy_import",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "legacy_revision_json": {
+          "name": "legacy_revision_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_legacy_import_check_0": {
+          "name": "token_usage_legacy_import_check_0",
+          "value": "singleton=1"
+        }
+      }
+    },
+    "token_usage_metadata_scans": {
+      "name": "token_usage_metadata_scans",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_metadata_scans_server_id_thread_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id"
+          ],
+          "name": "token_usage_metadata_scans_server_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_native_counters": {
+      "name": "token_usage_native_counters",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "baseline_json": {
+          "name": "baseline_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cumulative_json": {
+          "name": "cumulative_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_version": {
+          "name": "source_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "broken": {
+          "name": "broken",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_native_counters_server_id_thread_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id"
+          ],
+          "name": "token_usage_native_counters_server_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_native_counters_check_0": {
+          "name": "token_usage_native_counters_check_0",
+          "value": "broken IN (0,1)"
+        }
+      }
+    },
+    "token_usage_native_terminals": {
+      "name": "token_usage_native_terminals",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_native_terminals_server_id_thread_id_turn_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "name": "token_usage_native_terminals_server_id_thread_id_turn_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_projection_state": {
+      "name": "token_usage_projection_state",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ready": {
+          "name": "ready",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cursor_thread": {
+          "name": "cursor_thread",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cursor_turn": {
+          "name": "cursor_turn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_projection_state_check_0": {
+          "name": "token_usage_projection_state_check_0",
+          "value": "ready IN (0,1)"
+        }
+      }
+    },
+    "token_usage_rollouts": {
+      "name": "token_usage_rollouts",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_success_ms": {
+          "name": "last_success_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_kind": {
+          "name": "error_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_rollouts_server_id_thread_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id"
+          ],
+          "name": "token_usage_rollouts_server_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_scopes": {
+      "name": "token_usage_scopes",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "enabled_at_ms": {
+          "name": "enabled_at_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_scopes_check_0": {
+          "name": "token_usage_scopes_check_0",
+          "value": "enabled IN (0,1)"
+        }
+      }
+    },
+    "token_usage_sources": {
+      "name": "token_usage_sources",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lineage": {
+          "name": "lineage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_version": {
+          "name": "source_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "counts_json": {
+          "name": "counts_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observed_ms": {
+          "name": "observed_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        }
+      },
+      "indexes": {
+        "token_usage_sources_observed_query": {
+          "name": "token_usage_sources_observed_query",
+          "columns": [
+            "server_id",
+            "observed_ms"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_sources_server_id_thread_id_turn_id_lineage_source_kind_source_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id",
+            "lineage",
+            "source_kind",
+            "source_id"
+          ],
+          "name": "token_usage_sources_server_id_thread_id_turn_id_lineage_source_kind_source_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_sources_check_0": {
+          "name": "token_usage_sources_check_0",
+          "value": "source_kind IN ('response','turn-snapshot')"
+        }
+      }
+    },
+    "token_usage_submissions": {
+      "name": "token_usage_submissions",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_id": {
+          "name": "input_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submitted_ms": {
+          "name": "submitted_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_submissions_server_id_thread_id_input_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "input_id"
+          ],
+          "name": "token_usage_submissions_server_id_thread_id_input_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_submissions_check_0": {
+          "name": "token_usage_submissions_check_0",
+          "value": "actor_kind IN ('human','session','unknown')"
+        },
+        "token_usage_submissions_check_1": {
+          "name": "token_usage_submissions_check_1",
+          "value": "mode IN ('start','steer')"
+        },
+        "token_usage_submissions_check_2": {
+          "name": "token_usage_submissions_check_2",
+          "value": "source_kind IN ('human','system','unknown')"
+        }
+      }
+    },
+    "token_usage_turn_actor_projections": {
+      "name": "token_usage_turn_actor_projections",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_json": {
+          "name": "value_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_turn_actor_projections_server_id_thread_id_turn_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "name": "token_usage_turn_actor_projections_server_id_thread_id_turn_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_turn_projections": {
+      "name": "token_usage_turn_projections",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_json": {
+          "name": "value_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_turn_projections_server_id_thread_id_turn_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "name": "token_usage_turn_projections_server_id_thread_id_turn_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "token_usage_turns": {
+      "name": "token_usage_turns",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_ms": {
+          "name": "started_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "execution_state": {
+          "name": "execution_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "participants_complete": {
+          "name": "participants_complete",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "usage_complete": {
+          "name": "usage_complete",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "responses_complete": {
+          "name": "responses_complete",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "frozen": {
+          "name": "frozen",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        },
+        "observed_tokens": {
+          "name": "observed_tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "allocation_state": {
+          "name": "allocation_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unknown_model": {
+          "name": "unknown_model",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        }
+      },
+      "indexes": {
+        "token_usage_turns_thread_query": {
+          "name": "token_usage_turns_thread_query",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "started_ms",
+            "turn_id"
+          ],
+          "isUnique": false
+        },
+        "token_usage_turns_query": {
+          "name": "token_usage_turns_query",
+          "columns": [
+            "server_id",
+            "started_ms",
+            "thread_id",
+            "turn_id",
+            "frozen",
+            "allocation_state",
+            "observed_tokens",
+            "unknown_model"
+          ],
+          "isUnique": false
+        },
+        "token_usage_turns_date": {
+          "name": "token_usage_turns_date",
+          "columns": [
+            "server_id",
+            "started_ms",
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "token_usage_turns_server_id_thread_id_turn_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id",
+            "turn_id"
+          ],
+          "name": "token_usage_turns_server_id_thread_id_turn_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "token_usage_turns_check_0": {
+          "name": "token_usage_turns_check_0",
+          "value": "execution_state IN ('running','completed','failed','interrupted')"
+        },
+        "token_usage_turns_check_1": {
+          "name": "token_usage_turns_check_1",
+          "value": "source_kind IN ('human','system','unknown')"
+        },
+        "token_usage_turns_check_2": {
+          "name": "token_usage_turns_check_2",
+          "value": "participants_complete IN (0,1)"
+        },
+        "token_usage_turns_check_3": {
+          "name": "token_usage_turns_check_3",
+          "value": "usage_complete IN (0,1)"
+        },
+        "token_usage_turns_check_4": {
+          "name": "token_usage_turns_check_4",
+          "value": "responses_complete IN (0,1)"
+        },
+        "token_usage_turns_check_5": {
+          "name": "token_usage_turns_check_5",
+          "value": "frozen IN (0,1)"
+        },
+        "token_usage_turns_check_6": {
+          "name": "token_usage_turns_check_6",
+          "value": "allocation_state IN ('settled','provisional','pending','system','unknown')"
+        },
+        "token_usage_turns_check_7": {
+          "name": "token_usage_turns_check_7",
+          "value": "unknown_model IN (0,1)"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

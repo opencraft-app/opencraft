@@ -24,6 +24,9 @@ export class BrowserThreadAttention {
   private stopState = () => {};
   private readonly checked = new Map<string, string>();
   private readonly pending = new Set<string>();
+  private readonly catchUpQueue = new Map<object, () => void>();
+  private readonly activeCatchUps = new Set<object>();
+  private pumpingCatchUps = false;
   private readonly live = new Map<string, number>();
   constructor(private readonly clients: Pick<AppServerClientRegistry, "get">,
     source: TurnCompletionObserver, accounts: PlatformAccountContributionRegistry,
@@ -136,13 +139,53 @@ export class BrowserThreadAttention {
     this.synchronization = task;
     return task;
   }
+  /** All catalog/attention refreshes share this Application's background budget.
+   * Cancellation releases local admission even if an old provider replies late. */
+  private readCatchUp<T>(signal: AbortSignal, current: () => boolean, read: () => Promise<T>): Promise<T | undefined> {
+    if (signal.aborted || !current()) return Promise.resolve(undefined);
+    return new Promise((resolve, reject) => {
+      const owner = {};
+      let settled = false;
+      const finish = (value?: T, error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        this.catchUpQueue.delete(owner);
+        this.activeCatchUps.delete(owner);
+        signal.removeEventListener("abort", abort);
+        if (error !== undefined) reject(error); else resolve(value);
+        this.pumpCatchUps();
+      };
+      const abort = () => finish();
+      this.catchUpQueue.set(owner, () => {
+        if (signal.aborted || !current()) { finish(); return; }
+        this.activeCatchUps.add(owner);
+        try { void read().then(value => finish(value), error => finish(undefined, error)); }
+        catch (error) { finish(undefined, error); }
+      });
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      this.pumpCatchUps();
+    });
+  }
+  private pumpCatchUps(): void {
+    if (this.pumpingCatchUps || this.disposed) return;
+    this.pumpingCatchUps = true;
+    try {
+      while (this.activeCatchUps.size < 3 && this.catchUpQueue.size > 0) {
+        const [owner, start] = this.catchUpQueue.entries().next().value!;
+        this.catchUpQueue.delete(owner);
+        start();
+      }
+    } finally { this.pumpingCatchUps = false; }
+  }
   async catchUp(profile: HostConnectionProfile, threads: readonly { id: string; updatedAt: number }[], isCurrent: () => boolean) {
     const client = this.clients.get(profile.hostId);
     const scope = this.scope;
     const epoch = this.epoch;
+    const signal = this.controller.signal;
     if (!client || scope === null || client.status.state !== "open") return;
     const generation = client.connectionGeneration;
-    const current = () => !this.disposed && epoch === this.epoch && scope === this.scope && isCurrent()
+    const current = () => !this.disposed && !signal.aborted && epoch === this.epoch && scope === this.scope && isCurrent()
       && this.clients.get(profile.hostId) === client && client.connectionGeneration === generation && client.status.state === "open";
     const queue = threads.slice(0, 50);
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
@@ -153,10 +196,10 @@ export class BrowserThreadAttention {
         this.pending.add(key);
         const liveRevision = this.live.get(key) ?? 0;
         try {
-          const page = await client.request("thread/turns/list", {
+          const page = await this.readCatchUp(signal, current, () => client.request("thread/turns/list", {
             threadId: thread.id, cursor: null, limit: 1, itemsView: "notLoaded", sortDirection: "desc",
-          }, { priority: "background", timeoutMs: 10_000, signal: this.controller.signal, historySource: "attention" });
-          if (!current()) return;
+          }, { priority: "background", timeoutMs: 10_000, signal, historySource: "attention" }));
+          if (!current() || !page) return;
           this.checked.set(key, stamp);
           const turn = page.data[0];
           // A late catalog read cannot replace a completion received while it was in flight.

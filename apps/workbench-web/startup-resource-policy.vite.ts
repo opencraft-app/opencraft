@@ -13,6 +13,9 @@ export interface StartupResourcePolicy {
 }
 const demandOnlyPatterns = [
   /\/chat-render-web\/src\/renderers\/visualization\/(?:visualization\.tsx|sandbox\.ts)$/,
+  /\/components\/conversation-search-dialog\.tsx$/,
+  /\/components\/connectors\/connector-(?:library|native-services|setup)\.tsx$/,
+  /\/components\/extensions\/extension-library\.tsx$/,
   /\/packages\/appserver-session\/src\/derived-history\.ts$/,
   /\/apps\/workbench-web\/src\/components\/modal\/adaptive-sheet-handle\.tsx$/,
   /\/chat-render-web\/src\/extensions\/katex\/katex-math\.tsx$/,

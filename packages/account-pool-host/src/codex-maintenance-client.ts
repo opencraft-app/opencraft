@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { accountFailureDiagnostic } from "./account-diagnostics.js";
 import { mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 
@@ -96,6 +97,7 @@ export async function createCodexMaintenanceClient(options: {
 
   const client: CodexMaintenanceClient = {
     request,
+    diagnostics: () => accountFailureDiagnostic(new Error(stderrTail)),
     subscribeNotification(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async close() {
       if (closed) return;

@@ -1,0 +1,77 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+
+.right-panel-content[data-mobile-panel='true'] > .right-panel-toolbar { display: none; }
+.app-shell-root:has(.right-panel-content[data-mobile-panel='true']) {
+  .app-shell-header-motion-host { display: none; }
+}
+
+.right-panel-content[data-mobile-panel='true'],
+.browser-panel[data-mobile-browser='true'],
+.thread-composer-overlay-host[data-mobile-panel='true'] {
+  --panel-mobile-control: var(--size-chrome-action);
+  // One control row, its padding/border, bottom gap and separation above it.
+  // The guest and the body-level Composer consume the same dock allocation.
+  --panel-mobile-dock-height: calc(var(--panel-mobile-control) + var(--padding-material-liquid-group) * 2 + var(--spacing) * 4);
+}
+
+.browser-panel[data-mobile-browser='true'] {
+  position: relative;
+  // The Shell row (and body portals measured from it) already excludes the
+  // device bottom inset. Panel controls retain only their ordinary spacing.
+  .browser-viewport-slot { margin-bottom: var(--panel-mobile-dock-height); }
+  .browser-device-toolbar { flex-wrap: wrap; height: auto; min-height: var(--panel-mobile-control); }
+}
+.panel-mobile-dock__location {
+  display: flex; min-width: 0; flex: 1; gap: var(--spacing); align-items: center;
+  color: var(--color-text-tertiary);
+  > svg { flex: none; }
+  input {
+    width: 100%; min-width: 0; min-height: var(--size-control-hit-min); border: 0; outline: 0; padding: 0;
+    background: transparent; color: var(--color-text); text-align: center; text-overflow: ellipsis;
+    @include typography.role(mobile-input);
+    &:focus { text-align: start; }
+  }
+}
+.panel-mobile-sheet {
+  display: flex; flex-direction: column; padding: 0;
+  &__body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: calc(var(--spacing) * 4); }
+  &__header {
+    display: flex; justify-content: space-between; align-items: center; gap: calc(var(--spacing) * 3);
+    h2 { margin: 0; @include typography.role(panel-title); }
+  }
+  &__search { flex: none; }
+  &__tabs { min-height: 0; overflow-y: auto; gap: calc(var(--spacing) * 4); }
+  &__utilities { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 3); }
+}
+.panel-mobile-tab {
+  display: flex; align-items: center; min-width: 0;
+  &__activate { flex: 1; min-width: 0; }
+  &__title { min-width: 0; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+  &__close { flex: none; }
+}
+
+// Preserve the original two surfaces: the recent turn behind the unchanged
+// Composer. Shell owns safe-area/keyboard contraction; this only reserves dock.
+:root[data-ui-density='touch'] .thread-composer-overlay-host[data-mobile-panel='true'] {
+  .thread-composer-overlay__padding {
+    padding-inline: max(calc(var(--spacing) * 3), env(safe-area-inset-left, 0px)) max(calc(var(--spacing) * 3), env(safe-area-inset-right, 0px));
+    padding-bottom: var(--panel-mobile-dock-height);
+  }
+  .thread-composer-overlay__content { max-width: 100%; }
+  .thread-composer-overlay__latest { inset-inline: calc(var(--spacing) * 2); }
+  .thread-composer-overlay__response { max-height: min(40cqh, var(--right-panel-composer-preview-max-height)); }
+}
+
+.right-panel-content[data-mobile-panel='true'] {
+  position: relative;
+  &:not([data-mobile-browser='true']) > .right-panel-view { margin-bottom: var(--panel-mobile-dock-height); }
+}
+.panel-mobile-dock__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-mobile-dock__location { margin: 0; }
+
+.panel-mobile-dock__plugin-actions {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  &:empty { display: none; }
+}

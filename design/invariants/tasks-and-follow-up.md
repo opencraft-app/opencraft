@@ -67,19 +67,20 @@ filter synchronization, recycle round trips and refresh with held requests.
 
 ## Demand pool columns
 
-Board splits backlog into Product backlog and Technical backlog, followed by the
+Board splits backlog into Product backlog, Growth backlog and Technical backlog in that order, followed by the
 existing workflow columns. This is one projection of the task status and kind:
 engineering, harness, research, documentation and operations backlog tasks use
-the technical pool; all other or missing kinds use the product pool. Filtering,
+the technical pool; growth uses the growth pool (运营需求池); all other or missing
+kinds use the product pool. Filtering,
 counts, compact selection, loading geometry and scroll/draft keys use the same
 column identity. Existing statuses, ordering and task data are preserved.
 Inline creation defaults to feature in the product pool and engineering in the
-technical pool; compatible kind filters are inherited, incompatible filters do
+technical pool, and growth in the growth pool; compatible kind filters are inherited, incompatible filters do
 not override the chosen pool and a hidden-result notice explains the filter.
 
 ## Tasks board card width
 
-The seven-column board uses one Tasks-owned minimum column width token of 340px,
+The eight-column board uses one Tasks-owned minimum column width token of 340px,
 with equal flexible tracks above that minimum. Cards fill the column content
 width. The board scrollport owns horizontal overflow; the page does not expand.
 At task-container widths of 600px or less, the existing selected single-column
@@ -157,7 +158,7 @@ Morning overview is a read-only projection of the task controller snapshot, with
 
 ### AI follow-up cards and Morning separation
 
-AI follow-up is a peer of Board and List with Todo / Working / Needs you / In review / Ready to merge. All active tasks participate; Owner and local scope/search consistently filter every lane/count and survive route remounts within the authority/account activation. Todo is not started, Working requires an explicit execution report to claim AI activity; old business statuses stay visibly unverified. Needs you requires ready material and a specific round request. Assigned Todo/Needs you/Ready to merge show current visible-lane dwell from server activity, bounded by an optional fixed product rollout floor; Needs sorts by that same origin. Working/In review/unassigned cards show no clock. Comments/reassignment/repeated same-lane reports/new decision rounds do not reset lane dwell; state re-entry and lifecycle boundaries do. Stale/failed/incomplete history has no inferred clock. Original decision-round timestamps remain separate. Judge and Owner are distinct. Ready requires a compatible explicit recorded fact and never implies merged/deployed. Cards provide readable titles, a bounded decision/material summary, state/time, Owner and exact conversation navigation. Full content stays in original task activity/conversation. Semantic theme tokens, shared controls, profile avatars and Radix menus own presentation/interaction; five columns remain in one row inside a dedicated horizontal board scrollport. No simulation, synthetic task, approval/scheduling or separate writable execution state is introduced. Morning remains the separate future risk/key-exploration surface.
+AI follow-up is a peer of Board and List with Todo / Working / Needs you / In review / Ready to merge. All active tasks participate; Owner and local scope/search consistently filter every lane/count and survive route remounts within the authority/account activation. Todo is not started, Working requires an explicit execution report to claim AI activity; old business statuses stay visibly unverified. Needs you requires ready material and a specific round request. Assigned Todo/Needs you/Ready to merge show current visible-lane dwell from server activity, bounded by an optional fixed product rollout floor; Needs sorts by that same origin. Working/In review/unassigned cards show no clock. Comments/reassignment/repeated same-lane reports/new decision rounds do not reset lane dwell; state re-entry and lifecycle boundaries do. Stale/failed/incomplete history has no inferred clock. Original decision-round timestamps remain separate. Judge and Owner are distinct. Ready requires a compatible explicit recorded fact and never implies merged/deployed. Cards show title, state dwell, human-handling requirement, exact conversation entry, current handler and priority only. Summaries/decision details/kind/IDs remain in original activity/conversation. A verified explicit Needs judge is the displayed handler; otherwise display Owner without inferring a judge or changing permission. Local status/priority grouping shares the same rows and filters; urgent/high/normal/low/none map to P0/P1/P2/P3/Unset, with missing priorities Unset. Grouping survives navigation in the same authority/account activation and never mutates status or clock origins. Full content stays in original task activity/conversation. Semantic theme tokens, shared controls, profile avatars and Radix menus own presentation/interaction; five columns remain in one row inside a dedicated horizontal board scrollport. No simulation, synthetic task, approval/scheduling or separate writable execution state is introduced. Morning remains the separate future risk/key-exploration surface.
 
 Cards contain no business metrics; full research output, next steps and rationale stay in the original task activity/conversation rather than card disclosures. Ordinary board browsing filters remain independent. Missing links are explicit; multiple links use the existing accessible menu. Navigation never approves or starts work. Cards use shared typography, semantic paired colors and Settings controls within the Tasks container. The Morning decision-round waiting authority and strict >72-hour threshold remain separate from card lane dwell.
 
@@ -197,13 +198,20 @@ primary and cancel actions remain reachable in short and narrow viewports.
 
 ### Board navigation copy
 The Tasks application uses “看板” (English: “Board”) for its navigation label,
-collapsed rail tooltip and main page heading. Board, list and follow-up remain
+collapsed rail tooltip and main page heading. The unified board and list remain
 views within the same application; task actions keep their task terminology.
 
 ### Conversation task summary
 
-The optional `thread-summary` trusted plugin owns a read-only projection of structured plans,
-file changes and agent/command activity. `ConversationSummaryService` owns one revocable
+The optional `thread-summary` trusted plugin places a shared Markdown note first, followed
+by read-only projections of structured plans, file changes and agent/command activity.
+The note uses an independent gateway-owned CRDT store and the existing conversation access
+policy; it never writes timeline projections, engine data, UI preferences or browser records.
+An authenticated note capability is required. Unsynced edits belong to the conversation
+session, survive closing the panel and same-account Thread navigation, and are not
+claimed durable across a page reload. Account changes fence the old transport before
+and after asynchronous calls; same-account profile refresh does not change the note identity.
+Remote edits preserve selection and wait until active IME composition commits. `ConversationSummaryService` owns one revocable
 contribution, while the Workbench owns placement, focus, modality and semantic navigation.
 Unloading the plugin never ends execution, releases a conversation lease or changes history.
 The existing project/working-directory information dialog remains a separate action.
@@ -224,3 +232,66 @@ Cached history remains readable, but cannot authorize resource or agent navigati
 labels its history coverage; a completed spawn tool is never treated as agent completion.
 
 Task summary navigation requires a real receiver/agent/state thread identity; presentation fallback IDs do not become thread links. Renamed file entries point to their new Host path.
+
+## Unified work board
+
+Board and AI follow-up share one default board entrance and one task dataset.
+The collaboration, workflow and priority groupings are read-only projections;
+workflow retains all demand-pool columns and completed/canceled tasks, without
+changing business statuses, associations or revisions. Terminal tasks appear
+in a Closed collaboration group, never as new human requests. The list remains
+the full editing surface; New, archives and recycle retain their existing owners.
+
+Cards use only title, state dwell, action-needed indication, conversation action,
+handler and priority. One light card surface has no outer lane frame or nested
+button surface. Title/body remain selectable, and chat is the only card action.
+The current theme owns page/card backgrounds; prototype palette values are not
+imported. Quiet shared controls own hover, focus and touch targets.
+
+Human and Agent readers consume the same filtered task identities and revisions.
+The read panel exposes original workflow, owner, verified current judge/request,
+state clock, exact Server/Thread references, context and report provenance.
+Unavailable collaboration is explicitly unknown; stale requests/clocks never
+authorize an action. Reports are not execution attestations. The JSON projection
+grants no approval or execution permission and does not create a scheduler or
+another writable store. All write intents continue through the original Tasks
+authority with its existing permissions and revision checks. Grouping and Owner
+filters retain activation/account scope and survive conversation round trips.
+The existing assigned-lane clock/floor is unchanged.
+
+### Unified card context access and lane scrolling
+
+The whole task card opens the original task editor, including Description,
+acceptance criteria, properties and activity. Shared ObjectActionSurface expands
+the native ObjectTitleButton pointer/touch target without nesting buttons or
+adding keyboard stops. Conversation buttons/menus keep their own destination;
+a text selection never opens details. Pending cards cannot open. Closing
+restores title focus and preserves the existing unsaved editor draft.
+
+The board uses the remaining page height. Each lane owns an independent vertical
+card scrollport with its header outside it; horizontal scrolling belongs to the
+board. Neighboring lanes and the page stay still. Per-group scroll positions
+survive grouping changes while mounted. No wheel/touch interception is used.
+Morning reviewing is removed from Tasks navigation; historical data is retained.
+This supersedes earlier title-only/static-card and separate Morning-entry
+behavior. Concise fields, themes, timers, owners and permissions remain unchanged.
+
+### Compact work board
+
+At compact container capacity, one full-width lane is visible at a time. A shared
+segmented status selector shows the same group counts; native horizontal scrolling
+belongs only to that selector. The board retains the same workflow/collaboration/
+priority projections and controls. Group choice, selected lane per grouping and
+column offsets live within the existing authority/account activation, and survive
+view remounts and conversation return. Resizing changes presentation, not task or
+editor identity. Desktop keeps parallel independently scrolling lanes.
+
+Compact grouping uses the shared choice menu. Owner/search filters remain available
+in the existing utility dialog; active Owner count is visible on its trigger. The
+search/scope controls give their space back while reading a scrolled lane, remain
+visible while focused, and return at its top. Group selection and filter access
+remain available. Card titles use the shared reading prominence, wrap completely
+and keep the native detail action. Cards omit untimed filler and present missing
+conversation as passive text. Exact conversation actions, text selection, original
+Description/criteria/unsaved draft, accessibility and business clocks are unchanged.
+This supersedes compact parallel-column presentation only.

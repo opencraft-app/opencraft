@@ -324,3 +324,30 @@ current platform contract and actual services. Attachment tests reflect the
 existing 1 GiB chunked capability and verify transport assembly through both
 Codex adapter and local Host; no commercial wire limit is changed here.
 Trusted platform Views receive optional `PlatformViewHost.currentUser` from the selected account contribution's authenticated `identity` projection: provider ID, stable subject ID and explicit handle. Display-only names, retained metadata and anonymous/loading/error snapshots cannot supply that identity. The provider owns authentication and revocation; this projection supplies no credentials or resource grants. enterprise identity maps verified staffId/loginName into this shared contract. Tasks uses an exact registered member handle or a client-selected viewing preference; it does not import enterprise identity or infer identity from a name.
+
+
+## Planned gateway restart diagnostics
+
+Headless disposal logs static component/stage names, started/waiting/completed/failed
+phases and monotonic elapsed milliseconds. Web separately observes restart close
+frames, carrier retirement, accepted handlers and HTTP closure, with a pending
+handler count. Slow stages are reported every five seconds without cancelling
+accepted work, releasing the writer or logging request/exception contents. The
+root writer is released only after the existing disposal and flush sequence
+succeeds; a diagnostic sink failure cannot change cleanup results.
+
+A received WebSocket 1012 enables retries with gaps capped at two seconds for a
+bounded 120-second period, covering a slow managed restart; the window is not
+renewed by ordinary connection failures. Manual/authentication blocks remain
+blocked, and prolonged outages return to normal backoff. This does not shorten
+the server outage, grant a recovered session or authorize replay of unknown
+inputs. Verify actual gateway replacement and old-page recovery separately.
+
+
+HTTP shutdown separately tracks unfinished responses and upgraded carriers. After
+stopping admission, it closes sockets with no unfinished HTTP response, including
+partial first headers and partial next headers on a reused keepalive connection.
+An unfinished response retains its socket until finish/close; an accepted async
+handler remains in the drain set even if its peer has disconnected. Upgraded
+Hub/SSH/AppHost carriers keep their existing restart-close and retirement order.
+No timer discards accepted work or authorizes releasing the database writer.

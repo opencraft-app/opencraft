@@ -24,7 +24,7 @@ function createDisplayFlow({ keyframe, diagnose, pace = () => {}, bounds, now = 
     if (ws.readyState !== 1 || !flow.viewer.visible) { clear(ws); return; }
     if (now() - flow.since >= 10000 || ws.bufferedAmount > hard) { close(ws); return; }
     if (ws.bufferedAmount <= low && now() - flow.requested >= 1000) {
-      flow.requested = now(); keyframe(flow.page);
+      flow.requested = now(); keyframe(flow.page, flow.viewer.bucket ?? 'fast');
     }
     flow.timer = setTimeout(() => poll(ws, flow), 100); flow.timer.unref();
   }

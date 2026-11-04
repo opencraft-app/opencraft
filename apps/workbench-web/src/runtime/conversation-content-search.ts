@@ -27,9 +27,10 @@ export interface ConversationSearchSource {
 }
 
 export function mergeConversationSearchResults(titles: readonly ConversationSearchRow[], bodies: readonly ConversationSearchRow[]) {
-  const rows = new Map(titles.map(row => [JSON.stringify([row.connectionHostId, row.id]), row]));
-  for (const row of bodies) rows.set(JSON.stringify([row.connectionHostId, row.id]), row);
-  return [...rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const key=(row:ConversationSearchRow)=>JSON.stringify([row.connectionHostId,row.id]);
+  const rows=new Map(bodies.map(row=>[key(row),row]));
+  const titleOnly=titles.filter(row=>!rows.has(key(row))).sort((a,b)=>b.updatedAt-a.updatedAt);
+  return [...rows.values(),...titleOnly];
 }
 
 export function isUnsupportedSearch(error: unknown): boolean {
@@ -69,7 +70,7 @@ export function createAppServerContentSearchSource(input: {
     search: (term, cursor, signal) => serialize(signal, async () => {
       input.assertCurrent();
       const result = await input.protocol.request("thread/search", { searchTerm: term, cursor, limit: 30,
-        archived: false, sortKey: "updated_at", sortDirection: "desc" }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS });
+        archived: false, sortDirection: "desc" }, { timeoutMs: CONTENT_SEARCH_TIMEOUT_MS });
       input.assertCurrent();
       return { matches: result.data.map(match => ({ ...input.project(match.thread), snippet: match.snippet, searchTerm: term })), nextCursor: result.nextCursor };
     }),

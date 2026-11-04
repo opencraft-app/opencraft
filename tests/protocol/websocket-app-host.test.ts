@@ -141,12 +141,14 @@ test("visible route checks wake the existing Workbench retry owner before a long
     recoveryEvents: events, reportFailure: () => undefined,
   });
   const runtime = createAppServerWorkbenchRuntime({ hostId: "mobile", autoReconnect: true, reconnectDelaysMs: [60_000],
+    subscribeRecoveryHint: listener => client.subscribeRecoveryHint(listener),
     createTransport: () => client.createTransport("mobile"),
     clock: { now: () => Date.now(), setTimeout: (run, delay) => setTimeout(run, delay), clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>) },
   });
   try {
     const failed = assert.rejects(runtime.connect(), /App Host connection failed/);
     await flush(); sockets[0]!.fail(); await failed;
+    await flush(); await flush(); // Let failed service assembly finish its cleanup before the route returns.
     assert.equal(runtime.getSnapshot().phase, "reconnecting");
     assert.equal(sockets.length, 1);
     context.mock.timers.tick(5_000); await flush(); await flush();
@@ -828,6 +830,24 @@ test("synchronous connecting observer can revoke before admission or socket allo
     client.close();
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else Reflect.deleteProperty(globalThis, "window");
   }
+});
+
+
+test("Host route observation survives having no transport and retires with its subscription", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const events = new RecoveryEvents();
+  const client = connectWebSocketAppHost(() => { throw new Error("route observation must not dial"); }, {
+    recoveryEvents: events, reportFailure: () => undefined,
+  });
+  let hints = 0;
+  const stop = client.subscribeRecoveryHint(() => { hints++; });
+  try {
+    context.mock.timers.tick(5_000); assert.equal(hints, 1);
+    events.fire(false); context.mock.timers.tick(60_000); assert.equal(hints, 1);
+    events.fire(); assert.equal(hints, 2);
+    stop(); context.mock.timers.tick(60_000); events.fire(); assert.equal(hints, 2);
+    client.close(); assert.equal(events.listeners.size, 0);
+  } finally { stop(); client.close(); }
 });
 
 

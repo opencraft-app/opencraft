@@ -101,3 +101,47 @@ test("Server directory retains committed rows until the native index observes th
   const later = page(); publisher.observeResult("thread/list", { cursor: null }, later);
   assert.equal(later.data.length, 0, "native observation releases the temporary directory tail");
 });
+
+test("a first page cannot acknowledge a live patch for an unloaded later page", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "patch", threadId: "tail", status: { type: "active", activeFlags: ["waitingOnUserInput"] } }));
+  const boundary = updates.getSnapshot();
+  updates.acknowledge(updates.markRead({ ...page(row("first")), nextCursor: "two" }, boundary));
+  assert.equal(updates.hasPending, true);
+  const stale = page(row("first"), row("tail"));
+  updates.acknowledge(updates.markRead(stale, boundary), true);
+  assert.equal(updates.hasPending, true, "a later but stale snapshot does not cover the fact");
+  assert.deepEqual(updates.project(stale)?.data.find(r => r.id === "tail")?.status,
+    { type: "active", activeFlags: ["waitingOnUserInput"] });
+  const fresh = page(row("first"), { ...row("tail"), status: { type: "active", activeFlags: ["waitingOnUserInput"] } });
+  updates.acknowledge(updates.markRead(fresh, boundary), true);
+  assert.equal(updates.hasPending, false, "the source snapshot confirms the exact status");
+});
+
+test("partial absence cannot acknowledge a deletion or erase an unobserved creation", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "remove", threadId: "deleted" }));
+  updates.receive(change(2, { type: "upsert", thread: row("new") }));
+  const partial = updates.markRead(page(row("first")), updates.getSnapshot());
+  updates.acknowledge(partial);
+  assert.deepEqual(updates.project(page(row("deleted")))?.data.map(r => r.id), ["new"]);
+  updates.acknowledge(updates.markRead(page(row("new")), updates.getSnapshot()), true);
+  assert.equal(updates.hasPending, false);
+});
+
+test("matching old reads cannot retire a newer fact", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  const before = updates.getSnapshot();
+  updates.receive(change(1, { type: "patch", threadId: "tail", name: "newer" }));
+  updates.acknowledge(updates.markRead(page({ ...row("tail"), name: "newer" }), before), true);
+  assert.equal(updates.hasPending, true);
+});
+
+
+test("terminal cursor with warming coverage cannot acknowledge absence", () => {
+  const updates = new ThreadCatalogUpdates("host"); updates.enabled = true;
+  updates.receive(change(1, { type: "remove", threadId: "deleted" }));
+  const warming = { ...page(), catalog: { state: "warming", coverage: "unknown" } };
+  updates.acknowledge(updates.markRead(warming, updates.getSnapshot()), true);
+  assert.equal(updates.hasPending, true);
+});

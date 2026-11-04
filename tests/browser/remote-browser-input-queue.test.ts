@@ -55,7 +55,7 @@ test('negotiated input waits for a real result and editing waits for the input b
   const windowOriginal = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
   Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: { OPEN: 1 } });
-  const sent: any[] = [], host: any = new RemoteBrowserSurfaceHost({ getItem: () => null, setItem() {} }, 'input-proof');
+  const sent: any[] = [], host: any = new RemoteBrowserSurfaceHost('mse', { getItem: () => null, setItem() {} }, 'input-proof');
   const p: any = { closed: false, connection: 1, controlGeneration: 1, control: { controller: true, token: 'grant' }, pending: new Map(), inputAcknowledgements: true,
     inputCredits: new CreditWindow({ maxItems: 2, maxBytes: 65536 }),
     socket: { readyState: 1, send(value: string) { sent.push(JSON.parse(value)); } } };
@@ -135,4 +135,95 @@ test('client merges keep a tiny timed tail instead of losing fling samples', asy
  queue.push({type:'touchEnd',time:1001,touchPoints:[]});await tick();release();await queue.idle();
  const move=seen.find(v=>v.type==='touchMove');assert.equal(move.time,1000);
  assert.deepEqual(move.history.map((v:any)=>v.time),[998,999]);assert.equal(seen.at(-1).time,1001);
+});
+
+
+for (const method of ['wait', 'inspect', 'readContext']) {
+  test(`read-only ${method} fences prior input but permits future input before its reply`, async () => {
+    const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const oldSocket = Object.getOwnPropertyDescriptor(globalThis, 'WebSocket');
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: { OPEN: 1 } });
+    const sent: any[] = [], host: any = new RemoteBrowserSurfaceHost('mse', { getItem: () => null, setItem() {} }, 'readonly-fence');
+    const p: any = { closed: false, connection: 1, document: 'doc-1', controlGeneration: 1,
+      control: { controller: true, token: 'human-grant' }, pending: new Map(), inputAcknowledgements: true,
+      inputCredits: new CreditWindow({ maxItems: 12, maxBytes: 65536 }), socket: { readyState: 1, send(v: string) { sent.push(JSON.parse(v)); } } };
+    const ack = (index: number) => { const id = sent[index].id, request = p.pending.get(id); assert(request);
+      p.inputCredits.release(id); p.pending.delete(id); clearTimeout(request.timer); request.resolve(); };
+    try {
+      p.inputQueue = new RemoteBrowserInputQueue((input: any) => host.call(p, 'input', input), () => assert.fail('overflow'));
+      p.inputQueue.push({ type: 'mouseDown' }); await tick();
+      const read = host.call(p, 'automation', { method });
+      p.inputQueue.push({ type: 'char', keyCode: 'H' });
+      assert.deepEqual(sent.map(m => m.method), ['input'], 'read cannot precede past input ACK');
+      ack(0); await tick();
+      assert.deepEqual(sent.map(m => m.method), ['input', 'automation', 'input']);
+      assert.equal(sent[1].control, undefined, 'resource use cannot grant input authority');
+      assert.equal(sent[1].document, 'doc-1');
+      assert.equal(sent[2].control, 'human-grant'); assert.equal(sent[2].input.keyCode, 'H');
+      ack(2); assert.equal(await p.inputQueue.idle(), true, 'input drains while read is still pending');
+      assert.equal(p.pending.size, 1); ack(1); await read;
+    } finally {
+      p.inputQueue?.reset(); host.rejectPending(p);
+      if (oldWindow) Object.defineProperty(globalThis, 'window', oldWindow); else delete (globalThis as any).window;
+      if (oldSocket) Object.defineProperty(globalThis, 'WebSocket', oldSocket); else delete (globalThis as any).WebSocket;
+    }
+  });
+}
+
+for (const boundary of ['controlGeneration', 'connection', 'closed', 'reset'] as const) {
+  test(`queued read cannot outlive ${boundary}`, async () => {
+    const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+    const host: any = new RemoteBrowserSurfaceHost('mse', { getItem: () => null, setItem() {} }, 'read-cancel');
+    const p: any = { closed: false, connection: 1, controlGeneration: 1, control: { controller: true, token: 'grant' } };
+    let release!: () => void, reads = 0;
+    p.inputQueue = new RemoteBrowserInputQueue(() => new Promise<void>(r => { release = r; }), () => assert.fail('overflow'));
+    host.rawCall = () => { reads++; return Promise.resolve(); };
+    try {
+      p.inputQueue.push(wheel()); await tick();
+      const read = host.call(p, 'automation', { method: 'wait' });
+      const rejected = assert.rejects(read, /interaction ended/);
+      if (boundary === 'reset') p.inputQueue.reset();
+      else if (boundary === 'closed') p.closed = true;
+      else ++p[boundary];
+      release(); await rejected; assert.equal(reads, 0);
+    } finally {
+      p.inputQueue.reset();
+      if (oldWindow) Object.defineProperty(globalThis, 'window', oldWindow); else delete (globalThis as any).window;
+    }
+  });
+}
+
+test('same-transaction barriers share a bounded ACK window behind prior input and fence later keys', async () => {
+  const seen: string[] = [], acknowledgements: (() => void)[] = [];
+  let pointerAck!: () => void;
+  const queue = new RemoteBrowserInputQueue(input => {
+    seen.push(input.type);
+    return input.type === 'mouseDown' ? new Promise<void>(r => pointerAck = r) : Promise.resolve();
+  }, () => assert.fail('overflow'));
+  queue.push({type:'mouseDown'});
+  const phases=Array.from({length:10},(_,i)=>queue.barrier(async current=>{
+    assert(current());seen.push('phase'+i);await new Promise<void>(r=>acknowledgements.push(r));
+  },'one-composition'));
+  queue.push({type:'keyDown'});await tick();assert.deepEqual(seen,['mouseDown']);
+  pointerAck();await tick();assert.deepEqual(seen,['mouseDown','phase0','phase1']);
+  for(let i=0;i<10;i++){
+    assert(acknowledgements[i]);acknowledgements[i]();await tick();
+    if(i<9)assert(!seen.includes('keyDown'));
+    assert(acknowledgements.length<=Math.min(10,i+3),'default window cannot admit more than two phases');
+  }
+  await Promise.all(phases);await queue.idle();
+  assert.deepEqual(seen,['mouseDown',...Array.from({length:10},(_,i)=>'phase'+i),'keyDown']);
+});
+
+test('late old composition ACKs cannot release a replacement group after reset', async () => {
+  const release: (()=>void)[]=[],seen:string[]=[];
+  const queue=new RemoteBrowserInputQueue(async input=>{seen.push(input.type);},()=>assert.fail('overflow'));
+  const phase=(group:string)=>queue.barrier(async()=>{seen.push(group);await new Promise<void>(r=>release.push(r));},group);
+  const old=[phase('old'),phase('old')];await tick();queue.reset();
+  const current=[phase('current'),phase('current')];queue.push({type:'keyDown'});await tick();
+  release[0]();release[1]();await Promise.all(old);await tick();assert(!seen.includes('keyDown'));
+  release[2]();await tick();assert(!seen.includes('keyDown'));release[3]();await Promise.all(current);await queue.idle();
+  assert.deepEqual(seen,['old','old','current','current','keyDown']);
 });

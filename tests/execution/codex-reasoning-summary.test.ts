@@ -196,7 +196,8 @@ for (const kind of ["local", "remote"] as const) {
       if (kind === "local") await request("test/completeTurn", { threadId: entry.threadId });
     }
     const lifecycle = harness.writes.filter(frame => ["initialize", "thread/start", "thread/fork", "thread/resume"].includes(frame.method as string));
-    assert.equal(lifecycle.length, 4);
+    assert.deepEqual(lifecycle.map(frame => frame.method), ["initialize", "thread/start", "thread/resume", "thread/fork", "thread/resume"]);
+    assert.deepEqual(paramsOf(lifecycle[2]!), {threadId: newId, excludeTurns: true}, "fork materializes the same undispatched Native root without a new input");
     for (const frame of lifecycle) assert.equal(Object.hasOwn(paramsOf(frame), "summary"), false);
   });
 

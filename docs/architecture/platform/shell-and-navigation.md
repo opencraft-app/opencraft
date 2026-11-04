@@ -380,6 +380,12 @@ map. It validates that input slot against its account-bound draft owner, not
 just the 20-View presentation cache. Failed or superseded preparations never
 publish a preferred View; POP updates it only after acceptance. Draft eviction
 forgets the slot, and account revocation clears the map and fences pending work.
+A persisted Composer View ID discovered after bootstrap is a cold selection,
+not another application initialization. The transaction prepares its normal
+destination lease using the saved View ID, preserving the existing route on
+failure and restoring the original input slot after acceptance. `mountInitial`
+remains exclusive to bootstrap; saved drafts must not make later sidebar clicks
+fail before a route or pending indicator can be published.
 `ConversationDraftOwnerRegistry` owns at most 50 nonempty input slots and their
 original Controllers independently of View/Scope resource caching. It does not
 retain Thread or Host leases. Physical editing/submission protects input;
@@ -462,7 +468,7 @@ consume the same theme token; themes without that capability keep zero radius.
 
 ### Overhome and miniapps
 
-The Applications action always opens `/overhome`, a stable URL for the registered
+The legacy `/overhome` route remains a stable URL for the registered
 `opencraft.overhome.view` extension view. The existing Application Router owns its
 history and retained Chat return reference. Opening the desktop or a miniapp
 hides Chat presentation without recreating its draft, Host or execution owner.
@@ -531,3 +537,22 @@ the single density owner. Explicit compact mode works on touch-capable hardware;
 clicks, taps and mouse movement never replace that choice. Shell retains route,
 portal, list-scroll and draft ownership across preference changes. The real
 AppShell probe is `scripts/smoke/shell/smoke-footer-density.ts`.
+
+### Applications in the context sidebar
+
+Application pages that otherwise leave the context sidebar empty expose the live
+miniapp catalog as flat icon-and-name navigation rows. Miniapp Settings targets
+keep this same list instead of switching to general Settings navigation. Chat
+retains its conversation list and general Settings retains its section list.
+The sidebar and desktop consume `projectMiniApps`, including platform, audience,
+renderer availability, ordering and extension retirement. Selection follows the
+Router; launch invokes the existing View/Settings host and dismisses a transient
+sidebar through the Shell. Long labels truncate with their full accessible name;
+the list scrolls within the existing context pane and has a real empty state.
+
+The normal Applications entrance now lives at the top of the left context pane
+and toggles its inline catalog without navigating away. The catalog is also
+available above Chat and general Settings context, so it never requires opening
+the wallpaper desktop first. Board is an application contribution; products
+register their own applications through the same extension contract. The global
+right header, floating drawer header and footer do not duplicate this entrance.

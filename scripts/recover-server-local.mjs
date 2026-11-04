@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-export async function recoverLocalServer({ url, stateDirectory, origin = url, jobId, version, buildId, recoveryId, recoveryIdFile } = {}) {
+export async function recoverLocalServer({ url, stateDirectory, origin = url, jobId, version, buildId, recoveryId, recoveryIdFile, targetManifestSha256 } = {}) {
   const address = new URL(url);
   if (address.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(address.hostname) || address.username || address.password)
     throw new Error('Recovery URL must be loopback HTTP');
@@ -21,13 +21,23 @@ export async function recoverLocalServer({ url, stateDirectory, origin = url, jo
   const key = (await readFile(join(stateDirectory, 'admin-key'), 'utf8')).trim();
   cookie = (await post('login', { key })).headers.get('set-cookie').split(';')[0];
   {
-    await post('recover-current', { jobId, version, buildId });
+    await post(targetManifestSha256 ? 'recover-target' : 'recover-current', { jobId, version, buildId,
+      ...(targetManifestSha256 ? { manifestSha256: targetManifestSha256 } : {}) });
     const deadline = Date.now() + 300_000;
     while (Date.now() < deadline) {
       const response = await fetch(endpoint, { headers: { cookie }, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) throw new Error('Recovery observation unavailable');
       const status = await response.json();
       if (status.job?.id !== jobId) throw new Error('Recovery job changed; inspect the original transaction');
+      if (targetManifestSha256) {
+        if (status.job.phase === 'failed') throw new Error('Target recovery failed; original transaction retained');
+        if (status.job.phase === 'completed') {
+          if (status.current.version !== version || status.current.buildId !== buildId)
+            throw new Error('Target recovery identity changed');
+          return { jobId, outcome: 'same-target-completed', recoveryRequired: status.recoveryRequired };
+        }
+        await delay(250); continue;
+      }
       if (status.job.phase === 'failed') {
         if (status.job.recoveryError || status.job.recovery?.outcome !== 'rolled-back') throw new Error('Recovery verification failed; original transaction retained');
         return { jobId, recovery: status.job.recovery, recoveryRequired: status.recoveryRequired };
@@ -39,7 +49,7 @@ export async function recoverLocalServer({ url, stateDirectory, origin = url, jo
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const options = {};
-  const flags = { '--url': 'url', '--state-directory': 'stateDirectory', '--origin': 'origin', '--job-id': 'jobId', '--version': 'version', '--build-id': 'buildId', '--recovery-id-file': 'recoveryIdFile' };
+  const flags = { '--url': 'url', '--state-directory': 'stateDirectory', '--origin': 'origin', '--job-id': 'jobId', '--version': 'version', '--build-id': 'buildId', '--recovery-id-file': 'recoveryIdFile', '--target-manifest-sha256': 'targetManifestSha256' };
   try {
     for (let i = 2; i < process.argv.length; i += 2) {
       if (!flags[process.argv[i]] || !process.argv[i + 1]) throw new Error('Invalid recovery arguments');

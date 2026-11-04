@@ -158,7 +158,9 @@ export class ConnectionLifecycleOwner<T> {
     if (this.state.phase === "disposed") return;
     // Later ordinary close events cannot downgrade an explicit manual block.
     if (this.state.phase === "blocked") return;
-    if (plannedRestart && !manual && this.plannedRestartUntil <= this.now()) this.plannedRestartUntil = this.now() + 30_000;
+    // Cover managed stop/start and readiness budgets. Repeated failures during
+    // this window do not renew it; prolonged outages keep normal backoff.
+    if (plannedRestart && !manual && this.plannedRestartUntil <= this.now()) this.plannedRestartUntil = this.now() + 120_000;
     if (this.state.phase === "backoff" && !manual) return;
     const error = cause instanceof Error ? cause : new Error("Connection is unavailable");
     this.cancelRetry();

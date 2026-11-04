@@ -4,7 +4,7 @@ const { mergeTouchMoves } = require('@opencraft/remote-interaction/touch');
 // A page has one ordered control stream. Only adjacent, not-yet-dispatched
 // pointer positions may replace one another; adjacent wheel deltas accumulate.
 // Gesture edges and editing never merge.
-function createControls(command, getDocument = () => undefined) {
+function createControls(command, getDocument = () => undefined, now = () => performance.now()) {
   const tails = new Map(), moves = new Map(), epochs = new Map();
   const ordered = new Set(['input', 'text', 'ime', 'copy', 'viewport', 'visible', 'zoom', 'close', 'control']);
   const dispatch = message => {
@@ -27,20 +27,29 @@ function createControls(command, getDocument = () => undefined) {
       if (move || mergeWheel) {
         previous.message = wheel ? { ...message, input: { ...message.input, ...deltas } }
           : message.input.type === 'touchMove' ? { ...message, input: mergeTouchMoves(previous.message.input, message.input) } : message;
+        previous.admitted = now();
         return previous.operation;
       }
     }
     // Even unordered navigation is a coalescing boundary.
     moves.delete(page);
     if (!ordered.has(message.method) && message.control === undefined) return command(message);
-    const slot = { message, signature };
+    const slot = { message, signature, admitted: now() };
     const operation = (tails.get(page) ?? Promise.resolve()).then(() => {
       if (epochs.get(page) !== epoch)
         throw Object.assign(new Error('Browser renderer replaced'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
       if (message.document !== undefined && message.document !== getDocument(page))
         throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED', retryable: true });
       if (moves.get(page) === slot) moves.delete(page);
-      return command(slot.message);
+      let current = slot.message;
+      // Include server-side waiting too. The first native down must not date
+      // a buffered gesture at ACK time and put its later samples in the future.
+      if (current.method === 'input' && Number.isFinite(current.input?.time)) {
+        const age = current.input.age ?? 0;
+        if (Number.isFinite(age) && age >= 0)
+          current = { ...current, input: { ...current.input, age: age + Math.max(0, now() - slot.admitted) } };
+      }
+      return command(current);
     });
     slot.operation = operation;
     if (move || wheel) moves.set(page, slot);

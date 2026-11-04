@@ -232,6 +232,89 @@ test("disconnect cancels a held cached history reader while the background Turn 
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("aborted Item hydration includes the active page phase in the terminal diagnostic", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined, event => diagnostics.push(event));
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should reach lazy Item hydration before cancellation");
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.equal(typeof stage?.pageMs, "number", "the terminal event must flush the still-active page timer");
+    assert.ok(Number(stage?.pageMs) > 0);
+  } finally {
+    await adapter.send(JSON.stringify({ id: "unpause-items", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("slow cancellation freezes phase timing before resource metadata completes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-slow-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  let enterResources!: () => void, releaseResources!: () => void;
+  const resourcesEntered = new Promise<void>(resolve => { enterResources = resolve; });
+  const resourcesGate = new Promise<void>(resolve => { releaseResources = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined,
+    event => diagnostics.push(event), async () => {
+      enterResources(); await resourcesGate;
+      return { status: "unavailable", loadAvg1m: null, loadAvg5m: null, loadAvg15m: null,
+        cpuPsi: { someAvg10: null, someAvg60: null, someAvg300: null, fullAvg10: null, fullAvg60: null, fullAvg300: null },
+        ioPsi: { someAvg10: null, someAvg60: null, someAvg300: null, fullAvg10: null, fullAvg60: null, fullAvg300: null },
+        memoryPsi: { someAvg10: null, someAvg60: null, someAvg300: null, fullAvg10: null, fullAvg60: null, fullAvg300: null } };
+    });
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should enter Item hydration before the slow cancellation");
+    await new Promise(resolve => setTimeout(resolve, 5_100));
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    await resourcesEntered;
+    await request("unpause-items", "test/pauseItemReads", { paused: false });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    releaseResources();
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.ok(Number(stage?.pageMs) > 0);
+    assert.ok(Number(stage?.coreMs) > 5_000);
+    assert.ok(Number(stage?.pageMs) <= Number(stage?.coreMs) + 50, `pageMs ${stage?.pageMs} must not be recounted after coreMs ${stage?.coreMs} is finalized`);
+  } finally {
+    releaseResources();
+    await adapter.send(JSON.stringify({ id: "unpause-items-cleanup", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("duplicate history reads share native work and logical unsubscribe retires pending history", async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-history-coalesce-")), frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames);
@@ -387,6 +470,37 @@ test("Codex Host titles a new conversation after its View disconnects, without l
     assert.equal(frames.some(frame => JSON.stringify(frame).includes("title-thread-")), false);
     assert.equal(frames.filter(frame => frame.method === "turn/completed").length, 0);
     assert.equal((await request("auto:list", "thread/list", {}, "catalog-reader")).data.length, 1);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("private title inference never acquires product tools, execution bindings or collaboration callbacks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-title-product-hooks-")), frames: Array<Record<string, unknown>> = [];
+  const prepared: string[] = [], started: string[] = [], wire: any[] = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, true, undefined, async threadId => {
+    prepared.push(threadId);
+    if (threadId.startsWith("title-thread-")) throw new Error("Private inference cannot acquire product capabilities");
+    return null;
+  });
+  (adapter as any).options.collaboration = { command: async () => null, authorize() {}, tool: async () => null,
+    started(threadId: string) { started.push(threadId); assert.ok(!threadId.startsWith("title-thread-")); } };
+  try {
+    await adapter.connect();
+    const stdin = (adapter as any).child.stdin, write = stdin.write.bind(stdin);
+    stdin.write = (chunk: any, ...args: any[]) => { try { wire.push(JSON.parse(String(chunk))); } catch {} return write(chunk, ...args); };
+    await initializeClient(adapter, frames, "writer");
+    await adapter.send(JSON.stringify({ id: "hooks:create", method: "thread/start", params: { cwd: root, testNoServerRequest: true }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const threadId = (await waitFor(frames, frame => frame.id === "hooks:create")).result as any;
+    await adapter.send(JSON.stringify({ id: "hooks:input", method: "turn/start", params: { threadId: threadId.thread.id, input: [{ type: "text", text: "修复自动标题" }] }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await waitFor(frames, frame => frame.method === "thread/name/updated");
+    assert.ok(prepared.includes(threadId.thread.id));
+    assert.equal(prepared.some(id => id.startsWith("title-thread-")), false);
+    assert.equal(started.some(id => id.startsWith("title-thread-")), false);
+    assert.ok(wire.find(m => m.id && m.method === "thread/start" && m.params.threadSource !== "thread_title").params.dynamicTools.length > 0);
+    const privateStart = wire.find(m => m.method === "thread/start" && m.params.threadSource === "thread_title");
+    assert.ok(privateStart); assert.deepEqual(privateStart.params.dynamicTools ?? [], []);
+    const privateTurn = wire.find(m => m.method === "turn/start" && m.params.threadId.startsWith("title-thread-"));
+    assert.ok(privateTurn); assert.equal(privateTurn.params.summary, undefined);
+    assert.equal((adapter as any).hostState.database.prepare("SELECT COUNT(*) AS count FROM execution_leases WHERE thread_id=?").get(privateTurn.params.threadId).count, 0);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
@@ -606,7 +720,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       { version: 1, fork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true },
     );
     assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false });
 
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
@@ -897,7 +1011,7 @@ test("Codex Host queue Steer capability does not depend on a patched native mark
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false },
     );
   } finally {
     await adapter.close();
@@ -944,7 +1058,7 @@ test("older native queue marker does not change Host queue capabilities", async 
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false },
     );
   } finally {
     await adapter.close();
@@ -1812,7 +1926,7 @@ test("Codex provider retry classifies terminal native failures and respects stop
     await adapter.connect(); await initializeClient(adapter, frames, "writer");
     for (const code of ["internalServerError", { responseTooManyFailedAttempts: { httpStatusCode: 502 } }, "unauthorized", "sandboxError", "contextWindowExceeded", "usageLimitExceeded"]) {
       const threadId = (await rpc("thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
-      const before = (await rpc("test/readAcceptedInputs", {})).data.length;
+      const before = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId).length;
       await rpc("turn/start", { threadId, input: [{ type: "text", text: "Original task" }] });
       await rpc("test/completeTurn", { threadId, codexErrorInfo: code });
       // Rate-limit discovery runs inside the per-thread lane; wait for that lane to settle.
@@ -1821,7 +1935,10 @@ test("Codex provider retry classifies terminal native failures and respects stop
       const expected = code === "internalServerError" || typeof code === "object";
       assert.equal(result.recovery?.state === "scheduled", expected);
       if (expected) {
-        await rpc("turn/interrupt", { threadId, turnId: "already-failed" });
+        const stopId = `policy-stop-${++sequence}`;
+        await adapter.send(JSON.stringify({ id: stopId, method: "turn/interrupt", params: { threadId, turnId: "already-failed" }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+        const stopped = await waitFor(frames, frame => frame.id === stopId);
+        assert.equal((stopped.error as any)?.code, -32600, "Native rejects the stale Turn while user Stop still revokes recovery");
         (adapter as any).providerRetry.now = () => Date.now() + 1_000_000;
         await (adapter as any).providerRetry.recover();
         const inputs = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId);
@@ -2021,6 +2138,108 @@ for (const state of ["not-found", "archived", "recovering"] as const)
       assert.equal(JSON.stringify(error).includes("/private/path"), false);
     } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
   });
+
+for (const boundary of ["disconnect", "tools-failed", "duplicate-tools-failed"] as const) test(`unsent preparation at ${boundary} retires only its own pending execution`, { timeout: 10_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-unsent-preflight-")), frames: Array<Record<string, unknown>> = [];
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const preparing = new Promise<void>(resolve => { entered = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => {
+    entered(); await gate;
+    if (boundary !== "disconnect") throw new Error("synthetic tools unavailable Bearer fixture-secret");
+    return null;
+  });
+  const rpc = async (id: string, method: string, params: object, client = "writer") => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const store = (adapter as any).executionLeases;
+    if (boundary === "duplicate-tools-failed") {
+      store.capture(threadId, "cancelled-input", { principal: null, ownership: "unowned" });
+      store.begin(threadId, "cancelled-input");
+    }
+    const sending = adapter.send(JSON.stringify({ id: "unsent", method: "turn/start", params: {
+      threadId, clientUserMessageId: "cancelled-input", input: [{ type: "text", text: "synthetic" }],
+    }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    await Promise.race([preparing, sending.then(() => { throw new Error("start settled before reaching tool preparation"); })]);
+    assert.deepEqual(store.unsettledTargets(threadId), [{ turnId: null, inputId: "cancelled-input" }]);
+    if (boundary === "disconnect") await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "writer" }));
+    release(); await sending;
+    assert.deepEqual(store.unsettledTargets(threadId), boundary === "duplicate-tools-failed" ? [{ turnId: null, inputId: "cancelled-input" }] : []);
+    await initializeClient(adapter, frames, "observer");
+    const accepted = await rpc("native-inputs", "test/readAcceptedInputs", {}, "observer");
+    assert.deepEqual((accepted.result as any).data, []);
+    if (boundary !== "disconnect") {
+      const rejected = await waitFor(frames, frame => frame.id === "unsent");
+      assert.match((rejected.error as any).message, /Session tools/);
+      assert.equal((rejected.error as any).data.submissionOutcome, "rejected");
+      assert.equal((rejected.error as any).data.stage, "resolve-tools");
+      assert.equal((rejected.error as any).data.reason, "preparation-failed");
+      assert.equal(JSON.stringify(rejected).includes("fixture-secret"), false);
+    }
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const method of ["thread/start", "thread/fork"] as const) test(`temporary ${method} sends consecutive turns without durable session tools`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-side-chat-tools-")), frames: Array<Record<string, unknown>> = [];
+  let preparations = 0, reservations = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => { preparations++; throw new Error("durable provider must not run for temporary chats"); },
+    async () => { reservations++; throw new Error("temporary creation must not reserve durable tools"); });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const created = await rpc("temporary", method, { threadId: "parent", cwd: root, ephemeral: true, testNoServerRequest: true });
+    assert.equal(created.error, undefined);
+    const threadId = (created.result as any).thread.id;
+    for (let index = 0; index < 2; index++) {
+      const reply = await rpc(`send-${index}`, "turn/start", { threadId, clientUserMessageId: `side-${index}`, input: [{ type: "text", text: "question" }] });
+      assert.equal(reply.error, undefined); assert.ok((reply.result as any).turn.id);
+      await rpc(`complete-${index}`, "test/completeTurn", { threadId });
+    }
+    assert.equal(preparations, 0); assert.equal(reservations, 0);
+    const counts = (await rpc("counts", "test/readMethodCounts", {})).result as any;
+    assert.equal(counts["turn/start"], 2);
+    // Fork reads the parent's choices; the temporary child must never resume
+    // from disk or retire its runtime to refresh durable tools.
+    assert.equal(counts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    assert.equal(counts["thread/unsubscribe"] ?? 0, 0);
+    const childCounts = (await rpc("child-counts", "test/readMethodCounts", { threadId })).result as any;
+    assert.equal(childCounts["turn/start"], 2);
+    assert.equal(childCounts["thread/resume"] ?? 0, 0);
+    assert.equal(childCounts["thread/unsubscribe"] ?? 0, 0);
+    const parentCounts = (await rpc("parent-counts", "test/readMethodCounts", { threadId: "parent" })).result as any;
+    assert.equal(parentCounts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    const rejected = await rpc("durable-send", "turn/start", { threadId: "durable", input: [{ type: "text", text: "question" }] });
+    assert.equal((rejected.error as any).data.code, "SESSION_TOOLS_UNAVAILABLE"); assert.equal(preparations, 1);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("Codex gateway RPC and owner-internal goal/recovery admission both enforce the latest policy", async () => {
+ const root=await mkdtemp(join(tmpdir(),"codex-model-policy-"));
+ const path=join(root,"policy.sqlite"),store=new ModelPolicyStore(path),frames:Record<string,any>[]=[];
+ const adapter=createRoutingAdapter(root,frames);
+ (adapter as any).options.modelPolicyPath=path;
+ try {
+  await adapter.connect();await initializeClient(adapter,frames,"policy-client");
+  store.write(0,[{engine:"codex",model:"blocked"}],"admin");
+  await adapter.send(JSON.stringify({id:"blocked-turn",method:"turn/start",params:{threadId:"t",model:"blocked",input:[{type:"text",text:"blocked"}]},[LOGICAL_CLIENT_FIELD]:"policy-client"}));
+  const denied=await waitFor(frames,f=>f.id==="blocked-turn");assert.equal((denied.error as any).data.code,"model_usage_restricted");
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"blocked",input:[]}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("thread/goal/set",{threadId:"t",status:"active"}),/Contact|restricted/);
+  await assert.rejects((adapter as any).requestPhysical("turn/start",{threadId:"t",model:"allowed",collaborationMode:{mode:"default",settings:{model:"blocked",reasoning_effort:"high"}},input:[]}),/Contact|restricted/);
+  const queued=(adapter as any).queueStore().add("t","policy-queue",[{type:"text",text:"retained"}]);
+  await assert.rejects((adapter as any).dispatchQueuedStart("t",queued.id),/Contact|restricted/);
+  assert.equal((adapter as any).queueStore().find("t",queued.id).state,"queued");
+  assert.equal((adapter as any).queueStore().find("t",queued.id).pausedReason,"model-restricted");
+ } finally {await adapter.close();store.close();await rm(root,{recursive:true,force:true});}
+});
 
 for (const transient of [true, false]) test(`queued tool-preflight rejection retains known custody (transient=${transient})`, { timeout: 10_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-queue-tools-retry-")), frames: Array<Record<string, unknown>> = [];

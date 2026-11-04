@@ -34,7 +34,7 @@ async function fixture(t:any) {
   await mcp.listen();
   t.after(async()=>{await mcp.close();await broker.close();await service.close();actors.close();await rm(root,{recursive:true,force:true});});
   const child=(threadId:string,ownerActorId=owner.actorId,driverKind='pi'):ThreadRelation=>({threadId,ownerActorId,driverKind,serverId:'server',parentThreadId:'parent',lifecycleOwnerThreadId:'parent',forkedFromId:null,visibility:'hidden',engineHostGeneration:null,nativeSessionId:threadId,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:1,hasDirectUserInput:false,userInputExcerpt:null});
-  return {root,actors,owner,other,created,session,capabilities,child,get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
+  return {root,actors,owner,other,created,session,capabilities,child,execution,get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
     async open(){
       const config=mcp.config(session) as {url:string;http_headers:Record<string,string>},client=new Client({name:'cli-agent',version:'1'});
       try{await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));
@@ -125,5 +125,19 @@ test('real Native MCP discovers the CLI provider without new Core tools or a mod
   assert.equal(reply.isError,false);
   const opened=JSON.parse(reply.content[0].text);assert.equal(opened.context.reference,ref(thread.id));
   assert.deepEqual((await f.run(opened.launcher,'list','--children')).children,[]);
+  assert.equal(f.created.size,0);
+});
+
+
+test('CLI reports a confirmed Host rejection distinctly from an uncertain delivery',async t=>{
+  const f=await fixture(t);
+  const configuration=f.mcp.config(f.session) as {url:string;http_headers:Record<string,string>};
+  for(const known of [true,false]){
+    f.execution.prepare=async()=>{throw Object.assign(new Error('PRIVATE_NATIVE_MESSAGE'),{code:known?403:-32081,...(known?{status:403}:{})});};
+    const response=await fetch(configuration.url.replace(/\/mcp$/, '/thread-cli'),{method:'POST',headers:{...configuration.http_headers,'content-type':'application/json'},
+      body:JSON.stringify({command:'spawn',arguments:{prompt:'No native creation'},idempotencyKey:'reject-'+known})});
+    assert.equal(response.status,known?403:503);
+    assert.deepEqual(await response.json(),{error:known?'orchestration_rejected':'orchestration_outcome_unknown'});
+  }
   assert.equal(f.created.size,0);
 });

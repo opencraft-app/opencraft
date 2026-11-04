@@ -30,6 +30,9 @@ export class ThreadCatalogPublisher {
   observeResult(method: string, params: unknown, result: unknown): void {
     const input = object(params), output = object(result), raw = object(output.thread);
     if (method === "thread/list" && Array.isArray(output.data)) {
+      // Certified pages belong to an immutable directory version. Adding a
+      // provisional row here would make their checkpoint untrue.
+      if (output.catalogSnapshot) return;
       // Native persistence and its discovery index need not become visible together.
       // Retire a committed creation only when the native directory observes it.
       for (const value of output.data) { const id = object(value).id; if (typeof id === "string") this.unindexed.delete(id); }

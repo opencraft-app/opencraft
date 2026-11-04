@@ -287,7 +287,7 @@ export class AccountPoolStore {
     if (!(this.switchThreshold > 0 && this.switchThreshold <= 1)) throw new RangeError("Invalid switch threshold");
     if (!Number.isSafeInteger(this.affinityIdleTtlMs) || this.affinityIdleTtlMs <= 0) throw new RangeError("Invalid affinity idle TTL");
     if (!Number.isSafeInteger(this.maxAffinityBindings) || this.maxAffinityBindings <= 0) throw new RangeError("Invalid affinity binding limit");
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "account-pool-host",
       path: options.databasePath,
       migrations: [
         { version: 1, name: "account-pool", sql: BASELINE },

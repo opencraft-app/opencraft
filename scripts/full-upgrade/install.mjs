@@ -3,6 +3,7 @@ import { constants, existsSync as existsSyncEntry, realpathSync as realpathSyncE
 // Explicit official-installation adapter. This is not an HTTP installation API.
 import { readFile, mkdir, chmod, chown, cp, lstat, realpath, symlink, rename } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { acceptManifest, parseStrictJson, sha256 } from '../full-release/contract.mjs';
 import { verifyRetainedRelease } from '../full-release/retained.mjs';
 import { rootOwned } from './service-config.mjs';

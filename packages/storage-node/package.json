@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
     "./server-legacy": "./src/server/legacy.ts",
-    "./server-repository": "./src/server/repository.ts"
+    "./server-repository": "./src/server/repository.ts",
+    "./server-identity-reader": "./src/server/read-compat.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "0.1.0",

@@ -1,6 +1,6 @@
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import scss from "postcss-scss";
 import selectorParser from "postcss-selector-parser";
@@ -166,12 +166,75 @@ export function inspectHoverHandlers(source, file) {
   }
   visit(ast); return issues;
 }
+// Embedded documents belong to one JavaScript literal/template, never to a
+// regex range across unrelated strings, comments or executable source.
+function embeddedDocuments(source, file) {
+  if (/\.html$/iu.test(file)) return [{ text: source, positions: null }];
+  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true,
+    /\.[jt]sx$/iu.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const documents = [];
+  function literal(node) {
+    const start = node.getStart(ast) + 1;
+    const end = node.end - ([ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle].includes(node.kind) ? 2 : 1);
+    const positions = [];
+    for (let cursor = start; cursor < end;) {
+      const position = cursor;
+      let width = 1;
+      if (source[cursor] === "\\") {
+        const escape = /^\\(?:\r\n|[\n\r\u2028\u2029]|u\{[\da-f]+\}|u[\da-f]{4}|x[\da-f]{2}|[0-7]{1,3}|[\s\S])/iu.exec(source.slice(cursor, end))?.[0];
+        if (escape) {
+          cursor += escape.length;
+          width = /^\\(?:\r\n|[\n\r\u2028\u2029])$/u.test(escape) ? 0 :
+            escape.startsWith("\\u{") && Number.parseInt(escape.slice(3, -1), 16) > 0xffff ? 2 : 1;
+        } else cursor++;
+      } else if (source[cursor] === "\r") {
+        cursor += source[cursor + 1] === "\n" ? 2 : 1;
+      } else cursor++;
+      for (let index = 0; index < width; index++) positions.push(position);
+    }
+    return { text: node.text, positions };
+  }
+  function visit(node) {
+    if (ts.isTemplateExpression(node)) {
+      if (![node.head, ...node.templateSpans.map(span => span.literal)].some(part => /<style(?:\s|>)/iu.test(part.text))) {
+        for (const span of node.templateSpans) visit(span.expression);
+        return;
+      }
+      const document = literal(node.head);
+      for (const span of node.templateSpans) {
+        // A dynamic value cannot supply a hover guard. Keep its source line
+        // mapping, and still inspect static rules on either side of it.
+        const placeholder = "hover-policy-expression";
+        document.text += placeholder;
+        document.positions.push(...Array(placeholder.length).fill(span.expression.getStart(ast)));
+        const tail = literal(span.literal);
+        document.text += tail.text;
+        document.positions.push(...tail.positions);
+        visit(span.expression);
+      }
+      documents.push(document);
+      return;
+    }
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && /<style(?:\s|>)/iu.test(node.text)) documents.push(literal(node));
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  return documents;
+}
 export function inspectHoverSource(source, file) {
   if (/\.(?:css|scss)$/u.test(file)) return inspectHoverStyles(source, file);
   const issues = inspectHoverHandlers(source, file);
-  for (const match of source.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/giu)) {
-    const offset = source.slice(0, match.index + match[0].indexOf(match[1])).split("\n").length - 1;
-    issues.push(...inspectHoverStyles(match[1], file).map(issue => ({ ...issue, line: issue.line + offset })));
+  if (!/<style(?:\s|>)/iu.test(source)) return issues;
+  for (const document of embeddedDocuments(source, file)) {
+    for (const match of document.text.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/giu)) {
+      const start = match.index + match[0].indexOf(">") + 1;
+      for (const issue of inspectHoverStyles(match[1], file)) {
+        const before = match[1].split("\n").slice(0, issue.line - 1).join("\n");
+        const offset = start + before.length + (issue.line > 1 ? 1 : 0);
+        const position = document.positions ? document.positions[offset] : offset;
+        issues.push({ ...issue, line: source.slice(0, position).split("\n").length });
+      }
+    }
   }
   return issues;
 }

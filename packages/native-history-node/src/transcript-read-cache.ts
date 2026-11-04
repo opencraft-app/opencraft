@@ -1,9 +1,13 @@
+import {readLatestContext} from './context-window.js';
+import {unknownContext,type ThreadContextObservation} from '@opencraft/appserver-protocol/collaboration';
+import { ExactReadUnavailable, ExactResultConflict, exactTurnResult, targetWatermark } from './exact-turn-result.js';
+import { unobservedTurnConfiguration, type TurnConfigurationObservation, type ConversationTurnResult } from '@opencraft/appserver-protocol/collaboration';
 import { createHash, randomUUID } from "node:crypto";
 import { access, open, stat } from "node:fs/promises";
 import { TranscriptCacheWorker } from "./transcript-cache-worker.js";
 import { resolveCacheDataDirectory } from "./cache-directory.js";
 import { join } from "node:path";
-import type {DatabaseOutcome} from "@opencraft/sqlite-node";
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { AppServerThread, AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
 import { canonicalRolloutPath, readRolloutIncrement, type NativeRolloutSource } from "./codex-rollout-reader.js";
 
@@ -152,12 +156,14 @@ export class NativeItemReadScheduler {
 
 export interface NativeTranscriptPort {
   nativeHome?: string;
-  resolveSource?(threadId: string, path: string): Promise<NativeRolloutSource>;
+  resolveSource?(threadId: string, path: string, signal?: AbortSignal): Promise<NativeRolloutSource>;
   observeSnapshotSource?(threadId: string): Promise<NativeTranscriptSnapshotSource | null>;
   readThread(threadId: string, signal?: AbortSignal): Promise<AppServerThread>;
   listTurns(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection?: "asc" | "desc"): Promise<NativePage>;
   /** Optional paired native ports: index every Turn without projecting hidden
    * Item bodies, then materialize only the Turns a caller actually requests. */
+  /** A single native header page, without full-Turn or index-building fallback. */
+  listRecentTurnHeaders?(threadId: string, limit: number, signal?: AbortSignal): Promise<NativePage>;
   listTurnHeaders?(threadId: string, cursor: string | null, limit: number, signal?: AbortSignal): Promise<NativePage>;
   listTurnItems?(threadId: string, turnId: string, signal?: AbortSignal, path?: ItemHydrationPath): Promise<AppServerTurn["items"]>;
 }
@@ -218,7 +224,7 @@ export class TranscriptReadCache {
   private readonly itemReadScheduler: NativeItemReadScheduler;
   private readonly measured?: (event: { kind: "hit" | "rebuild" | "increment"; ms: number; nativeBytes: number }) => void;
   private async serialize<T>(id: string, run: () => Promise<T>, signal?: AbortSignal, onQueued?: (ms: number) => void): Promise<T> {
-    if(this.closed)throw new Error("Transcript cache closed");
+    if (this.closed) throw new Error("Transcript cache closed");
     const prior = this.jobs.get(id);
     const queued = performance.now(); let reported = false;
     const report = () => { if (reported) return; reported = true; try { onQueued?.(Math.max(0, performance.now() - queued)); } catch { /* Diagnostics never own read settlement. */ } };
@@ -259,6 +265,189 @@ export class TranscriptReadCache {
     onValidated?.();
     const initialTurnsPage = await this.page(threadId, null, limit, thread, itemsView, "desc", effectiveSignal, observer);
     return { thread: { ...thread, historyTurnCount: initialTurnsPage.totalTurnCount }, initialTurnsPage };
+  }
+  /** A fresh recent observation never opens or rebuilds the disposable index. */
+  async recentHeaders(threadId: string, limit: number, signal?: AbortSignal): Promise<ThreadTurnsListResponse> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5) throw new Error("Invalid recent Turn limit");
+    if (!this.port.listRecentTurnHeaders) throw new NativeItemPaginationUnsupported("Recent native headers are unavailable");
+    if(this.closed)throw new Error("Transcript cache closed");
+    const effectiveSignal = signal ?? AbortSignal.timeout(DEFAULT_TRANSCRIPT_READ_TIMEOUT_MS);
+    const revision = this.revisions.get(threadId) ?? 0;
+    const current = () => {
+      throwIfAborted(effectiveSignal);
+      if (this.closed || revision !== (this.revisions.get(threadId) ?? 0)) throw new Error("Transcript read invalidated");
+    };
+    current();
+    const thread = await awaitWithAbort(this.port.readThread(threadId, effectiveSignal), effectiveSignal);
+    current();
+    if (thread.id !== threadId) throw new Error("Native reader returned another Thread");
+    const page = await awaitWithAbort(this.port.listRecentTurnHeaders(threadId, limit, effectiveSignal), effectiveSignal);
+    current();
+    if (!Array.isArray(page.data) || page.data.length > limit || page.data.some(turn => typeof turn.id !== "string"
+      || turn.itemsView !== "notLoaded" || !Array.isArray(turn.items) || turn.items.length !== 0)
+      || page.nextCursor !== null && typeof page.nextCursor !== "string") throw new NativeItemPaginationUnsupported("Invalid recent native headers");
+    return page;
+  }
+  /** Latest recorded window size/usage; no cold history index or Native execution. */
+  async context(threadId:string,signal?:AbortSignal):Promise<ThreadContextObservation> {
+    const budget=signal?AbortSignal.any([signal,AbortSignal.timeout(9000)]):AbortSignal.timeout(9000);
+    const revision=this.readRevision(threadId);
+    const current=()=>{budget.throwIfAborted();if(this.closed||revision!==this.readRevision(threadId))throw Error('Source changed');};
+    try {return await this.itemReadScheduler.run(threadId,budget,async()=>{
+      current();const thread=await awaitWithAbort(this.port.readThread(threadId,budget),budget);current();
+      if(thread.id!==threadId||typeof thread.path!=='string')return unknownContext('source-unavailable');
+      if(!this.port.resolveSource&&!this.port.nativeHome)return unknownContext('source-unavailable');
+      const source=this.port.resolveSource?await awaitWithAbort(this.port.resolveSource(threadId,thread.path,budget),budget)
+        :{nativeHome:this.port.nativeHome!,key:JSON.stringify(['single',this.port.nativeHome]),validate:async()=>{}};
+      const result=await readLatestContext(thread.path,source,budget);current();return result;
+    });}catch {signal?.throwIfAborted();return unknownContext(budget.aborted?'read-budget':'source-unavailable');}
+  }
+  /** Opt-in metadata only; shares exact target/source authority and never builds an index. */
+  async configuration(threadId: string, turnId: string, signal?: AbortSignal): Promise<TurnConfigurationObservation> {
+    signal?.throwIfAborted();
+    const budget = signal ? AbortSignal.any([signal,AbortSignal.timeout(9000)]) : AbortSignal.timeout(9000);
+    const revision = this.readRevision(threadId), pages = {remaining:20};
+    const current = () => { budget.throwIfAborted(); if(this.closed||revision!==this.readRevision(threadId)) throw new Error('Source invalidated'); };
+    const unknown = () => unobservedTurnConfiguration(turnId);
+    try { return await this.itemReadScheduler.run(threadId,budget,async()=>{
+      current();
+      const before = await this.result(threadId,turnId,false,null,budget,pages); current();
+      if(!before.watermark||pages.remaining<1) return unknown(); // Must remain visible in canonical Native history.
+      const thread = await awaitWithAbort(this.port.readThread(threadId,budget),budget); current();
+      if(thread.id!==threadId || typeof thread.path!=='string') return unknown();
+      const source = this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId,thread.path,budget),budget)
+        : {nativeHome:this.port.nativeHome!,key:JSON.stringify(['single',this.port.nativeHome]),validate:async()=>{}};
+      const path = await awaitWithAbort(canonicalRolloutPath(thread.path,source.nativeHome),budget); current();
+      const sourceStat = await stat(path,{bigint:true}), identity = `${sourceStat.dev}:${sourceStat.ino}`, birth = sourceStat.birthtimeNs;
+      const end = Number(sourceStat.size);
+      // Two bounded passes verify a retained prefix without freezing out unrelated appends.
+      if(end>8*1024*1024) return unknown();
+      let session=false,started=false,bad=false,startAt:number|null=null;
+      let first: {model:string|null;reasoningEffort:string|null;recordedAt:string}|null=null;
+      const field=(p:Record<string,any>,key:string) => {
+        const v=p[key]; if(v==null)return null;
+        if(typeof v!=='string'||!v||v.length>256||/[\s\x00-\x1f]/u.test(v))throw Error('Invalid context field');
+        return v;
+      };
+      const fingerprints:string[]=[];
+      let offset=0;
+      while(offset<end) {
+        current();
+        const batch=await readRolloutIncrement<never>({path,nativeHome:source.nativeHome,source,cursor:offset,identity,
+          end,signal:budget,fingerprint:true,stopOnOversized:true,maxRecords:128,
+          // Unknown/bad record tags cannot be skipped as if the prefix were proven complete.
+          select:head=>!/^\s*\{[^\n]*?"type"\s*:\s*"(?:response_item|event_msg)"/.test(head)
+            || /"type"\s*:\s*"(?:task_started|thread_rolled_back)"/.test(head),
+          retain:(row:any)=>{
+            const p=object(row.payload);
+            if(typeof row.type!=='string') {bad=true;return null;}
+            if(row.type==='session_meta') { if(p.id!==threadId||session)bad=true;session=true; }
+            if(row.type==='compacted'||p.type==='thread_rolled_back')bad=true;
+            if(row.type==='event_msg'&&p.type==='task_started'&&p.turn_id===turnId) { if(started||!session)bad=true;started=true;startAt=Date.parse(row.timestamp);if(!Number.isSafeInteger(startAt)||startAt<0)bad=true; }
+            if(row.type==='turn_context') {
+              if(typeof p.turn_id!=='string')bad=true;
+              if(p.turn_id===turnId) {
+                if(!session||!started)bad=true;
+                const at=Date.parse(row.timestamp);
+                if(typeof row.timestamp!=='string'||!Number.isSafeInteger(at)||at<0||startAt===null||at<startAt) {bad=true;return null;}
+                const value={model:field(p,'model'),reasoningEffort:field(p,'effort'),recordedAt:row.timestamp};
+                if(first&&(first.model!==value.model||first.reasoningEffort!==value.reasoningEffort))bad=true;
+                first??=value; // Equal duplicates retain the first record's time and never fill missing fields.
+              }
+            }
+            return null;
+          },oversized:()=>true});
+        current(); if(batch.missing||batch.cursor===offset) return unknown();
+        fingerprints.push(batch.fingerprint!);offset=batch.cursor;
+      }
+      if(bad||!session||!started||!first)return unknown();
+      // Detect same-inode rewrites as well as epoch/inode replacement. Never return raw bytes.
+      const verificationStamp=await stat(path,{bigint:true});
+      offset=0;let part=0;
+      while(offset<end) {
+        current();const batch=await readRolloutIncrement<never>({path,nativeHome:source.nativeHome,source,cursor:offset,identity,
+          end,signal:budget,fingerprint:true,stopOnOversized:true,select:()=>false,retain:()=>null});
+        if(batch.missing||batch.cursor===offset||batch.fingerprint!==fingerprints[part++])return unknown();offset=batch.cursor;
+      }
+      await awaitWithAbort(source.validate(budget),budget);current();
+      const after=await this.result(threadId,turnId,false,null,budget,pages);current();
+      if(before.watermark!==after.watermark)return unknown();
+      await awaitWithAbort(source.validate(budget),budget);current();
+      const afterStat=await stat(path,{bigint:true});
+      if(`${afterStat.dev}:${afterStat.ino}`!==identity||afterStat.birthtimeNs!==birth
+        ||afterStat.mtimeNs!==verificationStamp.mtimeNs||afterStat.ctimeNs!==verificationStamp.ctimeNs)return unknown();
+      const context=first as {model:string|null;reasoningEffort:string|null;recordedAt:string};
+      return {...unknown(),...context,status:'observed',coverage:'complete-retained-prefix',initiality:'start-boundary-observed',
+        watermark:targetWatermark(threadId,turnId,source.key,`${identity}:${birth}`,JSON.stringify(context))};
+    }); } catch(error) {
+      signal?.throwIfAborted();
+      return unobservedTurnConfiguration(turnId,error instanceof NativeItemPaginationUnsupported?'unsupported'
+        : budget.aborted||error instanceof ExactResultConflict?'unknown':'unavailable');
+    }
+  }
+  /** Bounded source read owned here, without creating/rebuilding a cold history index. */
+  async result(threadId: string, turnId: string, output: boolean, cursor: string | null, signal?: AbortSignal, pages = {remaining:20}): Promise<ConversationTurnResult> {
+    const budget = signal ?? AbortSignal.timeout(9000);
+    const deadline = performance.now() + 9000;
+    const revision = this.readRevision(threadId);
+    const current = () => { if(performance.now() >= deadline) throw new Error('Exact result budget exhausted'); throwIfAborted(budget); if (this.closed || revision !== this.readRevision(threadId)) throw new Error('Result source invalidated'); };
+    const thread = await awaitWithAbort(this.port.readThread(threadId,budget),budget); current();
+    if (thread.id !== threadId || typeof thread.path !== 'string' || !await exists(thread.path)) throw new ExactReadUnavailable('Exact result source unavailable');
+    const source = this.port.resolveSource ? await awaitWithAbort(this.port.resolveSource(threadId,thread.path,budget),budget)
+      : {nativeHome:this.port.nativeHome!,key:JSON.stringify(['single',this.port.nativeHome]),validate:async()=>{}};
+    const path = await awaitWithAbort(canonicalRolloutPath(thread.path,source.nativeHome),budget);
+    const sourceIdentity = async () => {const value=await stat(path,{bigint:true});return `${value.dev}:${value.ino}:${value.birthtimeNs}`;};
+    const identity = await sourceIdentity();
+    let position: string | null = null;
+    const seen = new Set<string>();
+    let exhausted = false;
+    while(pages.remaining-- > 0) {
+      current();
+      let page: NativePage;
+      try {
+        page = await awaitWithAbort(this.port.listTurnHeaders
+          ? this.port.listTurnHeaders(threadId,position,1,budget)
+          : this.port.listTurns(threadId,position,1,budget,'desc'),budget);
+      } catch (error) {
+        if (error instanceof NativeItemPaginationUnsupported || Number(object(error).code) === -32601)
+          throw new NativeItemPaginationUnsupported('Native Turn headers unsupported', {cause:error});
+        throw new ExactReadUnavailable('Native Turn header read unavailable',{cause:error});
+      }
+      current();
+      if (!Array.isArray(page.data) || page.data.length>1 || page.nextCursor!==null && typeof page.nextCursor!=='string') throw new Error('Invalid target page');
+      let turn=page.data.find(value=>value.id===turnId);
+      if(turn) {
+        if(output && ['completed','failed','interrupted'].includes(String(turn.status))) {
+          if(turn.itemsView!=='full') {
+            let full: NativePage;
+            try { full=await awaitWithAbort(this.port.listTurns(threadId,position,1,budget,'desc'),budget); }
+            catch(error) { throw new ExactReadUnavailable('Complete target hydration unavailable',{cause:error}); }
+            current();
+            if(full.data.length!==1 || full.data[0]?.id!==turnId) { position=null;seen.clear();continue; }
+            turn=full.data[0];
+          }
+          if(turn.itemsView!=='full') {
+            if(!this.port.listTurnItems) throw new ExactReadUnavailable('Complete target unavailable');
+            try {
+              const items=await this.itemReadScheduler.run(threadId,budget,()=>awaitWithAbort(this.port.listTurnItems!(threadId,turnId,budget,'cache-page'),budget));
+              turn={...turn,items,itemsView:'full'};
+            } catch(error) { throw new ExactReadUnavailable('Complete target hydration unavailable',{cause:error}); }
+          }
+          if(!Array.isArray(turn.items)) throw new Error('Incomplete target');
+        }
+        await awaitWithAbort(source.validate(budget),budget);current();
+        if(await sourceIdentity()!==identity) throw new ExactResultConflict('Source replaced');
+        const hash=createHash('sha256').update(JSON.stringify(turn)).digest('hex');
+        const result = exactTurnResult(turnId,turn,targetWatermark(threadId,turnId,source.key,identity,hash),output,cursor);
+        current();return result;
+      }
+      if(page.nextCursor===null){exhausted=true;break;}
+      if(seen.has(page.nextCursor))throw new Error('Repeated native cursor');
+      seen.add(page.nextCursor);position=page.nextCursor;
+    }
+    await awaitWithAbort(source.validate(budget),budget);current();
+    if (cursor && !exhausted) throw new Error('Target not located within the bounded source window');
+    return exactTurnResult(turnId,undefined,null,output,cursor);
   }
   async page(threadId: string, cursor: string | null, limit = 10, metadata?: AppServerThread, itemsView: "full" | "notLoaded" | "presentation" = "full", sortDirection: "asc" | "desc" = "desc", signal?: AbortSignal, observer?: HistoryReadObserver, detailItemId?: string): Promise<ThreadTurnsListResponse> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return Promise.reject(new Error("Invalid transcript page size"));
@@ -304,7 +493,10 @@ export class TranscriptReadCache {
         observeStart(observer, "page");
         try {
         if (cursor?.startsWith("transcript:") || cursor?.startsWith("transcript-asc:")) throw new InvalidTranscriptCursor();
-        let page = await awaitWithAbort(this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
+        // A header consumer must not hydrate an entire unfinished Turn first.
+        let page = await awaitWithAbort(itemsView === "notLoaded" && sortDirection === "desc" && this.port.listTurnHeaders
+          ? this.port.listTurnHeaders(threadId, cursor, limit, effectiveSignal)
+          : this.port.listTurns(threadId, cursor, limit, effectiveSignal, sortDirection), effectiveSignal);
         if (itemsView !== "notLoaded" && this.port.listTurnItems) {
           const missing = page.data.filter(turn => turn.itemsView === "notLoaded");
           if (missing.length) {
@@ -523,7 +715,10 @@ export class TranscriptReadCache {
   close(): Promise<void> {
     if(this.closing)return this.closing;
     this.closed=true;
-    return this.closing=(async()=>{await Promise.allSettled([...this.jobs.values()]);await this.storage.close();})();
+    return this.closing=(async()=>{
+      await Promise.allSettled([...this.jobs.values()]);
+      await this.storage.close();
+    })();
   }
 }
 class InvalidTranscriptCursor extends Error { constructor(){super("Transcript page expired; reload history");} }

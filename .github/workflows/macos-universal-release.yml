@@ -50,11 +50,18 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run test:identity
       - run: npm run build:electron:release
+      - name: Require the verified native Electron fork
+        env:
+          OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64 || vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
+        run: |
+          test -n "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64"
+          test -f "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64/opencraft-electron-desktop-artifact.json"
       - name: Assemble unsigned arm64 app
         working-directory: apps/workbench-electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: ../../node_modules/.bin/electron-builder --mac dir --arm64 --publish never --config.mac.identity=null --config.directories.output=release/ci-arm64
+          OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64 || vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
+        run: node ../../scripts/package-electron-desktop.mjs --mac dir --arm64 --publish never --config.mac.identity=null --config.directories.output=release/ci-arm64
       - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-arm64/mac-arm64/OpenCraft.app OpenCraft-arm64-app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -76,11 +83,18 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run test:identity
       - run: npm run build:electron:release
+      - name: Require the verified native Electron fork
+        env:
+          OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64 || vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
+        run: |
+          test -n "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64"
+          test -f "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64/opencraft-electron-desktop-artifact.json"
       - name: Assemble unsigned x64 app
         working-directory: apps/workbench-electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: ../../node_modules/.bin/electron-builder --mac dir --x64 --publish never --config.mac.identity=null --config.directories.output=release/ci-x64
+          OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64 || vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
+        run: node ../../scripts/package-electron-desktop.mjs --mac dir --x64 --publish never --config.mac.identity=null --config.directories.output=release/ci-x64
       - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-x64/mac/OpenCraft.app OpenCraft-x64-app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

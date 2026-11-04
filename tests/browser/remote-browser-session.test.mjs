@@ -4,7 +4,9 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
@@ -53,6 +55,46 @@ async function fixture() {
   };
 }
 
+async function savedState(f) {
+  await f.service.persistence;
+  const db=new DatabaseSync(join(f.directory,'remote-browser/resources.sqlite'),{readOnly:true});
+  try{return {pages:db.prepare("SELECT value FROM resource_records WHERE collection='sessions' AND value IS NOT NULL").all().map(r=>JSON.parse(r.value))};}finally{db.close();}
+}
+
+test('discard atomically removes logical recovery records, including a tab that never acquired a native page', async () => {
+  const f = await fixture();
+  try {
+    const client = await f.connect('owner-a'), peer = await f.connect('owner-b');
+    const state = await client.call('records'), other = await peer.call('records');
+    const lease = 'browser-' + randomUUID();
+    const values = [
+      ['pages', 'page', { id: 'page', ownerId: 'draft', entries: [], index: -1 }],
+      ['tabs', 'tab', { id: 'tab', pageId: 'page', ownerId: 'draft', createdAt: 1 }],
+      ['storage', 'page', lease],
+    ];
+    for (const [collection, id, value] of values) {
+      await client.call('records', { scope: state.scope, collection, id, value, expectedRevision: 0, mutationId: randomUUID() });
+      await peer.call('records', { scope: other.scope, collection, id, value, expectedRevision: 0, mutationId: randomUUID() });
+    }
+    await client.call('discard', { lease });
+    for (const [collection, id, value] of values) {
+      const row = await client.call('records', { scope: state.scope, action: 'read', collection, id });
+      assert.equal(row.value, null, `${collection} must not restore a retired tab`);
+      await assert.rejects(client.call('records', { scope: state.scope, collection, id, value,
+        expectedRevision: row.revision, mutationId: randomUUID() }), { code: 'SESSION_CLOSED' });
+      await assert.rejects(client.call('records', { scope: state.scope, collection, id, value,
+        expectedRevision: 1, mutationId: randomUUID() }), { code: 'SESSION_CLOSED' });
+      assert.notEqual((await peer.call('records', { scope: other.scope, action: 'read', collection, id })).value, null);
+    }
+    const bootstrap = await client.call('records');
+    for (const collection of ['pages', 'tabs', 'storage']) assert.deepEqual(bootstrap.records[collection], []);
+    await f.restart();
+    const stale = await f.connect('owner-a');
+    await assert.rejects(stale.call('open', { lease, multiView: true }), { code: 'SESSION_CLOSED' });
+    assert.equal(f.service.physical.size, 0);
+  } finally { await f.close(); }
+});
+
 test('detach keeps the same live page; restart restores URL/config while explicit close retires it', async () => {
   const f = await fixture();
   try {
@@ -74,7 +116,7 @@ test('detach keeps the same live page; restart restores URL/config while explici
     assert.equal(restored.width, 430); assert.equal(restored.deviceProfile, 'iphone');
     await third.call('close'); await third.detach();
     assert.equal(f.service.pages.size, 0);
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8')).pages, []);
+    assert.deepEqual((await savedState(f)).pages, []);
     assert.equal((await stat(join(f.directory, 'remote-browser/tabs.json'))).mode & 0o777, 0o600);
   } finally { await f.close(); }
 });
@@ -104,7 +146,7 @@ test('metadata survives restart, is owner scoped and rejects stale/unauthorized 
     assert.equal((await a.call('state', mutation)).revision, 1);
     assert.deepEqual((await b.call('state')).values, {});
     await assert.rejects(b.call('state', {...mutation,mutationId:randomUUID()}), {code:'STATE_CONFLICT'});
-    await assert.rejects(a.call('state', { ...mutation, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(a.call('state', { ...mutation, value: '["different-tab"]', mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
     await assert.rejects(a.call('state', { ...mutation, key: '../secret', expectedRevision: 1 }), /Invalid browser metadata/);
     await a.detach(); await b.detach(); await f.restart();
     const resumed = await f.connect('owner-a');
@@ -228,17 +270,17 @@ test('blank bootstrap checkpoints reopen without navigating an unsupported exter
 test('legacy about:blank recovery records migrate on read without clearing tab identities', async () => {
   const f = await fixture();
   try {
-    const lease = randomUUID(), first = await f.connect('owner-a');
-    await first.call('open', { lease }); await first.detach(); await f.restart();
+    const lease=randomUUID(),key=JSON.stringify(['owner-a',lease]);
+    await mkdir(join(f.directory,'remote-browser'),{recursive:true});
     const path = join(f.directory, 'remote-browser/tabs.json');
-    const saved = JSON.parse(await readFile(path, 'utf8')); saved.pages[0].url = 'about:blank';
+    const saved={schemaVersion:1,pages:[{id:createHash('sha256').update(key).digest('hex'),key,ownerId:'owner-a',url:'about:blank',zoom:100,viewport:{width:1280,height:720}}],states:[],retired:[]};
     await writeFile(path, JSON.stringify(saved));
     const second = await f.connect('owner-a');
     const restored = await second.call('open', { lease });
     assert.equal(restored.restored, true); assert.equal(restored.navigation.url, 'about:blank');
     assert.equal(f.service.pages.size, 1); assert.equal([...f.service.pages.values()][0].url, null);
     assert.equal(f.service.commands.filter(c => c.method === 'navigate').length, 0);
-    assert.equal(JSON.parse(await readFile(path, 'utf8')).pages[0].id, saved.pages[0].id);
+    assert.equal((await savedState(f)).pages[0].id, saved.pages[0].id);
     await assert.rejects(second.call('navigate', { url: 'file:///tmp/private' }), /Unsupported browser URL/);
     await second.call('navigate', { url: 'https://example.test/recovered' }); await second.detach();
   } finally { await f.close(); }
@@ -259,7 +301,7 @@ test('recovery keeps the saved remote target before navigation commits, then fol
     assert.equal(restored.navigation.url, 'https://example.test/remote-authority');
     assert.equal(restored.navigation.isLoading, true);
     await f.service.persistence;
-    let saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    let saved = (await savedState(f));
     assert.equal(saved.pages[0].url, 'https://example.test/remote-authority');
     const record = [...f.service.pages.values()][0];
     f.service.receive({ type: 'navigation', page: record.id, state: { url: 'https://example.test/redirected', isLoading: false } });
@@ -280,7 +322,7 @@ test('accepted close completes after the viewer disconnects before native acknow
     await new Promise(resolve=>setImmediate(resolve)); await f.service.persistence;
     assert.equal(f.service.physical.size, 0, 'native page destroyed');
     assert.equal(f.service.pages.size, 0, 'closed page must stop occupying quota after detach');
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory,'remote-browser/tabs.json'),'utf8')).pages,[]);
+    assert.deepEqual((await savedState(f)).pages,[]);
     await f.restart(); const next = await f.connect('owner');
     await assert.rejects(next.call('open',{lease}), /closed/);
     assert.equal((await next.call('open',{lease:randomUUID()})).restored,false); await next.call('close'); await next.detach();
@@ -298,7 +340,7 @@ test('discard waits for an in-flight create and cannot leave an orphan native pa
     const discarding=control.call('discard',{lease});await new Promise(resolve=>setTimeout(resolve,15));finish();await discarding;await opening;
     await f.service.persistence;
     assert.equal(f.service.pages.size,0);assert.equal(f.service.physical.size,0,'created native page must be retired before discard acknowledges');
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory,'remote-browser/tabs.json'),'utf8')).pages,[]);
+    assert.deepEqual((await savedState(f)).pages,[]);
     await first.detach();await control.detach();
   }finally{finish?.();await f.close()}
 });
@@ -348,14 +390,14 @@ test('failed native destruction remains durably closing and resumes after a serv
     const request = f.service.request.bind(f.service);
     f.service.request = async (id, method, input) => { if (method === 'close') throw new Error('temporary native failure'); return request(id, method, input); };
     await assert.rejects(viewer.call('close'), /temporary/);
-    const saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const saved = (await savedState(f));
     assert.equal(saved.pages[0].closing, true);
     await viewer.detach();
     const reconnect = await f.connect('owner'); await assert.rejects(reconnect.call('open', { lease }), /closed/);
     await reconnect.detach(); await viewer.detach(); await f.restart();
     const state = await f.connect('owner'); await state.call('state');
     await until(() => f.service.pages.size === 0); await f.service.persistence;
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8')).pages, []);
+    assert.deepEqual((await savedState(f)).pages, []);
     await state.detach();
   } finally { await f.close(); }
 });
@@ -622,10 +664,10 @@ test('committed catalog survives failed create without phantom live occupancy or
     const starting = await a.call('catalog');
     assert.equal(starting.sessions[0].runtime, 'starting'); assert.equal(starting.sessions[0].link, null);
     await b.call('open', { lease: randomUUID() });
-    const before = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const before = (await savedState(f));
     assert.equal(before.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'starting');
     finish(); assert.match((await failed).message, /initialization failed/);
-    const committed = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const committed = (await savedState(f));
     assert.equal(committed.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'absent');
     assert.equal((await a.call('catalog')).capacity.accountUsed, 0);
     assert.equal((await b.call('catalog')).sessions.length, 1, 'account isolation');
@@ -655,6 +697,49 @@ test('missing committed metadata cannot create native pages; per-key CAS and ret
   } finally { await f.close(); }
 });
 
+test('shared viewers acknowledge identical stale navigation without overwriting peers or losing no-op receipts', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.connect('owner'), b = await f.connect('owner'), outsider = await f.connect('other');
+    const { scope } = await a.call('state');
+    const first = { scope, key: 'pages', value: '["next-document"]', expectedKeyRevision: 0, mutationId: randomUUID() };
+    const accepted = await a.call('state', first);
+    const duplicate = { ...first, mutationId: randomUUID() };
+    assert.deepEqual(await b.call('state', duplicate), accepted);
+    const current = await b.call('state');
+    assert.equal(current.revision, 1); assert.equal(current.keyRevisions.pages, 1);
+    assert.equal(current.values.pages, first.value, 'no-op cannot replace the accepted snapshot');
+    assert.equal(current.receipts.length, 2, 'both independent unknown outcomes remain recoverable');
+    const newer = { ...first, value: '["newer-document"]', expectedKeyRevision: 1, mutationId: randomUUID() };
+    await a.call('state', newer);
+    assert.deepEqual(await b.call('state', duplicate), accepted, 'lost convergence ACK cannot replay the old value');
+    assert.equal((await a.call('state')).values.pages, newer.value);
+    await assert.rejects(b.call('state', { ...duplicate, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(b.call('state', { ...duplicate, value: newer.value, expectedKeyRevision: 9, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(b.call('state', { ...duplicate, value: newer.value, expectedKeyRevision: -1, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(b.call('state', { ...duplicate, value: newer.value, expectedKeyRevision: null, expectedRevision: 0, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(outsider.call('state', { ...newer, mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await a.detach(); await b.detach(); await outsider.detach(); await f.restart();
+    const resumed = await f.connect('owner');
+    assert.deepEqual(await resumed.call('state', duplicate), accepted);
+    assert.equal((await resumed.call('state')).values.pages, newer.value);
+    await resumed.detach();
+  } finally { await f.close(); }
+});
+
+test('legacy aggregate CAS may converge only on an exact current value', async () => {
+  const f = await fixture();
+  try {
+    const c = await f.connect('owner'), { scope } = await c.call('state');
+    const first = { scope, key: 'bindings', value: '[]', expectedRevision: 0, mutationId: randomUUID() };
+    const result = await c.call('state', first);
+    assert.deepEqual(await c.call('state', { ...first, mutationId: randomUUID() }), result);
+    await assert.rejects(c.call('state', { ...first, value: '["stale"]', mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await assert.rejects(c.call('state', { ...first, expectedRevision: '0', mutationId: randomUUID() }), { code: 'STATE_CONFLICT' });
+    await c.detach();
+  } finally { await f.close(); }
+});
+
 test('unknown create keeps its slot until a positive native snapshot, without replaying create', async () => {
   const f = await fixture();
   try {
@@ -673,13 +758,13 @@ test('unknown create keeps its slot until a positive native snapshot, without re
   } finally { await f.close(); }
 });
 
-test('failed file draft and rejected physical epoch never leak into a later committed snapshot', async () => {
+test('failed SQLite transaction and rejected physical epoch never leak into a later committed snapshot', async () => {
   const f = await fixture();
   try {
     await f.service.load();
-    await assert.rejects(f.service.commit(draft => { draft.pages.push({ id: 'uncommitted' }); throw Error('Abort draft'); }), /Abort draft/);
+    await assert.rejects(f.service.commit(draft => { draft.saveSession({ id:'uncommitted',ownerId:'fixture',key:JSON.stringify(['fixture','aborted']) }); throw Error('Abort draft'); }), /Abort draft/);
     const c = await f.connect('owner'); await c.call('open', { lease: randomUUID() });
-    const saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const saved = (await savedState(f));
     assert.equal(saved.pages.length, 1); assert.notEqual(saved.pages[0].id, 'uncommitted');
     const page = [...f.service.pages.values()][0], epoch = page.runtimeEpoch ?? 0;
     f.service.resetVisibility(page); await f.service.runtimeState(page, 'unknown');
@@ -701,4 +786,87 @@ test('complete metadata registers a dormant logical session in the same commit w
     assert.equal(catalog.sessions[0].link.pageId, 'page-a'); assert.equal(f.service.commands.length, 0);
     await c.detach();
   } finally { await f.close(); }
+});
+
+for (const kind of ['live', 'starting', 'unknown', undefined]) {
+  test(`uncertain residency reconciles a nonlive page with durable ${kind ?? 'legacy'} state before recovery`, async () => {
+    const f = await fixture();
+    try {
+      const lease = randomUUID(), a = await f.connect('owner'); await a.call('open', { lease });
+      await a.call('navigate', { url: 'https://example.test/unsaved' }); await a.detach();
+      const page = [...f.service.pages.values()][0], memory = f.service.physical.get(page.id).memory;
+      f.service.resetVisibility(page); page.live = false;
+      await f.service.commit(draft => { const record=draft.session(page.key);record.runtime={...record.runtime,kind};draft.saveSession(record); });
+      const before = f.service.commands.length, b = await f.connect('owner');
+      const reply = await b.call('open', { lease, multiView: true, initialUrl: 'https://example.test/stale-client' });
+      assert.equal(reply.resumed, true); assert.equal(reply.restored, false); assert.equal(reply.memory, memory);
+      const commands = f.service.commands.slice(before);
+      assert.equal(commands[0].method, 'snapshot'); assert.equal(commands.some(c => ['create', 'navigate', 'close'].includes(c.method)), false);
+      await b.detach();
+    } finally { await f.close(); }
+  });
+}
+
+test('confirmed absent residency retains create and saved-URL recovery without a speculative snapshot', async () => {
+  const f = await fixture();
+  try {
+    const lease = randomUUID(), a = await f.connect('owner'); await a.call('open', { lease });
+    await a.call('navigate', { url: 'https://example.test/recover' }); await a.detach();
+    const page = [...f.service.pages.values()][0]; f.service.resetVisibility(page); page.live = false;
+    f.service.physical.delete(page.id); await f.service.runtimeState(page, 'absent');
+    const before = f.service.commands.length, b = await f.connect('owner'), reply = await b.call('open', { lease, multiView: true });
+    assert.equal(reply.resumed, false); assert.equal(reply.restored, true); assert.equal(reply.navigation.url, 'https://example.test/recover');
+    assert.equal(f.service.commands[before].method, 'create'); await b.detach();
+  } finally { await f.close(); }
+});
+
+for (const negative of [false, true]) {
+  test(`uncertain residency rejects a late ${negative ? 'negative' : 'positive'} snapshot after page retirement`, async () => {
+    const f = await fixture(); let release;
+    try {
+      const lease = randomUUID(), a = await f.connect('owner'); await a.call('open', { lease }); await a.detach();
+      const page = [...f.service.pages.values()][0], original = f.service.physical.get(page.id);
+      page.document = original.document = 'original-document'; f.service.resetVisibility(page); page.live = false;
+      await f.service.runtimeState(page, 'unknown');
+      const request = f.service.request.bind(f.service); let enter, first = true;
+      const entered = new Promise(resolve => { enter = resolve; }), gate = new Promise(resolve => { release = resolve; });
+      f.service.request = async (...args) => {
+        if (args[1] === 'snapshot' && first) {
+          first = false; const value = await request(...args); enter(); await gate;
+          if (negative) throw new Error('Browser page closed'); return value;
+        }
+        return request(...args);
+      };
+      const before = f.service.commands.length, b = await f.connect('owner'), opening = b.call('open', { lease, multiView: true });
+      void opening.catch(() => {}); await entered; f.service.resetVisibility(page);
+      const replacement = { ...original, document: 'replacement-document', memory: randomUUID() };
+      f.service.physical.set(page.id, replacement); release();
+      await assert.rejects(opening, error => error.code === 'BROWSER_UNAVAILABLE');
+      assert.equal(page.live, false); assert.equal(f.service.physical.get(page.id), replacement);
+      assert.equal(f.service.commands.slice(before).some(c => ['close', 'create', 'navigate'].includes(c.method)), false);
+      await b.detach();
+    } finally { release?.(); await f.close(); }
+  });
+}
+
+test('uncertain residency cannot overwrite a newer document observation with an older snapshot', async () => {
+  const f = await fixture(); let release;
+  try {
+    const lease = randomUUID(), a = await f.connect('owner'); await a.call('open', { lease }); await a.detach();
+    const page = [...f.service.pages.values()][0], physical = f.service.physical.get(page.id);
+    page.document = physical.document = 'original-document'; f.service.resetVisibility(page); page.live = false;
+    await f.service.runtimeState(page, 'unknown');
+    const request = f.service.request.bind(f.service); let enter, first = true;
+    const entered = new Promise(resolve => { enter = resolve; }), gate = new Promise(resolve => { release = resolve; });
+    f.service.request = async (...args) => {
+      const value = await request(...args);
+      if (args[1] === 'snapshot' && first) { first = false; const old = structuredClone(value); enter(); await gate; return old; }
+      return value;
+    };
+    const b = await f.connect('owner'), opening = b.call('open', { lease, multiView: true }); void opening.catch(() => {});
+    await entered; page.document = physical.document = 'newer-document'; release();
+    await assert.rejects(opening, error => error.code === 'BROWSER_UNAVAILABLE'); assert.equal(page.document, 'newer-document'); assert.equal(page.live, false);
+    const resumed = await b.call('open', { lease, multiView: true }); assert.equal(resumed.document, 'newer-document'); assert.equal(resumed.resumed, true);
+    await b.detach();
+  } finally { release?.(); await f.close(); }
 });

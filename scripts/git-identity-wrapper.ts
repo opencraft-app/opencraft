@@ -1,3 +1,5 @@
+import { GIT_EXECUTION_ID } from './git-execution-context.js';
+import { retryGitIdentity as retry } from './git-identity-retry.js';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn, execFile } from 'node:child_process';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -102,15 +104,6 @@ async function privateGitHome(env: NodeJS.ProcessEnv): Promise<() => Promise<voi
   } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
 }
 const preserveAuthor = (command: string, tail: string[]) => ['rebase', 'cherry-pick', 'am'].includes(command) || (command === 'commit' && tail.some(arg => ['--amend', '-c', '-C', '--reuse-message', '--reedit-message'].includes(arg) || /^--(?:reuse|reedit)-message=/u.test(arg))) || (command === 'pull' && tail.some(a => a.startsWith('--rebase')));
-async function retry(socket: string, request: unknown) {
-  let lastStatus = 'unavailable';
-  for (const delay of [0, 100, 300, 700]) {
-    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-    try { const answer = await queryGitIdentityBroker(socket, request); lastStatus = answer.status; if (!['unavailable', 'expired'].includes(answer.status)) return answer; }
-    catch { /* Retry lookup only; never replay Git. */ }
-  }
-  throw new Error(`Git identity ${lastStatus === 'expired' ? 'execution lease expired' : 'broker unavailable'}; refusing server-account fallback`);
-}
 async function credentialHelper(socket: string, sessionId: string, action: string) {
   if (action !== 'get') return 0; // Never persist Git's store/erase messages.
   let input = ''; for await (const chunk of process.stdin) { input += chunk; if (input.length > 16_384) return 1; }
@@ -197,7 +190,7 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
   // No remote/profile means no safe identity guess. Confirm unconfigured before retaining legacy behavior.
   const cloneConflict = command === 'clone' && conflicts(tail);
   const candidates = command === 'submodule' || cloneConflict || !managedHosts.length ? supported : managedHosts;
-  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host, operation: command }) })));
+  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host, operation: command, ...(process.env[GIT_EXECUTION_ID] ? { executionId: process.env[GIT_EXECUTION_ID] } : {}) }) })));
   const sessions = bindings.filter(binding => binding.reply.status === 'configured');
   let releaseHome: (() => Promise<void>) | undefined;
   try {
@@ -227,6 +220,7 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     const env: NodeJS.ProcessEnv = { ...withoutTrace(process.env), OPENCRAFT_GIT_COMMAND_SESSION: reply.sessionId,
       GIT_COMMITTER_NAME: reply.identity.name, GIT_COMMITTER_EMAIL: reply.identity.email, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false' };
     env.GIT_TRACE_REDACT = '1';
+    if (typeof reply.executionId === 'string') env[GIT_EXECUTION_ID] = reply.executionId;
     if (!serverRead) {
       releaseHome = await privateGitHome(env);
       env.GIT_SSH_COMMAND = '/bin/false'; env.GIT_SSH = '/bin/false';

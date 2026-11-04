@@ -228,3 +228,25 @@ test('ordinary fence preserves an approved negative policy without retaining old
   assert.deepEqual(owner.hostColdUnavailable(),policy,'already approved negative responsibility remains available after fence');
  }finally{await f.close();}
 });
+
+for (const drift of [false, true]) test(`host recovery accepts fresh configuration after ordinary generation changes; drift=${drift}`,async()=>{
+ const {f,native,raw}=await hostFixture();try{
+  const historicalConfiguration=raw.configuration;
+  f.receipt.configurationSha256="c".repeat(64);await f.save();
+  const before=f.registry.coldSnapshot(),owner=f.open();
+  if(drift){
+   await assert.rejects(owner.importMaintenance("d".repeat(64),async()=>native),/configuration/);
+   assert.deepEqual(f.registry.coldSnapshot(),before);return;
+  }
+  await owner.importMaintenance(f.receipt.configurationSha256,async()=>native);
+  const archive=f.registry.metadata(`router-history:${owner.snapshot().maintenanceSeal}`)as any;
+  assert.equal(archive.receipt.sourceHandoff.configuration,historicalConfiguration);
+  assert.equal(archive.receipt.configurationSha256,f.receipt.configurationSha256);
+  assert.deepEqual(owner.snapshot().pending,raw.pending);
+  const input={operatorLease,expectedOwner:owner.owner,expectedEpoch:owner.snapshot().epoch,operationId:f.receipt.operationId,fence:f.receipt.fence,historicalUnknownSha256:owner.snapshot().historicalUnknownSha256};
+  await assert.rejects(owner.coldReady(input,"d".repeat(64),async()=>native),/configuration/);
+  const ready=await owner.coldReady(input,f.receipt.configurationSha256,async()=>native);
+  await owner.resume({...input,identity:ready.identity},f.receipt.configurationSha256,async()=>native);
+  assert(owner.isOpen());assert.deepEqual(owner.snapshot().pending,raw.pending);
+ }finally{await f.close();}
+});

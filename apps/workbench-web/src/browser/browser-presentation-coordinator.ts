@@ -74,11 +74,16 @@ export class BrowserPresentationCoordinator {
       if (!page) throw new Error("Browser page is closed");
       const host = this.manager.getWebview(page.ownerId, pageId, page.navigation.currentUrl ?? "") as OpenCraftPresentationHost;
       const count = this.useCounts.get(pageId) ?? 0;
-    if (count > 0) throw new Error("Browser page is busy with another automation operation");
+      if (count > 0) throw new Error("Browser page is busy with another automation operation");
       this.useCounts.set(pageId, 1);
       this.manager.setBrowserUseActive(page.ownerId, pageId, true);
-      this.manager.setBrowserUseViewportSize(page.ownerId, pageId, { width: 1280, height: 800 });
-      host.setAutomationActive(true);
+      const localInput = surfaces.inputAuthority !== 'server';
+      // Resource residency is not an input grant. Remote peers already arbitrate
+      // human/Agent input and viewport changes using server-issued control tokens.
+      if (localInput) {
+        this.manager.setBrowserUseViewportSize(page.ownerId, pageId, { width: 1280, height: 800 });
+        host.setAutomationActive(true);
+      }
       let released = false;
       return () => {
         if (released) return;
@@ -86,7 +91,7 @@ export class BrowserPresentationCoordinator {
         this.useCounts.delete(pageId);
         this.manager.setBrowserUseActive(page.ownerId, pageId, false);
         this.manager.releaseBrowserUseTab(page.ownerId, pageId);
-        host.setAutomationActive(false);
+        if (localInput) host.setAutomationActive(false);
       };
     });
     this.removeCloseListener = surfaces.onClose?.(pageId => {

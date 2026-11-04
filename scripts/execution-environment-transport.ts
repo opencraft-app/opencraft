@@ -27,6 +27,9 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
       for (const listener of this.listeners) listener(JSON.stringify({ jsonrpc: '2.0', method, params, [LOGICAL_CLIENT_FIELD]: watcher.clientId }));
     });
   }
+  watchConversation(threadId: string, clientId: string, current: () => boolean): () => void {
+    return this.inner?.watchConversation?.(threadId, clientId, current) ?? (() => {});
+  }
   get status() { return this.inner.status; }
   connect(signal?: AbortSignal) { return this.inner.connect(signal); }
   close() { this.pending.clear(); this.watched.clear(); this.unsubscribeProcesses(); this.listeners.clear(); return this.inner.close(); }

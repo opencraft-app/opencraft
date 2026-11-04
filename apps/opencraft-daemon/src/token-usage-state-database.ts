@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_TOKEN_USAGE } from "./token-usage-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_RUNTIME } from "./token-usage-runtime-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_COUNTERS } from "./token-usage-counter-schema.js";
@@ -39,8 +39,8 @@ export class TokenUsageStateDatabase {
   readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(directory: string, legacyPath?: string) {
-    const managed = openManagedDatabase({ path: join(directory, "token-usage.sqlite"),
-      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX + TOKEN_USAGE_RECENCY_INDEX) });
+    const managed = openManagedDatabase({ schemaId: "token-usage-state-database", path: join(directory, "token-usage.sqlite"),
+      legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS });
     this.database = managed.database;
     this.outcome = managed.outcome;
     try { if (legacyPath) this.importLegacy(legacyPath); }

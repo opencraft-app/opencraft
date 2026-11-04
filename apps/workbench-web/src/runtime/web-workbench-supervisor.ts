@@ -535,6 +535,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         const { createHeadlessServerExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessServerExtension({
           requestHost: requestSettingsHost,
+          subscribeRecoveryHint: (hostId, listener) => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false
+            ? remoteAppHost! : headlessAppHost).subscribeRecoveryHint(listener),
           createTransport: hostId => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false ? remoteAppHost! : headlessAppHost).createTransport(hostId),
           workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
           sshServers: sshManagement!.getSnapshot().available !== false ? [] : sshServers,
@@ -703,6 +705,11 @@ export async function createWebWorkbenchApplicationSupervisor(
     await environmentDirectory.refresh().catch(() => undefined);
   }
   const sharedDisposalSteps: readonly (() => void | Promise<void>)[] = [
+    // Application teardown is not logout. Retire account observers before
+    // extensions withdraw their contributions, preserving accepted originals.
+    () => localClientScope?.dispose(),
+    stopBotDraftScope,
+    stopClientResourceScope,
     () => { stopDesktopServers?.(); hostProfiles.close(); },
     () => queryClient.clear(),
     () => extensionManager.dispose(),
@@ -916,6 +923,9 @@ export async function createWebWorkbenchApplicationSupervisor(
           normalizedConfig,
           providerContext,
         ),
+        ...(providerLease.provider.subscribeRecoveryHint ? {
+          subscribeRecoveryHint: (listener: () => void) => providerLease.provider.subscribeRecoveryHint!(normalizedConfig, providerContext, listener),
+        } : {}),
         autoReconnect: true,
         initialize: {
           clientInfo: { name: "opencraft-workbench", version: "0.1.0" },
@@ -947,7 +957,12 @@ export async function createWebWorkbenchApplicationSupervisor(
         throw error;
       }
       const stopQueryRecovery = bindHostQueryRecovery(runtime, profile.hostId, queryClient);
-      const stopUnavailable = runtime.resources.threads.subscribeUnavailable?.(threadId => {
+      const stopUnavailable = runtime.resources.threads.subscribeUnavailable?.((threadId, reason) => {
+        // An archived Thread is still a valid user object. Keep its route alive
+        // long enough for the Workbench to render a read-only archive state and
+        // offer an explicit restore action. Missing Threads have no recovery
+        // action and can still be retired from navigation immediately.
+        if (reason !== "not-found") return;
         const memoryScope = threadMemoryScope?.();
         queueMicrotask(() => {
           if (!disposed && memoryScope === threadMemoryScope?.()) forgetUnavailableThread?.(profile.hostId, threadId);

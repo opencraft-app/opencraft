@@ -399,6 +399,17 @@ CLI's own build/source identity separately from server components.
 
 Browser capabilities, telemetry and dashboard navigation use the selected server context. Operator-owned `grafanaBasePath` in ingress and observation-service configuration must match Grafana root_url for that named-server prefix. The relay preserves already-scoped HTML paths exactly once; ingress maps authorized Grafana requests to the configured Unix-socket path. These URL transformations never establish identity or expand target ACL. Each deployment owns independent storage and deploymentId; missing component capture stays partial.
 
+
+## 普通中继连接与容量
+
+Relay application 作为独立 `relay` producer，经现有 `OPENCRAFT_OBSERVE_SOCKET` 每10秒发送 owner 快照；不增加HTTP监听或业务启动依赖。活动数据流、等待建立的预留槽位、控制连接分别统计。总槽位=活动+预留，单实例512、全局4096；最忙实例的占用与单实例上限并列。这里只覆盖普通relay，Hub peer-link容量不计入。
+
+`opencraft_relay_active_streams`、`pending_streams`、`control_connections`、`max_instance_slots`、`instance_limit`、`global_limit` 为精确owner样本；同一前缀的 `peak_slots` 与 `peak_instance_slots` 是进程生命周期高水位，在申请槽位时更新，可保留采样之间的短尖峰。`capacity_rejections_total{scope="instance|global"}` 仅计实际触发容量限制的拒绝；离线、认证拒绝、停机和客户端取消均不计入。`open_timeouts_total` 计预留后10秒内未建成的数据通道。这些计数随Relay进程重启归零，Prometheus increase处理reset。
+
+容量事件有独立采样时间；`opencraft_relay_sample_age_seconds` 显示其年龄。超过90秒不再导出占用和计数，进程资源心跳不能刷新旧容量样本；未接入没有样本，均不能解释成零或健康。部署多个独立Relay进程时需分别部署观测profile，当前latest-producer投影只代表一个Relay进程，不做多进程求和。
+
+既有平台总览新增“中继连接与容量”，定义来自 `relay.connections/capacity/peaks/rejections/timeouts/freshness` 命名查询。Observe与独立Relay须分别更新并核实真实emitter，不能从Web版本推断Relay已更新。指标只含数值和固定scope，无实例名、地址或身份标签。
+
 增量历史核对从十个完整原生 Turn 开始，沿原 cursor 继续到所有脏 Turn 的最老边界；
 完整重建仍读取全部历史。这样小增量不再反复投影一百轮未变的工具输出。此改动不减少
 最终返回的 Item、正文或旧页，不用窗口轮数替代完整轮数；原生大小限制仍按原策略缩页。
@@ -430,6 +441,84 @@ truncated=false仅指聚合完整，不代表明细全量；baseline.compare拒�
 拨测状态与成功率的查询只读取 `kind=availability` 的事件，使用受管 v5 部分索引。
 既有观测库通过增量迁移保留事件及 v1–v4 迁移回执；健康、指标和看板刷新不得随其他类型历史事件量线性扫描。
 
+
+## History RPC stage observations (2026-11-03)
+
+When the managed observation ingress is configured, the persisted-history transport emits one numeric-only gateway RPC event for every admitted history read, including errors and cancellation. A server-generated `gatewayPairId` UUID v4 appears in both the gateway event and the response's `__opencraftGatewayTiming` (or error data). The browser copies only the closed numeric vocabulary and UUID. Ingress preserves this random correlation ID across producers; it does not grant identity, authorization or trust to a client claim. Existing operation/request identifiers retain their producer-scoped pseudonyms. A browser `hostId` on these RPC events is an opaque client-incarnation ID, never a Host recipe, URL or account.
+
+`gatewayMs` measures transport ingress to reply construction; server `durationMs` additionally includes serialization and synchronous delivery callbacks. `gatewayStorageMs` covers history port calls, `gatewaySourceMs` covers native request and reconciliation, `gatewayInitializeMs` covers discovery, and `gatewayDependencyMs` covers the transport's legacy write tail. The storage owner separately records `storageDependencyMs` (accepted prior writes/scope opening), `storageQueueMs` (parent enqueue to worker execution), `storageExecuteMs` (worker execution including authorization and busy retries), `storageAuthorizeMs` (worker-to-gateway authorization handshake), `storageBusyMs` and retry count. Server-only `gatewaySerializeMs` and `gatewayDeliverMs` measure JSON serialization and local listener dispatch. These nested measurements overlap and must not be summed as disjoint stages. Delivery is not socket acknowledgement or browser paint. Event-loop/network delay outside these boundaries remains unmeasured.
+
+An async request-local context keeps concurrent reads separate; late detached refresh work cannot mutate a completed record. Observation failure cannot alter RPC settlement. Unknown keys, payloads, paths, messages and credentials are never included. The existing bounded Observe event queue and OTLP logs export to Collector/Loki remain lossy; paired observations, missing records and dropped counters must be reported separately. This is structured OTel logging, not a newly deployed trace backend. New instrumentation does not itself fix latency or prove a performance improvement.
+
+
+### History RPC timing version 2: native boundaries and client wake
+
+`gatewayTimingVersion=2` separates detached revalidation, repair timers and unsolicited notification work from the foreground async timing context. Native response processing explicitly restores the context captured by its matching pending request. Version 1 accumulated some overlapping background work; do not mix its stage aggregates with version 2 or interpret sums as a critical-path decomposition.
+
+Each awaited native call emits one `dependency` log with the parent `gatewayPairId`, a random `nativeCallId`, method, outcome and duration. `nativeStartOffsetMs` locates its start relative to the parent request; `nativeDispatchAtMs` and `nativeReplyAtMs` are offsets from that child start to local adapter invocation and raw response callback entry. `nativeReplyWaitMs` is their difference. This is the adapter boundary, not a packet capture or network acknowledgement. `nativeSendMs`, when present, measures settlement of the local send promise; some adapters settle after emitting their reply, so it is neither pure socket-write time nor always available. `nativeDecodeMs` measures frame JSON parsing, `nativeReceiveQueueMs` measures decoded reply waiting for its processing lane, `nativePendingWritesMs` measures the preceding write-tail fence, `nativeImportQueueMs` and `nativeImportMs` separate import admission and the import call. `nativeReplyProcessingMs` includes processing and those waits. Child records survive a failed or timed-out native call without turning telemetry failure into RPC failure. Parent aggregates remain nested; use child boundaries, not their sum, to locate a delay. Gateway logs identify only the fixed local Host IDs used by this installation.
+
+Browser RPC observations include configured `clientBudgetMs`, wall-clock `clientWallMs`, the response callback entry `clientReceivedAt` and callback-to-settlement `clientReceiveToSettleMs`. These timestamps are local observations; cross-machine timestamp subtraction cannot establish one-way network latency. `client_signal` records visible/hidden, pagehide/pageshow, supported freeze/resume, online/offline and late responses. A two-second timer runs only while visible and reports gaps of at least six seconds; normal ticks emit no event. Both wall and monotonic elapsed time are retained across transitions, exposing sleep/clock divergence without deciding which cause occurred. Long tasks use their actual start time rather than their observer delivery time. All listeners/timers retire with the observation owner. A browser that does not deliver freeze/resume events cannot be classified as never suspended; hidden/wake and visible gaps supply separate evidence.
+
+
+### 请求触发与目录回源因果链
+
+读取请求在协商 `opencraft/request-trace.version=1` 后，使用 JSON-RPC envelope 的
+`__opencraftTrace` 传递受限诊断上下文。`traceId` 为非零32位小写十六进制，
+`spanId`、`parentSpanId` 为非零16位；结构化日志用这些字段关联 Query、客户端 RPC、
+Gateway 和 Native 子调用。目前仍经 Observe / Collector / Loki 存储事件，未部署
+X-Ray、Tempo 或完整 span 后端，不应将这些日志称为已有分布式追踪 UI。
+
+客户端上下文是自报的关联信息，不是身份、授权或幂等依据。只读方法使用可选 envelope，
+Gateway 消费后剥除，原生引擎参数及请求保持原契约；旧 Host 不声明能力时不发送该字段。
+无有效上下文的旧请求由 Gateway 生成独立 trace，触发原因保留 unknown。
+
+目录 Query owner 记录初次加载、自动翻页、连接 ready、目录通知、显式重试及显式下一页。
+未捕获入口的重读标为 query-refetch，不凭发生时间猜成窗口聚焦或重连。
+当前工作台 `refetchOnWindowFocus=false`。同一次 fetch 的重试保持 Query span，
+每次 RPC 使用独立 span 和 attempt；自动下一页继续前页 trace，其他显式触发另起操作。
+多触发合并使用 cause-link 保留附加上下文，pending 最多16个，多余数量记 causeOverflow。
+正在执行的原因不被新触发覆盖，初读期间合并的触发在该次完成时确认，不遗留给下一页。
+
+随机 catalogId 标识客户端 Query 对象生命周期；随机 directoryId 标识 Gateway 中同一逻辑
+连接/目录查询，二者均不包含 Host 配置、账号、查询词或游标内容。directoryId 至多保留256个，
+断开删除对应项，淘汰后可以变化，不能当业务主键。两个 ID 可跨操作关联同一目录的诊断。
+Query 元数据显式标识受观测目录，threads 前缀下其他投影不推断为侧栏调用。
+
+Gateway 自己记录 directoryCache / directoryMissReason（最初缺失）及 directoryRangeReason（最近缺失）、directoryMode、directoryStart、
+directoryCheckpoint、directoryQueued、directoryPages、directoryRestart 和 directoryStop。
+Storage owner 在已有读写位置记录 directoryPriorState / directoryState、directoryImportPage，
+worker 通过本次操作回包投递到捕获的请求上下文，不增加诊断查询，也不跨请求共享最后原因。
+导入状态必须与该 Native 子调用的 outcome 一起判断，失败的操作不能当作提交成功。
+背景刷新另起 trace，通过 linkedTraceId / linkedSpanId 关联触发请求，记录 refreshReason
+及 foreground 的 refreshDecision，不计入前台 span 时长。
+
+Query/trigger/cause-link 记录为 client_signal.catalog_query，不增加 catalog_complete 操作终态或混入其耗时分布。新增字段仅进入明细，不作为 Prometheus 标签。不记录调用栈、原始 Query key、游标、路由、
+消息、标题或请求载荷。现有有界 lossy 队列/丢失计数保持原预算；缺事件仍表示证据不足。
+
+
+## 通知来源与请求入口等待诊断
+
+目录通知经Gateway边界投影为有限词汇的notificationMethod/Source/Change、随机notificationId及可选生产cause trace/span。来源区分history-storage、execution-status、upstream-catalog、upstream-native和access-policy；旧Host客户端回退unknown。upstream分类只识别Gateway收到的边界，不证明具体引擎内部publisher。Query触发信号保留修订、五秒订阅局部计数、收到通知到invalidate耗时、refresh-other-projections或cancel-and-refetch决策；RPC摘要通过notificationId关联，避免携带原通知或业务身份。
+
+只读请求由AppHostServerPort接收回调采单调时间，在实际出队/访问控制/History入口和构造回复处记录gatewayIngressQueueMs、gatewayRpcAccessMs、gatewayIngressToReadMs、gatewayIngressToReplyMs；wall字段只供定位，不跨机直接相减。该入口不等于NIC/HTTP接入，回复边界不包括序列化和socket flush。Web clientOutsideGatewayMs按两端duration差计算，覆盖这段服务端窗口之外，不能直接定性为网络耗时。
+
+可见且有RPC在途时每250ms采调度点，迟到至少250ms才报client_signal/rpc_loop_gap；最后回复取消timer前采样，hidden/dispose/关闭观测均清理。clientLoopDelayMs只证明JS调度迟到，可能受忙碌、休眠或节流影响，不代表网络包到达时刻。事件硬上限2048B、原有速率不变；时间小数最多三位，较大事件先裁重叠分项并标diagnosticTrimmed，优先保留因果、入口总量和native等待；仍可能按既有有损预算丢失。
+
+
+## CPU、资源与 SQL 读放大观测
+
+进程指标使用实际resource事件的独立snapshot，不以RPC更新资源采样时间。native/self累计CPU按匿名进程代次（producer哈希）独立序列，图表按component求各代次rate之和；health_projection只提供观察gauge，不作为累计进程CPU求rate。超过90秒的采样不导出；process_sample_age与普通生产者活跃年龄分开。旧未保存snapshot的记录等待新资源采样，不从旧JSON补推。
+
+可选resourceSampling由部署配置注入，Linux只读/proc和/sys/fs/cgroup。每30秒复用Observe生命周期采宿主CPU/IO等待/可用内存/PSI，以及最多12个有限角色、每角色最多32个服务成员的CPU核数、节流、IO字节和内存；未配置不采。CPU/IO是窗口delta，首采/成员替换/缺失权限为partial，缺失能力省略，不冒充零。跨父子cgroup存在重叠时不得将父子相加；IO是整个服务的物理IO，不能直接称为DB读放大。路径仅在部署配置，事件只含有限角色；客户端声明不能覆盖可信宿主指标。Grafana资源区消费同一套指标。
+
+历史worker的原生SQLite连接在请求上下文内统计prepare/API执行调用、返回行数、原生调用墙钟和错误，包含事务/PRAGMA/API重试，iterate按实际next计行；返回行数不是扫描行数，exec一次是API批调用而非逐语句数量。SQL仅输出归一化模板SHA256前16位，不记录SQL文本、bind参数或数据；连接指纹缓存256、操作聚合最多64个模板，溢出计数。整段SQL时间不含调用外的JSON解码/业务JS。线程CPU仅在threadCpuUsage可用时采，不回退为全进程CPU；worker执行墙钟包含等待，与CPU/SQL阶段重叠不得求和。
+
+RPC累积storageSqlCalls/Rows/Ms、storageWorkerCpuMs；目录fence记录调用、命中、重建、行数和metadata UTF8字节量（不含对象/索引/磁盘扫描字节）。单操作queue+execute至少100ms、单SQL调用至少25ms、调用至少100次或fence至少100行时才发storage-work子记录，带父trace/span、有限storageOperation/Lane、累计最耗时模板与最慢单调用指纹。每个RPC/独立后台最多3条，省略计storageSamplesDropped；RPC汇总仍累计全部操作。2048B事件/原速率不放宽，重叠计时分项仍可被既有预算裁剪。未接入VM扫描步数、页缓存命中或CPU profiler，不把这些统计称为完整慢查询/profiling覆盖。
+
+### 原生回复内的状态分发计时
+
+`nativeReplyProcessingMs`内新增nativeReplyYieldMs（既有yieldHistoryWork的等待）、nativeStatusSnapshotMs（执行状态快照计算）、nativeStatusPublishMs（既有执行状态通知分发），以及nativeStatusChanges/PublishAttempts。后者是循环中的发布尝试数，guard可拒绝，不等于客户端送达或paint；分发耗时包含原权限检查、序列化与同步监听器。诊断不额外调用授权/SQL，不改变顺序、调度和既有预算；仅native-child明细新增，不把嵌套阶段相加成独立总量。未获字段的旧版本/被预算裁丢记录不能按零解释。这些分段用于解释replyProcessing与import差值，不证明SQL或原生内部根因。
+
 ### Web AppHost reachability diagnostics
 
 The WebSocket bridge records `probe-received`, `probe-response`, and
@@ -459,11 +548,29 @@ pageResumeAgoMs（距观察到恢复的时间）、pageHiddenForMs（当前未�
 同一页面的多个物理连接共用记录，重复生命周期通知不重置起点。
 新增 pagehide/freeze/resume 监听仅记诊断，不改变原有超时、恢复、授权或 Relay 回收策略。
 
+## Chat image diagnostics
+
+`client_signal/chat_media` records the policy, source or decode phase, the Host
+or direct transport, source/content classes, and success/failure. Optional HTTP
+status and redirect facts come from the file transport; RPC codes are bounded.
+`mediaDocumentId` is a SHA256 message-ID digest used to correlate one document,
+not a distributed trace or an access grant. No message text, path, URL, alt,
+response body, credential or raw error is exported. Events that precede telemetry
+activation are bounded to 32 entries and use the existing observation queue.
+
+`mediaPolicy` distinguishes renderer resource policy from an enforced browser
+CSP image policy. It reports only `resource` or `csp`, never directive text or
+the blocked URL. HTTP errors preserve their original status without auth fallback.
+
+Chat media failures also report the closed `mediaError` class (`none`, `http`, `type`, `abort`, `dom`, `rpc`, `other`). This is classification evidence only: TypeError is not proof of a particular network cause. Error names, messages and URLs are never exported.
+
+Media reads report mediaReadAttempts in the closed range 1–5 when known, and network failures report mediaReadPhase=fetch/body. Successful prepared media retain the attempts used to acquire those bytes; cached data need not create a new transport-attempt count. No source URLs, paths, response bodies or raw error text are exported.
+
 
 ### Background refresh completion logs
 
 A cached foreground read and the background job it schedules have different
-latency meanings. Native read timing carries optional `caller` and `traceRole`
+latency meanings. Native read timing keeps the existing `caller` and `traceRole`
 fields. Slow (at least 1000ms) or unsuccessful `background-refresh` completions
 also emit a compact `[opencraft background-refresh]` log with
 `workClass: background`, method, outcome, duration and available causal links.

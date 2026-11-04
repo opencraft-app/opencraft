@@ -29,6 +29,8 @@ export class SshConnectionsController {
   private closed = false;
   private readAbort: AbortController | null = null;
   private refreshOperation: Promise<void> | null = null;
+  private sessionOperation: Promise<ReturnType<typeof parseSshManagementSessionView> | null> | null = null;
+  private sessionAbort: AbortController | null = null;
   private stopDiscovery: (() => void) | null = null;
   private readFailures = 0;
   private authorizationChanges = 0;
@@ -40,8 +42,9 @@ export class SshConnectionsController {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   /** Socket recovery must not depend on a visible page's discovery timer. */
   async prepareConnection(): Promise<void> {
-    await this.refresh();
-    if (this.closed || !this.snapshot.authenticated) {
+    if (this.authorizationChanges > 0) throw new Error(messages.locked);
+    const session = await this.readAuthentication().catch(() => null);
+    if (this.closed || this.authorizationChanges > 0 || !session?.authenticated || !this.snapshot.authenticated) {
       throw new Error(this.snapshot.accessMode === "shared" ? messages.sessionExpired : messages.locked);
     }
   }
@@ -80,48 +83,18 @@ export class SshConnectionsController {
     if (epoch !== this.epoch || this.closed) return;
     this.publish({ ...this.snapshot, refreshing: true });
     try {
-      // The session read owns a five-second budget; keep it active through
-      // the response body parse and release it before later request budgets.
-      const sessionSignal = combineAbortSignals([abort.signal, AbortSignal.timeout(5000)]);
-      let session: ReturnType<typeof parseSshManagementSessionView>;
-      try {
-        const response = await this.fetcher("/__opencraft_ssh/session", { credentials: "same-origin", cache: "no-store", signal: sessionSignal.signal });
-        if (response.status === 404) {
-          if (epoch === this.epoch && !this.closed) {
-            if (this.snapshot.authenticated) ++this.authEpoch;
-            this.readFailures = 0;
-            this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null, accessMode: null });
-          }
-          return;
-        }
-        if (!response.ok) throw new Error("bad-session");
-        session = parseSshManagementSessionView(await response.json());
-      } finally { sessionSignal.dispose(); }
+      const session = await this.readAuthentication();
       if (epoch !== this.epoch || this.closed) return;
-      if (this.admissionOrigin && session.authenticatedOrigin && session.authenticatedOrigin !== this.admissionOrigin) {
-        session = { ...session, authenticated: false };
-      }
-      if (!session.authenticated) {
-        if (this.snapshot.authenticated) ++this.authEpoch;
-        this.publish({ ...this.snapshot, available: true, authenticated: false, items: [], legacyServers: [], accessMode: session.accessMode });
-      }
-      let renewed = false;
-      if (!session.authenticated && session.accessMode === "shared") {
-        // This is a server-issued installation session, not an execution or
-        // connection command. Renew it automatically after expiry/restart.
-        const grant = await this.request("session", "POST", {}, abort.signal);
-        if (epoch !== this.epoch || this.closed) return;
-        if (!grant || typeof grant !== "object" || !("authenticated" in grant) || grant.authenticated !== true) throw new Error("bad-session");
-        ++this.authEpoch;
-        renewed = true;
-        session = { ...session, authenticated: true };
-      }
+      if (session === null) { this.readFailures = 0; return; }
+      const catalogAuthEpoch = this.authEpoch;
       const [records, legacy] = session.authenticated ? await Promise.all([this.request("connections", "GET", undefined, abort.signal), this.request("legacy-connections", "GET", undefined, abort.signal)]) : [[], []];
       const items = parseSshConnectionViews(records), legacyServers = parseSshServerDescriptors(legacy);
-      if (epoch === this.epoch && !this.closed) {
-        if (!renewed && this.snapshot.authenticated !== session.authenticated) ++this.authEpoch;
+      if (epoch === this.epoch && !this.closed && catalogAuthEpoch === this.authEpoch) {
         this.readFailures = 0;
         this.publish({ available: true, authenticated: session.authenticated, items, legacyServers, refreshing: false, error: null, accessMode: session.accessMode });
+      } else if (epoch === this.epoch && !this.closed) {
+        // This discovery read still owns loading, but its old grant owns no data.
+        this.publish({ ...this.snapshot, refreshing: false });
       }
     } catch {
       if (epoch === this.epoch && !this.closed) {
@@ -130,7 +103,54 @@ export class SshConnectionsController {
       }
     }
   }
-  private invalidateReads() { ++this.epoch; this.readAbort?.abort(); this.refreshOperation = null; }
+  /** Session admission is shared with discovery, but never waits for its catalogs. */
+  private readAuthentication(): Promise<ReturnType<typeof parseSshManagementSessionView> | null> {
+    if (this.closed) return Promise.reject(new Error(messages.unavailable));
+    if (this.sessionOperation) return this.sessionOperation;
+    const abort = new AbortController();
+    this.sessionAbort = abort;
+    const current = () => { if (this.closed || abort.signal.aborted) throw new Error(messages.sessionExpired); };
+    const operation = (async () => {
+      const sessionSignal = combineAbortSignals([abort.signal, AbortSignal.timeout(5000)]);
+      let session: ReturnType<typeof parseSshManagementSessionView>;
+      try {
+        const response = await this.fetcher("/__opencraft_ssh/session", { credentials: "same-origin", cache: "no-store", signal: sessionSignal.signal });
+        current();
+        if (response.status === 404) {
+          if (this.snapshot.authenticated) ++this.authEpoch;
+          this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null, accessMode: null });
+          return null;
+        }
+        if (!response.ok) throw new Error("bad-session");
+        session = parseSshManagementSessionView(await response.json());
+        current();
+      } finally { sessionSignal.dispose(); }
+      if (this.admissionOrigin && session.authenticatedOrigin && session.authenticatedOrigin !== this.admissionOrigin)
+        session = { ...session, authenticated: false };
+      if (!session.authenticated) {
+        if (this.snapshot.authenticated) ++this.authEpoch;
+        this.publish({ ...this.snapshot, available: true, authenticated: false, items: [], legacyServers: [], accessMode: session.accessMode });
+      }
+      let renewed = false;
+      if (!session.authenticated && session.accessMode === "shared") {
+        const grant = await this.request("session", "POST", {}, abort.signal);
+        current();
+        if (!grant || typeof grant !== "object" || !("authenticated" in grant) || grant.authenticated !== true) throw new Error("bad-session");
+        ++this.authEpoch;
+        renewed = true;
+        session = { ...session, authenticated: true };
+      }
+      current();
+      if (!renewed && this.snapshot.authenticated !== session.authenticated) ++this.authEpoch;
+      this.publish({ ...this.snapshot, available: true, authenticated: session.authenticated, accessMode: session.accessMode });
+      return session;
+    })().finally(() => {
+      if (this.sessionOperation === operation) { this.sessionOperation = null; this.sessionAbort = null; }
+    });
+    this.sessionOperation = operation;
+    return operation;
+  }
+  private invalidateReads() { ++this.epoch; this.readAbort?.abort(); this.sessionAbort?.abort(); this.sessionOperation = null; this.refreshOperation = null; }
   private refreshAfterMutation() { this.invalidateReads(); return this.refresh(); }
   async unlock(accessKey: string) {
     const authEpoch = ++this.authEpoch; this.invalidateReads(); ++this.authorizationChanges;

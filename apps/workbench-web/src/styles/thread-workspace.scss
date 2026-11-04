@@ -1,3 +1,4 @@
+@use '@opencraft/design-system/material.web' as material;
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
 
 // Width/height transitions are local to this surface; Shell owns pane motion.
@@ -81,10 +82,8 @@
   z-index: 0;
   margin-bottom: calc(var(--spacing) * -3);
   padding-bottom: calc(var(--spacing) * 3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: calc(var(--spacing) * 4);
-  background: var(--color-background-elevated-primary-opaque);
-  box-shadow: var(--opencraft-main-surface-elevation);
+  @include material.surface;
+  border-radius: var(--radius-2xl);
   transition: opacity var(--transition-duration-basic) var(--ease-enter-snappy),
     translate var(--transition-duration-basic) var(--ease-enter-snappy);
   &[data-visible="false"] {
@@ -95,29 +94,12 @@
   }
 }
 .thread-composer-overlay__summary {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--spacing) * 2);
   width: 100%;
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
-  border-radius: inherit;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  font: inherit;
-  text-align: start;
-  span {
-    flex: 1;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  svg {
-    transition: rotate var(--transition-duration-basic);
-  }
-  &[aria-expanded="true"] svg {
-    rotate: 180deg;
-  }
+  svg { transition: rotate var(--transition-duration-basic); }
+  &[aria-expanded="true"] svg { rotate: 180deg; }
+}
+.thread-composer-overlay__summary-label {
+  flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: start;
 }
 .thread-composer-overlay__response-motion {
   overflow: hidden;

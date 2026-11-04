@@ -15,11 +15,12 @@ import { createIntlTestRoot } from "./intl-root";
 import "../../apps/workbench-web/src/styles/app.scss";
 
 initializeAppearanceTheme();
+const writes: string[] = [];
 const sizes: { cols: number; rows: number }[] = [];
 const snapshot = { revision: 0, phase: "running", output: [{ sequence: 1, deltaBase64: btoa(Array.from({ length: 80 }, (_, i) => `Terminal output ${i}\r\n`).join("")) }], error: null };
 const session = { processId: "test", getSnapshot: () => snapshot, subscribe: () => () => {},
   resize: async (cols: number, rows: number) => { sizes.push({ cols, rows }); },
-  write: async () => { throw new Error("No user shell input in this fixture"); }, terminate: async () => {}, dispose: async () => {} };
+  write: async (data: string) => { writes.push(atob(data)); }, terminate: async () => {}, dispose: async () => {} };
 const registry = new WorkbenchTerminalSessionRegistry(() => ({ resources: { terminal: { open: () => session } } }) as any);
 const resource = registry.open({ hostId: "test", cwd: null });
 const runtime = await createWorkbenchPanelReactRuntime();
@@ -36,7 +37,7 @@ function App() {
   const state = useSyncExternalStore(subscribe, getState);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   useTimelineViewportHost(chrome);
-  Object.assign(window, { fixture: { sizes, controller, setOverlayEnabled, setThemePreference } });
+  Object.assign(window, { fixture: { writes, sizes, controller, setOverlayEnabled, setThemePreference } });
   return <AppShell layoutScope="keyboard" mainContentLayout="default" header={<AppShellHeader title="Terminal" project={null} sidebarOpen={false} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onToggleSidebar={() => {}} onToggleRightPanel={() => {}} onHome={() => {}} canGoBack={false} canGoForward={false} onBack={() => {}} onForward={() => {}} navigationActions={['sidebar-toggle']} />} windowChrome={chrome}
     sidebarOpen={false} sidebarWidth={275} onSidebarCollapse={() => {}} onSidebarExpand={() => {}} onSidebarResizeEnd={() => {}}
     floatingSidebarHeader={() => null} leftPanel={null} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open => runtime.panels.dispatch("keyboard", {type:"set-region-open",region:"right",open})}

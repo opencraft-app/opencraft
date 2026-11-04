@@ -92,6 +92,8 @@ export async function createObservabilityIngress(path,{access,actors,executionHe
         event.producerId=pseudonym(JSON.stringify([principal.provider,principal.subject,event.producerId]));
         event.eventId=pseudonym(JSON.stringify([event.producerId,event.eventId]));
         for(const key of ['operationId','executionId','recoveryId','attemptId','requestId','incidentRef','pairId'])if(event[key])event[key]=pseudonym(JSON.stringify([event.producerId,event[key]]));
+        // Random trace/span IDs and gatewayPairId are correlation claims, never business identity or authority.
+        // Preserve it for joining native gateway and client observations; it grants no authority.
         return event;
       });
       ingressActive++;try{const result=await socketRequest(config.socketPath,'/events',{events,verifiedActor});send(res,200,result);}catch{send(res,503,{error:{code:'observation_unavailable',retryable:true}});}finally{ingressActive--;}return true;

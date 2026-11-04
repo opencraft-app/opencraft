@@ -1,0 +1,236 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "codex-host-state",
+      "checksum": "c2508ef065ded8821d7c071fab1603b403b4e5e9220569916f1cee53f82025c3"
+    },
+    {
+      "version": 2,
+      "name": "codex-bot-state",
+      "checksum": "809a3629f5a894a7cf6dbebc50b6f89b8a6485ee894480efa3aaafa1516a394d"
+    },
+    {
+      "version": 3,
+      "name": "ioa-thread-creators",
+      "checksum": "8cb7b36a3d2735390617cdd83718400eb690cad4db51de5db582f6d08f6c1749"
+    },
+    {
+      "version": 4,
+      "name": "message-sender-origins",
+      "checksum": "882898aab8d89b0f6f2c2122ef62835541b238a76aab58afd64694caf83bbc84"
+    },
+    {
+      "version": 5,
+      "name": "durable-thread-catalog",
+      "checksum": "4e8ef5e0d3c77f29b5b7d8c7b25613b46c61aa9fe2943014baaa2350fa66a738"
+    },
+    {
+      "version": 6,
+      "name": "token-usage-metering",
+      "checksum": "b6b659d6dcb27563e2f46f2b7a769869104e53c681c2d143d2f14c444435c9b1"
+    },
+    {
+      "version": 7,
+      "name": "token-usage-recovery",
+      "checksum": "0c13491d10765f1c1999214f735e76d80f099b7b9f908591183700e462c7f316"
+    },
+    {
+      "version": 8,
+      "name": "token-usage-native-counters",
+      "checksum": "aa471aeaf733439963eee5cb986bbd133750b9ee2ee285a8e668eb0880364ad2"
+    },
+    {
+      "version": 9,
+      "name": "token-usage-query-indexes",
+      "checksum": "2978f6731e228a8caa6e67d31f932215464ee608bf4e673bbc63990510318ef0"
+    },
+    {
+      "version": 10,
+      "name": "token-usage-delivery-attempts",
+      "checksum": "4ecc69a600fc726fcea62d7358c4d564d59915470965da2fdc92a489dce4393c"
+    },
+    {
+      "version": 11,
+      "name": "token-usage-actor-projections",
+      "checksum": "c600ec13cc362bc937a377bbfbd5c447175218d438f9db8fac0752dc77a8a359"
+    },
+    {
+      "version": 12,
+      "name": "token-usage-frozen-coverage",
+      "checksum": "3978288eb0a59ba87004b4f964cfd65eb7a8867ef591709a9c492d1c9392b46b"
+    },
+    {
+      "version": 13,
+      "name": "opencraft-host-state-owned-names",
+      "checksum": "6f9f5094f84e11792897f3e232b3371a22cfe2bbfee91c338755464f9102aa1a"
+    },
+    {
+      "version": 14,
+      "name": "opencraft-host-bot-owned-names",
+      "checksum": "9339b195ffd243ddc903e86a88722d65c24386ec64ac71917546c885c7583e73"
+    },
+    {
+      "version": 15,
+      "name": "immutable-execution-leases",
+      "checksum": "555091035a70dcc3e413a6be64dcfdc4a574799bfe2608ae546dab8de089d7b9"
+    },
+    {
+      "version": 16,
+      "name": "execution-boot-clock",
+      "checksum": "54d6f348751c19776c29569fa98f69bcf094196e5b92d5fc67e3dae66387ffad"
+    }
+  ],
+  "tableOptions": {
+    "execution_leases": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "execution_queue_inputs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "execution_submissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_message_presence": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_participant_state": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_presence_sync": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_thread_creators": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "message_sender_origins": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "message_senders": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "opencraft_bot_commands": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "opencraft_bot_message_slots": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "opencraft_bot_rooms": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "opencraft_catalog_sync": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "opencraft_host_queue": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "opencraft_thread_catalog": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_actor_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_admissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_allocations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_attempts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_buckets": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_checkpoints": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_coverage": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_gaps": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_input_conflicts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_inputs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_metadata_scans": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_counters": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_terminals": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_projection_state": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_rollouts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_scopes": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_sources": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_submissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_actor_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turns": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "8f31b77b1bb630c1cd8b910d2d84dcf530c2f45af6e8a185ae2033be8ed0274f",
+  "baselineSnapshotChecksum": "017a2fbfcd28626388bd3481eb95391d7209704715ae9b426e10f0858a813699"
+}

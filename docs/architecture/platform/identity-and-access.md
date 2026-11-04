@@ -46,6 +46,21 @@ and visible recovery; background pages catch up on return. This is bounded polli
 not server Push. Clients without an account persistence contribution retain their
 local adapter; no remote capability is implied for those products.
 
+Background unread catch-up shares three active metadata reads across the whole
+Application, including concurrent catalog refreshes and different Hosts. Pending
+Host/Thread identities still deduplicate. Waiting for a slot does not renew an
+RPC deadline: the existing ten-second budget begins only when its request is
+admitted. Each queued read rechecks account scope, Host recipe and connection
+generation before sending. Account replacement or disposal settles local waits
+and cancels their requests; late completions cannot release a successor's slots
+or publish to another account. This budget belongs only to background attention
+reads; foreground history does not queue behind it.
+
+Concurrent initial catalog consumers also share a connection's in-flight pin
+discovery. No completed pin response is cached as current authority. A mutation
+admitted during discovery forces a fresh read after its write, and a failed or
+retired discovery releases its shared slot for the next caller.
+
 ### Authentication ownership
 
 Trusted product assembly can contribute an external identity provider and an
@@ -483,3 +498,55 @@ Personal Composer model/effort defaults are account data, separate from installa
 Headless 将 `access-control/collaboration` 作为 ActorStore / ActorAccess 后的协作权威，拥有独立托管 SQLite 中的私聊消息、投递、运行绑定与执行交接记录。`scripts/conversation-execution.mjs` 是有限的进程内 AppHost 适配；OpenCraftHostQueue 仍唯一拥有执行领取，并在领取前调用当前 Actor 授权校验。Wire 字段不构成可信调用上下文。契约及未隔离边界见[主体协作接口](../../actor-collaboration-api.md)。
 
 [会话引用、读取与投递](../conversation-interoperability.md)将Actor和Conversation资源分开，统一Collaboration接纳与交接，目标Host继续拥有执行队列。Headless本地Codex已接通稳定引用、按需历史、原始输入委托的服务端工具；其他引擎与跨Server投递须有实际适配，不因协议类型而自动可用。
+
+### External human structured interactions
+
+The collaboration `interactions` and `respondInteraction` capabilities expose the
+existing Codex shared interaction owner. CLI `interactions list/show/respond`
+uses the authenticated human Actor and full Server/Thread ref. Reads and writes
+recheck current Actor generation, credential lifetime, instance admission and
+resource ACL. A transient `TransportSubmissionContext.interactionScope` is
+created only by Hub; it carries the exact Thread and read/respond scope together
+with the existing `resourceOwner.assertCurrent`. It is never decoded from wire,
+used as a persistent permission grant, or inherited from ordinary messages.
+The initialized daemon checks it before reading or admitting a response and
+again before writing to Native. Interaction commands retain the trusted Actor
+and ACL scope with `sender: null`: answering a pending Native RPC is not a new
+message or execution attribution. This also preserves the no-overlay Core
+mode restriction on verified message senders during initialization. No Native resume or new Turn is needed to answer
+an already captured human wait.
+
+The typed `response` is compiled at `HostInteractions` against the current source
+method. External callers cannot supply arbitrary JSON-RPC results. The owner
+checks producer epoch, pending snapshot revision, Thread and source availability
+before its existing synchronous response admission. Hub namespaces submission
+identities by Actor, generation and ref. A concurrent answer reports
+`already-submitted`; it does not say that this caller's answer won. Native
+settlement alone resolves the pending interaction. `submitted` is delivery
+acknowledgment; `executionState` remains `unknown`. Lost delivery acknowledgment
+returns `unknown`, retains `unconfirmed`, and does not authorize automatic replay.
+
+First delivery supports command approval (`accept` once, `decline`, `cancel`;
+`acceptForSession` only when explicitly offered in `availableDecisions`), file
+change approval (`accept` once, `decline`, `cancel`), and blocking
+`item/tool/requestUserInput` (exact question IDs and bounded string arrays).
+Session command grants are distinct from once approval. File `grantRoot`
+honoring is not established, so file session grants are absent. Permission
+approval, policy amendments, MCP elicitation and setup/pickers remain visible as
+unsupported method summaries; no response schema is inferred. Pi/DSH and older
+Hosts without `structuredResponses` fail capability negotiation.
+
+List returns at most 30 summaries, without prompt content. Its cursor binds ref,
+epoch and revision. Show returns one projected prompt, bounded to 24,000 UTF-16
+code units; answers have the same bound, at most 16 questions/answers and 32
+options per question. Unknown source methods expose no raw params. These are
+bounded views, not a complete interaction audit log.
+
+`HostInteractions` owns an in-memory admission ledger and bounded resolved
+entries. Same-process retry does not write twice unless an authoritative producer
+pending replay restores the request. Disconnect makes sources unavailable;
+producer replay alone reestablishes current source state. A new owner/clear
+changes epoch and fences old snapshots. Neither submission IDs nor retained
+Native request lifetimes establish cross-process exactly-once delivery. This
+feature introduces no persistent table, migration, second permission authority,
+or changes to Server6/Host17 and the fixed Server1–7 compatibility contract.

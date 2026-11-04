@@ -8,10 +8,17 @@ const server = createServer();
 const sockets = new WebSocketServer({ server });
 const subscriptions = new Map();
 const threads = new Map();
+const interactionReplies=[];
+let interactionSequence=0;
+const interactionThreads=new Map();
 let sequence = 0;
+let executionStatus = "ready";
 let holdNextRead = 0;
 let pendingReads = 0;
 let holdNextTurn = false;
+let replaceAfterHeaders = null;
+const interruptCounts = new Map();
+const interruptTargets = new Map();
 const heldReads = [], heldTurns = [];
 sockets.on("connection", socket => {
   const subscribed = new Set();
@@ -20,6 +27,18 @@ sockets.on("connection", socket => {
   const send = value => socket.send(JSON.stringify(value));
   socket.on("message", raw => {
     const { id, method, params = {} } = JSON.parse(String(raw));
+    if (method === "fixture/emitInteraction") {
+      const requestId='human-'+(++interactionSequence);interactionThreads.set(requestId,params.threadId);
+      send({id:requestId,method:'item/commandExecution/requestApproval',params:{threadId:params.threadId,turnId:'synthetic-turn',itemId:requestId,command:'synthetic command',availableDecisions:['accept','decline']}});
+      send({id,result:{requestId}});return;
+    }
+    if (method === "fixture/interactionReplies") {send({id,result:{data:interactionReplies}});return;}
+    if (method===undefined && interactionThreads.has(id)) {
+      const message=JSON.parse(String(raw));interactionReplies.push({id,result:message.result});
+      send({method:'serverRequest/resolved',params:{threadId:interactionThreads.get(id),requestId:id}});return;
+    }
+    if (method === "fixture/executionStatus") { executionStatus = params.status; send({id, result: {}}); return; }
+    if (method === "environment/status") { if (executionStatus === "timeout") return; send({id, result: {status: executionStatus, error: "SYNTHETIC_SECRET_NATIVE_DETAIL"}}); return; }
     if (method === "initialized") return;
     if (method === "initialize") { send({ id, result: { serverInfo: { name: "fake", version: "1" } } }); return; }
     if (method === "thread/start") {
@@ -45,6 +64,24 @@ sockets.on("connection", socket => {
       send({ id, error: { code: -32601, message: "list_turns is not supported yet" } }); return;
     }
     if (method === "thread/read") { const wait = holdNextRead; holdNextRead = 0; const reply = () => { if (wait) pendingReads--; send({ id, result: { thread: threads.get(params.threadId) } }); }; if (wait === -1) { pendingReads++; heldReads.push(reply); } else if (wait) { pendingReads++; setTimeout(reply, wait); } else reply(); return; }
+    if(method==='fixture/replaceAfterHeaders'){replaceAfterHeaders=params.threadId;send({id,result:{}});return;}
+    if(method==='fixture/interruptCount'){send({id,result:{count:interruptCounts.get(params.threadId)??0,targetTurnId:interruptTargets.get(params.threadId)??null}});return;}
+    if (method === 'thread/turns/list') {
+      const rows=[...(threads.get(params.threadId)?.turns??[])];if(params.sortDirection!=='asc')rows.reverse();
+      send({id,result:{data:rows.slice(0,params.limit??100).map(turn=>({...turn,items:params.itemsView==='notLoaded'?[]:turn.items})),nextCursor:null}});
+      if(replaceAfterHeaders===params.threadId){
+        replaceAfterHeaders=null;const thread=threads.get(params.threadId),old=thread.turns.find(turn=>turn.status==='inProgress');if(old)old.status='completed';
+        const next={id:`turn-${++sequence}`,status:'inProgress',items:[]};thread.turns.push(next);
+        for(const [client,ids] of subscriptions)if(ids.has(thread.id))client.send(JSON.stringify({method:'turn/started',params:{threadId:thread.id,turn:next}}));
+      }return;
+    }
+    if (method === 'turn/interrupt') {
+      interruptCounts.set(params.threadId,(interruptCounts.get(params.threadId)??0)+1);interruptTargets.set(params.threadId,params.turnId);
+      const thread=threads.get(params.threadId),target=thread?.turns.find(turn=>turn.id===params.turnId && turn.status==='inProgress');
+      if(!target){send({id,error:{code:-32600,message:'Active Turn changed'}});return;}
+      target.status='interrupted';thread.status={type:'idle'};send({id,result:{}});
+      for(const [client,ids] of subscriptions)if(ids.has(thread.id))client.send(JSON.stringify({method:'turn/completed',params:{threadId:thread.id,turn:target}}));return;
+    }
     if (method === "thread/items/list") { send({ id, result: { data: (threads.get(params.threadId)?.turns ?? []).flatMap(turn => turn.items.map(item => ({ item }))), nextCursor: null } }); return; }
     if (method === "thread/list") { send({ id, result: { data: [...threads.values()].filter(t => !process.env.FAKE_REQUIRE_DURABLE_RESUME || t.turns.length), nextCursor: null } }); return; }
     if (method === "thread/loaded/list") { send({ id, result: { data: [...threads.keys()] } }); return; }

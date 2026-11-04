@@ -83,12 +83,16 @@ export async function openIndexedDbClientResources(name: string, factory: IDBFac
       resourceKey({ namespace, name, id: "namespace", authority: "local" });
       return transaction<readonly ClientResourceKey[]>("readonly", (store, result) => {
         const keys: { key: ClientResourceKey; savedAt: number; identity: string }[] = [];
-        const cursor = store.index("namespace").openCursor(namespace);
+        // This existing index contains both authorities. Read only its keys:
+        // discovering a View must not deserialize every account draft body.
+        const cursor = store.index("remote-age").openKeyCursor(IDBKeyRange.bound(["local", 0], ["local", Infinity]));
         cursor.onsuccess = () => {
           const row = cursor.result;
           if (!row) { result(keys.sort((a, b) => b.savedAt - a.savedAt || a.identity.localeCompare(b.identity)).map(row => row.key)); return; }
           const [scope, domain, id, authority] = JSON.parse(String(row.primaryKey));
-          if (domain === name && authority === "local") keys.push({ key: { namespace: scope, name: domain, id, authority }, savedAt: (row.value as Stored).savedAt, identity: String(row.primaryKey) });
+          if (scope === namespace && domain === name && authority === "local") {
+            keys.push({ key: { namespace: scope, name: domain, id, authority }, savedAt: (row.key as [string, number])[1], identity: String(row.primaryKey) });
+          }
           row.continue();
         };
       });

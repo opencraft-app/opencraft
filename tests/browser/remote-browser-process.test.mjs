@@ -60,7 +60,7 @@ try {
 }
 `;
 test('isolated browser EPIPE retires only its generation and Gateway survives/reconnects', {skip:process.getuid?.()!==0}, () => {
-  const result=spawnSync(process.execPath,['--input-type=module','-e',probe],{encoding:'utf8',timeout:10000});
+  const result=spawnSync(process.execPath,['--import','tsx','--input-type=module','-e',probe],{encoding:'utf8',timeout:10000});
   assert.equal(result.status,0,result.stderr||result.error?.message);
   assert.match(result.stdout,/gateway-survived-and-recovered/);
   assert.doesNotMatch(result.stderr,/private-secret/);

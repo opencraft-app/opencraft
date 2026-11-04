@@ -25,7 +25,7 @@ function createWidgetWheelDispatcher(debuggerPort, getZoomFactor, getDocument = 
 // applies browser zoom and pinch scale to its CSS coordinates on injection.
 // Read native metrics at dispatch, including while a gesture changes scale;
 // a viewer notification or a once-per-gesture snapshot would be stale.
-function createWidgetTouchDispatcher(debuggerPort, getZoomFactor, getDocument = () => undefined) {
+function createWidgetTouchDispatcher(debuggerPort, getZoomFactor, getDocument = () => undefined, nativeInputTickets = () => false) {
   // Wire identities are not Chromium pointer slots (VelocityTracker uses a
   // 32-bit bitset). Keep held contacts stable, even when their wire IDs are
   // large or their snapshot order changes. Commit slots only after native ACK.
@@ -56,7 +56,8 @@ function createWidgetTouchDispatcher(debuggerPort, getZoomFactor, getDocument = 
       touchPoints = touchPoints.map(point => ({ ...point, id: next.get(point.id), x: point.x / scale, y: point.y / scale }));
     }
     // Chromium's per-contact dispatcher leaves radius/force in widget units.
-    const result = await debuggerPort.sendCommand('Input.dispatchTouchEvent', { ...input, touchPoints });
+    const method = input.type === 'touchEnd' && nativeInputTickets() ? 'Input.dispatchTouchEventWithNativeInputTicket' : 'Input.dispatchTouchEvent';
+    const result = await debuggerPort.sendCommand(method, { ...input, touchPoints });
     if (input.type === 'touchEnd') {
       if (!touchPoints.length) next.clear();
       else for (const point of input.touchPoints) next.delete(point.id);
@@ -83,7 +84,7 @@ function points(input) {
 
 // The worker selects Chromium's per-contact dispatcher. Its touchStart/touchEnd
 // describe changed contacts; the wire carries complete active-contact snapshots.
-function createTouchInput(dispatch, now = () => performance.timeOrigin + performance.now(), getDocument = () => undefined) {
+function createTouchInput(dispatch, now = () => Date.now(), getDocument = () => undefined) {
   let active = new Map(), tail = Promise.resolve(), clock = null;
   const enqueue = operation => {
     const result = tail.then(operation); tail = result.catch(() => {}); return result;
@@ -111,11 +112,17 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
     const touchPoints = input.type === 'touchStart' ? added : input.type === 'touchEnd' ? (next.length ? removed : []) : next;
     const modifiers = (Array.isArray(input.modifiers) ? input.modifiers : []).reduce((bits, modifier) => bits | ({ alt: 1, control: 2, meta: 4, shift: 8 }[modifier] ?? 0), 0);
     // Viewer time is a relative monotonic clock, never a trusted wall clock.
-    // Anchor once per gesture on the server; native ACK/queue jitter must not
-    // masquerade as the user's speed. Legacy senders remain untimed.
+    // Start a gesture clock from capture age; genuine sample intervals survive
+    // queue jitter, subject to causal, nondecreasing native time below.
+    // Legacy senders remain untimed.
     const timed = active.size ? clock !== null : input.time !== undefined;
-    const wall = now();
-    const nextClock = timed ? { ...(clock ?? { origin: input.time, native: wall, last: input.time }) } : null;
+    const wall = now(), age = input.age ?? 0;
+    if (!Number.isFinite(age) || age < 0 || age > 25000) throw new Error('Invalid touch age');
+    // CDP translates Unix time using its current wall clock. Keep a small
+    // margin for clock/IPC precision: a future event can crash Chromium's
+    // compositor latency reporter even if it is only microseconds ahead.
+    const causalNow = wall - 2;
+    const nextClock = timed ? { ...(clock ?? { origin: input.time, native: causalNow - age, last: input.time, lastNative: -Infinity }) } : null;
     const history = input.history ?? [];
     if (!Array.isArray(history) || history.length >= MAX_TOUCH_SAMPLES
       || history.length && (input.type !== 'touchMove' || next.length !== 1 || !timed)) throw new Error('Invalid touch history');
@@ -134,12 +141,25 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
         if (sample.time <= previous) throw new Error('Invalid touch time');
         previous = sample.time;
         const nativeTime = nextClock.native + sample.time - nextClock.origin;
-        if (nativeTime > wall + 1000 || nativeTime < wall - 25000) throw new Error('Invalid touch time');
-        samples.push({ type: 'touchMove', touchPoints: geometry, modifiers, timestamp: nativeTime / 1000 });
+        if (Math.abs(nativeTime - (causalNow - age)) > 25000) throw new Error('Invalid touch time');
+        samples.push({ type: 'touchMove', touchPoints: geometry, modifiers, timestamp: nativeTime / 1000, sourceTime: sample.time });
       }
       const nativeTime = nextClock.native + input.time - nextClock.origin;
-      if (nativeTime > wall + 1000 || nativeTime < wall - 25000) throw new Error('Invalid touch time');
-      timestamp = nativeTime / 1000;
+      // The original offset includes unknown transport delay. Validate a
+      // bounded skew, not a future native timestamp, until it is normalized.
+      if (Math.abs(nativeTime - (causalNow - age)) > 25000) throw new Error('Invalid touch time');
+      // Falling network delay or clock drift can make a prior offset point
+      // ahead of this arrival. Shift this batch back, preserving its genuine
+      // sample intervals; never inject future or decreasing native time.
+      nextClock.native -= Math.max(0, nativeTime - (causalNow - age));
+      const floor = nextClock.lastNative;
+      if (floor > causalNow) throw new Error('Touch clock changed');
+      for (const sample of samples) sample.timestamp = (nextClock.native + sample.sourceTime - nextClock.origin) / 1000;
+      timestamp = Math.max(floor, nextClock.native + input.time - nextClock.origin) / 1000;
+      // Capture age and transport skew are separate bounds; they must not add
+      // up to admitting an arbitrarily old native event after normalization.
+      if ([timestamp, ...samples.map(sample => sample.timestamp)].some(time => time * 1000 < wall - 25002))
+        throw new Error('Invalid touch time');
     }
     try {
       // A bounded real tail is available to restore native velocity after
@@ -151,11 +171,15 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
       // Dense delivered samples already define native velocity. Only bridge a
       // coalescing gap that would reset Chromium's 40ms movement history, using
       // the newest genuine predecessor. Never replay every retained sample.
-      if (timed && input.type === 'touchMove' && input.time - nextClock.last >= 40 && samples.length)
-        await checkedDispatch(samples.at(-1));
-      await checkedDispatch({ type: input.type, touchPoints, modifiers, ...(timed ? { timestamp } : {}) });
+      if (timed && input.type === 'touchMove' && input.time - nextClock.last >= 40 && samples.length
+        && samples.at(-1).timestamp * 1000 > nextClock.lastNative) {
+        const { sourceTime, ...sample } = samples.at(-1);
+        await checkedDispatch(sample);
+      }
+      const result = await checkedDispatch({ type: input.type, touchPoints, modifiers, ...(timed ? { timestamp } : {}) });
       active = new Map(next.map(p => [p.id, p]));
-      clock = active.size && timed ? { ...nextClock, last: input.time } : null;
+      clock = active.size && timed ? { ...nextClock, last: input.time, lastNative: timestamp * 1000 } : null;
+      return result;
     } catch (error) {
       // A failed ACK may follow native acceptance. Do not leave contacts held
       // or retry a press into a different document.
@@ -163,19 +187,23 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
       active.clear(); clock = null; throw error;
     }
   };
+  const checkedApply = async input => {
+    try { return await apply(input); }
+    catch (error) { await reset().catch(() => {}); throw error; }
+  };
   return {
     get active() { return active.size > 0; },
-    apply: input => enqueue(() => apply(input)),
+    apply: input => enqueue(() => checkedApply(input)),
     reset: () => enqueue(reset),
     mouse: event => enqueue(async () => {
       if (event.type === 'mouseDown') await reset();
       if (event.type !== 'mouseDown' && !active.size) return;
-      return apply({ type: event.type === 'mouseDown' ? 'touchStart' : event.type === 'mouseMove' ? 'touchMove' : 'touchEnd',
+      return checkedApply({ type: event.type === 'mouseDown' ? 'touchStart' : event.type === 'mouseMove' ? 'touchMove' : 'touchEnd',
         touchPoints: event.type === 'mouseUp' ? [] : [{ id: 0, x: event.x, y: event.y }], modifiers: event.modifiers });
     }),
   };
 }
-// Actual input identity wins over the emulated target device profile.
+// Explicit mouse/pen input wins over a mobile profile on hybrid devices.
 function isTouchInput(input, profile) {
   return input.pointerType === 'touch' || input.pointerType === undefined
     && ['iphone','ipad','android-phone','android-tablet','desktop-touch'].includes(profile);

@@ -1,3 +1,4 @@
+import { accountFailureDiagnostic } from "./account-diagnostics.js";
 import type { AccountCredentialRefreshReason } from "./oauth-refresh.js";
 import type {
   AccountPoolAccount,
@@ -126,7 +127,12 @@ export class CodexSubscriptionService {
     const existing = this.flights.get(accountId);
     if (existing !== undefined) return existing;
     let operation!: Promise<void>;
-    operation = this.performRefresh(accountId).finally(() => {
+    const startedAt = Date.now();
+    operation = this.performRefresh(accountId).catch(error => {
+      console.warn("[opencraft account-pool]", JSON.stringify({ event: "usage-refresh-failed",
+        accountId, durationMs: Date.now() - startedAt, ...accountFailureDiagnostic(error) }));
+      throw error;
+    }).finally(() => {
       if (this.flights.get(accountId) === operation) this.flights.delete(accountId);
     });
     this.flights.set(accountId, operation);

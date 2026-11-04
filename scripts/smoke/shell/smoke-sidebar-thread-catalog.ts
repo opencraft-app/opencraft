@@ -9,6 +9,7 @@ import{useHostThreadCatalogQueries}from'/apps/workbench-web/src/runtime/use-host
 import{bindThreadCatalogNotifications}from'/apps/workbench-web/src/runtime/thread-catalog-notifications';
 import{projectAppServerThread}from'@opencraft/workbench-runtime';
 import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
+import{subscribeHostCatalogReadiness}from'/apps/workbench-web/src/runtime/host-catalog-readiness.ts';
 import{canDisplayHostThreadCatalog,canReadHostThreadCatalog}from'/apps/workbench-web/src/runtime/host-thread-catalog.ts';
 import{Sidebar}from'/apps/workbench-web/src/components/sidebar.tsx';
 import{UiPreferencesProvider,openWorkbenchUiPreferences}from'/apps/workbench-web/src/runtime/ui-preferences-runtime.tsx';
@@ -19,7 +20,7 @@ import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const preferences=await openWorkbenchUiPreferences();
-const actions=[];
+const actions=[];let replaceCatalogRuntime=()=>{};
 let snapshot={revision:0,mode:null,modes:[],hideRowBadge:false,notice:null,filter:{label:'My conversations',enabled:false}};
 const listeners=new Set();
 const grouping={id:'filter-fixture',getSnapshot:()=>snapshot,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},watch:()=>()=>{},project:()=>[],setMode:()=>{},toggleGroup:()=>{},filterThreads:refs=>snapshot.filter.enabled?refs.filter(ref=>ref.hostId==='local'):refs,setFilterEnabled:enabled=>{snapshot={...snapshot,revision:snapshot.revision+1,filter:{...snapshot.filter,enabled}};listeners.forEach(fn=>fn())}};
@@ -33,7 +34,15 @@ setRemoteAvailable(phase==='ready'&&admitted);
 setThreads(cachedRows.filter(r=>r.connectionHostId==='local'||canDisplayHostThreadCatalog(profile,management))
  .map(r=>({...r,interactionAvailable:r.connectionHostId==='local'||(phase==='ready'&&admitted)})));
 return admitted;}
-window.fixture={setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,connection};
+function beginRuntimeReplacement(){
+let runtime={getSnapshot:()=>({phase:"reconnecting"}),subscribe:()=>()=>{}};
+const listeners=new Set();
+const registry={peekRuntime:()=>runtime,subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};
+const sync=()=>connection("open",true,runtime.getSnapshot().phase);
+const stop=subscribeHostCatalogReadiness(registry,["ssh:remote"],sync);sync();
+replaceCatalogRuntime=()=>{runtime={getSnapshot:()=>({phase:"ready"}),subscribe:()=>()=>{}};listeners.forEach(listener=>listener());stop();};
+}
+window.fixture={beginRuntimeReplacement,replaceCatalogRuntime:()=>replaceCatalogRuntime(),setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,connection};
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{},onSetPinned:async(target,pinned)=>{actions.push({pin:target.threadId,pinned});setThreads(rows=>rows.map(row=>row.id===target.threadId&&row.connectionHostId===target.hostId?{...row,pinned}:row));}};
 return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div>;}
 const liveQuery=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false}}});
@@ -161,6 +170,22 @@ try {
     await page.waitForFunction(() => Boolean((window as any).fixture && document.querySelector('.sidebar-tasks')), null, { timeout: 60000 });
     await page.locator('.sidebar-tasks[aria-busy="true"]').waitFor({ state: "attached" });
     await page.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
+    if (process.env.OPENCRAFT_SIDEBAR_REPLACEMENT_ONLY === '1') {
+      await page.evaluate(() => { (window as any).fixture.setCatalogs([]); (window as any).fixture.beginRuntimeReplacement(); });
+      const row = page.locator('.sidebar-activity-item').filter({ has: page.getByText('Task 1', { exact: true }) });
+      await row.waitFor();
+      assert.equal(await row.isDisabled(), true);
+      if (process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR) await page.screenshot({ path: `${process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR}/replacement-before-${touch}-${theme}.png` });
+      await page.evaluate(() => (window as any).fixture.replaceCatalogRuntime());
+      if (touch) await row.tap(); else await row.click();
+      assert.equal(await row.isDisabled(), false);
+      assert.deepEqual(await page.evaluate(() => (window as any).fixture.actions), [{ hostId: 'ssh:remote', id: 'thread-1' }]);
+      assert.deepEqual(errors, []);
+      if (process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR) await page.screenshot({ path: `${process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR}/replacement-after-${touch}-${theme}.png` });
+      evidence.push({ touch, theme, replacementRestoresInteraction: true });
+      await context.close();
+      continue;
+    }
     if (process.env.OPENCRAFT_SIDEBAR_GROUPS_ONLY === '1') {
       await page.evaluate(() => {
         const f = (window as any).fixture;
@@ -344,6 +369,13 @@ try {
       assert.deepEqual(await page.locator('.sidebar-activity-item').evaluateAll(rows => rows.map(row => ({text: row.textContent, y: row.getBoundingClientRect().y}))), before, 'transport transitions cannot remove/reorder cached rows');
       assert.equal(await page.evaluate(() => (window as any).retainedRows.every((row, index) => row === document.querySelectorAll('.sidebar-activity-item')[index])), true, 'reconnect preserves actual row nodes');
     }
+    await page.evaluate(() => (window as any).fixture.beginRuntimeReplacement());
+    const remoteTask = page.locator('.sidebar-activity-item').filter({ has: page.getByText('Task 1', { exact: true }) });
+    await remoteTask.waitFor();
+    assert.equal(await remoteTask.isDisabled(), true, 'retained remote row is disabled while its runtime reconnects');
+    await page.evaluate(() => (window as any).fixture.replaceCatalogRuntime());
+    await remoteTask.click();
+    assert.equal(await remoteTask.isDisabled(), false, 'already-ready replacement restores row interaction without another phase event');
     await page.evaluate(() => (window as any).fixture.connection('open', false));
     await page.waitForTimeout(30);
     assert.equal(await page.locator('.sidebar-activity-item').count(), 2, 'authorization revocation clears remote cache while local rows remain');

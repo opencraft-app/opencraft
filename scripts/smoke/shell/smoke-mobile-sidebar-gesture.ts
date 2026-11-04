@@ -22,8 +22,11 @@ const arbitrationMarkdown = [
   "| " + Array.from({length:8},()=>"---").join(" | ") + " |",
   ...Array.from({length:4},(_,row)=>"| "+Array.from({length:8},(_,i)=>"Cell_"+row+"_"+i+"_readable_value").join(" | ")+" |"),
 ].join("\n");
+const navigationProbe = process.env.OPENCRAFT_GESTURE_NAVIGATION_ONLY === "1";
 const edgeProbe = process.env.OPENCRAFT_GESTURE_EDGE_ONLY === "1";
 const source = `
+import fixtureData from '/gesture-data.json';
+const {boundaryImage,arbitrationMarkdown}=fixtureData;
 import{bindInteractionDensity}from'/apps/workbench-web/src/runtime/interaction-density';
 import{createClientRuntime}from'/apps/workbench-web/src/runtime/client-runtime';
 import{createEdgeGestureBridge}from'/apps/workbench-web/src/runtime/edge-gesture-bridge';
@@ -63,23 +66,23 @@ import '/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const threads=Array.from({length:35},(_,i)=>({id:'thread-'+i,title:'协同对话标题字符完整显示测试'+i,project:'workspace',pinned:true,status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'fixture',connectionHostLabel:'Synthetic server',...legacyDirectServerProjectionFromHost({hostId:'fixture',hostKind:'remote-ssh',label:'Synthetic server'})}));
-const stationaryProbe=${JSON.stringify(process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === "1" || process.env.OPENCRAFT_GESTURE_STACK_ONLY === "1")};
-const brand=<ApplicationBrand branding={joinBrand}/>;
+const stationaryProbe=${JSON.stringify(navigationProbe || process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === "1" || process.env.OPENCRAFT_GESTURE_STACK_ONLY === "1")};
+const brand=<ApplicationBrand branding={joinBrand} onHome={()=>actions.push("Home")}/>;
 let mounts=0;const actions=[];
 const navigationRouter=createApplicationNavigation(null,{mode:'memory'});
 const contributionSnapshot={settingsPages:[]};
 const contributions={subscribe:()=>()=>{},getSnapshot:()=>contributionSnapshot};
 function Context({showNewChat=true}){const[selected,setSelected]=useState('thread-0');window.selectFixtureThread=setSelected;useEffect(()=>{mounts++},[]);return <Sidebar showStart={false} showFooter={false} showNewChat={showNewChat} threads={threads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} onNewTask={()=>actions.push('New chat')} onOpenSettings={()=>{}} onSelectThread={(_host,id)=>actions.push(id)}/>}
 function App(){const preferences=useUiPreferencesRuntime();useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);const route=useSyncExternalStore(navigationRouter.subscribe,navigationRouter.getSnapshot).applicationRoute;const[open,setOpen]=useState(false),[modal,setModal]=useState(false),[showNewChat,setShowNewChat]=useState(true),[conversationHeader,setConversationHeader]=useState(false);window.fixture={setDensity:value=>preferences.set('interface.touchFriendly',value),sidebarOpen:()=>open,setOpen,setModal,setShowNewChat,setConversationHeader,setThemePreference,returnToChat:()=>navigationRouter.openChat(),route:()=>navigationRouter.getSnapshot().applicationRoute,mounts:()=>mounts,actions};
-const navigation={layout:'unified',account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
-return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell sidebarTransientEnabled={${process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === "1" ? "false" : "true"}} navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
+const navigation={layout:'unified',applicationsInSidebar:${navigationProbe},account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},...(${navigationProbe}?[{id:'shell.applications',title:'Applications',icon:'grid',onInvoke:()=>actions.push('Applications')}]:[]),{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
+return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={arbitrationMarkdown}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell sidebarTransientEnabled={${process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === "1" ? "false" : "true"}} navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader conversationHeader={conversationHeader} navigationBrand={stationaryProbe ? brand : undefined} title='Workspace' project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={stationaryProbe} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={()=> stationaryProbe ? <AppShellNavigationControls brand={brand} hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={()=>{}} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/> : <div style={{height:'100%',display:'flex',alignItems:'center',padding:12}}>Conversations</div>}
 leftPanel={route.kind==='settings'?<SettingsNavigation section={route.slug} presentation='sidebar' extensionContributions={contributions} profiles={[]} machines={[]} activeHostId='' onBack={()=>navigationRouter.openChat()} onSectionChange={slug=>{actions.push('Settings:'+slug);navigationRouter.openSettings(slug);}}/>:<Context showNewChat={showNewChat}/>}>
 <div style={{height:'100%',width:'100%',overflowY:'auto'}} data-main-scroll>
 ${process.env.OPENCRAFT_GESTURE_CONTENT_ONLY === "1" ? `<MobileSidebarContentProbe record={action=>actions.push(action)}/>` : ""}
-${process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? `<WebChatDocument documentId="modal-input-probe" source={${JSON.stringify(boundaryImage)}} />` : ''}
-${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div data-gesture-rich style={{padding:16}}><WebChatDocument documentId="arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/><div data-gesture-command><CommandBlock block={commandBlock}/></div></div>` : ""}
+${process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? `<WebChatDocument documentId="modal-input-probe" source={boundaryImage} />` : ''}
+${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div data-gesture-rich style={{padding:16}}><WebChatDocument documentId="arbitration" allowWideBlocks={false} source={arbitrationMarkdown}/><div data-gesture-command><CommandBlock block={commandBlock}/></div></div>` : ""}
 <div data-gesture-pad style={{height:240,display:'grid',placeItems:'center'}}>Swipe in content</div>
 <input aria-label='Draft' defaultValue='Keep this draft' style={{margin:12,width:'80%'}}/>
 <pre data-horizontal style={{overflowX:'auto',whiteSpace:'pre',margin:12}}>A deliberately long code line that scrolls horizontally and keeps its own touch gestures. A deliberately long code line that scrolls horizontally.</pre>
@@ -93,8 +96,8 @@ const presentationRoot=shadow?document.createElement('div'):host;
 if(shadow){const style=document.createElement('style');style.textContent=appStyles+mediaStyles;shadow.append(style,presentationRoot);presentationRoot.style.cssText='width:100vw;height:100dvh';}
 createIntlTestRoot(presentationRoot).render(<WorkbenchPresentationRootProvider target={presentationRoot}><App/></WorkbenchPresentationRootProvider>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), publicDir: "apps/workbench-web/public", logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-mobile-sidebar-gesture", esbuild: { jsx: "automatic", target: "esnext" }, server: { host: "127.0.0.1", port: 0, hmr: false },
-  optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react-intl", "@radix-ui/react-dialog", "@radix-ui/react-tooltip", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-alert-dialog", "@deepseek-ai/cordis", "tslib"] },
-  plugins: [pluginBranding(process.env.OPENCRAFT_SMOKE_BRANDING_WORKSPACE ?? process.cwd(), []), { name: "mobile-sidebar-gesture-fixture", resolveId: id => id === "/gesture-probe.tsx" ? id : null, load: id => id === "/gesture-probe.tsx" ? source : null,
+  optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react-use-event-hook", "react-intl", "@radix-ui/react-dialog", "@radix-ui/react-tooltip", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-alert-dialog", "@deepseek-ai/cordis", "tslib"] },
+  plugins: [pluginBranding(process.env.OPENCRAFT_SMOKE_BRANDING_WORKSPACE ?? process.cwd(), []), { name: "mobile-sidebar-gesture-fixture", resolveId: id => ["/gesture-probe.tsx", "/gesture-data.json"].includes(id) ? id : null, load: id => id === "/gesture-probe.tsx" ? source : id === "/gesture-data.json" ? JSON.stringify({boundaryImage,arbitrationMarkdown}) : null,
     configureServer(server) { server.middlewares.use((req, res, next) => { if (new URL(req.url??"/","http://fixture").pathname !== "/") return next(); res.setHeader("content-type", "text/html"); res.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="root"></div><script type="module" src="/gesture-probe.tsx"></script>'); }); },
   }],
 });
@@ -168,6 +171,87 @@ try {
         await page.waitForFunction(before => document.querySelectorAll('.app-shell-floating-left-panel .sidebar-activity-item').length > before && !document.querySelector('.app-shell-floating-left-panel .sidebar-activity-pagination[aria-busy="true"]'), before, { timeout: 8000 });
       }
     };
+    if (navigationProbe) {
+      const draft=page.getByRole('textbox',{name:'Draft',exact:true});
+      await draft.fill('Keep navigation draft');
+      await draft.evaluate(el=>{(window as any).navigationDraft=el});
+      await page.locator('[data-chrome-action-id="sidebar-toggle"][data-chrome-action-host-role="persistent"]').tap();
+      await panel.waitFor();await page.waitForTimeout(reducedMotion==='reduce'?100:700);
+      await expandScrollFixture();
+      const scroll=panel.locator('.shell-sidebar__scroll');
+      for (const width of [320,390,430]) {
+        await page.setViewportSize({width,height:700});
+        await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=0});
+        await page.waitForTimeout(150);
+        const geometry=await panel.evaluate(root=>{
+          const nav=root.querySelector('.shell-navigation__items--applications')!;
+          const rect=(el:Element)=>el.getBoundingClientRect().toJSON();
+          const buttons=[...nav.querySelectorAll<HTMLButtonElement>('button[data-action-id]')].filter(el=>el.getBoundingClientRect().height>0);
+          const bounds=buttons.map(rect);const top=Math.min(...bounds.map(r=>r.top)),bottom=Math.max(...bounds.map(r=>r.bottom));
+          return {nav:{...rect(nav),y:top,top,bottom,height:bottom-top},context:rect(root.querySelector('.shell-sidebar__context')!),header:rect(root.querySelector('.app-shell-floating-left-panel__header')!),
+            buttons:buttons.map(el=>({id:el.dataset.actionId,...rect(el),hit:el.contains(document.elementFromPoint(el.getBoundingClientRect().x+el.getBoundingClientRect().width/2,el.getBoundingClientRect().y+el.getBoundingClientRect().height/2))})),
+            scrollWidth:(root as HTMLElement).scrollWidth,clientWidth:(root as HTMLElement).clientWidth};
+        });
+        await page.screenshot({path:`${output}/navigation-${width}-${theme}-${reducedMotion}.png`});
+        await writeFile(`${output}/latest-geometry.json`,JSON.stringify(geometry,null,2));
+        assert.ok(geometry.nav.height>=44,'long conversation list must not compress the navigation grid');
+        assert.equal(await panel.locator('[data-action-id="shell.home"]').count(),0,'brand replaces duplicate Home row');
+        const apps=await panel.locator('[data-action-id="shell.applications"]').boundingBox();
+        const settings=await panel.getByRole('button',{name:'Settings',exact:true}).boundingBox();
+        assert.ok(apps&&settings&&Math.abs(apps.y-settings.y)<1&&apps.x+apps.width<=settings.x,'catalog and settings have distinct bottom targets');
+        const footerPaint=await panel.evaluate(root=>{
+          const scroll=root.querySelector<HTMLElement>('.shell-sidebar__scroll')!;
+          const column=root.querySelector('.shell-sidebar__column')!;
+          const actions=[...root.querySelectorAll<HTMLElement>('.sidebar-new-chat,[data-surface="applications"],[data-surface="settings"]')];
+          return {bottom:scroll.getBoundingClientRect().bottom,columnBottom:column.getBoundingClientRect().bottom,
+            surfaces:actions.map(el=>({surface:el.dataset.controlSurface,glass:!!el.querySelector('.ui-liquid-glass')}))};
+        });
+        assert.ok(Math.abs(footerPaint.bottom-footerPaint.columnBottom)<1,'list paints to the bottom edge behind actions');
+        assert.equal(footerPaint.surfaces.length,3);
+        assert.ok(footerPaint.surfaces.every(a=>a.surface==='floating'&&a.glass),'all three glass button surfaces remain');
+        await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight/2});await page.waitForTimeout(100);
+        const creation=panel.locator('.sidebar-new-chat');const creationBox=await creation.boundingBox();assert.ok(creationBox);
+        const underlay=await panel.evaluate(root=>{
+          const button=root.querySelector('.sidebar-new-chat')!,r=button.getBoundingClientRect();
+          const scroll=root.querySelector('.shell-sidebar__scroll')!,s=scroll.getBoundingClientRect();
+          const stack=document.elementsFromPoint(r.x+r.width/2,r.y+r.height/2);
+          const gap=document.elementFromPoint(s.x+2,r.y+r.height/2);
+          return {rowBehind:stack.some(el=>!!el.closest('.sidebar-activity-item')),gapInScroll:!!gap?.closest('.shell-sidebar__scroll')};
+        });
+        assert.ok(underlay.rowBehind,'conversation rows actually render behind the glass button');
+        assert.ok(underlay.gapInScroll,'gaps between controls reveal the scrollport instead of a footer plate');
+        await page.screenshot({path:`${output}/footer-underlay-${width}-${theme}-${reducedMotion}.png`});
+        await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight});await page.waitForTimeout(100);
+        const lastPage=await panel.locator('.sidebar-activity-pagination').last().boundingBox();assert.ok(lastPage);
+        assert.ok(lastPage.y+lastPage.height<=creationBox.y,'last pagination can clear the measured footer');
+        await scroll.evaluate(el=>{el.scrollTop=0});await page.waitForTimeout(100);
+
+        assert.ok(geometry.buttons.every((b:any)=>b.width>=44&&b.height>=44&&b.hit),'all navigation targets stay full size and unobstructed');
+        assert.ok(geometry.buttons.every((b:any)=>b.y>=geometry.header.bottom-1&&b.bottom<=geometry.nav.bottom+1),'header and navigation each keep their own layout budget');
+        assert.ok(geometry.context.y>=geometry.nav.bottom-1,'conversations start after the complete navigation group');
+        for(let i=0;i<geometry.buttons.length;i++)for(let j=i+1;j<geometry.buttons.length;j++) {
+          const a=geometry.buttons[i],b=geometry.buttons[j];
+          assert.ok(Math.min(a.right,b.right)<=Math.max(a.x,b.x)+1 || Math.min(a.bottom,b.bottom)<=Math.max(a.y,b.y)+1,'navigation hit boxes never overlap');
+        }
+        assert.ok(geometry.scrollWidth<=geometry.clientWidth+1,'drawer has no horizontal overflow');
+        for(const id of ['shell.home','shell.applications','opencraft.tasks.navigation']) {
+          if(id==='shell.home') await panel.locator('button.application-brand:visible').tap();
+          else await panel.locator(`[data-action-id="${id}"]`).tap();
+          if(id!=='shell.applications') {await page.waitForTimeout(reducedMotion==='reduce'?80:650);await page.locator('[data-chrome-action-id="sidebar-toggle"][data-chrome-action-host-role="persistent"]').tap();await panel.waitFor();await page.waitForTimeout(reducedMotion==='reduce'?80:650);}
+        }
+        assert.deepEqual(await page.evaluate(()=>(window as any).fixture.actions.slice(-3)),['Home','Applications','Tasks']);
+        evidence.push({navigation:true,width,theme,reducedMotion,geometry,passed:true});
+      }
+      await scroll.evaluate((el:HTMLElement)=>{el.scrollTop=300});
+      await page.waitForTimeout(100);
+      assert.ok(await scroll.evaluate((el:HTMLElement)=>el.scrollTop)>0,'the long list keeps its single native scrollport');
+      assert.equal(await draft.evaluate(el=>el===(window as any).navigationDraft),true);assert.equal(await draft.inputValue(),'Keep navigation draft');
+      await page.setViewportSize({width:1280,height:844});await page.evaluate(()=>(window as any).fixture.setOpen(true));await page.waitForTimeout(600);
+      const desktop=await page.locator('.shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation button[data-action-id]').evaluateAll(nodes=>nodes.map(el=>el.getBoundingClientRect().toJSON()));
+      assert.ok(desktop.length>0&&desktop.every(r=>Math.abs(r.y-desktop[0].y)<1),'desktop still uses its horizontal bottom bar');
+      assert.equal(await draft.evaluate(el=>el===(window as any).navigationDraft),true);assert.equal(await draft.inputValue(),'Keep navigation draft');
+      assert.deepEqual(errors,[]);await context.close();continue;
+    }
     await closed();
     if (edgeProbe) {
       const row = page.locator('.app-shell-row');
@@ -856,7 +940,7 @@ try {
         const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
         const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
         assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
-          'initial native list reaches the drawer bottom behind floating actions');
+          'initial list viewport reaches the bottom edge');
         await expandScrollFixture();
         assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
         const scroll=panel.locator('.shell-sidebar__scroll');
@@ -915,7 +999,12 @@ try {
         const category=width===320?'Appearance':'Chat';
         await panel.getByRole('button',{name:category,exact:true}).tap();await page.waitForTimeout(650);await closed();
         assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'settings',slug:category.toLowerCase()});
-        await page.evaluate(()=>(window as any).fixture.returnToChat());
+        await drag(80,width-50);await opened();
+        assert.equal(await page.locator('.app-shell-header [data-return-to-app]').count(),0);
+        const returnButton=panel.locator('.settings-return-to-app:visible');
+        await returnButton.waitFor();assert.equal(await returnButton.isEnabled(),true,'settings exit does not require browser history');
+        await returnButton.tap();await page.waitForTimeout(150);
+        assert.deepEqual(await page.evaluate(()=>(window as any).fixture.route()),{kind:'conversation'});
         assert.equal(await page.getByLabel('Draft',{exact:true}).inputValue(),'Keep this draft');
         evidence.push({theme,reducedMotion,width,button:after,gear,footer,last,passed:true});
       }

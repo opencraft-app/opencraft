@@ -12,10 +12,11 @@ export interface NativeGitProcess {
 }
 export interface GitOriginLeaseReader {
   readonly originClock?: 'boot-monotonic-v1';
+  resolveExecution?(threadId: string, executionId: string): GitOriginLeaseResolution;
   resolveJobOrigin(input: { threadId: string; engineIncarnation: string; startedAtMs: number; uncertaintyMs: number; bootId?: string; startedAtBootMs?: number }):
     GitOriginLeaseResolution | Promise<GitOriginLeaseResolution>;
 }
-export type GitOriginLeaseResolution = { status: 'unknown' } | { status: 'active' | 'expired' | 'unowned'; lease: { principal: { provider: string; subject: string } | null; executionId: string } };
+export type GitOriginLeaseResolution = { status: 'unknown'; reason?: 'lease-unresolved' | 'live-inspection-unavailable' | 'lease-changed' } | { status: 'active' | 'expired' | 'unowned'; lease: { principal: { provider: string; subject: string } | null; executionId: string } };
 const verifiedExecutables = new WeakMap<DatabaseSync, Map<string, string>>();
 const executableChecks = new WeakMap<DatabaseSync, Map<string, Promise<boolean>>>();
 /** Resolve only the official persistent npm transport's unique direct child.
@@ -203,7 +204,8 @@ export function createGitOriginResolver(options: {
         || (await readGitProcess(peer.pid)).startTicks !== chain.at(-1)!.startTicks
         || (await readGitProcess(job.pid)).startTicks !== job.startTicks
         || (await readFile(`/proc/${job.pid}/environ`, 'utf8')).split('\0').filter(item => item.startsWith(`${found.threadEnvironment}=`)).join('\0') !== bindings[0]) return { status: 'unknown' };
-      if (result.status === 'unknown' || result.status === 'expired' || result.status === 'unowned') return { status: result.status };
+      if (result.status === 'unknown') return { status: 'unknown', reason: result.reason ?? 'lease-unresolved' };
+      if (result.status === 'expired' || result.status === 'unowned') return { status: result.status };
       const account = result.lease.principal && options.account(result.lease.principal);
       return account ? { status: 'active', account, executionId: result.lease.executionId } : { status: 'unknown' };
     } catch { return { status: 'unknown' }; }

@@ -80,6 +80,20 @@ export class ResumeNotificationBufferService extends Service {
     if (actions) this.buffers.set(threadId, actions.filter(action => !isSnapshotHistoryNotification(action.method)));
   }
 
+  /** Project native observations received before a versioned snapshot's reply
+   * into the retained display. Committed patches wait for its durable version.
+   * Later frames stay buffered until the snapshot has been installed. */
+  captureSnapshot(threadId: string): void {
+    const actions = this.buffers.get(threadId);
+    if (!actions) return;
+    const committed = actions.filter(action => action.method === "opencraft/history/changed");
+    this.buffers.set(threadId, committed);
+    for (const action of actions) {
+      if (this.buffers.get(threadId) !== committed) return;
+      if (action.method !== "opencraft/history/changed") action.replay();
+    }
+  }
+
   release(threadId: string): number {
     const actions = this.buffers.get(threadId) ?? [];
     this.buffers.delete(threadId);

@@ -1,0 +1,47 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "im-switchboard",
+      "checksum": "4da2a8d03320e489e5f385cf37de3e68e60d0659d4adbabe262321bdb25b0db5"
+    },
+    {
+      "version": 2,
+      "name": "im-programmable-routing",
+      "checksum": "73f5af2a7aa1b6d732fd53860ebc8c955a8027e055c7085567bd2d09b9e52e0e"
+    },
+    {
+      "version": 3,
+      "name": "im-explicit-replies",
+      "checksum": "baf1fc4c2d92aa4e49ca7111bf0be98835369f5c7a0baa130eadf6d998fffee8"
+    }
+  ],
+  "tableOptions": {
+    "im_channels": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "im_identity_challenges": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "im_messages": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "im_route_versions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "im_sender_links": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "switchboard": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "0800abb65ab468064821fdd15fcf4c97e923ad4eb1f0d8d696b422a379a027f1",
+  "baselineSnapshotChecksum": "d109ab9c0401ebef9c5b70217ab1cab5d68e67ec96b6a9c6b0e5f833d7605d3f"
+}

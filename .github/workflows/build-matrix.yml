@@ -134,6 +134,8 @@ jobs:
     env:
       OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
       OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
+      OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64 || vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
+      OPENCRAFT_ELECTRON_DISTRIBUTION: ${{ vars.OPENCRAFT_ELECTRON_DISTRIBUTION }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -145,10 +147,14 @@ jobs:
       - run: npm run prepare:dsh-runtime
       - run: npm run smoke:local-agent
       - run: npm run build:electron:release
+      - name: Require the verified native Electron fork
+        run: |
+          test -n "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64"
+          test -f "$OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64/opencraft-electron-desktop-artifact.json"
       - name: Package an ad-hoc signed CI DMG
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm exec --workspace @opencraft/workbench-electron -- electron-builder --mac dmg --config.mac.identity=- --config.forceCodeSigning=true
+        run: npm run package:mac:arm64:dmg --workspace @opencraft/workbench-electron
       - name: Verify and launch the app from the final DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-macos-smoke

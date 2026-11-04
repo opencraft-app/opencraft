@@ -396,3 +396,16 @@ test("same-host client incarnations allocate distinct default RPC IDs", async ()
   try { await Promise.all([first.connect(initializeParams), second.connect(initializeParams)]); assert.equal(new Set(ids).size, 2); }
   finally { await first.close(); await second.close(); }
 });
+
+test('receive boundary precedes synchronous projection and settlement diagnostics', async () => {
+  let wall=1000,elapsed=0;
+  const transport=new MemoryTransport({server:createTestServer()});
+  const client=new JsonRpcAppServerClient({hostId:'receive-boundary',transport,requestTimeoutMs:0,
+    clock:{now:()=>wall,elapsedNow:()=>elapsed}});
+  const events:any[]=[];client.subscribeRequestLifecycle(event=>events.push(event));
+  await client.connect(initializeParams);
+  await client.requestRaw('echo',{}, {receiveResult(){wall+=75;elapsed+=75;}});
+  const result=events.find(e=>e.type==='completed'&&e.method==='echo');
+  assert(result);assert.equal(result.receivedAtMs,1000);assert.equal(result.receiveToSettleMs,75);assert.equal(result.endedAtMs,1075);assert.equal(result.durationMs,75);
+  await client.close();
+});

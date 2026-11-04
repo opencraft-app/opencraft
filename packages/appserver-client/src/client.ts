@@ -1,5 +1,7 @@
 import {
   encodeJsonRpcMessage,
+  createRequestTrace,
+  parseRequestTrace,
   isJsonRpcFailure,
   isJsonRpcNotification,
   isJsonRpcRequest,
@@ -41,6 +43,9 @@ export interface AppServerClientRequestOptions extends AppServerRequestOptions {
   /** Synchronous final check after lifecycle observers and serialization.
    * Throw to reject before transport admission; the original error is preserved. */
   beforeSend?(): void;
+  /** Request-owned synchronous receive boundary, before subsequent frames and
+   * Promise continuations. Local only; throwing rejects this result. */
+  receiveResult?(result: unknown): void;
 }
 
 export interface AppServerClientConfig {
@@ -109,6 +114,7 @@ interface PendingRequest {
   startedAtMs: number;
   startedElapsedAtMs: number;
   params: unknown;
+  receiveResult?: (result: unknown) => void;
   timeoutMs: number;
   preparationTurnId?: string;
   resolve(value: unknown): void;
@@ -183,6 +189,7 @@ export type AppServerRequestLifecycleEvent =
       queueWaitMs: number;
       params: unknown;
       historySource?: AppServerClientRequestOptions["historySource"];
+      trace?: import("@opencraft/appserver-protocol").RequestTrace;
       timeoutMs: number;
     })
   | (RequestLifecycleBase & {
@@ -193,6 +200,9 @@ export type AppServerRequestLifecycleEvent =
       /** UTF-8 response size, computed only when an observer requests it. */
       readonly responseBytes?: number;
       readonly decodeMs?: number;
+      /** Local callback entry, not remote send time or browser network arrival. */
+      readonly receivedAtMs?: number;
+      readonly receiveToSettleMs?: number;
     })
   | (RequestLifecycleBase & {
       type: "failed" | "timed-out" | "aborted";
@@ -201,6 +211,9 @@ export type AppServerRequestLifecycleEvent =
       error: Error;
       readonly responseBytes?: number;
       readonly decodeMs?: number;
+      /** Local callback entry, not remote send time or browser network arrival. */
+      readonly receivedAtMs?: number;
+      readonly receiveToSettleMs?: number;
     })
   | { type: "late-response"; hostId: string; id: JsonRpcId; receivedAtMs: number };
 
@@ -411,7 +424,9 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const historyCancellation = cancellable && typeof historyParams?.threadId === "string"
       && executionEngineExtension(this.initializeResult?.capabilities?.extensions, historyParams.threadId, "opencraft/read-history")?.cancellation === true
       ? { threadId: historyParams.threadId, historyReadId: `${this.connectionGeneration}:${++this.historyReadSequence}` } : undefined;
+    const trace = parseRequestTrace(options.trace) ?? createRequestTrace(options.historySource ? "history" : "client", options.historySource ? "unknown" : "direct-request");
     const request: JsonRpcRequest = { jsonrpc: "2.0", id, method,
+      ...((this.initializeResult?.capabilities?.extensions?.["opencraft/request-trace"] as {version?:unknown} | undefined)?.version === 1 && ["thread/list","thread/read","thread/turns/list","thread/items/list","thread/search","thread/searchOccurrences"].includes(method) ? {__opencraftTrace:trace} : {}),
       params: historyCancellation ? { ...params as object, historyReadId: historyCancellation.historyReadId } : params };
     const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
     const queuedAtMs = this.clock.now();
@@ -439,6 +454,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         startedElapsedAtMs: queuedElapsedAtMs,
         params,
         timeoutMs,
+        receiveResult: options.receiveResult,
         resolve: (value) => resolve(value as TResult),
         reject,
         timerId: null,
@@ -469,6 +485,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         queueWaitMs: Math.max(0, pending.startedElapsedAtMs - pending.queuedElapsedAtMs),
         params,
         historySource: options.historySource,
+        trace,
         timeoutMs,
       });
       if (this.pending.get(id) !== pending) return;
@@ -569,6 +586,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private historyReadSequence = 0;
 
   private receive(frame: string): void {
+    const receivedAtMs = this.clock.now();
     const decodeStarted = this.elapsedTime();
     let message;
     try {
@@ -587,6 +605,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
       const notification: AppServerNotification = {
         method: message.method,
         params: message.params,
+        ...(message.__opencraftNotification ? {__opencraftNotification:message.__opencraftNotification} : {}),
       };
       this.trackContextPreparation(notification);
       if (notification.method === "serverRequest/resolved") {
@@ -621,29 +640,39 @@ export class JsonRpcAppServerClient implements AppServerClient {
       return;
     }
     this.cleanupPending(message.id as JsonRpcId, pending);
-    const endedAtMs = this.clock.now();
     if (isJsonRpcFailure(message)) {
       const error = new AppServerRpcError(message.error);
       pending.reject(error);
       this.emitRequestLifecycle({
         ...this.lifecycleBase(pending),
         type: "failed",
-        endedAtMs,
+        endedAtMs: this.clock.now(),
         durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         error,
         get responseBytes() { return utf8ResponseBytes(frame); },
-        decodeMs,
+        decodeMs, receivedAtMs, receiveToSettleMs: Math.max(0, this.elapsedTime() - decodeStarted),
       });
     } else if (isJsonRpcSuccess(message)) {
+      try {
+        const receive = pending.receiveResult;
+        receive?.(message.result);
+      } catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        pending.reject(error);
+        this.emitRequestLifecycle({ ...this.lifecycleBase(pending), type: "failed", endedAtMs: this.clock.now(),
+          durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs), error,
+          receivedAtMs, decodeMs, receiveToSettleMs: Math.max(0, this.elapsedTime() - decodeStarted) });
+        return;
+      }
       pending.resolve(message.result);
       this.emitRequestLifecycle({
         ...this.lifecycleBase(pending),
         type: "completed",
-        endedAtMs,
+        endedAtMs: this.clock.now(),
         durationMs: Math.max(0, this.elapsedTime() - pending.startedElapsedAtMs),
         result: message.result,
         get responseBytes() { return utf8ResponseBytes(frame); },
-        decodeMs,
+        decodeMs, receivedAtMs, receiveToSettleMs: Math.max(0, this.elapsedTime() - decodeStarted),
       });
     }
   }

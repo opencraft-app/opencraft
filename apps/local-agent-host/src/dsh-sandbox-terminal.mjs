@@ -5,9 +5,9 @@ import { createInterface } from 'node:readline';
 import { prepareSandboxInvocation, sandboxControllerEnvironment } from '@opencraft/sandbox-node/command';
 
 /** The real PTY and its SDK inspection/signalling live together inside the sandbox. */
-export async function spawnDshSandboxTerminal({ runner, configuration, agent, sdk, spec, env }) {
+export async function spawnDshSandboxTerminal({ runner, runnerExecArgv, configuration, agent, sdk, spec, env }) {
   spec.signal?.throwIfAborted();
-  const invocation = prepareSandboxInvocation({ runner, configuration, owner: 'dsh-terminal', cwd: spec.cwd,
+  const invocation = prepareSandboxInvocation({ runner, runnerExecArgv, configuration, owner: 'dsh-terminal', cwd: spec.cwd,
     command: [process.execPath, agent, sdk], env: { ...sandboxControllerEnvironment(), HOME: process.env.HOME ?? "/" } });
   const child = spawn(invocation.argv[0], invocation.argv.slice(1), { cwd: spec.cwd, env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdin.write(invocation.input);

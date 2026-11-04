@@ -36,6 +36,7 @@ export type BuiltinAgentsExtensionOptions =
 
 export interface HeadlessServerExtensionOptions {
   readonly requestHost: HostProtocolRequest;
+  readonly subscribeRecoveryHint?: (hostId: string, listener: () => void) => () => void;
   readonly createTransport: (hostId: string) => DuplexTransport;
   readonly workspaceBrowseRoots: readonly string[];
   readonly sshServers?: readonly { readonly serverId: string; readonly displayName: string; readonly workspaceBrowseRoots: readonly string[]; readonly hideFromNewChat?: boolean }[];
@@ -92,6 +93,11 @@ export function createHeadlessServerExtension(options: HeadlessServerExtensionOp
     targets: ["web"] as const,
     configVersion: 1,
     validate,
+    ...(options.subscribeRecoveryHint ? {
+      subscribeRecoveryHint(_config: HostConnectionJson, context: HostConnectionProviderContext, listener: () => void) {
+        return options.subscribeRecoveryHint!(context.hostId, listener);
+      },
+    } : {}),
     createTransport(_config: HostConnectionJson, context: HostConnectionProviderContext) {
       return options.createTransport(context.hostId);
     },

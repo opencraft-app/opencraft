@@ -159,6 +159,9 @@ export async function startCodexAccountPoolServer(options: {
   readonly host?: string;
   readonly port?: number;
   readonly admissionOpen?: () => boolean;
+  readonly onAttemptDispatch?: (id: string, route: string) => void;
+  readonly onAttemptTerminal?: (id: string, result: "completed" | "failed") => void;
+  readonly onAttemptSettled?: (id: string) => void;
   readonly onUncertain?: (route: string, diagnostic: AccountPoolUncertainDiagnostic) => void | Promise<void>;
 }): Promise<{ readonly url: string; activeCount(): number; interruptForMaintenance(): Promise<void>; close(): Promise<void> }> {
   const host = options.host ?? "127.0.0.1";
@@ -170,6 +173,8 @@ export async function startCodexAccountPoolServer(options: {
     const requestStartedAt = Date.now();
     const requestId = randomUUID();
     const correlation = requestCorrelation(incoming);
+    const tracked = incoming.method === "POST" && (incoming.url ?? "").split("?", 1)[0] === "/v1/responses";
+    let terminalObserved = false;
     const streamEvidence = { completionObserved: false, upstreamEof: false, upstreamReadFailed: false };
     let sentAt: number | undefined;
     let responseStatus: number | undefined;
@@ -210,8 +215,12 @@ export async function startCodexAccountPoolServer(options: {
         headers: requestHeaders(incoming),
         ...(body === undefined ? {} : { body: new Uint8Array(body) }),
         signal: abort.signal,
-      }), () => { dispatched = true; sentAt ??= Date.now(); });
+      }), () => {
+        if (tracked) options.onAttemptDispatch?.(requestId, "/v1/responses");
+        dispatched = true; sentAt ??= Date.now();
+      });
       responseStatus = response.status;
+      if (tracked && dispatched && !response.ok) { options.onAttemptTerminal?.(requestId, "failed"); terminalObserved = true; }
       outgoing.statusCode = response.status;
       outgoing.statusMessage = response.statusText;
       for (const [name, value] of response.headers) outgoing.setHeader(name, value);
@@ -222,7 +231,11 @@ export async function startCodexAccountPoolServer(options: {
         // The bounded protocol parser recognizes complete terminal records from bytes.
         (incoming.url ?? "/").split("?", 1)[0] === "/v1/responses" && response.ok
           ? Readable.from(completedResponsesBody(response.body, event => {
-            if (event === "completion") streamEvidence.completionObserved = true;
+            if (event === "completion" || event === "failure") {
+              if (tracked && dispatched) options.onAttemptTerminal?.(requestId, event === "completion" ? "completed" : "failed");
+              terminalObserved = true;
+              if (event === "completion") streamEvidence.completionObserved = true;
+            }
             else if (event === "eof") streamEvidence.upstreamEof = true;
             else { streamEvidence.upstreamReadFailed = true; firstFailure ??= "upstream-failed"; }
           }))
@@ -234,7 +247,7 @@ export async function startCodexAccountPoolServer(options: {
     } catch (error) {
       // Once an upstream mutation may have been dispatched, disconnect is not
       // a delivery receipt. The owner retains uncertainty until reconciliation.
-      if (dispatched && !["GET", "HEAD"].includes(incoming.method ?? "GET")) {
+      if (dispatched && !terminalObserved && !["GET", "HEAD"].includes(incoming.method ?? "GET")) {
         const now = Date.now();
         await options.onUncertain?.((incoming.url ?? "/").split("?", 1)[0], {
           requestId, method: ["POST", "DELETE", "PUT", "PATCH"].includes(incoming.method ?? "") ? incoming.method! : "other",
@@ -268,9 +281,12 @@ export async function startCodexAccountPoolServer(options: {
         outgoing.end(JSON.stringify({ error: { message: status === 413 ? "Request too large" : "Account Pool request failed" } }));
       }
     } finally {
-      releaseUpstreamSlot?.();
-      incoming.off("aborted", onAborted);
-      outgoing.off("close", onOutgoingClose);
+      try { if (tracked && dispatched) options.onAttemptSettled?.(requestId); }
+      finally {
+        releaseUpstreamSlot?.();
+        incoming.off("aborted", onAborted);
+        outgoing.off("close", onOutgoingClose);
+      }
     }
   };
   const server = createServer((incoming, outgoing) => {

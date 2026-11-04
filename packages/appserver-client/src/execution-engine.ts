@@ -1,9 +1,14 @@
+import type { GoalExecutionAuthorization, GoalExecutionProof } from "@opencraft/appserver-protocol";
 /** Trusted server composition port. This is not a browser extension permission. */
 export interface ExecutionEngineClient {
   request(method: string, params: Record<string, unknown>): Promise<any>;
   notify(method: string, params: Record<string, unknown>): void;
 }
 
+export interface GoalExecutionAdmissionPort {
+  authorize(input: GoalExecutionAuthorization): Promise<boolean>;
+  admit(input: GoalExecutionAuthorization & GoalExecutionProof): Promise<boolean>;
+}
 export interface ExecutionEngineProvider {
   readonly id: string;
   readonly label: string;
@@ -12,6 +17,9 @@ export interface ExecutionEngineProvider {
   readonly extensions?: Readonly<Record<string, unknown>>;
   readonly storageOutcomes?: readonly unknown[];
   start?(): Promise<void>;
+  /** Native Goal rounds wait while the server-owned identity observer is absent. */
+  setGoalExecutionObservation?(available: boolean): void;
+  setGoalExecutionAdmission?(port: GoalExecutionAdmissionPort): void;
   ownsThread(id: string): boolean;
   ownsModel(id: string): boolean;
   request(method: string, params: Record<string, any>, client: ExecutionEngineClient): Promise<any>;

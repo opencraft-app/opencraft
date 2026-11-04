@@ -12,7 +12,8 @@ export interface HostCatalogRuntimeRegistry {
  * Bridges the Host lifecycle into catalog revalidation.
  *
  * Availability changes on departure as well as arrival. Only phase transitions
- * notify the catalog; ordinary streaming updates must not repaint the list.
+ * and runtime replacements notify the catalog; ordinary streaming updates must
+ * not repaint the list.
  */
 export function subscribeHostCatalogReadiness(
   registry: HostCatalogRuntimeRegistry,
@@ -26,12 +27,14 @@ export function subscribeHostCatalogReadiness(
   }>();
   const expected = new Set(hostIds);
 
-  const bind = () => {
+  const bind = (notify = true) => {
+    const changed = new Set<string>();
     for (const [hostId, record] of observed) {
       const runtime = expected.has(hostId) ? registry.peekRuntime(hostId) : null;
       if (runtime === record.runtime) continue;
       record.unsubscribe();
       observed.delete(hostId);
+      changed.add(hostId);
     }
 
     for (const hostId of expected) {
@@ -54,11 +57,13 @@ export function subscribeHostCatalogReadiness(
         onPhaseChange(hostId);
       });
       observed.set(hostId, record);
+      changed.add(hostId);
     }
+    if (notify) for (const hostId of changed) onPhaseChange(hostId);
   };
 
-  const unsubscribeRegistry = registry.subscribe(bind);
-  bind();
+  const unsubscribeRegistry = registry.subscribe(() => bind());
+  bind(false);
   return () => {
     unsubscribeRegistry();
     for (const record of observed.values()) record.unsubscribe();

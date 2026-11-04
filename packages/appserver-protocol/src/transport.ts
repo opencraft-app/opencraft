@@ -1,6 +1,8 @@
 import type { AppServerNotification } from "./methods";
 
 export interface AppServerRequestOptions {
+  /** Safe metadata in the RPC envelope, never engine/business params. */
+  trace?: import("./request-trace").RequestTrace;
   /** Local diagnostics only; never serialized into engine params. */
   historySource?: "open" | "snapshot-reread" | "attention" | "overview" | "navigation" | "refresh" | "task-metadata";
   timeoutMs?: number;

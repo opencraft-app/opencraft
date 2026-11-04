@@ -1,3 +1,4 @@
+import { EngineThreadDirectory } from "./engine-thread-directory.js";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
@@ -29,6 +30,17 @@ export async function startEngineHost(options: {
   const registry = new Map(options.providers.map(provider => [provider.id, provider]));
   if (registry.size !== options.providers.length || options.legacy && registry.has(options.legacy.id)) throw new Error("Duplicate execution engine");
   if (!registry.has(options.defaultEngine) && options.defaultEngine !== options.legacy?.id) throw new Error("Default execution engine is not enabled");
+  let goalObservers = 0;
+  const goalAdmissionReaders = new Set<(method: string, params: unknown) => Promise<boolean>>();
+  const goalAdmission = (method: string, params: unknown) => {
+    const reader = [...goalAdmissionReaders].at(-1);
+    return reader ? reader(method, params) : Promise.resolve(false);
+  };
+  for (const provider of options.providers) provider.setGoalExecutionAdmission?.({
+    authorize: input => goalAdmission("opencraft/goal-observer/authorize", input),
+    admit: input => goalAdmission("opencraft/goal-observer/admit", input),
+  });
+  for (const provider of options.providers) provider.setGoalExecutionObservation?.(false);
   const readiness = new Map<string, string>();
   await Promise.all(options.providers.map(async provider => {
     try { await provider.start?.(); readiness.set(provider.id, "ready"); }
@@ -75,6 +87,7 @@ export async function startEngineHost(options: {
   sockets.on("connection", socket => {
     // A backend read is canceled with its frontend connection. Only logical
     // clients sharing that lifetime may share an in-flight request.
+    const directories = new Map<string, EngineThreadDirectory>();
     const flights = new Map<string, Promise<unknown>>();
     const singleflight = <T>(key: string, operation: () => Promise<T>): Promise<T> => {
       const existing = flights.get(key) as Promise<T> | undefined;
@@ -88,10 +101,21 @@ export async function startEngineHost(options: {
     let stopped = false, backend: WebSocket | undefined, backendStarting: Promise<WebSocket> | undefined;
     const internal = new Map<string, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
     const platform = new Map<string, { clientId: string; resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
-    const observation = () => internal.size + platform.size;
+    const observation = () => internal.size + platform.size + goalRequests.size;
     connectionObservations.add(observation);
+    let goalObserver = false;
+    const observedGoalTurns = new Set<string>();
     const clients = new Map<string, { owner: ExecutionEngineClient; opened: Set<string>; reading: Set<string> }>();
     const send = (value: Value) => { if (!stopped && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
+    const goalRequests = new Map<string, { settle(value: boolean): void; timer: ReturnType<typeof setTimeout> }>();
+    const goalRequest = (method: string, params: unknown): Promise<boolean> => {
+      if (stopped || !goalObserver || goalRequests.size >= 256) return Promise.resolve(false);
+      return new Promise(resolve => {
+        const id = `goal-admission:${randomUUID()}`;
+        const timer = setTimeout(() => { goalRequests.delete(id); resolve(false); }, 5000);
+        goalRequests.set(id, { settle: resolve, timer }); send({ jsonrpc: "2.0", id, method, params });
+      });
+    };
     const client = (clientId: string) => {
       let state = clients.get(clientId); if (state) return state;
       const opened = new Set<string>();
@@ -110,7 +134,16 @@ export async function startEngineHost(options: {
     };
     const subscriptions = options.providers.map(provider => provider.subscribe((method, params) => {
       consumerEvent(method, params);
+      for (const directory of directories.values()) directory.observe(method, params, undefined, provider.id);
       const threadId = params.threadId ?? params.thread?.id;
+      if (goalObserver) {
+        const turnKey = JSON.stringify([threadId, params.turn?.id]);
+        const goalStart = method === "turn/started" && params.__opencraftGoalExecution;
+        const goalEnd = method === "turn/completed" && observedGoalTurns.delete(turnKey);
+        if (goalStart) observedGoalTurns.add(turnKey);
+        if (goalStart || goalEnd || ["opencraft/goal/authorized", "thread/goal/updated", "thread/goal/cleared"].includes(method))
+          send({ jsonrpc: "2.0", method, params: method.startsWith("turn/") ? { ...params, turn: { ...params.turn, items: [] } } : params });
+      }
       for (const state of clients.values()) if (method === THREAD_CATALOG_CHANGED || method === "opencraft/schedules/changed" || method === "skills/changed" || threadId && (state.opened.has(threadId) || state.reading.has(threadId))) state.owner.notify(method, params);
     }));
     // A frontend connection owns one backend incarnation. Replacing only the
@@ -124,7 +157,16 @@ export async function startEngineHost(options: {
       const connection = backend;
       backend = undefined; backendStarting = undefined;
       subscriptions.forEach(unsubscribe => unsubscribe());
+      for (const directory of directories.values()) directory.close();
+      directories.clear();
       for (const state of clients.values()) for (const provider of options.providers) provider.disconnect(state.owner);
+      if (goalObserver) {
+        goalAdmissionReaders.delete(goalRequest);
+        for (const request of goalRequests.values()) { clearTimeout(request.timer); request.settle(false); }
+        goalRequests.clear();
+        goalObserver = false; goalObservers--;
+        if (!goalObservers) for (const provider of options.providers) provider.setGoalExecutionObservation?.(false);
+      }
       clients.clear(); connectionObservations.delete(observation);
       if (internal.size || platform.size) unknownConsumer = true;
       for (const call of internal.values()) { clearTimeout(call.timer); call.reject(new Error("Host connection closed")); } internal.clear();
@@ -145,7 +187,10 @@ export async function startEngineHost(options: {
       connection.on("message", data => {
         if (stopped || backend !== connection) return;
         let message: Value; try { message = JSON.parse(data.toString()); } catch { connection.close(); return; }
-        if (typeof message.method === 'string') consumerEvent(message.method, message.params ?? {});
+        if (typeof message.method === 'string') {
+          consumerEvent(message.method, message.params ?? {});
+          for (const directory of directories.values()) directory.observe(message.method, message.params ?? {}, undefined, options.legacy?.id);
+        }
         if (typeof message.method === 'string') nodeObserver('gateway').execution('dsh',message.method,message.params);
         const pending = internal.get(String(message.id));
         if (message.opencraftDshReceipt) {
@@ -189,6 +234,11 @@ export async function startEngineHost(options: {
       void (async () => {
         let frame: Value;
         try { frame = JSON.parse(data.toString()); } catch { send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } }); return; }
+        const goalReceipt = goalObserver && !frame.method ? goalRequests.get(String(frame.id)) : undefined;
+        if (goalReceipt) {
+          goalRequests.delete(String(frame.id)); clearTimeout(goalReceipt.timer);
+          goalReceipt.settle(frame.result?.admitted === true); return;
+        }
         const clientId = typeof frame[LOGICAL_CLIENT_FIELD] === "string" ? frame[LOGICAL_CLIENT_FIELD] : "";
         if (clientId.length > 4096) { socket.close(1008); return; }
         const state = client(clientId);
@@ -209,6 +259,13 @@ export async function startEngineHost(options: {
           }
           const dispatchInner = async () => {
           const method = frame.method, params = frame.params ?? {};
+          if (method === "opencraft/goal-observer/initialize") {
+            if (!goalObserver) {
+              goalObserver = true; goalObservers++; goalAdmissionReaders.add(goalRequest);
+              for (const provider of options.providers) provider.setGoalExecutionObservation?.(true);
+            }
+            reply({ ready: true }); return;
+          }
           if (typeof method === "string" && method.startsWith("opencraft/orchestration/")) {
             const driver = params.driver ?? params.settings?.driver;
             const provider = typeof driver === "string" ? registry.get(driver)
@@ -220,6 +277,7 @@ export async function startEngineHost(options: {
           if (method === "runtime/client/disconnect") {
             for (const provider of options.providers) provider.disconnect(state.owner);
             catalogClients.delete(state.owner);
+            directories.get(clientId)?.close(); directories.delete(clientId);
             clients.delete(clientId);
             for (const [id, request] of platform) if (request.clientId === clientId) { platform.delete(id); clearTimeout(request.timer); request.reject(new Error("Platform tool owner disconnected")); }
             backend?.send(JSON.stringify(frame)); return;
@@ -247,6 +305,8 @@ export async function startEngineHost(options: {
               ...(access ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, SCOPED_SKILL_CATALOG_METHOD])] } } : {}),
               [SCOPED_SKILL_CATALOG_EXTENSION]: { version: 1 },
               "opencraft/execution-engines": { version: 1, defaultEngine: options.defaultEngine, providers: options.providers.map(provider => ({ id: provider.id, threadPrefix: provider.threadPrefix, modelPrefix: provider.modelPrefix, extensions: provider.extensions })) },
+              "opencraft/thread-directory-updates": { version: 1 },
+              "opencraft/thread-directory-merkle": { version: 1, buckets: 256 }, "opencraft/thread-directory-snapshots": { version: 1, recovery: "snapshot" },
               "opencraft/thread-pins": { version: 1 },
               "opencraft/scoped-model-catalog": { version: 1 } } } }); return;
           }
@@ -321,6 +381,31 @@ export async function startEngineHost(options: {
           const provider = typeof params.threadId === "string" ? options.providers.find(provider => provider.ownsThread(params.threadId))
             : typeof params.model === "string" ? options.providers.find(provider => provider.ownsModel(params.model))
             : method === "thread/start" ? registry.get(options.defaultEngine) : undefined;
+          if (method === "thread/list" && !params.threadId && catalogClients.has(state.owner)) {
+            let directory = directories.get(clientId);
+            if (!directory) {
+              directory = new EngineThreadDirectory([
+                ...(options.legacy ? [{ id: options.legacy.id,
+                  list: (query: Value) => callLegacy("thread/list", query, clientId),
+                  read: (threadId: string) => callLegacy("thread/read", { threadId, includeTurns: false }, clientId),
+                  owns: (threadId: string) => !options.providers.some(provider => provider.ownsThread(threadId)),
+                }] : []),
+                ...options.providers.map(provider => ({ id: provider.id,
+                  list: (query: Value) => provider.request("thread/list", query, state.owner),
+                  read: (threadId: string) => provider.request("thread/read", { threadId, includeTurns: false }, state.owner),
+                  owns: (threadId: string) => provider.ownsThread(threadId),
+                })),
+              ], event => {
+                if (!stopped) state.owner.notify(THREAD_CATALOG_CHANGED, { ...event });
+              }, metric => { if (metric.phase !== "read") console.info(JSON.stringify({ event: "thread-directory", ...metric })); });
+              directories.set(clientId, directory);
+            }
+            if (directory.supports(params)) {
+              const page = await directory.list(params);
+              if (stopped || clients.get(clientId) !== state || !catalogClients.has(state.owner)) throw new Error("Directory reader admission expired");
+              reply(page); return;
+            }
+          }
           if ((method === "model/list" || method === "thread/list") && !params.threadId) {
             const catalog = await singleflight(`${method}:${JSON.stringify(params)}`, async () => {
             const outcomes = await Promise.allSettled([
@@ -352,7 +437,10 @@ export async function startEngineHost(options: {
             const wasReading = state.reading.has(params.threadId);
             if (watching) state.reading.add(params.threadId);
             let result;
-            try { result = await provider.request(method, params, state.owner); }
+            try {
+              result = await provider.request(method, params, state.owner);
+              for (const directory of directories.values()) directory.observe(method, params, result);
+            }
             catch (error) { if (watching && !wasReading) state.reading.delete(params.threadId); throw error; }
             if (["thread/start", "thread/resume", "thread/fork"].includes(method) && result.thread?.id) state.opened.add(result.thread.id);
             if (method === "thread/unsubscribe") { state.opened.delete(params.threadId); state.reading.delete(params.threadId); }
@@ -366,6 +454,7 @@ export async function startEngineHost(options: {
             return;
           }
           const result = await callLegacy(method, params, clientId);
+          for (const directory of directories.values()) directory.observe(method, params, result);
           if (["thread/resume", "thread/start"].includes(method) && result.thread?.status?.type === "active") consumerTurns.set(result.thread.id, "unknown");
           if (method === "turn/start" && result.turn?.status === "inProgress" && params.threadId) consumerEvent("turn/started", { threadId: params.threadId, turn: result.turn });
           reply(result);

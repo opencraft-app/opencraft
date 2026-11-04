@@ -503,6 +503,10 @@ export class OpenCraftTokenUsageLedger {
   /** A complete successful replay repairs transient acquisition failures even
    * after a Host restart. Invalid/replaced source evidence needs separate proof. */
   resolveReplayGaps(threadId:string): void {
+    threadId=requiredId(threadId);
+    // A read-only miss must not acquire the shared writer lock. The UPDATE
+    // rechecks under the transaction; a concurrent later gap stays retryable.
+    if(!this.statement("SELECT 1 FROM token_usage_gaps WHERE server_id=? AND thread_id=? AND ends_ms IS NULL AND reason IN ('storage-write','queue-full','source-offline','unreplayable','source-replaced') LIMIT 1").get(this.serverId,threadId))return;
     this.write(()=>{
       const result=this.statement("UPDATE token_usage_gaps SET ends_ms=? WHERE server_id=? AND thread_id=? AND ends_ms IS NULL AND reason IN ('storage-write','queue-full','source-offline','unreplayable','source-replaced')").run(timestamp(this.now()),this.serverId,requiredId(threadId));
       if(result.changes)this.bump();

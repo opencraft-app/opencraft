@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import { WebSocketServer } from "ws";
 
-import { parseThreadPinsSnapshot, supportsThreadPinDiscovery } from "@opencraft/appserver-protocol";
+import { parseThreadPinsSnapshot, supportsThreadPinDiscovery, threadDirectoryIncomplete } from "@opencraft/appserver-protocol";
 
 import { ThreadPinningResource } from "../../packages/workbench-runtime/src/thread-pinning-resource";
 
@@ -353,7 +353,7 @@ async function legacyPinBackend(thread: Record<string, unknown>) {
         "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, pin: true },
         "opencraft/thread-pins": { version: 1 },
       } } }; break;
-      case "thread/list": result = { data: [thread], nextCursor: null }; break;
+      case "thread/list": result = { data: frame.params?.archived === true ? [] : [thread], nextCursor: null }; break;
       case "opencraft/thread-pins/list": result = { supported: true, data: state.pinned ? [thread] : [] }; break;
       case "opencraft/thread-pins/set": state.pinned = frame.params?.pinned === true; result = { pinned: state.pinned }; break;
       default: result = {};
@@ -401,6 +401,13 @@ test("engine host advertises and routes pins for DSH and Pi without opening eith
       defaultEngine: "dsh", legacy: { id: "dsh", label: "DSH", start: startLegacy } });
     let current = await connectRuntime();
     let page = await current.resources.threads.list();
+    // Independent engines may publish a useful partial first page. Pin routing
+    // requires their complete directory, not a race against the first socket.
+    for (let attempt = 0; threadDirectoryIncomplete(page) && attempt < 50; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      page = await current.resources.threads.list();
+    }
+    assert.equal(threadDirectoryIncomplete(page), false);
     assert.deepEqual(page.data.map(row => row.id).sort(), ["dsh-thread", piThread]);
     assert.equal(current.resources.threads.capabilities!("dsh-thread").pin, true);
     assert.equal(current.resources.threads.capabilities!(piThread).pin, true);

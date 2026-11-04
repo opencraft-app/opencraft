@@ -14,6 +14,7 @@
   --size-control-hit-min: 0px;
   --gap-control-density-min: 0px;
   --spacing: 4px;
+  --padding-floating-navigation-inline: calc(var(--spacing) * 5);
   // Floating transcript control: +15% glyph scale with a 44px touch target.
   --size-transcript-float-touch: 44px;
   --size-transcript-float-icon-touch: 23px;
@@ -116,6 +117,9 @@
   --gap-accessory-control-content: 4px;
   --radius-accessory-control: var(--radius-md);
   --padding-navigation-list-inline: calc(var(--spacing) * 2);
+  // Shell destination lists share one surface inset across apps and settings.
+  --padding-sidebar-content-inline: calc(var(--spacing) * 4);
+  --size-sidebar-navigation-leading-slot: calc(var(--spacing) * 4);
   --gap-toolbar-control: 6px;
   --size-toolbar-control-icon: 13px;
   --size-toolbar-control-chevron: 10px;

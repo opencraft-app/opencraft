@@ -31,3 +31,14 @@ test('composing, inactive and retired contexts do not submit edits',()=>{
   const f=fixture();f.composing(true);f.edit.input(f.event('deleteContentBackward',false));f.composing(false);f.active(false);
   f.edit.beforeInput(f.event('insertText',true,'x'));assert.deepEqual(f.calls,[]);
 });
+
+test('native editing intents run once through both cancelable and noncancelable paths',()=>{
+ for(const [type,command] of [['historyUndo','undo'],['historyRedo','redo'],['deleteWordBackward','deleteWordBackward'],['deleteWordForward','deleteWordForward']]) {
+  for(const cancelable of [true,false]) {
+   const f=fixture(),calls:string[]=[];
+   const edit=new RemoteBrowserEditInput(f.receiver,()=>true,()=>false,()=>assert.fail('not replacement text'),()=>assert.fail('not an OS shortcut'),c=>calls.push(c));
+   const e=f.event(type,cancelable);edit.beforeInput(e);assert.equal(e.prevented,cancelable);edit.input(e);
+   assert.deepEqual(calls,[command]);assert.equal(f.receiver.value,'');
+  }
+ }
+});

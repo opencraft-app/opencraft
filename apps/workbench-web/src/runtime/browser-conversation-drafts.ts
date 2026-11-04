@@ -23,6 +23,26 @@ export function createBrowserConversationDraftStorage(scope: string, documents?:
   const prefix = conversationDraftStoragePrefix(scope);
   const displayPrefix = conversationDisplayStoragePrefix(scope);
   let revoked = false;
+  // Only recognized, canonical semantic keys can exclude an unrelated body.
+  // Unknown/legacy keys retain their original content-based recovery path.
+  const mayContainNewTarget = (key: string, draftId: string): boolean => {
+    if (!key.startsWith(prefix)) return true;
+    try {
+      const slot: unknown = JSON.parse(key.slice(prefix.length));
+      if (!Array.isArray(slot) || slot.length !== 2 || typeof slot[0] !== "string"
+        || !slot[0] || typeof slot[1] !== "string") return true;
+      const target: unknown = JSON.parse(slot[1]);
+      if (!Array.isArray(target)) return true;
+      if (target[0] === "new-thread" && target.length === 2 && typeof target[1] === "string" && target[1]) {
+        return target[1] === draftId;
+      }
+      if (["existing-thread", "enqueue-follow-up"].includes(target[0]) && target.length === 3
+        && target.slice(1).every(value => typeof value === "string" && value)) return false;
+      if (["fork-thread", "steer-active-turn"].includes(target[0]) && target.length === 4
+        && target.slice(1).every(value => typeof value === "string" && value)) return false;
+    } catch { /* Preserve recovery from unrecognized historical keys. */ }
+    return true;
+  };
   const storage: ConversationDraftStorage = {
     async load(key) {
       if (revoked || !key.startsWith(prefix)) return null;
@@ -67,13 +87,16 @@ export function createBrowserConversationDraftStorage(scope: string, documents?:
       try {
         if (documents) for (const key of await documents.keys()) {
           if (revoked) return null;
+          if (!mayContainNewTarget(key, draftId)) continue;
           const target = parseConversationDraftTarget((await documents.read(key)) ?? null);
+          if (revoked) return null;
           if (target?.draftId === draftId) return target;
         }
         for (let index = 0; index < window.localStorage.length; index++) {
           const key = window.localStorage.key(index);
-          if (!key?.startsWith(prefix)) continue;
+          if (!key?.startsWith(prefix) || !mayContainNewTarget(key, draftId)) continue;
           const target = parseConversationDraftTarget(documents ? await readMigratingLocalDocument(documents, key, window.localStorage) : window.localStorage.getItem(key));
+          if (revoked) return null;
           if (target?.draftId === draftId) return target;
         }
       } catch { /* Storage denial must not prevent startup. */ }

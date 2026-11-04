@@ -18,6 +18,7 @@ export function projectFloatingComposer(
     readiness: BrowserReadiness;
     forceExpanded?: boolean;
     onDemand?: boolean;
+    presentation?: "pointer" | "touch";
   },
 ) {
   const handles = input.floating && (input.onDemand || input.readiness === "ready");
@@ -27,7 +28,8 @@ export function projectFloatingComposer(
   const phase: OverlayPhase = wantsHidden
     ? state.phase === "exiting" ? "exiting" : "hidden"
     : state.phase === "entering" ? "entering" : "visible";
-  const expanded = input.forceExpanded || (input.tabId !== null && input.tabId === state.focusedTab);
+  // Touch uses the shared Composer layout; focus must not select desktop compact chrome.
+  const expanded = input.presentation === "touch" || input.forceExpanded || (input.tabId !== null && input.tabId === state.focusedTab);
   return {
     phase,
     peeked,
@@ -41,8 +43,8 @@ export function projectFloatingComposer(
 export class FloatingComposerState {
   private readonly mobileTabs = new Set<string>();
 
-  /** Initialize each mobile browser once; reopening must retain explicit intent. */
-  prepareMobileBrowser(tabId: string): void {
+  /** Initialize each touch panel once; reopening must retain explicit intent. */
+  prepareMobilePanel(tabId: string): void {
     if (this.mobileTabs.has(tabId)) return;
     this.mobileTabs.add(tabId);
     if (this.value.focusedTab !== tabId && !this.value.collapsedTabs.has(tabId))

@@ -58,7 +58,7 @@ if (kind === "pi" || kind === "dsh-acp") {
     else if (command === "hold" && faux) { faux.setResponses([fauxAssistantMessage("Pi held native execution. ".repeat(2000)), ...Array.from({ length: 20 }, () => fauxAssistantMessage("Synthetic Pi done."))]); result = true; }
     else throw new Error("Unknown isolated native control operation");
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ result }));
-  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: String(error) })); }); });
+  })().catch(error => { response.writeHead(500); response.end(JSON.stringify({ error: error instanceof Error ? error.message : "Fixture request failed" })); }); });
   await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
   await writeFile(join(root, `${kind}-host.json`), JSON.stringify({ websocketUrl: host.websocketUrl,
     controlUrl: `http://127.0.0.1:${(control.address() as any).port}`, token }), { mode: 0o600 });
@@ -139,7 +139,7 @@ if (kind === "pi" || kind === "dsh-acp") {
       authorities: service.database.prepare("SELECT t.thread_id,t.turn_id,a.input_id FROM conversation_turn_authorities t JOIN conversation_authorities a ON a.id=t.authority_id").all() };
     else throw new Error("Unknown mixed Gateway command");
     process.send?.({ id, result });
-  })().catch(error => process.send?.({ id: message.id, error: String(error), stack: (error as Error).stack })); });
+  })().catch(error => process.send?.({ id: message.id, error: error instanceof Error ? error.message : "Fixture request failed" })); });
   process.once("SIGTERM", () => void (async () => { await mcp.close(); for (const rpc of clients.values()) await rpc.close(); client.close(); await appHost.close(); await aggregate.close(); await broker.close(); await service.close(); actors.close(); process.exit(0); })());
   process.send?.({ ready: true });
 } else throw new Error("Unknown isolated mixed process role");

@@ -2,11 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
 function object(value: unknown): Record<string, any> {return value!==null&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,any>:{};}
 const OUTPUT_FIELDS = ["aggregatedOutput", "output", "result", "structuredResult", "contentItems", "results"] as const;
-import { TRANSCRIPT_CACHE_MIGRATIONS, TRANSCRIPT_CACHE_SQL as SQL } from "./transcript-cache-schema.js";
+import { TRANSCRIPT_CACHE_MIGRATIONS } from "./transcript-cache-schema.js";
 type Row = Record<string, any>;
 function stamp(path: string, withCtime = true): { identity: string; watermark: string; position: number } {
   const s = statSync(path, { bigint: true });
@@ -96,8 +96,8 @@ export class TranscriptCacheStorage {
     this.db?.close(); this.db = null;
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     chmodSync(join(this.dataDirectory, "cache"), 0o700); chmodSync(this.directory, 0o700);
-    const openIndex = () => openManagedDatabase({ path: this.databasePath, migrations: TRANSCRIPT_CACHE_MIGRATIONS,
-      legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(SQL) });
+    const openIndex = () => openManagedDatabase({ schemaId: "transcript-read-cache", path: this.databasePath, migrations: TRANSCRIPT_CACHE_MIGRATIONS,
+      legacyPolicy: "reject-unknown" });
     let opened;
     try { opened = openIndex(); }
     catch (error) {

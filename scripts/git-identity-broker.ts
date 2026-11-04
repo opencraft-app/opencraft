@@ -1,3 +1,4 @@
+import { gitIdentityReason, type GitIdentityReason } from './git-identity-retry.js';
 import { randomUUID } from 'node:crypto';
 import { GitBrokerOwner } from './git-broker-owner.js';
 import { readFile } from 'node:fs/promises';
@@ -6,10 +7,10 @@ import { createMemoryGitSigner, createMemoryGitAuthenticator } from './git-ident
 
 export interface GitPeer { pid: number; uid: number }
 export type GitExecutionIdentity = { status: 'active'; account: string; executionId: string }
-  | { status: 'unowned' | 'unknown' | 'expired' };
+  | { status: 'unowned' | 'unknown' | 'expired'; reason?: GitIdentityReason };
 export interface GitBrokerOptions {
   store: EmployeeGitVaultStore; hosts: readonly string[]; runtimeDirectory: string;
-  resolve(peer: GitPeer, threadId: string): Promise<GitExecutionIdentity>;
+  resolve(peer: GitPeer, threadId: string, executionId?: string): Promise<GitExecutionIdentity>;
   ttlMs?: number; ownerStateFile?: string;
   httpsCredentialHosts?: readonly string[];
 }
@@ -60,26 +61,36 @@ export class GitIdentityBroker {
     try { return await this.handleRequest(peer, input); } finally { finish?.(); }
   }
   private async handleRequest(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
+    const started = performance.now();
+    const value = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+    const requestId = typeof value.requestId === 'string' && /^[a-f0-9-]{36}$/u.test(value.requestId) ? value.requestId : randomUUID();
+    const fail = (reason: GitIdentityReason, status = 'unavailable') => {
+      console.error('[git-identity]', JSON.stringify({ requestId, reason, status,
+        operation: ['open', 'credential', 'close', 'health'].includes(String(value.op)) ? value.op : 'invalid',
+        peerPid: peer.pid, elapsedMs: Math.round(performance.now() - started) }));
+      return { status, reason, requestId };
+    };
     try {
-      if (peer.uid !== process.getuid?.() || !input || typeof input !== 'object' || Array.isArray(input)) return { status: 'unavailable' };
+      if (peer.uid !== process.getuid?.() || !input || typeof input !== 'object' || Array.isArray(input)) return fail('invalid-request');
       const request = input as Record<string, unknown>;
       if (request.op === 'health') return { status: this.owner.admits() ? 'ready' : 'maintenance', commandSessions: this.sessions.size };
       if (request.op === 'open') {
         if (typeof request.threadId !== 'string' || !request.threadId || request.threadId.length > 512
-          || typeof request.host !== 'string' || !this.options.hosts.includes(request.host)) return { status: 'unavailable' };
+          || typeof request.host !== 'string' || !this.options.hosts.includes(request.host)
+          || request.executionId !== undefined && (typeof request.executionId !== 'string' || !request.executionId || request.executionId.length > 512)) return fail('invalid-request');
         // Establish host-wide absence before touching asynchronous execution
         // adapters. Unbound Git must not depend on their health or latency.
         if (!this.options.store.hasBindings(request.host)) return { status: 'unconfigured' };
-        const identity = await this.options.resolve(peer, request.threadId);
+        const identity = await this.options.resolve(peer, request.threadId, request.executionId as string | undefined);
         if (identity.status === 'unowned') return { status: 'unconfigured' };
-        if (identity.status !== 'active') return { status: identity.status === 'expired' ? 'expired' : 'unavailable' };
+        if (identity.status !== 'active') return fail(identity.status === 'expired' ? 'execution-expired' : gitIdentityReason(identity.reason ?? 'origin-unresolved'), identity.status === 'expired' ? 'expired' : 'unavailable');
         const record = this.options.store.read(identity.account, request.host);
         if (!record.credential) return { status: 'unconfigured' };
         const start = await readGitProcess(peer.pid), credential = record.credential;
         const threadId = request.threadId;
         const authorize = async () => {
           if ((await readGitProcess(peer.pid)).startTicks !== start.startTicks) return false;
-          const current = await this.options.resolve(peer, threadId);
+          const current = await this.options.resolve(peer, threadId, identity.executionId);
           return current.status === 'active' && current.account === identity.account && current.executionId === identity.executionId
             && this.options.store.read(identity.account, request.host as string).revision === record.revision;
         };
@@ -89,24 +100,24 @@ export class GitIdentityBroker {
         const id = randomUUID();
         this.sessions.set(id, { peer, startTicks: start.startTicks, account: identity.account, host: request.host,
           threadId, executionId: identity.executionId, revision: record.revision, credential, signer, authenticator, finish: this.owner.begin('command-session', true), expires: performance.now() + (this.options.ttlMs ?? 300_000) });
-        return { status: 'configured', sessionId: id, identity: credential.identity,
+        return { status: 'configured', sessionId: id, executionId: identity.executionId, identity: credential.identity,
           ...(authenticator ? { sshAuth: { socket: authenticator.path, publicKey: credential.sshAuth!.publicKey } } : {}),
           ...(signer ? { signing: { socket: signer.path, publicKey: credential.signing!.publicKey } } : {}) };
       }
-      if (typeof request.sessionId !== 'string') return { status: 'unavailable' };
+      if (typeof request.sessionId !== 'string') return fail('invalid-request');
       const session = this.sessions.get(request.sessionId);
       if (!session || session.expires <= performance.now()) return { status: 'expired' };
-      if (!await sameProcessTree(peer, session)) return { status: 'unavailable' };
+      if (!await sameProcessTree(peer, session)) return fail('peer-mismatch');
       if (request.op === 'close') { await this.remove(request.sessionId); return { status: 'closed' }; }
-      if (request.op !== 'credential') return { status: 'unavailable' };
+      if (request.op !== 'credential') return fail('invalid-request');
       // Exact final Git credential protocol/host, not URL hints or substring matches.
       if ((this.options.httpsCredentialHosts && !this.options.httpsCredentialHosts.includes(session.host)) || session.credential.sshAuth || !session.credential.token || request.protocol !== 'https' || request.host !== session.host || !this.options.hosts.includes(String(request.host))) return { status: 'denied' };
-      const current = await this.options.resolve(session.peer, session.threadId);
-      if (current.status === 'unknown') return { status: 'unavailable' };
+      const current = await this.options.resolve(session.peer, session.threadId, session.executionId);
+      if (current.status === 'unknown') return fail(gitIdentityReason(current.reason ?? 'origin-unresolved'));
       if (current.status !== 'active' || current.executionId !== session.executionId || current.account !== session.account) return { status: 'expired' };
       if (this.options.store.read(session.account, session.host).revision !== session.revision) return { status: 'expired' };
       return { status: 'configured', username: session.credential.identity.username, password: session.credential.token };
-    } catch { return { status: 'unavailable' }; }
+    } catch { return fail('broker-error'); }
   }
   async close(): Promise<void> { this.owner.close(); clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id, true))); }
   private async remove(id: string, uncertain = false): Promise<void> {

@@ -44,3 +44,14 @@ Keep future task plans, findings and progress under a named topic in `design/`,
 or use ignored `.local/` for scratch work. Keep required third-party notices in
 place. A file move must update its links, tool loaders, fixtures and CI selection
 so a fresh clone works without an older checkout or private parent repository.
+
+
+## Byte delta synchronization
+
+[`packages/rsync-delta`](../packages/rsync-delta/README.md) is a standalone,
+platform-neutral rsync-style byte algorithm. It owns signatures, rolling matching
+and checked reconstruction; it consumes a SHA-256 port and explicit manifests.
+Directory epochs, authorized views, durable subscriptions and source-side storage
+remain consumers' responsibilities. The package includes executable SMT/model
+verification and TypeScript conformance tests; it does not implement rsync CLI wire
+compatibility or create a second directory projection.

@@ -135,22 +135,39 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     }
     appChoice = this.registry.metadata(`app-payload:${id}`) as AppPayloadChoice | null;
     const health = await this.options.supervisor.start(generation);
-    if (await realpath(health.dataDirectory) !== await realpath(this.options.dataDirectory) || health.proxyBaseUrl !== this.options.proxyBaseUrl) throw new Error("Generation account Core identity mismatch");
-    const expectedHome = await realpath(join(generation.runtimeDataDirectory, "runtime"));
-    const actualHome = health.codexHome ?? (await readFile(`/proc/${health.codexPid}/environ`, "utf8")).split("\0").find(value => value.startsWith("CODEX_HOME="))?.slice(11);
-    if (!actualHome || await realpath(actualHome) !== expectedHome) throw new Error("Generation native HOME mismatch");
-    const identity = await this.options.supervisor.identify(generation, health);
-    if (appChoice?.applied) {
-      await verifyAppChoice(generation, appChoice);
-      if (identity.cliSha256 !== appChoice.cliSha256 || identity.cliVersion !== appChoice.cliVersion) throw new Error("APP-only CLI identity changed");
-      if (generation.state === "candidate" && !appChoice.restoringSourceApp) requireCallbackObservation(health);
-    }
+    const identity = await this.verifyHealth(generation, health);
     const previous = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity | null;
     if (generation.state === "candidate") this.registry.ready(id);
     else if (previous && JSON.stringify(previous) !== JSON.stringify(identity)) {
       this.registry.runtimeChanged(id); this.probes.get(id)?.peer.close(); this.probes.delete(id);
     }
     this.registry.setMetadata(`runtime:${id}`, identity); this.cached.set(id, { at: this.now(), health }); return health;
+  }
+  private async verifyHealth(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity> {
+    if (await realpath(health.dataDirectory) !== await realpath(this.options.dataDirectory) || health.proxyBaseUrl !== this.options.proxyBaseUrl) throw new Error("Generation account Core identity mismatch");
+    const expectedHome = await realpath(join(generation.runtimeDataDirectory, "runtime"));
+    const actualHome = health.codexHome ?? (await readFile(`/proc/${health.codexPid}/environ`, "utf8")).split("\0").find(value => value.startsWith("CODEX_HOME="))?.slice(11);
+    if (!actualHome || await realpath(actualHome) !== expectedHome) throw new Error("Generation native HOME mismatch");
+    const identity = await this.options.supervisor.identify(generation, health);
+    const appChoice = this.registry.metadata(`app-payload:${generation.id}`) as AppPayloadChoice | null;
+    if (appChoice?.applied) {
+      await verifyAppChoice(generation, appChoice);
+      if (identity.cliSha256 !== appChoice.cliSha256 || identity.cliVersion !== appChoice.cliVersion) throw new Error("APP-only CLI identity changed");
+      if (generation.state === "candidate" && !appChoice.restoringSourceApp) requireCallbackObservation(health);
+    }
+    return identity;
+  }
+  /** Observe an existing ready owner without admission, start or recovery. */
+  async inspectHealth(id: string): Promise<CodexAppServerHealth> {
+    const generation = this.registry.get(id);
+    if (this.closed || !generation || !["ready", "active", "draining"].includes(generation.state) || !this.options.supervisor.inspect) throw paused();
+    const health = await this.options.supervisor.inspect(generation);
+    const identity = await this.verifyHealth(generation, health);
+    const previous = this.registry.metadata(`runtime:${id}`) as GenerationProcessIdentity | null;
+    const after = this.registry.get(id);
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(identity) || after?.incarnation !== generation.incarnation
+      || !["ready", "active", "draining"].includes(after.state)) throw new Error("Execution owner changed during health observation");
+    return health;
   }
   async selectAppPayload(value: Record<string, unknown>): Promise<AppPayloadChoice> {
     const request = appPayloadRequest(value), id = request.id;
@@ -190,6 +207,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
   async preparation(id: string, expectedOwner?: string, expectedHost?: string): Promise<string> {
     this.verifyOwner(expectedOwner, expectedHost);
     await this.ensure(id, true, true);
+    if (this.options.supervisor.inspect) await this.inspectHealth(id);
     this.verifyOwner(expectedOwner, expectedHost);
     const g = this.registry.get(id)!;
     if (!["ready", "active", "draining"].includes(g.state)) throw new Error("Generation is not prepared");
@@ -236,6 +254,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     if (this.registry.epoch() !== expectedEpoch) throw new Error("Generation admission epoch changed");
     // Shared per-HOME starting lease serializes cold validation with concurrent reads.
     await this.ensure(id, true, preparation !== undefined);
+    // Routing liveness is insufficient to prepare or promote an execution owner.
+    if (this.options.supervisor.inspect) await this.inspectHealth(id);
     if (preparation !== undefined) this.verifyPreparation(id, expectedEpoch, preparation);
     if (this.retiring.has(id) || this.changingPayload.has(id) || this.registry.get(id)?.state === "revoking") throw paused();
     this.verifyOwner(expectedOwner, expectedHost);

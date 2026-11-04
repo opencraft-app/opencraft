@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
+import { openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
 
 export type SigningRegistration = 'unregistered' | 'pending' | 'registered' | 'manual_required';
 export interface GitVaultCredential {
@@ -78,8 +78,8 @@ export class EmployeeGitVaultStore {
     this.key = privateFile(keyPath).bytes;
     if (this.key.length !== 32) { this.key.fill(0); throw new GitVaultError('unavailable', 503); }
     try {
-      const managed = openManagedDatabase({ path, migrations: EMPLOYEE_GIT_VAULT_MIGRATIONS,
-        validateSchema: createSchemaValidator(SCHEMA), legacyPolicy: 'reject' });
+      const managed = openManagedDatabase({ schemaId: "employee-git-vault-store", path, migrations: EMPLOYEE_GIT_VAULT_MIGRATIONS,
+         legacyPolicy: 'reject' });
       this.db = managed.database; this.outcome = managed.outcome;
     } catch (error) { this.key.fill(0); throw error; }
   }

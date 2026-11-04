@@ -1,3 +1,5 @@
+import { threadDirectoryIncomplete, threadDirectoryFailed, parseThreadCatalogSnapshot, isCatalogSnapshotExpired } from "@opencraft/appserver-protocol";
+import { observeCatalogQueries, noteCatalogCause, catalogPageTrace } from "./catalog-request-observation";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { InfiniteQueryObserver, notifyManager, useQueryClient,
   type InfiniteData, type DefaultedInfiniteQueryObserverOptions, type InfiniteQueryObserverOptions, type InfiniteQueryObserverResult } from "@tanstack/react-query";
@@ -8,6 +10,7 @@ import { beginObservedOperation } from "./observability";
 import { retryQuery } from "./workbench-application-services";
 import { reportRuntimeError } from "../runtime-error-reporting";
 import { threadCatalogUpdates } from "./thread-catalog-updates";
+import { startCatalogReturnRecovery } from "./catalog-return-recovery";
 
 type CatalogQuery = Omit<Parameters<typeof readHostThreadCatalog>[0], "signal" | "onInitialPage" | "pageCursor"> & {
   readonly enabled: boolean;
@@ -17,14 +20,31 @@ type Key = CatalogQuery["queryKey"];
 type Observer = InfiniteQueryObserver<ThreadListResponse, Error, ThreadListResponse, Key, string | null>;
 type Result = InfiniteQueryObserverResult<ThreadListResponse, Error>;
 type Options = InfiniteQueryObserverOptions<ThreadListResponse, Error, ThreadListResponse, Key, string | null>;
+const directoryFailure = new Error("Conversation directory refresh failed");
 
 /** A connection owner drives recovery of an unreadable Host. */
 export function retryHostThreadCatalogQuery(failureCount: number, error: unknown): boolean {
-  return isHostThreadCatalogUnavailableError(error) ? false : retryQuery(failureCount, error);
+  return isHostThreadCatalogUnavailableError(error) || isCatalogSnapshotExpired(error) ? false : retryQuery(failureCount, error);
 }
 
-function projectPages(value: InfiniteData<ThreadListResponse, string | null>): ThreadListResponse {
-  return { ...value.pages[0]!, data: mergeThreadCatalogPages(value.pages), nextCursor: value.pages.at(-1)?.nextCursor ?? null };
+export function projectThreadCatalogPages(value: InfiniteData<ThreadListResponse, string | null>): ThreadListResponse {
+  const snapshot = parseThreadCatalogSnapshot(value.pages[0]);
+  if (snapshot && value.pages.some(page => JSON.stringify(parseThreadCatalogSnapshot(page)) !== JSON.stringify(snapshot)))
+    throw new Error("Conversation catalog snapshot changed; retry from the first page");
+  const partial = value.pages.find(threadDirectoryIncomplete) as (ThreadListResponse & { catalog?: unknown }) | undefined;
+  const result = { ...value.pages[0]!, ...(partial?.catalog ? { catalog: partial.catalog } : {}),
+    data: mergeThreadCatalogPages(value.pages), nextCursor: value.pages.at(-1)?.nextCursor ?? null };
+  if (snapshot) {
+    const decoration = (value.pages[0] as ThreadListResponse & { catalogDecorations?: { pins?: ThreadListResponse["data"]; provisional?: ThreadListResponse["data"] } }).catalogDecorations;
+    const raw = result.data;
+    const pins = new Set(decoration?.pins?.map(row => row.id) ?? []);
+    const displayed = new Map(raw.map(row => [row.id, { ...row, pinned: pins.has(row.id) }]));
+    if (result.nextCursor !== null || partial) for (const row of [...decoration?.pins ?? [], ...decoration?.provisional ?? []])
+      if (!displayed.has(row.id)) displayed.set(row.id, { ...row, pinned: pins.has(row.id) });
+    result.data = [...displayed.values()].sort((a, b) => (b.recencyAt ?? b.updatedAt) - (a.recencyAt ?? a.updatedAt) || a.id.localeCompare(b.id));
+    Object.assign(result, { __opencraftCatalogRawRows: raw });
+  }
+  return result;
 }
 
 /** TanStack exposes useInfiniteQuery for one source, but no useInfiniteQueries.
@@ -32,6 +52,8 @@ function projectPages(value: InfiniteData<ThreadListResponse, string | null>): T
  * live here; successful pages, retries and cancellation belong to QueryClient. */
 export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
   const client = useQueryClient();
+  useEffect(() => startCatalogReturnRecovery(client), [client]);
+  observeCatalogQueries(client);
   const pool = useMemo(() => new Map<string, Observer>(), [client]);
   const measures = useMemo(() => new Map<Observer, ReturnType<typeof beginObservedOperation>>(), [client]);
   const scope = JSON.stringify(inputs.map(input => input.queryKey));
@@ -58,14 +80,16 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
   }), [client, pool, scope]);
   function options(input: CatalogQuery): Options {
     return {
-      queryKey: input.queryKey, enabled: input.enabled, initialPageParam: null,
+      queryKey: input.queryKey, meta:{requestCaller:"sidebar-catalog"}, enabled: input.enabled, initialPageParam: null,
       queryFn: async ({ signal, pageParam }) => {
         const updates = threadCatalogUpdates(client, input.queryKey, input.profile.hostId);
         const startedAt = updates.getSnapshot();
-        const page = await readHostThreadCatalog({ ...input, signal, pageCursor: pageParam });
         const previous = client.getQueryData<InfiniteData<ThreadListResponse, string | null>>(input.queryKey);
-        const position = previous?.pageParams.indexOf(pageParam) ?? -1;
         const appending = client.getQueryState(input.queryKey)?.fetchMeta?.fetchMore?.direction === "forward";
+        const projected = pageParam == null && previous?.pages.length && !appending ? projectThreadCatalogPages(previous) : undefined;
+        const recoveryBase = projected ? { ...projected, data: (projected as ThreadListResponse & { __opencraftCatalogRawRows?: ThreadListResponse["data"] }).__opencraftCatalogRawRows ?? projected.data } : undefined;
+        const page = await readHostThreadCatalog({ ...input, signal, pageCursor: pageParam, recoveryBase, trace:catalogPageTrace(client,input.queryKey,pageParam) });
+        const position = previous?.pageParams.indexOf(pageParam) ?? -1;
         const prefix = !appending ? [] : position < 0 ? previous?.pageParams ?? [] : previous!.pageParams.slice(0, position + 1);
         if (page.nextCursor != null && (page.nextCursor === pageParam || prefix.includes(page.nextCursor))) {
           throw new Error("Repeated thread catalog cursor");
@@ -73,7 +97,9 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
         return updates.markRead(page, startedAt);
       },
       getNextPageParam: last => last.nextCursor ?? null,
-      select: projectPages, staleTime: 30_000, retry: retryHostThreadCatalogQuery,
+      select: projectThreadCatalogPages, staleTime: 30_000, retry: retryHostThreadCatalogQuery,
+      refetchInterval: query => query.state.data?.pages.some(threadDirectoryIncomplete)
+        ? query.state.data.pages.some(threadDirectoryFailed) ? 30_000 : 2000 : false,
     };
   }
   const configured = inputs.map(input => {
@@ -83,17 +109,31 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
     return defaulted;
   });
   const optimistic = observers.map((observer, index) => observer.getOptimisticResult(configured[index]!));
+  const snapshotRestarts = useRef(new WeakMap<Observer, { at: number; count: number }>());
+  useEffect(() => {
+    optimistic.forEach((result, index) => {
+      if (!inputs[index]!.enabled || !result.isError || result.isFetching || !isCatalogSnapshotExpired(result.error)) return;
+      const observer = observers[index]!, now = performance.now(), prior = snapshotRestarts.current.get(observer);
+      const count = prior && now - prior.at < 60_000 ? prior.count : 0;
+      if (count >= 2) return; // Bounded recovery; a busy/failed owner retains ordinary Retry.
+      snapshotRestarts.current.set(observer, { at: now, count: count + 1 });
+      const key = inputs[index]!.queryKey;
+      const previous = client.getQueryData<InfiniteData<ThreadListResponse, string | null>>(key);
+      notifyManager.batch(() => {
+        if (previous?.pages.length) client.setQueryData(key, { pages: [{ ...previous.pages[0],
+          data: mergeThreadCatalogPages(previous.pages), nextCursor: null,
+          catalog: { state: "syncing", coverage: "partial" } }], pageParams: [null] });
+        void observer.refetch({ cancelRefetch: false });
+      });
+    });
+  });
   useEffect(() => {
     optimistic.forEach((result, index) => {
       if (result.isFetching || !result.isSuccess) return;
       const update = updates[index]!;
-      if (!result.hasNextPage) update.acknowledge(result.data);
-      if (!update.hasPending) return;
-      // Fold the tail into the same query cache after its old read settles.
-      // Keep page cursors/identities, and retain no second long-lived directory.
-      const revision = update.getSnapshot();
-      client.setQueryData<InfiniteData<ThreadListResponse, string | null>>(inputs[index]!.queryKey, data => update.materialize(data));
-      update.acknowledge(update.markRead(result.data!, revision));
+      // Query data contains only raw Server pages. Live facts are projected at
+      // presentation time and cannot acknowledge themselves through this cache.
+      update.acknowledge(result.data, !result.hasNextPage && !threadDirectoryIncomplete(result.data));
     });
   });
   const store = useMemo(() => {
@@ -123,6 +163,7 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
   useEffect(() => {
     optimistic.forEach((result, index) => {
       if (inputs[index]!.enabled && result.hasNextPage && !result.isFetching && !result.isError) {
+        noteCatalogCause(client,{queryKey:inputs[index]!.queryKey,exact:true},"auto-next-page");
         void observers[index]!.fetchNextPage({ cancelRefetch: false });
       }
     });
@@ -135,11 +176,12 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
         measures.set(observer, beginObservedOperation("catalog_complete"));
       }
       const finish = measures.get(observer);
-      if (finish && (!inputs[index]!.enabled || result.isError || (!result.isFetching && !result.hasNextPage && result.data))) {
-        finish(!inputs[index]!.enabled ? "aborted" : result.isError ? "failed" : "ok", { count: result.data?.data.length ?? 0 });
+      const failed = result.isError || threadDirectoryFailed(result.data);
+      if (finish && (!inputs[index]!.enabled || failed || (!result.isFetching && !result.hasNextPage && result.data && !threadDirectoryIncomplete(result.data)))) {
+        finish(!inputs[index]!.enabled ? "aborted" : failed ? "failed" : "ok", { count: result.data?.data.length ?? 0 });
         measures.delete(observer);
       }
-      if (inputs[index]!.enabled && result.isError && !isHostThreadCatalogUnavailableError(result.error)) {
+      if (inputs[index]!.enabled && result.isError && !isHostThreadCatalogUnavailableError(result.error) && !isCatalogSnapshotExpired(result.error)) {
         const token = `${JSON.stringify(inputs[index]!.queryKey)}:${result.error instanceof Error ? result.error.message : String(result.error)}`;
         if (!reportedCatalogErrors.current.has(token)) {
           reportedCatalogErrors.current.add(token);
@@ -151,6 +193,12 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
   });
   useEffect(() => () => { for (const finish of measures.values()) finish("aborted"); measures.clear(); }, [measures]);
   return optimistic.map((result, index) => ({ ...result,
+    status: threadDirectoryFailed(result.data) ? "error" as const : result.status,
+    error: result.error ?? (threadDirectoryFailed(result.data) ? directoryFailure : null),
+    isSuccess: result.isSuccess && !threadDirectoryFailed(result.data),
+    isError: result.isError || threadDirectoryFailed(result.data),
+    isLoading: result.isLoading || (!threadDirectoryFailed(result.data) && threadDirectoryIncomplete(result.data) && result.data?.data.length === 0),
+    isFetching: result.isFetching || (!threadDirectoryFailed(result.data) && threadDirectoryIncomplete(result.data)),
     data: updates[index]!.project(result.data),
     hasNextPage: result.data === undefined && updates[index]!.project(undefined) !== undefined ? true : result.hasNextPage,
     dataRevision: observers[index]!.getCurrentQuery().state.dataUpdateCount + updates[index]!.getSnapshot(),

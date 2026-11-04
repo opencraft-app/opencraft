@@ -112,7 +112,7 @@ export async function routerLocalJson(endpoint: string, token: string, path: str
   return new Promise<any>((resolve, reject) => {
     const req = request({ socketPath: endpoint, path, agent: false, headers: { authorization: `Bearer ${token}` } }, response => {
       const chunks: Buffer[] = []; let size = 0;
-      response.on("data", chunk => { size += chunk.length; if (size > 1024 * 1024) req.destroy(Error("Router maintenance response too large")); else chunks.push(chunk); });
+      response.on("data", chunk => { size += chunk.length; if (size > 16 * 1024 * 1024) req.destroy(Error("Router maintenance response too large")); else chunks.push(chunk); });
       response.on("end", () => { try { if (response.statusCode !== 200) throw Error("Router maintenance inspection rejected"); resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch (error) { reject(error); } });
     });
     req.setTimeout(10_000, () => req.destroy(Error("Router maintenance inspection timed out"))); req.on("error", reject); req.end();
@@ -137,10 +137,13 @@ export function readRouterMaintenance(path: string, state: unknown, storage: str
   const pending = raw.pending ?? [];
   if (raw.version !== 1 || !Array.isArray(pending) || !pending.every(identity) || new Set(pending).size !== pending.length
     || typeof raw.uncertain !== "boolean" || !["open", "fenced"].includes(String(raw.phase)) || !Number.isSafeInteger(raw.epoch)) throw Error("Invalid maintenance source state");
+  // Open owners can prepare/activate generations after their last handoff.
+  // raw.configuration records that historical handoff; importMaintenance binds
+  // the freshly inspected receipt configuration to current artifacts and data.
   const host = rpcRecord(value.native);
   if (value.mode === "host-restart" && (host.policy !== "host-restart-v1" || host.sourceBootId !== value.source.bootId
     || host.recoveryBootId !== value.controller.bootId || raw.phase !== "open"
-    || !Array.isArray(raw.history) || !raw.history.length || !sha(raw.configuration) || raw.configuration !== value.configurationSha256)) throw Error("Invalid host restart proof");
+    || !Array.isArray(raw.history) || !raw.history.length || !sha(raw.configuration))) throw Error("Invalid host restart proof");
   if (host.hostColdUnavailable) {
     const policy = hostColdUnavailablePolicy(host.hostColdUnavailable, value.mode === "host-restart");
     if (value.mode === "host-restart" && (policy.source.owner !== value.source.owner || policy.source.bootId !== value.source.bootId)) throw Error("Host cold-unavailable receipt source changed");

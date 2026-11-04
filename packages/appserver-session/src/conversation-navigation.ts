@@ -43,6 +43,8 @@ interface HydratedTurnNavigation {
 
 export interface V3ConversationNavigationPort {
   getView(): ThreadView | null;
+  /** Read-only history authority; independent of execution Resume ownership. */
+  historyReady?(): boolean;
   subscribeView(listener: () => void): () => void;
   listTurns(params: ThreadTurnsListRequest): Promise<ThreadTurnsListResponse>;
   commitHydratedTurn(
@@ -203,6 +205,8 @@ export function createV3ConversationNavigationSource(
   let requested = false;
   let snapshot: ConversationNavigationSnapshot;
 
+  const historyReady = () => config.port.historyReady?.() ?? config.port.getView()?.resumeState === "resumed";
+
   const generation = (): string | null => {
     const view = config.port.getView();
     return view === null ? null : `appserver-v3:${view.hostId}:${view.historyCheckpoint ? `${view.historyCheckpoint.epoch}:${view.historyCheckpoint.nextSeq}` : view.connectionGeneration}`;
@@ -267,7 +271,7 @@ export function createV3ConversationNavigationSource(
 
   const enumerate = async (): Promise<void> => {
     const expectedGeneration = generation();
-    const current = () => !disposed && generation() === expectedGeneration;
+    const current = () => !disposed && historyReady() && generation() === expectedGeneration;
     phase = "loading";
     error = null;
     publish();
@@ -324,10 +328,10 @@ export function createV3ConversationNavigationSource(
     requested = true;
     if (disposed) return Promise.resolve();
     const view = config.port.getView();
-    // Resume owns discovery of the history model. Enumerating before it has
-    // settled can accidentally turn a message-window provider into a second
+    // The authoritative history baseline owns discovery of the history model.
+    // Enumerating before it settles can turn a message-window provider into a second
     // all-history reader, competing with foreground hydration.
-    if (view === null || view.resumeState !== "resumed") return Promise.resolve();
+    if (view === null || !historyReady()) return Promise.resolve();
     if (view.historyMode === "message-window") {
       locators = [];
       completeness = view.tailHydrationComplete ? "complete" : "partial";
@@ -410,7 +414,7 @@ export function createV3ConversationNavigationSource(
     const view = config.port.getView();
     // Index discovery is requested by the rail/search consumer, not retention.
     if (!requested) { publish(); return; }
-    if (view?.historyMode === "message-window" || (preparedGeneration === null && view?.resumeState === "resumed")) {
+    if (view?.historyMode === "message-window" || (preparedGeneration === null && historyReady())) {
       publish();
       void prepare();
       return;
@@ -467,11 +471,13 @@ export function createV3ConversationNavigationSource(
           options,
         );
         if (isAborted() || generation() !== expectedGeneration) return null;
-        const target = { turnKey: anchor.turnKey, itemId: anchor.itemId, projectionRevision };
+        const itemId = options?.itemId ?? anchor.itemId;
+        if (itemId !== null && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === itemId)) return null;
+        const target = { turnKey: anchor.turnKey, itemId, projectionRevision };
         const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
         if (
           currentAnchor === undefined
-          || conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target)
+          || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
         ) return null;
         return {
           ...target,
@@ -488,7 +494,8 @@ export function createV3ConversationNavigationSource(
       ) return null;
       const prompt = hydrated.prompts.find((candidate) => candidate.itemId === anchor.itemId)
         ?? hydrated.prompts[0];
-      if (prompt === undefined) return null;
+      if (prompt === undefined && options?.itemId === undefined) return null;
+      if (options?.itemId !== undefined && !hydrated.turn.items?.some(item => item.id === options.itemId)) return null;
       const commit = config.port.commitHydratedTurn(
         hydrated.turn,
         locators.map((locator) => locator.turnId),
@@ -498,13 +505,14 @@ export function createV3ConversationNavigationSource(
       if (isAborted() || generation() !== expectedGeneration) return null;
       const target = {
         turnKey: anchor.turnKey,
-        itemId: prompt.itemId,
+        itemId: options?.itemId ?? prompt!.itemId,
         projectionRevision,
       };
+      if (options?.itemId !== undefined && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === options.itemId)) return null;
       const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
       if (
         currentAnchor === undefined
-        || conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target)
+        || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
       ) return null;
       return {
         ...target,

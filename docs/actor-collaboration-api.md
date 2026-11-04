@@ -213,3 +213,26 @@ Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
 input delegation and the original write budget; it creates no parallel queue.
 The child's durable Broker parentage, rather than each engine's native lineage,
 is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).
+
+
+### 跨驱动准备与失败诊断
+
+Codex 的原生 permission profile ID 只在同驱动创建时继承。`sourceOnly`
+准备将已知内建 profile 映射为共享 `opencraft:permission-mode:*`，供 DSH/ACP、Pi
+验证；未知自定义 profile 保持未知，不能据 sandbox 外观升级为 Full access。
+目的驱动仍独立验证权限及模型归属，模型参数使用目的驱动目录返回的精确模型 ID。
+
+准备等非创建调用的 Host 明确拒绝保留 HTTP 状态码及 JSON-RPC 参数校验状态；
+创建调用即使返回 409/502 也可能已执行，只有 Broker 持久化的明确拒绝回执才能判定失败；
+CLI 返回 `orchestration_rejected`，模型工具保留对应状态。传输丢失、超时和结果未知
+继续按原 receipt 对账，不改为成功或自动重放。Gateway 的
+`thread-orchestration` / `thread-orchestration-tool-failed` 诊断仅记录调用路径、
+operation/thread/turn ID、状态与数值 RPC code，不记录参数、prompt、凭据或原始异常正文。
+
+Local Host queue cancellation advertises its own final-admission capability,
+independently of exact running-Turn control and its stable Server identity.
+The existing trusted Actor request still owns the queued input, and its
+resource-owner admission is checked immediately before deletion. This does not
+grant wire callers authority to forge Actor context or manage another input.
+
+The shared durable directory consumes committed catalog events. Native `thread/start` responses and `thread/started` allocation notifications remain provisional until first input acceptance, including when Host overlays are enabled.

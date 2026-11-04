@@ -97,6 +97,27 @@ The independent durable terminal owner keeps its existing process RPC and lifeti
 This integration does not route that separate Workbench terminal owner through
 CreateSandbox; DSH SDK terminals are covered by the engine integration below.
 
+## First consumer and rollout
+
+startLocalAgentHost({ processSandbox: { policy, backend, environment } }) owns
+a pool and routes its terminal process RPC through the shared primitive.
+The supplied backend can be local or remote. Terminal output is retained even if
+it arrives before the spawn reply. Input, resize, exit, replay and kill continue
+to use existing process RPC. Pending handles are excluded from duplicate starts,
+and Host close cancels pending admission. Sandbox denial never falls back to a
+bare command.
+Sandbox terminal requests must supply a cwd in the selected environment;
+missing cwd never defaults to the Host's local home directory.
+
+Configured sandbox terminals receive only explicitly selected Host environment
+values plus caller-supplied overrides; they do not inherit the Host process's
+whole environment, which could leak credentials to a remote provider.
+
+The option is explicit. Unconfigured Hosts retain existing process behavior and
+do not claim sandbox containment. The Linux backend refuses unsupported platforms.
+An E2B production adapter is not included; a selected uninstalled provider rejects
+execution rather than falling back to host execution.
+
 ## Engine execution integration
 
 The deployment selects a private, owned `OPENCRAFT_SANDBOX_CONFIG` file (or the
@@ -116,6 +137,36 @@ private input envelope, never in the controller environment or launcher argv.
 | DSH terminals, including ACP DSH | The SDK PTY, foreground inspection and foreground signals run together inside a sandbox; a bounded private pipe transports operations and output. |
 | Pi | Each conversation shell worker and all of its terminal descendants share a sandbox. Owner loss interrupts work; it does not replay it. |
 
+Codex APP readiness requires the configured environment's live `environment/status`
+response to be `ready`, after the initial `environment/info` warmup. Health and
+execution admission use bounded, coalesced read-only observations; a background
+observation runs every two seconds. `pending`, `disconnected`, malformed responses
+and timeouts are unavailable. New Thread/fork, Turn start/steer, command
+and filesystem operations reject with `Execution environment unavailable`; reads
+of conversation history remain available. Observation never starts, reconnects
+or recovers exec-server. External recovery can make the same APP ready again.
+Router health inspects its existing APP without starting a generation. The
+private authenticated `/native-health` endpoint attests only the existing Native
+owner's liveness. Router routing refresh for ready/active/draining owners uses
+that endpoint so history reads survive execution loss; cold/new owner admission
+and deployment health still require executable `/health`. Older APPs without
+the supplemental endpoint follow the existing startup observation path. Host
+readiness observes control health even while its connection stays open; CLI
+`status` and Server directory expose `unavailable` during execution loss.
+
+The generation's `runtime/exec-server-lifecycle.jsonl` is a private (0600)
+append-only diagnostic sink, independent of Native stderr. File writes run in
+Node's asynchronous filesystem worker pool, serialize per logger, and drain on
+owner/transport shutdown; connection threads perform no synchronous log IO. It records timestamps,
+controller PID/parent PID, generated sandbox identity, transient unit, start/exit,
+service exit code or numeric signal when observable, and launcher exit code/signal.
+It distinguishes stdin EOF, output loss, cancellation, normal cleanup and APP
+owner stop (including SIGTERM/SIGINT, startup or Native failure). A missing unit
+status is unknown; a launcher exit is not presented as proof of the payload's
+signal. External stops without an observed initiator remain unattributed.
+No command, cwd, environment, protocol payload, raw error or Native stderr is
+logged. A diagnostic write failure does not alter execution semantics.
+
 These are resource owners, not a promise of one sandbox per Thread for every
 engine. In particular, a Codex environment can serve multiple Threads. A future
 provider's filesystem and working-directory mapping must be implemented before
@@ -128,6 +179,17 @@ local environment, so it is retained only after verifying the Native owner's
 kernel CPU/memory/PID limits; this is bounded local execution. A non-local provider
 has no automatic local fallback. Existing retained generations require a managed
 deployment policy to apply equivalent limits until they retire.
+
+The generation owner is an aggregate controller domain, not one payload sandbox.
+Its optional `backend.options.executionOwner` resources are therefore independent
+from `pool.capacity` and `pool.defaults`: the former bounds Native and auxiliary
+processes across the generation, while the latter continue to define admission
+and per-sandbox resources. Omitting `executionOwner` preserves the legacy
+payload-sized owner defaults. An explicit `memoryHighBytes: null` leaves the
+owner's soft limit unset; a finite configured parent slice remains mandatory and
+provides the shared host ceiling. A managed deployment must reconcile already
+running generation owners against this policy as well as using it for new
+owners; otherwise a prior transient limit can survive a package update.
 
 The three-container Docker assembly selects the `hands-unix` backend for Codex.
 AppServer and its writable `CODEX_HOME` remain in Brain; the sandbox runner opens
@@ -170,7 +232,8 @@ await pool.close();
 
 Contract tests cover remote handles, multiple commands, unsupported terminals,
 effective budget mismatches, cancellation, late provisioning, unknown creation,
-failed destruction and bounded admission.
+failed destruction and bounded admission. Host terminal tests check denial,
+pending close and remote output/input/resize without leaking Host environment.
 
 The explicit Linux smoke creates a unique synthetic domain and verifies actual
 4 CPU / 8 GiB limits, PID/FD limits, inherited fork membership, multiple commands,
@@ -186,3 +249,9 @@ the header, including bytes in the same read; EOF, malformed/oversized headers
 and cancellation fail closed. Loader values and credentials stay outside the
 controller argv/environment. Preparation, parsing and cleanup perform no
 synchronous filesystem operations on an engine dispatch thread.
+
+Source checkouts explicitly select the controller and worker TypeScript loaders by
+absolute module URL when launching from a task directory. Packaged runtime bundles
+use their sealed JavaScript entries and do not depend on the development loader.
+
+Source DSH composition resolves its development loader before bundling a plugin into a temporary directory and passes that trusted local module URL to the source sandbox runner. Packaged runners do not require a development loader.

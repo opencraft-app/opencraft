@@ -64,7 +64,7 @@ export function createTasksExtension(
         title: "看板",
         titleMessage: { id: "sidebar.rail.tasks", defaultMessage: "Board" },
         shortTitleMessage: { id: "sidebar.rail.tasks.short", defaultMessage: "Board" },
-        surface: "sidebar-primary",
+        surface: "applications",
         target: { kind: "view", viewId: TASKS_VIEW_ID },
         icon: "columns",
         order: 35,

@@ -19,7 +19,7 @@ const { outputFiles } = await build({
     const modules = {
       "@tanstack/react-query": `export const useQueries = () => []; export const useQuery = () => globalThis.__panelTest.query ?? ({data:globalThis.__panelTest.resourceData ?? {text:'# Hello',blob:null}}); export const useQueryClient = () => ({invalidateQueries:async()=>{}}); export const useMutation = options => {globalThis.__panelTest.mutation=options.mutationFn;return {}};`,
       "../runtime/appserver-runtime-context": `export const useAppServerRuntime=()=>globalThis.__panelTest.runtime;export const useAppServerSnapshot=()=>({hostId:globalThis.__panelTest.hostId??'bot-a',conversation:null});export const useBlobResources=()=>globalThis.__panelTest.blobs;`,
-      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};`,
+      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};export const fileDownloadUrl=()=>null;export const fileDownloadSize=()=>Promise.resolve(0);`,
       "../appearance-theme": `export const useAppearanceTheme=()=>({resolvedTheme:'light'});`,
       "../runtime/appserver-media-loader": `export const createAppServerMediaSourceLoader=()=>()=>{};`,
       "@opencraft/i18n/react": `export const useIntl=()=>({formatMessage:m=>m.defaultMessage});`,
@@ -43,7 +43,7 @@ test("preview rejects direct writes; editable panel saves the captured target", 
   const invalidations = [];
   globalThis.__panelTest = {
     runtime: {resources:{host:{canRequest:method=>method==="fs/writeFile"},fileSystem:{writeFile:async(...args)=>{writes.push(args)}}}},
-    blobs: {invalidate:async resource=>{invalidations.push(resource)}},
+    blobs: {refresh:async resource=>{invalidations.push(resource)}},
   };
   try {
     const props = {tab:{resource:"/workspace/report.md"}};

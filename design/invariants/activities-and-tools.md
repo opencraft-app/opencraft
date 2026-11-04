@@ -173,3 +173,13 @@ from the authoritative tool, delivery and child projections. Raw axes remain in
 the dispatch tooltip. Unknown stays unconfirmed; completed tools and timed-out
 waits do not prove child completion. New child conversations default to hidden
 subagents and remain reachable through the parent's authorized navigation.
+Pointer activation uses the current result’s selectable ordinal with a stable state action, so retained results can reuse presentation during query changes. Membership, order and disabled-state changes refresh those ordinals; unavailable results never activate. Mouse-only input guards remain shared with the hover policy.
+
+
+## Collaboration status summaries
+
+Collaboration headers and dispatch rows show a single status derived by chat-core
+from the authoritative tool, delivery and child projections. Raw axes remain in
+the dispatch tooltip. Unknown stays unconfirmed; completed tools and timed-out
+waits do not prove child completion. New child conversations default to hidden
+subagents and remain reachable through the parent's authorized navigation.

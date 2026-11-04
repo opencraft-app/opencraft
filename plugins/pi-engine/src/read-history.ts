@@ -1,3 +1,4 @@
+import { PiGoalDoc } from "./goals.js";
 import { PiPrivateCallsDoc } from "./private-calls.js";
 import { PiShellDoc } from "./shell.js";
 import { PiQueueDoc, type PiQueueState } from "./queue.js";
@@ -90,7 +91,7 @@ export async function readPiSnapshot(file: string, cacheDirectory: string, signa
       const entries = await pages(cursor => storage.scanEntries({ conversationId: ROOT_CONVERSATION_ID, order: "ascending" }, 100, cursor, context));
       const submissions = await pages(cursor => storage.scanSubmissions({ conversationId: ROOT_CONVERSATION_ID }, 100, cursor, context));
       const tasks = await pages(cursor => storage.scanTasks({}, 100, cursor, context));
-      return { entries, submissions, queue: await doc(PiQueueDoc.definition.kind, { items: [], paused: false }) as unknown as PiQueueState, tasks: new Map(tasks.map(task => [task.id, task])),
+      return { entries, submissions, goal: await doc(PiGoalDoc.definition.kind, { goal: null, authorizationId: null, round: 0 }) as PiSnapshot["goal"], queue: await doc(PiQueueDoc.definition.kind, { items: [], paused: false }) as unknown as PiQueueState, tasks: new Map(tasks.map(task => [task.id, task])),
         agent: await doc(AgentDoc.definition.kind, {}) as PiSnapshot["agent"],
         live: await doc(LiveDoc.definition.kind, {}) as PiSnapshot["live"],
         usage: await doc(UsageDoc.definition.kind, { models: {}, tools: {} }) as PiSnapshot["usage"],

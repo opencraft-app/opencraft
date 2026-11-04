@@ -5,6 +5,10 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
+import { initialReadinessPolicy } from '../../scripts/server-deployment/initial-readiness-budget.mjs';
 import { updateLocalServer, observeLocalUpdate } from '../../scripts/update-server-local.mjs';
 
 for (const transport of ['slow headers', 'slow body', 'disconnected status']) test(`local updater observes ${transport} without a second installation`, { timeout: 5000 }, async t => {
@@ -111,4 +115,83 @@ test('a stuck status request consumes only the remaining overall budget', { time
       signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
     }) })), /server operation may still be running/);
   assert.equal(reads, 1); assert.ok(performance.now() - started < 500);
+});
+
+const initialRecord = () => ({ policy: { schemaVersion: 1, kind: 'opencraft.initial-target-readiness', timeoutMs: 1_800_000,
+  target: { version: '1.1.0', buildId: 'target', manifestSha256: 'a'.repeat(64), releaseSequence: 317 } }, policySha256: 'b'.repeat(64) });
+const initialAttempt = () => ({ schemaVersion: 1, reason: 'root-owned-exact-target', jobId: 'accepted-job',
+  target: initialRecord().policy.target, policySha256: 'b'.repeat(64), selectedAt: 1_000_000, deadlineAt: 2_800_000 });
+
+test('exact root policy observes the same accepted job beyond fifteen minutes without resubmission', async () => {
+  let elapsed = 0, reads = 0;
+  const budget = initialAttempt();
+  const result = await observeLocalUpdate(observing({ deadline: 900_000, initialReadinessRecord: initialRecord(),
+    now: () => elapsed, wallNow: () => 1_000_000 + elapsed,
+    sleep: async ms => { elapsed += ms; }, status: async () => {
+      reads++; elapsed += 600_000;
+      return { ...completed(), job: { ...completed().job, phase: reads === 1 ? 'starting' : 'completed', initialReadinessBudget: budget } };
+    } }));
+  assert.equal(result.job.phase, 'completed'); assert.equal(reads, 2); assert.ok(elapsed > 900_000);
+});
+
+for (const mismatch of ['target', 'policy', 'attempt', 'missing-selection']) test(`long observation refuses changed ${mismatch}`, async () => {
+  let elapsed = 0, reads = 0;
+  const budget = initialAttempt();
+  await assert.rejects(observeLocalUpdate(observing({ deadline: 900_000, initialReadinessRecord: initialRecord(),
+    now: () => elapsed, wallNow: () => 1_000_000 + elapsed, sleep: async ms => { elapsed += ms; }, status: async () => {
+      reads++;
+      const b = structuredClone(budget);
+      if (mismatch === 'target') b.target.manifestSha256 = 'c'.repeat(64);
+      if (mismatch === 'policy') b.policySha256 = 'c'.repeat(64);
+      if (mismatch === 'attempt' && reads === 2) { b.selectedAt++; b.deadlineAt++; }
+      return { ...completed(), job: { ...completed().job, phase: mismatch === 'attempt' && reads === 1 ? 'starting' : 'completed',
+        ...(mismatch === 'missing-selection' ? {} : { initialReadinessBudget: b }) } };
+    } })), /readiness|identity|attempt/i);
+});
+
+test('long observation deadline is fixed once, exhausted attempts do not loop or renew', async () => {
+  let elapsed = 0, reads = 0;
+  await assert.rejects(observeLocalUpdate(observing({ deadline: 900_000, initialReadinessRecord: initialRecord(),
+    now: () => elapsed, wallNow: () => 1_000_000 + elapsed, sleep: async ms => { elapsed += ms; }, status: async () => {
+      reads++; elapsed += 600_000;
+      return { job: { id: 'accepted-job', version: '1.1.0', phase: 'starting', initialReadinessBudget: initialAttempt() } };
+    } })), /timed out/);
+  assert.ok(elapsed <= 2_430_000, 'the accepted absolute deadline plus bounded observation cleanup cannot renew');
+  assert.ok(reads <= 4);
+});
+
+
+for (const policyState of ['exact', 'wrong target', 'corrupt']) test(`CLI protected readiness record ${policyState} controls observation without install body injection`,
+  { skip: process.getuid?.() !== 0, timeout: 10_000 }, async t => {
+  const root = await mkdtemp('/root/oc-budget-observer-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root,'admin-key'),'synthetic-only',{mode:0o600});
+  const archive=join(root,'target.tgz');await writeFile(archive,'synthetic fixture bytes');
+  const target={version:'1.1.0',buildId:'target',manifestSha256:'a'.repeat(64),releaseSequence:7};
+  const bytes=JSON.stringify(initialReadinessPolicy({...target,...(policyState==='wrong target'?{buildId:'wrong'}:{})}));
+  await writeFile(join(root,'initial-target-readiness.json'),policyState==='corrupt'?'{invalid':bytes,{mode:0o600});
+  let installs=0;const bodies=[];
+  const selectedAt=Date.now();const attempt={schemaVersion:1,reason:'root-owned-exact-target',jobId:'accepted-job',target,
+    policySha256:createHash('sha256').update(bytes).digest('hex'),selectedAt,deadlineAt:selectedAt+1_800_000};
+  const server=createServer(async(request,response)=>{
+    response.setHeader('content-type','application/json');
+    let body='';for await(const chunk of request)body+=chunk;
+    if(request.method==='POST'&&request.url.endsWith('/login')){
+      response.setHeader('set-cookie','session=synthetic; Path=/');response.end('{"ok":true}');return;
+    }
+    if(request.method==='POST'&&request.url.endsWith('/install-local')){
+      installs++;bodies.push(JSON.parse(body));response.statusCode=202;response.end('{"jobId":"accepted-job"}');return;
+    }
+    response.end(JSON.stringify(installs?{...completed(),job:{...completed().job,initialReadinessBudget:attempt}}
+      :{localInstall:true,job:null,current:{version:'1.0.0',buildId:'old'}}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{const closed=new Promise(resolve=>server.close(resolve));server.closeAllConnections();await closed;});
+  const invoke=()=>promisify(execFile)(process.execPath,[new URL('../../scripts/update-server-local.mjs',import.meta.url).pathname,
+    '--version',target.version,'--build-id',target.buildId,'--archive',archive,'--observe-initial-readiness'],
+    {env:{...process.env,OPENCRAFT_WEB_STATE:root,OPENCRAFT_WEB_UPDATE_URL:`http://127.0.0.1:${server.address().port}`},timeout:8_000});
+  if(policyState!=='exact'){await assert.rejects(invoke());assert.equal(installs,0);return;}
+  const result=JSON.parse((await invoke()).stdout);assert.equal(result.buildId,target.buildId);assert.equal(result.execution.ready,true);
+  assert.equal(installs,1);assert.deepEqual(Object.keys(bodies[0]).sort(),['archive','buildId','integrity','version']);
+  assert.equal(bodies[0].buildId,target.buildId);assert.equal(bodies[0].archive,archive);
 });

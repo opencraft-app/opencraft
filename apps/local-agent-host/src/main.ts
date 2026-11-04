@@ -39,6 +39,8 @@ import {
 import { requestLoopback } from "./loopback-http.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
 import { DurableHostProcessService } from "./durable-process-service.js";
+import { HostProcessService } from "./process-service.js";
+import { createSandboxPool, type SandboxBackend, type SandboxPoolPolicy } from "@opencraft/sandbox";
 import { ProjectRepository } from "./project-repository.js";
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
@@ -123,6 +125,8 @@ export async function startLocalAgentHost(options: {
     run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T>;
     control(action: string, input: any): Promise<unknown>;
   };
+  /** Trusted Host policy. Provider initialization is lazy; execution never falls back to bare spawn. */
+  readonly processSandbox?: { policy: SandboxPoolPolicy; backend: SandboxBackend; environment?: Readonly<Record<string, string>> };
   readonly host?: string;
   readonly port?: number;
   readonly token?: string;
@@ -166,6 +170,8 @@ export async function startLocalAgentHost(options: {
     if (failure !== undefined) throw failure;
   };
   try {
+  const sandboxPool = options.processSandbox ? await createSandboxPool(options.processSandbox.policy, options.processSandbox.backend) : undefined;
+  if (sandboxPool) cleanup.push(() => sandboxPool.close());
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
@@ -197,12 +203,14 @@ export async function startLocalAgentHost(options: {
     bridgeDirectory = await mkdtemp(join(tmpdir(), "opencraft-engine-plugin-"));
     const patch = join(bridgeDirectory, "patch.json");
     let nativePlugin = plugin;
+    let sourceRunnerImport: string | undefined;
     // Source previews run DSH without the parent's TS loader. Packaged plugins
     // are already bundled; only source composition needs this build step.
     try {
       await access(resolve(dirname(plugin), '../../../scripts/execution-environment.ts'));
       const { build } = await import('esbuild');
       nativePlugin = join(bridgeDirectory, 'dsh-capability-plugin.mjs');
+      sourceRunnerImport = import.meta.resolve('tsx');
       await build({ entryPoints: [plugin], outfile: nativePlugin, bundle: true, platform: 'node', format: 'esm', target: 'node24', logLevel: 'silent' });
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     const engineModule = (name: string) => pathToFileURL(resolve(dirname(executable), `../../${name}/lib/index.js`)).href;
@@ -210,7 +218,7 @@ export async function startLocalAgentHost(options: {
       { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
       { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
       { insert: [{ id: "opencraft-capability", name: nativePlugin, config: {
-      modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
+      sourceRunnerImport, modelPolicyPath: options.modelPolicyPath, environmentDataDirectory: options.environmentDataDirectory, token: bridgeToken, ownerRequired: !!options.ownerHandoff,
       skillsRoot: join(bridgeDirectory, "skills"),
       persistentSkillsRoot,
       taskSkillsRoot: join(productDataRoot, "task-agent"),
@@ -284,6 +292,34 @@ export async function startLocalAgentHost(options: {
       return capabilityLink.permissions(threadId, preset);
     },
   } : undefined, options.speechModelManagement === true);
+  // This source belongs to the Host, never to a retained frontend delegate or execution lease.
+  adapter.setDirectoryMetadataReader(ids => {
+    if (!capabilityLink) throw new Error("Directory metadata service is not ready");
+    return capabilityLink.directoryMetadata(ids);
+  });
+  let directoryScan: import("@opencraft/appserver-protocol").AppServerThread[] = [];
+  const directory = storage.threads.attachDirectory({
+    measured: metric => { if (metric.phase !== "read") console.info(JSON.stringify({ event: "thread-directory", engine: "dsh", ...metric })); },
+    list: async (params, signal) => {
+      if (signal.aborted) throw new Error("Directory closed");
+      if (params.cursor == null) directoryScan = await adapter.directoryMetadata();
+      const offset = params.cursor == null ? 0 : Number(params.cursor);
+      if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid source cursor");
+      const data = directoryScan.slice(offset, offset + 200);
+      const nextCursor = offset + data.length < directoryScan.length ? String(offset + data.length) : null;
+      if (nextCursor == null) directoryScan = [];
+      return { data, nextCursor };
+    },
+    readMetadataBatch: async (threadIds, signal) => {
+      if (signal.aborted) throw new Error("Directory closed");
+      const wanted = new Set(threadIds);
+      return new Map((await adapter.directoryMetadata(threadIds)).filter(thread => wanted.has(thread.id)).map(thread => [thread.id, { thread }]));
+    },
+    changed: event => {
+      for (const [socket, clients] of socketClients) for (const state of clients.values())
+        if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "opencraft/thread-catalog/changed", params: event ?? {} });
+    },
+  });
   const projectlessWorkspaceRoot = (
     options.projectlessWorkspaceDirectory
     ?? process.env.OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY
@@ -294,6 +330,7 @@ export async function startLocalAgentHost(options: {
   cleanup.push(() => adapter.close());
   cleanup.push(adapter.subscribe((method, params) => {
     const value = params as { threadId?: string };
+    directory.observe(method, params);
     // Creation belongs to the committed lifecycle transaction, including ephemeral policy.
     if (method !== "thread/started" && value.threadId && lifecycle.catalog.get(value.threadId)?.ephemeral === false)
       catalogChanges.observeNotification(method, params);
@@ -532,7 +569,9 @@ export async function startLocalAgentHost(options: {
     }
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
-  const processes = new DurableHostProcessService(productDataRoot);
+  const processes = sandboxPool
+    ? new HostProcessService(undefined, sandboxPool, options.processSandbox?.environment)
+    : new DurableHostProcessService(productDataRoot);
   cleanup.push(() => processes.close());
   const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null, storage.documents);
   cleanup.push(() => hostDocuments.close());
@@ -830,6 +869,8 @@ export async function startLocalAgentHost(options: {
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
+                "opencraft/thread-directory-updates": { version: 1 },
+              "opencraft/thread-directory-merkle": { version: 1, buckets: 256 }, "opencraft/thread-directory-snapshots": { version: 1, recovery: "snapshot" },
               },
             },
           };

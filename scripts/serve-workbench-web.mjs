@@ -2,6 +2,7 @@
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
 import { serveNotModified } from "./web-asset-cache.mjs";
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
+import { createShutdownDiagnostics } from './shutdown-diagnostics.mjs';
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
@@ -97,6 +98,16 @@ function allowedInternalDesktopOrigin(request) {
 }
 
 function bridgeAppServerSocket(client, request, options) {
+  const accessSession = options.createAccessSession?.(options.submissionContext, frame => {
+    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+  });
+  const write = (frame, isBinary = false) => {
+    if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
+    if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
+    const projected = accessSession ? accessSession.project(String(frame)) : frame;
+    if (projected !== null) client.send(projected, {binary:isBinary});
+  };
+  client.once('close', () => accessSession?.close());
   const protocolHeader = request.headers["sec-websocket-protocol"];
   const protocols = typeof protocolHeader === "string"
     ? protocolHeader.split(",").map((value) => value.trim()).filter(Boolean)
@@ -111,13 +122,13 @@ function bridgeAppServerSocket(client, request, options) {
     ? new WebSocket(options.appServerTarget, protocols, upstreamOptions)
     : new WebSocket(options.appServerTarget, upstreamOptions);
   const identitySession = options.identity?.open(frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   });
   const appSession = options.mcpAppsService ? new McpAppsRpcSession(options.mcpAppsService, frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   }) : null;
   const querySession = options.createAppServerQuerySession?.(frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   });
   const dshPending = new Set();
   const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
@@ -126,6 +137,8 @@ function bridgeAppServerSocket(client, request, options) {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
     try {
+      if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
+      if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -178,7 +191,7 @@ function bridgeAppServerSocket(client, request, options) {
         // Identity restores rewritten request IDs before query initialization is correlated.
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
         const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
-        if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
+        if (frame !== null) write(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, isBinary);
         if (!isBinary) {
           const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
           if (proof && dshPending.has(key)) {
@@ -465,6 +478,7 @@ export async function createWorkbenchWebServer({
   localAccess = null,
   accessService = null,
   actorService = null,
+  createAppServerAccessSession = null,
   actorCollaborationService = null,
   turnPushService = null,
   authService = null,
@@ -512,6 +526,13 @@ export async function createWorkbenchWebServer({
 
   let closing = false;
   const pendingRequests = new Set();
+  const httpSockets = new Map();
+  const closeIdleHttpSocket = (socket, state) => {
+    // Upgraded carriers have their own close-frame/retirement authority. An
+    // HTTP socket with no unfinished response owns no accepted wire work,
+    // including a peer that has not finished sending its first request header.
+    if (closing && !state.upgraded && state.responses.size === 0) socket.destroy();
+  };
   const trackRequest = handler => (...args) => {
     const operation = Promise.resolve().then(() => handler(...args));
     pendingRequests.add(operation);
@@ -822,6 +843,24 @@ export async function createWorkbenchWebServer({
     }
   }, webSocketHeartbeatIntervalMs) : null;
   heartbeat?.unref();
+  server.on('connection', socket => {
+    httpSockets.set(socket, { upgraded: false, responses: new Set() });
+    socket.once('close', () => httpSockets.delete(socket));
+  });
+  server.prependListener('request', (request, response) => {
+    const state = httpSockets.get(request.socket);
+    if (!state) return;
+    state.responses.add(response);
+    const release = () => {
+      state.responses.delete(response);
+      closeIdleHttpSocket(request.socket, state);
+    };
+    response.once('finish', release); response.once('close', release);
+  });
+  server.prependListener('upgrade', request => {
+    const state = httpSockets.get(request.socket);
+    if (state) state.upgraded = true;
+  });
   server.on("upgrade", trackRequest(async (request, socket, head) => {
     if (closing) { socket.destroy(); return; }
     if (hubService?.node?.handleUpgrade(request, socket, head)) return;
@@ -996,6 +1035,7 @@ export async function createWorkbenchWebServer({
         hyperNodeUser,
         identity: appServerIdentity,
         createAppServerQuerySession,
+        createAccessSession: createAppServerAccessSession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
       });
@@ -1017,6 +1057,9 @@ export async function createWorkbenchWebServer({
       });
     },
     close(update = null, retireIngress = () => undefined) {
+      const trace = createShutdownDiagnostics('web', {
+        report: value => console.info('[opencraft shutdown]', JSON.stringify({ ...value, pendingRequests: pendingRequests.size, httpSockets: httpSockets.size })),
+      });
       htmlPreviews?.close();
       closing = true;
       speechService?.close();
@@ -1037,14 +1080,15 @@ export async function createWorkbenchWebServer({
         .finally(()=>{clearTimeout(deadline);for(const client of clients)if(client.readyState!==WebSocket.CLOSED)client.terminate();});
       // Carrier sockets must outlive the restart close frame. Conversely,
       // externally owned Hub upgrades must retire before HTTP close can finish.
-      const ingressClosed = closeClients.then(retireIngress);
-      const requestsClosed = ingressClosed.then(() => Promise.allSettled([...pendingRequests]));
+      const ingressClosed = trace('websockets', () => closeClients).then(() => trace('carriers', retireIngress));
+      const requestsClosed = ingressClosed.then(() => trace('requests', () => Promise.allSettled([...pendingRequests])));
       for (const client of desktopWebSockets.clients) client.terminate();
       websocketServer.close();
       desktopWebSockets.close();
-      return Promise.all([receipt, requestsClosed, new Promise((resolvePromise, reject) => {
+      return trace('total', () => Promise.all([receipt, requestsClosed, trace('http', () => new Promise((resolvePromise, reject) => {
         server.close((error) => error ? reject(error) : resolvePromise());
-      })]).then(() => undefined);
+        for (const [socket, state] of httpSockets) closeIdleHttpSocket(socket, state);
+      }))])).then(() => undefined);
     },
   };
 }

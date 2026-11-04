@@ -1,5 +1,5 @@
-import { chatMediaPresentationKey, resolveChatConversationMediaSource, type ChatMeasurementReason, type ChatConversationMediaResolution } from "@opencraft/chat-render-react";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useChatMediaSource, resolveChatConversationMediaSource, type ChatMeasurementReason, type ChatConversationMediaResolution } from "@opencraft/chat-render-react";
+import { useContext, useEffect, useMemo, useRef } from "react";
 
 import {
   browserReadableImageSource,
@@ -50,68 +50,17 @@ export function useConversationMediaSource(
     () => resolveConversationMediaSource(source, context.cwd, resolveDirect, context.loadMediaSource !== undefined),
     [context.cwd, context.loadMediaSource, resolveDirect, source],
   );
-  const loadKey = useMemo(
-    () => chatMediaPresentationKey(source, resolution.decision, {
-      hostId: context.hostId, conversationId: context.conversationId, cwd: context.cwd, documentId,
-    }),
-    [context.hostId, context.conversationId, context.cwd, documentId, resolution.decision, source],
-  );
-  const [loaded, setLoaded] = useState<{
-    readonly key: string;
-    readonly source: string | null;
-    readonly status: "loading" | "ready" | "unavailable";
-  } | null>(null);
-
+  const request = useMemo(() => !resolution.loadThroughHost || !resolution.decision.target || !resolution.decision.kind ? null : ({
+    source, resolvedTarget: resolution.decision.target, resourceKind: resolution.decision.kind,
+    documentId, conversationId: context.conversationId, hostId: context.hostId, cwd: context.cwd,
+  }), [resolution.loadThroughHost, resolution.decision.target, resolution.decision.kind, source, documentId, context.conversationId, context.hostId, context.cwd]);
+  const loaded = useChatMediaSource(context.loadMediaSource, request);
   useEffect(() => {
-    if (!resolution.loadThroughHost
-      || resolution.decision.target === null
-      || resolution.decision.kind === undefined
-      || context.loadMediaSource === undefined) return;
-    let active = true;
-    const controller = new AbortController();
-    let release: (() => void) | undefined;
-    setLoaded({ key: loadKey, source: null, status: "loading" });
-    void context.loadMediaSource({
-      signal: controller.signal,
-      source,
-      resolvedTarget: resolution.decision.target,
-      resourceKind: resolution.decision.kind,
-      documentId,
-      conversationId: context.conversationId,
-      hostId: context.hostId,
-      cwd: context.cwd,
-    }).then((result) => {
-      if (!active) { result?.release?.(); return; }
-      release = result?.release;
-      setLoaded({
-        key: loadKey,
-        source: result?.source ?? null,
-        status: result === null ? "unavailable" : "ready",
-      });
-      requestMeasurement("resource-resolve");
-    }, () => {
-      if (!active) return;
-      setLoaded({ key: loadKey, source: null, status: "unavailable" });
-      requestMeasurement("resource-resolve");
+    if (request && loaded.status !== "loading") context.onMeasurementRequest?.({
+      documentId, generation, geometryChanged: true, reason: "resource-resolve",
     });
-    return () => { active = false; controller.abort(); release?.(); };
-  }, [
-    context.conversationId,
-    context.cwd,
-    context.hostId,
-    context.loadMediaSource,
-    context.onMeasurementRequest,
-    documentId,
-    generation,
-    loadKey,
-    resolution.decision.kind,
-    resolution.decision.target,
-    resolution.loadThroughHost,
-    source,
-  ]);
-
+  }, [request, loaded, context.onMeasurementRequest, documentId, generation]);
   if (resolution.directSource !== null) return { requestMeasurement, source: resolution.directSource, status: "ready" };
   if (!resolution.loadThroughHost) return { requestMeasurement, source: null, status: "unavailable" };
-  if (loaded?.key !== loadKey) return { requestMeasurement, source: null, status: "loading" };
-  return { requestMeasurement, source: loaded.source, status: loaded.status };
+  return { requestMeasurement, source: loaded.value?.source ?? null, status: loaded.status };
 }

@@ -1,3 +1,4 @@
+import type { SandboxLifecycleEvent } from "./command.js";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { access, readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -7,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { SandboxCreationFault, SandboxFault, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxExit, type SandboxIdentity, type SandboxOutput, type SandboxPoolPolicy, type SandboxProcess, type SandboxResources } from "@opencraft/sandbox";
 const execute = promisify(execFile);
 export interface SystemdSandboxOptions {
+  readonly lifecycle?: (event: SandboxLifecycleEvent) => void;
   readonly scope: "system" | "user";
   readonly uid: number;
   readonly gid: number;
@@ -42,7 +44,7 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
     try { return (await execute("/usr/bin/systemctl", [...scope, ...args], { env: managementEnv, timeout: 10_000, maxBuffer: 64 * 1024 })).stdout; }
     catch { throw fault("SANDBOX_UNAVAILABLE", "Sandbox systemd control failed"); }
   };
-  const state = async (unit: string) => Object.fromEntries((await control(["show", "--property=LoadState,ActiveState,MainPID,ControlGroup,Description,Transient,FragmentPath,DropInPaths,PrivateTmp", "--", unit])).trim().split("\n").map(l => {
+  const state = async (unit: string) => Object.fromEntries((await control(["show", "--property=LoadState,ActiveState,MainPID,ControlGroup,Description,Transient,FragmentPath,DropInPaths,PrivateTmp,ExecMainCode,ExecMainStatus", "--", unit])).trim().split("\n").map(l => {
     const i = l.indexOf("="); return [l.slice(0, i), l.slice(i + 1)];
   }));
   const stop = async (unit: string) => {
@@ -165,14 +167,25 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
         void exited.catch(() => {});
         let finished = false, launchFailed = false, observerFailed = false, ready = false, termination: Promise<void> | undefined;
         let killLauncher: () => void = () => {};
-        const terminate = () => termination ??= (async () => { await stop(unit); if (!finished) killLauncher(); })();
+        const terminate = (reason: SandboxLifecycleEvent["reason"] = "process-terminate") => termination ??= (async () => {
+          options.lifecycle?.({event: "unit-stop", unit, sandboxId: identity.id, reason});
+          await stop(unit); if (!finished) killLauncher();
+        })();
         const output = (stream: "stdout" | "stderr", data: Uint8Array) => {
           try { onOutput?.({ stream, data }); }
           catch { observerFailed = true; if (ready) void terminate().catch(() => {}); }
         };
         const finish = (code: number | null, signal?: string) => {
           finished = true;
-          void terminate().then(() => {
+          void (async () => {
+            // Observe the actual service before cleanup, not just systemd-run's exit.
+            try {
+              const status = await state(unit), kind = Number(status.ExecMainCode), value = Number(status.ExecMainStatus);
+              options.lifecycle?.({event: "unit-exited", unit, sandboxId: identity.id,
+                ...(kind === 1 ? {code: value} : kind === 2 || kind === 3 ? {exitSignal: value} : {status: "unknown"})});
+            } catch { options.lifecycle?.({event: "unit-exited", unit, sandboxId: identity.id, status: "unknown"}); }
+            await terminate("process-exited");
+          })().then(() => {
             running.delete(id);
             if (observerFailed) reject(fault("SANDBOX_START", "Sandbox output consumer failed"));
             else resolve({ code, ...(signal ? { signal } : {}) });
@@ -204,7 +217,7 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
             child.stdin.end((error?: Error | null) => error ? no(fault("SANDBOX_START", "Sandbox stdin could not close")) : yes());
           });
         }
-        running.set(id, { stop: terminate, exited });
+        running.set(id, { stop: () => terminate("environment-close"), exited });
         // Close cannot race a launcher whose StartTransientUnit has not reached PID1.
         const deadline = Date.now() + 15_000;
         try {
@@ -219,6 +232,7 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
           throw fault("SANDBOX_START", "Sandbox command creation is unconfirmed; environment retained");
         }
         ready = true;
+        options.lifecycle?.({event: "unit-started", unit, sandboxId: identity.id});
         await rm(directory, { recursive: true }); privateFiles.delete(directory);
         if (launchFailed || closing || observerFailed) { await terminate(); throw fault("SANDBOX_START", "Sandbox command could not start or was cancelled"); }
         const common = { id, exited, writeStdin, terminate };

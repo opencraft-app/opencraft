@@ -7,7 +7,7 @@ import { OPENCRAFT_HOST_TOKEN_USAGE_COUNTERS } from "./token-usage-counter-schem
 import { ownedDatabasePath } from "./owned-database-path.js";
 import { acquireOwnedStorageLease } from "./owned-storage-lease.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_TOKEN_USAGE } from "./token-usage-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_RUNTIME } from "./token-usage-runtime-schema.js";
 
@@ -192,7 +192,7 @@ export class OpenCraftHostStateDatabase {
     this.releaseLease = acquireOwnedStorageLease(directory);
     try {
       const path = this.path = ownedDatabasePath(directory, "opencraft-host-state.sqlite", "codex-host-queue.sqlite");
-      const managed = openManagedDatabase({ path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
+      const managed = openManagedDatabase({ schemaId: "opencraft-host-state-database", path, legacyPolicy: "reject-unknown",
         migrations: OPENCRAFT_HOST_STATE_MIGRATIONS, legacyMigration });
       this.database = managed.database;
       this.outcome = managed.outcome;

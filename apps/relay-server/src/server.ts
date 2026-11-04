@@ -75,6 +75,23 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
   const controls = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false });
   const data = new WebSocketServer({ noServer: true, maxPayload: 65_536, perMessageDeflate: false });
   let closing = false;
+  let rejectedInstance = 0, rejectedGlobal = 0, openTimeouts = 0, peakSlots = 0, peakInstanceSlots = 0;
+  const capacity = () => {
+    const reservations = new Map<Connection, number>();
+    for (const p of pending.values()) reservations.set(p.connection, (reservations.get(p.connection) ?? 0) + 1);
+    let activeStreams = 0, maxInstanceSlots = 0;
+    for (const c of connections.values()) {
+      activeStreams += c.streams.size;
+      maxInstanceSlots = Math.max(maxInstanceSlots, c.streams.size + (reservations.get(c) ?? 0));
+    }
+    const slots = activeStreams + pending.size;
+    peakSlots = Math.max(peakSlots, slots); peakInstanceSlots = Math.max(peakInstanceSlots, maxInstanceSlots);
+    return { relayCapturedAt: Date.now(), relayActiveStreams: activeStreams, relayPendingStreams: pending.size,
+      relayControlConnections: connections.size, relayMaxInstanceSlots: maxInstanceSlots,
+      relayPeakSlots: peakSlots, relayPeakInstanceSlots: peakInstanceSlots,
+      relayInstanceLimit: MAX_RELAY_STREAMS, relayGlobalLimit: 4096,
+      relayRejectedInstance: rejectedInstance, relayRejectedGlobal: rejectedGlobal, relayOpenTimeouts: openTimeouts };
+  };
   const retire = (connection: Connection) => {
     connection.socket.terminate();
     for (const stream of connection.streams) stream.destroy();
@@ -83,12 +100,20 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
   async function channel(route: RelayRoute, signal: AbortSignal): Promise<Duplex> {
     if (route.hubId && options.hub) return options.hub.open(route.hubId, undefined, signal);
     const connection = connections.get(route.instanceId);
-    if (!connection || connection.socket.readyState !== WebSocket.OPEN || connection.streams.size + [...pending.values()].filter(p => p.connection === connection).length >= MAX_RELAY_STREAMS || pending.size + [...connections.values()].reduce((sum,c)=>sum+c.streams.size,0) >= 4096 || closing) throw new Error('Instance unavailable or busy');
+    if (!connection || connection.socket.readyState !== WebSocket.OPEN || closing) throw new Error('Instance unavailable or busy');
+    const current = capacity();
+    const instanceSlots = connection.streams.size + [...pending.values()].filter(p => p.connection === connection).length;
+    if (instanceSlots >= MAX_RELAY_STREAMS) {
+      rejectedInstance++; throw new Error('Instance unavailable or busy');
+    }
+    if (current.relayActiveStreams + current.relayPendingStreams >= current.relayGlobalLimit) {
+      rejectedGlobal++; throw new Error('Instance unavailable or busy');
+    }
     const id = randomUUID(), token = randomBytes(32).toString('base64url');
     return new Promise((resolve, rejectPromise) => {
       const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); pending.delete(id); };
       const abort = () => { cleanup(); rejectPromise(new Error('Client disconnected')); };
-      const timer = setTimeout(() => { cleanup(); rejectPromise(new Error('Relay connection timeout')); }, 10_000); timer.unref();
+      const timer = setTimeout(() => { openTimeouts++; cleanup(); rejectPromise(new Error('Relay connection timeout')); }, 10_000); timer.unref();
       if (signal.aborted) { abort(); return; }
       signal.addEventListener('abort', abort, { once: true });
       pending.set(id, { connection, token, reject: error => { cleanup(); rejectPromise(error); }, accept: ws => {
@@ -97,6 +122,9 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
         const lifetime = setTimeout(() => stream.destroy(), 3_600_000); lifetime.unref();
         stream.once('close', () => { clearTimeout(lifetime); connection.streams.delete(stream); ws.terminate(); }); resolve(stream);
       } });
+      // Capture peaks at admission, including channels gone before the next sample.
+      peakSlots = Math.max(peakSlots, current.relayActiveStreams + current.relayPendingStreams + 1);
+      peakInstanceSlots = Math.max(peakInstanceSlots, instanceSlots + 1);
       connection.socket.send(JSON.stringify({ type: 'open', id, token }));
     });
   }
@@ -164,21 +192,25 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if(cookies)req.headers.cookie=cookies;else delete req.headers.cookie;
     return 0;
   }
-  async function admitted(route: RelayRoute, principal: Principal): Promise<boolean> {
+  async function admitted(route: RelayRoute, principal: Principal): Promise<'admitted' | 'denied' | 'unavailable'> {
     const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 4000); let stream: Duplex | undefined;
     const path = '/__opencraft_access/session';
     try {
       stream = await channel(route, abort.signal);
-      return await new Promise<boolean>(resolve => {
+      return await new Promise<'admitted' | 'denied' | 'unavailable'>(resolve => {
         const upstream = httpRequest({ method: 'GET', path, createConnection: () => stream!, headers: { host: new URL(route.origin).host,
           [ASSERTION_HEADER]: route.signer.issue(principal, 'GET', path), connection: 'close' } }, response => {
           let body = ''; response.on('data', chunk => { body += String(chunk); if (body.length > 16384) upstream.destroy(); });
-          response.on('end', () => { try { const value = JSON.parse(body); resolve(response.statusCode === 200 && ['member','admin'].includes(value.role)); } catch { resolve(false); } });
-          response.on('error', () => resolve(false));
+          response.on('end', () => {
+            if (response.statusCode === 401 || response.statusCode === 403) { resolve('denied'); return; }
+            try { const value = JSON.parse(body); resolve(response.statusCode === 200 && ['member','admin'].includes(value.role) ? 'admitted' : 'unavailable'); } catch { resolve('unavailable'); }
+          });
+          response.on('error', () => resolve('unavailable'));
+          response.on('aborted', () => resolve('unavailable'));
         });
-        abort.signal.addEventListener('abort', () => upstream.destroy(), { once: true }); upstream.on('error', () => resolve(false)); upstream.end();
+        abort.signal.addEventListener('abort', () => upstream.destroy(), { once: true }); upstream.on('error', () => resolve('unavailable')); upstream.end();
       });
-    } catch { return false; } finally { clearTimeout(timer); stream?.destroy(); }
+    } catch { return 'unavailable'; } finally { clearTimeout(timer); stream?.destroy(); }
   }
   async function handleSelector(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     if (!options.serverSelection) return false;
@@ -196,13 +228,15 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     if (req.headers.origin !== undefined && req.headers.origin !== entry.origin) { failure(res,403); return true; }
     const principal = authentication.authenticate(req, entry);
     if (!principal || principal.expiresAt <= Date.now()) { authentication.begin(req,res,entry); return true; }
+    let pending = false;
     const candidates = availableRoutes().slice(0,128), visible: { id: string; name: string; route?: string }[] = [], labels = names();
     for (let i=0; i<candidates.length; i+=8) {
       const group = candidates.slice(i,i+8), access = await Promise.all(group.map(route => admitted(route,principal)));
-      for (let j=0; j<group.length; j++) if (access[j]) { const route=group[j]!; visible.push({id:route.instanceId,route:routeLabel(route.instanceId),name:route.name ?? (labels.get(route.hubId ?? '')?.trim() || new URL(route.origin).hostname)}); }
+      pending ||= access.includes('unavailable');
+      for (let j=0; j<group.length; j++) if (access[j] === 'admitted') { const route=group[j]!; visible.push({id:route.instanceId,route:routeLabel(route.instanceId),name:route.name ?? (labels.get(route.hubId ?? '')?.trim() || new URL(route.origin).hostname)}); }
     }
     res.writeHead(200, {'content-type':'text/html; charset=utf-8','cache-control':'private, no-store','referrer-policy':'no-referrer','x-frame-options':'DENY'});
-    res.end(selectorPage(principal,visible,url.pathname === '/',selectionDefault(principal,options.selectionDefaults) ?? paths?.defaultServer)); return true;
+    res.end(selectorPage(principal,visible,url.pathname === '/',selectionDefault(principal,options.selectionDefaults) ?? paths?.defaultServer, pending)); return true;
   }
   const server = createServer(async (req, res) => {
     if (req.url === '/__opencraft_hub/operator') {
@@ -329,7 +363,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
   const heartbeat = setInterval(() => { for (const connection of connections.values()) {
     if (!connection.alive) retire(connection); else { connection.alive = false; connection.socket.ping(); }
   } }, 15_000); heartbeat.unref();
-  return { server, connected: (id: string) => connections.has(id), async close() {
+  return { server, capacity, connected: (id: string) => connections.has(id), async close() {
     closing = true; clearInterval(heartbeat); for (const connection of connections.values()) retire(connection);
     await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); controls.close(); data.close();
   } };

@@ -1759,9 +1759,23 @@ test("outgoing bubble remains mounted while Turn acknowledgement arrives before 
     return { blockId: messages[0]!.id, frameId: frame.id, renderKey: timelineTurnRenderKey(turn) };
   };
   const optimistic = visibleIdentity();
+  const beforeReceipt = runtime.getSnapshot();
+  assert.equal(beforeReceipt.activeTurn, null,
+    "local presentation custody cannot claim that AppServer started a Turn");
+  const presentationOnlyTurn = groupTimelineFramesByTurn(beforeReceipt.timeline)[0];
+  assert.equal(presentationOnlyTurn?.status, "complete");
+  assert.deepEqual(presentationOnlyTurn === undefined ? null
+    : createTimelineTurnPresentationPlan(presentationOnlyTurn, undefined, { isMostRecentTurn: true }).thinkingOwner,
+  { type: "none" }, "presentation-only custody cannot render Thinking");
+  const optimisticUser = beforeReceipt.timeline.frames.flatMap(frame => frame.blocks).find(block =>
+    block.type === "user-message" && block.clientId === intent.clientMessageId);
+  assert.equal(optimisticUser?.type, "user-message");
+  if (optimisticUser?.type === "user-message") assert.equal(optimisticUser.deliveryStatus, "sending");
   resolveSubmission(receipt(intent.commandId, intent.clientMessageId));
   await operation;
   assert.deepEqual(visibleIdentity(), optimistic, "the RPC receipt must not remount the bubble");
+  assert.equal(runtime.getSnapshot().activeTurn?.turnId, "turn-two",
+    "a concrete AppServer Turn receipt activates execution while history catches up");
   assert.equal(groupTimelineFramesByTurn(runtime.getSnapshot().timeline)[0]?.turnKey, "turn-two",
     "the navigation and measurement locator remains the authoritative Turn ID");
 
@@ -2750,6 +2764,25 @@ test("history source total reaches a partial timeline without counting display f
     replica.setEntity(threadView({ turnsPagination: { hasLoadedOldest: true } }));
     assert.equal(runtime.getSnapshot().timeline.historyTurnCount, 1);
   } finally { runtime.dispose(); }
+});
+
+test("completed older history cannot keep the loading projection visible", () => {
+  const replica = new FakeReplica(threadView({
+    turnsPagination: { olderCursor: null, hasLoadedOldest: true, isLoadingOlder: true },
+  }));
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"),
+    replica,
+    commands: commands(),
+    history: { async loadOlder() {} },
+  });
+  try {
+    assert.equal(runtime.getSnapshot().history.hasOlder, false);
+    assert.equal(runtime.getSnapshot().history.loading, false);
+    assert.equal(runtime.getSnapshot().history.cursor, null);
+  } finally {
+    runtime.dispose();
+  }
 });
 
 function pendingQueueFixture(withOutbox = false) {

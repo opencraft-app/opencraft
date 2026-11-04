@@ -38,9 +38,9 @@ test('gateway rejects webpage/API/IM/orchestration/goal requests and queue dispa
  const received:any[]=[];let listener:(s:string)=>void=()=>{};
  const inner:any={status:{state:'open'},connect:async()=>{},close:async()=>{},subscribeStatus:()=>()=>{},subscribeMessage:(fn:any)=>{listener=fn;return()=>{};},async send(frame:string){const m=JSON.parse(frame);received.push(m);if(String(m.id).startsWith('model-policy:'))listener(JSON.stringify({id:m.id,result:m.method==='thread/read'?{thread:{model:'blocked',reasoningEffort:'high'}}:{data:[{model:'allowed',defaultReasoningEffort:'high'}]}}));}};
  const gateway=new ModelPolicyTransport(inner,f.path);const replies:any[]=[];gateway.subscribeMessage(s=>replies.push(JSON.parse(s)));t.after(()=>gateway.close());
- for(const source of ['web','api','im','orchestration','goal'])for(const method of ['turn/start','turn/steer','thread/queue/start','thread/queue/steer'])await gateway.send(JSON.stringify({id:source+method,method,params:{threadId:'t'}}));
+ for(const source of ['web','api','im','orchestration','goal'])for(const method of ['thread/settings/update','turn/start','turn/steer','thread/queue/start','thread/queue/steer'])await gateway.send(JSON.stringify({id:source+method,method,params:{threadId:'t'}}));
  await gateway.send(JSON.stringify({id:'collaboration',method:'turn/start',params:{threadId:'t',model:'allowed',collaborationMode:{mode:'default',settings:{model:'blocked',reasoning_effort:'high'}}}}));
- assert.equal(replies.length,21);assert.ok(replies.every(r=>r.error.data.code==='model_usage_restricted'&&r.error.data.alternatives.includes('allowed')));
+ assert.equal(replies.length,26);assert.ok(replies.every(r=>r.error.data.code==='model_usage_restricted'&&r.error.data.alternatives.includes('allowed')));
  assert.ok(received.every(m=>String(m.id).startsWith('model-policy:')));
 });
 test('DSH resolved native boundary covers goal and queued turns, keeps running turn, catches changed model',async t=>{

@@ -23,6 +23,16 @@ test('closed schema never exports payloads and rejects malformed known fields',(
   assert(!JSON.stringify(value).includes('canary'));assert(!('actorId' in value));assert.equal(sanitizeEvent(event({operationType:'user-content'}),now),null);
   assert.equal(sanitizeEvent(event({durationMs:-1}),now),null);assert.throws(()=>windowFor({from:'2020-01-01',to:'2026-01-01'},now));
 });
+test('gateway pairing is opaque, preserved and bounded through OTLP event sanitization',()=>{
+  const gatewayPairId='11111111-1111-4111-8111-111111111111';
+  const value=sanitizeEvent(event({gatewayPairId,gatewayMs:123,storageQueueMs:80,gatewaySerializeMs:1,requestPending:30,gatewayTimingVersion:2,nativeCallId:'22222222-2222-4222-8222-222222222222',nativeReplyWaitMs:7000,nativeReceiveQueueMs:15,nativeImportMs:100,params:{private:'canary'}}),now);
+  assert.equal(value.gatewayPairId,gatewayPairId);assert.equal(value.storageQueueMs,80);assert.equal(value.requestPending,30);assert.equal(value.nativeReplyWaitMs,7000);assert.equal(value.nativeReceiveQueueMs,15);assert.equal(value.nativeImportMs,100);
+  assert(!JSON.stringify(value).includes('canary'));
+  assert.equal(sanitizeEvent(event({gatewayPairId:'private-thread'}),now),null);
+  assert.equal(sanitizeEvent(event({storageQueueMs:-1}),now),null);
+  assert.equal(sanitizeEvent(event({kind:'client_signal',clientSignal:'freeze',clientWallMs:240000,clientElapsedMs:118000}),now).clientSignal,'freeze');
+  assert.equal(sanitizeEvent(event({clientSignal:'private-content'}),now),null);
+});
 test('transport failure metadata survives sanitization without accepting error text or invalid causes',()=>{
   const input=event({kind:'client_signal',clientSignal:'transport_failure',attemptId:'physical-1',
     transportFailure:'probe-timeout',transportPhase:'ready',networkState:'online',visibility:'hidden',
@@ -416,11 +426,98 @@ test('nodeObserver supports processResources:false and resolves thread.id fallba
   }
 });
 
+test('generated dashboard legends project known operation/cache/outcome enums without touching queries or identities',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'opencraft-dashboard-'));
+  try{
+    await generate(directory);
+    const dashboard=JSON.parse(await readFile(join(directory,'provisioning/dashboards/overview.json'),'utf8'));
+    const panel=title=>dashboard.panels.find(value=>value.title===title);
+    const latency=panel(definitions['operations.latency'].title),outcomes=panel(definitions['operations.outcomes'].title),dependencies=panel(definitions['dependencies.summary'].title),progress=panel(definitions['execution.progress'].title);
+    const apply=(name,value)=>(value.transformations??[]).reduce((label,transform)=>{const [,body,flags]=transform.options.regex.match(/^\/(.*)\/([a-z]*)$/);return label.replace(new RegExp(body,flags),transform.options.renamePattern);},name);
+    assert.equal(latency.targets[0].expr,definitions['operations.latency'].promql);assert.equal(outcomes.targets[0].expr,definitions['operations.outcomes'].promql);
+    assert.equal(apply('thread_open [cold] (codex)',latency),'打开会话 (thread_open) [冷启动 (cold)] (codex)');
+    assert.equal(apply('catalog_first - ok (interactive)',outcomes),'模型首选 (catalog_first) - 成功 (ok) (interactive)');
+    assert.equal(apply('thread/read [ok]',dependencies),'thread/read [成功 (ok)]');
+    assert.equal(apply('执行状态: failed',progress),'执行状态: 失败 (failed)');
+    assert.equal(apply('custom_operation [cold] (serverId)',latency),'custom_operation [冷启动 (cold)] (serverId)');
+    assert.equal(latency.targets[0].legendFormat,'{{operation}} [{{cache}}] ({{engine}})');
+    assert.equal(outcomes.targets[0].legendFormat,'{{operation}} - {{outcome}} ({{origin}})');
+    assert.equal(latency.fieldConfig.defaults.mappings.length,1);assert.equal(outcomes.fieldConfig.defaults.mappings.length,1);
+    assert(latency.fieldConfig.defaults.mappings[0].options.thread_open);assert(outcomes.fieldConfig.defaults.mappings[0].options.ok);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test('operator Grafana paths accept server scope and reject traversal or URL input',async()=>{
   const {observationGrafanaBasePath}=await import('../../packages/observability-contract/node.mjs');
   assert.equal(observationGrafanaBasePath(),'/__opencraft_observe/grafana');
   assert.equal(observationGrafanaBasePath('/servers/example/__opencraft_observe/grafana'),'/servers/example/__opencraft_observe/grafana');
   for(const path of ['https://elsewhere.invalid/__opencraft_observe/grafana','//elsewhere.invalid/__opencraft_observe/grafana','/servers/../__opencraft_observe/grafana','/servers/%2e%2e/__opencraft_observe/grafana','/__opencraft_observe/grafana?x=1'])assert.throws(()=>observationGrafanaBasePath(path));
+});
+
+test('history first paint labels and foreground-only histograms reach the exporter and dashboard', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-paint-observe-'));
+  const service = await startObserve({directory, deploymentId:'test', metricsPort:0});
+  try {
+    const fields = {operationType:'thread_history_first_paint',cache:'cold',engine:'pi',lengthBucket:'200to499',originClass:'interactive',visibility:'visible',measurementScope:'in_page',durationMs:560};
+    assert.equal(sanitizeEvent(event({...fields,lengthBucket:'private-thread-123'})),null);
+    assert(!('threadId' in sanitizeEvent(event({...fields,threadId:'private-thread-123'}))));
+    for (const outcome of ['ok','aborted','failed','empty']) assert.equal(service.store.ingest([event({...fields,outcome})]).accepted,1);
+    service.store.ingest([event({...fields,originClass:'probe'}), event({...fields,visibility:'hidden'})]);
+    const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+    assert.match(metrics,/opencraft_thread_history_first_paint_duration_seconds_count\{cache="cold",length_bucket="200to499",engine="pi"\} 1/);
+    assert.match(metrics, /opencraft_thread_history_first_paint_duration_seconds_bucket\{cache="cold",length_bucket="200to499",engine="pi",le="0.15"\} 0/);
+    for (const outcome of ['ok','aborted','failed','empty']) assert(metrics.includes(`engine="pi",outcome="${outcome}",origin="interactive"}`));
+    assert(!metrics.includes('private-thread'));
+    const output = join(directory,'provisioning-source'); await generate(output);
+    const dashboard = JSON.parse(await readFile(join(output,'provisioning/dashboards/overview.json'),'utf8'));
+    for (const q of [50,95]) {
+      const definition = definitions[`operations.history_paint_p${q}`];
+      assert(dashboard.panels.some(panel=>panel.title === definition.title && panel.targets.some(target=>target.expr===definition.promql)));
+      assert(definition.promql.includes('cache, length_bucket, engine'));
+    }
+  } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test('relay producer reaches metrics; stale capacity and replacement heartbeat cannot report zero',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'relay-observe-'));
+  let clock=Date.now();
+  const service=await startObserve({directory,deploymentId:'relay-fixture',metricsPort:0,now:()=>clock,prometheus:'http://127.0.0.1:1'});
+  const observer=nodeObserver('relay',{socketPath:service.socketPath,processResources:false});
+  const metrics=async()=>await(await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+  const fields={kind:'relay_capacity',component:'relay',relayCapturedAt:clock,at:clock,relayActiveStreams:25,relayPendingStreams:2,relayControlConnections:1,relayMaxInstanceSlots:27,relayPeakSlots:155,relayPeakInstanceSlots:155,relayInstanceLimit:512,relayGlobalLimit:4096,relayRejectedInstance:3,relayRejectedGlobal:1,relayOpenTimeouts:2};
+  try{
+    assert(!((await metrics()).includes('opencraft_relay_active_streams')),'missing is not zero');
+    assert.equal(sanitizeEvent(event({...fields,relayPendingStreams:1.5}),clock),null);
+    assert.equal(sanitizeEvent(event({...fields,component:'web'}),clock),null);
+    assert(observer.emit(fields));
+    const deadline=Date.now()+15000;
+    while(!service.store.producers().some(p=>p.component==='relay')){
+      if(Date.now()>deadline)throw Error('Relay producer did not reach Observe');
+      await new Promise(r=>setTimeout(r,25));
+    }
+    const text=await metrics();
+    assert.match(text,/opencraft_relay_active_streams 25\n/);
+    assert.match(text,/opencraft_relay_pending_streams 2\n/);
+    assert.match(text,/opencraft_relay_peak_instance_slots 155\n/);
+    assert.match(text,/opencraft_relay_capacity_rejections_total\{scope="instance"\} 3\n/);
+    assert.match(text,/opencraft_relay_capacity_rejections_total\{scope="global"\} 1\n/);
+    clock+=limits.freshnessMs+1;
+    const resource=event({kind:'resource',component:'relay',producerId:service.store.producers().find(p=>p.component==='relay').producer,at:clock});
+    await socketRequest(service.socketPath,'/events',{events:[resource]});
+    assert.match(await metrics(),/opencraft_relay_sample_age_seconds 90.001/);
+    assert(!((await metrics()).includes('opencraft_relay_active_streams')),'resource heartbeat cannot refresh capacity');
+    // A fresh replacement process has no capacity until its own owner sample arrives.
+    await socketRequest(service.socketPath,'/events',{events:[event({kind:'resource',component:'relay',producerId:'replacement',at:++clock})]});
+    assert(!((await metrics()).includes('opencraft_relay_active_streams')));
+    const fresh=event({...fields,producerId:'replacement',at:++clock,relayCapturedAt:clock,relayActiveStreams:0,relayPendingStreams:0,relayRejectedInstance:0,relayRejectedGlobal:0});
+    assert.equal((await socketRequest(service.socketPath,'/events',{events:[fresh]})).accepted,1);
+    assert.match(await metrics(),/opencraft_relay_active_streams 0\n/,'fresh owner zero is explicit');
+    assert.match(await metrics(),/opencraft_relay_capacity_rejections_total\{scope="global"\} 0\n/);
+    assert(definitions['relay.capacity'].promql.includes('opencraft_relay_instance_limit'));
+    await generate(directory);
+    const dashboard=JSON.parse(await readFile(join(directory,'provisioning/dashboards/overview.json'),'utf8'));
+    for(const name of ['relay.connections','relay.capacity','relay.peaks','relay.rejections','relay.timeouts','relay.freshness'])assert(dashboard.panels.some(p=>p.targets?.some(t=>t.expr===definitions[name].promql)),name);
+  }finally{observer.close();await service.close();await rm(directory,{recursive:true,force:true});}
 });
 
 test('history first paint labels and foreground-only histograms reach the exporter and dashboard', async () => {
@@ -495,4 +592,43 @@ test('availability migration preserves v4 history and avoids scanning unrelated 
     assert.equal(prepare('SELECT count(*) AS n FROM events').get().n, 10003);
     assert.deepEqual(prepare('SELECT version,name,checksum,applied_at FROM schema_migrations WHERE version<=4 ORDER BY version').all(), history);
   } finally {store?.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('catalog causality signals persist without changing catalog operation metrics',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'opencraft-catalog-causality-'));
+ const store=new ObserveStore(join(directory,'observe.sqlite'));
+ try {
+  const diagnostic=event({kind:'client_signal',operationType:undefined,clientSignal:'catalog_query',traceRole:'query',
+   traceId:'1'.repeat(32),spanId:'2'.repeat(16),caller:'sidebar-catalog',trigger:'auto-next-page',
+   originClass:'interactive',visibility:'visible',measurementScope:'client'});
+  assert.equal(store.ingest([diagnostic]).accepted,1);
+  assert.equal(store.db.prepare("SELECT count(*) n FROM events WHERE kind='client_signal'").get().n,1);
+  assert.equal(store.db.prepare("SELECT count(*) n FROM metrics WHERE name LIKE 'operation%'").get().n,0);
+ } finally {store.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('process counters stay per incarnation; RPCs cannot refresh old resource samples; projections never enter CPU rate',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'process-resource-observe-'));let now=Date.now();const service=await startObserve({directory,deploymentId:'test',metricsPort:0,now:()=>now});
+ const resource=(producer,cpu,extra={})=>event({kind:'resource',component:'gateway',producerId:producer,at:now,cpuSeconds:cpu,rssBytes:100,producerMode:'native',observedBy:'self',...extra});
+ try{
+  service.store.ingest([resource('one',218),resource('two',2.44),resource('projected',900,{producerMode:'health_projection',observedBy:'gateway'}),event({kind:'resource',component:'web',producerId:'client',producerMode:'client',observedBy:'self',at:now,resourceScope:'host',resourceTarget:'host',resourceCpuBusyPercent:99})]);
+  let text=await(await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+  const counters=text.split('\n').filter(line=>line.startsWith('opencraft_process_cpu_seconds_total{component="gateway"'));
+  assert.equal(counters.length,2);assert(counters.some(line=>line.endsWith(' 218')));assert(counters.some(line=>line.endsWith(' 2.44')));assert(counters.every(line=>line.includes('process=')&&line.includes('mode="native"')));assert(text.includes('opencraft_process_observed_cpu_seconds'));assert(!text.includes('opencraft_resource_cpu_busy_percent{'),'client event cannot spoof host resources');
+  const output=join(directory,'generated');await generate(output);const dashboard=JSON.parse(await readFile(join(output,'provisioning/dashboards/overview.json'),'utf8'));assert(dashboard.panels.find(p=>p.id===90).targets[0].expr.includes('{mode="native"}'),'dashboard excludes the corrupt legacy component-only series immediately');
+  now+=91000;service.store.ingest([event({kind:'rpc',component:'gateway',producerId:'one',at:now,method:'thread/list',outcome:'ok'})]);
+  text=await(await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();assert(!text.includes('opencraft_process_cpu_seconds_total{component="gateway"'),'new RPC must not resurrect stale cpu sample');
+ }finally{await service.close();await rm(directory,{recursive:true,force:true});}
+});
+
+
+test('partial resource samples replace previous metric values atomically, never merge old CPU into a fresh window',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'resource-replacement-'));let now=Date.now();const service=await startObserve({directory,deploymentId:'test',metricsPort:0,now:()=>now});
+ try{
+  const base={kind:'resource',component:'observe',producerId:'resource-target',at:now,resourceScope:'cgroup',resourceTarget:'checks',producerMode:'native',observedBy:'self'};
+  service.store.ingest([event({...base,resourceCoverage:'complete',resourceCpuCores:4,resourceMemoryBytes:1024})]);
+  let text=await(await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();assert(text.includes('opencraft_resource_cpu_cores{scope="cgroup",target="checks"} 4'));
+  now+=1000;service.store.ingest([event({...base,at:now,resourceCoverage:'partial',resourceMembers:0})]);
+  text=await(await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();assert(!text.includes('opencraft_resource_cpu_cores{scope="cgroup",target="checks"}'));assert(!text.includes('opencraft_resource_memory_bytes{scope="cgroup",target="checks"}'));assert(text.includes('opencraft_resource_partial{scope="cgroup",target="checks"} 1'));
+ }finally{await service.close();await rm(directory,{recursive:true,force:true});}
 });

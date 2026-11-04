@@ -29,7 +29,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.OP
 const evidence:any[]=[];
 try{for(const theme of ['light','dark'])for(const width of [390,1280]){
  const context=await browser.newContext({viewport:{width,height:900},permissions:['clipboard-read','clipboard-write']});await context.addInitScript(()=>{(window as any).__name=(v:any)=>v;});const page=await context.newPage(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(vite.resolvedUrls!.local[0]+'?theme='+theme);await page.getByRole('button',{name:'Target conversation',exact:true}).click({button:'right'});
+ await page.goto(vite.resolvedUrls!.local[0]+'?theme='+theme);await page.getByRole('button',{name:'Target conversation',exact:true}).click({button:'right',timeout:5000}).catch(async error=>{throw Error(JSON.stringify({errors,body:(await page.locator('body').innerText()).slice(0,1000),cause:error.message}));});
  await page.getByRole('menuitem',{name:'Copy conversation reference'}).click();
  const copied=await page.evaluate(()=>navigator.clipboard.readText());assert.match(copied,/conversation=/);assert.ok(!copied.includes('token='));
  const editor=page.locator('.ProseMirror');await editor.click();await page.keyboard.press('ControlOrMeta+V');
@@ -40,7 +40,7 @@ try{for(const theme of ['light','dark'])for(const width of [390,1280]){
  // The native fixture catalog only exposes its original thread, so search that title.
  await page.keyboard.press('ControlOrMeta+A');await page.keyboard.type('@fixture');await page.getByRole('option').first().click({timeout:5000});assert.equal(await page.locator('[data-conversation-reference]').count(),1);
  const prompt=await page.evaluate(()=>(window as any).fixture.prompt());assert.match(JSON.stringify(prompt),/opencraft:\/\/conversation\/v1\/fixture/);
- await page.goto(vite.resolvedUrls!.local[0]+'?theme='+theme+'&conversation='+encodeURIComponent('opencraft://conversation/v1/fixture/fixture-fork-1'));await page.waitForFunction(()=>(window as any).navigated?.key?.threadId==='fixture-fork-1');
+ await page.goto(vite.resolvedUrls!.local[0]+'?theme='+theme+'&cold=1&conversation='+encodeURIComponent('opencraft://conversation/v1/fixture/fixture-fork-1'));await page.waitForFunction(()=>(window as any).navigated?.key?.threadId==='fixture-fork-1');
  await page.getByRole('link',{name:'Saved conversation reference'}).click();await page.getByText('Verified target history from native adapter',{exact:true}).waitFor();
  assert.deepEqual(errors,[]);evidence.push({theme,width,copied,prompt});await context.close();
  }}finally{await browser.close();await vite.close();await service.close();await host.close();actors.close();await rm(root,{recursive:true,force:true});}

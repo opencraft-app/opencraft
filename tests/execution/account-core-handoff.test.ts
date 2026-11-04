@@ -14,7 +14,7 @@ import { AccountPoolStore, CodexAccountService, createCodexAccountPoolLaunch } f
 import { accountCoreOwner } from "../../scripts/full-upgrade/account-core-owner.mjs";
 
 const token = "synthetic-private-account-owner-token";
-async function fixture(streamDelayMs = 250, nativeCompletion = false) {
+async function fixture(streamDelayMs = 250, nativeCompletion = false, journal = false) {
   const root = await mkdtemp(join(tmpdir(), "oc-acct-")), children: ChildProcess[] = [];
   const data = join(root, "data"); await mkdir(data, { mode: 0o700 });
   const store = new AccountPoolStore({ databasePath: join(data, "account-pool.sqlite"), secretsDirectory: join(data, "secrets") });
@@ -34,7 +34,7 @@ async function fixture(streamDelayMs = 250, nativeCompletion = false) {
     if (nativeCompletion) {
       const response = { id: "resp_fixture", object: "response", status: "in_progress", output: [] };
       res.write(`data: ${JSON.stringify({ type: "response.created", response })}\n\n`);
-      if (modelCalls > 1) {
+      if (modelCalls > 1 || journal) {
         const item = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
           content: [{ type: "output_text", text: "OK", annotations: [] }] };
         for (const event of [
@@ -55,6 +55,7 @@ async function fixture(streamDelayMs = 250, nativeCompletion = false) {
   const socket = join(root, "account.sock"), runtime = join(root, "app.sock");
   const options = { endpoint: socket, appServerEndpoint: runtime, authToken: token, dataDirectory: data,
     syntheticMaintenance: true,
+    ...(journal ? { accountHandoffStorage: "sqlite" } : {}),
     runtimeDirectory: root, nativeCodexHomeDirectory: join(root, "unused"), executable: process.execPath,
     upstreamBaseUrl: `http://127.0.0.1:${(upstream.address() as any).port}`, proxyPort: 0 };
   const reserve = createServer(); await new Promise<void>(r => reserve.listen(0, "127.0.0.1", r));
@@ -71,7 +72,7 @@ async function fixture(streamDelayMs = 250, nativeCompletion = false) {
     });
     const descriptor = join(root, `descriptor-${child.pid}.json`);
     await writeFile(descriptor, JSON.stringify({ schemaVersion: 1, pid: child.pid, endpoint: socket, token }), { mode: 0o600 });
-    return { child, environment, adapter: accountCoreOwner(descriptor), logs: () => errors };
+    return { child, environment, adapter: accountCoreOwner(descriptor, journal ? { summary: true } : undefined), logs: () => errors };
   }
   async function stop(child: ChildProcess) {
     if (child.exitCode !== null || child.signalCode !== null) return;
@@ -237,7 +238,7 @@ test("malformed unauthenticated proxy requests do not create upstream uncertaint
     assert.equal(status, 502);
     const state = await first.adapter.snapshot();
     assert.equal(state.proof.coverage, "complete"); assert.deepEqual(state.handoff.uncertain, []);
-    assert.equal((await f.model()).status, 200);
+    const valid = await f.model(); assert.equal(valid.status, 200); await valid.text();
   } finally { await f.close(); }
 });
 
@@ -884,5 +885,47 @@ test("an oversized ordinary fence leaves the live owner open and its durable sta
     const small = await source.adapter.acquireFence(f.input(after));
     await source.adapter.abortFence(f.input(small));
     const restored = await source.adapter.snapshot();assert.equal(restored.handoff.phase,"open");assert.deepEqual(restored.handoff.uncertain,unknown);
+  } finally { await f.close(); }
+});
+
+
+test("SQLite owner: real UDS summary/paging, pure reads during drain and cold handoff", async () => {
+  const f = await fixture(100, true, true);
+  try {
+    const unknown = Array.from({ length: 25_000 }, (_, i) => ({ id: `old-${i}`, route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown }), { mode: 0o600 });
+    const source = await f.start(); const initial = await source.adapter.summary();
+    assert.ok(Buffer.byteLength(JSON.stringify(initial)) < 8192); assert.equal(initial.handoff.uncertain, undefined);
+    assert.deepEqual(await source.adapter.history(initial.handoff.historicalUnknownSummary), unknown);
+    const rejected = await fetch(`http://127.0.0.1:${f.options.proxyPort}/v1/responses`, { method: "POST", body: "{}" });
+    assert.equal(rejected.status, 401); await rejected.text();
+    assert.equal((await source.adapter.summary()).handoff.persistence, "ready");
+    await (await f.model()).text();
+    const afterModel = await source.adapter.summary(); assert.equal(afterModel.handoff.historicalUnknownSummary.count, 25_000);
+    const fenced = await source.adapter.acquireFence({ ...f.input(afterModel), historicalUnknownSummary: afterModel.handoff.historicalUnknownSummary,
+      targetLaunch: afterModel.handoff.launch, preflightLaunch: afterModel.handoff.launch });
+    const idle = await source.adapter.inspectDrain(f.input(fenced));
+    await delay(10); await source.adapter.summary(); await source.adapter.snapshot();
+    await source.adapter.releaseWriter({ ...f.input(idle), proof: idle.proof.identity }); await f.stop(source.child);
+    const successor = await f.start(), cold = await successor.adapter.coldReady(f.input(await successor.adapter.summary()));
+    await successor.adapter.releaseFence(f.input(cold), cold);
+    assert.deepEqual(await successor.adapter.history(cold.handoff.historicalUnknownSummary), unknown);
+    assert.ok((await (await f.model()).text()).includes("response.completed"));
+  } finally { await f.close(); }
+});
+
+test("SQLite owner: SIGKILL after dispatch retains unknown on restart without replay", async () => {
+  const f = await fixture(60_000, false, true);
+  try {
+    const source = await f.start(), response = await f.model();
+    const exit = once(source.child, "exit"); source.child.kill("SIGKILL"); await exit;
+    await response.body!.cancel().catch(() => {});
+    const calls = f.modelCalls(); assert.equal(calls, 1);
+    const recovered = await f.start(), state = await recovered.adapter.summary();
+    assert.equal(state.handoff.phase, "open"); assert.equal(state.handoff.historicalUnknownSummary.count, 1);
+    assert.equal(f.modelCalls(), calls);
+    const rows = await recovered.adapter.history(state.handoff.historicalUnknownSummary);
+    assert.equal(rows[0].route, "/v1/responses");
+    assert.equal((await f.account()), 200);
   } finally { await f.close(); }
 });

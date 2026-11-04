@@ -1,0 +1,29 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "workbench-resource-records",
+      "checksum": "ac018d1dac229ebeb33d8863a7517f4b10551533e97ea1feb6162b26524487f5"
+    }
+  ],
+  "tableOptions": {
+    "resource_imports": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "resource_legacy_heads": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "resource_mutations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "resource_records": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "700e726f9b8fc5b6f867bd551f0117725e28b19f68e524d0655fcf0d1f1d1ca4",
+  "baselineSnapshotChecksum": "b4b4d5ecda03ae5f71d4c579a34a455fb8d02a98b1535f60ea0d1ada32a15adf"
+}

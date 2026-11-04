@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
-import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -48,6 +48,7 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"packages/app-host-server/src/conversation-history-storage.worker.mjs")],outfile:join(dirname(output),"conversation-history-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],

@@ -1,3 +1,5 @@
+import { threadDirectoryIncomplete, THREAD_DIRECTORY_SNAPSHOTS, THREAD_DIRECTORY_SNAPSHOT_START, THREAD_DIRECTORY_MERKLE } from "@opencraft/appserver-protocol";
+import { reconcileThreadCatalog } from "./thread-catalog-recovery";
 import { beginObservedOperation } from "./observability";
 import type { SshConnectionView, SshServerDescriptor } from "@opencraft/app-host-protocol";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
@@ -78,7 +80,25 @@ export function canReadHostThreadCatalog(
     // Static recipes have no managed row; their authenticated live profile
     // still requires an explicitly established logical connection.
   }
-  return profile.autoConnect || phase === "ready";
+  return profile.autoConnect || phase === "ready" || isCurrentServerCatalog(profile);
+}
+
+/** A visible durable WebSocket on this website is its metadata source, not an
+ * undiscovered remote machine. Reading its directory establishes no Thread or
+ * execution ownership, even when another engine is the selected chat Host. */
+function isCurrentServerCatalog(profile: HostConnectionProfile): boolean {
+  if (profile.providerId !== "opencraft.websocket" || profile.hostKind !== "durable"
+    || typeof window === "undefined" || !profile.providerConfig
+    || typeof profile.providerConfig !== "object" || Array.isArray(profile.providerConfig)) return false;
+  const value = (profile.providerConfig as { url?: unknown }).url;
+  if (typeof value !== "string") return false;
+  try {
+    const origin = new URL(window.location.href);
+    if (origin.protocol !== "http:" && origin.protocol !== "https:") return false;
+    origin.protocol = origin.protocol === "https:" ? "wss:" : "ws:";
+    const endpoint = new URL(value, origin);
+    return endpoint.origin === origin.origin && !endpoint.username && !endpoint.password;
+  } catch { return false; }
 }
 
 /** A connection precondition failed before any catalog read could start. */
@@ -108,6 +128,9 @@ export async function readHostThreadCatalog(input: {
   readonly signal?: AbortSignal;
   /** Read one independently cacheable metadata page when specified. */
   readonly pageCursor?: string | null;
+  readonly trace?: import("@opencraft/appserver-protocol").RequestTrace;
+  readonly recoveryBase?: ThreadListResponse;
+  readonly loadRecoveryBase?: () => Promise<ThreadListResponse | undefined>;
 }) {
   // SSH authorization cannot revoke or invalidate a different Host's reads.
   const management = input.profile.hostKind === "remote-ssh" ? input.management : null;
@@ -131,13 +154,39 @@ export async function readHostThreadCatalog(input: {
   try {
   const runtime = await input.registry.ensureConnected(input.profile.hostId);
   assertCurrent();
+  const generation = runtime.getSnapshot().connectionGeneration;
+  const read = async (cursor: string | null) => {
+    assertCurrent();
+    if (input.registry.peekRuntime(input.profile.hostId) !== runtime || runtime.getSnapshot().connectionGeneration !== generation) throw new HostThreadCatalogUnavailableError();
+    const page = await runtime.resources.threads.list({ cursor, limit: 50 }, { trace: input.trace });
+    assertCurrent();
+    if (input.registry.peekRuntime(input.profile.hostId) !== runtime || runtime.getSnapshot().connectionGeneration !== generation) throw new HostThreadCatalogUnavailableError();
+    return page;
+  };
   // Complete-directory callers follow every metadata cursor. The navigation
   // query uses independently cacheable pages under the same admission fence.
   const cursors = new Set<string>();
   let cursor: string | null = input.pageCursor ?? null;
+  const snapshotCapability = runtime.resources.host?.getInitializeResult?.()?.capabilities?.extensions?.[THREAD_DIRECTORY_SNAPSHOTS] as { version?: unknown } | undefined;
+  const merkleCapability = runtime.resources.host?.getInitializeResult?.()?.capabilities?.extensions?.[THREAD_DIRECTORY_MERKLE] as { version?: unknown } | undefined;
+  if (cursor === null && merkleCapability?.version === 1) {
+    const base = input.recoveryBase ?? await input.loadRecoveryBase?.();
+    assertCurrent();
+    let recovered: ThreadListResponse | null = null;
+    if (base) {
+      const finish = beginObservedOperation("recovery", { caller: "sidebar-catalog" });
+      let transferred = 0;
+      try {
+        recovered = await reconcileThreadCatalog(base, async c => { const page = await read(c); transferred += page.data.length; return page; }, input.signal);
+        finish(recovered ? "ok" : "empty", { count: transferred });
+      } catch (error) { finish(input.signal?.aborted ? "aborted" : "failed", { count: transferred }); throw error; }
+    }
+    if (recovered) { finishFirst("ok", { count: recovered.data.length }); finishFull("ok", { count: recovered.data.length }); return recovered; }
+  }
+  if (cursor === null && snapshotCapability?.version === 1) cursor = THREAD_DIRECTORY_SNAPSHOT_START;
   do {
     assertCurrent();
-    const page = await runtime.resources.threads.list({ cursor, limit: 50 });
+    const page = await read(cursor);
     // Fence every page, including a revoked final response. Never publish a
     // partial catalog as a successful complete search after a failed page.
     assertCurrent();
@@ -153,6 +202,10 @@ export async function readHostThreadCatalog(input: {
     if (cursor !== null) cursors.add(cursor);
     if (pages.length === 1 && cursor !== null && page.data.length > 0) input.onInitialPage?.(page);
   } while (cursor !== null);
+  if (pages.some(threadDirectoryIncomplete)) {
+    if (pages[0]!.data.length) input.onInitialPage?.(pages[0]!);
+    throw new Error("Thread directory is still synchronizing");
+  }
   // The first page backfills old pins, which can recur in later recent pages.
   finishFull("ok", {count:mergeThreadCatalogPages(pages).length});
   return { ...pages[0]!, data: mergeThreadCatalogPages(pages), nextCursor: null };

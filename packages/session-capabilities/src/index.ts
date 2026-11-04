@@ -1,3 +1,5 @@
+import { CapabilityError } from './errors.js';
+export { CapabilityError } from './errors.js';
 /** Trusted Host composition supplies the session; model arguments never select it. */
 export interface CapabilityExecution {
   readonly executionId?: string; readonly inputId?: string; readonly turnId?: string; readonly incarnation?: string; readonly callId?: string;
@@ -13,7 +15,7 @@ export interface CapabilityTool {
 export interface CapabilityResult { success: boolean; contentItems: { type: "inputText"; text: string }[] }
 export interface SessionCapabilityProvider {
   readonly id: string;
-  refresh?(session: CapabilitySession): Promise<void>;
+  refresh?(session: CapabilitySession, signal?: AbortSignal): Promise<void>;
   tools(session: CapabilitySession): readonly CapabilityTool[];
   formatResult?(value: unknown): CapabilityResult;
   call(session: CapabilitySession, name: string, args: unknown, signal: AbortSignal): Promise<unknown>;
@@ -34,22 +36,32 @@ export class SessionCapabilities {
     this.providers.set(provider.id, provider);
     return () => { if (this.providers.get(provider.id) === provider) this.providers.delete(provider.id); };
   }
-  async refresh(session: CapabilitySession): Promise<void> {
-    await Promise.all([...this.providers.values()].map(provider => provider.refresh?.(session)));
+  async refresh(session: CapabilitySession, signal?: AbortSignal): Promise<void> {
+    await Promise.all([...this.providers.values()].map(provider => provider.refresh?.(session, signal)));
   }
   private catalog(session: CapabilitySession) {
     const tools = new Map<string, { tool: CapabilityTool; provider: SessionCapabilityProvider }>();
     for (const provider of this.providers.values()) for (const tool of provider.tools(session)) {
-      if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/u.test(tool.name) || tools.has(tool.name)) throw new Error("Capability name conflict");
+      if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/u.test(tool.name) || tools.has(tool.name)) throw new CapabilityError("capability_catalog_invalid", "catalog");
       tools.set(tool.name, { tool: structuredClone(tool), provider });
     }
     return tools;
   }
   tools(session: CapabilitySession): readonly CapabilityTool[] { return [...this.catalog(session).values()].map(v => v.tool); }
   async call(session: CapabilitySession, name: string, args: unknown, signal: AbortSignal): Promise<CapabilityResult> {
-    signal.throwIfAborted();
-    const entry = this.catalog(session).get(name);
-    if (!entry) throw new Error("Capability is not authorized for this session");
+    const checkCancelled = () => { if (signal.aborted) throw new CapabilityError('capability_cancelled', 'authorization'); };
+    checkCancelled();
+    let entry = this.catalog(session).get(name);
+    if (!entry) {
+      // A surviving native execution may call a replacement gateway before any
+      // tools/list. Restore declarations only; invocation is still authorized by
+      // the provider against this exact execution, and is dispatched once.
+      try { await this.refresh(session, signal); }
+      catch (error) { throw error instanceof CapabilityError ? error : new CapabilityError('capability_catalog_unavailable', 'catalog'); }
+      checkCancelled();
+      entry = this.catalog(session).get(name);
+    }
+    if (!entry) throw new CapabilityError('capability_not_authorized', 'authorization');
     const value = await entry.provider.call(Object.freeze({ ...session, ...(session.execution ? { execution: Object.freeze({ ...session.execution }) } : {}) }), name, args, signal);
     if (entry.provider.formatResult) return entry.provider.formatResult(value);
     return { success: true, contentItems: [{ type: "inputText", text: JSON.stringify(value) ?? "null" }] };

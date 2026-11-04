@@ -5,6 +5,7 @@ import sharp from 'sharp';
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'playwright');
 const output = process.env.OPENCRAFT_SAFE_BOTTOM_OUTPUT ?? '/tmp/opencraft-composer-safe-bottom';
 const topProbe = process.argv.includes('--top-clearance');
+const dynamicCanvasProbe = process.argv.includes('--dynamic-canvas');
 const projectIos27 = topProbe && process.env.OPENCRAFT_IOS27_CSS_PROBE === '1';
 const source = `import React from 'react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
@@ -36,7 +37,59 @@ try {
     await mkdir(output, { recursive: true });
     await server.listen();
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-    if (topProbe) {
+    if (dynamicCanvasProbe) {
+        // Project only an oversized legacy paint canvas. The CSS dynamic
+        // viewport, real SafeLayout, sticky footer and Composer remain native.
+        for (const theme of ['light', 'dark']) for (const width of [390, 430]) {
+            const page = await browser.newPage({ viewport: { width, height: 874 }, isMobile: true, hasTouch: true });
+            const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+            await page.addInitScript(() => { (window as any).__name = (value: unknown) => value; });
+            await page.goto(server.resolvedUrls!.local[0]);
+            const editor = page.locator('.opencraft-composer-editor'); await editor.waitFor();
+            await page.evaluate(theme => {
+                (window as any).fixtureSetTheme(theme);
+                Object.assign(document.documentElement.dataset, { uiDensity: 'touch', windowHost: 'browser',
+                    windowDisplayMode: 'standalone', windowEdgeStrategy: 'legacy-overlay-requested' });
+                document.documentElement.style.setProperty('--test-safe-bottom', '34px');
+                document.documentElement.style.setProperty('--safe-layout-inset-top', '62px');
+            }, theme);
+            const paint = await page.addStyleTag({ content: '.app-shell-root { height: calc(100vh + 62px) !important; }' });
+            const geometry = () => page.evaluate(() => {
+                const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON();
+                return { shell: rect('.app-shell-root'), row: rect('.app-shell-row'),
+                    composer: rect('.opencraft-composer-shell'), viewportHeight: innerHeight,
+                    scroll: rect('.thread-scroll') };
+            });
+            const check = async () => {
+                const result = await geometry();
+                assert.ok(result.composer.bottom <= result.viewportHeight - 34 - 16 + 1, JSON.stringify(result));
+                assert.ok(result.scroll.bottom <= result.viewportHeight + 1, 'reading paint ends at the exposed window');
+                return result;
+            };
+            const idle = await check();
+            assert.equal(idle.shell.height, 936, 'full immersive paint canvas is retained');
+            assert.equal(idle.row.height, 874, 'interactive row consumes the CSS dynamic viewport');
+            await page.screenshot({ path: `${output}/dynamic-${theme}-${width}-idle.png` });
+            const old = await page.addStyleTag({ content: '.app-shell-row { max-height: none !important; }' });
+            const negative = await geometry();
+            assert.ok(negative.composer.bottom > negative.viewportHeight, 'old geometry must reproduce the clipped Composer');
+            await old.evaluate(element => element.remove()); await check();
+            await editor.fill('Keep this PWA draft');
+            const handle = await editor.elementHandle();
+            await check();
+            await page.setViewportSize({ width: 874, height: width }); await check();
+            await page.setViewportSize({ width, height: 874 }); await check();
+            assert.ok(await handle!.evaluate(element => element.isConnected && document.activeElement === element));
+            assert.equal(await editor.innerText(), 'Keep this PWA draft');
+            await editor.blur(); await check();
+            await paint.evaluate(element => element.remove()); await check();
+            assert.deepEqual(errors, []); results.push({ theme, width, idle, negative });
+            await page.close();
+        }
+        await writeFile(`${output}/result.json`, JSON.stringify({ results,
+            boundary: 'Chromium real components and native CSS dvh; oversized vh canvas projected, physical iOS not verified' }, null, 2));
+        console.log('PASS dynamic canvas: idle/editing/blur, rotation, draft/focus, immersive paint and old-layout negative control');
+    } else if (topProbe) {
         // Only the CSS engine capability boundary is projected. AppShell,
         // SafeLayout, floating conversation chrome and Composer are real.
         for (const theme of ['light', 'dark']) for (const inset of [0, 62]) {

@@ -35,7 +35,7 @@ probe.openedSubagents = [];
 
 function reasoning(engine: string, content = text, completed = false): TimelineSourceItem {
   return { id: "reason", type: "reasoning", payload: {
-    summary: engine === "codex" ? [content] : [], content: !content ? [] : engine === "codex" ? ["Alternate returned detail"] : [content],
+    summary: engine === "codex" ? [content] : [], content: !content ? [] : [content],
     completed, status: completed ? "completed" : "inProgress",
   } };
 }
@@ -232,6 +232,14 @@ function Demo() {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
       setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine, action === "empty" ? "" : action === "markdown" ? markdown : text)] }); return;
     }
+    if (action === "summary-detail" || action === "summary-only" || action === "summary-blank-detail" || action === "detail-only") {
+      restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
+      setTurn({ id: "turn", status: "streaming", items: [{ id: "reason", type: "reasoning", payload: {
+        summary: action === "detail-only" ? [] : ["**Checking renderer**"],
+        content: action === "summary-only" ? [] : action === "summary-blank-detail" ? [" \n "] : ["## Detailed investigation\n\n- Inspect the renderer\n- Preserve Markdown\n\n```js\nconst detail = 42;\n```"],
+        status: "inProgress", completed: false,
+      } }] }); return;
+    }
     if (action === "long-detail") {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
       setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine,
@@ -346,6 +354,12 @@ function Demo() {
           reasoning(selectedEngine, text, true),
           { id: "answer", type: "agentMessage", payload: { text: "Final answer", phase: "final_answer", completed: true } },
         ] }); return;
+    }
+    if (action === "detail-grow" || action === "summary-grow" || action === "detail-drop") {
+      setTurn(current => ({ ...current, items: current.items.map(item => item.type === "reasoning"
+        ? { ...item, payload: { ...(item.payload as object), ...(action === "detail-drop" ? { content: [] } : action === "detail-grow"
+          ? { content: ["## Detailed investigation\n\nNew **detail** arrived"] }
+          : { summary: ["**Renderer checked**"] }) } } : item) })); return;
     }
     setTurn(current => {
       if (action === "command-timer-complete") return { ...current, items: current.items.map(item =>

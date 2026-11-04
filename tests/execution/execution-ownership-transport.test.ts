@@ -80,8 +80,12 @@ test("live reader refuses a missed completion, unknown native state and replacem
   f.db.prepare("UPDATE execution_leases SET admitted_at_ms=1000 WHERE execution_id=?").run(id);
   const query={threadId:"t",engineIncarnation:"native",startedAtMs:1100,uncertaintyMs:20};
   assert.equal((await new LiveExecutionLeaseReader(f.store(),async()=>"finished").resolveJobOrigin(query)).status,"expired");
-  assert.equal((await new LiveExecutionLeaseReader(f.store(),async()=>"unknown").resolveJobOrigin(query)).status,"unknown");
+  assert.deepEqual(await new LiveExecutionLeaseReader(f.store(),async()=>"unknown").resolveJobOrigin(query), {status:"unknown", reason:"live-inspection-unavailable"});
   assert.equal((await new LiveExecutionLeaseReader(f.store(),async()=>{throw new Error("native down");}).resolveJobOrigin(query)).status,"unknown");
+  assert.equal((await new LiveExecutionLeaseReader(f.store(),async()=>"active").resolveJobOrigin(query)).status,"active");
+  f.store().suspend();
+  assert.deepEqual(await new LiveExecutionLeaseReader(f.store(),async()=>"active").resolveJobOrigin(query), {status:"unknown", reason:"lease-unresolved"});
+  f.store().reconcile("t", [{id:"one",status:"inProgress"}], "native");
   assert.equal((await new LiveExecutionLeaseReader(f.store(),async()=>"active").resolveJobOrigin(query)).status,"active");
   const changed=new LiveExecutionLeaseReader(f.store(),async()=>{f.store().finished("t","one");return "active";});
   assert.equal((await changed.resolveJobOrigin(query)).status,"expired");

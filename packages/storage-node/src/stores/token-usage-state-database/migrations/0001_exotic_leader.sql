@@ -1,0 +1,2 @@
+CREATE INDEX `token_usage_gaps_thread` ON `token_usage_gaps` (`server_id`,`thread_id`,`ends_ms`);--> statement-breakpoint
+CREATE INDEX `token_usage_gaps_open` ON `token_usage_gaps` (`server_id`,`ends_ms`,`starts_ms`);

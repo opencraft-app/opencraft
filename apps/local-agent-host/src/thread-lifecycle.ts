@@ -55,6 +55,13 @@ export class ThreadLifecycle {
       return archived ? {} : this.decorate({ thread });
     }
     if (method === "thread/list") {
+      const query = { ...params, sortKey: params.sortKey ?? "updated_at" };
+      if (this.catalog.directory?.supports(query)) {
+        const page = await this.catalog.directory.list(query);
+        this.assertClient(clientId);
+        return { ...page, data: page.data.map(thread => ({ ...thread,
+          status: this.attachments.isLoaded(thread.id) ? this.catalog.get(thread.id)?.status ?? thread.status : { type: "notLoaded" } })) };
+      }
       let cursor: string | null = null;
       do {
         const page = await delegate("thread/list", { cursor, limit: 1000 });

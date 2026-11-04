@@ -47,22 +47,11 @@ async function render(options: { text: string; submissionDisabled: boolean; loca
   </IntlRuntimeProvider>);
 }
 
-const hint = /class="opencraft-composer-connection-hint" role="status">正在连接，连上后即可发送</u;
-
-test("typed content waiting for the Host explains why it cannot be sent", async () => {
-  assert.match(await render({ text: "帮我写周报", submissionDisabled: true }), hint);
-});
-
-test("the hint stays quiet for an empty Composer or a connected Host", async () => {
-  assert.doesNotMatch(await render({ text: "", submissionDisabled: true }), /opencraft-composer-connection-hint/u);
-  assert.doesNotMatch(await render({ text: "帮我写周报", submissionDisabled: false }), /opencraft-composer-connection-hint/u);
-});
-
-test("every embedded console language translates the hint", async () => {
-  for (const catalog of embeddedLocaleCatalogs) {
-    if (catalog.locale === "en-US") continue;
-    const messages = await catalog.load();
-    assert.ok(typeof messages["chat.waitingForHostToSend"] === "string" && messages["chat.waitingForHostToSend"].length > 0, catalog.locale);
+test("waiting for the Host never appends connection copy below the Composer", async () => {
+  for (const text of ["", "帮我写周报"]) for (const submissionDisabled of [false, true]) {
+    const html = await render({ text, submissionDisabled });
+    assert.doesNotMatch(html, /opencraft-composer-connection-hint|正在连接，连上后即可发送/u);
+    if (text && submissionDisabled) assert.match(html, /data-composer-primary-action="send" disabled/u);
   }
 });
 

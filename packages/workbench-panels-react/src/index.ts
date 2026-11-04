@@ -16,6 +16,9 @@ export interface PanelRendererProps {
   readonly presentationId: string;
   /** Logical visibility, not exit-animation progress. Inactive cannot own input. */
   readonly active?: boolean;
+  /** Shell-owned touch toolbar slot; null while the slot is mounting. */
+  readonly toolbarContainer?: HTMLElement | null;
+  readonly touchToolbar?: boolean;
 }
 
 export interface PanelRendererRegistration {

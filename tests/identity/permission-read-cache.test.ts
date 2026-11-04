@@ -8,6 +8,7 @@ import { PermissionReadCache, withPermissionWrite as write } from '../../package
 import { openServerDatabase } from '../../packages/storage-node/src/server/index.js';
 import { ActorStore } from '../../packages/access-control/src/actors.js';
 import { MembershipStore, InstanceAccess } from '../../packages/access-control/src/index.js';
+import { ThreadAccessStore } from '../../packages/access-control/src/thread-access.js';
 function fixture(db: DatabaseSync) {
   db.exec("CREATE TABLE policy(id TEXT PRIMARY KEY,enabled INTEGER); INSERT INTO policy VALUES('a',1)");
   const cache=new PermissionReadCache(function*(){for(const row of db.prepare('SELECT * FROM policy').iterate())yield [String(row.id),row.enabled] as const;});
@@ -35,31 +36,34 @@ test('failed projection refresh and memory-budget overflow reject reads instead 
   assert.throws(()=>f.get(),/unavailable/);
  }finally{db.close();}
 });
-test('Actor, membership, credential, grant delivery checks execute zero SQL and owner revocation remains immediate',async()=>{
+test('Actor, membership, credential, grant and Thread policy delivery checks execute zero SQL and owner revocation remains immediate',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'oc-permission-memory-')),source=await openServerDatabase(dir),db=source.database;
- const actors=new ActorStore(source),members=new MembershipStore(source);
+ const actors=new ActorStore(source),members=new MembershipStore(source),threads=new ThreadAccessStore(join(dir,'threads.sqlite'),actors,{permissionOwner:db});
  const principal={provider:'fixture',subject:'human',displayName:'Human',expiresAt:Date.now()+60000},human=actors.resolveHuman(principal)!;
- members.set(principal,'member',true,'fixture');members.setActor(human.actorId,'member',true,'fixture');
+ members.set(principal,'member',true,'fixture');members.setActor(human.actorId,'member',true,'fixture');threads.created('server','thread',human);
  const access=new InstanceAccess(members,[],actors,['fixture']);
  const session=actors.createSession('Session','fixture'),credential=actors.issueCredential(session.id,Date.now()+60000,'fixture'),proof=actors.authenticateSession(credential.token)!;
  actors.setGrant(session.id,human.actorId,'test.read',true,'fixture');
- const prepare=db.prepare,exec=db.exec;
+ const prepare=db.prepare,exec=db.exec,threadDb=(threads as unknown as {db:DatabaseSync}).db,threadPrepare=threadDb.prepare,threadExec=threadDb.exec;
  try{
   db.prepare=(()=>{throw Error('hot-path prepare');}) as typeof db.prepare;
   db.exec=(()=>{throw Error('hot-path exec');}) as typeof db.exec;
+  threadDb.prepare=db.prepare;threadDb.exec=db.exec;
   for(let i=0;i<100;i++){
    assert.equal(access.admitsActor(human.actorId),true);assert.equal(access.role(principal),'member');assert.equal(actors.isCurrent(human),true);
    assert.equal(actors.resolveHuman(principal)?.actorId,human.actorId);assert.equal(actors.findHuman(principal)?.id,human.actorId);assert.equal(actors.bindings(human.actorId)[0]?.subject,'human');
-   assert.equal(actors.isCurrent(proof),true);assert.equal(actors.can(proof,human.actorId,'test.read'),true);
+   assert.equal(actors.isCurrent(proof),true);assert.equal(actors.can(proof,human.actorId,'test.read'),true);assert.equal(threads.allowsActor('server','thread',human.actorId),true);
+   assert.equal(members.revocationRevision(human.actorId,actors.bindings(human.actorId)),0);
   }
   assert.equal(actors.get('missing'),null);assert.equal(members.actorMembership('missing'),null);
-  db.prepare=prepare;db.exec=exec;
-  members.setActor(human.actorId,'member',false,'fixture');assert.equal(access.admitsActor(human.actorId),false);
+  db.prepare=prepare;db.exec=exec;threadDb.prepare=threadPrepare;threadDb.exec=threadExec;
+  members.setActor(human.actorId,'member',false,'fixture');assert.equal(access.admitsActor(human.actorId),false);assert.ok(members.revocationRevision(human.actorId,actors.bindings(human.actorId))>0);
   members.setActor(human.actorId,'member',true,'fixture');assert.equal(access.admitsActor(human.actorId),true);
   actors.revokeCredential(credential.credentialId,'fixture');assert.equal(actors.isCurrent(proof),false);
   actors.setEnabled(human.actorId,false,'fixture');assert.equal(access.admitsActor(human.actorId),false);
   actors.setEnabled(human.actorId,true,'fixture');assert.equal(actors.isCurrent(human),false);
+  const current=actors.resolveHuman(principal)!;threads.set('server','thread','private',1,current);assert.equal(threads.read('server','thread').accessMode,'private');
   principal.expiresAt=0;assert.equal(access.role(principal),null);
   actors.close();assert.throws(()=>actors.get(human.actorId),/closed/);
- }finally{db.prepare=prepare;db.exec=exec;members.close();actors.close();await source.close();await rm(dir,{recursive:true,force:true});}
+ }finally{db.prepare=prepare;db.exec=exec;threadDb.prepare=threadPrepare;threadDb.exec=threadExec;threads.close();members.close();actors.close();await source.close();await rm(dir,{recursive:true,force:true});}
 });

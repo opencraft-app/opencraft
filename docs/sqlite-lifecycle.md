@@ -1,6 +1,6 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-30 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
+状态：2026-10-30 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 OpenCraft 自有 Host、Electron 与插件 SQLite 库已采用相同 Drizzle 开发流程，保持物理独立；原生引擎私有库不由 OpenCraft 管理。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
 
 Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管理命令与服务器互斥；正常退出先关闭全部消费者和数据库，再释放锁。新增执行凭据绑定表通过核心迁移 v2 接入，导入同时识别旧 `session-capabilities.sqlite` 的 v1/v2 并保留执行绑定，历史 SQL/checksum 不变。
 
@@ -23,6 +23,7 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 | `opencraft-server.sqlite` | [Server storage owner](../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
+| `thread-notes.sqlite` | Headless gateway：[ThreadNoteStore](../plugins/thread-summary/src/note-store.ts) | Headless server data directory | Shared Markdown CRDT state keyed by trusted server/thread; separate from engine, policy and browser data; schema v1 |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
 | `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
 | `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
@@ -149,6 +150,57 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle snapshots 在同目录 `migrations/`。`npm run generate:storage` 生成 SQL、保留所有核心表的 SQLite STRICT 约束并编译随包 TS；`npm run check:storage` 检查源码 SQL 与随包内容一致。迁移测试还检查 schema 与 snapshot 无差异。运行时不读取仓库相对路径、不需要 Drizzle Kit、libsql 或另一个迁移账本。
 
+### 独立 SQLite owner 的 Drizzle 开发流程
+
+Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册33组
+OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、客户端偏好/文档/资源、
+Tasks/IM/摘要、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
+OpenCraft 自有 generation registry/account pool 元数据。各声明位于
+`storage-node/src/stores/<id>/schema.ts`，沿现有 owner、文件、独占锁和生命周期执行。
+这不管理 Codex/Pi/DSH 的原生私有数据库，也不将 IndexedDB 转为 SQLite。
+退休六域旧库只作已冻结导入源，不能重新注册成业务写 owner。
+
+既有完整迁移前缀在每库 `baseline.json` 固定 version/name/SHA-256；该库
+`migrations/0000_legacy_baseline.sql` 和 snapshot 表示当前结构，**不作为新迁移执行**。
+运行时 `openManagedDatabase({schemaId, migrations: legacy, ...})` 在打开文件前核对
+冻结前缀，再追加随包生成增量；仍使用同一个 `schema_migrations` 账本。
+初次注册无新增DDL、不重建/重命名文件、不改变已有账本。完整链推导最终结构校验，
+避免旧的固定目标validator在下次生成后仍拒绝新增表/列。
+
+修改步骤：
+
+1. 修改该库 `schema.ts`，运行 `npm run generate:storage -- --store <id>`。
+   默认不带store继续生成Server迁移；`storage-migrations.mjs compile` 可编译已审核SQL。
+2. 审查明文SQL及数据变换，提交SQL、snapshot、journal和随包生成清单。
+   独立库增量的journal索引1对应旧链的N+1，而不是重置已安装迁移版本。
+3. 审查后运行 `npm run freeze:storage -- --store <id>`（Server默认省略store），
+   将新条目追加到该库 `published.json`，与迁移一起提交。generate/compile可处理尚未冻结
+   的新草稿；check要求全部条目已冻结。新owner的发布清单从 `[]` 开始，基线也需冻结。
+4. 运行 `npm run check:storage`、`npm run test:sqlite-node` 及该owner的升级保留数据测试。
+   检查覆盖所有owner的前缀身份、schema漂移、连续编号/时间顺序、snapshot链和孤立产物。
+   Join完整测试/历史审计仍按现有后置规则，不新增部署审批或前置门禁。
+
+发布清单逐项固定tag、时间、执行版本、SQL原文/snapshot与实际编译SQL的SHA-256。
+结构描述基线的执行版本为0，不写进数据库账本。generate/compile/freeze都会先核对已有
+冻结前缀；freeze只能追加，不能接受既有条目改写或删除，编译器变化也不能改变已经
+应用的SQL。Server与独立库、下游私有库使用同一检查原语；清单不是第二份运行时账本。
+
+编译器保留原表STRICT/WITHOUT ROWID选项，新表默认STRICT；运行时无Drizzle Kit依赖。
+SQLite未命名UNIQUE约束以稳定`legacy_unique_*`别名描述；它们与旧sqlite_autoindex
+在开发期按约束语义核对，不能把别名当作已安装索引执行DROP INDEX。
+Drizzle Kit当前SQLite表达式索引的SQL序列化会拆开表达式内逗号；编译器从生成snapshot
+的结构化columns/internal表达式元信息重建CREATE INDEX，回归覆盖json_extract复合索引。
+含`foreign_keys=OFF`的自动重建不能在当前逐迁移事务里直接执行；应改为符合owner事务及
+外键约束的明确迁移，并验证数据保留，不以关闭外键或修改已发布历史绕过执行器。
+
+下游私有SQLite使用同一通用`resolveMigrationContract(id, legacy, contract)`连接冻结前缀和
+生成增量，schema/SQL/snapshot和生成清单留在产品目录。核心不认识产品schema ID；
+下游复用`storage-migration-tools`与`storage-owner-source`做产物、结构和覆盖检查。
+
+源码注册和运行升级分开：本批主服受管包可启用其包含的owner代码，但不会重启
+独立Core/router/Engine，不能据此声称它们运行中的进程已换代码。以后它们按自己的
+受管维护契约消费同一机制；接入schema不授予生命周期交接权限。
+
 ### openManagedDatabase
 
 [lifecycle](../packages/sqlite-node/src/lifecycle.ts) 的实际步骤是：
@@ -161,6 +213,13 @@ Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle 
 6. 完成后保留原始恢复点并清理超额旧备份；清理失败返回已提交成功的 outcome 与 `maintenanceWarnings`，不把升级报告成未提交。
 
 每个版本的 schema 与账本同事务；嵌套同步事务使用 savepoint，不提交调用方事务。不同物理库仍不是一个事务；Server 合库导入自身是一个目标库事务。`moved-aside` 只保留为旧协议状态兼容，新执行器不再产生该处置。
+
+注册的独立库以冻结旧前缀末版作为无账本转换目标；产品自有完整链可显式传
+`legacyVersion`，未指定时保持原来的完整目标。旧完整结构先严格验证，或由已声明
+的legacyMigration转换到该目标，再执行后续生成增量。转换、旧前缀账本登记和全部
+新增迁移同处一个外层事务；失败时全部回滚，重试复用最初备份。已经完整匹配最新版
+的无账本库仍可直接采纳，不重放SQL；同列结构但约束不同需逐目标严格判定。
+这只保留原先可识别的完整旧目标，不自动接受任意历史前缀，也不放宽legacyPolicy=reject。
 
 ### daemon 启动与 owner
 
@@ -838,3 +897,47 @@ Turns through the existing reader; transient failures are propagated unchanged.
 When full native Turn pages exceed the transport byte budget and Item paging is
 unsupported, preserve the original size error so the existing reader can reduce
 the Turn page size. An unsupported Item RPC must not erase that size boundary.
+
+### 注册 owner 的无账本旧库与生成增量
+
+注册 owner 的历史转换回调可以只生成冻结的已发布迁移前缀。执行器在原备份和
+同一事务内先核对该前缀的精确结构，再执行注册契约中的生成增量，并校验最终
+完整目标后一次记入同一个账本。回调已生成完整目标时不重复执行增量；既不匹配
+前缀也不匹配目标时继续拒绝并回滚。未注册 owner、未知结构及已有账本的正常
+N+1 路径保持原边界，不通过迁移伪造历史 Goal 授权。
+
+### Account Core 交接事实
+
+显式迁入的 `account-handoff` owner 使用独立 `account-handoff.sqlite`，受现有
+accounts writer 锁保护。两张领域表保存请求事实与单条控制检查点；旧 JSON 的
+unknown 单份导入与检查点同事务，carried 列表仅保留摘要，提交后退役旧权威入口。
+新未知逐条追加，不按历史长度重写状态；FULL synchronous 保障 fetch 前的持久边界。
+完整历史摘要、32KiB 分页及固定 launch 恢复协议见 [Account Core](codex-core.md#请求事实与紧凑交接存储)。
+
+## Explicit Server identity reader compatibility
+
+The optional `@opencraft/storage-node/server-identity-reader` entry accepts only
+Server migration chains 5 and the exact staged 6. It reuses the owner migrations,
+strict ledger/checksum validation and complete physical schema validation. The
+caller holds a read transaction through validation, installation-complete check,
+and Actor/membership queries. Join's Git broker does this at every admission;
+a cached connection never caches schema or authorization acceptance.
+
+`server/read-compat/contracts.json` pins the base and target chain hashes and the
+reviewed migration identity; `read-compat/0005_mushy_karma.sql` is the exact SQL
+from the referenced candidate, not a separately maintained schema model.
+`npm run generate:server-read-compat` bundles that declaration; `check:storage`
+checks drift and rejects a writer promotion using different SQL or an unknown
+writer version. A later writer6 promotion must consume these exact bytes, keep
+the check, and retire the staging file only when the compatibility window ends.
+The active writer journal, Drizzle schema, published history and default strict
+SQLite reader remain unchanged in the precursor. This is a read contract, not a
+migration installer or a second source of identity/permissions.
+
+Delivery requires managed activation of the independent broker while the library
+is still 5, followed by an actual cold identity read on the running broker. Only
+then may a writer6 package migrate the shared library. Health alone is insufficient.
+After migration6 commits, the old writer5 package refuses the library; recovery
+must keep the compatible broker and activate a verified writer6-capable recovery
+entry against current data, or fix forward. Never delete ledger entries, restore
+an old database over current writes, or claim a whole-package rollback to 5 works.

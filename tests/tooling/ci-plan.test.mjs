@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, readFileSync, readdirSync, accessSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -193,4 +193,26 @@ test('contract, runtime, loader and regression changes retain builds and add ext
   assert.equal(planChanges(['docs/architecture/browser/overview-and-ownership.md']).extensions, false);
   assert.equal(planChanges(['docs/architecture/extensions-guide.md']).extensions, false);
   assert.equal(planChanges(['package-lock.json']).extensions, true);
+});
+
+
+test('the remote interaction gate names real test files rather than silently omitting a stale path',()=>{
+ const manifest=JSON.parse(readFileSync(new URL('../../package.json',import.meta.url),'utf8'));
+ const files=manifest.scripts['test:remote-interaction'].match(/\btests\/[^\s]+\.test\.(?:[cm]?js|jsx|[cm]?tsx?)\b/g)??[];
+ assert(files.length>0,'remote interaction gate must exercise test files');
+ for(const file of files)accessSync(new URL('../../'+file,import.meta.url));
+ const family=readdirSync(new URL('../../tests/browser/',import.meta.url)).filter(name=>/^remote-(?:browser|interaction)-.+\.test\.(?:[cm]?js|jsx|[cm]?tsx?)$/.test(name));
+ assert.deepEqual(family.filter(name=>!files.includes('tests/browser/'+name)),[],'every remote browser/interaction family test must be in the gate');
+});
+
+
+test('normal headless CI and full gate execute remote interaction regressions for browser code',()=>{
+ const {scripts}=JSON.parse(readFileSync(new URL('../../package.json',import.meta.url),'utf8'));
+ assert.match(scripts['test:headless-server'],/(?:^|&&)\s*npm run test:remote-interaction(?:\s*(?:&&|$))/);
+ assert.match(scripts.gate,/(?:^|&&)\s*npm run test:headless-server(?:\s*(?:&&|$))/);
+ assert.match(readFileSync(new URL('../../.github/workflows/build-matrix.yml',import.meta.url),'utf8'),/run: npm run test:headless-server/);
+ for(const path of ['apps/workbench-web/src/browser/remote-browser-input-queue.ts','apps/workbench-web/src/browser/browser-device-toolbar.tsx','apps/workbench-web/src/browser/opencraft/viewport-resize.js','apps/workbench-web/src/browser/future-client.mts','apps/workbench-web/src/browser/future-client.mjs','scripts/remote-browser/touch.cjs','tests/browser/remote-browser-wheel.test.mjs']){
+  const plan=planChanges([path]); assert.equal(plan.headlessTests,true,path);assert.equal(plan.native,false,path);assert.equal(plan.headlessPackage,false,path);
+ }
+ assert.equal(planChanges(['apps/workbench-web/src/browser/browser-mobile-toolbar.scss']).headlessTests,false);
 });

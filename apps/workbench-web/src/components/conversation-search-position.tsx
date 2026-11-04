@@ -1,3 +1,5 @@
+import { findConversationItemElement } from "./conversation/search-target";
+import "./conversation-search-position.scss";
 import { useEffect, useRef, useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ConversationNavigationSource } from "@opencraft/chat-navigation";
@@ -33,7 +35,7 @@ export function ConversationSearchPosition({ source, target, api, scrollElement 
       const anchor = await waitForSearchNavigationAnchor(source,
         { turnId: target.turnId, itemId: target.itemId }, abort.signal);
       if (abort.signal.aborted) return;
-      const prepared = await source.prepareTarget(anchor.id, { signal: abort.signal });
+      const prepared = await source.prepareTarget(anchor.id, { signal: abort.signal, itemId: target.itemId });
       if (abort.signal.aborted) return;
       if (!prepared || prepared.generation !== source.getSnapshot().generation) throw new Error("Matching turn changed");
       // Hydrating a distant Turn changes the measured window. Verify that its
@@ -53,8 +55,7 @@ export function ConversationSearchPosition({ source, target, api, scrollElement 
         }
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         if (abort.signal.aborted) return;
-        const item = [...(scrollElement?.querySelectorAll<HTMLElement>("[data-content-search-unit-key]") ?? [])]
-          .find(element => element.dataset.contentSearchUnitKey === prepared.itemId);
+        const item = scrollElement && prepared.itemId ? findConversationItemElement(scrollElement, prepared.itemId) : null;
         const rect = item?.getBoundingClientRect();
         const viewport = scrollElement?.getBoundingClientRect();
         if (rect && viewport && rect.top >= viewport.top - 1 && rect.top < viewport.bottom) {

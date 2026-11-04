@@ -53,3 +53,21 @@ test('readiness cancellation and timeout release transient clients without admit
   await assert.rejects(initializeHeadlessCodexHost(host, { signal: abort.signal }));
   assert.equal(closes, 2, 'already cancelled attempt must not acquire a client');
 });
+
+
+test('an open Host loses execution readiness and recovers without reconnecting or restarting', {timeout: 3000}, async () => {
+  const f = hostFixture(); f.enable(true);
+  let executable = true, checks = 0;
+  const worker = maintainHeadlessCodexHost(f.host, {pollMs: 10, retryMs: 20, report() {},
+    async checkExecution() { checks++; if (!executable) throw Error('SYNTHETIC_SECRET'); }});
+  const wait = async state => { for (let n = 0; n < 150 && worker.snapshot().state !== state; n++) await delay(5); assert.equal(worker.snapshot().state, state); };
+  try {
+    await wait('ready'); const opens = f.counts().opens;
+    executable = false; await wait('unavailable');
+    assert.equal(f.host.hostState(), 'open');
+    assert.equal(worker.snapshot().code, 'execution-environment-unavailable');
+    executable = true; await wait('ready');
+    assert.equal(f.counts().opens, opens);
+    assert.ok(checks >= 3); assert.equal(JSON.stringify(worker.snapshot()).includes('SYNTHETIC_SECRET'), false);
+  } finally {worker.close();}
+});

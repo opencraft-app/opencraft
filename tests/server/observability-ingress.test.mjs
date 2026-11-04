@@ -23,12 +23,12 @@ test('host identity wins over forged Grafana headers/cookies; member cannot use 
     }
     role='member';assert.equal((await fetch(origin+'/__opencraft_observe/api/capabilities')).status,403);
     const capability=await(await fetch(origin+'/__opencraft_observe/capabilities')).json();assert.equal(capability.available,false);assert.equal(capability.telemetry,true);
-    const input={schemaVersion:1,kind:'rpc',component:'core',producerId:'synthetic',eventId:'one',at:Date.now(),method:'thread/read',outcome:'ok',params:{text:'sensitive-canary'},actorKind:'human',actorId:'forged',originClass:'automation',error:'sensitive-canary'};
+    const input={schemaVersion:1,kind:'rpc',component:'core',producerId:'synthetic',eventId:'one',at:Date.now(),method:'thread/read',outcome:'ok',traceId:'1'.repeat(32),spanId:'2'.repeat(16),parentSpanId:'3'.repeat(16),caller:'sidebar-catalog',trigger:'auto-next-page',traceRole:'client-rpc',gatewayPairId:'11111111-1111-4111-8111-111111111111',gatewayMs:20,params:{text:'sensitive-canary'},actorKind:'human',actorId:'forged',originClass:'automation',error:'sensitive-canary'};
     assert.equal((await fetch(origin+'/__opencraft_observe/events',{method:'POST',headers:{'content-type':'application/json',origin:'https://attacker.invalid'},body:JSON.stringify({events:[input]})})).status,403);
     const accepted=await fetch(origin+'/__opencraft_observe/events',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify({events:[input,{...input,eventId:'two',kind:'execution',executionId:'forged'}]})});
     assert.equal(accepted.status,200);assert.equal((await accepted.json()).rejected,1);
     const rows=service.store.events(Date.now()-60000,Date.now(),Date.now());assert.equal(rows.length,2); // observe heartbeat and one client record
-    const rpc=rows.find(e=>e.kind==='rpc');assert.equal(rpc.component,'web');assert.equal(rpc.originClass,'interactive');assert(!JSON.stringify(rows).includes('sensitive-canary'));
+    const rpc=rows.find(e=>e.kind==='rpc');assert.equal(rpc.component,'web');assert.equal(rpc.originClass,'interactive');assert.equal(rpc.gatewayPairId,input.gatewayPairId);assert.equal(rpc.gatewayMs,20);assert.equal(rpc.traceId,input.traceId);assert.equal(rpc.spanId,input.spanId);assert.equal(rpc.parentSpanId,input.parentSpanId);assert.equal(rpc.trigger,'auto-next-page');assert(!JSON.stringify(rows).includes('sensitive-canary'));
     role='admin';assert.equal((await fetch(origin+'/__opencraft_observe/api/capabilities')).status,200);
     const down=await fetch(origin+'/__opencraft_observe/grafana/d/opencraft-overview');assert.equal(down.status,503);assert.equal((await down.json()).error.code,'dashboard_unavailable');
     role=null;assert.equal((await fetch(origin+'/__opencraft_observe/api/capabilities')).status,401);

@@ -565,6 +565,12 @@ no per-row glass backdrop or pill material; only neutral hover, press and curren
 state fills. A navigation destination is distinct from an independent Shell action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
+The touch panel bottom rail uses the same floating ControlSurface and one group
+backdrop, with integrated IconButton actions. All-tab navigation reuses the flat
+NavigationItem state treatment and shared fields/actions rather than a custom
+card/button palette. ModalSurface retains popup paint and focus ownership.
+The latest-turn preview retains shared panel material and a localized Button
+disclosure; its reading geometry remains with the Composer owner.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
@@ -648,6 +654,20 @@ trusted Host resolves its project binding. A working directory or panel owner
 identifier never substitutes for account/project execution authority. See
 [account environment variables](account-environment.md).
 
+
+Account and sign-in overlays follow the shared [footer overlay topology](../design/invariants/navigation-and-sidebar.md#footer-overlay-topology): presentation-root portals escape Sidecar clipping/material ancestors, while Radix owns anchoring and collisions. Consumer verification checks actual hit testing beyond the sidebar edge, not only DOM visibility or bounding boxes.
+
+### Shared sidebar content inset
+
+Destination lists select the shared `NavigationList inset="sidebar"` primitive.
+`--padding-sidebar-content-inline` is the foundation token for their outer reading
+inset; Apps and Settings wrappers do not each add a gutter. Touch Shell branding,
+conversation roots and footer edges consume the same token. Row padding, glyph
+slot and label gap remain distinct shared row metrics. The list derives
+`--offset-navigation-content-inline` in the current presentation so section headings
+can align with leading glyphs. Ordinary dialog/page lists retain the default inset.
+Validate row, glyph and label coordinates across consumers and a single token
+change that moves them together, not a per-screen correction.
 
 ## Page overlay ownership
 

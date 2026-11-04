@@ -125,6 +125,84 @@ class ControlledTransport extends TestTransport {
   }
 }
 
+test('an expired recipient cannot crash native publication or interrupt a healthy peer', async () => {
+  const physical = new TestTransport(); let created = 0, revoked = false;
+  const server = new AppHostServer({ createTransport: () => physical, physicalHostLifetime: 'server',
+    createRpcAccessSession: () => {
+      const recipient = ++created;
+      return { receive: () => false, project(frame) { if (recipient === 1 && revoked) throw Error('App resource authority revoked'); return frame; }, close() {} };
+    } });
+  const first = createPortPair(), second = createPortPair();
+  const stale = server.accept(first.host, 'stale'), peer = server.accept(second.host, 'peer');
+  const staleClient = new MessagePortAppHostClient(first.browser, 'stale'), peerClient = new MessagePortAppHostClient(second.browser, 'peer');
+  const old = staleClient.createTransport('local'), healthy = peerClient.createTransport('local');
+  const received: string[] = []; healthy.subscribeMessage(frame => received.push(frame));
+  try {
+    await old.connect(); await healthy.connect();
+    await old.send(JSON.stringify({id:1,method:'thread/list'}));
+    await healthy.send(JSON.stringify({id:2,method:'thread/list'}));
+    revoked = true;
+    const notification = JSON.stringify({method:'thread/changed',params:{threadId:'fixture'}});
+    assert.doesNotThrow(() => physical.receive(notification));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stale.isClosed, true);
+    assert.equal(peer.isClosed, false);
+    assert.deepEqual(received, [notification]);
+    assert.equal(physical.closeCount, 0, 'revoking one recipient does not close its shared physical Host');
+    const request = JSON.stringify({id:3,method:'thread/list'});
+    await healthy.send(request);
+    assert.equal(physical.sent.at(-1), request);
+  } finally { staleClient.close(); peerClient.close(); stale.close(); peer.close(); await server.close(); }
+});
+
+test('a filtered access projection does not retire a healthy connection', async () => {
+  const physical = new TestTransport();
+  const server = new AppHostServer({ createTransport: () => physical,
+    createRpcAccessSession: () => ({ receive: () => false, project: () => null, close() {} }) });
+  const ports = createPortPair(), connection = server.accept(ports.host, 'filtered');
+  const client = new MessagePortAppHostClient(ports.browser, 'filtered'), channel = client.createTransport('local');
+  const received: string[] = []; channel.subscribeMessage(frame => received.push(frame));
+  try {
+    await channel.connect(); physical.receive(JSON.stringify({method:'thread/changed'}));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(connection.isClosed, false); assert.deepEqual(received, []);
+    const request = JSON.stringify({id:1,method:'thread/list'});
+    await channel.send(request); assert.equal(physical.sent.at(-1), request);
+  } finally { client.close(); connection.close(); await server.close(); }
+});
+
+test('projection reentry cannot publish a frame after closing its recipient', async () => {
+  const physical = new TestTransport(), ports = createPortPair(); let writes = 0;
+  const originalPost = ports.host.postMessage;
+  ports.host.postMessage = message => { writes++; originalPost(message); };
+  let connection: ReturnType<AppHostServer['accept']>;
+  const server = new AppHostServer({ createTransport: () => physical,
+    createRpcAccessSession: () => ({ receive: () => false, project(frame) { connection.close(); return frame; }, close() {} }) });
+  connection = server.accept(ports.host, 'reentrant');
+  const client = new MessagePortAppHostClient(ports.browser, 'reentrant'), channel = client.createTransport('local');
+  try {
+    await channel.connect(); const before = writes;
+    physical.receive(JSON.stringify({method:'thread/changed'}));
+    assert.equal(writes, before, 'a retired recipient cannot write even when projection returns a frame');
+  } finally { client.close(); connection.close(); await server.close(); }
+});
+
+test('a failed recipient retains failed port cleanup for explicit server retry', async () => {
+  const physical = new TestTransport(), ports = createPortPair(); let failClose = true;
+  const originalClose = ports.host.close;
+  ports.host.close = () => { if (failClose) throw Error('port close failed'); originalClose(); };
+  const server = new AppHostServer({ createTransport: () => physical, physicalHostLifetime:'server',
+    createRpcAccessSession: () => ({ receive: () => false, project() { throw Error('revoked'); }, close() {} }) });
+  const connection = server.accept(ports.host, 'failed-cleanup');
+  const client = new MessagePortAppHostClient(ports.browser, 'failed-cleanup'), channel = client.createTransport('local');
+  try {
+    await channel.connect(); assert.doesNotThrow(() => physical.receive(JSON.stringify({method:'thread/changed'})));
+    assert.equal(connection.isClosed, true);
+    await assert.rejects(server.close(), /disconnecting/);
+    failClose = false; await server.close();
+  } finally { failClose = false; client.close(); connection.close(); await server.close(); }
+});
+
 test("Host activation rejects physical loss before its connect continuation", async () => {
   class LostTransport extends TestTransport {
     override async connect() { await super.connect(); this.publish({ state: "closed", reason: "immediate loss" }); }
@@ -1176,4 +1254,32 @@ test("a shared native status cannot export one local RPC's no-dispatch proof to 
     physical.retireWithLocalProof(request.id);
     await rejected;
   } finally { client.close(); bridge.close(); await server.close(); }
+});
+
+
+test('read timing starts at server port admission and includes access wait',async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const {openServerDatabase}=await import('@opencraft/storage-node/server');
+ const {ConversationHistory}=await import('../../packages/app-host-server/src/conversation-history.js');
+ const {ConversationHistoryTransport}=await import('../../packages/app-host-server/src/conversation-history-transport.js');
+ const directory=mkdtempSync(join(tmpdir(),'ingress-observation-'));const storage=await openServerDatabase(directory);
+ const history=new ConversationHistory(storage.database,'fixture');
+ await history.observe('thread/started',{thread:{id:'private-thread',cwd:'/private',createdAt:1,updatedAt:2}});
+ class Native extends TestTransport {override async send(frame:string){super.send(frame);const p=JSON.parse(frame);if(p.id!==undefined)this.receive(JSON.stringify({id:p.id,result:p.method==='initialize'?{}:{data:[],nextCursor:null}}));}}
+ const physical=new ConversationHistoryTransport(new Native(),history,undefined,8000,undefined,undefined,()=>{});
+ const server=new AppHostServer({createTransport:()=>physical,createRpcAccessSession:()=>({
+  async receive(frame){if(JSON.parse(frame).method==='thread/list')await new Promise(r=>setTimeout(r,35));return false;},project:frame=>frame,close(){}
+ })});const ports=createPortPair(),connection=server.accept(ports.host,'fixture');
+ const client=new MessagePortAppHostClient(ports.browser,'fixture'),channel=client.createTransport('fixture');
+ const packets:any[]=[];channel.subscribeMessage(frame=>packets.push(JSON.parse(frame)));
+ try {
+  await channel.connect();await channel.send(JSON.stringify({id:98,method:'initialize',params:{clientInfo:{name:'fixture',version:'1'}}}));
+  for(let i=0;i<100&&!packets.some(p=>p.id===98);i++)await new Promise(r=>setTimeout(r,5));
+  await channel.send(JSON.stringify({id:99,method:'thread/list',params:{limit:1},__opencraftGatewayTiming:{gatewayIngressAt:1}}));
+  for(let i=0;i<100&&!packets.some(p=>p.id===99);i++)await new Promise(r=>setTimeout(r,5));
+  const result=packets.find(p=>p.id===99)?.result;assert(result,JSON.stringify(packets));const timing=result.__opencraftGatewayTiming;
+  assert(timing.gatewayRpcAccessMs>=25);assert(timing.gatewayIngressToReadMs>=25);
+  assert(timing.gatewayIngressToReplyMs>=timing.gatewayIngressToReadMs);assert(timing.gatewayIngressQueueMs>=0);
+  assert(timing.gatewayIngressAt>1);assert(timing.gatewayReplyAt>=timing.gatewayIngressAt);
+ }finally{client.close();connection.close();await server.close();await storage.close();rmSync(directory,{recursive:true,force:true});}
 });

@@ -8,6 +8,7 @@ export * from "./image-edit-icons";
 export * from "./activity-icons";
 export { RecoveryScanArtwork } from "./recovery-scan";
 export * from "./layout-icons";
+export { SidebarToggleIcon } from "./sidebar-toggle-icon";
 export { BoldIcon, ItalicIcon, ParagraphIcon, QuoteIcon, OrderedListIcon, UndoIcon, HistoryIcon, CalendarClockIcon, NewFileIcon, SearchFileIcon, AddImageIcon } from "./shared-action-icons";
 
 /** Input geometry remains owned by ui-composer-input-icon (including touch). */
@@ -128,4 +129,12 @@ export function RotateIcon(props: ActionIconProps) {
 }
 export function ReplayIcon(props: ActionIconProps) {
   return <ActionGlyph {...props} kind="replay"><path d="M5 9a8 8 0 1 1-1 5M5 4.5V9h4.5" /><path d="m11 9 4 3-4 3V9Z" /></ActionGlyph>;
+}
+
+/** A tab count is one glyph, so grouped buttons never reach into label DOM. */
+export function TabCountIcon({ count, ...props }: ActionIconProps & { readonly count: number }) {
+  return <ActionGlyph {...props} kind="tab-count">
+    <rect x="4.5" y="4.5" width="15" height="15" rx="2.75" />
+    <text x="12" y="12.5" textAnchor="middle" dominantBaseline="central" fill="currentColor" stroke="none" fontSize={count > 99 ? 7 : 10} fontWeight="600">{count > 99 ? '99+' : count}</text>
+  </ActionGlyph>;
 }

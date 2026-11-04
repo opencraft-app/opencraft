@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import { GitExecutionContextReader } from '../../scripts/git-execution-context';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,10 +10,13 @@ import { ActorStore } from "../../packages/access-control/src/actors";
 import { Collaboration } from "../../packages/access-control/src/collaboration";
 import { AppHostServer } from "../../packages/app-host-server/src/index";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter";
+import { openServerDatabase } from "@opencraft/storage-node/server";
+import { ConversationHistoryTransport } from "../../packages/app-host-server/src/conversation-history-transport";
+import { ConversationHistory } from "../../packages/app-host-server/src/conversation-history";
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { createConversationExecution } from "../../scripts/conversation-execution.mjs";
 
-async function fixture(t: any) {
+async function fixture(t: any, historyOwner = false) {
   const root = await mkdtemp(join(tmpdir(), 'actor-codex-'));
   const actors = new ActorStore(join(root, 'actors.sqlite'));
   const a = actors.createSession('source', 'operator'), b = actors.createSession('target', 'operator');
@@ -29,12 +34,15 @@ async function fixture(t: any) {
       prepare: (context,input)=>service.referenceContext(context,input),
       command: (context,body)=>service.command(context,body), authorize:(context,thread,input)=>service.authorizeExecution(context,thread,input), started:(thread,input,turn)=>service.executionStarted(thread,input,turn), tool:(thread,turn,name,args)=>service.tool(thread,turn,name,args),
     },
-    collaborationInput: { available: () => service.available, mode: id => service.inputMode(id), authorize: (thread, id, mode, turn) => service.authorizeInput(thread, id, mode, turn) },
+    collaborationInput: { available: () => service.available, settings:(thread,id)=>service.inputSettings(thread,id), mode: id => service.inputMode(id), authorize: (thread, id, mode, turn) => service.authorizeInput(thread, id, mode, turn) },
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
-  const host = new AppHostServer({ physicalHostLifetime: 'server', logicalClientRouting: true, createTransport: () => adapter });
+  const historyStorage=historyOwner?await openServerDatabase(join(root,'history')):null;
+  const transport=historyStorage?new ConversationHistoryTransport(adapter,new ConversationHistory(historyStorage.database,'local-codex')):adapter;
+  const host = new AppHostServer({ physicalHostLifetime: 'server', logicalClientRouting: true, createTransport: () => transport });
   service = new Collaboration(join(root, 'collaboration.sqlite'), actors, createConversationExecution(() => host, {serverId:"fixture",hostId:"local-codex"}));
-  t.after(async () => { await service.close(); await host.close(); actors.close(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await service.close(); await host.close(); await historyStorage?.close(); actors.close(); await rm(root, { recursive: true, force: true }); });
+  if(historyOwner)await adapter.connect();
   await host.ensureHostConnected('local-codex');
   let next = 0;
   const rpc = async (method: string, params: any = {}, trusted?: string, raw = false, actor?: any) => {
@@ -173,6 +181,15 @@ test('conversation tools execute in the server after the source viewer disconnec
   assert.equal(f.service.getRequest(human,receipt.requestId).state,'submitted');
   const accepted=(await f.rpc('test/readAcceptedInputs')).result.data;
   assert.equal(accepted.filter((r:any)=>r.params.threadId===reference.threadId).length,1);
+  const executionDb=new DatabaseSync(join(f.root,'data','opencraft-host-state.sqlite'),{readOnly:true});
+  try {
+    const lease=executionDb.prepare('SELECT execution_id FROM execution_leases WHERE thread_id=? AND input_id=?')
+      .get(reference.threadId,'actor-input:'+receipt.requestId);
+    assert.ok(lease);
+    assert.equal(new GitExecutionContextReader(executionDb).resolveExecution(reference.threadId,String(lease.execution_id)).status,'unowned',
+      'an agent message sent under a human delegation does not transfer personal Git identity');
+  } finally { executionDb.close(); }
+
   const delivered=accepted.find((r:any)=>r.params.threadId===reference.threadId).params.input.map((p:any)=>p.text).join('\n');
   assert.match(delivered,/<opencraft_thread_message from="opencraft:\/\/conversation\/v1\/fixture\//);assert.match(delivered,/Review this change/);
   assert.equal((await f.rpc('opencraft/collaboration',{action:'reference',threadId:reference.threadId})).error.code,-32070);
@@ -180,3 +197,69 @@ test('conversation tools execute in the server after the source viewer disconnec
   await f.rpc('test/emitTool',{threadId:f.threadId,turnId,tool:'read_thread',arguments:{reference:encoded}});
   assert.equal((await waitResult(3))[2].result.success,false);
 });
+
+test('tail goes through real Collaboration, AppHost and Codex Host with bounded native pages',async t=>{
+ const f=await fixture(t,true),ref={serverId:'fixture',threadId:f.threadId};
+ f.actors.setGrant(f.a.id,'opencraft://conversation/v1/fixture/'+encodeURIComponent(f.threadId),'conversation.read',true,'operator');
+ const seed=async(marker:string)=>{
+   const result=await f.rpc('test/setHistory',{threadId:f.threadId,turns:[{id:'old',status:'completed',items:[{id:'old-item',type:'agentMessage',text:'earliest'}]},
+     {id:'live',status:'inProgress',items:[{id:'live-item',type:'agentMessage',text:marker}]}]});assert.ok(result.result);
+ };
+ await seed('TAIL-HOST-1');
+ const one=await f.service.command(f.context,{action:'read',reference:ref,bounded:true,tail:1}) as any;
+ assert.equal(one.history.entries.at(-1).text,'TAIL-HOST-1');assert.equal(one.history.latestTurnId,'live');
+ await seed('TAIL-HOST-2');
+ const two=await f.service.command(f.context,{action:'read',reference:ref,bounded:true,tail:1}) as any;
+ assert.equal(two.history.entries.at(-1).text,'TAIL-HOST-2');
+});
+
+
+test('actual Headless bundle tail negotiates and reads via history owner without execution', {timeout:30000}, async t=>{
+  const {mkdir,writeFile}=await import('node:fs/promises');
+  const {pathToFileURL}=await import('node:url');
+  const {buildHeadlessBundle}=await import('../../scripts/package-headless-linux.mjs');
+  const runtime=new URL('../../.runtime/',import.meta.url).pathname;await mkdir(runtime,{recursive:true});
+  const root=await mkdtemp(join(runtime,'tail-headless-'));let app:any;
+  t.after(async()=>{await app?.close();await rm(root,{recursive:true,force:true});});
+  const bundle=join(root,'server.mjs');await buildHeadlessBundle(bundle);
+  const {startHeadlessServer}=await import(pathToFileURL(bundle).href);
+  const webRoot=join(root,'web');await mkdir(webRoot);
+  await writeFile(join(webRoot,'index.html'),'<!doctype html><title>Tail fixture</title>');
+  await writeFile(join(webRoot,'version.json'),JSON.stringify({schemaVersion:1,buildId:'tail-test',headlessServer:true,headlessHostId:'opencraft-server'}));
+  const wrapper=join(root,'codex'),quote=(s:string)=>"'"+s.replaceAll("'","'\\''")+"'";
+  await writeFile(wrapper,'#!/bin/sh\nexec '+quote(process.execPath)+' '+quote(new URL('../fixtures/fake-codex-stdio-appserver.mjs',import.meta.url).pathname)+'\n',{mode:0o700});
+  const composition={createIdentity:async()=>({providers:[{authenticate:(request:any)=>request.headers['x-fixture-human']==='tail'?{provider:'fixture',subject:'tail-human',displayName:'Tail verifier',expiresAt:Date.now()+60000}:null}],close(){}})};
+  app=await startHeadlessServer({root,webRoot,dataDirectory:join(root,'data'),port:0,codexExecutable:wrapper,runtimeDirectory:root,
+    startAgentHost:async()=>({websocketUrl:'ws://127.0.0.1:9/rpc',async close(){}})},composition);
+  // Exercise the shipped Headless assembly with a synthetic human proof. Only
+  // the native process is a fixture; history worker, Actor and routing are real.
+  const {default:WebSocket}=await import('ws');
+  const socket=new WebSocket(app.url.replace(/^http/,'ws')+'/apphost',{origin:app.url,headers:{'x-fixture-human':'tail'}});
+  t.after(()=>socket.terminate());
+  const incoming:any[]=[];socket.on('message',raw=>incoming.push(JSON.parse(raw.toString())));
+  await new Promise<void>((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});
+  const take=async(predicate:(v:any)=>boolean)=>{for(let i=0;i<500;i++){const index=incoming.findIndex(predicate);if(index>=0)return incoming.splice(index,1)[0];await new Promise(r=>setTimeout(r,5));}throw Error('Missing Headless tail response');};
+  socket.send(JSON.stringify({type:'hello',protocolVersion:2,rendererId:'tail-verifier'}));await take(v=>v.type==='ready');
+  socket.send(JSON.stringify({type:'host/connect',requestId:'connect',hostId:'local-codex',leaseId:'tail-lease'}));
+  const connected=await take(v=>v.type==='response'&&v.requestId==='connect');assert.equal(connected.ok,true);
+  let rpcId=0;
+  const rpc=async(method:string,params:any={})=>{const id=++rpcId;socket.send(JSON.stringify({type:'host/send',requestId:'tail-'+id,hostId:'local-codex',leaseId:'tail-lease',generation:connected.result.generation,frame:JSON.stringify({id,method,params})}));return JSON.parse((await take(v=>v.type==='host/frame'&&JSON.parse(v.frame).id===id)).frame);};
+  const init=await rpc('initialize',{clientInfo:{name:'tail-fixture',version:'1'},capabilities:{experimentalApi:true}});
+  assert.equal(init.result.capabilities.extensions['opencraft/collaboration'].tailRead,true);
+  const directory=await rpc('opencraft/collaboration',{action:'servers'});
+  assert.ok(directory.result,directory.error?.message);
+  const server=directory.result.servers.find((s:any)=>s.engine==='codex');assert.equal(server.capabilities.tailRead,true);
+  const coldPath=join(root,'cold-rollout.jsonl');await writeFile(coldPath,JSON.stringify({type:'synthetic-noise',payload:'x'.repeat(2_000_000)})+'\n');
+  const seeded=await rpc('test/setHistory',{threadId:'durable-thread',path:coldPath,turns:[{id:'live',status:'inProgress',items:[{id:'a',type:'agentMessage',text:'TAIL-HEADLESS-1'}]}]});assert.ok(seeded.result);
+  const tail=await rpc('opencraft/collaboration',{action:'read',reference:{serverId:server.serverId,threadId:'durable-thread'},bounded:true,tail:1});
+  assert.ok(tail.result,JSON.stringify(tail.error));
+  assert.match(JSON.stringify(tail.result.history.entries),/TAIL-HEADLESS-1/);
+  for(let n=2;n<=3;n++){
+    await rpc('test/setHistory',{threadId:'durable-thread',turns:[{id:'live',status:'inProgress',items:[{id:'a',type:'agentMessage',text:'TAIL-HEADLESS-'+n}]}]});
+    await rpc('test/emitNotification',{notification:{method:'item/completed',params:{threadId:'durable-thread',turnId:'live',item:{id:'a',type:'agentMessage',text:'TAIL-HEADLESS-'+n}}}});
+    const updated=await rpc('opencraft/collaboration',{action:'read',reference:{serverId:server.serverId,threadId:'durable-thread'},bounded:true,tail:1});
+    assert.ok(updated.result,JSON.stringify(updated.error));assert.match(JSON.stringify(updated.result.history.entries),new RegExp('TAIL-HEADLESS-'+n));
+  }
+  socket.terminate();
+
+ });

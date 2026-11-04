@@ -14,12 +14,13 @@ export function createProtocolIngress({ httpPort, httpServer = null, sshTarget, 
   if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password
     || target.pathname !== '/' || target.search || target.hash) throw new Error('SSH backend must be a loopback origin');
   const sshPort = Number(target.port || 80);
-  if (![httpPort, sshPort].every(port => Number.isInteger(port) && port > 0 && port <= 65535)
+  const validPort = port => Number.isInteger(port) && port > 0 && port <= 65535;
+  if ((!httpServer && !validPort(httpPort)) || !validPort(sshPort)
     || !Number.isSafeInteger(handshakeTimeoutMs) || handshakeTimeoutMs < 1
     || !Number.isSafeInteger(maxConnections) || maxConnections < 1
     || (httpServer !== null && !(httpServer instanceof HttpServer))) throw new Error('Invalid ingress configuration');
   const sockets = new Set(); const peers = new Set(); let closed = false; let closing;
-  const server = createServer(socket => {
+  const acceptSocket = socket => {
     if (closed || sockets.size >= maxConnections) { socket.destroy(); return; }
     sockets.add(socket);
     const deadline = setTimeout(() => socket.destroy(), handshakeTimeoutMs);
@@ -51,8 +52,11 @@ export function createProtocolIngress({ httpPort, httpServer = null, sshTarget, 
       });
     };
     socket.on('data', classify);
-  });
+    socket.resume();
+  };
+  const server = createServer(acceptSocket);
   return {
+    acceptSocket,
     listen({ host = '127.0.0.1', port = 10000 } = {}) {
       if (closed) throw new Error('Protocol ingress is closed');
       return new Promise((accept, reject) => { server.once('error', reject); server.listen(port, host, () => {

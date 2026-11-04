@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 
 import {
+  hasFullWidthOpeningPunctuation,
   typographyRegistry,
   typographyRole,
 } from "@opencraft/design-system/typography";
@@ -98,4 +99,35 @@ test("local typography mixins emit no global variables but the global adapter pr
   const global = compileString('@use "typography.web";', { loadPaths: [directory] }).css;
   assert.match(global, /--font-family-count:/u);
   assert.match(global, /--typography-count-badge-weight: 700/u);
+});
+
+
+test("shortcut help and notices consume local typography without duplicating global CSS", () => {
+  const directory = fileURLToPath(new URL("../../packages/design-system/src/", import.meta.url));
+  const globalTypography = compileString('@use "typography.web";', { loadPaths: [directory] }).css;
+  const importer = { findFileUrl(url: string) {
+    const prefix = "@opencraft/design-system/";
+    return url.startsWith(prefix) ? new URL(`../../packages/design-system/src/${url.slice(prefix.length)}.scss`, import.meta.url) : null;
+  } };
+  for (const name of ["workbench-shortcut-help", "async-notices", "conversation-rename-dialog", "extensions/extension-library"]) {
+    const source = read(`../apps/workbench-web/src/components/${name}.scss`);
+    const url = new URL(`../../apps/workbench-web/src/components/${name}.scss`, import.meta.url);
+    const actual = compileString(source, { importers: [importer], url }).css;
+    const original = compileString(source.replace("typography-mixins.web", "typography.web"), { importers: [importer], url }).css;
+    assert.ok(original.startsWith(globalTypography), `${name}: original global prefix is identified exactly`);
+    assert.equal(actual, original.slice(globalTypography.length).trimStart(), `${name}: every authored component rule is preserved`);
+    assert.doesNotMatch(actual, /:root|\.ui-text--/u);
+    assert.ok(Buffer.byteLength(original) - Buffer.byteLength(actual) > 20000, `${name}: actual repeated CSS is removed`);
+  }
+  assert.match(read("../apps/workbench-web/src/styles/app.scss"), /@use "@opencraft\/design-system\/typography.web"/u,
+    "application stylesheet retains global typography ownership");
+});
+
+test("optical start only selects fullwidth opening punctuation without rewriting titles", () => {
+  for (const title of ["【虾米】建站后端", "（讨论）", "「主题」", "《文档》"]) {
+    assert.equal(hasFullWidthOpeningPunctuation(title), true);
+  }
+  for (const title of ["OB", "hermes 升级", "账户注销", "[tag]", "(topic)", "】结束", " 【保留空格】", ""]) {
+    assert.equal(hasFullWidthOpeningPunctuation(title), false);
+  }
 });

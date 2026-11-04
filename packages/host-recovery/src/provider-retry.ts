@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
 import { PROVIDER_RETRY_LIMIT, providerRetryDecision, type ProviderFailure } from "./provider-retry-policy.js";
 
@@ -25,8 +25,8 @@ export class ProviderTurnRetry {
   private closed = false;
   private closing: Promise<void> | null = null;
   constructor(directory: string, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "provider-turn-retry.sqlite"),
-      migrations: [{ version: 1, name: "provider-turn-retry", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
+    this.managed = openManagedDatabase({ schemaId: "provider-retry", path: join(directory, "provider-turn-retry.sqlite"),
+      migrations: [{ version: 1, name: "provider-turn-retry", sql: schema }], legacyPolicy: "reject-unknown" });
     this.outcome = this.managed.outcome;
   }
   snapshot(threadId: string): ProviderRetry | null {
@@ -75,10 +75,10 @@ export class ProviderTurnRetry {
     const row = this.snapshot(threadId);
     if (row?.turnId === turnId && row.state === "running") this.put({ ...row, state: "complete" });
   }
-  handled(threadId: string): void {
+  handled(threadId: string, expectedTurnId?: string): void {
     if (this.closed) return;
     const row = this.snapshot(threadId);
-    if (row && row.state !== "handled") this.put({ ...row, state: "handled" });
+    if (row && (expectedTurnId === undefined || row.turnId === expectedTurnId) && row.state !== "handled") this.put({ ...row, state: "handled" });
   }
   wake(delay = 0): void {
     if (this.closed) return;

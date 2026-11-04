@@ -1,0 +1,58 @@
+[
+  {
+    "tag": "0000_server_core",
+    "when": 1793173427721,
+    "version": 1,
+    "sqlChecksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af",
+    "snapshotChecksum": "9de4504302ba7c161174394548b13c7acd5d23c001356fc1dbc73fb2499d50ec",
+    "compiledChecksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af"
+  },
+  {
+    "tag": "0001_execution_capability_bindings",
+    "when": 1793310385672,
+    "version": 2,
+    "sqlChecksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31",
+    "snapshotChecksum": "2d02c94c3199392251fbe2320c26f062ae92e7e9b770ebb1b72ce8a6282e4553",
+    "compiledChecksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31"
+  },
+  {
+    "tag": "0002_complex_nocturne",
+    "when": 1793382536462,
+    "version": 3,
+    "sqlChecksum": "ac4601dd19ee51d3f0877eade26dbb58e423425e60130b9b6aeea49d174d75b4",
+    "snapshotChecksum": "ec4f42b8da08b05d6f74e0fe8c8036fcb98d2fc9187ea3b62f5b0b03a817f013",
+    "compiledChecksum": "ac4601dd19ee51d3f0877eade26dbb58e423425e60130b9b6aeea49d174d75b4"
+  },
+  {
+    "tag": "0003_conscious_deathbird",
+    "when": 1793405458040,
+    "version": 4,
+    "sqlChecksum": "66694c524cb78730d67e40ee4fc3245186a02651dd7eb5d7e170bff89b201fd7",
+    "snapshotChecksum": "2578271f58cf76ce392bcb3dc883114dba50121c357225eebfd2e196c46c37ce",
+    "compiledChecksum": "66694c524cb78730d67e40ee4fc3245186a02651dd7eb5d7e170bff89b201fd7"
+  },
+  {
+    "tag": "0004_supreme_siren",
+    "when": 1793410877267,
+    "version": 5,
+    "sqlChecksum": "4a552b416d001a23df5360c25e1264ed9d1bb93bb06b3f82a89a5975ed6b10c3",
+    "snapshotChecksum": "8c28e38a2149a7035156691d48490918a572ede6f8e7fa0357b92812e7f89f36",
+    "compiledChecksum": "4a552b416d001a23df5360c25e1264ed9d1bb93bb06b3f82a89a5975ed6b10c3"
+  },
+  {
+    "tag": "0005_mushy_karma",
+    "when": 1793597320124,
+    "version": 6,
+    "sqlChecksum": "03afd1d25a011359bcc3e5c6502219d0fcdb51fc23fbf941dd9e6cd5bdc31cc5",
+    "snapshotChecksum": "c79bf94bffde495c7231fef078b3cb14f8041603cc726b608c2bfd7abcacf922",
+    "compiledChecksum": "03afd1d25a011359bcc3e5c6502219d0fcdb51fc23fbf941dd9e6cd5bdc31cc5"
+  },
+  {
+    "tag": "0006_serious_stellaris",
+    "when": 1793628615643,
+    "version": 7,
+    "sqlChecksum": "5ed14c4742eb465e869a7a4d0c745cb6ca74bf65688fe29dae14a02ab3c967ef",
+    "snapshotChecksum": "4499c0cfdac9592f3ffec89d096d2e65e23161536af531856b199e7d4f09c8bd",
+    "compiledChecksum": "5ed14c4742eb465e869a7a4d0c745cb6ca74bf65688fe29dae14a02ab3c967ef"
+  }
+]

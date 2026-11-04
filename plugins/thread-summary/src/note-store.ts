@@ -1,4 +1,4 @@
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 import * as Y from "yjs";
 
 const schema = `CREATE TABLE thread_notes (
@@ -16,7 +16,7 @@ export class ThreadNoteStore {
   private readonly db;
   readonly outcome;
   constructor(path: string) {
-    const opened = openManagedDatabase({ path, legacyPolicy: "reject", migrations: [{ version: 1, name: "thread-notes", sql: schema }], validateSchema: createSchemaValidator(schema) });
+    const opened = openManagedDatabase({ schemaId: "note-store", path, legacyPolicy: "reject", migrations: [{ version: 1, name: "thread-notes", sql: schema }] });
     this.db = opened.database;
     this.outcome = opened.outcome;
   }

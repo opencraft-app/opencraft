@@ -142,3 +142,28 @@ lease. Metadata fences and transport callbacks check their connection identity;
 a stale callback cannot end a replacement connection. Ordinary disconnection
 and admission errors keep their separate recovery/error semantics. Server close
 notifications follow the durable retirement commit.
+
+### Logical retirement and recovery projection
+
+Explicit close/discard commits the lease tombstone and removal of its Page,
+Tab and storage-mapping recovery records in one transaction, including sessions
+that never acquired a native page. When a mapping is itself removed, the reducer
+retains its former Page identity for cleanup after the lease index disappears.
+Closing one of multiple Tab references keeps the shared Page until its final
+reference closes. Cookie partitions remain subject to their existing retention
+policy; logical retirement does not clear site data.
+
+Deleted Page/Tab/mapping identities cannot be recreated by a late metadata write,
+even after the client reads the new tombstone revision. A stale write encountering
+retirement reports `SESSION_CLOSED`; ordinary live-record CAS conflicts remain
+`STATE_CONFLICT`. Native close notifications are sent after durable retirement.
+
+The remote surface forwards an authoritative `SESSION_CLOSED` failure (including
+one received at the metadata fence before transport opens) or the explicit remote
+close reason to the logical Page owner. Workbench removes all matching Tab/panel
+projections and releases presentations. A closure acknowledgement does not issue
+a second discard or allocate a new lease. Old connection/fence callbacks cannot
+retire a replacement generation. Transport loss and admission failure keep their
+separate recovery/error semantics. A disconnected or dormant stale client
+converges when it next attaches; a fresh metadata bootstrap excludes retired
+projections. This is not a general cross-client catalog subscription.

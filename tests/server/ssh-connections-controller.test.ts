@@ -397,7 +397,7 @@ test("socket preflight renews an expired shared grant without discovery wake and
     await Promise.all([controller.prepareConnection(), controller.prepareConnection()]);
     assert.equal(grants, 1);
     assert.equal(controller.getSnapshot().authenticated, true);
-    assert.deepEqual(methods, ["GET /__opencraft_ssh/session", "POST /__opencraft_ssh/session", "GET /__opencraft_ssh/connections", "GET /__opencraft_ssh/legacy-connections"]);
+    assert.deepEqual(methods, ["GET /__opencraft_ssh/session", "POST /__opencraft_ssh/session"], "connection admission must not read discovery catalogs");
   } finally { controller.dispose(); }
 });
 
@@ -413,4 +413,27 @@ test("socket preflight cannot admit locked access-key or failed shared renewal",
       assert.equal(grants, accessMode === "shared" ? 1 : 0);
     } finally { controller.dispose(); }
   }
+});
+
+test("authentication renewal retires stale catalog results without retaining loading", async () => {
+  let authenticated = true;
+  const held = deferred<Response>();
+  let holdCatalog = true;
+  const controller = new SshConnectionsController(async (input, init) => {
+    if (init?.method === "POST") { authenticated = true; return json({ authenticated: true }); }
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated, accessMode: "shared" });
+    if (String(input).endsWith("/legacy-connections")) return json([]);
+    return holdCatalog ? held.promise : json([row]);
+  });
+  try {
+    const discovery = controller.refresh();
+    for (let i = 0; i < 5; i++) await new Promise<void>(resolve => setImmediate(resolve));
+    authenticated = false; await controller.prepareConnection();
+    held.resolve(json([row])); await discovery;
+    assert.equal(controller.getSnapshot().refreshing, false);
+    assert.equal(controller.getSnapshot().authenticated, true);
+    assert.equal(controller.getSnapshot().items.length, 0, "a prior grant's catalog cannot populate the new grant");
+    holdCatalog = false; await controller.refresh();
+    assert.equal(controller.getSnapshot().items.length, 1);
+  } finally { held.resolve(json([])); controller.dispose(); }
 });

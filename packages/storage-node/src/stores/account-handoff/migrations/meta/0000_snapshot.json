@@ -1,0 +1,137 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "8fa99928-5f70-4b5b-9773-ade5cf9a8ad3",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "account_handoff_checkpoint": {
+      "name": "account_handoff_checkpoint",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "account_handoff_singleton": {
+          "name": "account_handoff_singleton",
+          "value": "\"account_handoff_checkpoint\".\"singleton\"=1"
+        }
+      }
+    },
+    "account_request_facts": {
+      "name": "account_request_facts",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "terminal": {
+          "name": "terminal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "settled": {
+          "name": "settled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unknown_seq": {
+          "name": "unknown_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unknown_json": {
+          "name": "unknown_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "account_request_facts_id_unique": {
+          "name": "account_request_facts_id_unique",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true
+        },
+        "account_request_facts_unknown_seq_unique": {
+          "name": "account_request_facts_unknown_seq_unique",
+          "columns": [
+            "unknown_seq"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "account_request_terminal": {
+          "name": "account_request_terminal",
+          "value": "\"account_request_facts\".\"terminal\" IN ('completed','failed')"
+        },
+        "account_request_settled": {
+          "name": "account_request_settled",
+          "value": "\"account_request_facts\".\"settled\" IN (0,1)"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

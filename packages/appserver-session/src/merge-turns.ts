@@ -251,9 +251,11 @@ export function reconcileHistoryWindow(
   existing: readonly AppServerTurn[], incoming: readonly AppServerTurn[],
   resumeBaseline: readonly AppServerTurn[] = [],
 ): readonly AppServerTurn[] {
-  const baseline = new Set(resumeBaseline);
-  const live = existing.filter(turn => turn.status === "inProgress"
-    || (typeof turn.historyWindowId !== "string" && !baseline.has(turn)));
+  const baseline = new Map(resumeBaseline.map(turn => [turn.id, turn]));
+  const incomingIds = new Set(incoming.map(turn => turn.id));
+  const live = existing.filter(turn => baseline.has(turn.id)
+    ? baseline.get(turn.id) !== turn || (turn.status === "inProgress" && !incomingIds.has(turn.id))
+    : turn.status === "inProgress" || typeof turn.historyWindowId !== "string");
   const liveIds = new Set(live.map(turn => turn.id));
   return [
     ...incoming.filter(turn => !liveIds.has(turn.id)),

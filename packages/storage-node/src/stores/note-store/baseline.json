@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "thread-notes",
+      "checksum": "c321e8dbb539810e99880bf783b6a192866654538694a43ecfef96e42ed884d8"
+    }
+  ],
+  "tableOptions": {
+    "thread_notes": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "acd950f01fdd64e9628187d21f6f4f6dde21855de6dc4f0ad14d81d20e88f976",
+  "baselineSnapshotChecksum": "4d7929b4e532676e159ebdda7a488fc1b377d47f645ab52ead0fe901bd748d08"
+}

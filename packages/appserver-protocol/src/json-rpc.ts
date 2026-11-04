@@ -1,3 +1,5 @@
+import { parseRequestTrace, parseNotificationObservation, type NotificationObservation, type RequestTrace } from "./request-trace";
+
 export type JsonRpcId = string | number;
 
 export interface JsonRpcErrorObject {
@@ -11,12 +13,14 @@ interface JsonRpcEnvelope {
 }
 
 export interface JsonRpcRequest<TParams = unknown> extends JsonRpcEnvelope {
+  __opencraftTrace?: RequestTrace;
   id: JsonRpcId;
   method: string;
   params?: TParams;
 }
 
 export interface JsonRpcNotification<TParams = unknown> extends JsonRpcEnvelope {
+  __opencraftNotification?: NotificationObservation;
   method: string;
   params?: TParams;
 }
@@ -98,9 +102,11 @@ export function parseJsonRpcMessage(frame: string): JsonRpcIncomingMessage {
       if (!isJsonRpcId(value.id)) {
         throw new JsonRpcParseError("JSON-RPC request id must be a string or number");
       }
-      return { ...envelope, id: value.id, method: value.method, ...params };
+      const trace = parseRequestTrace(value.__opencraftTrace);
+      return { ...envelope, id: value.id, method: value.method, ...params, ...(trace ? {__opencraftTrace:trace} : {}) };
     }
-    return { ...envelope, method: value.method, ...params };
+    const observation=parseNotificationObservation(value.__opencraftNotification);
+    return { ...envelope, method: value.method, ...params, ...(observation?.notificationMethod === value.method ? {__opencraftNotification:observation} : {}) };
   }
 
   if (!hasOwn(value, "id") || (value.id !== null && !isJsonRpcId(value.id))) {

@@ -740,3 +740,93 @@ unit from the row edge and immediately precedes the independent sender slot.
 Keep the existing desktop/touch hit widths and row heights; only preview and
 trailing actions retain their normal text separation. Reducing leading whitespace
 must not put the photo inside the drag activator or overlap its target.
+
+## Shared media resource state
+
+OpenCraft's `blob-resources` package owns shared prepared resource results through
+`ResourceStore<T>`. The application Blob service owns store disposal and forwards
+file invalidation. Resource identity remains the authenticated runtime, Host,
+connection generation and resolved file path; message/View IDs are consumer
+identities, never substitutes for file authority. Unknown file revisions retain
+the existing finite cache lifetime. A view subscribes to an application-owned
+result, reads a valid snapshot during its first render, and releases only its
+subscription on unmount. Pending work is canceled when its final reader leaves;
+ready URLs survive short view changes within bounded idle retention. Invalidation,
+expiry, budget eviction and application disposal release cached URL leases.
+
+The media adapter reuses Blob acquisition and supplies optional `getSnapshot`
+and `subscribe` methods on `ChatMediaSourceLoader`. Markdown, user attachment
+and tool/generated-image views use one React external-store adapter. Legacy
+asynchronous media providers remain supported with consumer cancellation.
+Shared results are presentation data, not permission to read a file or replay
+an action. Cold images with unknown dimensions still use existing loading
+feedback; no guessed aspect ratio or fixed-size replacement is introduced.
+
+Normal filesystem watch/save changes use resource `refresh`, preserving successful
+media while new bytes are read. Availability, `isFetching` and `error` are separate
+facts: refresh failure retains the last result and exposes the failure to consumers.
+Explicit invalidation still discards the old result. The final subscriber leaving
+cancels a refresh; it does not extend the retained result's original expiry. This
+adds no decode/dimension cache or automatic retry policy.
+
+When refreshing an existing image, the browser adapter waits for its replacement
+to be displayable before committing the new source; failure retains the old source,
+and cancellation releases the uncommitted URL. It stores no separate decode cache.
+
+## Recorded message attachment metadata
+
+The independent `messageAttachments` collaboration capability exposes bounded,
+live pages from the existing `OpenCraftMessageAttachments` owner. Thread pages
+include the recorded `clientMessageId`; an optional exact message filter uses
+that identity, not a Native Item or Turn ID. The existing primary key provides
+keyset windows of at most 51 candidates; no history/body scan or file read is
+required. Public rows contain only ID, name, MIME type, declared size and
+location kind. Content availability remains unknown. Locations, download URLs,
+credentials and arbitrary Native payloads never enter this projection.
+
+Each read intersects current human/instance/resource admission with the existing
+conversation-read policy, including private/shared and orchestration rules, and
+rechecks admission before returning. Authenticated encrypted cursors bind the
+Actor generation, query, ref and position to the current owner instance and a
+five-minute maximum lifetime. Reopening the source rejects old cursors. Pages
+are live observations without an exact total or frozen revision; an empty page
+describes recorded metadata only. Corrupt/oversized records, cancellation and
+budget exhaustion fail rather than return a misleading successful partial page.
+
+Headless uses the already mounted metadata owner through a trusted read port.
+The query performs no Native/model call, transport connection, execution lease,
+staging/download or business write. CLI bootstrap `servers` and the metadata
+action use the authorized control lane so unrelated history writes cannot block
+them. Missing/non-equivalent owners advertise unsupported.
+
+## Image failure diagnostics
+
+The optional `ChatMediaDiagnostic` callback separates policy refusal, Host source
+resolution and browser decode outcomes from geometry measurement. Workbench
+consumes it for assistant text images without changing loading, failure fallback,
+gallery or retry behavior. Original transport content type is an optional media
+result hint; a filename-derived display MIME must not hide a returned HTML page.
+Only closed phase/source/transport/content classes, safe HTTP/RPC codes and a
+SHA256 of the high-entropy message identity enter observation. Raw IDs, URLs,
+paths, alt text, response bodies and error messages remain inside the application.
+A passed isolated browser fixture is not evidence of an employee phone result.
+
+A matching enforced browser `img-src` violation is reported separately as CSP
+policy failure. The listener is scoped to the current image source and removed
+on replacement/unmount; blocked resource addresses are never exported.
+
+### Failed image reads can be retried in place
+
+An allowed image whose source read or browser load fails shows its label and an explicit, keyboard/touch accessible “Try again” action. Policy-denied images do not offer a retry. Shared Host loaders expose optional `retry(request)`; the AppServer implementation invalidates bytes and prepared media through BlobResourceService, retaining the original Host, authorization and path. Legacy loaders are invoked again; direct images get a new image element for the same URL. Retry does not reload the conversation, rewrite persisted Markdown, change authority, append cache-busting parameters, or loop automatically. A continuing HTTP denial remains a failure.
+
+Shared image retries preserve their existing subscription until the resource owner completes asynchronous byte invalidation; only legacy providers receive a fresh request identity. This prevents a pre-invalidation read and a duplicate follow-up read. Legacy source snapshots preserve failures locally for the same closed diagnostic classifier.
+
+### Connection generation binds both media reads and subscriptions
+
+An AppServer media loader captures one connection generation at construction. Its resource snapshot, subscription and retry use that same scope. Chat and workspace preview recreate the loader when the Host snapshot connectionGeneration changes. They must not read a moving generation inside getSnapshot while retaining an old subscription: after a reconnect this reads a new cold cache entry with no subscriber to start IO, replacing a previously ready image with a permanent placeholder. Existing generations retain their own snapshots until the consumer rebinds; bytes are never reused as the new generation's result.
+
+### Website download image URLs use the file data plane
+
+The Host loader may recognize an image source with resolveFileSource. The AppServer implementation accepts only a current-origin/current-server-scope `__opencraft_files` URL whose single hostId matches the active Host (the website's two local server aliases share their local file authority), whose single absolute path is valid, and whose website file-download capability is present. It maps that source to a file target before loading, preserving file names including percent signs. Other origins, server scopes, remote Hosts and resource-policy rejections are unchanged; ordinary links retain their navigation semantics.
+
+HTTP file reads recover from fetch/body TypeError or 408/500/502/503/504 with at most five total attempts, waiting 250 ms, 500 ms, 1 s and 2 s between attempts. Authorization and other 4xx failures are terminal, cancellation stops backoff immediately, and no failure falls back to another authority or RPC. The UI stays loading during these finite attempts. Exhaustion still exposes explicit retry. This replaces the earlier no-automatic-retry assumption for transient HTTP reads only; it does not introduce a periodic retry loop.

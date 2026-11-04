@@ -9,10 +9,9 @@ function fixture() {
   const adapter: any = Object.create(CodexEngineAdapter.prototype);
   let configuration: any = config(), status = "idle";
   const calls: Array<{ method: string; params: any }> = [];
-  Object.assign(adapter, { ephemeralThreads: new Set(), nativeSubscribedThreads: new Set(),
+  Object.assign(adapter, { ephemeralThreads: new Set(), options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
     environmentCreations: new Map(), executionEnvironments: new Map(), initialEnvironmentThreads: new Set(),
-    options: { sessionMcp: async () => configuration }, sessionMcpConfigurations: new Map(),
-    sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
+    sessionMcpRefreshes: new Map(), sessionMcpCreations: new Map(), sessionMcpInitial: new Map(), sessionMcpRetirements: new Map(), sessionMcpGeneration: 0, nativeSubscribedThreads: new Set(), statusListeners: new Set(), catalogChanges: { observeResult() {} }, humanInteractions: { markSourceUnavailable() {} }, cancelNativeRelease() {},
     async requestPhysical(method: string, params: any) {
       calls.push({ method, params });
       if (method === "thread/read") { assert.equal(params.includeTurns, false); return { thread: { status: { type: status } } }; }
@@ -146,25 +145,51 @@ test("creation capabilities bind the first execution without reading or resuming
   assert.equal(f.adapter.sessionMcpInitial.has("new"), false);
 });
 
-test("settled failed threads drain once, preserve settings, and apply tools after native unload", async () => {
-  const f = fixture(), request = f.adapter.requestPhysical;
+test("settled failed threads await one retirement without reviving it through queue observation", async () => {
+  const f = fixture(), request = f.adapter.requestPhysical, entered = deferred();
   f.setStatus("systemError");
-  let draining = true;
   f.adapter.requestPhysical = async (method: string, params: any) => {
     const result = await request(method, params);
-    if (method === "thread/unsubscribe" && draining) f.setStatus("systemError");
+    if (method === "thread/unsubscribe") { f.setStatus("systemError"); entered.resolve(); }
     return result;
   };
-  await assert.rejects(f.adapter.prepareSessionMcp("one"), /recovering/);
-  await assert.rejects(f.adapter.prepareSessionMcp("one"), /recovering/);
+  const preparation = f.adapter.prepareSessionMcp("one", "next", "execution-next");
+  await entered.promise;
+  assert.equal(await f.adapter.queueThreadIsIdle("one"), false);
+  f.setStatus("notLoaded");
+  // The background observer must not seize the just-unloaded window either.
+  assert.equal(await f.adapter.queueThreadIsIdle("one"), false);
+  await preparation;
   assert.equal(f.calls.filter(c => c.method === "thread/unsubscribe").length, 1);
-  assert.equal(f.calls.filter(c => c.method === "thread/resume").length, 1);
-  assert.equal(applied(f).length, 0);
-  draining = false; f.setStatus("notLoaded");
-  await f.adapter.prepareSessionMcp("one");
   assert.equal(applied(f).length, 1);
   assert.equal(applied(f)[0]!.params.model, "preserved");
   assert.equal(f.adapter.sessionMcpRetirements.size, 0);
+});
+
+test("an expired physical connection aborts retirement polling without dispatching input", async () => {
+  const f = fixture(), request = f.adapter.requestPhysical, entered = deferred();
+  f.adapter.requestPhysical = async (method: string, params: any) => {
+    const result = await request(method, params);
+    if (method === "thread/unsubscribe") { f.setStatus("idle"); entered.resolve(); }
+    return result;
+  };
+  const preparation = f.adapter.prepareSessionMcp("one");
+  const rejected = assert.rejects(preparation, /expired connection/);
+  await entered.promise; f.adapter.sessionMcpGeneration++;
+  await rejected;
+  assert.equal(applied(f).length, 0); assert(!f.calls.some(c => c.method === "turn/start"));
+});
+
+test("a queue status read racing retirement never reattaches the old instance", async () => {
+  const f = fixture(), request = f.adapter.requestPhysical;
+  f.adapter.nativeCore = {}; f.adapter.nativeSubscribedThreads.clear();
+  f.adapter.requestPhysical = async (method: string, params: any) => {
+    const result = await request(method, params);
+    if (method === "thread/read") f.adapter.sessionMcpRetirements.set("one", { model: "preserved" });
+    return result;
+  };
+  assert.equal(await f.adapter.queueThreadIsIdle("one"), false);
+  assert.equal(f.calls.filter(c => c.method === "thread/resume").length, 0);
 });
 
 
@@ -228,4 +253,54 @@ for (const cancelled of [false, true]) test(`physical delivery timeout starts af
   if (cancelled) controller.abort();
   gate.resolve(); await outcome;
   assert.equal(sends, cancelled ? 0 : 1);
+});
+
+
+
+for (const cancelled of [false, true]) test(`physical delivery timeout starts after tool preparation (cancelled=${cancelled})`, async () => {
+  const f = fixture(), gate = deferred(), entered = deferred(), controller = new AbortController();
+  let sends = 0;
+  Object.assign(f.adapter, { statusValue: { state: "open" }, physicalInitialized: true, child: {}, sequence: 0,
+    internalRequests: new Map(), historyReadTraces: new WeakMap(), hostState: null, tokenUsage: null,
+    async prepareSessionMcp() { entered.resolve(); await gate.promise; },
+    async writePhysical(message: any) {
+      sends++;
+      const pending = f.adapter.internalRequests.get(String(message.id));
+      f.adapter.internalRequests.delete(String(message.id)); clearTimeout(pending.timer);
+      pending.resolve({ turn: { id: "native-next" } });
+    } });
+  const request = (CodexEngineAdapter.prototype as any).requestPhysical.call(f.adapter,
+    "turn/start", { threadId: "one", clientUserMessageId: "next" }, 5, controller.signal);
+  const outcome = cancelled ? assert.rejects(request, (cause: unknown) => cause instanceof RecoveryNotSubmitted) : request;
+  await entered.promise;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(f.adapter.internalRequests.size, 0); assert.equal(sends, 0);
+  if (cancelled) controller.abort();
+  gate.resolve(); await outcome;
+  assert.equal(sends, cancelled ? 0 : 1);
+});
+
+for (const method of ["thread/start", "thread/fork"]) test(`temporary ${method} disables inherited session credentials while preserving other config`, async () => {
+  const f = fixture(), sent: any[] = [];
+  f.adapter.nativeCore = {}; f.adapter.nativeTransport = { async send(frame: string) { sent.push(JSON.parse(frame)); } };
+  await f.adapter.writePhysical({ method, params: { threadId: "parent", ephemeral: true,
+    config: { "mcp_servers.opencraft_session": config(), "mcp_servers.other": { enabled: true } } } });
+  assert.deepEqual(sent[0].params.config, { "mcp_servers.opencraft_session": { enabled: false, url: "http://127.0.0.1:1/mcp" }, "mcp_servers.other": { enabled: true }, ...(method === "thread/fork" ? { model_reasoning_effort: "high" } : {}) });
+  assert.equal(f.adapter.sessionMcpCreations.size, 0);
+});
+
+test("a queued retry resumes abandoned tool retirement without an observation resume", async () => {
+  const f = fixture(); f.setStatus("notLoaded");
+  f.adapter.sessionMcpRetirements.set("one", { model: "preserved" });
+  Object.assign(f.adapter, {
+    activeTurns: new Map(), pending: new Map(),
+    queueStore: () => ({ firstAwaitingAdmission: () => ({ id: "queued", state: "queued", pausedReason: "session-tools-recovering", clientUserMessageId: "same-input" }) }),
+    async reconcileQueue() {},
+    async dispatchQueuedStart() { await f.adapter.prepareSessionMcp("one", "same-input", "execution"); },
+  });
+  await f.adapter.maintainQueue("one");
+  assert.equal(applied(f).length, 1);
+  assert.equal(f.calls.filter(c => c.method === "thread/resume").length, 1);
+  assert.equal(f.calls.filter(c => c.method === "thread/unsubscribe").length, 0);
+  assert.equal(f.adapter.sessionMcpRetirements.size, 0);
 });

@@ -2,9 +2,27 @@ import type { MessageSender } from "@opencraft/appserver-protocol";
 import { ClientObserverList } from "./observer-list";
 export { ClientObserverList };
 
+/** Synchronous, trusted execution-owner port. Capture precedes the Hub's
+ * acceptance commit; it does not enqueue or launch native input. Never wire decoded. */
+export interface ConversationInputAdmissionPort {
+  readonly serverId: string;
+  readonly modelSettings?: boolean;
+  capture(threadId: string, inputId: string): void;
+}
+
+/** Trusted command-only capabilities, never decoded from collaboration wire args. */
+export interface ConversationCommandContext {
+  /** Count-only cancellation fence; conveys no identity or authority. */
+  readonly countReadCurrent?: () => boolean;
+  readonly submission: TransportSubmissionContext;
+  readonly inputAdmission?: ConversationInputAdmissionPort;
+}
+
 /** Trusted in-process context. Never decoded from a Renderer frame. */
 export interface TransportSubmissionContext {
   readonly sender: MessageSender | null;
+  /** Server-generated observation only; never decoded from wire or used for authority. */
+  readonly controlObservation?: import("@opencraft/appserver-protocol").ControlObservation;
   /** Verified provider subject for execution ownership. Never decoded from client frames.
    * loginName is an audit label, never the credential lookup key. */
   readonly executionPrincipal?: { readonly provider: string; readonly subject: string; readonly loginName?: string };
@@ -13,6 +31,9 @@ export interface TransportSubmissionContext {
   /** Verified at ingress; never deserialize from a wire frame. */
   readonly actorContext?: import("@opencraft/identity-core/actors").ActorContext;
   /** Trusted gateway resource authority; never decoded from a frame or sent to an engine. */
+  /** Hub-projected interaction resource scope; requires resourceOwner's current ACL check.
+   * Transient trusted context only, never decoded from a client frame or persisted as a grant. */
+  readonly interactionScope?: { readonly threadId: string; readonly respond: boolean };
   readonly resourceOwner?: { readonly id: string; readonly assertCurrent: () => void };
   readonly validUntil?: number;
   /** Headless-owned collaboration admission. Never decoded from a wire frame. */
@@ -76,6 +97,10 @@ export interface DuplexTransport {
    * No validity after the callback, send authority or wire field is implied.
    * Optional only for compatibility with legacy opaque providers. */
   captureMessageScope?(): () => boolean;
+  /** Trusted stored-history admission, never decoded from wire. The caller owns
+   * the watch lifetime and rechecks its current ACL on every observation. This
+   * registers a passive reader only; it does not start native execution. */
+  watchConversation?(threadId: string, clientId: string, current: () => boolean): () => void;
   subscribeMessage(listener: (frame: string) => void): () => void;
   subscribeStatus(listener: (status: TransportStatus) => void): () => void;
   /** Platform hint (foreground/network return); connection owner decides whether to retry. */
@@ -283,4 +308,38 @@ export class DeferredDuplexTransport implements DuplexTransport {
     this.messages.clear(); this.statuses.clear(); this.recovery.clear();
     return this.closing;
   }
+}
+
+/** Trusted read of the already-mounted Host storage owner; never a Native RPC. */
+export interface MessageAttachmentMetadataPort {
+ read(ref:import('@opencraft/appserver-protocol/collaboration').ConversationRef,query:import('@opencraft/appserver-protocol').MessageAttachmentQuery,
+   context:TransportSubmissionContext,signal:AbortSignal):Promise<import('@opencraft/appserver-protocol').ConversationMessageAttachments>;
+}
+
+/** In-process history watches retain their owner's live authorization fence. */
+export class ConversationWatchRegistry {
+  private readonly watches = new Map<string, Map<string, () => boolean>>();
+  add(threadId: string, clientId: string, current: () => boolean): () => boolean {
+    const clients = this.watches.get(threadId) ?? new Map<string, () => boolean>();
+    this.watches.set(threadId, clients); clients.set(clientId, current);
+    return () => {
+      if (this.watches.get(threadId)?.get(clientId) !== current) return false;
+      this.remove(threadId, clientId); return true;
+    };
+  }
+  has(threadId: string, clientId: string): boolean {
+    try { return this.watches.get(threadId)?.get(clientId)?.() === true; } catch { return false; }
+  }
+  allows(threadId: string, clientId: string, native: boolean): boolean {
+    return this.watches.get(threadId)?.has(clientId) ? this.has(threadId, clientId) : native;
+  }
+  clients(threadId: string): string[] {
+    return [...(this.watches.get(threadId)?.keys() ?? [])].filter(clientId => this.has(threadId, clientId));
+  }
+  remove(threadId: string, clientId: string): void {
+    const clients = this.watches.get(threadId); clients?.delete(clientId);
+    if (!clients?.size) this.watches.delete(threadId);
+  }
+  removeClient(clientId: string): void { for (const threadId of this.watches.keys()) this.remove(threadId, clientId); }
+  clear(): void { this.watches.clear(); }
 }
