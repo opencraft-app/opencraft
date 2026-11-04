@@ -1,6 +1,4 @@
-import { mkdtempSync, writeFileSync, lstatSync, readFileSync, unlinkSync, rmdirSync, rmSync } from "node:fs";
-import { dirname, basename, join, isAbsolute } from "node:path";
-import { tmpdir } from "node:os";
+import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { createSandbox, SandboxFault, type SandboxCommand, type SandboxPool, type SandboxProcess } from "@opencraft/sandbox";
 
@@ -14,27 +12,44 @@ export function prepareSandboxInvocation(options: { runner: string; configuratio
   if (!isAbsolute(options.runner) || !isAbsolute(options.configuration)) throw new SandboxFault("SANDBOX_POLICY", "Sandbox runner requires explicit absolute paths");
   const envelope: SandboxCommand = { command: options.command, cwd: options.cwd,
     env: Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)) };
-  const text = JSON.stringify(envelope);
-  if (Buffer.byteLength(text) > 384 * 1024) throw new SandboxFault("SANDBOX_POLICY", "Sandbox command exceeds its transport budget");
-  const directory = mkdtempSync(join(tmpdir(), "opencraft-sandbox-input-")), input = join(directory, "input.json");
-  try { writeFileSync(input, text, { mode: 0o600 }); }
-  catch { rmSync(directory, { recursive: true, force: true }); throw new SandboxFault("SANDBOX_START", "Sandbox input could not be prepared"); }
+  const input = sandboxMessage(envelope);
+  if (Buffer.byteLength(input) > 384 * 1024) throw new SandboxFault("SANDBOX_POLICY", "Sandbox command exceeds its transport budget");
   return { argv: [process.execPath, "--max-old-space-size=128", options.runner, "--config", options.configuration, "--owner", options.owner,
-    ...(options.terminal ? ["--terminal"] : []), "--input", input], env: sandboxControllerEnvironment(),
-    dispose() { rmSync(directory, { recursive: true, force: true }); } };
+    ...(options.terminal ? ["--terminal"] : []), "--input-stdin"], env: sandboxControllerEnvironment(), input };
 }
 
-export function readSandboxInvocation(path: string): SandboxCommand {
-  try {
-    const directory = dirname(path), file = lstatSync(path), parent = lstatSync(directory);
-    if (!isAbsolute(path) || basename(path) !== "input.json" || !basename(directory).startsWith("opencraft-sandbox-input-")
-      || !file.isFile() || !parent.isDirectory() || file.uid !== process.getuid?.() || parent.uid !== process.getuid?.()
-      || (file.mode & 0o077) || (parent.mode & 0o077) || file.size > 384 * 1024) throw Error();
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw Error();
-    unlinkSync(path); rmdirSync(directory);
-    return value as SandboxCommand; // The common spawn boundary validates every command field.
-  } catch { throw new SandboxFault("SANDBOX_POLICY", "Sandbox input is unavailable or invalid"); }
+/** Consume exactly one bounded control frame, then return the stream to its
+ * payload owner without losing binary input received in the same chunk. */
+export function readSandboxInvocation(input: Readable, signal?: AbortSignal): Promise<SandboxCommand> {
+  return new Promise((resolve, reject) => {
+    let bytes = 0;
+    const chunks: Buffer[] = [];
+    const cleanup = () => {
+      input.pause(); input.off("data", data); input.off("end", fail); input.off("error", fail);
+      signal?.removeEventListener("abort", fail);
+    };
+    const fail = () => { cleanup(); reject(new SandboxFault("SANDBOX_POLICY", "Sandbox input is unavailable or invalid")); };
+    const data = (value: Buffer | string) => {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      const newline = chunk.indexOf(10), header = newline < 0 ? chunk : chunk.subarray(0, newline);
+      bytes += header.length;
+      if (bytes >= 384 * 1024) { fail(); return; }
+      chunks.push(header);
+      if (newline < 0) return;
+      cleanup();
+      try {
+        const envelope: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) throw Error();
+        const rest = chunk.subarray(newline + 1);
+        if (rest.length) input.unshift(rest);
+        resolve(envelope as SandboxCommand); // The common spawn boundary validates each command field.
+      } catch { fail(); }
+    };
+    if (signal?.aborted || input.destroyed || input.readableEnded) { fail(); return; }
+    input.on("data", data); input.once("end", fail); input.once("error", fail);
+    signal?.addEventListener("abort", fail, { once: true });
+    input.resume();
+  });
 }
 
 export async function forwardSandboxCommand(options: {

@@ -1,10 +1,9 @@
 import { sandboxMessage } from "@opencraft/sandbox-node/command";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { engineSandboxConfiguration } from "@opencraft/sandbox-node/engine";
+import { engineSandboxConfiguration, sandboxFileExists } from "@opencraft/sandbox-node/engine";
 import { prepareSandboxInvocation } from "@opencraft/sandbox-node/command";
 import { fork, spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { defineDoc } from "@earendil-works/pi-durable";
 import type { ExecutionEnvironmentSnapshot } from '../../../scripts/execution-environment.js';
@@ -33,21 +32,21 @@ export class PiShellWorker {
   get pid() { return this.child?.pid; }
   async start(): Promise<{ parameters: Record<string, any> }> {
     const configuration = await engineSandboxConfiguration();
+    const bundled = new URL("./pi-shell-worker.mjs", import.meta.url);
+    const entry = await sandboxFileExists(bundled) ? bundled : new URL("./shell-worker.ts", import.meta.url);
+    const bundledRunner = new URL("./sandbox-command.mjs", import.meta.url);
+    const runner = fileURLToPath(await sandboxFileExists(bundledRunner) ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url));
     return this.starting ??= new Promise((resolve, reject) => {
       this.intentional = false; this.stopping = undefined; this.generation = randomUUID();
-      const bundled = new URL("./pi-shell-worker.mjs", import.meta.url);
-      const entry = existsSync(bundled) ? bundled : new URL("./shell-worker.ts", import.meta.url);
       const workerArgs = [JSON.stringify({ cwd: this.options.cwd, directory: this.options.directory })];
       const execArgv = entry.pathname.endsWith(".ts") ? ["--import", "tsx"] : [];
       const env = { ...(this.options.environment?.apply(process.env) ?? process.env), OPENCRAFT_THREAD_ID: this.options.threadId, PI_CODING_AGENT_DIR: this.options.directory };
-      const bundledRunner = new URL("./sandbox-command.mjs", import.meta.url);
-      const runner = fileURLToPath(existsSync(bundledRunner) ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url));
       const invocation = configuration ? prepareSandboxInvocation({ runner, configuration, owner: "pi", cwd: this.options.cwd,
         command: [process.execPath, ...execArgv, fileURLToPath(entry), ...workerArgs, "--stdio"], env }) : undefined;
       const child = this.child = invocation ? spawn(invocation.argv[0]!, invocation.argv.slice(1), {
         cwd: this.options.cwd, env: invocation.env, stdio: ["pipe", "pipe", "inherit"],
       }) : fork(entry, workerArgs, { stdio: ["ignore", "ignore", "inherit", "ipc"], env, execArgv });
-      child.once("close", () => invocation?.dispose()); child.once("error", () => invocation?.dispose());
+      if (invocation) child.stdin!.write(invocation.input);
       const deadline = setTimeout(() => { reject(new Error("Pi shell worker did not initialize")); void this.stop(); }, 30_000);
       const message = (message: any) => {
         if (message?.type === "ready") { clearTimeout(deadline); resolve({ parameters: message.parameters }); }

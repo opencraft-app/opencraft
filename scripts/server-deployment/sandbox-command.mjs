@@ -8,12 +8,12 @@ const parsed = new Map();
 let invalid = false;
 for (let i = 0; i < flags.length; i++) {
   const key = flags[i];
-  if (!['--config', '--owner', '--input', '--terminal'].includes(key) || parsed.has(key)) { invalid = true; break; }
-  if (key === '--terminal') parsed.set(key, true);
+  if (!['--config', '--owner', '--input-stdin', '--terminal'].includes(key) || parsed.has(key)) { invalid = true; break; }
+  if (key === '--terminal' || key === '--input-stdin') parsed.set(key, true);
   else { const value = flags[++i]; if (!value || value.startsWith('--')) invalid = true; parsed.set(key, value); }
 }
 const configuration = parsed.get('--config'), owner = parsed.get('--owner');
-const input = parsed.get('--input'), terminal = parsed.has('--terminal');
+const input = parsed.has('--input-stdin'), terminal = parsed.has('--terminal');
 let pool, raw = false, child;
 const abort = new AbortController();
 const cancel = () => abort.abort();
@@ -25,7 +25,7 @@ process.on('SIGINT', interrupt); process.on('SIGTSTP', suspend); process.on('SIG
 try {
   if (invalid || !configuration || !owner || (input ? separator >= 0 : separator < 0 || separator === args.length - 1)) throw Error();
   const config = await readSandboxRuntimeConfiguration(configuration);
-  const envelope = input ? readSandboxInvocation(input) : { command: args.slice(separator + 1), cwd: process.cwd(), env: sandboxPayloadEnvironment(config, process.env) };
+  const envelope = input ? await readSandboxInvocation(process.stdin, abort.signal) : { command: args.slice(separator + 1), cwd: process.cwd(), env: sandboxPayloadEnvironment(config, process.env) };
   const selected = { ...envelope, ...(terminal ? { terminal: { cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 } } : {}) };
   pool = await configuredSandboxPool(config);
   if (terminal && process.stdin.isTTY) { process.stdin.setRawMode(true); raw = true; }

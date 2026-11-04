@@ -10,6 +10,7 @@ export async function spawnDshSandboxTerminal({ runner, configuration, agent, sd
   const invocation = prepareSandboxInvocation({ runner, configuration, owner: 'dsh-terminal', cwd: spec.cwd,
     command: [process.execPath, agent, sdk], env: { ...sandboxControllerEnvironment(), HOME: process.env.HOME ?? "/" } });
   const child = spawn(invocation.argv[0], invocation.argv.slice(1), { cwd: spec.cwd, env: invocation.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  child.stdin.write(invocation.input);
   const output = new PassThrough(), pending = new Map();
   let sequence = 0, settled = false, readyResolve, readyReject, doneResolve, doneReject, stopping;
   const ready = new Promise((yes, no) => { readyResolve = yes; readyReject = no; });
@@ -48,7 +49,7 @@ export async function spawnDshSandboxTerminal({ runner, configuration, agent, sd
   let exited;
   const exit = new Promise(resolve => { exited = resolve; });
   child.once('close', () => {
-    clearTimeout(deadline); lines.close(); invocation.dispose(); output.end();
+    clearTimeout(deadline); lines.close(); output.end();
     if (!settled) fault();
     spec.signal?.removeEventListener('abort', abort); exited();
   });

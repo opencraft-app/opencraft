@@ -168,3 +168,10 @@ targets existing service units. Use a Linux test host and
 OPENCRAFT_SANDBOX_SMOKE=1 node --import tsx scripts/smoke/execution/smoke-sandbox.ts
 as a manager-authorized operator. No deployment changes follow from adding this
 source.
+
+Engine command envelopes are bounded in-memory control frames sent through the
+controller stdin before payload stdin. Framing preserves binary bytes following
+the header, including bytes in the same read; EOF, malformed/oversized headers
+and cancellation fail closed. Loader values and credentials stay outside the
+controller argv/environment. Preparation, parsing and cleanup perform no
+synchronous filesystem operations on an engine dispatch thread.

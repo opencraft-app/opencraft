@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -21,16 +21,15 @@ test("provider selection is explicit and remote payload environments cannot inhe
 test("loader and credential values live in a private payload envelope, never the controller argv or env", async () => {
   const invocation = prepareSandboxInvocation({ runner: "/engine/sandbox-command.mjs", configuration: "/operator/sandbox.json", owner: "dsh",
     command: ["/bin/bash", "--input", "--terminal", "literal;arg"], cwd: "/workspace", env: { NODE_OPTIONS: "--import /task/preload.mjs", PRIVATE_TOKEN: "test-secret", REMOVED: undefined } });
-  try {
-    assert.equal(invocation.env.NODE_OPTIONS, undefined); assert.equal(invocation.env.PRIVATE_TOKEN, undefined);
-    assert(!invocation.argv.join(" ").includes("test-secret"));
-    const path = invocation.argv.at(-1)!;
-    assert.equal((await stat(path)).mode & 0o077, 0);
-    const command = readSandboxInvocation(path);
-    assert.deepEqual(command.command, ["/bin/bash", "--input", "--terminal", "literal;arg"]);
-    assert.equal(command.env.NODE_OPTIONS, "--import /task/preload.mjs"); assert.equal(command.env.PRIVATE_TOKEN, "test-secret");
-    assert(!Object.hasOwn(command.env, "REMOVED")); await assert.rejects(stat(path));
-  } finally { invocation.dispose(); }
+  assert.equal(invocation.env.NODE_OPTIONS, undefined); assert.equal(invocation.env.PRIVATE_TOKEN, undefined);
+  assert(!invocation.argv.join(" ").includes("test-secret"));
+  const input = new PassThrough();
+  const pending = readSandboxInvocation(input);
+  input.write(invocation.input);
+  const command = await pending;
+  assert.deepEqual(command.command, ["/bin/bash", "--input", "--terminal", "literal;arg"]);
+  assert.equal(command.env.NODE_OPTIONS, "--import /task/preload.mjs"); assert.equal(command.env.PRIVATE_TOKEN, "test-secret");
+  assert(!Object.hasOwn(command.env, "REMOVED"));
 });
 
 test("stdio EOF reaches the bounded process and cleanup waits for its whole environment", async () => {
@@ -84,4 +83,23 @@ test("Native thread creation and recovered turns select the provider without wea
   assert.deepEqual(moved.environments, [{environmentId: "opencraft", cwd: "/project/moved"}]); assert.deepEqual(reads, ["old"]);
   await assert.rejects(policy("thread/start", {}));
   await assert.rejects(policy("turn/start", {threadId: "old", cwd: "relative"}));
+});
+
+test("sandbox control framing preserves binary stdin after a split header", async () => {
+  const invocation = prepareSandboxInvocation({ runner: "/engine/run.mjs", configuration: "/policy.json", owner: "test", command: ["cat"], cwd: "/task", env: {} });
+  const stream = new PassThrough(), pending = readSandboxInvocation(stream), data = Buffer.from([0, 255, 10, 17]);
+  stream.write(invocation.input.slice(0, 5));
+  stream.write(Buffer.concat([Buffer.from(invocation.input.slice(5)), data]));
+  assert.deepEqual((await pending).command, ["cat"]);
+  assert.deepEqual(stream.read(), data);
+  stream.destroy();
+});
+
+test("sandbox input rejects truncation, oversized control frames and cancellation", async () => {
+  const truncated = new PassThrough(), missing = readSandboxInvocation(truncated);
+  truncated.end('{'); await assert.rejects(missing, /unavailable or invalid/);
+  const oversized = new PassThrough(), limit = readSandboxInvocation(oversized);
+  oversized.write('x'.repeat(384 * 1024)); await assert.rejects(limit, /unavailable or invalid/); oversized.destroy();
+  const stream = new PassThrough(), controller = new AbortController(), cancelled = readSandboxInvocation(stream, controller.signal);
+  controller.abort(); await assert.rejects(cancelled, /unavailable or invalid/); stream.destroy();
 });
