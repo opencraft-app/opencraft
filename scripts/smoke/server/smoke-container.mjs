@@ -13,8 +13,10 @@ const image = process.env.OPENCRAFT_IMAGE ?? 'opencraft:local';
 const name = `opencraft-smoke-${randomBytes(5).toString('hex')}`;
 const directory = await mkdtemp(join(tmpdir(), name));
 const data = join(directory, 'data'), workspace = join(directory, 'workspaces');
-const deploymentUid = Number(process.env.OPENCRAFT_SMOKE_UID ?? process.getuid());
-const deploymentGid = Number(process.env.OPENCRAFT_SMOKE_GID ?? process.getgid());
+// Chromium deliberately keeps its sandbox enabled, so a root CI runner uses
+// the image's unprivileged account unless the smoke caller selects another ID.
+const deploymentUid = Number(process.env.OPENCRAFT_SMOKE_UID ?? (process.getuid() === 0 ? 1000 : process.getuid()));
+const deploymentGid = Number(process.env.OPENCRAFT_SMOKE_GID ?? (process.getgid() === 0 ? 1000 : process.getgid()));
 if (![deploymentUid, deploymentGid].every(Number.isInteger)) throw new Error('Smoke UID and GID must be integers');
 const architecture = execFileSync('docker', ['image', 'inspect', image, '--format', '{{.Architecture}}'], { encoding: 'utf8' }).trim();
 const env = { ...process.env, OPENCRAFT_IMAGE: image, OPENCRAFT_DATA_DIR: data,
@@ -40,6 +42,11 @@ const topPid = (service, pattern) => {
   assert.ok(line, `${service} must run ${pattern}`);
   return Number(line.trim().split(/\s+/u)[0]);
 };
+const topIncludesNativeExecServer = service => {
+  const id = compose(['ps', '-q', service]);
+  return docker(['top', id, '-eo', 'pid,args']).split('\n').some(value =>
+    value.includes('exec-server --listen stdio') && !value.includes('sandbox-command.mjs'));
+};
 
 let passed = false, origin;
 try {
@@ -59,7 +66,13 @@ try {
     core: first.body.core.pid, codex: first.body.core.codexPid,
     engine: first.body.engineHost.pid, dsh: first.body.dsh.enginePid,
   };
-  const hands = { owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') };
+  const hands = {
+    owner: topPid('hands', 'owner.cjs'),
+    worker: topPid('hands', 'worker.cjs'),
+    exec: topPid('hands', 'exec-server --listen stdio'),
+  };
+  assert.equal(topIncludesNativeExecServer('brain'), false,
+    'Brain must delegate Codex native execution to Hands');
   const marker = randomBytes(12).toString('hex');
   await writeFile(join(data, 'docker-smoke-marker'), marker);
 
@@ -68,7 +81,8 @@ try {
   const second = await ready();
   assert.deepEqual({ core: second.body.core.pid, codex: second.body.core.codexPid,
     engine: second.body.engineHost.pid, dsh: second.body.dsh.enginePid }, brain);
-  assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') }, hands);
+  assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs'),
+    exec: topPid('hands', 'exec-server --listen stdio') }, hands);
   assert.equal(await readFile(join(data, 'docker-smoke-marker'), 'utf8'), marker);
 
   // Loss is reported; Gateway never starts an embedded fallback owner.
@@ -77,7 +91,12 @@ try {
   compose(['start', 'brain']);
   const recovered = await ready();
   assert.notEqual(recovered.body.core.pid, brain.core);
-  assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') }, hands);
+  assert.deepEqual({ owner: topPid('hands', 'owner.cjs'), worker: topPid('hands', 'worker.cjs') },
+    { owner: hands.owner, worker: hands.worker });
+  assert.notEqual(topPid('hands', 'exec-server --listen stdio'), hands.exec,
+    'Brain restart must replace its leased Hands execution process');
+  assert.equal(topIncludesNativeExecServer('brain'), false,
+    'Brain must not reacquire an embedded Codex exec-server');
   passed = true;
   console.log(JSON.stringify({ ok: true, origin, persistence: true,
     gatewayRestartKeepsBrain: true, gatewayRestartKeepsHands: true, brainUnavailable: 503, brainRecovery: true }));
