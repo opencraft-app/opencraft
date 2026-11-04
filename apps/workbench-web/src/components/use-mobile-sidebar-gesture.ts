@@ -43,9 +43,10 @@ function horizontalInput(path: EventTarget[], boundary: HTMLElement): Horizontal
 }
 
 /** One visibility writer above the shared portal. Vertical/native input stays owned by its view. */
-export function useMobileSidebarGesture({ enabled, open, width, root, overlay, onOpenChange }: {
+export function useMobileSidebarGesture({ enabled, open, width, root, overlay, foreground, onOpenChange }: {
   enabled: boolean; open: boolean; width: MotionValue<number>;
   root: RefObject<HTMLElement | null>; overlay: RefObject<HTMLElement | null>;
+  foreground?: RefObject<HTMLElement | null>;
   onOpenChange(open: boolean): void;
 }) {
   const reducedMotion = useReducedMotion() === true;
@@ -119,7 +120,8 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       const shell = root.current, surface = overlay.current;
       if (!shell) return;
       const path = event.composedPath();
-      const boundary = surface && path.includes(surface) ? surface : shell && path.includes(shell) ? shell : null;
+      const page = foreground?.current;
+      const boundary = surface && path.includes(surface) ? surface : page && path.includes(page) ? page : path.includes(shell) ? shell : null;
       if (!boundary || foregroundOwnsInput(event) || window.getSelection()?.toString()) return;
       const scrollports = horizontalInput(path, boundary);
       if (scrollports === "exclusive") return;
@@ -259,14 +261,14 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
     document.addEventListener("visibilitychange", visibilityChanged);
     // A modal appearing while the finger is held revokes the old gesture now,
     // rather than letting its later move/end write behind the foreground view.
-    const foreground = new MutationObserver(() => { if (gesture.current || scrolling || (progress.get() > 0 && progress.get() < 1)) foregroundOwnsInput(); });
+    const foregroundObserver = new MutationObserver(() => { if (gesture.current || scrolling || (progress.get() > 0 && progress.get() < 1)) foregroundOwnsInput(); });
     const scope = root.current?.getRootNode();
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "aria-modal", "role", "hidden", "aria-hidden"] };
-    if (scope) foreground.observe(scope, observation);
-    if (scope !== document) foreground.observe(document, observation);
+    if (scope) foregroundObserver.observe(scope, observation);
+    if (scope !== document) foregroundObserver.observe(document, observation);
     return () => {
       stopContentMotion();
-      foreground.disconnect();
+      foregroundObserver.disconnect();
       document.removeEventListener("touchstart", start, true); document.removeEventListener("touchmove", move, true);
       document.removeEventListener("touchend", end, true); document.removeEventListener("touchcancel", cancelContact, true);
       document.removeEventListener("click", click, true); window.removeEventListener("resize", cancelContact);
@@ -275,7 +277,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       document.removeEventListener("visibilitychange", visibilityChanged);
       gesture.current = null;
     };
-  }, [enabled, overlay, root, progress, width]);
+  }, [enabled, overlay, foreground, root, progress, width]);
   useLayoutEffect(() => () => { ++generation.current; progress.stop(); }, [progress]);
   return { progress, present, dragging };
 }

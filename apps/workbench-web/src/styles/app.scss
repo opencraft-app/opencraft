@@ -152,7 +152,7 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   body { position: relative; }
   .app-shell-root { position: relative; }
   .app-shell-floating-overlay-root { position: absolute; }
-  :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
     right: auto;
     bottom: auto;
     top: var(--timeline-document-viewport-top, 0px);
@@ -359,7 +359,7 @@ button {
 // The Web adapter converts the visible frame into the measured fixed basis.
 // Pan changes its origin, never its available capacity. Containment gives
 // fixed descendants the same frame without applying the origin twice.
-html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
   contain: layout;
   top: var(--timeline-available-viewport-top, 0px);
   left: var(--timeline-available-viewport-left, 0px);
@@ -370,7 +370,7 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
 // At rest an installed overlay keeps its full CSS canvas. Native layout/visual
 // metrics can exclude the status strip without describing a keyboard. Actual
 // contraction still uses the existing viewport owner, including after blur.
-html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
   height: 100vh;
 }
 
@@ -10955,7 +10955,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .web-browser-presentation-root {
   position: fixed;
-  z-index: 43;
+  z-index: var(--layer-workspace-browser);
   inset: 0;
   overflow: visible;
   pointer-events: none;
@@ -12199,14 +12199,6 @@ html[data-window-host="browser"] body {
       box-shadow: var(--elevation-sidebar);
     }
   }
-  .app-shell-mobile-page-wash {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    pointer-events: none;
-    background: var(--color-background-elevated-primary-opaque);
-    will-change: opacity;
-  }
   .app-shell-header {
     padding-left: max(var(--padding-toolbar), var(--shell-mobile-safe-left));
     padding-right: max(var(--padding-toolbar), var(--shell-mobile-safe-right));
@@ -12273,6 +12265,26 @@ html[data-window-host="browser"] body {
     // a fractional-pixel compositing edge even over the stationary backing.
     background: transparent;
   }
+}
+// Page-owned overlays escape native guests and stay below desktop navigation.
+// The mobile foreground covers the stationary drawer during its travel.
+.app-shell-page-presentation {
+  position: fixed; inset: 0; pointer-events: none; overflow: clip;
+  z-index: var(--layer-shell-page-overlays);
+  transition-property: none;
+  &[data-mobile-sidebar-present] {
+    z-index: var(--layer-shell-page-foreground);
+    border-start-start-radius: var(--radius-lg);
+    border-end-start-radius: var(--radius-lg);
+  }
+}
+.app-shell-page-overlays {
+  position: absolute; z-index: 0; pointer-events: none; overflow: clip;
+}
+.app-shell-mobile-page-wash {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: var(--color-background-elevated-primary-opaque);
+  will-change: opacity;
 }
 .app-shell-mobile-page-dismiss {
   position: absolute; inset: var(--shell-mobile-safe-top) 0 0; z-index: 3;

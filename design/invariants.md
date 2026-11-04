@@ -29,6 +29,8 @@ for overflow, mobile boundaries and state continuity.
 旧章节锚点继续有效；重复章节链接指向同一份正式约束。
 
 ### Shell and layout
+Page-owned floating DOM content consumes the Shell overlay host; geometry, motion, clipping and input boundaries belong to Shell. Native/browser surfaces adapt that page boundary without replacing their resources. See [page-owned overlay presentation](invariants/shell-and-layout.md#page-owned-overlay-presentation).
+
 
 - <a id="owned-dom-projection-names"></a>[Owned DOM projection names](invariants/shell-and-layout.md#owned-dom-projection-names)
 - <a id="experimental-mobile-web-container"></a>[Experimental mobile Web container](invariants/shell-and-layout.md#experimental-mobile-web-container)

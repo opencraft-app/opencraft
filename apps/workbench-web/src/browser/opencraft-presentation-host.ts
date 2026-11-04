@@ -19,6 +19,7 @@ export class OpenCraftPresentationHost {
   private disposed = false;
   private blocked = false;
   private automationBlocked = false;
+  private presentationInputBlocked = false;
   private staged = false;
   private listeners = new Set<() => void>();
   private layout: BrowserViewportLayout | null = null;
@@ -80,9 +81,16 @@ export class OpenCraftPresentationHost {
     if (this.disposed || generation !== this.state.mountGeneration) return;
     if (this.reference && this.reference !== reference) return;
     this.state = { ...this.state, isVisible: false };
+    this.presentationInputBlocked = false; this.port.container.inert = false;
     this.reference = null; this.blocked = false; this.port.clearCover(); this.port.park();
   }
   blockInteraction() { this.blocked = true; this.port.container.style.pointerEvents = "none"; }
+  setPresentationInputBlocked(blocked: boolean) {
+    if (this.presentationInputBlocked === blocked) return;
+    this.presentationInputBlocked = blocked;
+    this.port.container.inert = blocked;
+    this.resync();
+  }
   setAutomationActive(active: boolean) { this.automationBlocked = active; this.resync(); }
   restoreInteraction() { this.blocked = false; this.resync(); }
   expandToCoverStagedBounds(bounds: Value) {
@@ -101,7 +109,7 @@ export class OpenCraftPresentationHost {
   }
   focus(allowed: () => boolean = () => true) {
     const active = document.activeElement;
-    if (allowed() && this.isPainted() && !this.blocked && !this.automationBlocked
+    if (allowed() && this.isPainted() && !this.blocked && !this.automationBlocked && !this.presentationInputBlocked
       && (!active || active === document.body || active === document.documentElement
         || active.tagName === "WEBVIEW" && active !== this.port.guest)) this.port.guest.focus();
   }
@@ -121,7 +129,7 @@ export class OpenCraftPresentationHost {
       return;
     }
     this.port.commit(this.layout, !this.staged);
-    if (this.blocked || this.automationBlocked) this.port.container.style.pointerEvents = "none";
+    if (this.blocked || this.automationBlocked || this.presentationInputBlocked) this.port.container.style.pointerEvents = "none";
     else this.focus();
   }
   transfer(options: Value) { this.options = { ...this.options, ...options }; }

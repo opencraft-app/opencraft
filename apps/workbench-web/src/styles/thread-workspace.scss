@@ -9,11 +9,7 @@
   pointer-events: none;
   // Clipping is not scrolling: focus/selection must not move this viewport.
   overflow: clip;
-  // Browser guests live outside the Shell's stacking context.
-  &[data-anchor="viewport"] {
-    position: fixed;
-    inset: auto;
-  }
+
 }
 .thread-composer-overlay-host {
   container: composer-overlay / size;

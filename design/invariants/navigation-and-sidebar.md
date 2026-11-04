@@ -155,6 +155,7 @@ One progress translates the foreground and brings the rear layer from 90% scale 
 45% opacity to its full size and clarity, with a left-center origin. A stationary, pointer-transparent theme veil fades
 from 65% to zero with that same progress, stronger toward the foreground edge.
 Light themes wash toward white; dark themes retain their own elevated surface.
+The Shell page-presentation plane applies the foreground veil and dismissal boundary above page DOM overlays and external browser guests. Input blocking covers the page, its overlay host and physical guests without retiring their resources. See [page-owned overlay presentation](shell-and-layout.md#page-owned-overlay-presentation).
 The foreground has a pointer-transparent theme veil driven by the same progress from zero to 65%, reciprocal to the rear veil: opening clarifies the sidebar while fading the conversation, and closing reverses both, including held and interrupted gestures. Reduced motion disables both veils. It releases with panel presence/inertness. A stationary
 full-viewport theme Sidebar/window material backs this animated layer while the
 floating panel is mounted, including the top/bottom safe areas. The scaled

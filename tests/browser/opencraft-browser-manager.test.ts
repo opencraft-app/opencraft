@@ -170,3 +170,31 @@ test("replaced unregistered host stays parked when its registration completes la
     transition.disposeAll();
   } finally { env.close(); }
 });
+
+
+test("page input boundary survives guest commits and automation release without retiring the resource", () => {
+  const env = environment();
+  try {
+    let focused = 0, closed = 0, parked = 0;
+    const container = { style: {}, isConnected: true, inert: false } as unknown as HTMLElement;
+    const host = new OpenCraftPresentationHost({ conversationId: "owner", browserTabId: "page" }, {
+      container, guest: { focus() { focused++; } } as unknown as HTMLElement, ready: Promise.resolve(),
+      commit() { container.style.pointerEvents = "auto"; }, park() { parked++; }, close() { closed++; }, clearCover() {}, cover() {},
+    });
+    const layout = { visualBounds: { x: 0, y: 0, width: 400, height: 500 }, stageBounds: { x: 0, y: 0, width: 400, height: 500 }, viewportSize: { width: 400, height: 500 }, scale: 1 };
+    host.markRegistered(); host.sync({ ...state, layout }, {});
+    host.setPresentationInputBlocked(true);
+    focused = 0;
+    host.setAutomationActive(true); host.setAutomationActive(false); host.finishReveal(); host.focus();
+    assert.equal(focused, 0, "guest transitions cannot reclaim page input");
+    assert.equal(container.inert, true, "keyboard input is blocked as well as pointer input");
+    assert.equal(container.style.pointerEvents, "none");
+    assert.equal(host.isPainted(), true); assert.equal(closed, 0); assert.equal(parked, 0);
+    host.setAutomationActive(true); host.setPresentationInputBlocked(false);
+    assert.equal(container.inert, false);
+    assert.equal(container.style.pointerEvents, "none", "page release does not override automation input ownership");
+    host.setAutomationActive(false);
+    assert.equal(container.style.pointerEvents, "auto");
+    assert.ok(focused > 0);
+  } finally { env.close(); }
+});

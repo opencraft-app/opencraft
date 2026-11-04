@@ -180,7 +180,10 @@
   // an application modal must paint above that modal, while its popovers,
   // tooltips and transient notices remain ordered deterministically.
   // Stationary touch chrome sits above the animated sidebar drawer (44).
+  --layer-workspace-browser: 42;
+  --layer-shell-page-overlays: 43;
   --layer-shell-sidebar-control: 45;
+  --layer-shell-page-foreground: 46;
   --layer-workspace-composer: 80;
   --layer-shell-navigation: 90;
   --layer-application-modal: 230;

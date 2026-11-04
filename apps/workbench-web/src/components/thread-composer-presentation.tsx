@@ -30,6 +30,7 @@ import {
   type ConversationDocumentContextValue,
 } from "./conversation";
 import { ConversationDocumentContext } from "./conversation/document-context";
+import { useShellPageOverlay } from "./shell-page-presentation";
 import { shouldPresentMainComposerOverlay } from "./thread-composer-presentation-model";
 import {
   ComposerWheelSwipeController,
@@ -184,9 +185,8 @@ export function ThreadComposerPresentation({
   useLayoutEffect(() => {
     if (mobileBrowser && activeTabId) store.prepareMobileBrowser(activeTabId);
   }, [mobileBrowser, activeTabId, store]);
-  // Browser guests use a separate body-level presentation plane. Retain that
-  // stacking contract; ordinary tools share the Shell's local overlay plane.
-  const overlayContainer = floating ? document.body : shellAnchor;
+  // Shell owns the overlay plane for DOM and native-guest presentations alike.
+  const overlayContainer = useShellPageOverlay();
   const view = projectFloatingComposer(state, {
     floating,
     tabId: activeTabId,
@@ -281,15 +281,6 @@ export function ThreadComposerPresentation({
     const measure = () => {
       scheduled = null;
       const rect = element.getBoundingClientRect();
-      if (floating)
-        for (const target of [host.current, revealHost.current])
-          if (target)
-            Object.assign(target.style, {
-              left: `${rect.left}px`,
-              top: `${rect.top}px`,
-              width: `${rect.width}px`,
-              height: `${rect.height}px`,
-            });
       // Ordinary tools are CSS-local to the Shell; measure bottom occlusion.
       // Content excludes both the bottom inset and the absolute latest-turn card.
       const contentRect = content.current?.getBoundingClientRect();
@@ -524,7 +515,7 @@ export function ThreadComposerPresentation({
               ref={host}
               className="thread-composer-overlay-host"
               data-mobile-browser={mobileBrowser || undefined}
-              data-anchor={floating ? "viewport" : "shell"}
+              data-anchor="shell"
               data-testid="right-panel-composer-overlay-host"
             >
               <div
@@ -678,7 +669,7 @@ export function ThreadComposerPresentation({
               </div>
             </div>
             {view.handles && !mobileBrowser ? (
-              <div ref={revealHost} className="thread-composer-reveal-host" data-anchor="viewport">
+              <div ref={revealHost} className="thread-composer-reveal-host" data-anchor="shell">
                 <div className="thread-composer-reveal-zone">
                   <button
                     type="button"

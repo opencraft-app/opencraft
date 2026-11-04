@@ -61,6 +61,8 @@ import { useMobileSidebarGesture } from "./use-mobile-sidebar-gesture";
 import { useContextPaneGeometry } from "./use-context-pane-geometry";
 import { AppShellRightPanel } from "./app-shell-right-panel";
 import { ComposerOverlayAnchorContext, FloatingComposerRegistryContext, FloatingComposerScopeContext } from "./thread-composer-presentation";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
+import { ShellPageOverlayContext, useShellPageOverlayFrame } from "./shell-page-presentation";
 import { FloatingComposerRegistry } from "./floating-composer-state";
 import {
   SidebarResizeHandle,
@@ -281,6 +283,9 @@ export function AppShell({
   const [dockedFooterHost, setDockedFooterHost] = useState<HTMLDivElement | null>(null);
   const [floatingPrimaryHost, setFloatingPrimaryHost] = useState<HTMLDivElement | null>(null);
   const [floatingContextHost, setFloatingContextHost] = useState<HTMLDivElement | null>(null);
+  const pagePresentationRef = useRef<HTMLDivElement | null>(null);
+  const [pageOverlayHost, setPageOverlayHost] = useState<HTMLDivElement | null>(null);
+  const presentationRoot = useWorkbenchPresentationRoot();
   const [mobileSidebarActionHost, setMobileSidebarActionHost] = useState<HTMLElement | null>(null);
   const [floatingFooterHost, setFloatingFooterHost] = useState<HTMLElement | null>(null);
   const navigationController = useShellNavigation({
@@ -624,7 +629,7 @@ export function AppShell({
   const mobileGesture = useMobileSidebarGesture({
     enabled: !sidebarSuppressed && mobileSidebarEnabled && !sidebarOpen && !desktopDockMounted && !layoutResizing,
     open: !sidebarSuppressed && (floatingIntent.requested || drawerRequested), width: floatingWidth,
-    root: shellRootRef, overlay: floatingOverlayRef,
+    root: shellRootRef, overlay: floatingOverlayRef, foreground: pagePresentationRef,
     onOpenChange: open => { if (!open) floatingIntent.dismiss(); setDrawerRequested(open); },
   });
   // One progress drives foreground travel and stationary sidebar depth; translating the row leaves the root's
@@ -638,7 +643,14 @@ export function AppShell({
   useLayoutEffect(() => mobilePageX.on("change", () => {
     rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
   }), [mobilePageX, rightPanelLayoutTick]);
-  const mobilePageBlocked = !sidebarSuppressed && mobileSidebarEnabled && (drawerRequested || floatingIntent.requested || mobileGesture.dragging);
+  const mobilePageBlocked = !sidebarSuppressed && mobileSidebarEnabled && (drawerRequested || floatingIntent.requested || mobileGesture.dragging || mobileGesture.present);
+  // External guests share the page's input boundary, including intent changes
+  // that do not change any rectangle.
+  useLayoutEffect(() => {
+    rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
+  }, [mobilePageBlocked, rightPanelLayoutTick]);
+  useShellPageOverlayFrame({ root: shellRootRef, anchor: composerOverlayAnchor,
+    overlay: pageOverlayHost, pageX: mobilePageX, layoutTick: rightPanelLayoutTick });
   const sidebarPresentation = resolveSidebarPresentation({
     docked: sidebarOpen,
     layoutMounted: desktopDockMounted,
@@ -741,7 +753,7 @@ export function AppShell({
       target.focus({ preventScroll: true });
       sidebarToggleFocusPending.current = false;
     }
-  }, [sidebarOpen, navigationOpen, drawerRequested, showFloatingSidebar, floatingOwnsContent]);
+  }, [sidebarOpen, navigationOpen, drawerRequested, showFloatingSidebar, floatingOwnsContent, mobilePageBlocked]);
 
   const toggleRightPanel = useCallback(() => {
     if (rightPanelRevealed) { setRightPanelRevealed(false); onRightPanelOpenChange(false); return; }
@@ -904,6 +916,18 @@ export function AppShell({
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
+        {typeof document !== "undefined" ? createPortal(
+          <motion.div ref={pagePresentationRef} className="app-shell-page-presentation"
+            data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+            data-mobile-sidebar={mobileSidebarEnabled || undefined}
+            style={{ ...shellStyle, x: mobileSidebarEnabled ? mobilePageX : 0 }}>
+            <div ref={setPageOverlayHost} className="app-shell-page-overlays" inert={mobilePageBlocked || undefined} />
+            {mobileSidebarEnabled ? <motion.div aria-hidden="true" className="app-shell-mobile-page-wash"
+              style={{ opacity: mobilePageWash }} /> : null}
+            {mobilePageBlocked ? <button type="button" className="app-shell-mobile-page-dismiss"
+              aria-label="Close sidebar" onClick={() => { sidebarToggleFocusPending.current = true; dismissFloatingSidebar(); }} /> : null}
+          </motion.div>, presentationRoot ?? document.body,
+        ) : null}
         <MotionSafeLayout edges={browserSafeLayout ? ["top", "bottom"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
           style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
@@ -990,6 +1014,7 @@ export function AppShell({
             >
               {header}
             </motion.div>
+            <ShellPageOverlayContext.Provider value={pageOverlayHost}>
             <ComposerOverlayAnchorContext.Provider value={composerOverlayAnchor}>
             <FloatingComposerRegistryContext.Provider value={floatingComposers}>
             <FloatingComposerScopeContext.Provider value={layoutScope}>
@@ -1041,12 +1066,8 @@ export function AppShell({
             </FloatingComposerScopeContext.Provider>
             </FloatingComposerRegistryContext.Provider>
             </ComposerOverlayAnchorContext.Provider>
+            </ShellPageOverlayContext.Provider>
           </main>
-          {mobileSidebarEnabled ? <motion.div aria-hidden="true" className="app-shell-mobile-page-wash"
-            style={{ opacity: mobilePageWash }} /> : null}
-          {mobilePageBlocked ? <button
-            type="button" className="app-shell-mobile-page-dismiss"
-            aria-label="Close sidebar" onClick={() => { sidebarToggleFocusPending.current = true; dismissFloatingSidebar(); }} /> : null}
         </MotionSafeLayout>
       </ApplicationShellRoot>
     </AppShellLayoutMotionContext.Provider>
