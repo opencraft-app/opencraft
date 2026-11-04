@@ -281,3 +281,14 @@ test("promoting a Draft target restores Scope selections into the fresh Composer
   views.dispose();
   leases.dispose();
 });
+
+test('incremental binding persistence and scope subscriptions avoid catalog enumeration on updates',()=>{
+ let writes=0,unrelated=0;
+ const store=createConversationBindingStore({persistence:{save(){throw Error('Snapshot write forbidden');},records:{load:()=>[],put(){writes++;},remove(){writes++;}}}});
+ store.subscribeScope(asConversationScopeId('unrelated'),()=>unrelated++);
+ for(let i=0;i<10000;i++){const id=asConversationScopeId('draft-'+i);store.register(id,asHostId('host'));store.bind(id,createConversationKey('host','thread-'+i));}
+ assert.equal(writes,20000);assert.equal(unrelated,0);assert.equal(store.getSnapshot().bindings.length,10000);
+ const canonical=asConversationScopeId('conversation:'+JSON.stringify(['host','existing']));
+ assert.equal(store.resolve(canonical)?.conversationKey?.threadId,'existing');assert.equal(store.getSnapshot().bindings.length,10000);
+ store.dispose();
+});

@@ -24,7 +24,7 @@ function profile(p:ConfiguredProvider){return {displayName:p.name,enabled:p.enab
 /** Engine-specific format exists only in this adapter, never in models.json. */
 function sections(doc:ModelDocument,raw:RuntimeSettingsDescribeResponse){
   const p=doc.providers.find(native), base=raw.namespaces.find(n=>n.ns==='llm-deepseek');
-  const nativeValue={...object(base?.base),...(p?profile(p):{}),enabled:p?.enabled??false};
+  const nativeValue:Record<string,any>={...object(base?.base),...(p?profile(p):{}),enabled:p?.enabled??false};
   delete nativeValue.api;delete nativeValue.displayName;
   if(p){const defaults=object(base?.base).models;nativeValue.models=p.models.map(({enabled,input,...m})=>({...((Array.isArray(defaults)?defaults:[]).find((v:any)=>v.id===m.id)??{}),...m,...(input?{inputModalities:input}:{})}));}
   return {

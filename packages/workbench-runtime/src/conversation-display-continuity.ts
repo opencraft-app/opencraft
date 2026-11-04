@@ -11,7 +11,7 @@ export interface ConversationDisplayStorage {
 
 export interface ConversationDisplayContinuity {
   /** Synchronous, account-scoped handoff; never persisted or command-capable. */
-  retainSubmission(intent: SubmitIntent, receipt: SubmissionReceipt): void;
+  retainSubmission(intent: SubmitIntent, receipt: SubmissionReceipt, sender?: UserMessageTimelineBlock["sender"]): void;
   peekSubmission(hostId: string, threadId: string): TimelineSnapshot | null;
   /** Bounded paint-only memory, available during render; never grants authority. */
   peek(hostId: string, threadId: string): TimelineSnapshot | null;
@@ -234,7 +234,7 @@ export function createConversationDisplayContinuity(input: {
     return entry.timeline;
   };
   return {
-    retainSubmission(intent, receipt) {
+    retainSubmission(intent, receipt, sender) {
       if (intent.target.type !== "new-thread" || intent.target.execution.hostId !== receipt.hostId
         || intent.clientMessageId !== receipt.clientMessageId || intent.commandId !== receipt.commandId) {
         throw new Error("First submission display does not match its Thread receipt");
@@ -247,7 +247,7 @@ export function createConversationDisplayContinuity(input: {
         frames: [{ type: "user", id: `submitted:${intent.clientMessageId}`,
           turnId: asTurnId(receipt.turnId ?? `submitted:${intent.clientMessageId}`),
           status: "complete", durationMs: null, hookStats: null, anchors: [],
-          blocks: [submittedMessageDisplay(intent)],
+          blocks: [submittedMessageDisplay(intent, sender)],
         }],
       });
       // A small transient handoff, not another durable conversation store.

@@ -146,6 +146,8 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 用户命令的 metadata-only `activate` 与只读历史恢复分别持有等待；旧激活 ACK 不阻塞新的 readonly baseline。激活 ACK 只提交 execution/stream 字段，保留当前历史 source、cursor 和其间观测到的 live settings。准备 await 后重新核对当前 baseline，并在首个写入发送前复核本地资格；创建/fork 已确认后的失败属于部分效果，不能归类为全未发送。完整 historical Resume 与 legacy message-window 保留原组合契约。详见[恢复契约](architecture/platform/connection-recovery-contract.md#execution-activation-and-current-presentation)。
 
+Codex 的执行激活 `thread/resume` 在已有执行准备工具时等待同一项准备，不立即返回重新配置错误，也不安装无执行身份的另一份配置。等待后复核客户端代次；准备失败、断连及无活动准备的退休状态继续受原守卫约束。执行激活的有限请求预算至少为120秒，以覆盖最长90秒准备；只读历史预算和显式无限预算保持各自语义。等待和打开视图均不重放用户输入。
+
 执行准入必须保证检查与提交之间绑定没有变化。Capability 替换和执行准入复用 Host 的 ThreadLifecycle 队列；引擎执行权继续由 execution authority 管理。不能只在 `await validate` 前检查“当前没有执行”，随后无条件卸载工具。
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。

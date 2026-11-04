@@ -68,6 +68,9 @@ export class BrowserWorkbenchCoordinator {
     private readonly storage: BrowserMetadataStorage | null = null,
   ) {
     this.restoreTabs();
+    this.pages.setSessionClosedHandler(pageId => {
+      for (const tab of [...this.tabs.values()]) if (tab.pageId === pageId) this.close(tab.ownerId, tab.id);
+    });
     this.unsubscribeBindings = bindings.subscribe(() => {
       for (const key of this.resourceListeners.keys()) {
         const [hostId, threadId] = JSON.parse(key);
@@ -301,6 +304,7 @@ export class BrowserWorkbenchCoordinator {
   }
 
   dispose(): void {
+    this.pages.setSessionClosedHandler(null);
     this.unsubscribeBindings(); this.resourceListeners.clear(); this.resourceSnapshots.clear();
     this.pages.setNewWindowHandler(null);
     for (const tabId of [...this.tabs.keys()]) this.stopObserving(tabId);
