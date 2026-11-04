@@ -1,1 +1,0 @@
-export const ACCOUNT_POOL_MAX_REQUEST_BYTES = 128 * 1024 * 1024;
