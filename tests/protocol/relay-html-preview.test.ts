@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {parse,serialize} from 'parse5';
+import {HostFileDownloads} from '../../apps/opencraft-daemon/src/host-file-downloads';
+import {selectorFixture} from '../fixtures/server-selector';
+
+test('selected Relay streams large isolated HTML reports without Workbench rewriting', {timeout:20000}, async t=>{
+ const root=await mkdtemp(join(tmpdir(),'relay-report-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const source='<!doctype html><html><head><title>Report</title></head><body><!--'+'x'.repeat(3*1024*1024)+'--><details><summary>Scene</summary>Passed</details></body></html>';
+ const report=join(root,'report.html');await writeFile(report,source);
+ const files:HostFileDownloads[]=[];
+ const f=await selectorFixture({fileDownloads:()=>{const service=new HostFileDownloads(()=> 'local');files.push(service);return service;}});
+ t.after(async()=>{await f.close();for(const service of files)service.close();});
+ const cookie=await f.login('alice'),base='/servers/join/__opencraft_preview/';
+ const issue=await f.get(base+'tickets',{cookie,origin:f.origin,'content-type':'application/json'},'POST',Buffer.from(JSON.stringify({hostId:'local-codex',path:report})));
+ assert.equal(issue.status,201);const entry=await issue.json();const ticket=entry.path.split('#ticket=')[1];
+ const redeemed=await f.get(base+'redeem',{cookie,origin:f.origin,'content-type':'application/json'},'POST',Buffer.from(JSON.stringify({ticket})));
+ assert.equal(redeemed.status,200);const session=await redeemed.json(),previewCookie=redeemed.headers.getSetCookie()[0]!.split(';')[0]!;
+ const headers={cookie:cookie+'; '+previewCookie,accept:'text/html'};
+ const documentPath=base+session.path.slice(2)+'document';
+ const document=await f.get(documentPath,headers);assert.equal(document.status,200);
+ assert.match(document.headers.get('content-security-policy')!,/sandbox allow-scripts/u);
+ assert.match(document.headers.get('cache-control')!,/no-store/u);
+ const body=await document.text();assert.equal(body,serialize(parse(source)));assert.ok(!body.includes('opencraft-server-context'));
+ const expired=await f.get(base+'s/'+'f'.repeat(24)+'/document',headers);assert.equal(expired.status,403,'preview denial is not redirected to Workbench chooser');
+ const denied=await f.get(documentPath,{accept:'text/html'});assert.ok(denied.status===303||denied.status===401);assert.ok(!(await denied.text()).includes('Scene'));
+ const app=await f.get('/servers/join/',{cookie,accept:'text/html'});assert.equal(app.status,200);assert.match(await app.text(),/opencraft-server-context/u);
+});

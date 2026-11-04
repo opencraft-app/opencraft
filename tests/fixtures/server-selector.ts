@@ -1,3 +1,4 @@
+import type {HostFileDownloads} from '../../apps/opencraft-daemon/src/host-file-downloads';
 import { createServer, request } from 'node:http';
 import { Readable } from 'node:stream';
 import { once } from 'node:events';
@@ -29,12 +30,12 @@ export async function virtualFetch(url:string, init:{headers?:Record<string,stri
     });req.on('error',reject);req.end(init.body);
   });
 }
-export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;appServerTarget?:string;webRoot?:string;appHost?:()=>unknown;defaultUsers?:readonly string[];legacyDefaultUsers?:readonly string[];entryName?:string;sshPublicAccess?:boolean;serverPaths?:ServerPaths}={}) {
+export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;appServerTarget?:string;webRoot?:string;appHost?:()=>unknown;defaultUsers?:readonly string[];legacyDefaultUsers?:readonly string[];entryName?:string;sshPublicAccess?:boolean;serverPaths?:ServerPaths;fileDownloads?:()=>HostFileDownloads;entryProtocol?:'http'|'https'}={}) {
   const directory=await mkdtemp(join(tmpdir(),'server-selector-')),cleanup:(()=>unknown)[]=[];
   cleanup.push(()=>rm(directory,{recursive:true,force:true}));
   const pair=generateKeyPairSync('ed25519'),privateKey=pair.privateKey.export({format:'pem',type:'pkcs8'}).toString(),publicKey=pair.publicKey.export({format:'pem',type:'spki'}).toString();
   const reserve=createServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const port=(reserve.address() as any).port;await new Promise<void>(r=>reserve.close(()=>r()));
-  const base=`http://127.0.0.1:${port}`,origin=`http://entry.selection.test:${port}`,host=new URL(origin).host;
+  const base=`http://127.0.0.1:${port}`,origin=`${options.entryProtocol??'http'}://entry.selection.test:${port}`,host=new URL(origin).host;
   const principals=Object.fromEntries(['alice','bob','carol'].map((name,index)=>[name,{provider:'enterprise-identity',subject:String(101+index),displayName:name,aliases:['login:'+name],attributes:{loginName:name},expiresAt:Date.now()+3600_000}]));
   const provider={authenticate:(req:any)=>principals[String(req.headers['x-fixture-user'])]??null};
   const routes:any[]=[],stores:MembershipStore[]=[],clients:ReturnType<typeof connectRelay>[]=[],targets:any[]=[];
@@ -49,7 +50,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     const appHost=options.appHost?.();if(appHost)cleanup.push(()=>(appHost as any).close());
     const sshManagement=options.sshPublicAccess === undefined ? null : new SshManagement({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
     if(sshManagement)cleanup.push(()=>sshManagement.close());
-    const web=await createWorkbenchWebServer({root,sshManagement,appHostServer:appHost,appServerTarget:options.appServerTarget??null,loopbackOnly:false,desktopAccess:'trusted-internal',accessService:access,identityService:oa,
+    const web=await createWorkbenchWebServer({root,sshManagement,appHostServer:appHost,appServerTarget:options.appServerTarget??null,loopbackOnly:false,desktopAccess:'trusted-internal',accessService:access,identityService:oa,fileDownloads:options.fileDownloads?.()??null,
       desktopService:{accept(ws:WebSocket){ws.send('connected-'+id);ws.on('message',(data,binary)=>ws.send(data,{binary}));},close(){}}});cleanup.push(()=>web.close());
     const address=await web.listen({host:'127.0.0.1',port:0});
     // Business streaming endpoint behind the same target authorization; no identity bypass.

@@ -1,16 +1,18 @@
 import { useEffect, useRef, type HTMLAttributes } from "react";
+import { useTouchContactScope } from "./touch-contact";
 
 /** Adapt direct touch activation; Radix still owns mouse, keyboard and the menu. */
 export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAttributes<HTMLButtonElement> {
   const touch = useRef(false);
   const tap = useRef(false);
+  const scope = useTouchContactScope();
   const cleanup = useRef<(() => void) | undefined>(undefined);
   const reset = () => {
     cleanup.current?.();
     cleanup.current = undefined;
     tap.current = false;
   };
-  useEffect(() => reset, [enabled]);
+  useEffect(() => reset, [enabled, scope]);
 
   return {
     onPointerDown(event) {
@@ -23,8 +25,9 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       const button = event.currentTarget;
       const document = button.ownerDocument;
       const { pointerId } = event;
+      if (scope !== null && !scope.claim(pointerId, "menu")) return;
       tap.current = true;
-      const cancel = () => { tap.current = false; };
+      const cancel = () => { tap.current = false; scope?.cancel(pointerId); };
       const anotherPointer = (next: PointerEvent) => { if (next.pointerId !== pointerId) cancel(); };
       const release = (next: PointerEvent) => {
         if (next.pointerId !== pointerId) return;
@@ -32,12 +35,14 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
         // click classification; missing a derived release is not cancellation.
         cleanup.current?.();
         cleanup.current = undefined;
+        scope?.release(pointerId);
       };
       const abort = (next: PointerEvent) => { if (next.pointerId === pointerId) reset(); };
       document.addEventListener("pointerdown", anotherPointer, true);
       document.addEventListener("pointerup", release, true);
       document.addEventListener("pointercancel", abort, true);
       cleanup.current = () => {
+        scope?.release(pointerId);
         document.removeEventListener("pointerdown", anotherPointer, true);
         document.removeEventListener("pointerup", release, true);
         document.removeEventListener("pointercancel", abort, true);

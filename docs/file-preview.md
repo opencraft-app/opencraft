@@ -138,3 +138,58 @@ messages rather than raw parser diagnostics.
 DOC and DOCX share a retained paper viewport with zoom and fit-width controls. The scroll container and scaled page frame remain local to the preview; changing application locale does not recreate the renderer or reset zoom.
 
 PPTX previews reveal the current slide in the thumbnail rail when it is reopened or its retained tab is reactivated. This scroll is confined to the preview rail.
+
+## Explicit external HTML reports
+
+Headless websites advertise `htmlPreviews` separately from original downloads.
+The resource header offers Open in browser for HTML on supported local/SSH Hosts;
+static and desktop deployments without that capability retain existing preview and
+download. The inert inline iframe and its script-disabled policy remain unchanged.
+Large HTML outside the existing editable-text limit can still use the external action.
+
+The authorized same-origin POST `/__opencraft_preview/tickets` snapshots one HTML
+file (25 MiB admission) and up to 64 statically referenced relative resources under
+its directory. Local and SSH reads reuse the owned binary data plane and check
+canonical resource boundaries, including symlinks. The final inlined document is
+bounded to 32 MiB; unsupported/external resources are not proxied. This is a
+standalone report viewer, not a live website/app or arbitrary directory server.
+
+The browser action synchronously opens the real bootstrap URL with a fragment-only
+Host/file request. The new page removes it before authenticated same-origin ticket
+issuance, then redeems locally. No about:blank WindowProxy or opener is required;
+managed hosts can forward the URL without returning a window handle. Preparation
+and permission failures show a visible error in the new page.
+
+The returned ticket path has no domain; the browser applies its existing Server base path
+and public origin. A 60-second ticket is carried only in the URL fragment, removed
+from browser history before a same-origin redemption POST, and consumed atomically.
+GET/link scanners do not consume it. Redemption creates a 15-minute HttpOnly,
+SameSite=Strict purpose-limited cookie (Secure except loopback HTTP). The preview
+cookie admits only that immutable snapshot, never application APIs or file download.
+Refresh uses the preview session; expired/revoked links require a fresh action.
+Original issuer admission, including Actor/SSH authorization, is rechecked; restart
+or shutdown revokes the in-memory store. Capacity is bounded to 16 snapshots and
+64 MiB plus at most two in-flight preparations.
+
+A trusted parent shell embeds the report with `sandbox=allow-scripts` and a matching
+response sandbox CSP. The report has an opaque origin, no main-page/cookie access,
+no connection permission and no nested frames/forms; ordinary report scripts and
+native details controls work with embedded images. No main login token is in the
+URL or document. This does not create a public tunnel or bypass an outer identity
+gateway: external reachability must already be supplied by the host deployment.
+
+Verification includes `tests/resources/html-file-previews.test.ts` and
+`scripts/smoke/resources/smoke-html-file-preview.ts` (set
+`OPENCRAFT_HTML_PREVIEW_REPORT` to a self-contained report).
+
+
+Preview document reads can race a managed backend connection switch. The proxy
+reconnects only bodyless preview GETs on connection reset/refusal/pipe failure,
+up to three times (100/250/500 ms), before response headers. It never retries
+issuance/redemption POSTs, authorization errors or partial response streams.
+If the backend stays unavailable, it returns a non-cacheable 503 HTML page with
+a retry link rather than raw API JSON, including inside the report frame.
+Client closure cancels reconnects and releases the worker lease. Final failures
+log only a transport error code and retry count, never report URLs or credentials.
+This does not preserve in-memory preview sessions across a backend restart;
+a revoked/expired session still requires reopening the original file.

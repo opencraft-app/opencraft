@@ -512,3 +512,18 @@ fail closed, fence stale asynchronous completions and retain trusted binding
 facts needed for durable admission after restart. Publication invalidates old
 policy decisions. Local recovery and machine-to-machine Hub authentication keep
 their separate existing contracts.
+
+
+## Standalone HTML preview responses
+
+`/__opencraft_preview` owns its relative URLs, snapshot limits, CSP and report
+sandbox. Relay forwards these responses as a stream without Workbench document
+injection, canonical-navigation redirects or the 2 MiB Workbench HTML rewrite
+buffer. It preserves status, body bytes, encoding and security headers, while
+retaining existing selected-instance cookie scoping, login, signed assertions,
+instance admission, stream budgets and response deadlines. In particular a large
+inline-image report must not be truncated or receive Workbench scripts, and an
+expired preview must keep its 403 rather than redirect to the server chooser.
+Other Workbench HTML keeps its existing rewrite behavior and bound.
+Regression: `tests/protocol/relay-html-preview.test.ts` exercises the full selected
+Relay/tunnel/instance/ticket path with a report larger than the rewrite limit.

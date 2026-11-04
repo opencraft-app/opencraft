@@ -1148,5 +1148,7 @@
   "welcome.retry": "重试",
   "welcome.connection.settings": "连接设置",
   "modelServices.noAuth.title": "无需鉴权",
-  "modelServices.noAuth.description": "仅用于不需要 API Key 的接口；不会发送已保存或环境中的密钥。"
+  "modelServices.noAuth.description": "仅用于不需要 API Key 的接口；不会发送已保存或环境中的密钥。",
+  "preview.externalHint": "在浏览器中打开此 HTML 报告，查看完整内容并使用交互控件。",
+  "preview.externalUnavailable": "无法打开预览，请重试或下载原件。"
 }

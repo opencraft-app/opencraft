@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { open } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, isAbsolute } from "node:path";
+import { basename, isAbsolute, sep } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createSshPasswordAgent, quoteSshShellArgument as quote, validateSshConnection, type SshConnectionOptions } from "./ssh-connection.js";
@@ -11,12 +11,13 @@ interface FileStream { readonly size: number; readonly body: Readable; dispose()
 type FileHost = "local" | SshConnectionOptions;
 
 /** The only remote command is a read of one quoted path, on an independent SSH channel. */
-export function fileReadCommand(path: string, head: boolean): string {
-  return `sh -c ${quote('test -f "$1" && test -r "$1" || exit 1; LC_ALL=C wc -c < "$1"' + (head ? '' : '; exec cat -- "$1"'))} sh ${quote(path)}`;
+export function fileReadCommand(path: string, head: boolean, root?: string): string {
+  const boundary = root === undefined ? '' : 'target=$(realpath -- "$1") && root=$(realpath -- "$2") || exit 1; root=${root%/}; case "$target" in "$root"/*) ;; *) exit 1;; esac; set -- "$target"; ';
+  return `sh -c ${quote(boundary + 'test -f "$1" && test -r "$1" || exit 1; LC_ALL=C wc -c < "$1"' + (head ? '' : '; exec cat -- "$1"'))} sh ${quote(path)}${root === undefined ? '' : ` ${quote(root)}`}`;
 }
 
 async function remoteFile(connection: SshConnectionOptions, path: string, head: boolean, signal: AbortSignal,
-  spawnSsh: (args: readonly string[], env: NodeJS.ProcessEnv) => ChildProcessWithoutNullStreams): Promise<FileStream> {
+  spawnSsh: (args: readonly string[], env: NodeJS.ProcessEnv) => ChildProcessWithoutNullStreams, root?: string): Promise<FileStream> {
   validateSshConnection(connection);
   const auth = connection.authentication.kind === "password" ? await createSshPasswordAgent(connection.authentication.resolvePassword) : null;
   let child: ChildProcessWithoutNullStreams | undefined;
@@ -62,7 +63,7 @@ async function remoteFile(connection: SshConnectionOptions, path: string, head: 
       args.push("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey");
       if (connection.authentication.kind === "key") args.push("-o", "IdentitiesOnly=yes", "-i", connection.authentication.identityFile);
     }
-    args.push("--", connection.hostname, fileReadCommand(path, head));
+    args.push("--", connection.hostname, fileReadCommand(path, head, root));
     const env = { ...process.env, ...auth?.env };
     if (!auth) { delete env.SSH_ASKPASS; delete env.SSH_ASKPASS_REQUIRE; }
     delete env.ELECTRON_RUN_AS_NODE;
@@ -80,7 +81,12 @@ async function remoteFile(connection: SshConnectionOptions, path: string, head: 
   } catch (error) { await auth?.close(); throw error; }
 }
 
-async function localFile(path: string, head: boolean, signal: AbortSignal): Promise<FileStream> {
+async function localFile(path: string, head: boolean, signal: AbortSignal, root?: string): Promise<FileStream> {
+  if (root !== undefined) {
+    const [canonical, boundary] = await Promise.all([realpath(path), realpath(root)]);
+    if (!canonical.startsWith(boundary.replace(/\/$/u, "") + sep)) throw new Error("File outside preview");
+    path = canonical;
+  }
   const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const info = await handle.stat(); signal.throwIfAborted();
@@ -97,6 +103,33 @@ export class HostFileDownloads {
   private closed = false;
   constructor(private readonly resolveHost: (hostId: string) => FileHost,
     private readonly spawnSsh = (args: readonly string[], env: NodeJS.ProcessEnv) => spawn("ssh", args, { stdio: ["pipe", "pipe", "pipe"], env })) {}
+
+  /** Bounded report snapshots reuse the same installation-owned data plane. */
+  async readPreview(hostId: string, path: string, signal: AbortSignal, maxBytes: number, root?: string): Promise<Buffer> {
+    if (!hostId || hostId.length > 128 || !isAbsolute(path) || path.length > 8192 || /[\0\r\n]/u.test(path)
+      || (root !== undefined && (!isAbsolute(root) || /[\0\r\n]/u.test(root)))) throw new Error("Invalid preview path");
+    if (this.closed || this.active.size >= 8) throw new Error("File reader unavailable");
+    const controller = new AbortController(), combined = AbortSignal.any([signal, controller.signal]);
+    this.active.add(controller);
+    const deadline = setTimeout(() => controller.abort(), 30_000);
+    let file: FileStream | undefined;
+    try {
+      const host = this.resolveHost(hostId);
+      file = host === "local" ? await localFile(path, false, combined, root) : await remoteFile(host, path, false, combined, this.spawnSsh, root);
+      if (file.size > maxBytes) throw new Error("Preview too large");
+      const chunks: Buffer[] = []; let bytes = 0;
+      for await (const chunk of file.body) {
+        combined.throwIfAborted(); bytes += chunk.length;
+        if (bytes > maxBytes) throw new Error("Preview too large");
+        chunks.push(Buffer.from(chunk));
+      }
+      combined.throwIfAborted();
+      return Buffer.concat(chunks);
+    } finally {
+      clearTimeout(deadline);
+      try { await file?.dispose(); } finally { this.active.delete(controller); }
+    }
+  }
 
   async handle(request: IncomingMessage, response: ServerResponse, authorize: (hostId: string) => boolean): Promise<void> {
     response.setHeader("cache-control", "private, no-store");

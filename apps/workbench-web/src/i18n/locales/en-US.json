@@ -1124,5 +1124,7 @@
   "welcome.retry": "Retry",
   "welcome.connection.settings": "Connection settings",
   "modelServices.noAuth.title": "No authentication",
-  "modelServices.noAuth.description": "Use only when this endpoint does not require an API key. Saved and environment keys will not be sent."
+  "modelServices.noAuth.description": "Use only when this endpoint does not require an API key. Saved and environment keys will not be sent.",
+  "preview.externalHint": "Open this HTML report in your browser to view its contents and interactive controls.",
+  "preview.externalUnavailable": "Could not open the preview. Try again or download the original file."
 }
