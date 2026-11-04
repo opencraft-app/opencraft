@@ -35,6 +35,15 @@ export function setEnvironmentValue(text, key, value) {
   return updated.join('\n');
 }
 
+export function deploymentIdentity(environment) {
+  const identity = { uid: Number(environment.OPENCRAFT_UID), gid: Number(environment.OPENCRAFT_GID) };
+  if (!Number.isSafeInteger(identity.uid) || !Number.isSafeInteger(identity.gid) || identity.uid < 0 || identity.gid < 0)
+    throw new Error('OPENCRAFT_UID/GID must be non-negative integers');
+  if (identity.uid === 0 || identity.gid === 0)
+    throw new Error('OpenCraft containers require a non-root deployment UID and GID so Chromium sandboxing remains enabled');
+  return identity;
+}
+
 function runCompose(args, image, options = {}) {
   execFileSync('docker', ['compose', '--env-file', '.env', ...args], {
     cwd: dockerDirectory, stdio: options.capture ? 'pipe' : 'inherit', encoding: options.capture ? 'utf8' : undefined,
@@ -62,8 +71,7 @@ export async function doctor(environment, { allowOversubscription = false } = {}
   const required = ['OPENCRAFT_HOST_DATA_DIR', 'OPENCRAFT_DATA_DIR', 'OPENCRAFT_HOST_WORKSPACE_DIR', 'OPENCRAFT_WORKSPACE_DIR', 'OPENCRAFT_UID', 'OPENCRAFT_GID'];
   for (const name of required) if (!environment[name]) throw new Error(`Missing ${name}`);
   for (const name of required.slice(0, 4)) if (!environment[name].startsWith('/')) throw new Error(`${name} must be absolute`);
-  const identity = { uid: Number(environment.OPENCRAFT_UID), gid: Number(environment.OPENCRAFT_GID) };
-  if (!Number.isSafeInteger(identity.uid) || !Number.isSafeInteger(identity.gid)) throw new Error('OPENCRAFT_UID/GID must be integers');
+  const identity = deploymentIdentity(environment);
   if (process.getuid?.() !== identity.uid || process.getgid?.() !== identity.gid)
     throw new Error(`Run this tool as the deployment identity ${identity.uid}:${identity.gid}`);
   await Promise.all([inspectDirectory(environment.OPENCRAFT_HOST_DATA_DIR, identity), inspectDirectory(environment.OPENCRAFT_HOST_WORKSPACE_DIR, identity)]);

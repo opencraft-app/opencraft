@@ -79,7 +79,9 @@ presented below `/data`. Do not put persistent state in the image layer.
 
 All services run as `OPENCRAFT_UID:OPENCRAFT_GID`. The data directory must be
 owned by that identity with mode `0700`; private tokens, descriptors and sockets
-are mode `0600`. Compose refuses to create missing bind sources. Brain and
+are mode `0600`. Use a dedicated non-root identity: UID or GID 0 is rejected so
+the Chromium sandbox is never replaced with a root/no-sandbox deployment.
+Compose refuses to create missing bind sources. Brain and
 Gateway use host PID visibility because execution-lease recovery verifies real
 process birth through `/proc`. They use host networking because the existing
 private descriptors advertise loopback endpoints. Hands uses host networking so

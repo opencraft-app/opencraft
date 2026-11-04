@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { deploymentPaths, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
-import { OWNER_ORDER, assertImageReference, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { OWNER_ORDER, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
 
 test('Compose release transactions preserve env content and owner dependency order', () => {
   assert.deepEqual(OWNER_ORDER, ['hands', 'brain', 'gateway']);
@@ -20,6 +20,9 @@ test('Compose release transactions preserve env content and owner dependency ord
   for (const image of ['ghcr.io/opencraft-app/opencraft', 'localhost:5000/opencraft', 'opencraft:latest', 'opencraft:local'])
     assert.throws(() => assertImageReference(image), /mutable/);
   assert.throws(() => assertImageReference('opencraft@sha256:abc'), /complete/);
+  assert.deepEqual(deploymentIdentity({ OPENCRAFT_UID: '1000', OPENCRAFT_GID: '1000' }), { uid: 1000, gid: 1000 });
+  for (const environment of [{ OPENCRAFT_UID: '0', OPENCRAFT_GID: '1000' }, { OPENCRAFT_UID: '1000', OPENCRAFT_GID: '0' }])
+    assert.throws(() => deploymentIdentity(environment), /non-root/);
 });
 
 test('Hands resource settings have one strict representation for Compose and Brain', () => {

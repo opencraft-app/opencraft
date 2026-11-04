@@ -13,7 +13,7 @@ import WebSocket from 'ws';
 import { browserRuntimeIdentity } from '../../scripts/browser-runtime-identity.mjs';
 import { connectBrowserOwner, reuseBrowserOwner } from '../../scripts/remote-browser-owner.mjs';
 import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
-const { createBrowserOwner } = createRequire(import.meta.url)('../../scripts/remote-browser/owner.cjs');
+const { createBrowserOwner, installOwnerSignals } = createRequire(import.meta.url)('../../scripts/remote-browser/owner.cjs');
 
 const worker = `
 const pages=new Map();process.send({type:'ready'});
@@ -42,6 +42,14 @@ async function fixture(t) {
   };
   return { owner, socketPath, service };
 }
+
+test('service-manager signals close the owner once and report the result', async () => {
+  const runtime = new EventEmitter(); let closes = 0, release;
+  const closed = new Promise(resolve => { release = resolve; });
+  installOwnerSignals({ close: async () => { closes++; release(); } }, runtime);
+  runtime.emit('SIGTERM'); runtime.emit('SIGINT'); await closed; await new Promise(resolve => setImmediate(resolve));
+  assert.equal(closes, 1); assert.equal(runtime.exitCode, 0);
+});
 
 async function probe(socketPath) {
   const socket = connect(socketPath); await once(socket, 'connect');
