@@ -212,3 +212,13 @@ Supervisor、多个有清晰所有权的 Runtime scope，以及可被两种以�
 仍然保持 provisional 的只有物理 Adapter SPI 细节、Native resident pool 策略和 Remote
 Browser 协议能力发现；它们必须由第二实现或真实服务证据决定。身份、生命周期与 Host
 client 所有权不应再因这些 Adapter 细节反复改动。
+
+### Physical input under device emulation
+
+A target device profile does not identify the viewer's current physical input.
+Explicit mouse and pen events retain mouse semantics under phone/tablet profiles;
+legacy senders without pointer identity retain the existing profile fallback.
+The native smoke uses a touch-capable viewer and separately checks physical mouse
+(`Pointer mouse`, no `touchstart`) and real touchscreen input (`Pointer touch`,
+`Touched`). Responsive mode follows that hybrid viewer; the laptop preset separately
+checks a non-touch desktop. Touch counts must match the shared runtime maximum.

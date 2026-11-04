@@ -126,9 +126,20 @@ def main():
     parser.add_argument('--native', required=True, help='OpenCraft native Codex executable')
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[2], help='OpenCraft checkout to exercise')
     parser.add_argument('--fixture', type=Path, help='Reuse a manifest from this synthetic generator')
-    parser.add_argument('--turns', type=int, default=601)
-    parser.add_argument('--output-bytes', type=int, default=524288)
-    parser.add_argument('--mib-per-second', type=float, default=6)
+    parser.add_argument('--turns', type=int, default=46)
+    parser.add_argument('--output-bytes', type=int, default=3145728)
+    parser.add_argument('--mib-per-second', type=float, default=24)
+    parser.add_argument('--visible-turns', type=int, default=46,
+                        help='number of notLoaded Turns requested for the initial visible page')
+    parser.add_argument('--load-path', choices=('cache-hydration', 'adapter-fallback', 'both'), default='both')
+    parser.add_argument('--rpc-delay-ms', type=float, default=100,
+                        help='deterministic per-response local-link latency for Item RPCs')
+    parser.add_argument('--expect-slow', action='store_true',
+                        help='expect the pre-fix 8-13 second serial cold read')
+    parser.add_argument('--expect-aborted', action='store_true',
+                        help='cancel during Item hydration and assert metadata scale/path are already recorded')
+    parser.add_argument('--abort-after-ms', type=int, default=300,
+                        help='local client deadline used by --expect-aborted')
     parser.add_argument('--node', default=shutil.which('node'))
     parser.add_argument('--web-root', type=Path, help='Optional built Headless Application for DOM first paint')
     parser.add_argument('--chromium', help='Optional Chromium executable for DOM validation')
@@ -136,19 +147,32 @@ def main():
     args = parser.parse_args()
     root = Path(tempfile.mkdtemp(prefix='history-cold-repro-', dir=args.out))
     fixture = args.fixture.resolve() if args.fixture else native_fixture(args.native, root, args.turns, args.output_bytes)
-    command = [args.node, '--import', 'tsx', str(Path(__file__).with_suffix('.ts')),
-               '--native', str(Path(args.native).resolve()), '--repo', str(args.repo.resolve()),
-               '--fixture', str(fixture), '--mib-per-second', str(args.mib_per_second)]
-    if args.web_root:
-        command += ['--web-root', str(args.web_root.resolve()), '--screenshot', str(root/'first-paint.png')]
-    if args.chromium:
-        command += ['--chromium', args.chromium]
-    with (root/'result.log').open('w') as output:
-        result = subprocess.run(command, cwd=Path(__file__).resolve().parents[2], stdout=output,
-                                stderr=subprocess.STDOUT, check=False, timeout=180)
-    print(json.dumps({'synthetic': True, 'passed': result.returncode == 0, 'fixture': str(fixture),
-                       'evidence': str(root), 'result': str(root/'result.log')}))
-    return result.returncode
+    modes = ('cache-hydration', 'adapter-fallback') if args.load_path == 'both' else (args.load_path,)
+    results = []
+    for mode in modes:
+        command = [args.node, '--import', 'tsx', str(Path(__file__).with_suffix('.ts')),
+                   '--native', str(Path(args.native).resolve()), '--repo', str(args.repo.resolve()),
+                   '--fixture', str(fixture), '--mib-per-second', str(args.mib_per_second),
+                   '--visible-turns', str(args.visible_turns), '--load-path', mode,
+                   '--rpc-delay-ms', str(args.rpc_delay_ms), '--expect-slow', str(args.expect_slow).lower(),
+                   '--expect-aborted', str(args.expect_aborted).lower(), '--abort-after-ms',
+                   str(args.abort_after_ms if args.expect_aborted else 30_000)]
+        if args.web_root:
+            command += ['--web-root', str(args.web_root.resolve()), '--screenshot', str(root/f'first-paint-{mode}.png')]
+        if args.chromium:
+            command += ['--chromium', args.chromium]
+        result_path = root/f'result-{mode}.log'
+        with result_path.open('w') as output:
+            result = subprocess.run(command, cwd=Path(__file__).resolve().parents[2], stdout=output,
+                                    stderr=subprocess.STDOUT, check=False, timeout=180)
+        results.append({'loadPath': mode, 'passed': result.returncode == 0, 'result': str(result_path)})
+        if result.returncode:
+            break
+    passed = len(results) == len(modes) and all(row['passed'] for row in results)
+    print(json.dumps({'synthetic': True, 'passed': passed, 'fixture': str(fixture),
+                       'visibleTurns': args.visible_turns, 'rpcDelayMs': args.rpc_delay_ms,
+                       'evidence': str(root), 'results': results}))
+    return 0 if passed else 1
 
 
 if __name__ == '__main__':

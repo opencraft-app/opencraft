@@ -397,3 +397,12 @@ The browser-local remembered account chooses an input partition only, never an
 Actor or native proof. Explicit logout clears it. Full offline acceptance requires
 an actual new document under network-offline conditions, saved draft/queue recovery
 and no send before live verification; a cached HTML response alone is insufficient.
+
+### Fork execution choices
+
+A thread-ID Codex fork inherits the source's current model, provider, reasoning
+effort and service tier from an acknowledged native snapshot. Explicit fork
+overrides take precedence, including explicit null. Credentials, tool entries and
+permissions are not copied by this policy. Path forks retain native semantics.
+The Workbench adopts the fork response for durable and temporary children so
+read-only history hydration preserves the newly acknowledged execution choices.

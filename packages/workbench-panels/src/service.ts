@@ -16,6 +16,8 @@ export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unk
   };
   /** Rebuilds cached panel chrome from an application-owned resource directory. */
   restoreTabs?(ownerId: string): readonly PanelTabDescriptor[];
+  /** Restore Host resources after connection without selecting or opening a panel. */
+  hydrateTabs?(ownerId: string): Promise<readonly PanelTabDescriptor[]>;
   createTab(params: TParams): PanelTabDescriptor;
   /** Releases the logical resource represented by a tab. Renderers never own it. */
   disposeTab?(tab: PanelTabDescriptor, ownerId: string, reason: PanelDisposeReason): void;
@@ -61,6 +63,7 @@ export class WorkbenchPanelService extends Service {
   private readonly ownerStates = new Map<string, ConversationPanelState>();
   private readonly ownerListeners = new Map<string, Set<() => void>>();
   private readonly initializedOwners = new Set<string>();
+  private readonly hydrationTokens = new Map<string, object>();
   private readonly registryListeners = new Set<() => void>();
   private registrySnapshot: readonly PanelTypeDefinition[] = [];
   private toolbarActionSnapshot: readonly PanelToolbarActionDefinition[] = [];
@@ -75,6 +78,7 @@ export class WorkbenchPanelService extends Service {
       this.ownerStates.clear();
       this.ownerListeners.clear();
       this.initializedOwners.clear();
+      this.hydrationTokens.clear();
       this.registryListeners.clear();
     });
   }
@@ -100,6 +104,10 @@ export class WorkbenchPanelService extends Service {
     if (this.definitions.has(definition.kind)) throw new Error(`Panel kind ${definition.kind} is already registered`);
     this.definitions.set(definition.kind, definition as PanelTypeDefinition);
     this.publishRegistry();
+    if (definition.hydrateTabs) for (const ownerId of this.initializedOwners) {
+      this.hydrationTokens.delete(ownerId);
+      this.hydrateOwner(ownerId);
+    }
     return () => {
       if (this.definitions.get(definition.kind) !== definition) return;
       for (const [ownerId, state] of this.ownerStates) {
@@ -183,7 +191,7 @@ export class WorkbenchPanelService extends Service {
   /** Explicit resource creation boundary; snapshot reads remain side-effect free. */
   ensureOwner(ownerId: string): ConversationPanelState {
     const current = this.getOwnerSnapshot(ownerId);
-    if (this.initializedOwners.has(ownerId)) return current;
+    if (this.initializedOwners.has(ownerId)) { this.hydrateOwner(ownerId); return current; }
     const initialTabs = [...this.definitions.values()]
       .filter((definition) => definition.initialTab !== undefined)
       .sort((left, right) => (left.initialTab?.order ?? 0) - (right.initialTab?.order ?? 0))
@@ -208,8 +216,36 @@ export class WorkbenchPanelService extends Service {
     });
     this.initializedOwners.add(ownerId);
     this.ownerStates.set(ownerId, initialized);
+    this.hydrateOwner(ownerId);
     for (const listener of this.ownerListeners.get(ownerId) ?? []) listener();
     return initialized;
+  }
+
+  /** Host readiness can retry pending resource recovery without recreating panel chrome. */
+  refreshOwnerResources(ownerId: string): void {
+    if (!this.initializedOwners.has(ownerId)) return;
+    this.hydrationTokens.delete(ownerId);
+    this.hydrateOwner(ownerId);
+  }
+
+  private hydrateOwner(ownerId: string): void {
+    if (this.hydrationTokens.has(ownerId)) return;
+    const token = {};
+    this.hydrationTokens.set(ownerId, token);
+    for (const definition of this.definitions.values()) {
+      if (!definition.hydrateTabs) continue;
+      void Promise.resolve().then(() => definition.hydrateTabs!(ownerId)).then(tabs => {
+        if (this.hydrationTokens.get(ownerId) !== token || this.definitions.get(definition.kind) !== definition) return;
+        for (const tab of tabs) {
+          const state = this.ownerStates.get(ownerId);
+          if (!state || tab.kind !== definition.kind || [...state.right.tabs, ...state.bottom.tabs].some(existing => existing.id === tab.id)) continue;
+          this.dispatch(ownerId, { type: "open-tab", tab, activate: false });
+        }
+      }).catch(() => {
+        // Connection failure remains owned by the Host. Re-entering the owner retries restoration.
+        if (this.hydrationTokens.get(ownerId) === token) this.hydrationTokens.delete(ownerId);
+      });
+    }
   }
 
   subscribeOwner = (ownerId: string, listener: () => void): (() => void) => {
@@ -227,6 +263,7 @@ export class WorkbenchPanelService extends Service {
     const state = this.ownerStates.get(ownerId);
     if (state !== undefined) this.disposeOwnerTabs(state, "owner-release");
     this.ownerStates.delete(ownerId);
+    this.hydrationTokens.delete(ownerId);
     this.initializedOwners.delete(ownerId);
     this.ownerListeners.delete(ownerId);
   }

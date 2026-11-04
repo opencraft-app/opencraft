@@ -16,6 +16,8 @@ export interface ConfiguredProvider {
   protocol: string;
   baseUrl: string;
   credentialRef: string | null;
+  /** Omitted preserves legacy credential requirements. */
+  authentication?: "none";
   enabled: boolean;
   models: ConfiguredModel[];
 }
@@ -36,12 +38,13 @@ export function validateModelDocument(value: unknown): asserts value is ModelDoc
   if(value.schemaVersion!==1 || !Number.isSafeInteger(value.revision) || Number(value.revision)<0 || !Array.isArray(value.providers)) throw new Error("不支持的模型配置版本");
   const ids=new Set<string>();
   for(const p of value.providers) {
-    fields(p,['id','name','catalogId','protocol','baseUrl','credentialRef','enabled','models']);
+    fields(p,['id','name','catalogId','protocol','baseUrl','credentialRef','authentication','enabled','models']);
     if(typeof p.id!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(p.id)||['__proto__','constructor','prototype'].includes(p.id)||ids.has(p.id))throw new Error('提供商 ID 无效或重复');
     ids.add(p.id);
     if(typeof p.name!=='string'||!p.name.trim()||typeof p.protocol!=='string'||!p.protocol.trim()||typeof p.enabled!=='boolean'||typeof p.baseUrl!=='string'||!Array.isArray(p.models))throw new Error('提供商配置不完整');
     if(p.catalogId!==undefined&&typeof p.catalogId!=='string')throw new Error('提供商目录标识无效');
     if(p.credentialRef!==null&&(typeof p.credentialRef!=='string'||!/^[_A-Za-z][_A-Za-z0-9]*$/.test(p.credentialRef)))throw new Error('凭据引用无效');
+    if(p.authentication!==undefined && (p.authentication!=='none'||p.credentialRef!==null||!['openai-completions','openai-responses'].includes(p.protocol)||!p.baseUrl.trim()||p.id==='deepseek-official'||p.id==='openai-codex'))throw new Error('免鉴权只适用于明确地址的 OpenAI 兼容连接，且不能绑定凭据');
     if(p.baseUrl){let url:URL;try{url=new URL(p.baseUrl)}catch{throw new Error('模型地址无效')}if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('模型地址不得包含认证或查询信息');}
     const models=new Set<string>();
     for(const m of p.models){

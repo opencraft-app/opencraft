@@ -83,6 +83,8 @@ export interface NewThreadDraftPageProps {
   composerPresentationEnabled?: boolean;
   readonly placeholder?: string;
   readonly heading?: string;
+  readonly setupNotice?: ReactNode;
+  readonly setupBlocksSubmission?: boolean;
   readonly draft: NewThreadDraftSnapshot;
   readonly controller: ComposerController;
   readonly goals?: ThreadGoalResource;
@@ -449,6 +451,8 @@ export function NewThreadDraftPage({
   composerPresentationEnabled = true,
   placeholder,
   heading,
+  setupNotice,
+  setupBlocksSubmission = false,
   draft,
   controller,
   goals,
@@ -477,7 +481,7 @@ export function NewThreadDraftPage({
 }: NewThreadDraftPageProps) {
   const intl = useIntl();
   const composerRef = useRef<OpenCraftComposerHandle>(null);
-  useObservedReadiness(draft.scopeId, connectionPhase === 'ready' && !personalDefaultsPending && !draftSubmissionOwnsNavigation(draft.phase));
+  useObservedReadiness(draft.scopeId, connectionPhase === 'ready' && !personalDefaultsPending && !setupBlocksSubmission && !draftSubmissionOwnsNavigation(draft.phase));
   const portalContainer = useWorkbenchPresentationRoot();
 
   if (draft.submission !== null) {
@@ -514,7 +518,7 @@ export function NewThreadDraftPage({
       />
     ) : undefined}
     disabled={goalBusy || draftSubmissionOwnsNavigation(draft.phase)}
-    submissionDisabled={connectionPhase !== "ready" || personalDefaultsPending}
+    submissionDisabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission}
     isStreaming={false}
     placeholder={placeholder ?? intl.formatMessage({ id: "chat.companionPlaceholder", defaultMessage: "Share your thoughts, or ask me to help with something" })}
     onResolveAttachment={onResolveAttachment}
@@ -545,12 +549,13 @@ export function NewThreadDraftPage({
           <section className="new-thread-draft-hero" aria-labelledby="new-thread-heading">
             <h1 id="new-thread-heading">{heading ?? <FormattedMessage id="draft.heading" defaultMessage="What should we work on?" />}</h1>
           </section>
+          {setupNotice}
           <section className="new-thread-draft-composer-zone" aria-label={intl.formatMessage({ id: "draft.startNewTask", defaultMessage: "Start a new task" })}>
             <div className="thread-layout-width new-thread-draft-composer-width">
               <ThreadComposerPresentation controller={controller} scopeId={draft.scopeId} activeTabId={activeTabId} enabled={composerPresentationEnabled} timeline={null}>
               <div className="thread-composer-region" data-thread-find-composer="true">
                 {goals ? <ThreadGoalSurface threadId={null} goals={goals} draftScope={draft.target}
-                  onCreateGoal={onCreateGoal} disabled={connectionPhase !== "ready" || personalDefaultsPending || draftSubmissionOwnsNavigation(draft.phase)}
+                  onCreateGoal={onCreateGoal} disabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission || draftSubmissionOwnsNavigation(draft.phase)}
                   portalContainer={portalContainer}>{composer}</ThreadGoalSurface> : composer(null)}
               </div>
               </ThreadComposerPresentation>

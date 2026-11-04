@@ -5,6 +5,7 @@ import { ChevronDownIcon, CheckIcon, FilesActivityIcon, TextFileIcon, CodeFileIc
 import type { ConversationSummaryProps } from "@opencraft/workbench-panels-react";
 import { deriveThreadSummary } from "./model";
 import { presentSummaryFiles } from "./file-presentation";
+import { ThreadNoteContent } from "./note-content";
 import "./styles.scss";
 
 const messages = defineMessages({
@@ -53,6 +54,7 @@ export default function ThreadSummaryContent({ context, viewState, onViewStateCh
   })[value];
   const hasContent = context.goal || model.steps.length || model.files.length || model.activities.length;
   return <div ref={scroll} className="thread-summary__scroll" onScroll={event => onViewStateChange({ ...viewState, scrollTop: event.currentTarget.scrollTop })}>
+    {context.note ? <ThreadNoteContent key={context.scopeKey} transport={context.note} scopeKey={context.scopeKey} current={context.current} /> : null}
     {context.goal ? <p className="thread-summary__goal" aria-label={t("goal")}><TargetIcon size={16} aria-hidden="true" /><span>{context.goal.objective}</span></p> : null}
     {model.steps.length ? section("plan", t("plan"), `${model.steps.filter(step => step.status === "complete").length}/${model.steps.length}`,
       <ol className="thread-summary__list">{model.steps.map(step => <li className="thread-summary__row" key={step.id} data-step-status={step.status}>

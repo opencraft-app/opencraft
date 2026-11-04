@@ -105,3 +105,14 @@ Capabilities are negotiated individually. Older Hosts return
 
 Run `opencraft --help` for the installed command set. HTTPS credential exchange,
 desktop CLI admission and Session bearer admission are separate future work.
+
+## Current execution and child conversations
+
+Human SSH profiles retain the commands above. Inside an authorized Agent
+execution, `thread_cli` returns a private launcher and connection-file path.
+The launcher and the existing CLI share the same execution command implementation;
+the installed CLI selects it with `OPENCRAFT_THREAD_CLI_CONNECTION=<private-path>`.
+It adds context, paginated child discovery, spawn, tell and wait over the existing
+Broker. See [Conversation CLI](thread-cli.md). The environment variable contains a
+file path, never a bearer; do not copy connection files or switch to a human SSH
+profile when execution authorization fails.

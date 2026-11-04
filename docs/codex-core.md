@@ -173,6 +173,14 @@ registry schema v1 记录不可变代定义、当前默认代/接纳 epoch、Thr
 
 退休用两阶段握手避免“读到空闲后又接纳”：routing owner 提交代次 fence；Host 同步拒绝该代新执行并以新 fence epoch 报告此前已接纳的全部工作，取消/暂停与读取仍可用。ACK 仍忙则撤 fence，继续原任务。ACK 空后才同步关闭该 runtime 准入，再核 Native、Host、RPC 与所有 Linux worker task 的子进程（含后台 shell）；持久记 `retiring` 后停止已验证的 unit，确认退出后记 `retired`。stop 失败保留 fence 与当前数据，重启继续该交接，不在旧 writer 尚活时打开 HOME。长期 goal/queue/schedule/unknown 不强制退休；新代继续接新 Thread。
 
+Linux 委派子树把 APP/native 放在 service 的 `app` 叶子，工具可位于同一 service 的其他子组。
+OS 工作观测必须递归整个 service；进程当前位于叶子并不缩小 owner 范围。
+原生子进程树仍检查所有 worker task；退休的最后核验还覆盖委派子树里的孤儿工具，
+不因工具已失去 Native 父进程而认证为空闲。目录或成员不可读保持 unknown/拒绝退休。
+服务级停止沿 `KillMode=control-group` 覆盖嵌套工具，不把工具迁到独立 tools slice。
+该观测兼容不自动启用 Delegate、不重启旧代，也不改变 Core 与 APP 的独立停止边界。
+
+
 旧 HOME 再被访问时，自动只向前升级可比较的稳定 CLI 版本；默认回退到较旧 CLI 时仍使用该 HOME 原固定 payload，未知版本也不猜测升级次序。先从已经退出的 HOME 制作备份与验证副本，逐 SQLite `quick_check`；验证 unit 启动前原子持久记录其身份，routing owner 重启先完成遗留验证 unit 的清理，失败保留交接记录。用当前 CLI 在私有 mount namespace 将副本绑定到**原绝对 HOME**，只执行 list/read 验证，避免 native 数据中的绝对 rollout 路径误读真实目录。验证成功后才用当前 payload 在原 HOME 独占冷启动并增加 incarnation。验证不执行 resume、Turn 或工具；兼容失败保留原目录/副本，返回不可用，不恢复旧快照。此冷验证目前要求 systemd 路径不含空白、冒号或反斜线。
 
 回退只 CAS 新建默认路由到仍就绪的原代；新代已创建 Thread 与数据继续保留并按其归属服务。原代已退休时，显式 activate 先验证并重开它保留的 payload/HOME。已冷升级的 HOME 不承诺旧 CLI 可读，不做 schema 降级。单代异常只通知 Host 受影响 Thread，沿现有恢复 owner 读实际状态、恢复订阅和必要的后继，不断开其它代、不盲重发 mutation。
@@ -293,6 +301,30 @@ fence/inspect/release/cold-ready/resume lifecycle as other upgrade owners. Its
 fixed private descriptor contains the Unix endpoint, expected PID and control
 token. It is not a complete parent upgrade recipe.
 
+Core and registry-router advertise `operatorLeaseProtocolVersion: 1`. New fences
+require `operatorLease: { version: 1, id, controller: { pid, startTime, bootId },
+ttlMs }`, with a live same-boot Linux process and a 1–30 second TTL. The public
+adapters bind their own PID, renew every three seconds (default TTL 15 seconds),
+start renewal before awaiting potentially slow fence quiescence, and stop it after
+abort or release. A claim recorded as automatically terminated cannot fence again.
+`renew-operator-lease` carries the exact
+owner/epoch/operation/fence and original claim. It advances only this incarnation's
+monotonic deadline; it never replaces a drain proof or changes sealed data.
+Renewal remains available while an asynchronous maintenance interruption settles.
+Missing, dead, reused-PID, foreign-boot and expired bindings fail closed.
+
+While the original source can still abort, operator death or expiry automatically
+persists `phase: open` and an `operatorLeaseAborts` receipt containing the exact
+owner/epoch/operation/fence, claim, reason (`operator-exited` or `lease-expired`)
+and timestamp. Unknown outcomes, pending responsibilities, history and retained
+state are preserved. Source polling is 100 ms, subject to the process event loop
+and durable storage completing; persistence failure keeps admission unhealthy.
+The snapshot's `operatorLeaseStatus` is an ephemeral observation, not cold proof.
+An abort receipt proves only intrinsic admission was reopened. External network
+gates and consumer stop intents still require their controller's exact recovery.
+No lease timeout opens a released/cold-ready owner, an irreversibly closing writer,
+or an old fenced process after restart; those retain explicit cold recovery.
+
 The account authority owns OAuth and maintenance subprocesses, account mutations,
 HTTP request bodies, the upstream concurrency queue, credential refresh, complete
 response streams and affinity writes. Fence closes new proxy requests before body
@@ -392,3 +424,150 @@ Core-owned stores and reference files require the service UID. A root service ma
 explicitly configured private regular external auth file owned by its independent credential writer.
 The proof binds the external file's actual UID, mode and content digest; any change invalidates
 readiness. Core never takes ownership of or writes this external file.
+
+### Delegated tool memory guard (implementation, not activated)
+
+The opt-in Linux prototype in `scripts/server-deployment/tool-memory-guard.py`
+observes process fork/exec events outside native and adopts tools into child
+cgroups under an already delegated generation service. It does not modify native,
+create delegation on a running legacy owner, read command/session content, or
+reject commands based on a sum of tool limits. Helpers are adopted as tools too.
+Proc-connector thread events are filtered; loss/unavailability is reported before
+100ms polling fallback. Startup reconciliation recovers orphaned tools.
+
+New owners require `Delegate=yes`, `DelegateSubgroup=app`, finite owner limits and
+`OOMPolicy=continue`. The APP unit has `OOMScoreAdjust=-1000`; the guard sets native
+to -999 and adopted tools/descendants to 0. Native must remain killable if the guard
+fails. The guard is supervised independently with `Restart=always`; the per-tool
+cgroup has `memory.oom.group=1`. Adoption is best effort: earlier allocations remain
+charged to the owner leaf; its total limit covers both leaf and tool subtrees.
+Normal-load latency and sampled anonymous residue are measured, not universal
+allocation bounds. The package carries the guard, an operator-editable policy sample and an offline
+configuration renderer. Host activation remains opt-in and requires a new owner.
+
+The local-only real-CLI smokes are `smoke-tool-memory-native.py` (50 simultaneous
+built-in shell tools with a full-speed allocator) and `smoke-tool-memory-guard.ts`
+(real APP/native priority and guard-down OOM recovery). They use private synthetic
+accounts and loopback fixtures and must never run on the main server. Nested
+retirement/inventory tests continue to verify the entire owner subtree.
+
+Occupancy/inventory and delegated retirement compare two complete directory and
+membership snapshots. A changed snapshot cannot certify stable/idle work during
+adoption. Guard recovery removes empty groups before parsing their limits, since
+a crash between mkdir and controller setup can leave `memory.max=max`.
+
+
+The sample `config/tool-memory-guard.json` sets each tool (including helpers) to
+12GiB High / 16GiB Max. These are policy values, never reservations or a budget
+admission test. `toolPidsMax=max` adds no new task-count restriction; the owner's
+existing TasksMax still applies. A small owner's total may be below one tool's
+maximum. Operators must size a generation for its intended traffic.
+
+`opencraft-tool-memory-prepare` stages a versioned Python payload, policy,
+standalone `Restart=always` service and a precise `99-delegated-tool-memory.conf`.
+It never mutates host configuration. The deployment owner holds its normal lock,
+backs up existing files, verifies the target generation is not running and
+applies only to that new owner. The guard payload is an independent versioned
+regular file so release garbage collection cannot delete it. A running operator
+policy is preserved; policy updates require a controlled guard restart.
+
+The supervisor discovers native exec through proc connector and reconciles
+systemd units on startup/restart/loss; only finite, explicitly delegated `app`
+owners with continue/-1000 qualify. Workers adopt tools via fork/exec events.
+Missing connector support is reported before 100ms polling fallback. Legacy
+undelegated owners are skipped. Worker/guard failure never blocks tool exec.
+APP makes its native child -999 before publishing readiness if APP is -1000,
+so even an unavailable guard cannot leave the whole generation OOM-immune.
+
+High and OOM observations contain generation, kernel comm process names, peak
+bytes, UTC time, counter increments and cumulative counters. No argv, environment
+or session/tool content is read. High increments are aggregated per observation
+rather than producing an unbounded log storm; every kernel count remains in the
+delta. Group OOM occurrences and killed-process counts are distinct. Counters
+are read once more before group deletion; restart re-observation carries stable
+counter-based keys for deduplication. These are observed peaks; absent historical
+process names cannot be reconstructed after a crash.
+
+A CLI launcher can fork native before its own score is changed. Protected APP
+startup therefore raises inherited -1000 across its owned native family
+parent-first, repeats after native readiness, and leaves score 0 unchanged.
+Launcher exit is failure immediately even if a grandchild still holds stdio;
+waiting only for ChildProcess close would defer recovery. The local forced-launcher
+smoke (`OPENCRAFT_TOOL_MEMORY_FORCE_WRAPPER_IMMUNITY=1`) verifies this before guard
+startup and bounds recovery with inherited open pipes. It also accepts a canonical
+APP bundle and packaged guard payload for artifact-level tests.
+
+
+### Hash-aware fenced source compatibility (local qualification)
+
+`--seal-fenced-account-maintenance <receipt>` is an explicit offline compatibility
+entry, separate from the older pre-hash legacy importer. It accepts only a
+`fenced-account-maintenance` receipt: the original source snapshot and proof remain
+unmodified, including the complete unknown list, its hash/count, and the SHA-256
+of the durable fenced account state (`sourceStateSha256`). A live source or a
+changed state, storage, configuration, CLI, or history is rejected.
+
+A controller must hold its real kernel locks and complete outer admission barrier,
+obtain a fresh authenticated fenced source proof, and publish a durable, identity-
+bound maintenance stop permit before stopping the source. This command does not
+provide that controller, stop a source, or establish a migration time budget.
+It opens no account writer admission. Existing ordinary/legacy paths do not infer
+this mode from a failed fence or silently accept a new receipt kind.
+
+This entry supports **empty volatile responsibility only**: every source account
+count must be zero, retained arrays empty, and the proof historical count must
+exactly equal the current persistent `pool_affinity` row count. Zero active calls
+alone is insufficient. Image affinities and login/reset receipts may remain after
+calls finish; their presence must cause same-lock abort/recovery before a source
+stop permit, never fabricated empty arrays or deletion. The successor imports all
+unknowns unchanged from current data; no request, login, or tool is replayed.
+
+The purpose is compatibility with a fenced, hash-aware source whose control
+request limit cannot carry its full historical list. It does not make the
+original source's ordinary release accept a partial list or a digest reference.
+A separately qualified guardian, controlled recovery, actual Native continuation,
+and large-scale forward/recovery budget evidence are required before operational
+use; this local protocol implementation alone grants no lifecycle permission.
+
+
+### Complete retained exports for a request-limited source
+
+`--inspect-account-retained-export <file>` validates a private full export and
+returns only its digest, source identity and row counts without acquiring a writer
+or starting services. `--inspect-exported-account-maintenance <receipt>` additionally validates the
+complete projected successor state while the source is still alive: current
+storage/configuration/CLI, full retained state and both historical arrays must
+fit the 64 MiB state bound with 4096 bytes reserved for successor metadata. It
+does not acquire a writer or modify the source; capacity rejection remains
+abortable before any stop permit is used.
+
+`--seal-exported-account-maintenance <receipt>` consumes an
+explicit `exported-account-maintenance` receipt after the separately controlled
+source exit. The receipt binds the original fenced state byte hash, unchanged
+source snapshot, full historical unknown hash/count, and the complete identity-
+bound retained export. Image affinities, original login outcomes and reset-credit
+outcomes (including unknown) are restored exactly; missing arrays, duplicate IDs,
+invalid outcomes, changed source identities, digests or aggregate history fail
+before any sealed state is written. A partial export never becomes empty.
+
+The deployment owner must qualify its observer separately: collect from the
+original live owner while outer admission is closed and verify that persistent
+`pool_affinity` rows plus all three actual retained arrays equal the original
+historical count. The observer's `v8-side-effect-checked` provenance is supplied
+by that privileged controller, not inferred or authenticated from a client claim.
+The offline importer remains a private operator interface, never an end-user
+route. It neither attaches a debugger nor stops or interrupts any process.
+
+New Core owner-handoff JSON requests use the existing 64 MiB account-state bound,
+so a complete historical list can cross the next ordinary fence. Other private
+control JSON (including account mutations) retains its 1 MiB default. Original
+request-limited source bytes remain unchanged and require the explicit bridge;
+raising a successor limit cannot make an old source accept a large request.
+
+The exported sealer acquires the account writer before its strict import
+validation, and returns a detached copy of the inspection actually bound into
+that release seal. It avoids duplicate pre/post storage and fixed-CLI hashing;
+source-exit, full retained/schema, storage/configuration/CLI checks still run
+before writing, and load verifies current sealed storage again. Repeating the
+command on an already sealed operation performs a fresh inspection. Existing
+legacy and empty-retained entry points retain their original reads.

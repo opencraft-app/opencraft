@@ -1,3 +1,4 @@
+import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexAccountService, CodexCoreControlClient } from "@opencraft/account-pool-host";
@@ -16,6 +17,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
   let accounts: CodexAccountService | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
   let closing: Promise<void> | undefined;
+  let interrupting = false, maintenanceInterrupted = false;
   const close = () => closing ??= (async () => {
     let phase = "control";
     const startedAt = Date.now();
@@ -23,6 +25,7 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
       event: "shutdown-wait", phase, durationMs: Date.now() - startedAt,
     })), 15_000);
     timer.unref();
+    owner.dispose();
     try { await control?.close(); phase = "accounts"; await accounts?.close(); }
     finally { clearInterval(timer); release(); }
   })();
@@ -38,18 +41,37 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
     control = await startControlServer(options.endpoint, options.authToken, async request => {
       if (request.method === "GET" && request.url === "/owner-handoff") {
         return { status: 200, value: { pid: process.pid, handoff: owner.snapshot(),
-          proof: owner.inspect(accounts?.handoffObservation()) } };
+          proof: owner.inspect(accounts?.handoffObservation()), maintenance: { interrupting, interrupted: maintenanceInterrupted } } };
       }
       if (request.method === "POST" && request.url === "/owner-handoff") {
         try {
-          const input = await readControlJson(request);
+          const input = await readControlJson(request, ACCOUNT_CORE_STATE_MAX_BYTES);
+          if (input.action === "renew-operator-lease") {
+            owner.renewOperatorLease(input as unknown as AccountOwnerExpectation);
+            // Renewal must neither wait for interruption nor replace the drain proof.
+            return { status: 200, value: { pid: process.pid, handoff: owner.snapshot() } };
+          }
+          if (interrupting) throw new Error("Account maintenance interruption is running");
+          if (input.action === "maintenance-interrupt") {
+            // Do not hold owner.transition while waiting: onUncertain must use
+            // that same queue to durably account for interrupted requests.
+            await owner.transition(async () => owner.checkMaintenance(input as unknown as AccountOwnerExpectation));
+            if (!accounts) throw new Error("Account writer already released");
+            interrupting = true;
+            try { await accounts.interruptForMaintenance(); maintenanceInterrupted = true; }
+            finally { interrupting = false; }
+            return { status: 200, value: { pid: process.pid, handoff: owner.snapshot(), proof: owner.inspect(accounts.handoffObservation()) } };
+          }
           return await owner.transition(async () => {
             const expected = input as unknown as AccountOwnerExpectation;
             let ready;
             switch (input.action) {
-              case "fence": await owner.fence(expected); break;
-              case "abort": await owner.abortFence(expected); break;
+              case "fence": await owner.fence(expected); maintenanceInterrupted = false; break;
+              case "abort": await owner.abortFence(expected); maintenanceInterrupted = false; break;
               case "inspect": owner.checkInspection(expected); break;
+              case "maintenance-accept-unknown":
+                if (!maintenanceInterrupted || !accounts) throw new Error("Account maintenance interruption is unconfirmed");
+                await owner.acceptMaintenanceUnknown(expected, accounts.handoffObservation().activeCount); break;
               case "release":
                 if (!accounts) throw new Error("Account writer already released");
                 await owner.release(expected, accounts.handoffObservation(), () => accounts!.retainedState(), async () => {

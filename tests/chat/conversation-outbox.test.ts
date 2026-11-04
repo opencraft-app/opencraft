@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createConversationKey } from "@opencraft/chat-core";
-import { createConversationOutbox, SubmissionOutcomeUnknownError, type ConversationOutboxEntry, type ConversationOutboxStorage } from "@opencraft/chat-runtime";
+import { createConversationOutbox, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError, type ConversationOutboxEntry, type ConversationOutboxStorage } from "@opencraft/chat-runtime";
 import type { SubmitIntent } from "@opencraft/composer-core";
 import { createBrowserConversationOutbox } from "../../apps/workbench-web/src/runtime/browser-conversation-outbox";
 
@@ -184,4 +184,15 @@ test('one local outbox owns cold-start input before a Thread exists and later at
   await box.ready(); box.wake(); await settle();
   assert.equal(sends, 1); assert.equal(box.project().length, 2); assert.ok(notifications > 0);
   unsubscribe(); box.dispose();
+});
+
+for (const retire of [false, true]) test(`a positively rejected queue admission retries without another Replica event (retire=${retire})`, async () => {
+  const f = fixture(async () => { if (f.sent.length === 1) throw new SubmissionNotDispatchedError(100); });
+  const box = f.create();
+  await box.admit(intent("same")); f.ready(); box.wake(); await settle();
+  assert.equal(f.sent.length, 1); assert.equal(f.rows()[0]!.state, "waiting");
+  if (retire) box.dispose();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.equal(f.sent.length, retire ? 1 : 2);
+  if (!retire) { assert.equal(f.rows().length, 0); assert.equal(f.sent[0]!.clientMessageId, f.sent[1]!.clientMessageId); box.dispose(); }
 });

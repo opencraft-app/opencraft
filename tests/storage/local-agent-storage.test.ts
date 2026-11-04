@@ -36,16 +36,22 @@ for (const unknownRouting of [false, true]) test(`legacy Host storage preserves 
       try { database.exec("CREATE TABLE unknown_owner_data(id TEXT PRIMARY KEY)"); }
       finally { database.close(); }
     }
+    if (unknownRouting) {
+      assert.throws(() => openLocalAgentStorage({ dataDirectory: directory }), (error: unknown) => error instanceof SqliteLifecycleError && error.kind === "unsupported-legacy");
+      const retained = new DatabaseSync(join(directory, "opencraft-session-routing.sqlite"), { readOnly: true });
+      assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE name='unknown_owner_data'").get()); retained.close();
+      assert.equal((await readdir(directory)).some(name => name.includes(".legacy-")), false); return;
+    }
     const storage = openLocalAgentStorage({ dataDirectory: directory });
     try {
-      assert.deepEqual(storage.summaries.map(item => item.status), [unknownRouting ? "moved-aside" : "migrated", "adopted", "fresh", "fresh", "adopted", "fresh"]);
+      assert.deepEqual(storage.summaries.map(item => item.status), ["migrated", "adopted", "fresh", "fresh", "adopted", "fresh"]);
       assert.equal(storage.threads.get("legacy-thread")?.name, "Legacy title");
       for (const item of storage.summaries.filter(item => item.backupPath)) {
         assert.match(item.backupPath!, /\.pre-v1-/);
         assert.ok((await stat(item.backupPath!)).size > 0);
       }
-      assert.equal(storage.summaries[0].movedAside, unknownRouting);
-      assert.equal((await readdir(directory)).some(name => name.includes(".legacy-")), unknownRouting);
+      assert.equal(storage.summaries[0].movedAside, false);
+      assert.equal((await readdir(directory)).some(name => name.includes(".legacy-")), false);
     } finally { storage.close(); }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

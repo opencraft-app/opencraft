@@ -1,6 +1,6 @@
 # Web 安装与一键更新
 
-公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。Node.js 22 或更新版本和 npm 是运行前提。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
+公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。公开的 0.1.17 包要求 Node.js 24.x 和 npm；安装其他精确版本时按该包的 `engines` 核对，带执行端的包还须匹配平台、架构和 Node ABI。源码模板的最低版本不代表已发布包的支持范围。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
 
 直接从源码打包并替换已有服务器网站，见[本地替换指引](web-local-deployment.md)；该流程使用本地包，不需要先发布 npm。
 
@@ -38,9 +38,12 @@ node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/
 ```sh
 OPENCRAFT_APPSERVER_URL=ws://127.0.0.1:9989/rpc \
 OPENCRAFT_WEB_STATE="$PWD/opencraft-web-state" \
-npx --registry=https://registry.npmjs.org/ \
-  "@opencraft-app/opencraft@${OPENCRAFT_RELEASE_VERSION:?设置精确安装版本}"
+npm exec --registry=https://registry.npmjs.org/ \
+  --package="@opencraft-app/opencraft@${OPENCRAFT_RELEASE_VERSION:?设置精确安装版本}" \
+  -- opencraft-web
 ```
+
+`opencraft-web` 是网站入口；源码中的 `opencraft` 命令已用于会话 CLI。不要依赖裸包名的默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../README.md#quick-start)，部署时仍固定经验证的精确版本，不复用旧版本号。
 
 长期运行时固定安装启动包，避免每次服务启动重新解析 `latest`：
 
@@ -525,3 +528,55 @@ in bounded chunks instead of allocating one archive-sized Base64 string.
 完整签名包的sealer直接读取当前npm自带的Arborist/npm-packlist清单并计算文件摘要，写入
 签名后只压缩一次。inspection/dry-run和交付使用同一最终归档，仍执行签名、文件列表、
 权限与预算的完整验证；不能将暂存文件清单当作归档已通过的证据。
+
+### Same-host signed directory installation
+
+A pinned bootstrap configured with a full-release trust root advertises
+`localTreeInstall: 1`. The authenticated local updater can accept
+`--tree <absolute-staging-root> --manifest-sha256 <digest>` with an exact version
+and build ID. It copies only signed files into a fresh installation directory,
+checks all target hashes, sizes, modes, paths, budgets, signatures and replay
+state, then uses the ordinary managed activation and rollback transaction.
+Links are rejected; the staging tree is never executed in place.
+
+`sealPackage({prepareOnly:true,...})` reserves the immutable release identity and
+writes signed metadata without creating an archive or claiming archive SRI.
+After activation and health checks, `archivePreparedPackage` can serialize that
+same tree, independently verify the complete archive and finalize its SRI.
+Archive retries preserve the original manifest and identity; changed contents
+require a new release identity. A failed archive build must not reinstall or
+roll back a healthy running version. Consumers without this capability retain
+the existing archive installation path. Deployments must promote the pinned
+bootstrap once using a verified complete package before selecting this path.
+
+
+### Verified recovery of an uncertain Web rollback
+
+A failed installation whose execution rollback also failed remains unknown even
+when the retained release later becomes healthy. `page-reconcile` imports durable
+owner receipts; it does not repair processes or invent a successful rollback.
+
+The authenticated same-origin JSON `POST /__opencraft_updates/recover-current`
+accepts only the original failed `jobId` and exact retained `version`/`buildId`.
+It reserves the existing Web transaction writer and verifies the signed retained
+files, current revocations and replay watermark, selected execution pointer,
+running payload, gateway kernel process identity and stable Core/DSH/Engine Host
+identities. The active Web worker and persisted state must remain unchanged.
+Maintenance markers retain their existing exact-controller header requirement.
+No installation, pointer switch, service restart, snapshot restore or replay
+watermark reduction occurs in this operation.
+
+The owner persists recovery evidence alongside the original failure before
+writing the separate terminal child receipt. A crash between those writes stays
+unknown and can be retried for the same job. The upgrade agent binds both records
+to the retained signed identity and projects `rolled-back` with a `not-applied`
+receipt for the failed candidate. Missing or mismatching evidence remains unknown.
+`node scripts/recover-server-local.mjs --url <loopback> --state-directory <state>
+--origin <public-origin> --job-id <failed-job> --version <retained-version>
+--build-id <retained-build>` uses the existing local administrator key without
+printing it. The fixed Web handler must first support this endpoint; installing
+a regular application payload alone does not replace that handler or the agent.
+
+Execution readiness now uses the same per-request health budget as status
+observation and preserves a bounded last failure reason and observation count.
+Dependency errors and raw response bodies are never copied into that diagnostic.

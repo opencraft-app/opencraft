@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inspectRouterNative, readRouterRegistry, routerDigest, routerFileDigest, committedHostRestartArchive, archivedHostColdUnavailable, type HostColdUnavailablePolicy } from "./router-maintenance.js";
 import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
@@ -17,6 +18,7 @@ export async function startCodexGenerationService(options: {
   registryDirectory: string; systemdScope: "user" | "system"; requireHostUsage: boolean;
   supervisor?: GenerationSupervisor;
   nativeHistoryFailures?: NativeHistoryFailures;
+  maintenanceFile?: string;
   bootstrap?: { generation: GenerationDefinition; legacy?: boolean }; signal?: AbortSignal;
 }) {
   options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
@@ -55,7 +57,7 @@ export async function startCodexGenerationService(options: {
   const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor, nativeHistoryFailures: options.nativeHistoryFailures });
   const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
-    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures });
+    runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures, maintenanceFile: options.maintenanceFile });
   const router = new CodexGenerationRouter(runtime); runtime.serverRequestCount = id => router.serverRequestCount(id);
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   let socket: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;
@@ -67,30 +69,31 @@ export async function startCodexGenerationService(options: {
       retention: runtime.registry.metadata(`retention:${generation.id}`), retirementHistory: runtime.registry.metadata(`retirement-history:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
     fences: runtime.fences(true), storage: runtime.registry.outcome });
-  const close = () => closing ??= (async () => { await control?.close(); await socket?.close(); await runtime.close(); })();
+  const close = () => closing ??= (async () => { runtime.owner.dispose(); await control?.close(); await socket?.close(); await runtime.close(); })();
   try {
     if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
     socket = await startGenerationSocket(nativeSocket, router);
     await chown(nativeSocket, execution.uid, execution.gid);
-    const configuration = async () => {
-      const artifacts = [];
-      for (const g of runtime.registry.list()) {
-        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node, ...(g.nativeLauncher ? [g.nativeLauncher.entrypoint, g.nativeLauncher.executable] : [])].map(async path => ({
-          path, sha256: createHash("sha256").update(await readFile(path)).digest("hex") }))) });
-      }
-      const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
-      return createHash("sha256").update(JSON.stringify({ ...options, token: createHash("sha256").update(options.token).digest("hex"), signal: undefined, supervisor: undefined,
-        node: process.version, abi: process.versions.modules, proxyBaseUrl, artifacts,
-        environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => !managed.has(key)).sort(([a], [b]) => a.localeCompare(b))) })).digest("hex");
-    };
+    const configuration = () => routerConfiguration(options, runtime.registry.list(), proxyBaseUrl);
+    const nativeMaintenance = () => inspectRouterNative({ generations: runtime.registry.list(), routes: runtime.registry.routes(),
+      metadata: Object.fromEntries([...runtime.registry.list().map(g => [`runtime:${g.id}`, runtime.registry.metadata(`runtime:${g.id}`)]),
+        ...runtime.registry.routes().map(r => [`thread-retention:${r.threadId}`, runtime.registry.metadata(`thread-retention:${r.threadId}`)])]),
+      unresolvedCreations: runtime.registry.list().reduce((n, g) => n + runtime.registry.unresolvedCreations(g.id), 0),
+      supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, runtime.owner.continuingNative(), runtime.owner.hostRestartPending(), runtime.owner.hostColdUnavailable(), runtime.owner.hostColdUnavailableArchived());
+    const coldRead = () => runtime.owner.snapshot().history?.length ? nativeMaintenance() : runtime.coldReadNative();
+    if (runtime.owner.maintenancePending()) await runtime.owner.importMaintenance(await configuration(), nativeMaintenance);
     const observation = async () => {
       const value = await runtime.handoffObservation(), counts = { ...value.counts, ...router.handoffCounts() };
       const activeCount = Object.values(counts).reduce((a, b) => a + b, 0);
       let coverage = value.coverage;
-      if (coverage === "complete" && activeCount === 0 && !runtime.owner.snapshot().uncertain) {
+      const onlySubscriptions = activeCount === counts.subscriptions;
+      const historicalWarmDrain = onlySubscriptions && runtime.owner.historicalUnknownSha256() !== undefined;
+      if (coverage === "complete" && (activeCount === 0 || historicalWarmDrain) && runtime.owner.currentResponsibilityConfirmed()) {
         // Reject unsupported current history while the exact source can still
         // abort. Discovering it only after release also defeats old-payload recovery.
-        try { await runtime.coldReadNative(); } catch { coverage = "unknown"; }
+        // With retained unknown, prove Native/Core quiet before the controller
+        // disconnects idle subscribers; their presence must not skip this proof.
+        try { await coldRead(); } catch { coverage = "unknown"; }
       }
       return { ...value, coverage, counts, activeCount };
     };
@@ -100,11 +103,12 @@ export async function startCodexGenerationService(options: {
         if (request.method === "POST") {
           const value = await readControlJson(request), input = value as unknown as RouterExpectation;
           if (value.action === "fence") { runtime.owner.fence(input); await runtime.quiesceRouter(); }
+          else if (value.action === "renew-operator-lease") runtime.owner.renewOperatorLease(input);
           else if (value.action === "abort") runtime.owner.abort(input);
           else if (value.action === "inspect") proof = runtime.owner.inspect(input, await observation());
           else if (value.action === "release") { const config = await configuration(); runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }
-          else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), () => runtime.coldReadNative());
-          else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), () => runtime.coldReadNative());
+          else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), coldRead);
+          else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), coldRead);
           else throw new Error("Unknown router handoff action");
         } else if (request.method !== "GET") throw new Error("Unknown router handoff method");
         return { status: 200, value: { pid: process.pid, handoff: runtime.owner.snapshot(), proof, ready } };
@@ -152,4 +156,53 @@ export async function startCodexGenerationService(options: {
     options.signal?.throwIfAborted(); runtime.startMonitor();
     return { endpoint: options.endpoint, nativeSocket, close };
   } catch (reason) { await close(); throw reason; }
+}
+
+export async function routerConfiguration(options: Parameters<typeof startCodexGenerationService>[0], generations: import("./generation-registry.js").GenerationRecord[], proxyBaseUrl: string) {
+      const artifacts = [];
+      for (const g of generations) {
+        artifacts.push({ id: g.id, definition: g, files: await Promise.all([g.executable, g.bundle, g.node, ...(g.nativeLauncher ? [g.nativeLauncher.entrypoint, g.nativeLauncher.executable] : [])].map(async path => ({
+          path, sha256: await routerFileDigest(path) }))) });
+      }
+      const managed = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "SHLVL", "_"]);
+      return createHash("sha256").update(JSON.stringify({ ...options, token: createHash("sha256").update(options.token).digest("hex"), signal: undefined, supervisor: undefined, maintenanceFile: undefined,
+        node: process.version, abi: process.versions.modules, proxyBaseUrl, artifacts,
+        environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => !managed.has(key)).sort(([a], [b]) => a.localeCompare(b))) })).digest("hex");
+}
+
+/** Read-only collector; opens no routing socket and never takes the registry writer role. */
+export async function inspectRouterMaintenanceService(options: Parameters<typeof startCodexGenerationService>[0], continuing = false, provisional = false, hostRestart = false, coldUnavailable?: HostColdUnavailablePolicy) {
+  options = { ...options, nativeHistoryFailures: nativeHistoryFailures(options.nativeHistoryFailures) };
+  const launch = await new CodexCoreControlClient(options.coreEndpoint, options.token).appServerLaunch();
+  if (await realpath(options.dataDirectory) !== launch.dataDirectory) throw Error("Router account data selector changed");
+  const base = launch.launch.args.find(v => v.startsWith("chatgpt_base_url=")); if (!base) throw Error("Router proxy selector unavailable");
+  const proxyBaseUrl: string = JSON.parse(base.slice(base.indexOf("=") + 1)), state = readRouterRegistry(options.registryDirectory);
+  const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory: options.registryDirectory, coreEndpoint: options.coreEndpoint,
+    dataDirectory: options.dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
+  const source = state.metadata["router-live-owner"] as { bootId?: string; owner?: string } | null;
+  const recoveryBootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+  if (hostRestart && !source?.bootId) throw Error("Host restart requires a durable source boot identity");
+  const committedHostRestart = hostRestart && source?.bootId === recoveryBootId ? committedHostRestartArchive(state.metadata, recoveryBootId) : undefined;
+  const handoff = state.metadata["router-handoff"] as { maintenanceSeal?: string; phase?: string; operationId?: string; fence?: string; history?: string[] } | undefined;
+  const archive = handoff?.maintenanceSeal ? state.metadata[`router-history:${handoff.maintenanceSeal}`] as { receipt?: { operationId?: string; fence?: string; source?: { owner?: string; bootId?: string }; native?: { hostColdUnavailable?: HostColdUnavailablePolicy } } } | undefined : undefined;
+  if (archive && routerDigest(archive) !== handoff!.maintenanceSeal) throw Error("Host cold-unavailable archive changed");
+  const inheritedUnavailable = archivedHostColdUnavailable(handoff?.history, key => state.metadata[key]);
+  const retainedUnavailable = archive?.receipt?.native?.hostColdUnavailable ?? inheritedUnavailable;
+  if (coldUnavailable && (!hostRestart || committedHostRestart && routerDigest(coldUnavailable) !== routerDigest(retainedUnavailable))) throw Error("Host cold-unavailable input is outside its approved recovery");
+  const policyArchived = !!archive?.receipt?.native?.hostColdUnavailable && !!retainedUnavailable
+    && routerDigest(archive.receipt.native.hostColdUnavailable) === routerDigest(retainedUnavailable)
+    && ["released", "cold-ready"].includes(handoff?.phase ?? "")
+    && source?.owner === archive!.receipt!.source?.owner && source?.bootId === archive!.receipt!.source?.bootId
+    && handoff?.operationId === archive!.receipt!.operationId && handoff?.fence === archive!.receipt!.fence
+    && (!coldUnavailable || routerDigest(coldUnavailable) === routerDigest(retainedUnavailable));
+  const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, continuing || !!committedHostRestart,
+    hostRestart && !committedHostRestart ? { sourceBootId: source!.bootId!, sourceOwner: source!.owner, recoveryBootId, ...(policyArchived ? { policyArchived: true } : {}) } : undefined, coldUnavailable ?? retainedUnavailable,
+    !!inheritedUnavailable && routerDigest(coldUnavailable ?? retainedUnavailable) === routerDigest(inheritedUnavailable));
+  const after = readRouterRegistry(options.registryDirectory);
+  if (!provisional && (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"]))) throw Error("Router current registry changed during collection");
+  return { ...(provisional ? { provisional: true } : {}), sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,
+    unconfirmedRecords: Object.entries(state.metadata).filter(([key, value]) => key.startsWith("router-uncertainty:")
+      || key.startsWith("router-lease:") && !!(value as { uncertainty?: unknown } | null)?.uncertainty).map(([key, value]) => ({ key, value })),
+    sourceProcess: state.metadata["router-live-owner"], ...(committedHostRestart ? { committedHostRestart } : {}),
+    configurationSha256: await routerConfiguration(options, state.generations, proxyBaseUrl) };
 }

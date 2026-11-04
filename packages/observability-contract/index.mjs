@@ -7,14 +7,24 @@ export const limits = Object.freeze({ eventBytes: 2048, batchEvents: 32, batchBy
 export const kinds = ['producer', 'operation', 'rpc', 'recovery', 'execution', 'queue', 'dependency', 'resource', 'client_signal', 'availability', 'lifecycle'];
 export const operations = ['navigation', 'thread_open', 'thread_history_first_paint', 'catalog_first', 'catalog_complete', 'configuration_confirmed', 'submit_ready', 'preference_save', 'recovery', 'other'];
 export const outcomes = ['started', 'progress', 'ok', 'failed', 'timeout', 'aborted', 'unfinished', 'empty', 'unknown'];
-export const stages = ['connecting', 'initializing', 'backoff', 'blocked', 'queued', 'history', 'ready', 'model', 'tool', 'human', 'capacity', 'running', 'completed', 'failed', 'other'];
+export const stages = ['connecting', 'initializing', 'backoff', 'blocked', 'queued', 'history', 'storage', 'ready', 'model', 'tool', 'human', 'capacity', 'running', 'completed', 'failed', 'other'];
 export const methods = ['initialize','runtime/machine/read','thread/read','thread/resume','thread/list','thread/start','thread/fork','thread/unsubscribe','thread/archive','thread/name/set','thread/items/list','thread/turns/list','thread/loaded/list','turn/start','turn/steer','turn/interrupt','turn/continue','turn/respond','model/list','config/read','config/value/write','config/batchWrite','configRequirements/read','tasks/list','tasks/read','tasks/create','tasks/update','tasks/delete','opencraft/tasks/list','opencraft/tasks/read','opencraft/tasks/create','opencraft/tasks/update','opencraft/schedules/list','opencraft/schedules/create','opencraft/schedules/update','opencraft/schedules/delete','fs/read','fs/write','fs/stat','fs/list','fuzzyFileSearch','command/exec','command/exec/write','command/exec/terminate','process/spawn','process/kill','process/writeStdin','skills/list','skills/read','bot/list','bot/read','mcpServerStatus/list','other'];
 export const components = ['web', 'gateway', 'core', 'codex', 'dsh', 'pi', 'observe', 'collector', 'prometheus', 'loki', 'grafana'];
 export const origins = ['interactive', 'automation', 'operator', 'probe', 'unknown'];
 const id = /^[a-zA-Z0-9_.:-]{1,128}$/u;
 const revision = /^[a-zA-Z0-9_.:+-]{1,128}$/u;
-const ids = ['eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
-const enums = { lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
+const ids = ['traceId','spanId','parentSpanId','linkedTraceId','linkedSpanId','gatewayPairId','eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
+const enums = {
+  caller: ['sidebar-catalog','thread-catalog','history','client','server-refresh'],
+  trigger: ['initial-load','auto-next-page','connection-ready','catalog-notification','explicit-retry','explicit-next-page','query-refetch','cache-refresh','direct-request','unknown'],
+  traceRole: ['trigger','query','cause-link','client-rpc','gateway-rpc','native-rpc','background-refresh','storage-work'],
+  refreshReason: ['initial-discovery','cached-head','watched-read','repair'],
+  directoryRestart: ['source-invalidated'],
+  clientSignal: ['transport_failure','rpc_loop_gap','catalog_query','visible','hidden','freeze','resume','pagehide','pageshow','online','offline','timer_gap','longtask','late_response'],
+  transportFailure: ['socket-error','socket-close','handshake-timeout','probe-timeout','invalid-response'],
+  transportPhase: ['connecting','socket-open','ready'], networkState: ['online','offline','unknown'],
+  socketReadyState: [0,1,2,3], socketWasClean: [0,1],
+ lifecycle: ['deployment','restart','owner_handoff'], kind: kinds, component: components, operationType: operations, outcome: outcomes,
   stage: stages, method: methods, originClass: origins, actorKind: ['human','agent','session','unknown'],
   measurementScope: ['navigation','in_page','rpc','domain','process','client','connection'],
   observedBy: ['self','gateway'], identitySource: ['self','health','installed_artifact','installed_manifest','unknown'], producerMode: ['native','health_projection','client'],
@@ -34,9 +44,22 @@ export function sanitizeEvent(input, now = Date.now()) {
     if (typeof input[key] !== 'string' || !id.test(input[key])) return null;
     event[key] = input[key];
   }
+  for (const [key,length] of [['traceId',32],['spanId',16],['parentSpanId',16],['linkedTraceId',32],['linkedSpanId',16]])
+    if (event[key] !== undefined && (!new RegExp(`^[0-9a-f]{${length}}$`,'u').test(event[key]) || /^0+$/.test(event[key]))) return null;
+  if ((event.traceId === undefined) !== (event.spanId === undefined) || (event.linkedTraceId === undefined) !== (event.linkedSpanId === undefined)) return null;
+  if (event.gatewayPairId && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(event.gatewayPairId)) return null;
   if (!event.eventId || !event.producerId) return null;
   if(event.errorCode && !/^(?:rpc:-?\d{1,10}|none|initialize|thread-list|timeout|connection|not-ready|unavailable|unknown)$/u.test(event.errorCode))return null;
-  for (const key of ['generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs','lastSuccessAt','consecutiveFailures']) if (input[key] !== undefined) {
+  for (const key of ['socketBufferedBytes','lastMessageAgoMs','probeElapsedMs','lastProbeRttMs','transportTimeoutMs','timerLateMs','pagePauseMs','pageResumeAgoMs','pageHiddenForMs']) if (input[key] !== undefined) {
+    if (!Number.isSafeInteger(input[key]) || input[key] < 0) return null;
+    event[key] = input[key];
+  }
+  if (input.socketCloseCode !== undefined) {
+    if (!Number.isSafeInteger(input.socketCloseCode) || input.socketCloseCode < 0 || input.socketCloseCode > 4999) return null;
+    event.socketCloseCode = input.socketCloseCode;
+  }
+  if (event.clientSignal === 'transport_failure' && (!event.attemptId || !event.transportFailure || !event.transportPhase)) return null;
+  for (const key of ['directoryPages','gatewaySourceMs','gatewayStorageMs','storageQueueMs','generation','attempt','count','bytes','dropped','rejected','durationMs','webSentAt','clientQueueMs','historyCoreMs','historyDecodeMs','historyMetadataMs','historyQueueMs','historySourceMs','historyReconcileMs','historyPageMs','historyProjectionMs','historyScanMs','historyNativeRpcMs','historyNativeRpcCount','rssBytes','heapBytes','cpuSeconds','eventLoopDelayMs','lastSuccessAt','consecutiveFailures']) if (input[key] !== undefined) {
     if (!Number.isFinite(input[key]) || input[key] < 0 || input[key] > Number.MAX_SAFE_INTEGER) return null;
     event[key] = input[key];
   }

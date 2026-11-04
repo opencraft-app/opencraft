@@ -15,7 +15,8 @@ type ReadJob = {
   deadline: number;
   slot?: ReadSlot;
 };
-type ReadSlot = { socket?: WebSocket; ready: boolean; retired: boolean; job: ReadJob | null; initId: string };
+type ReadSlot = { socket?: WebSocket; ready: boolean; retired: boolean; job: ReadJob | null; initId: string;
+  controller: AbortController };
 
 /** History-only connections are reused, with at most one RPC per connection.
  * A bad reply retires only that slot and RPC, never a subscription or execution.
@@ -25,7 +26,7 @@ export class CodexCoreReadIsolation {
   private sequence = 0;
   private readonly slots = new Set<ReadSlot>();
   private readonly queue: ReadJob[] = [];
-  constructor(private readonly health: () => Promise<{ nativeSocket: string }>,
+  constructor(private readonly health: (signal: AbortSignal) => Promise<{ nativeSocket: string }>,
     private readonly limits = { maxPayload: 100 * 1024 * 1024, concurrency: 4, queue: 64, timeoutMs: 30_000 }) {}
 
   private failure(message: ReadMessage, oversized = false): string {
@@ -61,7 +62,8 @@ export class CodexCoreReadIsolation {
       let slot = [...this.slots].find(candidate => candidate.job === null);
       if (!slot) {
         if (this.slots.size >= this.limits.concurrency) return;
-        slot = { ready: false, retired: false, job: null, initId: `opencraft-history-init-${++this.sequence}` };
+        slot = { ready: false, retired: false, job: null, initId: `opencraft-history-init-${++this.sequence}`,
+          controller: new AbortController() };
         this.slots.add(slot);
       }
       const job = this.queue.shift()!;
@@ -73,7 +75,7 @@ export class CodexCoreReadIsolation {
 
   private async open(slot: ReadSlot): Promise<void> {
     try {
-      const endpoint = await this.health();
+      const endpoint = await this.health(slot.controller.signal);
       // A deadline, reset or close may have retired this slot while health was pending.
       if (this.closed || slot.retired) return;
       if (!slot.job || performance.now() >= slot.job.deadline) { this.fail(slot); return; }
@@ -126,6 +128,7 @@ export class CodexCoreReadIsolation {
   private retire(slot: ReadSlot): void {
     slot.retired = true;
     this.slots.delete(slot);
+    slot.controller.abort();
     slot.socket?.terminate();
   }
 

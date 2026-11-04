@@ -476,12 +476,10 @@ export function useConversationViewDisplayKey() {
   const application = useContext(ApplicationRuntimeContext);
   const view = useContext(ConversationViewRuntimeContext);
   if (application === null || view === null) throw new Error("ConversationViewRuntimeProvider is missing");
-  const bindings = useSyncExternalStore(
-    application.conversationBindings.subscribe,
-    application.conversationBindings.getSnapshot,
-    application.conversationBindings.getSnapshot,
-  );
-  return bindings.bindings.find(binding => binding.scopeId === view.scopeId)?.conversationKey ?? null;
+  const store=application.conversationBindings,scopeId=view.scopeId;
+  const subscribe=useCallback((listener:()=>void)=>store.subscribeScope(scopeId,listener),[store,scopeId]);
+  const read=useCallback(()=>store.resolve(scopeId),[store,scopeId]);
+  return useSyncExternalStore(subscribe,read,read)?.conversationKey??null;
 }
 
 export function useConversationViewActivation(): {
@@ -982,6 +980,7 @@ export function useProjectCatalog(): ProjectCatalogSnapshot {
 
 export interface ComposerCatalogSnapshot {
   readonly personalDefaultsPending: boolean;
+  readonly modelsReady: boolean;
   readonly models: readonly Model[];
   readonly displayModels: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
@@ -1126,6 +1125,7 @@ export function useComposerCatalog(
 
   return {
     personalDefaultsPending: personalDefaults.isPending,
+    modelsReady: currentModels !== undefined,
     models: currentModels ?? [],
     displayModels: currentModels ?? cachedComposerModelMetadata(queryClient, snapshot.hostId, runtime.resources.composerCatalog),
     permissionProfiles: permissionProfileData,

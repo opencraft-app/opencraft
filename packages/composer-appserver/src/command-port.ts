@@ -222,6 +222,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     let threadId: string;
     let turnId: string | null;
+    let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
 
     switch (intent.target.type) {
@@ -307,17 +308,21 @@ export function createAppServerConversationCommandPort(
       }
       case "enqueue-follow-up": {
         threadId = intent.target.key.threadId;
-        await config.client.request("thread/queue/add", {
+        const added = await config.client.request("thread/queue/add", {
           threadId,
           input: [...compiled.input],
           clientUserMessageId: intent.clientMessageId,
         }, requestOptions);
+        // Older peers can acknowledge admission without returning queue custody.
+        // Keep that success; a subsequent queue baseline supplies the exact ID.
+        queuedSubmissionId = added.queuedSubmission?.id;
         turnId = null;
         break;
       }
     }
 
     const receipt: SubmissionReceipt = {
+      ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,
       hostId,
@@ -377,6 +382,15 @@ export function createAppServerConversationCommandPort(
       let creationAccepted = false;
       try { return await execute(intent, options, () => { admitted = true; }, () => { creationAccepted = true; }); }
       catch (cause) {
+        if ((intent.target.type === "existing-thread" || intent.target.type === "enqueue-follow-up")
+          && cause instanceof AppServerRpcError) {
+          const data = cause.data as { code?: unknown; submissionOutcome?: unknown; retryable?: unknown } | null;
+          // A structured rejection proves the original input never reached the
+          // engine. Only the existing outbox may transfer it to the Host queue.
+          if (data?.submissionOutcome === "rejected" && data.retryable === true
+            && ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"].includes(String(data.code)))
+            throw new SubmissionNotDispatchedError(1_000);
+        }
         if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") {
           if (creationAccepted) throw new SubmissionOutcomeUnknownError({ cause });
           throw new SubmissionNotDispatchedError();

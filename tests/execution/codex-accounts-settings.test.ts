@@ -240,3 +240,28 @@ test("a late account list cannot undo a committed credit policy", async () => {
     assert.equal(service.getSnapshot().accounts[0]?.allowCredits, true);
   } finally { service.dispose(); }
 });
+
+test("a maintenance-interrupted login shows a retry message without starting another login", async () => {
+  Object.assign(globalThis, { React });
+  for (const maintenance of [true, false]) {
+    const calls: string[] = [];
+    const request = (async (_hostId: string, method: string) => {
+      calls.push(method);
+      if (method.endsWith("/list")) return { accounts: [] };
+      if (method.endsWith("/start")) return { sessionId: "session", verificationUrl: "https://example.test/device", userCode: "TEST", expiresAt: Date.now() + 60_000 };
+      if (method.endsWith("/poll")) return { status: "error", message: "Login cancelled.", ...(maintenance ? { reason: "maintenance-interrupted" } : {}) };
+      throw new Error(`Unexpected method ${method}`);
+    }) as HostProtocolRequest;
+    const service = new CodexAccountsService(request, "local-codex");
+    try {
+      await service.refresh();
+      await service.startDeviceLogin();
+      await service.pollDeviceLogin();
+      const View = createCodexAccountsView(service);
+      const html = renderToStaticMarkup(createElement(View, {} as any));
+      if (maintenance) assert.match(html, /登录被维护中断，请重新登录/);
+      else { assert.match(html, /Login cancelled\./); assert.doesNotMatch(html, /登录被维护中断/); }
+      assert.equal(calls.filter(method => method.endsWith("/start")).length, 1);
+    } finally { service.dispose(); }
+  }
+});

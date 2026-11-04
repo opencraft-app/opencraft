@@ -191,3 +191,95 @@ The registry writer atomically couples each accepted RPC, native callback, and c
 Known released records retain the latest 32 IDs under `router-lease-recent`; unknown records never enter this expiry list. Late or repeated uncertainty remains unknown even after a local release. Evidence uses the existing metadata table, with one transaction for admission state and evidence; no new SQLite migration or second writer exists. A failed write closes admission before a Native side effect. Evidence is part of the full cold registry snapshot. Older compatible writers leave these metadata records intact.
 
 This adds diagnosis only. Existing anonymous pending IDs are not assigned invented scope or timestamps, historical unknown is not changed to success, and startup/release still reject pending or uncertain work. A legacy maintenance import requires a separately reviewed protocol and explicit approval; recording future evidence does not authorize restarting an already uncertain router.
+
+
+## Explicit router maintenance with retained unknown responsibility
+
+A legacy router that cannot release because delivery is unknown requires a separate, explicit maintenance receipt. Ordinary startup and release never infer success from an idle Native or a dead process. The read-only `--router-maintenance-inspect OUTPUT` mode validates the existing migration ledger and reads the current logical registry without taking the writer role or copying an online database. It checks every possible generation, current Native execution and child processes, APP callbacks, actual Core proxy work, and the same approved historical read policy. Independent Core account work and Native persistent goal records remain owned by those services.
+
+`--router-maintenance-file RECEIPT` is accepted only from a private operator file. Its short-lived receipt binds the live deployment-lock controller, exact stopped source identity, allowed successor payloads, configuration, logical registry, raw source state, stopped consumers and Native proof. A fenced source retains its original unknown proof and zero real activity counters; a crashed source is explicitly classified separately. The importer rechecks the live controller and consumers, source artifacts and current data, then atomically archives the entire receipt and source handoff under a content digest before sealing a cold successor. No old pending ID or unknown flag is removed or changed to success. The compatibility recovery payload must understand this protocol and stay outside rotating application release directories.
+
+The new epoch reports current activity separately from immutable historical responsibility. The global unknown flag and original pending IDs remain visible. Every later protocol action must supply the exact `historicalUnknownSha256`. New uncertainty remains a restart/release blocker; historical import does not unblock generation retirement. A candidate or controller crash cannot reuse an old incarnation's cold-ready proof; recovery rereads current data and repeats readiness. Each successful open records its process identity in `router-live-owner`, allowing recovery to identify a later crashed successor without pretending the original legacy process was still the source. Missing legacy provenance is a blocker, not a reason to invent identity.
+
+Before stopping subscribed consumers in a later historical handoff, inspection must prove Native and Core proxy work quiet while those subscriptions remain connected. A busy or unavailable proof keeps coverage unknown and leaves consumers receiving; idle subscriptions alone cannot bypass that check. The source repeats inspection after consumer shutdown and before release.
+
+A loaded Thread with `systemError` may be quiet without being reclassified as successful. The reader must obtain its complete nonempty Turn history, require every Turn to be completed, failed or interrupted and every execution item to be terminal, while APP callback/mutation counts, Native child processes and Core proxy activity are zero. Unavailable history, missing items, pending server requests or changing evidence reject maintenance. The proof records only Thread/Turn/item identities and terminal states, repeats the loaded-state check after reading durable history, and never answers, resumes, unloads or closes the Thread. The same proof must be supported by the prepared recovery payload.
+
+
+### Required migration while Native work continues
+
+Required owner, generation or host migrations may explicitly select continuing-work maintenance. Daily updates and recovery monitoring keep the quiet protocol above. No ordinary owner RPC enables this policy: a private short-lived receipt and live deployment lock are required.
+
+The controller waits at most thirty seconds, fences admission, stops the selected client consumers, then uses bounded managed-unit termination for the registry writer. Core, APP, Native and tool processes stay with their original owners. Live pending samples are observations. After writer exit, fresh inspection seals the complete current durable registry, source state, uncertainty/lease evidence and unresolved creations. An interrupted-source receipt binds the exact durable fence; crash recovery is classified separately. Neither fabricates release or complete/zero proof. Provisional live inspection cannot authorize import.
+
+Continuing proofs require supported callback observations and unchanged physical Core/Native owners. Counts, loaded state, requests and progress are recorded rather than declared quiet. Approved historical failures remain exact. An additional Native read error is only tolerated for a Thread currently loaded by the original Native, and recorded as an unconfirmed read with code and digest. An unloaded binding error still rejects import. Cold-ready binds physical ownership rather than volatile progress.
+
+All durable pending IDs and raw source uncertainty survive immutable archival and visible global state. Interrupted pending conservatively sets global uncertainty. The controller neither replays work nor answers requests; the client Host uses its existing continuation protocol. Measure interruption, actually resumed Turns and retained unknown separately. Failure uses compatible recovery and current data under the same lock; a committed exact open successor stays running. The next ordinary fence clears this special proof and requires quiet work again.
+
+
+## Program artifact digest observations
+
+Generation identity and router configuration proofs may reuse a program file digest within one process. Every call opens the file and checks device, inode, size, mode, owner and nanosecond modification/change timestamps before and after observation, then verifies that the current path still selects that same file version. A write or replacement during observation rejects the proof. Content is streamed, and the cache retains at most 64 digests. Node, CLI, launcher and APP bundle artifacts share this cache, including aliases through process executable descriptors.
+
+This optimization never caches the registry, HOME, Native history, pending requests or owner observations. Each maintenance phase still reads current data and rechecks process identity and the approved historical failure policy. A digest match grants no lifecycle action or admission by itself.
+
+## Host restart recovery for a historical router
+
+A historical router remains closed after an ordinary restart. A whole-host restart
+requires an explicit `host-restart` maintenance receipt; it cannot reuse a receipt
+or physical-owner proof from the old kernel. The durable live-owner retains its
+original boot ID, PID, source artifact and unknown responsibilities. A live,
+current controller holding the deployment lock signs a fresh receipt against the
+exact current registry and a `host-restart-v1` Native proof.
+
+This proof requires a different old boot and fresh, quiet Core/APP/Native owners.
+Generation definitions, HOME, execution identity and program/CLI/launcher hashes
+remain fixed; only kernel process identities may change. The verifier reads the
+actual APP executable and bundle argv, unambiguous runtime selectors, and the
+Native parent and CODEX_HOME from the running processes, repeating these checks
+after history reads. Every durable Thread is
+cold-read under the existing exact historical-failure policy. The receipt records
+both previous and current runtime identities. Registry adoption, the unmodified
+source responsibility archive and the new handoff state commit in one owner
+transaction. Routes, incarnations and default selection do not change. Cold
+readiness and resume check the new physical owners again. Failure leaves the old
+state intact or recovers the already committed successor from current data;
+unknown work is never reclassified, answered or replayed.
+
+This is a recovery primitive, not automatic startup orchestration. A managed boot
+caller must use a fresh receipt for each actual boot transition, keep its real
+lock descriptors through recovery/readiness, and persist the effective startup
+selector. Re-running an old receipt, treating a current PID with the old number
+as the old process, or starting a historical router directly remains invalid.
+
+If resume committed before its reply or process was lost, offline inspection can
+identify the exact committed host-restart archive and current-boot live-owner.
+The controller binds that archive to its retained receipt before signing a fresh
+current-boot crash-recovery receipt. Original boot responsibility stays archived;
+an unrelated current-boot process or archive cannot authorize this transition.
+The minimal host primitive accepts an open source with existing historical
+archives and configuration; it does not promise recovery of every intermediate
+phase of a second power loss.
+
+### Explicit cold-unavailable evidence
+
+A host recovery may carry a separately approved negative proof for an empty
+Thread whose Native state no longer exists. This control input stays outside the
+original options/configuration digest and the ordinary historical-failure list.
+It records the original source owner and boot, exact generation/incarnation and
+Thread, both read modes with error codes and digests, and an authority's creation
+and zero-work evidence. Initial host inspection requires fresh evidence. It may
+neither infer that a Thread is ephemeral nor learn an exception from a candidate
+failure.
+
+The receipt binds this policy in the Native proof and archives it as
+coldUnavailable, separately from successful reads and existing failures.
+Each import/cold readiness/resume repeats the exact negative reads. Additional
+errors, changed errors, routes, incarnations or nonzero work reject recovery.
+Existing routes, retention, unknown work, history and configuration remain
+unchanged. Compatible same-boot recovery may retain the already archived
+negative policy while obtaining new Native observations; a later host boot must
+refresh creation and zero-work evidence under the explicitly approved policy.
+Normal strict recovery does not acquire new exceptions through this input.
+
+An ordinary fence retires the old physical-owner maintenance seal, while an already approved negative policy remains in its verified responsibility archive. Later strict reads and 31b restarts may inherit that exact policy from the immutable archive, binding current Core/Native observations afresh. They cannot obtain a new exception from an unarchived input. This preserves normal restart compatibility without carrying an old Core process binding into a later handoff.

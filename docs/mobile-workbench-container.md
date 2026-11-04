@@ -166,3 +166,13 @@ mobile host and native storage/rendering adapters on that SDK together. Run
 manifest alone does not certify compatibility with the Expo Go installed on a
 physical phone. Workspace React hooks and the native renderer resolve React
 from the mobile host; the Web renderer may use its own compatible patch.
+
+## Standalone browser setup and the mobile connection owner
+
+The zero-Host standalone browser shares local-start/server choices with the
+welcome surface. An actual mobile container continues to use its existing
+connection Settings and explicit server selection. Source `dev:local` binds
+loopback and serves the local browser; it does not expose execution to another
+device, inject mobile credentials, or change the packaged/remote website policy.
+The draft setup hint retains the same Composer and model configuration owner;
+embedded products with fixed execution do not acquire a new setup/readiness flow.

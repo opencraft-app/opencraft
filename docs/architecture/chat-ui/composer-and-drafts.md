@@ -4,6 +4,18 @@
 
 ## Browser reconnect outbox
 
+An existing online text submission can also enter this outbox after a structured
+Host tool-preparation rejection proves it was never dispatched and explicitly
+marks the reason retryable. The local owner must persist the unchanged intent
+before releasing its failed optimistic row, then transfer the same message ID
+to the Host queue. A queue-admission rejection may schedule a bounded retry while
+ready; disconnect, disposal or scope replacement fences that wakeup. Positive
+server queue custody supersedes a matching local row during acknowledgement
+handoff, so the Composer renders each input once. Unknown delivery, permanent
+configuration errors, creation and explicit steering retain their existing
+recovery policy. Unsupported attachment/context handles keep the original input
+for explicit retry rather than promise automatic persistence.
+
 Existing Web/Electron conversations can accept text while their Host is offline
 or their Replica baseline is recovering. `ConversationRuntime` owns a local
 outbox distinct from the Host execution queue. The platform injects
@@ -49,6 +61,24 @@ is rechecked after asynchronous compilation immediately before sending.
 Reopening a document/process restores locally accepted input when its Runtime is
 reacquired; this is not cross-device delivery, and Web storage may be evicted.
 Background open conversations remain resident for recovery.
+
+## Queue-to-Steer admission continuity
+
+A live authoritative conversation accepts Steer intent on an in-flight queue
+submission before its add acknowledgement. This authority is separate from edit,
+delete and reorder custody. The row immediately becomes busy; the editor stays
+available for another draft and healthy local queue traffic does not remove the
+composer's direct Steer choice. Duplicate promotion requests join the same
+client-message identity until settlement.
+
+ConversationRuntime waits for the exact server queue identity from either
+`thread/queue/add`'s receipt or the authoritative queue notification, then uses
+the existing atomic queue-to-active-turn command (or starts that queue item if
+idle). An older ACK without a queue payload still confirms admission; exact
+custody comes from the subsequent queue baseline rather than an invented ID. Canonical history consumption settles the intent without sending again.
+Failure, unknown delivery and disposal retire the wait without replay. Offline
+waiting input and restored or uncertain delivery keep their existing fences.
+Promotion does not grant server membership or atomic-steering capability.
 
 ## Attachment staging during reconnect
 
@@ -773,6 +803,19 @@ startup status row or spinner. A rejected submission still exposes its error and
 explicit retry action. This presentation does not change creation, binding,
 queuing, or the Conversation footer's ownership of follow-up input.
 
+The Draft scope captures optional sender display metadata synchronously at
+submission, outside the immutable command payload. Pending presentation and the
+temporary Thread handoff use that same snapshot, so an acknowledgement does not
+insert an avatar/name row. Account changes cannot relabel an existing submission;
+an exact retry retains its snapshot and a new input captures its own. Missing
+identity remains absent, and authoritative server attribution still wins.
+
+User messages do not display sending or steering lifecycle copy, including
+pending, accepted, cancelled and declined steering. Delivery and steering states
+remain available to the runtime; failed, blocked and unconfirmed delivery still
+show actionable feedback. Attachment-only steering does not reserve an empty
+status footer.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.
@@ -868,12 +911,10 @@ ancestor scroll does not independently reject a click the browser accepted;
 pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
-leave a timer that starts recording over the editor later. An already-focused
-editor retires its pending voice hold on touch pointer release/cancellation as
-well as native touch end/cancellation. Pointer release must disarm the candidate
-even when touchend delivery is interrupted. An active recording still finishes
-on native touchend so pointer cancellation caused by the intentional editor blur
-does not cancel a valid recording.
+leave a timer that starts recording over the editor later. The editor has no voice hold candidate: touch, repeated taps and
+long presses retain native text editing. Only the explicit microphone action
+starts dictation; completion and cancellation retain the existing transient input
+transaction and draft ownership.
 
 
 ## New Draft creation after rejected Host admission
@@ -939,3 +980,15 @@ intent so the Web editor's direct failure transition and projected model
 selections retain it too. Editing content, submission settings, or execution
 placement creates a new identity. Retry state belongs to the owning Draft and is retired
 when acceptance settles, the Draft clears, or its controller is disposed.
+
+## Sent user-message quote continuity
+
+The immutable Composer document projects to timeline text with structural quote
+markers and separate top-level paragraphs. Both the optimistic existing-thread
+runtime and the pending/new-thread route use the same core projection; plain
+search and queue previews keep their original flattened contract. Native
+compilation prefixes every quoted line, including blank lines and nested blocks,
+while preserving non-text input entries. The existing user-message document
+renderer supplies the quote rail, with the user's following request outside it.
+Acknowledgement and reopening history retain the same quote boundary; they do
+not add a second quote block or fabricate a link to the source message.

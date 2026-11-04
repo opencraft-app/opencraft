@@ -16,7 +16,7 @@
   // Navigation and conversations share a native scrollport;
   // display:contents keeps the existing portal/action owners without a second list.
   .shell-sidebar__scroll {
-    grid-column: 1 / -1; grid-row: 1;
+    grid-column: 1 / -1; grid-row: 1 / -1;
     display: flex; flex-direction: column;
     min-height: 0; overflow: hidden auto;
     overscroll-behavior: contain; scrollbar-width: none;
@@ -86,16 +86,11 @@
 // lets its final row and pagination scroll clear of the controls and safe area;
 // it must not shorten the scrollport or create an opaque action band.
 .shell-sidebar__column[data-navigation-layout="mobile"] {
+  // Paint beneath the glass controls while measured padding clears final rows.
   .shell-sidebar__scroll {
-    padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
-    scroll-padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
-  }
-  &:has(.shell-navigation__footer--unified [data-surface="updates"]) .shell-sidebar__scroll {
-    // The update entrance stacks a second 48px button above the first one (8px
-    // gap) while a notice is visible; reserve both so the last row and its
-    // actions scroll clear of the two floating actions.
-    padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
-    scroll-padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+    box-sizing: border-box;
+    padding-block-end: calc(var(--shell-mobile-footer-height, 0px) + 8px);
+    scroll-padding-block-end: calc(var(--shell-mobile-footer-height, 0px) + 8px);
   }
   .shell-sidebar__floating-action {
     grid-column: 1; grid-row: 1;

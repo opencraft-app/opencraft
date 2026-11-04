@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ExtensionSupervisor } from "@opencraft/extension-runtime";
+import { ExtensionSupervisor, resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
 import { HOST_PROFILE_CONTRIBUTION_CHANNEL } from "@opencraft/workbench-runtime";
-import { createBuiltinAgentsExtension } from "../../plugins/builtin-agents/src/index";
+import { createBuiltinAgentsExtension, createHeadlessModelServicesExtension } from "../../plugins/builtin-agents/src/index";
 
 test("Web can activate built-in model and Codex settings without desktop Host registration", async () => {
   const renderedViews: string[] = [];
@@ -114,4 +114,16 @@ test("a server deployment contributes exactly one Codex page beside model servic
     assert.ok(pages.some(page => page.id === "opencraft.headless-model-services" && page.group === accounts[0]!.group));
     assert.ok(!supervisor.contributions.getSnapshot().views.some(({ contribution }) => contribution.id === "opencraft.builtin-agents.codex-accounts-view"));
   } finally { await supervisor.dispose(); }
+});
+
+
+test("headless model setup resolves the actual server owner and advertises readiness without RPC at registration", async () => {
+ const supervisor=new ExtensionSupervisor({platform:"web",internalContributions:{platformViewRenderer:{prepare(){return {commit:()=>()=>undefined}}}}});
+ try{
+  await supervisor.activate(createHeadlessModelServicesExtension({hostId:"opencraft-server",requestHost:async()=>{throw Error("No configuration RPC expected")},fetcher:async()=>new Response("{}",{status:404})}));
+  const pages=supervisor.contributions.getSnapshot().settingsPages.map(({contribution})=>contribution);
+  const page=resolveHostModelSettingsPage(pages,"opencraft-server","web");
+  assert.equal(page?.id,"opencraft.headless-model-services");assert.equal(page.modelReadiness,true);
+  assert.equal(resolveHostModelSettingsPage(pages,"another-host","web"),undefined);
+ }finally{await supervisor.dispose()}
 });

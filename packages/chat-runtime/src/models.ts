@@ -34,6 +34,8 @@ export type PendingInteraction = {
 export interface QueuedSubmission {
   /** Browser-owned, never accepted by the Host yet. */
   readonly local?: boolean;
+  /** Runtime can accept a promotion while normal queue admission is in flight. */
+  readonly steerable?: boolean;
   readonly sender?: MessageSender | null;
   readonly commandId: string;
   readonly clientMessageId: string;

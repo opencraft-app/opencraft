@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-const {createTouchInput,createWidgetTouchDispatcher}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
+const {createTouchInput,createWidgetTouchDispatcher,isTouchInput}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
 const p=(id,x=30)=>({id,x,y:50,force:.5,radiusX:4,radiusY:5});
 const frame=(type,...touchPoints)=>({type,touchPoints});
 
@@ -172,3 +172,12 @@ test('dense delivered motion never adds historical native ACK work',async()=>{
  await touch.apply({...frame('touchMove',p(1,60)),time:48,history:[{time:32,touchPoints:[p(1,50)]}]});
  assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,16,48]);
 });
+
+ test('explicit mouse or pen keeps its identity across mobile profiles',()=>{
+  for(const profile of ['desktop','desktop-touch','iphone','ipad','android-phone','android-tablet']){
+   assert.equal(isTouchInput({pointerType:'mouse'},profile),false);
+   assert.equal(isTouchInput({pointerType:'pen'},profile),false);
+   assert.equal(isTouchInput({pointerType:'touch'},profile),true);
+   assert.equal(isTouchInput({},profile),profile!=='desktop');
+  }
+ });

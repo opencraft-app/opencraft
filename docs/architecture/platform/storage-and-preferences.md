@@ -46,8 +46,7 @@ and gateway/Headless health project only actual owner opening results. These are
 migration dispositions, not claims that every optional engine is initialized.
 See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
 recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
-for payload migration. This retains node:sqlite without Drizzle; Web retains
-IndexedDB. Known database identity handoffs wait for other windows to release
+for payload migration. Server core consolidates six domains in `opencraft-server.sqlite`; Drizzle owns its schema authoring and SQL generation, while the single managed executor retains node:sqlite at runtime. Host and Electron physical consolidation is deferred; Web retains IndexedDB. Known database identity handoffs wait for other windows to release
 connections within a bounded deadline; the Sidebar adapter closes on versionchange
 and startup rollback owns its handle before loading layout rows. Expired migration
 opens retain late-handle cleanup and abort late upgrades. Both bootstrap recovery
@@ -336,3 +335,21 @@ usable paint. It precaches public build assets and sanitized deployment recipes,
 never private HTML or account/Host API responses. A prepared shell can start a
 new document fully offline and restore local input. Browser storage remains
 evictable; this provides neither an offline model nor background sending.
+
+### Disposable native transcript cache directory
+
+`OPENCRAFT_CACHE_DIRECTORY` optionally places native transcript projections under
+one absolute root. Each Host data directory gets a stable SHA-256 namespace of
+its resolved absolute data path, then `cache/transcripts/` and
+`cache/transcript-index.sqlite`. It cannot merge independent Host caches. Without
+configuration, the existing `<dataDirectory>/cache/` layout remains. A relative
+root is rejected. Changing the root rebuilds projections from the native source;
+old cache files are not imported, removed or treated as authority. The cache root
+is disposable but contains private history and requires private permissions.
+
+This setting applies to Codex, DSH and Pi consumers of `TranscriptReadCache`.
+It does not relocate native engine histories, Server authority, execution
+receipts, drafts or credentials. The existing downloadable resource cache has
+its own `OPENCRAFT_RESOURCE_CACHE_DIRECTORY`; it is not an established global
+setting for every temporary store. Broader unification must preserve each
+owner's isolation and retention contract rather than redirecting all data roots.

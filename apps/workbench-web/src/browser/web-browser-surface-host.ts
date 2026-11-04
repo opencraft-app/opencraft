@@ -14,6 +14,8 @@ import type { PresentationHostPort } from "./opencraft-presentation-host";
 import type { BrowserLocalMenuController } from './browser-local-menu';
 
 export interface BrowserSurfaceEvents {
+  /** Authoritative logical retirement; transport/admission failures are not closure. */
+  onSessionClosed?(): void;
   onNewWindow?(url: string, background: boolean): void;
   onNavigation?(state: { url: string; title: string; canGoBack: boolean; canGoForward: boolean; isLoading: boolean }): void;
   onLoaded(title: string | null): void;

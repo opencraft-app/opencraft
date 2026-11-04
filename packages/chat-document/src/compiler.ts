@@ -18,6 +18,7 @@ import {
 } from "./preprocess";
 import { findStableMarkdownPrefix } from "./streaming/code-boundary";
 import { jsonBlockTokenizer } from "./json-block";
+import { visualizationTokenizer } from "./visualization";
 
 type MarkdownToken = Record<string, unknown>;
 
@@ -296,6 +297,11 @@ function mapBlockTokens(
     switch (type) {
       case "space":
         break;
+      case "visualization": {
+        nodes.push({ ...emptyBase("directive", sourceRange), name: "visualize",
+          attributes: { path: string(token.path), mode: string(token.mode), title: string(token.title) }, raw });
+        break;
+      }
       case "bareJson": {
         const prefix = string(token.prefix);
         if (prefix.trim()) nodes.push({
@@ -630,7 +636,7 @@ const assistantMarked = new Marked({
   gfm: true,
   breaks: true,
   tokenizer: hanEmphasisTokenizer,
-  extensions: [mathBlockTokenizer, mathInlineTokenizer, jsonBlockTokenizer],
+  extensions: [mathBlockTokenizer, mathInlineTokenizer, jsonBlockTokenizer, visualizationTokenizer],
 });
 
 const userMessageMarked = new Marked({
@@ -685,7 +691,7 @@ export class ChatDocumentCompiler {
     // also matter. Braces can turn earlier Markdown blocks into one JSON block
     // when a later closing delimiter arrives; do not freeze those prefixes.
     // Marked normalizes CRLF internally, so raw offsets cannot be reused here.
-    if (options.streaming !== true || /[\[{\r]/u.test(preprocessed.markdown)
+    if (options.streaming !== true || /[\[{\r\uE200]/u.test(preprocessed.markdown)
       || preprocessed.markdown.includes("$$")) {
       const parsed: ParsedChatDocument = {
         source,

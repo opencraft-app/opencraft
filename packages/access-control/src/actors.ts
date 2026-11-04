@@ -1,22 +1,13 @@
+import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
+import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { createSchemaValidator, openManagedDatabase, type DatabaseOutcome } from '@opencraft/sqlite-node';
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import { parsePrincipal, principalKey, type Principal } from '@opencraft/identity-core';
 import type { Actor, ActorContext, ActorKind } from '@opencraft/identity-core/actors';
 
-const SCHEMA = `
-CREATE TABLE actor_authority (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL) STRICT;
-CREATE TABLE actors (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('human','session')),
- display_name TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), generation INTEGER NOT NULL,
- created_at INTEGER NOT NULL, created_by TEXT) STRICT;
-CREATE TABLE actor_bindings (binding TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES actors(id)) STRICT;
-CREATE TABLE actor_credentials (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES actors(id),
- digest TEXT NOT NULL, generation INTEGER NOT NULL, expires_at INTEGER NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1))) STRICT;
-CREATE TABLE actor_grants (actor_id TEXT NOT NULL REFERENCES actors(id), resource TEXT NOT NULL,
- action TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), PRIMARY KEY(actor_id,resource,action)) STRICT;
-CREATE TABLE actor_audit (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, operator TEXT NOT NULL,
- actor_id TEXT NOT NULL, action TEXT NOT NULL, resource TEXT) STRICT;
-`;
+
 const TOKEN_PREFIX = 'oc_actor_v1.';
 function name(value: string) {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\x00-\x1f]/u.test(value)) throw new Error('Invalid actor name');
@@ -47,29 +38,49 @@ export class ActorStore {
   /** Trusted local resource adapters only; registration confers no grants. */
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
   readonly #db: DatabaseSync;
+  readonly #readCache: PermissionReadCache;
+  readonly #permissionProjectionEnabled: boolean;
   readonly authority: string;
   readonly outcome: DatabaseOutcome;
-  constructor(path: string, readonly now: () => number = Date.now) {
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', migrations: [{ version: 1, name: 'actor-identities', sql: SCHEMA }], validateSchema: createSchemaValidator(SCHEMA) });
+  readonly #closeDatabase: () => void;
+  constructor(path: ServerDatabaseSource, readonly now: () => number = Date.now) {
+    const managed = openServerRepository(path, "actors");
+    this.#closeDatabase = managed.close;
     this.#db = managed.database;
+    this.#permissionProjectionEnabled = typeof path !== "string";
+    this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
     this.outcome = managed.outcome;
     this.#db.exec('PRAGMA foreign_keys=ON');
     this.#db.prepare('INSERT OR IGNORE INTO actor_authority(singleton,id) VALUES(1,?)').run(randomUUID());
     this.authority = this.#db.prepare('SELECT id FROM actor_authority WHERE singleton=1').get()!.id as string;
   }
+  *#permissionRows(): Iterable<readonly [string, unknown]> {
+    for (const row of this.#db.prepare('SELECT * FROM actors').iterate()) yield [JSON.stringify(["actor", row.id]), row];
+    const bindings = new Map<string, Record<string, unknown>[]>();
+    for (const row of this.#db.prepare('SELECT binding,actor_id FROM actor_bindings').iterate()) {
+      yield [JSON.stringify(["binding", row.binding]), row];
+      const list = bindings.get(String(row.actor_id)) ?? []; list.push(row); bindings.set(String(row.actor_id), list);
+    }
+    for (const [id, rows] of bindings) yield [JSON.stringify(["bindings", id]), rows];
+    for (const row of this.#db.prepare('SELECT id,actor_id,generation,expires_at,enabled FROM actor_credentials').iterate())
+      yield [JSON.stringify(["credential", row.id]), row];
+    for (const row of this.#db.prepare('SELECT actor_id,resource,action FROM actor_grants WHERE enabled=1').iterate())
+      yield [JSON.stringify(["grant", row.actor_id, row.resource, row.action]), true];
+  }
   get managementResource() { return `actor-registry://${this.authority}`; }
   get(id: string): Actor | null {
-    const row = this.#db.prepare('SELECT * FROM actors WHERE id=?').get(id);
+    const row = this.#readCache.get(JSON.stringify(['actor',id]), () => this.#db.prepare('SELECT * FROM actors WHERE id=?').get(id));
     return row ? actor(row) : null;
   }
   list(): Actor[] { return this.#db.prepare('SELECT * FROM actors ORDER BY created_at,id').all().map(actor); }
   /** Lookup only: an unrecognized verified identity is not registered by a read. */
   findHuman(verified: Pick<Principal, 'provider' | 'subject'>): Actor | null {
-    const row = this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(principalKey(verified));
+    const binding = principalKey(verified);
+    const row = this.#readCache.get(JSON.stringify(['binding',binding]), () => this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(binding));
     return row ? this.get(row.actor_id as string) : null;
   }
   bindings(actorId: string): Pick<Principal, 'provider' | 'subject'>[] {
-    return this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId)
+    return (this.#readCache.get(JSON.stringify(['bindings',actorId]), () => this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId)) ?? [])
       .map(row => { const [provider, subject] = JSON.parse(row.binding as string); return { provider, subject }; });
   }
   /** Both arguments must come from trusted, independently verified authentication. */
@@ -97,11 +108,7 @@ export class ActorStore {
       this.#audit(owner.actorId, owner.actorId, 'unbind-identity', principalKey(binding));
     });
   }
-  #transaction<T>(run: () => T): T {
-    this.#db.exec('BEGIN IMMEDIATE');
-    try { const result = run(); this.#db.exec('COMMIT'); return result; }
-    catch (error) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw error; }
-  }
+  #transaction<T>(run: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, run), this.#readCache); }
   #audit(operator: string, actorId: string, action: string, resource: string | null = null) {
     if (typeof operator !== 'string' || !operator || operator.length > 512) throw new Error('Invalid actor operator');
     this.#db.prepare('INSERT INTO actor_audit(at,operator,actor_id,action,resource) VALUES(?,?,?,?,?)')
@@ -117,6 +124,12 @@ export class ActorStore {
   resolveHuman(verified: Principal): ActorContext | null {
     const p = parsePrincipal(verified);
     if (p.expiresAt <= this.now()) return null;
+    if (this.#permissionProjectionEnabled) {
+      const existing = this.findHuman(p);
+      if (existing && (!existing.enabled || existing.kind !== 'human')) return null;
+      if (existing?.displayName === p.displayName)
+        return Object.freeze({ actorId: existing.id, generation: existing.generation, credentialId: null, expiresAt: p.expiresAt });
+    }
     let registered = false;
     const context = this.#transaction(() => {
       const key = principalKey(p);
@@ -184,7 +197,7 @@ export class ActorStore {
     const a = this.get(context.actorId);
     if (!a?.enabled || a.generation !== context.generation || !Number.isSafeInteger(context.expiresAt) || context.expiresAt <= this.now()) return false;
     if (context.credentialId === null) return a.kind === 'human';
-    const row = this.#db.prepare('SELECT * FROM actor_credentials WHERE id=?').get(context.credentialId);
+    const row = this.#readCache.get(JSON.stringify(['credential', context.credentialId]), () => this.#db.prepare('SELECT * FROM actor_credentials WHERE id=?').get(context.credentialId));
     return a.kind === 'session' && !!row && row.actor_id === a.id && row.enabled === 1
       && row.generation === a.generation && (row.expires_at as number) >= context.expiresAt;
   }
@@ -202,19 +215,17 @@ export class ActorStore {
   }
   can(context: ActorContext, resource: string, action: string): boolean {
     permission(resource, action);
-    return this.isCurrent(context) && !!this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1')
-      .get(context.actorId, resource, action);
+    return this.isCurrent(context) && !!this.#readCache.get(JSON.stringify(['grant', context.actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(context.actorId, resource, action));
   }
   /** Revalidate a durably admitted operation; never use this to authenticate a request. */
   canAdmitted(actorId: string, generation: number, resource: string, action: string): boolean {
     permission(resource, action);
     const current = this.get(actorId);
     return !!current?.enabled && current.generation === generation
-      && !!this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1')
-        .get(actorId, resource, action);
+      && !!this.#readCache.get(JSON.stringify(['grant', actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(actorId, resource, action));
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#humanRegistrationListeners.clear(); this.#db.close(); }
+  close() { this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, chown, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
@@ -10,18 +10,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { AccountPoolStore } from "@opencraft/account-pool-host";
+import { AccountPoolStore, CodexAccountService, createCodexAccountPoolLaunch } from "@opencraft/account-pool-host";
 import { accountCoreOwner } from "../../scripts/full-upgrade/account-core-owner.mjs";
 
 const token = "synthetic-private-account-owner-token";
-async function fixture() {
+async function fixture(streamDelayMs = 250, nativeCompletion = false) {
   const root = await mkdtemp(join(tmpdir(), "oc-acct-")), children: ChildProcess[] = [];
   const data = join(root, "data"); await mkdir(data, { mode: 0o700 });
   const store = new AccountPoolStore({ databasePath: join(data, "account-pool.sqlite"), secretsDirectory: join(data, "secrets") });
   store.addAccount({ id: "a", provider: "codex", label: "synthetic", upstreamAccountId: "a", priority: 0, enabled: true },
     { accessToken: "synthetic-access", refreshToken: null, expiresAt: null });
   const hostToken = store.issueHostToken("local-codex"); store.close();
-  let consumeCalls = 0;
+  let consumeCalls = 0, modelCalls = 0;
   const upstream = createServer((req, res) => {
     if (req.url === "/usage") { res.end('{"plan_type":"pro"}'); return; }
     if (req.url === "/images/generations") { res.end('{"ok":true}'); return; }
@@ -29,8 +29,27 @@ async function fixture() {
       { id: "credit-a", status: "available", is_supported_by_plan: true, reset_type: "codex_rate_limits", expires_at: null },
     ] })); return; }
     if (req.url === "/reset-credits/consume") { consumeCalls++; res.destroy(); return; }
+    modelCalls++;
     res.writeHead(200, { "content-type": "text/event-stream" });
-    res.write('data: first\n\n'); setTimeout(() => res.end('data: last\n\n'), 250);
+    if (nativeCompletion) {
+      const response = { id: "resp_fixture", object: "response", status: "in_progress", output: [] };
+      res.write(`data: ${JSON.stringify({ type: "response.created", response })}\n\n`);
+      if (modelCalls > 1) {
+        const item = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
+          content: [{ type: "output_text", text: "OK", annotations: [] }] };
+        for (const event of [
+          { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+          { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "OK" },
+          { type: "response.output_item.done", output_index: 0, item },
+          { type: "response.completed", response: { ...response, status: "completed", output: [item],
+            usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+        ]) res.write(`data: ${JSON.stringify(event)}\n\n`);
+        res.end();
+      }
+      return;
+    }
+    res.write('data: first\n\n'); const timer = setTimeout(() => res.end('data: last\n\n'), streamDelayMs);
+    res.once("close", () => clearTimeout(timer));
   });
   await new Promise<void>(r => upstream.listen(0, "127.0.0.1", r));
   const socket = join(root, "account.sock"), runtime = join(root, "app.sock");
@@ -77,7 +96,7 @@ async function fixture() {
     const code = await new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
     return { code, output, errors };
   }
-  return { root, data, start, stop, model, account, accountRpc, maintenance, consumeCalls: () => consumeCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
+  return { root, data, options, hostToken, start, stop, model, account, accountRpc, maintenance, consumeCalls: () => consumeCalls, modelCalls: () => modelCalls, input, async close() { for (const child of children) await stop(child); upstream.closeAllConnections(); await new Promise<void>(r => upstream.close(() => r())); await rm(root, { recursive: true, force: true }); } };
 }
 
 test("split account handoff drains full streams, freezes account RPC, preserves image affinity and repeats across owners", async () => {
@@ -473,5 +492,397 @@ test("legacy-shaped maintenance keeps exact unknown responsibility and refuses c
     assert.deepEqual(cold.handoff.uncertain, snapshot.handoff.uncertain);
     await candidate.adapter.releaseFence(f.input(cold), cold);
     assert.deepEqual((await candidate.adapter.snapshot()).handoff.uncertain, snapshot.handoff.uncertain);
+  } finally { await f.close(); }
+});
+
+
+test("explicit maintenance interrupts a live response, durably carries every unknown and resumes admission without replay", async () => {
+  const f = await fixture(60_000);
+  try {
+    const first = await f.start(), lost = await f.model(); await lost.body!.cancel();
+    let state: any;
+    for (let n = 0; n < 200; n++) {
+      state = await first.adapter.snapshot();
+      if (state.handoff.uncertain.length === 1 && state.proof.counts.proxy === 0) break;
+      await delay(10);
+    }
+    const historical = state.handoff.uncertain;
+    assert.equal(historical.length, 1);
+    const live = await f.model(), body = live.text();
+    // The rejection is observed immediately to avoid an unhandled client error.
+    const interruptedBody = body.then(() => false, () => true);
+    await assert.rejects(first.adapter.interruptForMaintenance(f.input(state)));
+    const fence = await first.adapter.acquireFence({ ...f.input(state), historicalUnknown: historical });
+    assert.ok(fence.proof.counts.proxy > 0);
+    const started = Date.now();
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fence));
+    assert.ok(Date.now() - started < 5000);
+    assert.equal(await interruptedBody, true);
+    assert.equal(interrupted.proof.counts.proxy, 0);
+    assert.equal(interrupted.proof.coverage, "unknown", "operator must explicitly accept the final exact list");
+    const exact = interrupted.handoff.uncertain;
+    assert.equal(exact.length, 2);
+    assert.deepEqual(exact[0], historical[0]);
+    assert.equal(exact[1].diagnostic.reason, "maintenance-interrupted");
+    assert.equal(JSON.parse(await readFile(join(f.data, "account-handoff.json"), "utf8")).uncertain.length, 2);
+    await assert.rejects(first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: historical }));
+    const carried = await first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: exact });
+    assert.equal(carried.proof.activeCount, 0);
+    await first.adapter.releaseWriter({ ...f.input(carried), proof: carried.proof.identity });
+    await f.stop(first.child);
+    const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, exact);
+    await next.adapter.releaseFence(f.input(cold), cold);
+    assert.deepEqual((await next.adapter.snapshot()).handoff.uncertain, exact);
+    assert.equal(f.modelCalls(), 2, "handoff must not replay the interrupted POST");
+    assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("maintenance interruption can abort back to the same owner without losing unknown or disabling its listener", async () => {
+  const f = await fixture(60_000);
+  try {
+    const first = await f.start(), live = await f.model(), body = live.text().catch(() => undefined);
+    const fence = await first.adapter.acquireFence(f.input(await first.adapter.snapshot()));
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fence));
+    await body;
+    assert.equal(interrupted.handoff.uncertain.length, 1);
+    await first.adapter.abortFence(f.input(interrupted));
+    assert.equal(await f.account(), 200);
+    const response = await f.model(); assert.equal(response.status, 200); await response.body!.cancel();
+    assert.equal(f.modelCalls(), 2);
+  } finally { await f.close(); }
+});
+
+
+test("a real Native turn automatically reconnects after Core maintenance without resubmitting the turn", {
+  skip: !process.env.OPENCRAFT_TEST_CODEX_EXECUTABLE, timeout: 60_000,
+}, async () => {
+  const f = await fixture(60_000, true);
+  let native: ChildProcess | undefined;
+  try {
+    const first = await f.start();
+    const launch = createCodexAccountPoolLaunch({ baseUrl: `http://127.0.0.1:${f.options.proxyPort}`, hostToken: f.hostToken });
+    await mkdir(join(f.root, "native-home"), { mode: 0o700 });
+    native = spawn(process.env.OPENCRAFT_TEST_CODEX_EXECUTABLE!, ["exec", ...launch.args,
+      "-c", "model_providers.opencraft-account-pool.requires_openai_auth=false",
+      "-c", 'model="fixture"', "--json", "--skip-git-repo-check", "-C", f.root, "Say OK"], {
+      cwd: f.root, env: { PATH: process.env.PATH, HOME: f.root, CODEX_HOME: join(f.root, "native-home"), ...launch.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "", errors = "";
+    native.stdout!.on("data", data => { output += data; });
+    native.stderr!.on("data", data => { errors += data; });
+    const finished = new Promise<number | null>((resolve, reject) => { native!.once("exit", resolve); native!.once("error", reject); });
+    for (let n = 0; n < 1000 && f.modelCalls() === 0 && native.exitCode === null; n++) await delay(10);
+    assert.equal(f.modelCalls(), 1, errors);
+    const before = await first.adapter.snapshot();
+    const fenced = await first.adapter.acquireFence({ ...f.input(before), historicalUnknown: before.handoff.uncertain });
+    const interrupted = await first.adapter.interruptForMaintenance(f.input(fenced));
+    const exact = interrupted.handoff.uncertain;
+    assert.equal(exact.length, 1);
+    assert.equal(exact[0].diagnostic.reason, "maintenance-interrupted");
+    const carried = await first.adapter.acceptMaintenanceUnknown({ ...f.input(interrupted), historicalUnknown: exact });
+    await first.adapter.releaseWriter({ ...f.input(carried), proof: carried.proof.identity });
+    await f.stop(first.child);
+    const next = await f.start(), cold = await next.adapter.coldReady(f.input(await next.adapter.snapshot()));
+    await next.adapter.releaseFence(f.input(cold), cold);
+    const exit = await Promise.race([finished, delay(20_000, undefined, { ref: false }).then(() => "timeout")]);
+    assert.equal(exit, 0, errors + output);
+    const events = output.trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(events.filter(event => event.type === "turn.started").length, 1);
+    assert.equal(events.filter(event => event.type === "turn.completed").length, 1);
+    assert.ok(events.some(event => event.type === "item.completed" && event.item?.text === "OK"));
+    assert.equal(f.modelCalls(), 2, "Native retries the model stream; Core never replays a tool or submits a new Turn");
+    assert.deepEqual((await next.adapter.snapshot()).handoff.uncertain, exact);
+  } finally {
+    if (native && native.exitCode === null && native.signalCode === null) {
+      native.kill("SIGKILL"); await once(native, "exit");
+    }
+    await f.close();
+  }
+});
+
+
+test("ordinary Core cold boot tolerates a missing external credential and recovers it without replacing account state", async () => {
+  const f = await fixture(20);
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const contents = JSON.stringify({ auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } });
+    await writeFile(auth, contents, { mode: 0o600 });
+    const reference = JSON.stringify({ kind: "codex-auth-file", path: auth });
+    await writeFile(join(f.data, "secrets/account-a.json"), reference, { mode: 0o600 });
+    const unknown = [{ id: "historical-before-power-loss", route: "/v1/responses" }];
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 7, phase: "open", uncertain: unknown }), { mode: 0o600 });
+    const first = await f.start(); await f.stop(first.child);
+    await rm(auth);
+    const restarted = await f.start();
+    assert.equal(await f.account(), 200);
+    assert.equal((await restarted.adapter.snapshot()).handoff.phase, "open");
+    const unavailable = await f.model(); await unavailable.text();
+    assert.ok(unavailable.status >= 400); assert.equal(f.modelCalls(), 0);
+    assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
+    assert.equal(await readFile(join(f.data, "secrets/account-a.json"), "utf8"), reference);
+    await writeFile(auth, contents, { mode: 0o600 });
+    const available = await f.model(); assert.equal(available.status, 200); await available.text();
+    assert.equal(f.modelCalls(), 1);
+    assert.deepEqual((await restarted.adapter.snapshot()).handoff.uncertain, unknown);
+    assert.equal((await f.accountRpc("list")).value.accounts.length, 1);
+    assert.equal((await restarted.adapter.snapshot()).pid, restarted.child.pid);
+  } finally { await f.close(); }
+});
+
+test("a released Core successor still rejects missing shared credentials without mutating its sealed state", async () => {
+  const f = await fixture();
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const contents = JSON.stringify({ auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } });
+    await writeFile(auth, contents, { mode: 0o600 });
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: auth }), { mode: 0o600 });
+    const source = await f.start(); await delay(50);
+    const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    await source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }); await f.stop(source.child);
+    const sealed = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    await rm(auth); await assert.rejects(f.start(), /ENOENT|credential/i);
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), sealed);
+    await writeFile(auth, contents, { mode: 0o600 });
+    const restored = await f.start(), cold = await restored.adapter.coldReady(f.input(await restored.adapter.snapshot()));
+    await restored.adapter.releaseFence(f.input(cold), cold); assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("ordinary Core cold boot still refuses invalid Host authentication records", async () => {
+  const f = await fixture();
+  try {
+    const host = (await readdir(join(f.data, "secrets"))).find(name => name.startsWith("host-"))!;
+    await writeFile(join(f.data, "secrets", host), JSON.stringify({ hostId: "local-codex", token: "invalid" }), { mode: 0o600 });
+    await assert.rejects(f.start(), /Account credential validation failed/);
+  } finally { await f.close(); }
+});
+
+
+test("an open owner rejects invalid external credentials before sealing and remains abortable", async () => {
+  const f = await fixture(20);
+  try {
+    const auth = join(f.root, "external-auth.json");
+    const good = { auth_mode: "chatgpt", tokens: { account_id: "a", access_token: "synthetic-external-access" } };
+    await writeFile(auth, JSON.stringify(good), { mode: 0o600 });
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: auth }), { mode: 0o600 });
+    const source = await f.start(); await delay(50);
+    for (const invalid of [
+      { ...good, tokens: { ...good.tokens, account_id: "wrong-account" } },
+      { ...good, auth_mode: "apikey" },
+      { ...good, tokens: { ...good.tokens, access_token: "invalid\ncredential" } },
+    ]) {
+      await writeFile(auth, JSON.stringify(invalid), { mode: 0o600 });
+      const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+      await assert.rejects(source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }));
+      const state = await source.adapter.snapshot();
+      assert.equal(state.handoff.phase, "fenced"); assert.equal(state.pid, source.child.pid);
+      assert.deepEqual(state.handoff.uncertain, []);
+      await source.adapter.abortFence(f.input(state)); assert.equal(await f.account(), 200);
+    }
+    await writeFile(auth, JSON.stringify(good), { mode: 0o600 });
+    const fence = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    await source.adapter.releaseWriter({ ...f.input(fence), proof: fence.proof.identity }); await f.stop(source.child);
+    const successor = await f.start(), cold = await successor.adapter.coldReady(f.input(await successor.adapter.snapshot()));
+    await successor.adapter.releaseFence(f.input(cold), cold); assert.equal(await f.account(), 200);
+  } finally { await f.close(); }
+});
+
+test("the frozen account-service startup itself requires external credentials", async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.data, "secrets/account-a.json"), JSON.stringify({ kind: "codex-auth-file", path: join(f.root, "missing-auth.json") }), { mode: 0o600 });
+    await assert.rejects(async () => {
+      // Exercise the service boundary directly: no owner storage read can reject
+      // the missing file before the frozen credential validation is reached.
+      const unexpected = await CodexAccountService.start({ ...f.options,
+        ownerHandoff: { admissionOpen: () => false, onUncertain: async () => {} } });
+      await unexpected.close();
+    }, /Account credential validation failed/);
+  } finally { await f.close(); }
+});
+
+
+test("explicit fenced maintenance preserves fifty thousand unknowns without weakening legacy import", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const unknown = Array.from({ length: 50_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 50_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "fenced-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const path = join(f.root, "fenced-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const alive = await f.maintenance("maintenance-seal-fenced", path, source.environment);
+    assert.notEqual(alive.code, 0); assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    // Synthetic-source lifecycle only. A production controller needs its own
+    // qualified durable stop permit under the outer barrier and same locks.
+    await f.stop(source.child);
+    for (const [label, mutate] of [
+      ["state", (v: any) => { v.sourceStateSha256 = "0".repeat(64); }],
+      ["hash", (v: any) => { v.sourceSnapshot.proof.historicalUnknownSha256 = "0".repeat(64); }],
+      ["count", (v: any) => { v.sourceSnapshot.proof.historicalUnknownCount--; }],
+      ["volatile", (v: any) => { v.sourceSnapshot.proof.historicalCount++; }],
+      ["retained", (v: any) => { v.sourceSnapshot.handoff.retained = { imageAffinities: [{}], resetReceipts: [], loginReceipts: [] }; }],
+      ["active", (v: any) => { v.sourceSnapshot.proof.counts.oauth = 1; }],
+    ] as const) {
+      const changed = structuredClone(receipt); mutate(changed);
+      const changedPath = join(f.root, label + ".json"); await writeFile(changedPath, JSON.stringify(changed), { mode: 0o600 });
+      const rejected = await f.maintenance("maintenance-seal-fenced", changedPath, source.environment);
+      assert.notEqual(rejected.code, 0, label);
+      assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    }
+    const ordinary = await f.maintenance("maintenance-seal", path, source.environment); assert.notEqual(ordinary.code, 0);
+    const sealed = await f.maintenance("maintenance-seal-fenced", path, source.environment);
+    assert.equal(sealed.code, 0, sealed.errors);
+    const candidate = await f.start(), cold = await candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, unknown);
+    await candidate.adapter.releaseFence(f.input(cold), cold);
+    const resumed = await candidate.adapter.snapshot(); assert.deepEqual(resumed.handoff.uncertain, unknown);
+    const rebound = await candidate.adapter.acquireFence({ ...f.input(resumed), operationId: "next-large-handoff", fence: "next-large-fence", historicalUnknown: unknown });
+    assert.equal(rebound.proof.coverage, "complete");
+    assert.deepEqual(rebound.handoff.carriedUnknown, unknown);
+    await candidate.adapter.abortFence({ ...f.input(rebound), operationId: "next-large-handoff", fence: "next-large-fence" });
+  } finally { await f.close(); }
+});
+
+test("exported fenced maintenance preserves nonempty retained state and fifty thousand unknowns", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const retained = {imageAffinities: [["local-codex\0turn-a", {affinityId:"affinity-a",expiresAt:Date.now()+3600000}]],
+      resetReceipts: [{idempotencyKey:"reset_unknown",accountId:"a",creditId:"credit-a",outcome:"unknown"}],
+      loginReceipts: [["login-a",{expiresAt:Date.now()+3600000,result:{status:"error",message:"Synthetic login error"}}]]};
+    const unknown = Array.from({ length: 50_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown, retained }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 50_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "exported-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const retainedExport = {version:1,kind:"account-retained-export",readOnly:"v8-side-effect-checked",source:{pid:source.child.pid,owner:fenced.handoff.owner,epoch:fenced.handoff.epoch,operationId:fenced.handoff.operationId,fence:fenced.handoff.fence,bootId:fenced.handoff.bootId},retained};
+    Object.assign(receipt,{retainedExport,retainedExportSha256:createHash("sha256").update(JSON.stringify(retainedExport)).digest("hex")});
+    const path = join(f.root, "exported-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const alive = await f.maintenance("maintenance-seal-exported", path, source.environment);
+    assert.notEqual(alive.code, 0); assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    // Synthetic-source lifecycle only. A production controller needs its own
+    // qualified durable stop permit under the outer barrier and same locks.
+    const preview = await f.maintenance("maintenance-preview-exported", path, source.environment);
+    assert.equal(preview.code, 0, preview.errors); assert.equal(JSON.parse(preview.output).status, "passed");
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    await f.stop(source.child);
+    for (const [label, mutate] of [
+      ["state", (v: any) => { v.sourceStateSha256 = "0".repeat(64); }],
+      ["hash", (v: any) => { v.sourceSnapshot.proof.historicalUnknownSha256 = "0".repeat(64); }],
+      ["count", (v: any) => { v.sourceSnapshot.proof.historicalUnknownCount--; }],
+      ["volatile", (v: any) => { v.sourceSnapshot.proof.historicalCount++; }],
+      ["export-hash", (v: any) => { v.retainedExportSha256="0".repeat(64); }],
+      ["export-owner", (v: any) => { v.retainedExport.source.owner="different";v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["export-partial", (v: any) => { v.retainedExport.retained.imageAffinities=[];v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["export-malformed", (v: any) => { v.retainedExport.retained.resetReceipts[0].outcome="pending";v.retainedExportSha256=createHash("sha256").update(JSON.stringify(v.retainedExport)).digest("hex"); }],
+      ["active", (v: any) => { v.sourceSnapshot.proof.counts.oauth = 1; }],
+    ] as const) {
+      const changed = structuredClone(receipt); mutate(changed);
+      const changedPath = join(f.root, label + ".json"); await writeFile(changedPath, JSON.stringify(changed), { mode: 0o600 });
+      const rejected = await f.maintenance("maintenance-seal-exported", changedPath, source.environment);
+      assert.notEqual(rejected.code, 0, label);
+      assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    }
+    const ordinary = await f.maintenance("maintenance-seal", path, source.environment); assert.notEqual(ordinary.code, 0);
+    const sealed = await f.maintenance("maintenance-seal-exported", path, source.environment);
+    assert.equal(sealed.code, 0, sealed.errors);
+    const sealReport = JSON.parse(sealed.output);
+    const freshInspection = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    assert.deepEqual(sealReport.inspection, freshInspection);
+    assert.equal(sealReport.inspection.storage.sha256, JSON.parse(await readFile(join(f.data,"account-handoff.json"),"utf8")).sealed.storage);
+    const candidate = await f.start(), cold = await candidate.adapter.coldReady(f.input(await candidate.adapter.snapshot()));
+    assert.deepEqual(cold.handoff.uncertain, unknown);assert.deepEqual(cold.handoff.retained,retained);
+    await candidate.adapter.releaseFence(f.input(cold), cold);
+    const resumed = await candidate.adapter.snapshot(); assert.deepEqual(resumed.handoff.uncertain, unknown);
+    const rebound = await candidate.adapter.acquireFence({ ...f.input(resumed), operationId: "next-large-handoff", fence: "next-large-fence", historicalUnknown: unknown });
+    assert.equal(rebound.proof.coverage, "complete");
+    assert.deepEqual(rebound.handoff.carriedUnknown, unknown);
+    await candidate.adapter.abortFence({ ...f.input(rebound), operationId: "next-large-handoff", fence: "next-large-fence" });
+  } finally { await f.close(); }
+});
+
+test("preview rejects a successor state that would exceed capacity while keeping the source alive", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const retained = {imageAffinities: [["local-codex\0turn-a", {affinityId:"affinity-a",expiresAt:Date.now()+3600000}]],
+      resetReceipts: [{idempotencyKey:"reset_unknown",accountId:"a",creditId:"credit-a",outcome:"unknown"}],
+      loginReceipts: [["login-a",{expiresAt:Date.now()+3600000,result:{status:"error",message:"Synthetic login error"}}]]};
+    const unknown = Array.from({ length: 500_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({ schemaVersion: 1, epoch: 0, phase: "open", uncertain: unknown, retained }), { mode: 0o600 });
+    const source = await f.start();
+    // A small original-protocol fence closes admission but cannot bind the list.
+    const fenced = await source.adapter.acquireFence(f.input(await source.adapter.snapshot()));
+    assert.equal(fenced.proof.coverage, "unknown"); assert.equal(fenced.proof.activeCount, null);
+    assert.equal(fenced.proof.historicalUnknownCount, 500_000);
+    assert.deepEqual(fenced.handoff.carriedUnknown, []);
+    const inspected = JSON.parse((await f.maintenance("maintenance-inspect", undefined, source.environment)).output);
+    const bundle = resolve(import.meta.dirname, "../fixtures/split-codex-owner.ts");
+    const startTime = (await readFile(`/proc/${source.child.pid}/stat`, "utf8")).split(")").at(-1)!.trim().split(/\s+/u)[19];
+    const receipt = { schemaVersion: 1, kind: "exported-account-maintenance",
+      sourceStateSha256: createHash("sha256").update(await readFile(join(f.data, "account-handoff.json"))).digest("hex"), source: {
+      pid: source.child.pid, startTime, bootId: fenced.handoff.bootId, bundle,
+      bundleSha256: createHash("sha256").update(await readFile(bundle)).digest("hex"),
+    }, sourceSnapshot: fenced, storageSha256: inspected.storage.sha256,
+      configurationSelectorSha256: inspected.configurationSelectorSha256, cliSha256: inspected.cliSha256 };
+    const retainedExport = {version:1,kind:"account-retained-export",readOnly:"v8-side-effect-checked",source:{pid:source.child.pid,owner:fenced.handoff.owner,epoch:fenced.handoff.epoch,operationId:fenced.handoff.operationId,fence:fenced.handoff.fence,bootId:fenced.handoff.bootId},retained};
+    Object.assign(receipt,{retainedExport,retainedExportSha256:createHash("sha256").update(JSON.stringify(retainedExport)).digest("hex")});
+    const path = join(f.root, "exported-receipt.json"); await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+    const before = await readFile(join(f.data, "account-handoff.json"), "utf8");
+    const preview = await f.maintenance("maintenance-preview-exported", path, source.environment);
+    assert.notEqual(preview.code, 0);
+    assert.match(preview.errors, /capacity|large|bound/i);
+    assert.equal(source.child.exitCode, null);
+    assert.equal(await readFile(join(f.data, "account-handoff.json"), "utf8"), before);
+    await source.adapter.abortFence(f.input(fenced));
+    assert.equal((await source.adapter.snapshot()).handoff.phase, "open");
+  } finally { await f.close(); }
+});
+
+test("an oversized ordinary fence leaves the live owner open and its durable state unchanged", { skip: process.platform !== "linux" }, async () => {
+  const f = await fixture();
+  try {
+    const unknown = Array.from({ length: 500_000 }, () => ({ id: randomUUID(), route: "/v1/responses" }));
+    await writeFile(join(f.data, "account-handoff.json"), JSON.stringify({schemaVersion:1,epoch:0,phase:"open",uncertain:unknown,
+      retained:{imageAffinities:[],resetReceipts:[],loginReceipts:[]}}), {mode:0o600});
+    const source = await f.start(), before = await source.adapter.snapshot();
+    const fileHash = () => readFile(join(f.data,"account-handoff.json")).then(bytes => createHash("sha256").update(bytes).digest("hex"));
+    const beforeHash = await fileHash();
+    await assert.rejects(source.adapter.acquireFence({...f.input(before),historicalUnknown:unknown}));
+    const after = await source.adapter.snapshot();
+    assert.equal(after.handoff.phase,"open");assert.equal(after.handoff.epoch,0);
+    assert.equal(after.handoff.persistence,"ready");assert.deepEqual(after.handoff.uncertain,unknown);
+    assert.equal(await fileHash(),beforeHash);assert.equal(await f.account(),200);
+    const small = await source.adapter.acquireFence(f.input(after));
+    await source.adapter.abortFence(f.input(small));
+    const restored = await source.adapter.snapshot();assert.equal(restored.handoff.phase,"open");assert.deepEqual(restored.handoff.uncertain,unknown);
   } finally { await f.close(); }
 });

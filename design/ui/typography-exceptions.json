@@ -108,24 +108,6 @@
       "owner": "chat document",
       "reason": "Document line height follows scoped user reading size plus the registered chat leading; inherited root calculations cannot preserve scoped preferences.",
       "reviewWhen": "When reading preference projection or prose ownership changes; remove stale entries automatically."
-    },
-    {
-      "file": "apps/workbench-web/src/browser/browser-mobile-toolbar.scss",
-      "selector": ".browser-mobile-dock__location input",
-      "property": "font-size",
-      "value": "16px",
-      "owner": "Web mobile browser",
-      "reason": "Navigation and tab-search inputs keep the 16 CSS px platform minimum that prevents iOS focus zoom; this does not set ordinary text typography.",
-      "reviewWhen": "When these input controls or the iOS focus-zoom contract changes; remove when the shared mobile input minimum provides the same guarantee."
-    },
-    {
-      "file": "apps/workbench-web/src/browser/browser-mobile-toolbar.scss",
-      "selector": ".browser-mobile-sheet &__search",
-      "property": "font-size",
-      "value": "16px",
-      "owner": "Web mobile browser",
-      "reason": "Navigation and tab-search inputs keep the 16 CSS px platform minimum that prevents iOS focus zoom; this does not set ordinary text typography.",
-      "reviewWhen": "When these input controls or the iOS focus-zoom contract changes; remove when the shared mobile input minimum provides the same guarantee."
     }
   ]
 }

@@ -175,4 +175,9 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
     }),
   };
 }
-module.exports = { createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS };
+// Actual input identity wins over the emulated target device profile.
+function isTouchInput(input, profile) {
+  return input.pointerType === 'touch' || input.pointerType === undefined
+    && ['iphone','ipad','android-phone','android-tablet','desktop-touch'].includes(profile);
+}
+module.exports = { isTouchInput, createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS };

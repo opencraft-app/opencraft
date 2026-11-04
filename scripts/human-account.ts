@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { mkdir, stat } from 'node:fs/promises';
+import { openServerDatabase } from "../packages/storage-node/src/server/index.js";
 import { ActorStore } from '../packages/access-control/src/actors.js';
 import { HumanAccounts } from '../packages/access-control/src/human-accounts.js';
 import { LocalAccountServerPlugin } from '../plugins/local-account/src/server.js';
@@ -13,8 +14,9 @@ if (!directory || !isAbsolute(directory) || !username || !['create', 'password',
 await mkdir(directory, { recursive: true, mode: 0o700 });
 const info = await stat(directory);
 if (!info.isDirectory() || (info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) throw new Error('Server data directory must be owned and private');
-const actors = new ActorStore(join(directory, 'actors.sqlite'));
-const accounts = new HumanAccounts(join(directory, 'human-logins.sqlite'), actors);
+const storage = await openServerDatabase(directory);
+const actors = new ActorStore(storage);
+const accounts = new HumanAccounts(storage, actors);
 const localAccounts = new LocalAccountServerPlugin(accounts.localAccountRepository);
 accounts.registerLocalAccounts(localAccounts);
 let members: MembershipStore | undefined;
@@ -36,8 +38,8 @@ try {
     if (!identity) throw new Error('Enabled local account required');
     const actor = actors.resolveHuman(identity);
     if (!actor) throw new Error('Human Actor unavailable');
-    members = new MembershipStore(join(directory, 'memberships.sqlite'));
+    members = new MembershipStore(storage);
     members.setActor(actor.actorId, action === 'grant' ? argument as MemberRole : 'member', action === 'grant', 'local-operator');
     console.log('Actor instance membership updated.');
   }
-} finally { members?.close(); accounts.close(); actors.close(); }
+} finally { members?.close(); accounts.close(); actors.close(); await storage.close(); }

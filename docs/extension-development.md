@@ -156,3 +156,10 @@ platform/audience and renderable targets, then uses the normal application Route
 A miniapp entry grants no resource permission and cannot invoke an execution
 command. This adds no downloaded-code runtime or public renderer ABI; see
 [Overhome ownership](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
+
+
+A model settings page that implements the runtime providers, models, settings and
+credential-description methods may also declare `modelReadiness: true` alongside
+`modelConfiguration: true` and its fixed `targetHostId`. The new-conversation setup
+uses this explicit capability to check configuration without probing a model or
+reading credential values. OAuth-only account pages should omit this declaration.

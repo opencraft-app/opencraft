@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
 import { AccountPoolStore } from "./store.js";
 import { CodexAccountPoolProxy } from "./codex-proxy.js";
@@ -88,7 +89,7 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      if (options.ownerHandoff) service.validateCredentials();
+      if (options.ownerHandoff) service.validateCredentials(options.ownerHandoff.admissionOpen() === false);
       service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
         admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
       if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
@@ -117,12 +118,15 @@ export class CodexAccountService {
       loginReceipts: this.login.handoffReceipts() };
   }
 
-  validateCredentials(): void {
+  validateCredentials(requireAccountCredentials = true): void {
     try {
       const token = this.store.issueHostToken("local-codex");
       if (this.store.authenticateHostToken(token) !== "local-codex") throw new Error("Invalid account Host identity");
+      // Frozen successors attest external credentials before readiness. Open
+      // owners must keep control/login available when an external owner is down.
+      // Local records and Host authentication remain strict in both modes.
       for (const account of this.store.listAccounts()) {
-        if (account.credentialConfigured) this.store.readCredential(account.id);
+        if (account.credentialConfigured) this.store.validateCredential(account.id, requireAccountCredentials);
       }
       this.accountViews();
     } catch { throw new Error("Account credential validation failed"); }
@@ -139,6 +143,13 @@ export class CodexAccountService {
     this.requests.add(operation);
     void operation.finally(() => this.requests.delete(operation)).catch(() => undefined);
     return operation;
+  }
+
+  async interruptForMaintenance(): Promise<void> {
+    if (this.options.ownerHandoff?.admissionOpen() !== false || this.closing) {
+      throw new Error("Account maintenance requires a fenced live owner");
+    }
+    await this.server!.interruptForMaintenance();
   }
 
   close(): Promise<void> {
@@ -205,7 +216,10 @@ export class CodexAccountService {
       case "opencraft/codex/accounts/deviceLogin/start": result = await login.start(); break;
       case "opencraft/codex/accounts/deviceLogin/poll": {
         const polled = await login.poll(string(params.sessionId));
-        if (polled.status !== "complete") result = polled;
+        if (polled.status === "error") {
+          const reason = await deviceLoginMaintenanceReason(this.options.dataDirectory, string(params.sessionId), polled);
+          result = reason ? { ...polled, reason } : polled;
+        } else if (polled.status !== "complete") result = polled;
         else {
           const account = this.accountViews().find(candidate => candidate.id === polled.account.id);
           if (account === undefined) throw new Error("Codex account was not found after login");

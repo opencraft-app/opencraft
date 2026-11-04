@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { MembershipStore } from '../packages/access-control/src/index.js';
-import { isAbsolute, dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { isAbsolute, dirname, basename } from 'node:path';
+import { openServerDatabase } from "../packages/storage-node/src/server/index.js";
 import { ActorStore } from '../packages/access-control/src/actors.js';
 const [database, action, provider, subject, role = 'member'] = process.argv.slice(2);
-if (!database || !isAbsolute(database) || !['list', 'list-actors', 'audit', 'grant', 'revoke'].includes(action ?? '')) throw new Error('Usage: access-admin /absolute/memberships.sqlite list|list-actors|audit|grant|revoke [provider subject [admin|member]]');
-const store = new MembershipStore(database);
-const actorPath = join(dirname(database), 'actors.sqlite');
-const actors = existsSync(actorPath) ? new ActorStore(actorPath) : null;
+if (!database || !isAbsolute(database) || !['opencraft-server.sqlite', 'memberships.sqlite'].includes(basename(database)) || !['list', 'list-actors', 'audit', 'grant', 'revoke'].includes(action ?? '')) throw new Error('Usage: access-admin /absolute/opencraft-server.sqlite list|list-actors|audit|grant|revoke [provider subject [admin|member]]');
+const storage = await openServerDatabase(dirname(database));
+const store = new MembershipStore(storage);
+const actors = new ActorStore(storage);
 try {
   if (action === 'list') console.log(JSON.stringify(store.list(), null, 2));
   else if (action === 'list-actors') console.log(JSON.stringify(store.listActors(), null, 2));
@@ -19,4 +19,4 @@ try {
     if (actor) store.setActor(actor.id, role as 'admin' | 'member', action === 'grant', 'local-operator');
     console.log('Membership updated');
   }
-} finally { actors?.close(); store.close(); }
+} finally { actors?.close(); store.close(); await storage.close(); }

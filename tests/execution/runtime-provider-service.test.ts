@@ -403,3 +403,22 @@ test("settings frontend saves through a single application command, never writes
   assert.equal(methods.some((method) => method.startsWith("runtime/credentials/")), false);
   service.dispose();
 });
+
+
+test("explicit no-auth mode clears the route binding without deleting shared secrets; legacy none remains unconfigured", async () => {
+  const f = fixture();
+  await f.service.apply({target:{kind:"update",id:"existing"},expectedRevision:7,
+    baseURL:"http://127.0.0.1:11434/v1",api:"openai-completions",models:[{id:"local-model"}],
+    enabled:true,credential:{kind:"unauthenticated"}});
+  const ns = f.section();
+  const profile = (ns.value as any).providers.existing;
+  assert.equal(profile.authentication,"none");
+  assert.equal(profile.apiKeyEnv,undefined);
+  assert.equal(f.secrets.get("SHARED_KEY"),"original");
+  assert.equal(f.calls.some(call=>call.method.startsWith("credentials.")),false);
+  await f.service.apply({target:{kind:"update",id:"existing"},expectedRevision:ns.revision,
+    baseURL:"http://127.0.0.1:11434/v1",credential:{kind:"none"}});
+  assert.equal((f.section().value as any).providers.existing.authentication,undefined);
+  await assert.rejects(f.service.apply({target:{kind:"update",id:"existing"},expectedRevision:f.section().revision,
+    baseURL:"http://127.0.0.1:11434/v1",enabled:true,credential:{kind:"none"}}),/authentication/);
+});

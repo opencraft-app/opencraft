@@ -1,4 +1,6 @@
 // Authorized, bounded projection. Raw inventory paths/processes never cross HTTP.
+import { request } from './ipc.mjs';
+import { socketPath } from './service-config.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { webChildControl } from './web-child.mjs';
@@ -46,17 +48,30 @@ export function projectPlan(plan) {
 export async function pageControl(config, input, journal, bootId) {
   const planPath = join(config.stateRoot, 'page-plan.json');
   const readPlan = async () => { try { return parseStrictJson(await readFile(planPath)); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } };
+  if (config.fullRecipePath && ['page-check', 'page-start', 'page-reconcile'].includes(input.action)) {
+    const operationId = input.operationId ?? 'full-' + Date.now();
+    if (input.action === 'page-reconcile') return request(socketPath(config, 'helper'), { action: 'full-recover', operationId }, 120000);
+    const checked = await request(socketPath(config, 'helper'), { action: 'full-inspect', operationId }, 120000);
+    await atomicJson(planPath, checked.plan);
+    if (input.action === 'page-check') return { ...checked, job: null };
+    invariant(checked.plan.planDigest === input.planDigest && checked.plan.executable, 'parent-plan-changed');
+    const result = await request(socketPath(config, 'helper'), { action: 'full-start', operationId, planDigest: checked.plan.planDigest }, 120000);
+    return { plan: checked.plan, job: result, fullStackExecutable: true };
+  }
   if (input.action === 'page-status') {
-    const all = (await journal.list()).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
+    const all = [...await journal.list(), ...(config.fullRecipePath ? (await request(socketPath(config, 'helper'), { action: 'full-status' })).jobs : [])].sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
     const ongoing = job => !['blocked', 'completed', 'failed', 'deferred', 'rolled-back'].includes(job.state);
     const jobs = [...all.filter(ongoing), ...all.filter(job => !ongoing(job)).slice(0, 100)];
-    return { schemaVersion: 1, plan: await readPlan(), jobs: jobs.map(job => projectJob(job, config)), fullStackExecutable: false };
+    return { schemaVersion: 1, plan: await readPlan(), jobs: jobs.map(job => projectJob(job, config)), fullStackExecutable: !!config.fullRecipePath };
   }
   if (input.action === 'page-reconcile') {
     const job = await journal.load(input.operationId);
     if (job.steps[0]?.action === 'official-web-transaction')
       return webChildControl(config, { operationId: job.steps[0].intent?.childJobId ?? job.steps[0].fence }, journal, bootId);
     return projectJob(job, config); // No P3 owner-specific recovery command yet.
+  }
+  if (input.action === 'page-stop' && config.fullRecipePath) {
+    try { return projectJob(await request(socketPath(config, 'helper'), { action: 'full-stop', operationId: input.operationId }), config); } catch {}
   }
   if (input.action === 'page-stop') {
     invariant(identifier(input.operationId), 'invalid-operation');

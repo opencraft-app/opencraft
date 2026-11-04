@@ -15,7 +15,7 @@
 }
 ```
 
-提供商字段为 id、name、可选 catalogId、protocol、baseUrl、credentialRef、enabled 和 models。模型字段为 id、可选 name/限制/输入类型及 enabled。默认选择仅持有 providerId、modelId 和可选 reasoningEffort。provider ID 是稳定身份，重命名不改变 ID；文件没有引擎名、settingsNs、apiKeyEnv 或 DSH 命名空间。
+提供商字段为 id、name、可选 catalogId、protocol、baseUrl、credentialRef、可选 authentication、enabled 和 models。模型字段为 id、可选 name/限制/输入类型及 enabled。默认选择仅持有 providerId、modelId 和可选 reasoningEffort。provider ID 是稳定身份，重命名不改变 ID；文件没有引擎名、settingsNs、apiKeyEnv 或 DSH 命名空间。
 
 `~/.opencraft/credentials.json` 由 OpenCraft 独立凭据仓库管理，模型文件只保存引用。两个文件写入权限为 0600，目录为 0700；这是私有文件，不是加密保险箱，也不使用 macOS Keychain。
 
@@ -137,3 +137,14 @@ Models without the selected tier resolve to standard through the Composer owner.
 
 If neither personal nor Host data resolves a tier, submission leaves the wire
 field absent. An unknown legacy/default choice must not be converted to standard.
+
+
+## 显式免鉴权连接
+
+OpenAI 兼容聊天连接可显式选择“无需鉴权”。产品记录保存 `authentication: "none"`、`credentialRef: null` 及明确的基础地址；省略此字段保留旧的凭据要求。旧 `credential:none` 命令仍表示解绑凭据，不代表免鉴权授权；新 `credential:unauthenticated` 命令在同一次 CAS 中设置模式并解绑引用。原凭据可能被其他连接共享，不删除它，也不在返回 API Key 模式时自动重新绑定。切换模式清空未保存密钥；变更需要鉴权的连接地址仍需显式重新提供或确认复用凭据。
+
+免鉴权不解析凭据仓库或环境 Key；已保存连接检查、模型目录 readiness、DSH 与 Pi 的执行投影消费同一意图。当前只支持有明确地址的 OpenAI Completions/Responses 聊天接口，不把原生 DeepSeek、OAuth 或语音服务改为免鉴权。协议 SDK 要求非空客户端 key 时，适配器使用仅在进程内的非秘密标记满足构造条件，并用 null 认证头抑制 SDK 自动认证；该标记不进入模型/凭据文件，也不得出现在 HTTP 请求。端点实际请求必须不含 Authorization、x-api-key 或 api-key，不允许回退到原生环境认证。模式配置和成功推理分开验证。
+
+服务器与本机模型设置贡献均声明固定 `targetHostId`、`modelConfiguration` 及显式 `modelReadiness` 能力。首用检测不按页面 ID 推断能力，不对 OAuth 账号页调用 provider 凭据协议。模型变更只取消/失效当前 Host 的 Composer 目录和 readiness，不改会话选择、全局默认或草稿。
+
+首用 readiness 对支持的 DSH/Pi 选择 ID 检查当前提供商与模型，不能因另一连接可用就放行未配置的当前选择；用户可以在原 Composer 中明确改选，检测不替用户更改模型。

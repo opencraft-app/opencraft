@@ -68,12 +68,56 @@ export class CodexCoreUnavailableError extends Error {}
 
 /** Local authenticated control plane. Requests are never retried: mutations may have committed. */
 export class CodexCoreControlClient {
+  private healthFlight: { operation: Promise<CodexCoreHealth>; controller: AbortController;
+    readers: number; settled: boolean } | null = null;
   constructor(private readonly endpoint: string, private readonly authToken: string) {
     if (!isAbsolute(endpoint)) throw new Error("Codex core endpoint must be an absolute Unix socket path");
     if (!authToken) throw new Error("Codex core requires the daemon authentication token");
   }
 
   async health(signal?: AbortSignal): Promise<CodexCoreHealth> {
+    const cancelled = () => signal?.reason instanceof Error ? signal.reason
+      : new CodexCoreUnavailableError("Codex core is temporarily unavailable");
+    if (signal?.aborted) throw cancelled();
+    let flight = this.healthFlight;
+    if (!flight) {
+      const controller = new AbortController();
+      flight = { operation: this.readHealth(controller.signal), controller, readers: 0, settled: false };
+      this.healthFlight = flight;
+      const current = flight;
+      const retire = () => {
+        current.settled = true;
+        if (this.healthFlight === current) this.healthFlight = null;
+      };
+      void current.operation.then(retire, retire);
+    }
+    const current = flight;
+    current.readers++;
+    // A recovery burst needs one live health observation, not one recursive
+    // Core -> router -> AppServer probe for each browser/read slot. No completed
+    // result is cached; directory requests still perform their own epoch check.
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const release = () => {
+        if (settled) return false;
+        settled = true;
+        signal?.removeEventListener("abort", abort);
+        current.readers--;
+        if (!current.settled && current.readers === 0) {
+          if (this.healthFlight === current) this.healthFlight = null;
+          current.controller.abort();
+        }
+        return true;
+      };
+      const abort = () => { if (release()) reject(cancelled()); };
+      signal?.addEventListener("abort", abort, { once: true });
+      void current.operation.then(value => { if (release()) resolve({ ...value }); },
+        error => { if (release()) reject(error); });
+      if (signal?.aborted) abort();
+    });
+  }
+
+  private async readHealth(signal: AbortSignal): Promise<CodexCoreHealth> {
     const value = await this.request("GET", "/health", undefined, signal) as Partial<CodexCoreHealth> | null;
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)

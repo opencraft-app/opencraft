@@ -58,3 +58,14 @@ value requires re-entry. Products provide localized labels and the authenticated
 management port. Async failures use the host notice port; input validation has a
 stable reserved slot. Runtime availability is owned by the launch adapters, not
 by the existence of this editor.
+
+
+## Model connection authentication
+
+The existing Model Services connection form presents an explicit no-authentication
+switch only when its Host advertises support. It uses the shared Settings row and
+switch, alongside the endpoint and key fields. Selecting it clears unsaved key
+input and hides the key editor; switching back requires an explicit credential
+choice. Save and cancel keep their existing roles. The shared Settings Shell owns
+scrolling and page gutters; narrow/touch presentation keeps the description and
+switch reachable without a second configuration page.

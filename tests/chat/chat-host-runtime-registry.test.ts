@@ -679,3 +679,42 @@ for (const scenario of ["recover", "cancel", "missing-thread", "dispose"] as con
     } finally { activation.dispose(); views.dispose(); leases.dispose(); drafts.dispose(); bindings.dispose(); coordinator.dispose(); await registry.dispose(); }
   });
 }
+
+test("explicit conversation selection rechecks an expired connection before suspended timers run", async () => {
+  const { ConnectionLifecycleOwner } = await import("../../packages/workbench-runtime/src/connection-lifecycle");
+  let now = 0, sequence = 0;
+  const timers = new Map<number, () => void>();
+  const runs: Array<{ resolve(value: object): void; signal: AbortSignal }> = [];
+  const owner = new ConnectionLifecycleOwner<object>({
+    clock: { now: () => now, setTimeout(run) { const id = ++sequence; timers.set(id, run); return id; },
+      clearTimeout(id) { timers.delete(id as number); } },
+    run: attempt => new Promise(resolve => runs.push({ resolve, signal: attempt.signal })),
+    valid: () => true, invalidate() {}, changed() {}, usable() {}, backoff() {}, manual: () => false,
+  });
+  const runtime = new FakeHostRuntime("local");
+  runtime.connect = () => owner.connect();
+  const registry = new HostRuntimeRegistry([registration("local", runtime)]);
+  const initial = createWorkbenchDraftLocation("local", "initial");
+  const coordinator = createWorkbenchCoordinator(registry, initial);
+  try {
+    const first = coordinator.prepare(createWorkbenchThreadLocation("local", "first"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runs.length, 1);
+    // A hidden/frozen page advances elapsed time without dispatching its timers.
+    now = 31_000;
+    const next = coordinator.prepare(createWorkbenchThreadLocation("local", "next"));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runs.length, 2, "new navigation must reach the connection deadline owner");
+    assert.equal(runs[0]!.signal.aborted, true);
+    assert.equal(await first, null, "superseded selection cannot replace the new destination");
+    const joined = registry.ensureConnected("local");
+    assert.equal(registry.ensureConnected("local"), joined, "current startup remains single-flight");
+    runs[1]!.resolve({});
+    assert.equal(await joined, runtime);
+    assert.equal((await next)?.commit(), true);
+    assert.deepEqual(coordinator.getSnapshot().location, createWorkbenchThreadLocation("local", "next"));
+    runs[0]!.resolve({});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(coordinator.getSnapshot().location, createWorkbenchThreadLocation("local", "next"));
+  } finally { owner.dispose(); coordinator.dispose(); await registry.dispose(); }
+});

@@ -174,13 +174,19 @@ function appendBlock(input: UserInput[], block: ComposerBlockNode, diagnostics: 
     case "divider":
       appendText(input, "---");
       return;
-    case "quote":
+    case "quote": {
+      const quoted: UserInput[] = [];
       block.children.forEach((child, index) => {
-        if (index > 0) appendText(input, "\n");
-        appendText(input, "> ");
-        appendBlock(input, child, diagnostics);
+        if (index > 0) appendText(quoted, "\n");
+        appendBlock(quoted, child, diagnostics);
       });
+      appendText(input, "> ");
+      for (const entry of quoted) {
+        if (entry.type === "text") appendText(input, entry.text.replace(/\r\n?|\n/gu, "\n> "));
+        else input.push(entry);
+      }
       return;
+    }
     case "list":
       block.items.forEach((item, index) => {
         if (index > 0) appendText(input, "\n");

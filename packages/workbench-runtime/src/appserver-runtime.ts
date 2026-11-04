@@ -2060,8 +2060,10 @@ export function createAppServerWorkbenchRuntime(
             if (client !== currentClient || generation !== currentClient.connectionGeneration) {
               throw new AppServerClientError("TRANSPORT_ERROR", "Fork response belongs to an earlier Host generation");
             }
+            // Fork already attached a live execution. Preserve its acknowledged
+            // choices when opening the child through the read-only history path.
+            requireSession().resume.adoptFork(response, generation);
             if (params.ephemeral === true) {
-              requireSession().resume.adoptFork(response, generation);
               ephemeralThreadIds.add(response.thread.id);
             } else {
               unlistedForks.set(response.thread.id, { ...response.thread, turns: [] });

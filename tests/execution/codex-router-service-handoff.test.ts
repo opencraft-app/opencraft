@@ -1,36 +1,42 @@
+import { codexRouterOwner } from "../../scripts/full-upgrade/codex-router-owner.mjs";
+import { operatorLeaseClaim } from "../../scripts/full-upgrade/operator-lease.mjs";
+const operatorLease = await operatorLeaseClaim(30000);
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
+import { CodexGenerationRegistry } from "../../apps/codex-core/src/generation-registry.js";
+import { routerDigest } from "../../apps/codex-core/src/router-maintenance.js";
 import { CodexGenerationRuntime } from "../../apps/codex-core/src/generation-runtime.js";
-import { startCodexGenerationService } from "../../apps/codex-core/src/generation-service.js";
+import { startCodexGenerationService, inspectRouterMaintenanceService } from "../../apps/codex-core/src/generation-service.js";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 import { GenerationPeer } from "../../apps/codex-core/src/generation-peer.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 
-test("real router service preserves native subscriptions and registry across release, candidate failure and current-data recovery", async () => {
+for (const carriedHistory of [false, true]) test("real router service preserves native subscriptions and registry across release, candidate failure and current-data recovery (history=" + carriedHistory + ")", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-router-service-"));
   const data = join(root, "data"), directory = join(root, "sockets"), registry = join(root, "registry"), native = join(root, "native.sock");
   await mkdir(data, { mode: 0o700 }); await mkdir(directory, { mode: 0o700 });
   const token = "synthetic-router-private-control-token", endpoint = join(directory, "control.sock"), coreEndpoint = join(root, "core.sock");
-  const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false;
+  const calls: string[] = []; let pending = 0, resumes = 0, rejectHistory = false, coreProxy = 0;
+  const unavailable = new Set<string>();
   const http = createServer(), wss = new WebSocketServer({ server: http });
   wss.on("connection", socket => socket.on("message", raw => {
     const m = JSON.parse(String(raw)); calls.push(m.method);
     if (m.id === undefined) return;
-    if (m.method === "thread/read" && rejectHistory) { socket.send(JSON.stringify({ id: m.id, error: { code: -32600, message: "Historical binding is unavailable" } })); return; }
+    if (m.method === "thread/read" && (rejectHistory || unavailable.has(m.params.threadId))) { socket.send(JSON.stringify({ id: m.id, error: { code: -32600, message: "Historical binding is unavailable" } })); return; }
     if (m.method === "thread/resume") resumes++;
     const result = m.method === "initialize" ? { userAgent: "retained-native" }
       : m.method === "thread/list" ? { data: [{ id: "historical", status: { type: "idle" } }], nextCursor: null }
       : m.method === "thread/loaded/list" ? { data: ["historical"] }
-      : ["thread/read", "thread/resume"].includes(m.method) ? { thread: { id: "historical" } } : {};
+      : ["thread/read", "thread/resume"].includes(m.method) ? { thread: { id: "historical", status: { type: "idle" } } } : {};
     socket.send(JSON.stringify({ id: m.id, result }));
   }));
   await new Promise<void>(r => http.listen(native, r));
-  const core = await startControlServer(coreEndpoint, token, async () => ({ status: 200, value: {
+  const core = await startControlServer(coreEndpoint, token, async request => request.url === "/owner-handoff" ? ({ status: 200, value: { pid: process.pid, handoff: { protocolVersion: 1, topology: "split", phase: "open", persistence: "ready", owner: "core-fixture", epoch: 0, uncertain: [] }, proof: { counts: { oauth: 0, proxy: coreProxy, refresh: 0, requests: 0, resetCredits: 0, subscriptions: 0 } } } }) : ({ status: 200, value: {
     protocolVersion: 1, dataDirectory: data, launch: { env: { OPENCRAFT_CODEX_POOL_AUTH_TOKEN: "synthetic" }, auth: { type: "chatgptAuthTokens", accessToken: "synthetic" }, args: ['chatgpt_base_url="http://127.0.0.1:1"'] } } }));
   const health = { protocolVersion: 1 as const, pid: process.pid, codexPid: process.pid, dataDirectory: data,
     proxyBaseUrl: "http://127.0.0.1:1", codexHome: join(data, "runtime"), nativeSocket: native, callbackProtocolVersion: 1 as const,
@@ -54,10 +60,24 @@ test("real router service preserves native subscriptions and registry across rel
       const chunks: Buffer[] = []; response.on("data", b => chunks.push(b)); response.on("end", () => resolve({ status: response.statusCode, ...JSON.parse(Buffer.concat(chunks).toString()) }));
     }); req.on("error", reject); req.end(value ? JSON.stringify(value) : undefined);
   });
-  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence" }; };
+  const input = async () => { const { handoff: h } = await rpc("/owner-handoff"); return { operatorLease, expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "handoff", fence: "fence", historicalUnknownSha256: h.historicalUnknownSha256 }; };
   const action = async (action: string, extra = {}) => rpc("/owner-handoff", { action, ...await input(), ...extra });
   try {
     service = await startCodexGenerationService(options);
+    if (!carriedHistory) {
+      const original = CodexGenerationRuntime.prototype.quiesceRouter;
+      const leaseToken = join(root, "lease-token"); await writeFile(leaseToken, token, { mode: 0o600 });
+      const adapter = codexRouterOwner(endpoint, leaseToken, { ttlMs: 1000, renewMs: 150 });
+      CodexGenerationRuntime.prototype.quiesceRouter = async function () {
+        await new Promise(resolve => setTimeout(resolve, 1400)); await original.call(this);
+      };
+      try {
+        const started = Date.now(), fenced = await adapter.acquireFence(await input());
+        assert.ok(Date.now() - started >= 1400);
+        assert.equal(fenced.handoff.phase, "fenced", "independent renewal keeps a slow real-service fence alive beyond TTL");
+        await adapter.abortFence(await input());
+      } finally { adapter.dispose(); CodexGenerationRuntime.prototype.quiesceRouter = original; }
+    }
     const state = await rpc("/generations");
     const retention = { id: "original", retained: true, expectedOwner: state.routingEpoch, expectedHost: state.preparationOwner,
       expectedEpoch: state.admissionEpoch, expectedIncarnation: state.generations[0].incarnation };
@@ -84,13 +104,38 @@ test("real router service preserves native subscriptions and registry across rel
     rejectHistory = false; await action("fence");
     const proof = (await action("inspect")).proof; assert.equal(proof.activeCount, 0);
     assert.equal((await action("release", { proof: proof.identity })).status, 200);
-    await service.close(); service = await startCodexGenerationService(options);
+    await service.close();
+    if (carriedHistory) {
+      // Persist the already-imported responsibility fixture while the source is
+      // released. The service must exercise its real historical cold reader.
+      const registryOwner = new CodexGenerationRegistry(registry);
+      const entries = ["empty-one", "empty-two"].map(threadId => ({ generationId: "original", incarnation: 1, threadId,
+        reads: [false, true].map(includeTurns => ({ includeTurns, code: -32600, errorSha256: routerDigest({ code: -32600, message: "Historical binding is unavailable" }) })),
+        creation: { phase: "created", inputId: null, turnId: null, executionLeases: 0, submissions: 0, queueInputs: 0, turnAuthorities: 0, inputAuthorities: 0, inputOrigins: 0, actorRequests: 0, nativeRows: 0 } }));
+      for (const entry of entries) { registryOwner.discover(entry.threadId, "original"); unavailable.add(entry.threadId); }
+      const archive = { version: 1, receipt: { source: { owner: "prior-router" }, sourceHandoff: { version: 1, uncertain: true, pending: ["legacy-unknown"] },
+        native: { hostColdUnavailable: { version: 1, kind: "host-cold-unavailable", source: { owner: "prior-router", bootId: "prior-boot" }, checkedAt: new Date(Date.now() - 16 * 60_000).toISOString(), evidenceSha256: "e".repeat(64), entries } } } };
+      const id = routerDigest(archive);
+      registryOwner.setMetadata(`router-history:${id}`, archive);
+      const state = registryOwner.metadata("router-handoff") as Record<string, unknown>;
+      registryOwner.setMetadata("router-handoff", { ...state, history: [id], pending: ["legacy-unknown"], uncertain: true, currentUncertain: false, sealed: routerDigest(registryOwner.coldSnapshot()) });
+      registryOwner.close();
+      const inspection = await inspectRouterMaintenanceService(options, true);
+      assert.equal(inspection.sourceHandoff && (inspection.sourceHandoff as any).phase, "released");
+      assert.equal(inspection.native.generations[0]!.history.coldUnavailable!.length, 2, "released collector inherits the archive after the physical seal was cleared");
+    }
+    service = await startCodexGenerationService(options);
     for (const kind of ["launcher", "native"] as const) {
       await writeFile(artifacts[kind], "changed fixed launcher artifact\n");
       assert.equal((await action("cold-ready")).status, 503);
       await writeFile(artifacts[kind], `synthetic ${kind} artifact\n`);
     }
     const cold = await action("cold-ready"); assert.equal(cold.status, 200);
+    if (carriedHistory) {
+      const inspection = await inspectRouterMaintenanceService(options, true);
+      assert.equal((inspection.sourceHandoff as any).phase, "cold-ready");
+      assert.equal(inspection.native.generations[0]!.history.coldUnavailable!.length, 2);
+    }
     const oldInput = await input();
     const started = performance.now(); await service.close(); service = await startCodexGenerationService(options);
     assert.equal((await rpc("/owner-handoff", { action: "resume", ...oldInput, identity: cold.ready.identity })).status, 503);
@@ -102,6 +147,18 @@ test("real router service preserves native subscriptions and registry across rel
     peer = (await GenerationPeer.open(service.nativeSocket, {}, { message() {}, disconnected() {} })).peer;
     assert.equal((await peer.call("thread/resume", { threadId: "historical" }) as any).thread.id, "historical");
     assert.equal(resumes, 1); assert.equal(calls.filter(m => m === "turn/start").length, 0);
+    if (carriedHistory) {
+      await action("fence"); coreProxy = 1;
+      const busy = (await action("inspect")).proof;
+      assert.equal(busy.counts.subscriptions, 1);
+      assert.equal(busy.coverage, "unknown", "an active Core proxy blocks drain while the original consumer remains subscribed");
+      assert.equal(busy.activeCount, null);
+      coreProxy = 0;
+      const quiet = (await action("inspect")).proof;
+      assert.equal(quiet.coverage, "complete"); assert.equal(quiet.activeCount, 1);
+      assert.equal((await action("abort")).status, 200);
+      assert.deepEqual((await rpc("/owner-handoff")).handoff.pending, ["legacy-unknown"]);
+    }
     console.info(JSON.stringify({ routerServiceRecoveryMs: recoveryMs, nativePreserved: true, resumes }));
   } finally {
     peer?.close(); await service?.close(); await core.close(); for (const socket of wss.clients) socket.terminate(); wss.close(); await new Promise<void>(r => http.close(() => r())); await rm(root, { recursive: true, force: true });
@@ -116,7 +173,7 @@ test("unsupported retired durable history blocks source release while abort rema
     for (const id of ["old","new"]) { runtime.registry.register({ id, endpoint: join(root,id,"control.sock"), runtimeDataDirectory: join(root,id,"data"), executable: process.execPath, bundle: process.argv[1]!, node: process.execPath, cwd: root }); runtime.registry.ready(id); }
     runtime.registry.activate("old",0); runtime.registry.discover("retired-history","old"); runtime.registry.activate("new",1);
     runtime.registry.fenceRetirement("old",1); runtime.registry.retire("old",1);
-    const input=()=>({ expectedOwner:runtime.owner.owner, expectedEpoch:runtime.owner.snapshot().epoch, operationId:"retired",fence:"fence" });
+    const input=()=>({ operatorLease, expectedOwner:runtime.owner.owner, expectedEpoch:runtime.owner.snapshot().epoch, operationId:"retired",fence:"fence" });
     runtime.owner.fence(input()); const observation=await runtime.handoffObservation();
     assert.ok(observation.counts.lifecycle>0);
     const proof=runtime.owner.inspect(input(),observation); assert.notEqual(proof.activeCount,0);

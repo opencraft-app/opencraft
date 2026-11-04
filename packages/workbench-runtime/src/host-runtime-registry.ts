@@ -37,6 +37,7 @@ interface HostRuntimeRecord<TRuntime extends HostRuntimeLifecycle> {
   descriptor: HostRuntimeDescriptor;
   readonly createRuntime: () => TRuntime;
   runtime: TRuntime | null;
+  connectAttempt: Promise<void> | null;
   connectOperation: Promise<TRuntime> | null;
   disposeOperation: Promise<void> | null;
   removed: boolean;
@@ -129,9 +130,13 @@ export class HostRuntimeRegistry<
     const record = this.records.get(hostId);
     if (record === undefined) return Promise.reject(new Error(`Unknown Host runtime ${hostId}`));
     if (record.removed) return Promise.reject(new Error(`Host runtime ${hostId} is being removed`));
-    if (record.connectOperation !== null) return record.connectOperation;
     const runtime = this.getRuntime(hostId);
-    const operation = runtime.connect()
+    // Explicit demand must reach the connection owner: a resumed page can
+    // have an expired attempt whose timer has not run yet. Deduplicate only
+    // after the owner has validated (or replaced) that attempt.
+    const attempt = runtime.connect();
+    if (record.connectAttempt === attempt && record.connectOperation !== null) return record.connectOperation;
+    const operation = attempt
       .then(() => {
         if (this.disposed) {
           throw new Error(`Host runtime ${hostId} was disposed during connection`);
@@ -142,8 +147,12 @@ export class HostRuntimeRegistry<
         return runtime;
       })
       .finally(() => {
-        if (record.connectOperation === operation) record.connectOperation = null;
+        if (record.connectOperation === operation) {
+          record.connectAttempt = null;
+          record.connectOperation = null;
+        }
       });
+    record.connectAttempt = attempt;
     record.connectOperation = operation;
     return operation;
   }
@@ -191,6 +200,7 @@ export class HostRuntimeRegistry<
       descriptor: Object.freeze({ ...registration.descriptor, hostId }),
       createRuntime: registration.createRuntime,
       runtime: null,
+      connectAttempt: null,
       connectOperation: null,
       disposeOperation: null,
       removed: false,
@@ -201,6 +211,7 @@ export class HostRuntimeRegistry<
     if (record.disposeOperation !== null) return record.disposeOperation;
     if (record.runtime === null) return Promise.resolve();
     const operation = Promise.resolve(record.runtime.dispose()).finally(() => {
+      record.connectAttempt = null;
       record.connectOperation = null;
     });
     record.disposeOperation = operation;

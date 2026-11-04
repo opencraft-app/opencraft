@@ -4,8 +4,12 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from 
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AccountPoolUncertainDiagnostic, CodexAccountRetainedState, CodexAccountServiceOptions } from "@opencraft/account-pool-host";
-import { acquireCodexWriter, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
+import { acquireCodexWriter, parseCodexAuthFile, parseCodexAuthFileReference } from "@opencraft/account-pool-host";
 import { ACCOUNT_CORE_STATE_MAX_BYTES } from "../../../scripts/full-upgrade/account-core-limits.mjs";
+
+import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
+
+import { parseFencedRetained } from "./fenced-retained.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fileDigest = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
@@ -17,25 +21,55 @@ function privateJson(text: string) {
   catch { throw new Error("Invalid private account JSON"); }
 }
 
-/** Exclusive, offline import of a preflighted legacy source; never opens proxy admission. */
-export async function sealLegacyAccountMaintenance(options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) {
+/** Pure shape preflight before a maintenance stop permit, no writer acquisition. */
+export async function inspectRetainedAccountExport(path: string) {
+  const info = await privateInfo(path);
+  if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained export is too large");
+  const value = privateJson(await readFile(path, "utf8"));
+  if (value?.version !== 1 || value.kind !== "account-retained-export" || value.readOnly !== "v8-side-effect-checked"
+    || !value.source || !Number.isSafeInteger(value.source.pid) || value.source.pid < 1
+    || !Number.isSafeInteger(value.source.epoch) || value.source.epoch < 0
+    || ["owner", "operationId", "fence", "bootId"].some(key => typeof value.source[key] !== "string" || !value.source[key])) throw new Error("Invalid retained export envelope");
+  const retained = parseFencedRetained(value.retained);
+  return { sha256: digest(value), source: value.source,
+    counts: { imageAffinities: retained.imageAffinities.length, resetReceipts: retained.resetReceipts.length, loginReceipts: retained.loginReceipts.length } };
+}
+
+type MaintenanceKind = "legacy-account-maintenance" | "fenced-account-maintenance" | "exported-account-maintenance";
+/** Exclusive offline sealing; the caller separately proves/controls source exit. */
+async function sealAccountMaintenance(options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string, kind: MaintenanceKind) {
   const owner = new AccountCoreOwner(options);
-  await owner.inspectMaintenance();
+  // Exported import validates the same storage/config/CLI while holding the
+  // writer below. Legacy entry points retain their original preliminary read.
+  if (kind !== "exported-account-maintenance") await owner.inspectMaintenance();
   const release = await acquireCodexWriter(options.dataDirectory, "accounts");
   try {
-    await owner.load(receipt);
+    await owner.load(receipt, kind);
     const state = owner.snapshot();
     if (state.phase !== "released" || !state.legacyMaintenance) throw new Error("Legacy account maintenance was not sealed");
     return { phase: state.phase, legacyMaintenance: state.legacyMaintenance,
-      unknownCount: state.uncertain.length, inspection: await owner.inspectMaintenance() };
+      unknownCount: state.uncertain.length, inspection: kind === "exported-account-maintenance"
+        ? owner.inspectionAtSeal() ?? await owner.inspectMaintenance() : await owner.inspectMaintenance() };
   } finally { release(); }
 }
+/** Existing pre-hash legacy importer stays strict and separate. */
+export const sealLegacyAccountMaintenance = (options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) =>
+  sealAccountMaintenance(options, receipt, "legacy-account-maintenance");
+/** Hash-aware fenced source; rejects any unexported volatile responsibility. */
+export const sealFencedAccountMaintenance = (options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) =>
+  sealAccountMaintenance(options, receipt, "fenced-account-maintenance");
+
+/** Complete, identity-bound retained export; never inferred from zero counts. */
+export const sealExportedAccountMaintenance = (options: ConstructorParameters<typeof AccountCoreOwner>[0], receipt: string) =>
+  sealAccountMaintenance(options, receipt, "exported-account-maintenance");
+
 type Phase = "open" | "fenced" | "released" | "cold-ready";
 type HistoricalUnknown = { id: string; route: string; diagnostic?: AccountPoolUncertainDiagnostic & {
   owner: string; bootId: string; incarnation: string; pid: number; ownerEpoch: number;
 } }[];
 interface State {
   schemaVersion: 1; epoch: number; phase: Phase; operationId?: string; fence?: string; sourceOwner?: string;
+  operatorLease?: OperatorLeaseClaim; operatorLeaseAborts?: OperatorLeaseAbort[];
   retained?: CodexAccountRetainedState;
   sealed?: { storage: string; historicalCount: number;
     configurationSelectorSha256: string; cliSha256: string; historicalUnknownSha256?: string };
@@ -44,7 +78,7 @@ interface State {
   carriedUnknown?: HistoricalUnknown;
   legacyMaintenance?: { receiptSha256: string; sourceBundleSha256: string; sourcePid: number };
 }
-export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown }
+export interface AccountOwnerExpectation { expectedOwner: string; expectedEpoch: number; operationId: string; fence: string; historicalUnknown?: HistoricalUnknown; operatorLease?: OperatorLeaseClaim }
 
 async function privateInfo(path: string, directory = false, readOnlyExternal = false) {
   const info = await lstat(path);
@@ -61,6 +95,7 @@ export async function readAccountStorage(directory: string) {
   for (const suffix of ["-wal", "-shm"]) await privateInfo(databasePath + suffix).catch(error => { if (error.code !== "ENOENT") throw error; });
   const db = new DatabaseSync(databasePath, { readOnly: true });
   const tables: { name: string; rows: number; sha256: string }[] = [];
+  const accountIdentities = new Map<string, string>();
   try {
     db.exec("BEGIN");
     if (db.prepare("PRAGMA quick_check").all().some(row => Object.values(row)[0] !== "ok")
@@ -68,6 +103,10 @@ export async function readAccountStorage(directory: string) {
     const schema = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()) {
       const name = String(row.name), rows = db.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`).all();
+      if (name === "pool_accounts") for (const account of rows) {
+        if (typeof account.id !== "string" || typeof account.upstream_account_id !== "string") throw new Error("Invalid account identity");
+        accountIdentities.set(account.id, account.upstream_account_id);
+      }
       tables.push({ name, rows: rows.length, sha256: digest(rows) });
     }
     tables.push({ name: "schema", rows: schema.length, sha256: digest(schema) });
@@ -91,9 +130,11 @@ export async function readAccountStorage(directory: string) {
         const reference = parseCodexAuthFileReference(value)!;
         // A configured reference grants a root reader access; its independent writer keeps ownership.
         const externalInfo = await privateInfo(reference.path, false, true);
-        const external = privateJson(await readFile(reference.path, "utf8"));
-        if (typeof external.tokens?.access_token !== "string" || !external.tokens.access_token) throw new Error("Unreadable external credential");
-        files.push({ path: `external:${digest(reference.path)}`, sha256: await fileDigest(reference.path), mode: externalInfo.mode & 0o777, uid: externalInfo.uid });
+        const expected = accountIdentities.get(relative.slice("secrets/account-".length, -".json".length));
+        if (expected === undefined) throw new Error("Unregistered external credential reference");
+        const external = await readFile(reference.path);
+        parseCodexAuthFile(external.toString("utf8"), expected);
+        files.push({ path: `external:${digest(reference.path)}`, sha256: createHash("sha256").update(external).digest("hex"), mode: externalInfo.mode & 0o777, uid: externalInfo.uid });
       } else if (!relative.startsWith("secrets/account-") || typeof value.accessToken !== "string" || !value.accessToken) {
         throw new Error("Unknown account credential file");
       }
@@ -111,16 +152,20 @@ export class AccountCoreOwner {
   private state: State = { schemaVersion: 1, epoch: 0, phase: "open", uncertain: [] };
   private failed = false;
   private sealedProcess = false;
+  private operatorLease?: OperatorLease;
   private transitioning = false;
   private activating = false;
   private calls = 0;
   private proof?: { identity: string; expiresAt: string; idle: boolean };
   private bootId = "";
   private readonly path: string;
+  private sealedInspection?: Awaited<ReturnType<AccountCoreOwner["inspectMaintenance"]>>;
   constructor(private readonly options: CodexAccountServiceOptions & { endpoint: string; appServerEndpoint?: string; authToken: string; runtimeDirectory: string }) {
     this.path = join(options.dataDirectory, "account-handoff.json");
   }
-  async load(legacyMaintenanceReceipt?: string) {
+  async load(legacyMaintenanceReceipt?: string, maintenanceKind: MaintenanceKind = "legacy-account-maintenance") {
+    if (!["legacy-account-maintenance", "fenced-account-maintenance", "exported-account-maintenance"].includes(maintenanceKind)) throw new Error("Invalid account maintenance kind");
+    this.sealedInspection = undefined;
     await mkdir(this.options.dataDirectory, { recursive: true, mode: 0o700 });
     this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
     try {
@@ -140,7 +185,7 @@ export class AccountCoreOwner {
         this.state = value;
       } finally { await file.close(); }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-    if (this.state.phase === "fenced" && legacyMaintenanceReceipt) await this.importLegacyMaintenance(legacyMaintenanceReceipt);
+    if (this.state.phase === "fenced" && legacyMaintenanceReceipt) await this.importLegacyMaintenance(legacyMaintenanceReceipt, maintenanceKind);
     if (legacyMaintenanceReceipt) {
       const info = await privateInfo(legacyMaintenanceReceipt);
       if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES || this.state.phase !== "released" || !this.state.legacyMaintenance
@@ -160,12 +205,12 @@ export class AccountCoreOwner {
       configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable) };
   }
   /** Explicit offline maintenance, not a cooperative release from the old owner. */
-  private async importLegacyMaintenance(path: string) {
+  private async legacyReleasedState(path: string, kind: MaintenanceKind, requireSourceExit: boolean): Promise<State> {
     const info = await privateInfo(path);
     if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Legacy account maintenance receipt is too large");
     const bytes = await readFile(path), value = privateJson(bytes.toString("utf8"));
     const source = value?.source, h = value?.sourceSnapshot?.handoff, proof = value?.sourceSnapshot?.proof;
-    if (value?.schemaVersion !== 1 || value.kind !== "legacy-account-maintenance"
+    if (value?.schemaVersion !== 1 || value.kind !== kind
       || !source || !Number.isSafeInteger(source.pid) || source.pid < 1 || source.bootId !== this.bootId
       || typeof source.startTime !== "string" || !/^\d+$/u.test(source.startTime)
       || typeof source.bundle !== "string" || !isAbsolute(source.bundle)
@@ -177,35 +222,87 @@ export class AccountCoreOwner {
       || !Array.isArray(h.uncertain) || h.uncertain.length === 0 || digest(h.uncertain) !== digest(this.state.uncertain)
       || !proof || proof.ownerId !== h.owner || proof.epoch !== h.epoch || proof.operationId !== h.operationId || proof.fence !== h.fence
       || proof.bootId !== h.bootId || proof.incarnation !== h.incarnation || proof.coverage !== "unknown" || proof.activeCount !== null
-      || proof.historicalUnknownSha256 !== undefined || !Number.isSafeInteger(proof.historicalCount)
+      || (kind === "legacy-account-maintenance"
+        ? proof.historicalUnknownSha256 !== undefined
+        : proof.historicalUnknownSha256 !== digest(this.state.uncertain)
+          || proof.historicalUnknownCount !== this.state.uncertain.length
+          || value.sourceStateSha256 !== await fileDigest(this.path))
+      || !Number.isSafeInteger(proof.historicalCount)
       || !proof.counts || Object.keys(proof.counts).sort().join(",") !== "oauth,proxy,refresh,requests,resetCredits,subscriptions"
       || Object.values(proof.counts).some(count => count !== 0)
-      || h.retained && Object.values(h.retained).some(rows => !Array.isArray(rows) || rows.length !== 0)
-      || this.state.retained && Object.values(this.state.retained).some(rows => !Array.isArray(rows) || rows.length !== 0)) {
+      || kind !== "exported-account-maintenance" && (h.retained && Object.values(h.retained).some(rows => !Array.isArray(rows) || rows.length !== 0)
+        || this.state.retained && Object.values(this.state.retained).some(rows => !Array.isArray(rows) || rows.length !== 0))) {
       throw new Error("Legacy account maintenance receipt rejected");
     }
     const currentProcess = await readFile(`/proc/${source.pid}/stat`, "utf8").catch(error => {
       if (error.code !== "ENOENT") throw error; return undefined;
     });
-    if (currentProcess?.slice(currentProcess.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] === source.startTime) {
+    if (requireSourceExit && currentProcess?.slice(currentProcess.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] === source.startTime) {
       throw new Error("Legacy account source process is still present");
     }
     if (await fileDigest(source.bundle) !== source.bundleSha256) throw new Error("Legacy account source bundle changed");
     const inspection = await this.inspectMaintenance();
+    let retained: CodexAccountRetainedState = { imageAffinities: [], resetReceipts: [], loginReceipts: [] };
+    if (kind === "exported-account-maintenance") {
+      const exported = value.retainedExport;
+      if (!exported || exported.version !== 1 || exported.kind !== "account-retained-export"
+        || exported.readOnly !== "v8-side-effect-checked" || value.retainedExportSha256 !== digest(exported)
+        || !exported.source || exported.source.pid !== source.pid
+        || ["owner", "epoch", "operationId", "fence", "bootId"].some(key => exported.source[key] !== h[key])) throw new Error("Account retained export identity changed");
+      retained = parseFencedRetained(exported.retained);
+    }
+    const volatileCount = retained.imageAffinities.length + retained.resetReceipts.length + retained.loginReceipts.length;
     const persistent = inspection.storage.tables.find(table => table.name === "pool_affinity");
-    if (!persistent || persistent.rows !== proof.historicalCount
+    if (!persistent || persistent.rows + volatileCount !== proof.historicalCount
       || value.storageSha256 !== inspection.storage.sha256
       || value.configurationSelectorSha256 !== inspection.configurationSelectorSha256
       || value.cliSha256 !== inspection.cliSha256) throw new Error("Legacy account current storage, volatile responsibility or configuration changed");
-    const released: State = { ...this.state, phase: "released",
-      retained: { imageAffinities: [], resetReceipts: [], loginReceipts: [] },
+    const released: State = { ...this.state, phase: "released", operatorLease: undefined,
+      retained: structuredClone(retained),
       carriedUnknown: structuredClone(this.state.uncertain),
       sealed: { storage: inspection.storage.sha256, historicalCount: proof.historicalCount,
         configurationSelectorSha256: inspection.configurationSelectorSha256, cliSha256: inspection.cliSha256,
         historicalUnknownSha256: digest(this.state.uncertain) },
       legacyMaintenance: { receiptSha256: createHash("sha256").update(bytes).digest("hex"), sourceBundleSha256: source.bundleSha256, sourcePid: source.pid }, ready: undefined };
     this.serialized(released, 4096);
-    await this.save(released);
+    if (requireSourceExit && kind === "exported-account-maintenance") this.sealedInspection = structuredClone(inspection);
+    return released;
+  }
+  /** The import-validated storage bound into the newly written release seal. */
+  inspectionAtSeal() { return this.sealedInspection && structuredClone(this.sealedInspection); }
+  private async importLegacyMaintenance(path: string, kind: MaintenanceKind) {
+    await this.save(await this.legacyReleasedState(path, kind, true));
+  }
+  /** Exact successor-schema capacity/storage preflight while the source is alive. */
+  async inspectExportedMaintenance(receipt: string) {
+    const info = await privateInfo(this.path);
+    if (info.size > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account state capacity exceeded");
+    const state = privateJson(await readFile(this.path, "utf8"));
+    if (state.schemaVersion !== 1 || state.phase !== "fenced" || !Number.isSafeInteger(state.epoch) || state.epoch < 0
+      || !Array.isArray(state.uncertain) || ![state.operationId,state.fence,state.sourceOwner].every(v => typeof v === "string" && v)) throw new Error("Invalid fenced source state");
+    this.state = state;
+    this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+    const released = await this.legacyReleasedState(receipt, "exported-account-maintenance", false);
+    return { status: "passed", projectedStateBytes: Buffer.byteLength(this.serialized(released, 4096)),
+      stateLimitBytes: ACCOUNT_CORE_STATE_MAX_BYTES, reserveBytes: 4096,
+      retainedSha256: digest(released.retained), unknownSha256: digest(released.uncertain) };
+  }
+  dispose() { this.operatorLease?.dispose(); this.operatorLease = undefined; }
+  private async expireOperatorLease(lease: OperatorLease, reason: OperatorLeaseEnd) {
+    if (!lease.ended() || this.operatorLease !== lease || this.failed || this.sealedProcess || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner) return;
+    if (this.transitioning) return; // Retry after the current atomic transition; release checks liveness before closing.
+    await this.transition(async () => {
+      const receipt: OperatorLeaseAbort = { version: 1, owner: this.owner, epoch: this.state.epoch,
+        operationId: this.state.operationId!, fence: this.state.fence!, operatorLease: lease.claim, reason, abortedAt: new Date().toISOString() };
+      await this.save({ ...this.state, phase: "open", operatorLease: undefined,
+        operatorLeaseAborts: [...(this.state.operatorLeaseAborts ?? []), receipt] });
+      this.proof = undefined; this.dispose();
+    });
+  }
+  renewOperatorLease(input: AccountOwnerExpectation) {
+    this.checkMaintenance(input);
+    if (!this.operatorLease) throw Error("Operator lease unavailable");
+    this.operatorLease.renew(input.operatorLease);
   }
   isOpen = () => !this.failed && !this.sealedProcess && !this.activating && this.state.phase === "open";
   retained() { return this.state.retained; }
@@ -227,13 +324,28 @@ export class AccountCoreOwner {
     await this.transition(() => this.save(this.state));
   };
   snapshot() { return { ...structuredClone(this.state), owner: this.owner, activeCalls: this.calls,
-    persistence: this.failed ? "unknown" : "ready", protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
+    operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
+    persistence: this.failed ? "unknown" : "ready", maintenanceInterruption: 1, protocolVersion: 1, topology: "split", pid: process.pid, bootId: this.bootId, incarnation: this.incarnation }; }
   private check(input: AccountOwnerExpectation, existing = true) {
     if (this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
       || ![input.operationId, input.fence].every(v => typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(v))
       || existing && (input.operationId !== this.state.operationId || input.fence !== this.state.fence)) throw new Error("Account owner handoff conflict");
   }
   checkInspection(input: AccountOwnerExpectation) { this.check(input); }
+  checkMaintenance(input: AccountOwnerExpectation) {
+    this.check(input);
+    if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.sealedProcess) {
+      throw new Error("Account maintenance requires the fenced source owner");
+    }
+  }
+  async acceptMaintenanceUnknown(input: AccountOwnerExpectation, activeCount: number) {
+    this.checkMaintenance(input);
+    if (activeCount + this.calls !== 0 || input.historicalUnknown === undefined
+      || digest(input.historicalUnknown) !== digest(this.state.uncertain)) {
+      throw new Error("Account maintenance requires the final exact unknown list and completed handlers");
+    }
+    await this.save({ ...this.state, carriedUnknown: structuredClone(input.historicalUnknown) });
+  }
   private async save(state: State) {
     const bytes = this.serialized(state);
     const temporary = `${this.path}.${randomUUID()}.tmp`;
@@ -248,21 +360,29 @@ export class AccountCoreOwner {
   }
   private serialized(state: State, reserve = 0) {
     const bytes = JSON.stringify(state);
-    if (Buffer.byteLength(bytes) + reserve > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained state exceeds protocol capacity");
+    if (Buffer.byteLength(bytes) + Math.max(reserve, state.phase === "fenced" && state.operatorLease ? 4096 : 0) > ACCOUNT_CORE_STATE_MAX_BYTES) throw new Error("Account retained state exceeds protocol capacity");
     return bytes;
   }
   async fence(input: AccountOwnerExpectation) {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
     if (input.historicalUnknown !== undefined && digest(input.historicalUnknown) !== digest(this.state.uncertain)) throw new Error("Account historical unknown list changed");
-    this.state = { schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
+    const lease = new OperatorLease(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
+    const fenced: State = { operatorLease: lease.claim, operatorLeaseAborts: this.state.operatorLeaseAborts, schemaVersion: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, fence: input.fence, sourceOwner: this.owner, uncertain: this.state.uncertain, retained: this.state.retained,
       carriedUnknown: structuredClone(input.historicalUnknown ?? []) };
-    await this.save(this.state);
+    // Reject oversized bindings while the original in-memory owner is still
+    // open. Close admission before the first asynchronous persistence step.
+    this.serialized(fenced);
+    this.state = fenced;
+    await this.save(fenced);
+    this.operatorLease = lease;
+    lease.start(reason => this.expireOperatorLease(lease, reason), () => { this.failed = true; lease.dispose(); });
   }
   async abortFence(input: AccountOwnerExpectation) {
     this.check(input);
     if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.sealedProcess) throw new Error("Account writer cannot resume after release began");
-    await this.save({ ...this.state, phase: "open" });
+    await this.save({ ...this.state, phase: "open", operatorLease: undefined });
+    this.proof = undefined; this.dispose();
   }
   inspect(observation: { activeCount: number; counts: unknown; historicalCount: number } | undefined) {
     const activeCount = (observation?.activeCount ?? 0) + this.calls;
@@ -283,9 +403,11 @@ export class AccountCoreOwner {
     this.check(input);
     if (this.state.phase !== "fenced" || observation.activeCount + this.calls !== 0 || !this.exactHistoricalUnknown()
       || !this.proof?.idle || this.proof.identity !== input.proof || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account Core is not drained or proof expired");
+    if (!this.operatorLease) throw Error("Live operator lease required");
+    this.operatorLease.assertLive();
     const carry = retained();
     const before = await readAccountStorage(this.options.dataDirectory);
-    const released: State = { ...this.state, phase: "released", legacyMaintenance: undefined, retained: carry, sealed: { storage: before.sha256,
+    const released: State = { ...this.state, phase: "released", operatorLease: undefined, legacyMaintenance: undefined, retained: carry, sealed: { storage: before.sha256,
       historicalCount: observation.historicalCount,
       configurationSelectorSha256: this.configuration(), cliSha256: await fileDigest(this.options.executable), historicalUnknownSha256: digest(this.state.uncertain) }, ready: undefined };
     // Reserve the successor's ready identity before closing anything. An
@@ -293,7 +415,10 @@ export class AccountCoreOwner {
     this.serialized(released, 4096);
     if (this.calls !== 0 || this.failed || !this.exactHistoricalUnknown() || released.sealed!.historicalUnknownSha256 !== digest(this.state.uncertain) || this.proof.identity !== input.proof
       || Date.parse(this.proof.expiresAt) <= Date.now()) throw new Error("Account final drain proof changed");
+    if (!this.operatorLease) throw Error("Live operator lease required");
+    this.operatorLease.assertLive();
     this.sealedProcess = true;
+    this.dispose();
     await stop();
     const storage = await readAccountStorage(this.options.dataDirectory);
     if (storage.sha256 !== before.sha256) throw new Error("Account storage changed while closing writer");

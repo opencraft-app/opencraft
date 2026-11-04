@@ -23,6 +23,20 @@ test('closed schema never exports payloads and rejects malformed known fields',(
   assert(!JSON.stringify(value).includes('canary'));assert(!('actorId' in value));assert.equal(sanitizeEvent(event({operationType:'user-content'}),now),null);
   assert.equal(sanitizeEvent(event({durationMs:-1}),now),null);assert.throws(()=>windowFor({from:'2020-01-01',to:'2026-01-01'},now));
 });
+test('transport failure metadata survives sanitization without accepting error text or invalid causes',()=>{
+  const input=event({kind:'client_signal',clientSignal:'transport_failure',attemptId:'physical-1',
+    transportFailure:'probe-timeout',transportPhase:'ready',networkState:'online',visibility:'hidden',
+    socketReadyState:1,socketCloseCode:1006,socketWasClean:0,socketBufferedBytes:4096,
+    lastMessageAgoMs:26000,probeElapsedMs:26000,lastProbeRttMs:40,transportTimeoutMs:5000,timerLateMs:21000,pagePauseMs:94000,pageResumeAgoMs:30,pageHiddenForMs:1200,
+    reason:'secret-url-canary',url:'secret-url-canary'});
+  const value=sanitizeEvent(input,now);
+  assert(value);assert.equal(value.pagePauseMs,94000);assert.equal(value.pageResumeAgoMs,30);assert.equal(value.pageHiddenForMs,1200);assert.equal(value.probeElapsedMs,26000);assert.equal(value.timerLateMs,21000);
+  assert.equal(value.transportFailure,'probe-timeout');assert.equal(value.socketCloseCode,1006);
+  assert(!JSON.stringify(value).includes('canary'));
+  for(const extra of [{transportFailure:'secret-url-canary'},{transportPhase:'secret'},{socketCloseCode:5000},
+    {socketReadyState:4},{socketWasClean:2},{timerLateMs:-1},{pagePauseMs:-1},{pageResumeAgoMs:0.5},{pageHiddenForMs:-1},{probeElapsedMs:1.5},{attemptId:undefined}])
+    assert.equal(sanitizeEvent({...input,...extra},now),null);
+});
 test('queue drops without blocking, retains bounds and accepts valid event after invalid',()=>{
   const queue=createEventQueue({maxEvents:2,maxBytes:4096,now:()=>now});
   assert.equal(queue.emit(event({kind:'garbage'})),false);assert(queue.emit(event()));assert(queue.emit(event()));assert.equal(queue.emit(event()),false);
@@ -258,6 +272,7 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
   test(`client observation remains usable with ${capability}`, async () => {
     const moduleUrl = new URL('../../apps/workbench-web/src/runtime/observability.ts', import.meta.url).href;
     const contractUrl = new URL('../../packages/observability-contract/index.mjs', import.meta.url).href;
+    const appHostUrl = new URL('../../apps/workbench-web/src/runtime/websocket-app-host.ts', import.meta.url).href;
     const source = `
       import assert from 'node:assert/strict';
       if (${JSON.stringify(capability)} === 'no-randomUUID') Object.defineProperty(globalThis.crypto, 'randomUUID', { configurable: true, value: undefined });
@@ -275,6 +290,7 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       window.open = url => { opened = url; };
       globalThis.fetch = async (url, options) => {
         if (url.endsWith('/capabilities')) { assert.equal(url, base + '/__opencraft_observe/capabilities'); capabilityReads++; return { ok: true, json: async () => ({ telemetry: true, available: true }) }; }
+        if (url.endsWith('/__opencraft_apphost_diagnostic')) throw Error('diagnostic endpoint temporarily unreachable');
         assert.equal(url, base + '/__opencraft_observe/events');
         batches.push(JSON.parse(options.body).events);
         return { ok: true };
@@ -292,6 +308,19 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const finish = observation.beginObservedOperation('thread_open'); finish('ok'); finish('failed');
       for (const stage of ['connecting','host-ready','settled','backoff','connecting','host-ready','settled'])
         observation.observeRecovery({hostId:'fixture',recoveryId:'test-recovery',stage,elapsedMs:1});
+      // The one-shot legacy POST fails. The account-attributable queued failure
+      // must still arrive with its original hidden-page context after return.
+      document.visibilityState = 'hidden';
+      window.location = {href:'https://example.test/private-path'};
+      const socket = Object.assign(new EventTarget(), {readyState:0,bufferedAmount:12,send(){},close(){this.readyState=3;}});
+      const {connectWebSocketAppHost} = await import(${JSON.stringify(appHostUrl)});
+      const appHost = connectWebSocketAppHost(() => socket);
+      const connection = appHost.createTransport('private-host').connect();
+      const failed = assert.rejects(connection,/App Host connection failed/);
+      await new Promise(resolve => setImmediate(resolve));
+      socket.dispatchEvent(new Event('error'));
+      await failed; appHost.close();
+      document.visibilityState = 'visible';
       let lifecycle, unsubscribed = false;
       const client = { connectionGeneration: 2, subscribeRequestLifecycle(callback) { lifecycle = callback; return () => { unsubscribed = true; }; } };
       const dispose = observation.installClientObservation(client);
@@ -304,6 +333,10 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       assert(events.length >= 6); assert(unsubscribed);
       const { sanitizeEvent } = await import(${JSON.stringify(contractUrl)});
       assert(events.every(event => sanitizeEvent(event) !== null));
+      const failure = events.find(event => event.clientSignal === 'transport_failure');
+      assert(failure);assert.equal(failure.visibility,'hidden');assert.equal(failure.transportFailure,'socket-error');
+      assert.equal(failure.socketBufferedBytes,12);assert(failure.attemptId);
+      assert(!JSON.stringify(failure).includes('private'));
       assert(events.every(event => event.producerId !== 'unavailable'));
       assert.equal(new Set(events.map(event => event.producerId)).size, 1);
       assert.equal(new Set(events.map(event => event.eventId)).size, events.length);

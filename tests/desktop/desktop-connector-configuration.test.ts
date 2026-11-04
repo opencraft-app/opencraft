@@ -44,7 +44,7 @@ test("DesktopConnectorConfigurationStore: fresh, up-to-date, and CAS operations"
   }
 });
 
-test("DesktopConnectorConfigurationStore adopts legacy matching database and moves aside mismatched legacy database", async () => {
+test("DesktopConnectorConfigurationStore adopts legacy matching database and rejects mismatched legacy database", async () => {
   for (const matching of [true, false]) {
     const root = await mkdtemp(join(tmpdir(), `oc-connector-config-legacy-${matching ? "match" : "mismatch"}-`));
     const path = join(root, "configuration.sqlite");
@@ -68,13 +68,19 @@ test("DesktopConnectorConfigurationStore adopts legacy matching database and mov
       }
       raw.close();
 
+      if (!matching) {
+        assert.throws(() => new DesktopConnectorConfigurationStore(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE type='table'").get()); retained.close();
+        continue;
+      }
       const store = new DesktopConnectorConfigurationStore(path);
       try {
-        assert.equal(store.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.equal(store.outcome.status, "adopted");
         assert.ok(store.outcome.backupPath);
         const files = await readdir(root);
         assert.ok(files.some(f => f.includes(".pre-v1-")));
-        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+        assert.equal(files.some(f => f.includes(".legacy-")), false);
 
         if (matching) {
           assert.deepEqual(store.load(), { revision: 1, value: legacyConfig });

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
+import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -41,9 +43,12 @@ export function headlessWebHostDefinitions() {
 }
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
+  await buildTranscriptCacheRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
+  await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
     // Product-local packages resolve first; this is a trusted build fallback.
@@ -58,6 +63,12 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
     outfile: output,
     logLevel: "warning",
   });
+}
+
+export function buildHumanAccountBundle(output) {
+  return build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: output,
+    bundle: true, platform: 'node', format: 'esm', target: 'node26',
+    banner: { js: "import { createRequire as createOpenCraftRequire } from 'node:module'; const require = createOpenCraftRequire(import.meta.url);" } });
 }
 
 function run(command, args, options = {}) {
@@ -170,8 +181,7 @@ export async function packageHeadlessLinux(composition = {}) {
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
     await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
     await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
-    await build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: join(stage, 'runtime/human-account.mjs'),
-      bundle: true, platform: 'node', format: 'esm', target: 'node26' });
+    await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
     await build({ entryPoints: [join(repositoryRoot, 'scripts/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.

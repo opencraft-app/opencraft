@@ -78,6 +78,8 @@ export interface IndexedDbHostConnectionProfileStoreOptions {
   readonly seed?: readonly HostConnectionProfile[];
   /** Activation-owned profiles visible for this run but never written to IDB. */
   readonly ephemeral?: readonly HostConnectionProfile[];
+  /** Legacy activation-owned default; a saved or explicit profile always wins. */
+  readonly fallback?: HostConnectionProfile;
 }
 
 function requestResult<TResult>(request: IDBRequest<TResult>): Promise<TResult> {
@@ -130,7 +132,7 @@ export class IndexedDbHostConnectionProfileStore implements HostConnectionProfil
     const database = await openProfileDatabase(factory, databaseName);
     const store = new IndexedDbHostConnectionProfileStore(database);
     try {
-      await store.load(options.seed ?? [], options.ephemeral ?? []);
+      await store.load(options.seed ?? [], options.ephemeral ?? [], options.fallback);
       return store;
     } catch (error) {
       store.close();
@@ -204,6 +206,7 @@ export class IndexedDbHostConnectionProfileStore implements HostConnectionProfil
   private async load(
     seed: readonly HostConnectionProfile[],
     ephemeral: readonly HostConnectionProfile[],
+    fallback?: HostConnectionProfile,
   ): Promise<void> {
     const transaction = this.database.transaction(PROFILE_STORE, "readonly");
     const completion = transactionComplete(transaction);
@@ -229,6 +232,11 @@ export class IndexedDbHostConnectionProfileStore implements HostConnectionProfil
       if (byId.has(profile.hostId)) {
         throw new Error(`Ephemeral Host profile ${profile.hostId} conflicts with a stored profile`);
       }
+      this.ephemeralIds.add(profile.hostId);
+      byId.set(profile.hostId, profile);
+    }
+    if (fallback && !byId.has(fallback.hostId)) {
+      const profile = normalizeHostConnectionProfile(fallback);
       this.ephemeralIds.add(profile.hostId);
       byId.set(profile.hostId, profile);
     }

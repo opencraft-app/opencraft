@@ -335,6 +335,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 export function createTerminalWorkbenchPanelPlugin(
   registry: WorkbenchTerminalSessionRegistry,
   resolveScope?: (ownerId: string) => { threadId?: string | null; projectId?: string | null },
+  restoreOwner?: (ownerId: string) => Promise<void>,
 ) {
   const TerminalPanel = createTerminalPanel(registry);
   const activeTerminalSessionId = (state: ConversationPanelState): string | null => {
@@ -379,6 +380,10 @@ export function createTerminalWorkbenchPanelPlugin(
           observePanelOwner(ownerId);
           return registry.listForOwner(ownerId).map(terminalTab);
         },
+        ...(restoreOwner ? { hydrateTabs: async (ownerId: string) => {
+          await restoreOwner(ownerId);
+          return registry.listForOwner(ownerId).map(terminalTab);
+        } } : {}),
         createTab: ({ sessionId }) => terminalTab(sessionId),
         disposeTab: (tab, _ownerId, reason) => {
           // Unmount/owner eviction/plugin replacement is not user intent to kill.

@@ -17,6 +17,7 @@ import { queryGitIdentityBroker, serveGitIdentityBroker } from '../../scripts/gi
 import { exactGitHost, gitConfigParameter, parseGitInvocation, personalHttpsRemote } from '../../scripts/git-identity-wrapper';
 import { managedGitEnvironment } from '../../scripts/git-identity-environment';
 import { renderGitIdentityInstallation } from '../../scripts/git-identity-installation';
+import { GitBrokerOwner } from '../../scripts/git-broker-owner';
 import { generateGitSigningKey } from '../../scripts/git-identity-signer';
 // SO_PEERCRED and /proc are the supported local Linux execution boundary.
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
@@ -381,6 +382,26 @@ esac
   const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /broker unavailable/u);
 });
 
+test('installation launcher restores its broker connection when callers filter inherited environment', async t => {
+  const f = await managedRepository(t);
+  f.bind();
+  await f.native('remote', 'add', 'origin', 'https://github.com/synthetic/repo.git');
+  await writeFile(join(f.root, 'git-identity-wrapper.mjs'), await readFile(join(f.root, 'git.mjs')));
+  const prepared = renderGitIdentityInstallation({ installationDirectory: f.root, runtimeDirectory: f.root,
+    node: process.execPath, nativeGit: '/usr/bin/git', brokerSocket: f.socket,
+    hosts: ['github.com'], basePath: '/usr/bin:/bin' });
+  const launcher = join(f.root, 'installed-git');
+  await writeFile(launcher, prepared.launcher, { mode: 0o700 });
+  for (const removed of [['OPENCRAFT_GIT_BROKER_SOCKET'], Object.keys(f.managedEnv).filter(key => key.startsWith('OPENCRAFT_GIT_'))]) {
+    const env = { ...f.managedEnv };
+    for (const key of removed) delete env[key];
+    const result = await child(launcher, ['commit', '--allow-empty', '-m', 'through installed broker'], env, f.work);
+    assert.equal(result.code, 0, result.err);
+    assert.equal((await f.native('log', '-1', '--format=%an <%ae>')).out, 'Employee <employee@example.test>');
+  }
+  assert.ok(f.opens.includes('github.com'), 'the real wrapper must contact the installed broker');
+});
+
 test('installation launcher applies an explicit read policy to already-running callers', async t => {
   const root = await mkdtemp(join(tmpdir(), 'git-read-policy-install-')); t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'git-identity-wrapper.mjs'), 'process.stdout.write(JSON.stringify(process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS));');
@@ -485,4 +506,34 @@ test('HTTPS credential allowlist denies a retired token without changing other h
     assert.equal(answer.status, host === 'github.com' ? 'configured' : 'denied');
     if (host !== 'github.com') assert.equal(JSON.stringify(answer).includes('synthetic-retired-token'), false);
   }
+});
+
+test('broker fence includes pending admission, drains existing signer, and cold successor preserves history', async t => {
+  const f = await fixture(t);
+  f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-only', signing: generateGitSigningKey() });
+  const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });
+  const call = (input: any) => queryGitIdentityBroker(f.socket, { op: 'owner-handoff', ...input });
+  const initial = (await call({ action: 'snapshot' })).handoff;
+  const stat = await readFile(`/proc/${process.pid}/stat`, 'utf8');
+  const claim = { version: 1, id: 'broker-test-lease', ttlMs: 15000, controller: { pid: process.pid, startTime: stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/u)[19], bootId: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() } };
+  const input = { expectedOwner: initial.owner, expectedEpoch: initial.epoch, operationId: 'broker-test', fence: 'broker-test-fence', operatorLease: claim };
+  const fenced = await call({ action: 'fence', ...input }); assert.equal(fenced.handoff.phase, 'fenced');
+  input.expectedEpoch++;
+  assert.equal((await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' })).status, 'unavailable');
+  assert.equal((await call({ action: 'release', ...input })).status, 'conflict');
+  assert.ok((await call({ action: 'snapshot' })).handoff.pending.some((r: any) => r.kind === 'command-session'));
+  assert.equal((await queryGitIdentityBroker(f.socket, { op: 'close', sessionId: session.sessionId })).status, 'closed');
+  assert.equal((await call({ action: 'release', ...input })).handoff.phase, 'released');
+  assert.equal((await call({ action: 'cold-ready', ...input })).handoff.phase, 'cold-ready');
+  assert.equal((await call({ action: 'resume', ...input })).handoff.phase, 'open');
+});
+test('durable broker restart refuses unconfirmed signing and never forgets unknown', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'broker-owner-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'owner.json'), owner = new GitBrokerOwner(path);
+  const finish = owner.begin('sign');
+  assert.throws(() => new GitBrokerOwner(path), /recovery required/);
+  finish(true);
+  const successor = new GitBrokerOwner(path);
+  assert.equal(successor.snapshot().history.length, 1);
+  assert.equal((successor.snapshot().history[0] as any).outcome, 'unknown');
 });

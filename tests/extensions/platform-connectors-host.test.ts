@@ -171,7 +171,7 @@ test("connector network rejects redirects and metadata targets without forwardin
 import { DatabaseSync } from "node:sqlite";
 import { readdir } from "node:fs/promises";
 
-test("ConnectorDatabase manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", async () => {
+test("ConnectorDatabase manages SQLite lifecycle: fresh, up-to-date, adopted, and rejected legacy", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-connector-lifecycle-"));
   const path = join(root, "managed.sqlite");
   try {
@@ -191,7 +191,7 @@ test("ConnectorDatabase manages SQLite lifecycle: fresh, up-to-date, adopted, an
   }
 });
 
-test("ConnectorDatabase adopts legacy matching database and moves aside mismatched legacy database", async () => {
+test("ConnectorDatabase adopts legacy matching database and rejects mismatched legacy database", async () => {
   for (const matching of [true, false]) {
     const root = await mkdtemp(join(tmpdir(), `oc-connector-legacy-${matching ? "match" : "mismatch"}-`));
     const path = join(root, "managed.sqlite");
@@ -210,9 +210,14 @@ test("ConnectorDatabase adopts legacy matching database and moves aside mismatch
       }
       raw.close();
 
+      if (!matching) {
+        assert.throws(() => new ConnectorDatabase(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE name='extra_table'").get()); retained.close(); continue;
+      }
       const db = new ConnectorDatabase(path);
       try {
-        assert.equal(db.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.equal(db.outcome.status, "adopted");
         assert.ok(db.outcome.backupPath);
         const files = await readdir(root);
         assert.ok(files.some(f => f.includes(".pre-v1-")));
@@ -248,10 +253,14 @@ test("known missing connector tables preserve configuration and credentials with
       if (variant === "missing-credentials") raw.exec("DROP TABLE connector_credentials");
       raw.close();
 
+      if (variant === "unknown-index" || variant === "wrong-constraint") {
+        assert.throws(() => new ConnectorDatabase(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.equal(retained.prepare("SELECT title FROM connector_instances").get()?.title, "Retained"); retained.close(); continue;
+      }
       const db = new ConnectorDatabase(path);
-      const known = variant === "missing-oauth" || variant === "missing-credentials";
       try {
-        assert.equal(db.outcome.status, known ? "migrated" : "moved-aside");
+        assert.equal(db.outcome.status, "migrated");
         assert.ok(db.outcome.backupPath);
         if (variant === "missing-oauth") {
           assert.equal(db.get("inst").revision, 7);
@@ -272,7 +281,7 @@ test("known missing connector tables preserve configuration and credentials with
       } finally { again.close(); }
       const retained = new DatabaseSync(path);
       try {
-        assert.equal(retained.prepare("SELECT title FROM connector_instances WHERE id='inst'").get()?.title, known ? "Retained" : undefined);
+        assert.equal(retained.prepare("SELECT title FROM connector_instances WHERE id='inst'").get()?.title, "Retained");
       } finally { retained.close(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   }

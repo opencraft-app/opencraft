@@ -12,6 +12,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
+import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -242,7 +243,8 @@ export function appHostFrameRejection(message) {
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
 const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
-const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode"]);
+const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs", "pagePauseMs", "pageResumeAgoMs", "pageHiddenForMs"];
+const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode", "visibility", "networkState", "wasClean", ...appHostDiagnosticNumbers]);
 
 const recoveryDiagnosticKeys = new Set(["kind", "recoveryId", "stage", "attemptId", "eventAtMs", "method", "elapsedMs", "attempt", "delayMs", "demand", "durationMs", "requests", "responseBytes", "projectionMs", "extraConversations", "nativeReads", "nativeEvents", "displayVersion", "messages", "timestamps", "workClocks", "authoritative", "cacheHit", "storageFailure", "renderedTimes", "visibleTimes", "touch", "viewportWidth"]);
 const recoveryStages = new Set(["display-load", "display-save", "display-paint", "transport-unavailable", "manual-block", "waiting", "backoff", "connecting", "initializing", "host-ready", "resources", "revalidate", "provider-history", "history-started", "history-backoff", "request-slow", "request-failed", "history-authoritative", "history-failed", "history-authoritative-failed", "capability-ready", "capability-ready-failed", "replica-ready", "replica-ready-failed", "settled"]);
@@ -280,15 +282,26 @@ function validAppHostDiagnostic(report) {
     && appHostFailureKinds.has(report.failure)
     && appHostPhases.has(report.phase)
     && Number.isInteger(report.readyState) && report.readyState >= 0 && report.readyState <= 3
-    && Number.isInteger(report.ageMs) && report.ageMs >= 0 && report.ageMs <= 86_400_000
+    && Number.isSafeInteger(report.ageMs) && report.ageMs >= 0
+    && appHostDiagnosticNumbers.every(key => report[key] === undefined || (Number.isSafeInteger(report[key]) && report[key] >= 0))
+    && (report.visibility === undefined || ["visible", "hidden"].includes(report.visibility))
+    && (report.networkState === undefined || ["online", "offline", "unknown"].includes(report.networkState))
+    && (report.wasClean === undefined || [0, 1].includes(report.wasClean))
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
 function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }) {
+  const send = createWebSocketSender(client);
   const listeners = new Set();
   const pendingConnects = new Set();
   let connection = null;
   let frameSequence = 0;
+  let probeSequence = 0;
+  let lastProbeObservedAt = -Infinity;
+  const probes = new Map();
+  const probeDetail = probe => ({ probeSequence: probe.sequence, eventAtMs: Date.now(),
+    elapsedMs: Math.max(0, performance.now() - probe.started),
+    readyState: client.readyState, bufferedBytes: client.bufferedAmount });
   const frameContext = () => ({ frameSequence, phase: connection === null ? "awaiting-hello" : "ready" });
   const port = {
     postMessage(message) {
@@ -296,7 +309,18 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       if (message?.type === "response" && pendingConnects.delete(message.requestId)) {
         logDiagnostic("host-connect", { ok: message.ok === true });
       }
-      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+      const probe = message?.type === "response" ? probes.get(message.requestId) : undefined;
+      if (probe) {
+        probes.delete(message.requestId);
+        const responseMs = Math.max(0, performance.now() - probe.started);
+        logDiagnostic("probe-response", { ...probeDetail(probe), responseMs, ok: message.ok === true });
+        if (client.readyState === WebSocket.OPEN) {
+          send(JSON.stringify(message), error => {
+            // A completed local write does not acknowledge browser receipt.
+            logDiagnostic("probe-written", { ...probeDetail(probe), responseMs, ok: !error });
+          });
+        }
+      } else if (client.readyState === WebSocket.OPEN) send(JSON.stringify(message));
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -317,17 +341,34 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (rejection !== null) {
       logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), ...rejection });
       if (rejection.reason === "protocol-version" && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: "fatal", error: {
+        send(JSON.stringify({ type: "fatal", error: {
           code: "APP_HOST_PROTOCOL_MISMATCH",
           message: "Client and server versions are incompatible. Update or reload the client to reconnect.",
           retryable: false,
-        } }));
+        } }), () => client.close(1008, "Invalid App Host request"));
+        return;
       }
       client.close(1008, "Invalid App Host request");
       return;
     }
+    if (message.type === "connection/probe") {
+      const started = performance.now();
+      const sequence = ++probeSequence;
+      // Observe normal five-second probes, bounded even for a flooding peer.
+      if (started - lastProbeObservedAt >= 1000 && probes.size < 8 && !probes.has(message.requestId)) {
+        lastProbeObservedAt = started;
+        const probe = { sequence, started };
+        probes.set(message.requestId, probe);
+        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence });
+      }
+    }
     if (!authorize(message)) {
-      client.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+      const probe = probes.get(message.requestId);
+      if (probe) {
+        probes.delete(message.requestId);
+        logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
+      }
+      send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
         error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
       return;
     }
@@ -344,7 +385,11 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (message.type === "host/connect") pendingConnects.add(message.requestId);
     for (const listener of listeners) listener(message);
   });
-  client.once("close", () => connection?.close());
+  client.once("close", () => {
+    for (const probe of probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
+    probes.clear();
+    connection?.close();
+  });
   client.once("error", () => connection?.close());
 }
 
@@ -687,9 +732,8 @@ export async function createWorkbenchWebServer({
           sendJson(response, 400, { ok: false, error: "Invalid App Host diagnostic" });
           return;
         }
-        emitAppHostDiagnostic({ event: "client-failure", attemptId: report.attemptId,
-          failure: report.failure, phase: report.phase, readyState: report.readyState,
-          ageMs: report.ageMs, ...(report.closeCode === undefined ? {} : { closeCode: report.closeCode }) });
+        // The closed validator above permits only local transport metadata.
+        emitAppHostDiagnostic({ event: "client-failure", ...report });
         sendJson(response, 202, { ok: true });
         return;
       }

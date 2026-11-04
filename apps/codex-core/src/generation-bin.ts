@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
-import { startCodexGenerationService } from "./generation-service.js";
+import { readFile, writeFile } from "node:fs/promises";
+import { startCodexGenerationService, inspectRouterMaintenanceService } from "./generation-service.js";
 import { readNativeHistoryFailures } from "./native-history-read.js";
+import { privateRouterJson, hostColdUnavailablePolicy } from "./router-maintenance.js";
 
 const argument = (name: string) => {
   const i = process.argv.indexOf(name), value = i >= 0 ? process.argv[i + 1]?.trim() : undefined;
@@ -15,13 +16,23 @@ async function main() {
   const scope = argument("--systemd-scope");
   if (scope !== "system" && scope !== "user") throw new Error("Invalid systemd scope");
   const tokenFile = argument("--token-file");
-  const service = await startCodexGenerationService({ endpoint: argument("--endpoint"), coreEndpoint: argument("--core-endpoint"),
+  const options: Parameters<typeof startCodexGenerationService>[0] = { endpoint: argument("--endpoint"), coreEndpoint: argument("--core-endpoint"),
     tokenFile, token: (await readFile(tokenFile, "utf8")).trim(), dataDirectory: argument("--data-directory"),
     registryDirectory: argument("--registry-directory"), systemdScope: scope,
     requireHostUsage: !process.argv.includes("--native-only"),
     nativeHistoryFailures: process.argv.includes("--native-history-failures-file") ? await readNativeHistoryFailures(argument("--native-history-failures-file")) : undefined,
     bootstrap: process.argv.includes("--bootstrap-file") ? JSON.parse(await readFile(argument("--bootstrap-file"), "utf8")) : undefined,
-    signal: startup.signal });
+    maintenanceFile: process.argv.includes("--router-maintenance-file") ? argument("--router-maintenance-file") : undefined,
+    signal: startup.signal };
+  if (process.argv.includes("--router-maintenance-inspect")) {
+    // Freshness follows archive/operation verification in the collector. Parsing
+    // here must not expire an already committed recovery's historical evidence.
+    const unavailable = process.argv.includes("--router-host-cold-unavailable-file") ? hostColdUnavailablePolicy(privateRouterJson(argument("--router-host-cold-unavailable-file")), false) : undefined;
+    const value = await inspectRouterMaintenanceService(options, process.argv.includes("--router-maintenance-continuing"), process.argv.includes("--router-maintenance-provisional"), process.argv.includes("--router-maintenance-host-restart"), unavailable);
+    await writeFile(argument("--router-maintenance-inspect"), JSON.stringify(value), { mode: 0o600, flag: "wx" }); return;
+  }
+  if (process.argv.includes("--router-maintenance-continuing") || process.argv.includes("--router-maintenance-provisional") || process.argv.includes("--router-maintenance-host-restart") || process.argv.includes("--router-host-cold-unavailable-file")) throw Error("Continuing proof requires explicit read-only inspection");
+  const service = await startCodexGenerationService(options);
   stop = async () => { await service.close(); process.exit(0); };
   if (startup.signal.aborted) { await stop(); return; }
   process.stdout.write(JSON.stringify({ type: "codex-routing-owner-ready", pid: process.pid }) + "\n");

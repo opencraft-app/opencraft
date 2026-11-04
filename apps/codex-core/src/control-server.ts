@@ -69,11 +69,11 @@ export async function startControlServer(endpoint: string, token: string,
 }
 
 /** Same bounded JSON envelope used by the private account and generation planes. */
-export async function readControlJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readControlJson(request: IncomingMessage, maxBytes = 1024 * 1024): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 1024 * 1024) throw new Error("Control request too large");
+    if (size > maxBytes) throw new Error("Control request too large");
     chunks.push(chunk);
   }
   const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));

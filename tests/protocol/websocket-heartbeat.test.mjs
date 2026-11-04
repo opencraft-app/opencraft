@@ -16,8 +16,8 @@ test('queued Ping cannot be called a peer heartbeat timeout; its own full interv
  const f=fixture();f.socket.bufferedAmount=1000;f.check();f.at(100);f.check();f.at(200);f.check();
  assert.equal(f.socket.readyState,1);assert.equal(f.events[0].event,'heartbeat-write-pending');
  f.at(250);f.flush();f.at(300);f.check();assert.equal(f.socket.readyState,1);
- f.at(350);f.check();assert.equal(f.socket.readyState,3);
- assert.equal(f.events.at(-1).event,'heartbeat-timeout');assert.equal(f.events.at(-1).queuedMs,250);assert.equal(f.events.at(-1).sentAgeMs,100);
+ f.at(650);f.check();assert.equal(f.socket.readyState,3);
+ assert.equal(f.events.at(-1).event,'heartbeat-timeout');assert.equal(f.events.at(-1).queuedMs,250);assert.equal(f.events.at(-1).sentAgeMs,400);
 });
 test('a drained Ping and matching Pong retire the probe; healthy checks stay quiet',()=>{
  const f=fixture();f.check();f.flush();f.at(50);f.pong();f.at(100);f.check();f.flush();f.pong();
@@ -25,7 +25,7 @@ test('a drained Ping and matching Pong retire the probe; healthy checks stay qui
 });
 test('unsolicited Pong cannot acknowledge a different probe',()=>{
  const f=fixture();f.check();f.flush();f.socket.emit('pong',Buffer.from('old'));
- f.at(100);f.check();assert.equal(f.events.at(-1).event,'heartbeat-timeout');
+ f.at(400);f.check();assert.equal(f.events.at(-1).event,'heartbeat-timeout');
 });
 test('progress extends the queued write deadline, but a stuck writer is bounded',()=>{
  const f=fixture();f.socket.bufferedAmount=1000;f.check();f.at(300);f.socket.bufferedAmount=900;f.check();
@@ -47,4 +47,15 @@ test('slow reader drains a real large frame and survives; the old interval polic
  const pong=new Promise(r=>peer.once('pong',r));client._socket.resume();
  await Promise.race([pong,new Promise((_,j)=>setTimeout(()=>j(Error('Pong did not arrive after drain')),2000).unref())]);
  time=250;check();assert.equal(peer.readyState,WebSocket.OPEN);assert.ok(events.some(e=>e.event==='heartbeat-recovered'));
+});
+
+test('partial frames defer a missing Pong, but one-way progress cannot leak a socket forever', () => {
+ let time = 0; const tcp = new EventEmitter();
+ const socket = Object.assign(new EventEmitter(), { _socket: tcp, readyState: 1, bufferedAmount: 0,
+  ping(_token, _mask, callback) { callback(); }, terminate() { this.readyState = 3; this.emit('close'); } });
+ const check = trackSocketHeartbeat(socket, { intervalMs: 100, now: () => time });
+ check();
+ for (time = 100; time < 2000; time += 100) { tcp.emit('data', Buffer.from([0])); check(); assert.equal(socket.readyState, 1); }
+ tcp.emit('data', Buffer.from([0])); check(); assert.equal(socket.readyState, 3);
+ assert.equal(tcp.listenerCount('data'), 0);
 });

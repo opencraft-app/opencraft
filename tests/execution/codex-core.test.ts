@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createServer as createTcpServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import { AppServerRpcError } from "@opencraft/appserver-client";
 import WebSocket from "ws";
 import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -23,6 +24,64 @@ import { observeNativeExecutionProcess } from "../../apps/opencraft-daemon/src/n
 // short and canonical, matching the identity returned by the runtime owner.
 const temporaryDirectory = realpathSync(process.platform === "darwin" ? "/tmp" : tmpdir());
 const token = "synthetic-core-token-".repeat(3);
+
+// Opt-in stock-native boundary. The isolated fixture has no real credentials.
+test("stock Native restart preserves a never-dispatched creation for its first input", {
+  skip: !process.env.OPENCRAFT_TEST_NATIVE_CLI,
+}, async () => {
+  let modelPosts = 0;
+  const f = await fixture(async options => ({ ...options,
+    executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, spawnAppServer: undefined,
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (init?.method !== "POST" || !url.pathname.endsWith("/responses")) return Response.json({ plan_type: "pro" });
+      modelPosts++;
+      const item = { type: "message", id: "msg_stock_first", role: "assistant", status: "completed",
+        content: [{ type: "output_text", text: "OK", annotations: [] }] };
+      const response = { id: "resp_stock_first", object: "response", status: "in_progress", output: [] };
+      const events = [{ type: "response.created", response },
+        { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+        { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: "OK" },
+        { type: "response.output_item.done", output_index: 0, item },
+        { type: "response.completed", response: { ...response, status: "completed", output: [item],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }];
+      return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+        { headers: { "content-type": "text/event-stream" } });
+    },
+  }));
+  let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
+  const initialization = { clientInfo: { name: "stock-empty-restart", version: "1" }, capabilities: { experimentalApi: true } };
+  try {
+    const a = await f.adapter(true); await a.rpc("browser", "initialize", initialization);
+    await mkdir(f.options.nativeCodexHomeDirectory!, { recursive: true });
+    const access = `${Buffer.from("{}").toString("base64url")}.${Buffer.from(JSON.stringify({
+      exp: Math.floor(Date.now() / 1000) + 3600, "https://api.openai.com/auth": { chatgpt_account_id: "stock-fixture" },
+    })).toString("base64url")}.synthetic`;
+    await writeFile(join(f.options.nativeCodexHomeDirectory!, "auth.json"), JSON.stringify({ auth_mode: "chatgpt",
+      tokens: { access_token: access, refresh_token: "synthetic", account_id: "stock-fixture" } }));
+    await a.rpc("browser", "opencraft/codex/accounts/import");
+    const { thread } = await a.rpc("browser", "thread/start", { cwd: f.root, ephemeral: false, model: "gpt-5.3-codex" });
+    assert.ok(existsSync(thread.path), "the Native allocation must survive restart before any client history read");
+    const oldNative = (await f.control.health()).codexPid;
+    const beforeRestart = await a.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
+    assert.deepEqual(beforeRestart.thread.turns, []);
+    await a.engine.close(); await f.core.close();
+    replacement = await startCodexCore(f.options);
+    assert.notEqual((await f.control.health()).codexPid, oldNative);
+    const b = await f.adapter(true); await b.rpc("browser", "initialize", initialization);
+    const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true });
+    assert.equal(restored.thread.id, thread.id);
+    const started = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "stock-first-after-restart",
+      input: [{ type: "text", text: "synthetic first input" }] });
+    assert.equal(typeof started.turn.id, "string");
+    for (let n = 0; n < 500 && !b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id); n++) await delay(10);
+    const completed = b.frames.find(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id);
+    assert.equal(completed?.params.threadId, thread.id);
+    assert.equal(completed?.params.turn.status, "completed");
+    assert.equal(b.frames.filter(frame => frame.method === "turn/started" && frame.params.turn.id === started.turn.id).length, 1);
+    assert.equal(modelPosts, 1, "the first input must reach the synthetic upstream exactly once");
+  } finally { await replacement?.close(); await f.close(); }
+});
 
 test("standalone Core records the real native process on execution leases across Host replacement", async () => {
   const f = await fixture();
@@ -835,12 +894,12 @@ for (const overlays of [false, true]) test(`directory readers learn a committed 
   } finally { await f.close(); }
 });
 
-test("a never-dispatched creation keeps its native route and events through Host replacement without a history resume", async () => {
+for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched creation keeps its native route and events through Host replacement without a history resume (unsupported=${emptyHistoryUnsupported})`, async () => {
   const f = await fixture(async options => ({ ...options,
     appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
-      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
+      { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", ...(emptyHistoryUnsupported ? { FAKE_EMPTY_HISTORY_UNSUPPORTED: "1" } : {}) }, stdio: ["pipe", "pipe", "pipe"] }),
   }));
   const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
   try {
@@ -1006,4 +1065,38 @@ test("creation storage upgrades v1 without inventing an environment owner", asyn
       assert.deepEqual(current.get("new")?.result, { thread: { id: "new", turns: [] } }); }
     finally { current.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+for (const state of ["created", "active-peer", "persisted", "attempted", "unloaded", "other-error", "checkpoint-failed", "checkpoint-wrong-id"] as const) test(`unsupported empty native history requires positive creation evidence (${state})`, async () => {
+  const root = await mkdtemp(join(temporaryDirectory, "oc-empty-history-"));
+  const { ProvisionalThreads } = await import("../../apps/opencraft-daemon/src/provisional-threads.js");
+  const store = new ProvisionalThreads(root);
+  const path = join(root, "rollout.jsonl");
+  const thread = { id: "new", turns: [], path, status: { type: state === "active-peer" ? "active" : "idle" } };
+  store.created("new", { thread });
+  if (state === "attempted") store.attempted("new", "uncertain-input");
+  if (state === "persisted") await writeFile(path, "existing history");
+  const calls: string[] = [];
+  const adapter: any = Object.create(CodexEngineAdapter.prototype);
+  Object.assign(adapter, { provisionalThreads: store, async requestPhysical(method: string, params: any) {
+    calls.push(method);
+    if (method === "thread/loaded/list") return { data: state === "unloaded" && calls.length > 1 ? [] : ["new"] };
+    if (params.includeTurns && (state === "created" || state === "checkpoint-wrong-id"))
+      await writeFile(path, JSON.stringify({ type: "session_meta", payload: { id: state === "created" ? "new" : "other" } }) + "\n");
+    if (state === "other-error" || params.includeTurns) throw new AppServerRpcError({code: state === "other-error" ? -32000 : -32601, message: "list_turns is not supported yet"});
+    return { thread };
+  } });
+  try {
+    if (["other-error", "checkpoint-failed", "checkpoint-wrong-id"].includes(state)) await assert.rejects(adapter.provisionalResult("new"), /list_turns/);
+    else {
+      if (state === "active-peer" || state === "persisted") {
+        await assert.rejects(adapter.provisionalResult("new"), /list_turns/);
+        return;
+      }
+      const result = await adapter.provisionalResult("new");
+      assert.equal(result?.thread.creationPhase ?? null, state === "created" ? "created" : null);
+      if (state === "attempted") assert.deepEqual(calls, [], "uncertain input must not be reclassified from history reads");
+      if (state === "persisted") assert.equal(store.get("new")?.phase, "persisted");
+    }
+  } finally { store.close(); await rm(root, {recursive:true,force:true}); }
 });
