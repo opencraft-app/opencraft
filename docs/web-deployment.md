@@ -2,6 +2,8 @@
 
 公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。公开的 0.1.17 包要求 Node.js 24.x 和 npm；安装其他精确版本时按该包的 `engines` 核对，带执行端的包还须匹配平台、架构和 Node ABI。源码模板的最低版本不代表已发布包的支持范围。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
 
+发行 profile 必须明确哪些执行能力随包提供。OpenCraft 的 Pi engine 是 Local Agent Host 的内置能力；Pi-first profile 可以只包含 Pi 运行所需的 server runtime，不下载或封存独立 Codex CLI 和 DSH engine。当前 Headless gateway 仍要求一个独立 Codex Core endpoint；这属于外部 owner 依赖，不等于把 Codex CLI/Core 塞进 Pi payload。Codex CLI 和 DSH 只有在目标服务器显式启用、并且其 owner/协议/存储兼容性已经列入签名发行清单时才进入该 profile。完整发行打包入口可用 `OPENCRAFT_FULL_RUNTIME_ENGINES=pi` 选择 Pi-only payload；未设置时保留原有 Codex+DSH full-runtime 行为。这个环境变量会同时把 Headless profile 默认收敛到 `--engines pi`，显式配置其他未声明引擎会被拒绝；它不替代外部 Core 的配置，也不证明独立 owner 已经可以无人值守升级。
+
 直接从源码打包并替换已有服务器网站，见[本地替换指引](web-local-deployment.md)；该流程使用本地包，不需要先发布 npm。
 
 ## 可选 Web 资源

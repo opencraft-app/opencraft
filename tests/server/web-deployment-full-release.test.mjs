@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { readFile, mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
+import { readFile, mkdtemp, mkdir, writeFile, rm, chmod, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { c } from 'tar';
 import { parseStrictJson, parseManifest, fileListDigest, sha256, signBytes, acceptManifest,
   signPreflight, verifyPreflight, HARD_LIMITS, LEGACY_LIMITS } from '../../scripts/full-release/contract.mjs';
 import { acceptReleasePolicy } from '../../scripts/full-upgrade/release-policy.mjs';
+import { normalizeFullRuntimeEngines, packageFullRuntime } from '../../scripts/full-release/package-runtime.mjs';
 import { sealPackage, npmPack, stagedInventory, archivePreparedPackage } from '../../scripts/full-release/producer.mjs';
 import { copyPreparedTree } from '../../scripts/full-release/prepared-tree.mjs';
 import { scanArchive as verifyInventoryArchive, verifyFullArchive, readReplayState, writeReplayState } from '../../scripts/full-release/archive.mjs';
@@ -29,6 +30,28 @@ function fixture() {
 }
 const bytes = record => Buffer.from(JSON.stringify(record));
 const signed = record => signBytes(bytes(record), privateKey, keyId);
+
+test('full runtime profiles can ship Pi without bundling independent Codex or DSH runtimes', () => {
+  assert.deepEqual(normalizeFullRuntimeEngines(['pi']), ['pi']);
+  assert.deepEqual(normalizeFullRuntimeEngines(['pi', 'pi']), ['pi']);
+  assert.deepEqual(normalizeFullRuntimeEngines(), ['codex', 'dsh']);
+  assert.throws(() => normalizeFullRuntimeEngines([]), /at least one engine/);
+  assert.throws(() => normalizeFullRuntimeEngines(['pi', 'unknown']), /Unsupported/);
+});
+
+test('Pi-only full runtime preparation does not read or create Codex and DSH payloads', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'full-runtime-pi-only-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const repositoryRoot = join(root, 'source'), packageRoot = join(root, 'package');
+  await mkdir(repositoryRoot, { recursive: true }); await mkdir(packageRoot, { recursive: true });
+  await writeFile(join(repositoryRoot, 'LICENSE'), 'Apache-2.0');
+  await writeFile(join(repositoryRoot, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }));
+  const provenance = await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: source, buildId: 'fixture', engines: ['pi'] });
+  assert.deepEqual(provenance.engines, ['pi']);
+  await assert.rejects(stat(join(packageRoot, 'full/core')), { code: 'ENOENT' });
+  await assert.rejects(stat(join(packageRoot, 'full/codex')), { code: 'ENOENT' });
+  await assert.rejects(stat(join(packageRoot, 'full/dsh')), { code: 'ENOENT' });
+  assert.deepEqual(JSON.parse(await readFile(join(packageRoot, 'release/provenance.json'), 'utf8')).runtimes, []);
+});
 
 // Synthetic installed payloads must match the signed modes, independently of
 // the runner's umask. Keep the runner and deliberately unsafe fixtures intact.
