@@ -4,6 +4,7 @@ import type { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
 export const CODEX_CORE_PROTOCOL_VERSION = 1;
 export interface CodexCoreHealth {
+  readonly threadTitleToolVersion?: 1;
   readonly protocolVersion: typeof CODEX_CORE_PROTOCOL_VERSION;
   readonly pid: number;
   readonly codexPid: number;
@@ -123,6 +124,7 @@ export class CodexCoreControlClient {
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
       || value.orchestrationRoutingVersion !== undefined && value.orchestrationRoutingVersion !== 1
+      || value.threadTitleToolVersion !== undefined && value.threadTitleToolVersion !== 1
       || value.callbackIncarnation !== undefined && (typeof value.callbackIncarnation !== "string" || !value.callbackIncarnation)
       || value.callbackProtocolVersion !== undefined && (value.callbackProtocolVersion !== 1 || !Number.isSafeInteger(value.pendingCallbacks) || value.pendingCallbacks! < 0
         || !Number.isSafeInteger(value.pendingOrchestrationMutations) || value.pendingOrchestrationMutations! < 0)

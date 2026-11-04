@@ -22,7 +22,7 @@ async function until(predicate: () => boolean) { const deadline = Date.now() + 4
 test("trusted router metadata does not alter any ACP driver's frozen native settings", async t => {
   for (const id of ["acp", "dsh-acp", "claude-code"] as const) {
     const f = await fixture(t, { id });
-    const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "routed-create", sourceSettings: { cwd: f.root }, arguments: {} }, client);
+    const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "routed-create", sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task" } }, client);
     const settings = { ...prepared, orchestrationDriver: id, orchestrationGenerationId: "generation-a" };
     const child = await f.engine.request("opencraft/orchestration/create", { operationId: "routed-create", settings }, client);
     assert.ok(f.engine.ownsThread(child.threadId));
@@ -51,7 +51,7 @@ test("ACP child creation is idempotent and callback lane survives a frontend dis
   f.engine.setOrchestration({ tools: [{ name: "thread_spawn", description: "spawn", inputSchema: { type: "object" } }],
     async call(threadId, turnId, callId) { replies.push([threadId, turnId, callId].join(":")); await blocked; return { childId: "child" }; } });
   f.engine.subscribe((method, params) => notices.push({ method, params }));
-  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "op-1", sourceSettings: { cwd: f.root }, arguments: {} }, client);
+  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "op-1", sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task" } }, client);
   const params = { operationId: "op-1", settings: prepared };
   const [a, b] = await Promise.all([f.engine.request("opencraft/orchestration/create", params, client), f.engine.request("opencraft/orchestration/create", params, client)]);
   assert.equal(a.threadId, b.threadId); assert.equal((await f.calls()).filter(call => call.method === "session/new").length, 1);
@@ -68,8 +68,8 @@ test("ACP child creation is idempotent and callback lane survives a frontend dis
 
 test("ACP rejects a changed create receipt and a wider child workspace", async t => {
   const f = await fixture(t);
-  await assert.rejects(f.engine.request("opencraft/orchestration/prepare", { sourceSettings: { cwd: f.root }, arguments: { cwd: "/" } }, client), /workspace exceeds/);
-  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "one", sourceSettings: { cwd: f.root }, arguments: {} }, client);
+  await assert.rejects(f.engine.request("opencraft/orchestration/prepare", { sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task", cwd: "/" } }, client), /workspace exceeds/);
+  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "one", sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task" } }, client);
   await f.engine.request("opencraft/orchestration/create", { operationId: "one", settings: prepared }, client);
   await assert.rejects(f.engine.request("opencraft/orchestration/create", { operationId: "one", settings: { ...prepared, cwd: join(f.root, "other") } }, client), (error: any) => error.code === 409);
 });
@@ -86,7 +86,7 @@ test("ACP generation switch keeps the old active turn and pins new children to t
   await host.manage("add", { id: "b", configPath: join(root, "b.json"), expectedCurrent: "a" });
   await host.manage("activate", { id: "b", expectedCurrent: "a" });
   await assert.rejects(host.manage("retire", { id: "a" }), /active turns/);
-  const prepared = await host.request("opencraft/orchestration/prepare", { operationId: "new-child", sourceSettings: { cwd: root }, arguments: {} }, client);
+  const prepared = await host.request("opencraft/orchestration/prepare", { operationId: "new-child", sourceSettings: { cwd: root }, arguments: { title: "Delegated task" } }, client);
   assert.equal(prepared.orchestrationGenerationId, "b");
   const created = await host.request("opencraft/orchestration/create", { operationId: "new-child", settings: prepared }, client);
   assert.equal(created.generationId, "b"); assert.match(created.threadId, /^dsh_acp_/);
@@ -103,13 +103,13 @@ test("DSH ACP launch uses the explicit ACP profile and preserves the exact entry
 
 test("ACP prepare preserves canonical Full settings across drivers and rejects an unknown Host policy", async t => {
   const f = await fixture(t);
-  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "full", sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: {} }, client);
+  const prepared = await f.engine.request("opencraft/orchestration/prepare", { operationId: "full", sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: { title: "Delegated task" } }, client);
   assert.equal(prepared.approvalPolicy, "never"); assert.equal(prepared.sandbox, "danger-full-access"); assert.ok(prepared.permissions);
   const target = await f.engine.request("opencraft/orchestration/create", { operationId: "full", settings: prepared }, client);
   const metadata = await f.engine.request("thread/read", { threadId: target.threadId }, client);
   assert.equal(metadata.thread.permissions, prepared.permissions);
   const denied = await fixture(t, { permission: "reject" });
-  await assert.rejects(denied.engine.request("opencraft/orchestration/prepare", { sourceSettings: { cwd: denied.root }, arguments: {} }, client), /Full access is not configured/);
+  await assert.rejects(denied.engine.request("opencraft/orchestration/prepare", { sourceSettings: { cwd: denied.root }, arguments: { title: "Delegated task" } }, client), /Full access is not configured/);
   assert.equal(denied.engine.processId, null);
 });
 
@@ -157,7 +157,7 @@ test("drained ACP generation suspends its PID, reads without waking, and resumes
 
 test("ACP preparations and unacknowledged creates block suspension through a default-generation switch", async t => {
   const f = await generationFixture(t);
-  const prepared = await f.host.request("opencraft/orchestration/prepare", { operationId: "prepared", sourceSettings: { cwd: f.root }, arguments: {} }, client);
+  const prepared = await f.host.request("opencraft/orchestration/prepare", { operationId: "prepared", sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task" } }, client);
   await f.switchToB();
   await assert.rejects(f.host.manage("suspend", { id: "a" }), /preparations/);
   const child = await f.host.request("opencraft/orchestration/create", { operationId: "prepared", settings: prepared }, client);
@@ -203,12 +203,12 @@ test("ACP native tool callbacks keep a direct human input identity and the origi
 test("ACP source-only preparation does not retain a ticket or wake an old generation", async t => {
   const f = await generationFixture(t), source = await f.host.request("thread/start", {}, client);
   await f.switchToB();
-  const settings = await f.host.request("opencraft/orchestration/prepare", { operationId: "context-only", threadId: source.thread.id, sourceOnly: true, arguments: {} }, client);
+  const settings = await f.host.request("opencraft/orchestration/prepare", { operationId: "context-only", threadId: source.thread.id, sourceOnly: true, arguments: { title: "Delegated task" } }, client);
   assert.equal(settings.orchestrationGenerationId, "a"); assert.equal(f.host.snapshot().current, "b");
   assert.equal(f.host.snapshot().generations[0].occupancy.preparedTickets, 0);
   await f.host.manage("suspend", { id: "a" });
   const calls = await f.calls();
-  const dormant = await f.host.request("opencraft/orchestration/prepare", { operationId: "context-only-again", threadId: source.thread.id, sourceOnly: true, arguments: {} }, client);
+  const dormant = await f.host.request("opencraft/orchestration/prepare", { operationId: "context-only-again", threadId: source.thread.id, sourceOnly: true, arguments: { title: "Delegated task" } }, client);
   assert.equal(dormant.orchestrationGenerationId, "a"); assert.equal(f.host.snapshot().generations[0].state, "dormant");
   assert.equal(f.host.snapshot().generations[0].pid, null); assert.deepEqual(await f.calls(), calls);
 });
@@ -216,12 +216,12 @@ test("ACP source-only preparation does not retain a ticket or wake an old genera
 test("ACP delegated children follow their source generation while ordinary roots and cross-driver destinations follow current", async t => {
   const f = await generationFixture(t), source = await f.host.request("thread/start", {}, client);
   await f.switchToB();
-  const delegated = await f.host.request("opencraft/orchestration/prepare", { operationId: "old-source-child", threadId: source.thread.id, arguments: {} }, client);
+  const delegated = await f.host.request("opencraft/orchestration/prepare", { operationId: "old-source-child", threadId: source.thread.id, arguments: { title: "Delegated task" } }, client);
   assert.equal(delegated.orchestrationGenerationId, "a");
   const child = await f.host.request("opencraft/orchestration/create", { operationId: "old-source-child", settings: delegated }, client);
   assert.equal(child.generationId, "a"); assert.equal(f.host.snapshot().current, "b");
   await f.host.request("opencraft/orchestration/ack", { operationId: "old-source-child" }, client);
-  const crossDestination = await f.host.request("opencraft/orchestration/prepare", { operationId: "cross-destination", threadId: source.thread.id, sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: {} }, client);
+  const crossDestination = await f.host.request("opencraft/orchestration/prepare", { operationId: "cross-destination", threadId: source.thread.id, sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: { title: "Delegated task" } }, client);
   assert.equal(crossDestination.orchestrationGenerationId, "b");
   await f.host.request("opencraft/orchestration/ack", { operationId: "cross-destination" }, client);
   const fresh = await f.host.request("thread/start", {}, client);
@@ -264,7 +264,7 @@ test("ACP concurrent distinct inputs leave a busy native turn and its receipt in
 });
 
 test("ACP prepare replay after a Host restart and default switch retains its sole frozen preparation and creation generation", async t => {
-  const f = await generationFixture(t), params = { operationId: "replayed-preparation", sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: {} };
+  const f = await generationFixture(t), params = { operationId: "replayed-preparation", sourceSettings: { cwd: f.root, approvalPolicy: "never", sandbox: "danger-full-access" }, arguments: { title: "Delegated task" } };
   const initial = await f.host.request("opencraft/orchestration/prepare", params, client);
   assert.equal(initial.orchestrationGenerationId, "a");
   await f.switchToB(); await f.restart();
@@ -283,9 +283,9 @@ test("ACP prepare replay after a Host restart and default switch retains its sol
 test("ACP source context lookup ignores a same-operation destination ticket in a different generation", async t => {
   const f = await generationFixture(t), source = await f.host.request("thread/start", {}, client);
   await f.switchToB();
-  const target = await f.host.request("opencraft/orchestration/prepare", { operationId: "source-and-target", threadId: source.thread.id, sourceSettings: { cwd: f.root }, arguments: {} }, client);
+  const target = await f.host.request("opencraft/orchestration/prepare", { operationId: "source-and-target", threadId: source.thread.id, sourceSettings: { cwd: f.root }, arguments: { title: "Delegated task" } }, client);
   assert.equal(target.orchestrationGenerationId, "b");
-  const context = await f.host.request("opencraft/orchestration/prepare", { operationId: "source-and-target", threadId: source.thread.id, sourceOnly: true, arguments: {} }, client);
+  const context = await f.host.request("opencraft/orchestration/prepare", { operationId: "source-and-target", threadId: source.thread.id, sourceOnly: true, arguments: { title: "Delegated task" } }, client);
   assert.equal(context.orchestrationGenerationId, "a"); assert.equal(f.host.snapshot().generations[0].occupancy.preparedTickets, 0);
   await f.host.manage("suspend", { id: "a" }); assert.equal(f.host.snapshot().generations[0].pid, null);
 });
@@ -303,4 +303,23 @@ test("P2c ACP preparation is bound to Host incarnation and admission epoch, incl
   await assert.rejects(f.host.manage("preparation", { id: "b", expectedOwner: before }), /owner changed/);
   await assert.rejects(f.host.manage("activate", { id: "b", expectedCurrent: "a", preparation: next.preparation }), /preparation/);
   assert.equal(f.host.snapshot().current, "a");
+});
+
+test('ACP rejects missing child titles before starting a native process',async t=>{
+ const f=await fixture(t);
+ for(const title of [undefined,'','  ','line\nbreak']){
+  await assert.rejects(f.engine.request('opencraft/orchestration/create',{operationId:'invalid-title',settings:{cwd:f.root,orchestrationTitle:title}},client),/nonblank child title/);
+ }
+ assert.equal(f.engine.processId,null);
+});
+
+test('ACP publishes the persisted title after creation and self rename',async t=>{
+ const f=await fixture(t),notices:any[]=[];f.engine.subscribe((method,params)=>{if(method==='thread/name/updated')notices.push(params);});
+ const settings=await f.engine.request('opencraft/orchestration/prepare',{operationId:'titled-child',arguments:{title:'Initial task'},sourceSettings:{cwd:f.root}},client);
+ const child=await f.engine.request('opencraft/orchestration/create',{operationId:'titled-child',settings},client);
+ assert.deepEqual(notices.at(-1),{threadId:child.threadId,threadName:'Initial task'});
+ assert.equal((await f.engine.request('thread/read',{threadId:child.threadId},client)).thread.name,'Initial task');
+ await f.engine.request('thread/name/set',{threadId:child.threadId,name:'Updated task'},client);
+ assert.deepEqual(notices.at(-1),{threadId:child.threadId,threadName:'Updated task'});
+ assert.equal((await f.engine.request('thread/read',{threadId:child.threadId},client)).thread.name,'Updated task');
 });

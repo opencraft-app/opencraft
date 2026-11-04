@@ -24,6 +24,9 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
       try{
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
+          // A lost acknowledgement must not replay an old title over a later one.
+          case 'claimTitleWrite':result=db.prepare("UPDATE opencraft_orchestration_operations SET state='applying' WHERE operation_id=? AND state='accepted' AND result_json IS NULL").run(payload.operationId).changes===1;break;
+          case 'finishTitleWrite':ledger.finish(payload.toolCallKey,payload.result);break;
           case 'observe':ledger.observeSnapshot(payload.snapshot);break;
           case 'updateExecution':updateExecutionRequest(db,payload);break;
           case 'targets':result=[...new Set([...ledger.observedRuntimeThreads(payload.includeTerminal),

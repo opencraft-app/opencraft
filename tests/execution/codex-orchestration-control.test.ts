@@ -53,7 +53,7 @@ test('a foreign source keeps delegation bounds while freezing Codex defaults and
   assert.equal(settings.cwd, '/workspace/child'); assert.equal(settings.model, 'codex-default'); assert.equal(settings.modelProvider, 'codex-provider');
   assert.equal(settings.orchestrationHostIncarnation, 'codex-owner'); assert.equal(settings.orchestrationCrossDriver, true);
   assert.equal(f.requests.filter(request => request.method === 'thread/resume').length, 0);
-  await f.invoke('create', { settings: { ...settings, orchestrationDriver: 'codex' } });
+  await f.invoke('create', { settings: { ...settings, orchestrationTitle:'Test child', orchestrationDriver: 'codex' } });
   const created = f.requests.find(request => request.method === 'thread/start')!;
   assert.equal(created.params.__opencraftOrchestrationSourceThreadId, undefined);
   assert.equal(created.params.orchestrationDriver, undefined); assert.equal(created.params.orchestrationCrossDriver, undefined);
@@ -68,7 +68,7 @@ test('nullable native Codex defaults stay absent instead of becoming invalid chi
     ? { config: { model: null, model_provider: null, model_reasoning_effort: null } } : original(method, params, admit);
   const settings = await f.invoke('prepare', { sourceSettings: { cwd: '/workspace', sandbox: 'danger-full-access', approvalPolicy: 'never' }, arguments: {} });
   assert.equal('model' in settings, false); assert.equal('modelProvider' in settings, false); assert.equal('config' in settings, false);
-  await f.invoke('create', { settings });
+  await f.invoke('create', { settings: { ...settings, orchestrationTitle: 'Test child' } });
   const native = f.requests.find(request => request.method === 'thread/start')!.params;
   assert.equal(native.config, undefined); assert.equal(native.model, undefined);
 });
@@ -97,8 +97,8 @@ test('inspect reads only recent user and assistant text, prioritizes the newest 
 
 test('only a confirmed Native rejection becomes a durable create failure; transport loss stays unknown',async()=>{
   const f=fixture();f.port.request=async()=>{throw Object.assign(Error('Native rejected'),{code:400,data:{orchestrationRejected:true}});};
-  assert.deepEqual(await f.invoke('create',{settings:{cwd:'/workspace'}}),{rejected:{status:400}});
-  f.port.request=async()=>{throw Error('Connection lost after send');};await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace'}}),/Connection lost/);
+  assert.deepEqual(await f.invoke('create',{settings:{orchestrationTitle:'Test child',cwd:'/workspace'}}),{rejected:{status:400}});
+  f.port.request=async()=>{throw Error('Connection lost after send');};await assert.rejects(f.invoke('create',{settings:{orchestrationTitle:'Test child',cwd:'/workspace'}}),/Connection lost/);
 });
 
 test('a Codex native full-access source exports the portable profile only for cross-driver preparation', async () => {
@@ -112,4 +112,17 @@ test('a Codex native full-access source exports the portable profile only for cr
   assert.equal(portable.permissions,permissionModeProfileId('full'),'foreign drivers consume the shared permission contract');
   f.port.request=async()=>({cwd:'/workspace',approvalPolicy:'never',sandbox:{type:'dangerFullAccess'},activePermissionProfile:{id:'custom-unknown'}});
   assert.equal((await f.invoke('prepare',{arguments:{},sourceOnly:true})).permissions,'custom-unknown','unknown custom policies cannot be promoted to Full access');
+});
+
+test('Codex rejects a missing child title before creation and never hides a failed title save',async()=>{
+  const f=fixture();
+  await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace'}}),{code:400});
+  assert.equal(f.requests.length,0);
+  const native=f.port.request;
+  f.port.request=async(method,params,admit)=>{
+    if(method==='thread/name/set')throw Object.assign(Error('Title denied'),{code:403,data:{orchestrationRejected:true}});
+    return native(method,params,admit);
+  };
+  await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace',orchestrationTitle:'Required title'}}),/Title denied/);
+  assert.equal(f.requests.filter(r=>r.method==='thread/start').length,1);
 });

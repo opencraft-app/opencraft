@@ -77,7 +77,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       value: request.method === "GET" && request.url === "/health" && !failed && ready
         ? { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
-          callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
+          callbackProtocolVersion: 1, threadTitleToolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: "Codex AppServer unavailable" },
     }));
     if (nativeSocket === options.endpoint) throw new Error("AppServer control endpoint must differ from native.sock");

@@ -20,6 +20,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   private readonly messages = new Set<(frame: string) => void>();
   private readonly statuses = new Set<(status: TransportStatus) => void>();
   private callbackReady = false;
+  private titleToolReady = false;
   private ownerIncarnation: string|null = null;
   private routed = false;
   private standaloneExecution: string | undefined;
@@ -27,6 +28,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   get supportsOrchestrationRouting():boolean{return this.routed;}
   get callbackIncarnation(): string|null {return this.ownerIncarnation;}
   get supportsOrchestration(): boolean { return this.callbackReady; }
+  get supportsThreadTitle(): boolean { return this.callbackReady && this.titleToolReady; }
   constructor(endpoint: string, token: string, callbackLaneId?: string) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal));
@@ -40,6 +42,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
         }
         this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId && (!health.routingEpoch || health.orchestrationRoutingVersion === 1);
         this.routed = health.orchestrationRoutingVersion === 1;
+        this.titleToolReady = health.threadTitleToolVersion === 1;
         this.ownerIncarnation = health.routingEpoch ? null : health.callbackIncarnation ?? null;
         return health;
       },

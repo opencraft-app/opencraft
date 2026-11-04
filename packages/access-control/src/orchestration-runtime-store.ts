@@ -4,6 +4,8 @@ import type { ParentNotification, WaitTicket } from './orchestration-ledger.js';
 import type { ExecutionRequestState } from './execution-request-state.js';
 
 export interface OrchestrationRuntimeStorage {
+  claimTitleWrite(operationId: string): Promise<boolean>;
+  finishTitleWrite(toolCallKey: string, result: unknown): Promise<void>;
   observe(snapshot: ThreadOrchestrationSnapshot, now: number): Promise<void>;
   targets(includeTerminal: boolean, now: number): Promise<string[]>;
   work(now: number): Promise<{ waits: WaitTicket[]; notifications: ParentNotification[] }>;
@@ -36,6 +38,8 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
     void this.ready.catch(()=>{});
   }
   start(): Promise<void> { return this.ready; }
+  claimTitleWrite(operationId:string):Promise<boolean>{return this.request('claimTitleWrite',{operationId});}
+  finishTitleWrite(toolCallKey:string,result:unknown):Promise<void>{return this.request('finishTitleWrite',{toolCallKey,result});}
   private async request<T>(method: string, payload: unknown = {}, closing = false): Promise<T> {
     if(this.stopping&&!closing)throw new Error('Orchestration storage is closing');
     await this.ready;if(this.failure)throw this.failure;

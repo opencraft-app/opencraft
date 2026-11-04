@@ -122,3 +122,10 @@ test("Pi server-owned orchestration survives browser disconnect with the origina
   const snapshot = await engine.request("opencraft/orchestration/status", { operationId: "status", threadId: created.thread.id }, owner);
   assert.equal(snapshot.state, "completed"); assert.equal(snapshot.rootTurnId, started.turn.id);
 });
+
+test('Pi rejects a missing or blank title before allocating a child session',async t=>{
+ const f=await fixture(t);
+ for(const title of [undefined,'','  ','line\nbreak']){
+  await assert.rejects(f.engine.request('opencraft/orchestration/create',{operationId:'invalid-title',settings:{driver:'pi',cwd:f.directory,orchestrationTitle:title}},owner),/nonblank child title/);
+ }
+});

@@ -106,7 +106,7 @@ Notifications retain per-root outcome deduplication after delivery; pending batc
 coalesce for two seconds with a five-second maximum deadline and preserve direct
 user intervention. A gateway restart reloads remaining deadlines from the ledger.
 
-The Codex Stage 1 Broker now exposes `thread_spawn`, `thread_tell`,
+The Codex Stage 1 Broker now exposes `thread_spawn`, `thread_set_title`, `thread_tell`,
 `thread_inspect` and `thread_wait` only when the independent APP Host advertises
 callback protocol v1. Older Hosts retain the existing conversation tools.
 Schema v4 adds immutable spawn settings, exact input provenance, continuation
@@ -213,3 +213,27 @@ Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
 input delegation and the original write budget; it creates no parallel queue.
 The child's durable Broker parentage, rather than each engine's native lineage,
 is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).
+
+## Agent conversation titles
+
+`thread_spawn` requires a nonblank, one-line `title` of at most 256 UTF-16 code
+units. The Broker and each create adapter reject invalid titles before allocating
+a child. A failed Codex title save cannot report a successful spawn or enqueue
+the child's first input.
+
+`thread_set_title` saves the current delegated conversation's title through the
+existing Host method. It accepts no target Thread. Its model-facing instruction
+requires setting a task-specific title at the start of a new conversation before
+substantive work or the final reply; this instruction does not constitute a
+server gate on every native tool or Turn completion. Spawn's required title is
+separately enforced by the server. Only an `updated` result confirms a save.
+
+The existing storage Worker claims a title write before dispatch. A lost reply
+or restart after that claim returns `unconfirmed`; replay never resubmits the old
+write over a newer title. Completed writes return their persisted receipt.
+
+Codex advertises the self-title tool only after the APP/router handshake includes
+`threadTitleToolVersion: 1`. The router also filters it against each pinned APP's
+capability, so callback protocol v1 alone cannot advertise the new tool. Existing
+Codex Threads keep their native dynamic-tool set; updating a gateway does not
+retroactively add tools to those Threads or upgrade an independent APP owner.

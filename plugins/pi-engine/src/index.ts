@@ -1,3 +1,4 @@
+import { parseThreadTitle } from '@opencraft/appserver-protocol/collaboration';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
 import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
@@ -654,6 +655,7 @@ export class PiEngine {
     }
     if (method === "opencraft/orchestration/create") {
       const settings = params.settings ?? {};
+      if (parseThreadTitle(settings.orchestrationTitle) === null) this.orchestrationError(400, "A nonblank child title is required");
       if (settings.driver !== "pi") this.orchestrationError(400, "Orchestration settings belong to another driver");
       const fingerprint = createHash("sha256").update(JSON.stringify(settings)).digest("hex"), prior = this.orchestrationCreates.get(operationId);
       if (prior) {
@@ -673,7 +675,7 @@ export class PiEngine {
         } else if (session.orchestrationOperation?.state !== "created") {
           await this.configure(session, start, true); session.orchestrationOperation!.state = "created"; await this.save(session);
         }
-        if (orchestrationTitle !== undefined && session.name !== orchestrationTitle) { session.name = orchestrationTitle; await this.save(session); }
+        if (orchestrationTitle !== undefined && session.name !== orchestrationTitle) { session.name = orchestrationTitle; await this.save(session); this.notify("thread/name/updated", {threadId:session.id,threadName:session.name}); }
         return { threadId: session.id, driverKind: "pi", generationId: this.orchestrationIncarnation, durability: "immediate" };
       })().catch(error => { this.orchestrationCreates.delete(operationId); throw error; });
       this.orchestrationCreates.set(operationId, { fingerprint, promise });

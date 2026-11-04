@@ -78,3 +78,15 @@ test('missing storage fails closed without creating a database or main-thread SQ
  const worker=new OrchestrationRuntimeWorker(join(dir,'missing.sqlite'));
  await assert.rejects(worker.start(),/unavailable/);await assert.rejects(worker.observe(snapshot,1000));await assert.rejects(worker.close());
 });
+
+test('title write claims and receipts stay off the main thread and survive worker replacement',async t=>{
+ const {dir,ledger,worker}=await fixture(t);
+ const operation=ledger.accept({toolCallKey:'title-write',delegationId:'delegation',issuerActorId:'actor',kind:'set_title',senderThreadId:'child',targetThreadId:'child',clientMessageId:null,mode:'title',arguments:{title:'Task title'}});
+ await forbidMainSql(async()=>{assert.equal(await worker.claimTitleWrite(operation.operationId),true);assert.equal(await worker.claimTitleWrite(operation.operationId),false);});
+ await worker.close();
+ const replacement=new OrchestrationRuntimeWorker(join(dir,'opencraft-server.sqlite'));await replacement.start();
+ try{
+  await forbidMainSql(async()=>{assert.equal(await replacement.claimTitleWrite(operation.operationId),false);await replacement.finishTitleWrite('title-write',{threadId:'child',status:'unconfirmed'});});
+  assert.equal((ledger.operation('title-write')!.result as any).status,'unconfirmed');
+ }finally{await replacement.close();}
+});

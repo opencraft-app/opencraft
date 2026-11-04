@@ -6,7 +6,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { removeStaleSocket } from './native-process.js';
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const tools = new Set(['thread_spawn','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
+const tools = new Set(['thread_spawn','thread_set_title','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
 const idKey = (id: unknown) => JSON.stringify(id);
 const send = (socket: WebSocket | null, value: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
 interface ExecutionPreparation { cancelled: boolean }
