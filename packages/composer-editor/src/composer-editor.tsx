@@ -1,4 +1,5 @@
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
+import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
 import { ComposerModelPicker } from "./composer-model-picker";
@@ -2159,7 +2160,7 @@ export const OpenCraftComposer = forwardRef<
       ? `${primaryActionLabel} (⌘/Ctrl+Enter to ${inverseFollowUpAction})`
       : primaryActionLabel;
   return (
-    <div
+    <TouchContactScope><div
       ref={stackRef}
       onPointerDownCapture={event => {
         // Touch browsers need not focus tapped buttons. Capture the actual
@@ -2791,6 +2792,6 @@ export const OpenCraftComposer = forwardRef<
           {intl.formatMessage({ id: "chat.waitingForHostToSend", defaultMessage: "Connecting. You can send once connected." })}
         </p>
       ) : null}
-    </div>
+    </div></TouchContactScope>
   );
 });
