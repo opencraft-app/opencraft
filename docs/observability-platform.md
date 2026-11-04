@@ -458,3 +458,26 @@ pageResumeAgoMs（距观察到恢复的时间）、pageHiddenForMs（当前未�
 这些 wall-clock 区间不代表网络可用性或操作系统实际冻结时长；最后消息时间是 JS 回调时间。
 同一页面的多个物理连接共用记录，重复生命周期通知不重置起点。
 新增 pagehide/freeze/resume 监听仅记诊断，不改变原有超时、恢复、授权或 Relay 回收策略。
+
+
+### Background refresh completion logs
+
+A cached foreground read and the background job it schedules have different
+latency meanings. Native read timing keeps the existing `caller` and `traceRole`
+fields. Slow (at least 1000ms) or unsuccessful `background-refresh` completions
+also emit a compact `[opencraft background-refresh]` log with
+`workClass: background`, method, outcome, duration and available causal links.
+Fast successful refreshes stay in telemetry without extra console output;
+native/storage child events do not each produce a completion log. Payloads,
+cursors, error text and resource identities are excluded. Logging failure must
+not alter read results or original telemetry admission.
+
+The shared `rpcWorkClass` and `rpcLatencySummary` query helpers derive
+foreground/background/unknown from existing event metadata, including historical
+records. Browser RPCs remain foreground; server-refresh callers and background
+roots are background; unclassified dependencies remain unknown. Summary groups
+retain component, kind, stage and traceRole so a whole background scan is never
+merged with its native/storage children or with foreground RPC latency. Causal
+trace links remain available for attribution; adjacency in time is insufficient.
+No new persisted field or Observe schema migration is required. This log/query
+classification does not change refresh scheduling, cursor recovery or timeouts.
