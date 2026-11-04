@@ -242,3 +242,5 @@ synchronous filesystem operations on an engine dispatch thread.
 Source checkouts explicitly select the controller and worker TypeScript loaders by
 absolute module URL when launching from a task directory. Packaged runtime bundles
 use their sealed JavaScript entries and do not depend on the development loader.
+
+Source DSH composition resolves its development loader before bundling a plugin into a temporary directory and passes that trusted local module URL to the source sandbox runner. Packaged runners do not require a development loader.

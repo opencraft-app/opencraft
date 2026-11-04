@@ -6,13 +6,13 @@ import { prepareSandboxInvocation } from '@opencraft/sandbox-node/command';
 
 /** Resource confinement follows the engine's existing filesystem/approval policy.
  * The SDK still owns output collection, foreground signals and process lifetime. */
-export async function registerDshSubprocessSandbox(ctx) {
+export async function registerDshSubprocessSandbox(ctx, sourceRunnerImport) {
   const configuration = await engineSandboxConfiguration();
   if (!configuration) return;
   const bundled = new URL('./sandbox-command.mjs', import.meta.url);
   const packagedRunner = await sandboxFileExists(bundled);
   const runner = fileURLToPath(packagedRunner ? bundled : new URL('../../../scripts/server-deployment/sandbox-command.mjs', import.meta.url));
-  const runnerExecArgv = packagedRunner ? undefined : ['--import', import.meta.resolve('tsx')];
+  const runnerExecArgv = packagedRunner ? undefined : ['--import', sourceRunnerImport ?? import.meta.resolve('tsx')];
   const require = createRequire(pathToFileURL(process.argv[1]));
   const sdk = require.resolve("@deepseek-ai/dsh-subprocess-local");
   const bundledAgent = new URL("./dsh-terminal-agent.mjs", import.meta.url);

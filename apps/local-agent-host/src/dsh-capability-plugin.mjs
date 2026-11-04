@@ -24,7 +24,7 @@ import { createInstructionController, sessionInstructions, hasSessionInstruction
 
 export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments", "goals", "jobs", "settings"];
 export async function apply(ctx, config) {
-  await registerDshSubprocessSandbox(ctx);
+  await registerDshSubprocessSandbox(ctx, config.sourceRunnerImport);
   const policyKey = Symbol.for("opencraft.dsh.model-policy.v1");
   globalThis[policyKey] = createDshPolicyBoundary(config.modelPolicyPath, async current => {
     const providers = ctx.llm.listProviders();
