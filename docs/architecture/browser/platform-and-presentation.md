@@ -267,3 +267,12 @@ or open a physical browser connection before admission. After admission it resto
 the authoritative lease mapping, commits metadata and then connects. Authentication
 failure follows the surface error path; closing the surface before admission prevents
 late admission from reopening it.
+### Remote browser metadata budgets
+
+Conversation binding aliases cover the catalog rather than only open browser tabs.
+Their value budget is 1 Mi UTF-16 code units; pages, tabs and lease mappings each
+retain a 64 Ki code-unit budget. Client initial reads, writes and server validation
+consume the shared browser-core limits. The 8 MiB wire budget accommodates all four
+fields at maximum size with worst-case JSON escaping. Rejecting an oversized local
+snapshot does not poison the authenticated metadata connection or erase its last
+acknowledged value; unrelated valid metadata can still be committed.
