@@ -4,6 +4,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV NODE_OPTIONS=--max-old-space-size=4096
 WORKDIR /src
 COPY . .
 RUN test "$(node --version)" = "v$(cat .nvmrc)"
@@ -17,11 +18,14 @@ COPY --from=build /out/opencraft-server/ /
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git openssh-client libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+    fonts-noto-cjk fonts-noto-color-emoji \
     libatspi2.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
     libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 opencraft && useradd --uid 1000 --gid 1000 --no-create-home opencraft
 COPY --from=build /out/opencraft-server /opt/opencraft
+RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
+    && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
 ENV PATH=/opt/opencraft/bin:$PATH
 WORKDIR /opt/opencraft
 USER 1000:1000

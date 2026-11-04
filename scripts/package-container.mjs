@@ -12,7 +12,7 @@ await mkdir(output, { recursive: true });
 process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT = join(output, 'server.tar.gz');
 console.log('Building the verified Headless archive and native runtimes');
 const archive = await packageHeadlessLinux({ architecture: process.arch === 'arm64' ? 'arm64' : 'amd64' });
-console.log('Preparing container gateway and independent native Host entries');
+console.log('Preparing container Gateway, Brain and Hands owner entries');
 execFileSync('tar', ['-xzf', archive, '-C', output]);
 const root = join(output, 'opencraft-server');
 for (const [source, target] of [
@@ -29,6 +29,8 @@ for (const [source, target, format] of [
   ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
 await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" --env-file-if-exists=.env "$opencraft_root/runtime/native-host.mjs" "$@"\n');
 await chmod(join(root, 'bin/opencraft-host'), 0o755);
+await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\n: "${OPENCRAFT_BROWSER_DATA_DIR:?Set OPENCRAFT_BROWSER_DATA_DIR}"\numask 077\nmkdir -p "$OPENCRAFT_BROWSER_DATA_DIR"\nchmod 700 "$OPENCRAFT_BROWSER_DATA_DIR"\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/browser/owner.cjs"\n');
+await chmod(join(root, 'bin/opencraft-hands'), 0o755);
 await cp(join(repository, 'LICENSE'), join(root, 'LICENSE'));
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
 const files = [];
@@ -41,6 +43,6 @@ async function inventory(directory) {
   }
 }
 await inventory(root);
-await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-external-host',
+await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-compose-owners',
   files: [...files, ...manifest.files.filter(file => file.link)].sort((a, b) => a.path.localeCompare(b.path)) }, null, 2) + '\n');
-console.log('Container and native Host payload ready');
+console.log('Container owner payload ready');

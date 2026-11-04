@@ -11,7 +11,7 @@ import { coreHealth } from '../server-deployment/execution.mjs';
 import { readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
 
-// Run this launcher on the Linux host, independently of Docker's lifecycle.
+// Run this launcher as the independent Brain owner, outside Gateway's lifecycle.
 if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch))
   throw new Error('The native execution bundle requires matching Linux arm64 or amd64');
 const paths = deploymentPaths();

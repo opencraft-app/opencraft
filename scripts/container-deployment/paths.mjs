@@ -5,7 +5,7 @@ export function deploymentPaths(env = process.env) {
   const data = env.OPENCRAFT_DATA_DIR;
   const workspace = env.OPENCRAFT_WORKSPACE_DIR;
   if (![data, workspace].every(value => typeof value === 'string' && isAbsolute(value)))
-    throw new Error('Set OPENCRAFT_DATA_DIR and OPENCRAFT_WORKSPACE_DIR to absolute host paths');
+    throw new Error('Set OPENCRAFT_DATA_DIR and OPENCRAFT_WORKSPACE_DIR to absolute deployment paths');
   const dataDirectory = resolve(data), runtimeDirectory = resolve(workspace);
   if (dataDirectory === '/' || runtimeDirectory === '/' || dataDirectory === runtimeDirectory)
     throw new Error('Use separate data and workspace directories, neither at the filesystem root');
