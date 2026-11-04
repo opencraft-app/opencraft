@@ -901,3 +901,18 @@ retires that custody. Transport failure or cancellation after dispatch retains
 unknown custody even after the native Turn has settled; cold reads see the same
 fact and refuse a zero-occupancy proof. Arguments and credentials are not copied.
 The generic handoff API cannot invent a domain receipt to clear an unknown call.
+
+
+### Generation directory source isolation
+
+Directory reads use a bounded per-page budget and bounded concurrent sources,
+prioritizing the active generation. Unavailable sources are represented as
+`catalog: { state: "error", coverage: "partial" }`; their absence is not deletion
+or an authoritative empty catalog. Directory consumers must retain cached rows
+and routes for unavailable sources and retry with a new head read. Continuations
+retain their original source coverage and still expire on admission changes.
+
+This requires the matching directory-coverage reader integration. Returning a
+partial page does not certify compatibility with a reader that ignores coverage.
+It neither replays mutations nor stops retained execution owners. The registry's
+existing synchronous SQLite implementation remains a separate concern.
