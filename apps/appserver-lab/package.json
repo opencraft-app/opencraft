@@ -18,7 +18,7 @@
     "@opencraft/composer-core": "0.1.0",
     "@opencraft/appserver-transport-replay": "0.1.0",
     "@opencraft/appserver-transport-websocket": "0.1.0",
-    "ws": "8.22.0"
+    "ws": "8.22.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
