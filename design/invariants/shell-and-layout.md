@@ -5,7 +5,10 @@
 The unified desktop sidebar measures one context column and a normal-flow
 horizontal bottom action row. Default and minimum widths describe the reading
 column itself, without an additional vertical icon-rail allowance. Saved user
-widths remain valid. Header action measurement includes Applications; docking,
+widths remain valid. Applications follows the sidebar toggle in the leading
+header rail, including its inert width measurement; the trailing rail keeps
+page actions and the preview control. Narrow mobile drawers retain their labeled
+Applications destination. Docking,
 held resize, context portals and mobile gesture/safe-area owners retain their
 existing geometry and lifecycle.
 The docked desktop browser Sidecar paints its theme-owned background once across

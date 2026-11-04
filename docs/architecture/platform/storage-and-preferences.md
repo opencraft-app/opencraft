@@ -335,3 +335,21 @@ usable paint. It precaches public build assets and sanitized deployment recipes,
 never private HTML or account/Host API responses. A prepared shell can start a
 new document fully offline and restore local input. Browser storage remains
 evictable; this provides neither an offline model nor background sending.
+
+### Disposable native transcript cache directory
+
+`OPENCRAFT_CACHE_DIRECTORY` optionally places native transcript projections under
+one absolute root. Each Host data directory gets a stable SHA-256 namespace of
+its resolved absolute data path, then `cache/transcripts/` and
+`cache/transcript-index.sqlite`. It cannot merge independent Host caches. Without
+configuration, the existing `<dataDirectory>/cache/` layout remains. A relative
+root is rejected. Changing the root rebuilds projections from the native source;
+old cache files are not imported, removed or treated as authority. The cache root
+is disposable but contains private history and requires private permissions.
+
+This setting applies to Codex, DSH and Pi consumers of `TranscriptReadCache`.
+It does not relocate native engine histories, Server authority, execution
+receipts, drafts or credentials. The existing downloadable resource cache has
+its own `OPENCRAFT_RESOURCE_CACHE_DIRECTORY`; it is not an established global
+setting for every temporary store. Broader unification must preserve each
+owner's isolation and retention contract rather than redirecting all data roots.

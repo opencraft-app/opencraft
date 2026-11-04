@@ -600,3 +600,7 @@ Icon-only application footer entrances select the shared
 `application-navigation-icon-control` role. Its design-system owner constrains
 height, minimum height and padding; Shell consumes density tokens without
 redeclaring those shared-control properties.
+
+### Sidebar bottom action surfaces
+
+Touch New chat, Applications and Settings retain their separate floating glass surfaces above a full-height scrollport. The footer hosts remain transparent. Shell measures both hosts and reserves their maximum height as scroll content padding, including safe areas and stacked update notices, so final rows can scroll above the buttons. Desktop surfaces and shared feedback remain.

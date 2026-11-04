@@ -28,8 +28,8 @@ import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { existsSync, statSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, stat } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
 import { OpenCraftHostQueue, type HostQueuedSubmission } from "./opencraft-host-queue.js";
@@ -750,7 +750,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       readThread: async (threadId, signal) => {
         const thread = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread) as AppServerThread;
         let bytes = -1;
-        try { if (typeof thread.path === "string") bytes = statSync(thread.path).size; } catch { /* Missing metadata stays unknown. */ }
+        try { if (typeof thread.path === "string") bytes = (await stat(thread.path)).size; } catch { /* Missing metadata stays unknown. */ }
         this.noteHistoryReadContext(signal, { lengthBucket: historyLengthBucket(bytes) });
         return thread;
       },
@@ -1378,6 +1378,17 @@ export class CodexEngineAdapter implements DuplexTransport {
         threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
       const forward = async () => {
+        if (message.method === "thread/resume") {
+          // Execution activation joins its existing tool preparation. A view
+          // must not race that owner by installing another configuration.
+          try { await this.sessionMcpRefreshes.get(string(params.threadId)); }
+          catch (cause) {
+            if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch)
+              this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
+            return;
+          }
+        }
+        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
         if (message.method === "thread/resume" && this.sessionMcpRetirements.has(string(params.threadId))) {
           try {
             if (this.sessionMcpRefreshes.has(string(params.threadId))) throw new SessionMcpRecoveryPending();
@@ -1601,7 +1612,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (Number.isSafeInteger(turnCount) && turnCount >= 0) trace.turnCountBucket = historyTurnCountBucket(turnCount);
       const rolloutPath = string(resultThread.path);
       if (rolloutPath) {
-        try { trace.lengthBucket = historyLengthBucket(statSync(rolloutPath).size); }
+        try { trace.lengthBucket = historyLengthBucket((await stat(rolloutPath)).size); }
         catch { /* A missing/unavailable rollout size stays unknown. */ }
       }
       if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");

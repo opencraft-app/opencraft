@@ -304,6 +304,7 @@
     "smoke:sandbox": "node --import tsx scripts/smoke/execution/smoke-sandbox.ts"
   },
   "dependencies": {
+    "deepmerge": "file:vendor/deepmerge",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -318,7 +319,7 @@
     "esbuild": "0.28.2",
     "eslint": "10.13.0",
     "eslint-plugin-compat": "7.0.2",
-    "eslint-plugin-es-x": "9.7.0",
+    "eslint-plugin-es-x": "10.1.0",
     "expo": "58.0.19",
     "fake-indexeddb": "^6.2.6",
     "graceful-fs": "4.2.11",
@@ -336,6 +337,20 @@
   "overrides": {
     "expo": "58.0.19",
     "react-native-reanimated": "4.7.1",
-    "react-native-worklets": "0.13.0"
+    "react-native-worklets": "0.13.0",
+    "body-parser": "2.4.0",
+    "qs": "6.16.1",
+    "node-forge": "1.4.1",
+    "zod": "4.6.6",
+    "@hono/node-server": "2.1.3",
+    "fast-uri": "3.1.9",
+    "glob@13": "14.0.2",
+    "hono": "4.13.11",
+    "ip-address": "10.7.4",
+    "minimatch": "11.0.1",
+    "katex": "0.19.0",
+    "deepmerge": "$deepmerge",
+    "@electron/asar": "4.3.1",
+    "@electron/universal": "3.0.6"
   }
 }
