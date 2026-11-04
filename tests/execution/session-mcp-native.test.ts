@@ -57,6 +57,7 @@ test("native failed Thread reconfigures tools promptly and accepts the next exec
   skip: !process.env.OPENCRAFT_CODEX_EXECUTABLE, timeout: 25_000,
 }, async t => {
   const { createServer } = await import("node:http");
+  const { CodexEngineAdapter } = await import("../../apps/opencraft-daemon/src/codex-engine-adapter.js");
   const home = await mkdtemp(join(tmpdir(), "session-mcp-recovery-native-"));
   let requests = 0, releaseNext!: () => void;
   const nextResponse = new Promise<void>(resolve => { releaseNext = resolve; });
@@ -111,20 +112,19 @@ stream_max_retries = 0
   await completed;
   const before = await request("thread/read", { threadId: created.thread.id, includeTurns: false });
   assert(["idle", "systemError"].includes(before.thread.status.type));
+  const adapter: any = Object.create(CodexEngineAdapter.prototype);
+  const methods: string[] = [];
+  Object.assign(adapter, { options: { sessionMcp: async () => mcp.config({ serverId: "fixture", threadId: created.thread.id, execution: { inputId: "next", executionId: "execution-next" } }) },
+    ephemeralThreads: new Set(), initialEnvironmentThreads: new Set(), executionEnvironments: new Map(),
+    sessionMcpConfigurations: new Map(), sessionMcpRetirements: new Map(), sessionMcpRefreshes: new Map(), sessionMcpInitial: new Map(), sessionMcpGeneration: 0,
+    nativeSubscribedThreads: new Set([created.thread.id]), cancelNativeRelease() {},
+    async requestPhysical(method: string, params: unknown) { methods.push(method); return request(method, params); } });
   const preparationStarted = performance.now();
-  await request("thread/unsubscribe", { threadId: created.thread.id });
-  let status = "idle";
-  while (status !== "notLoaded" && performance.now() - preparationStarted < 5_000) {
-    await new Promise(resolve => setTimeout(resolve, 50));
-    const snapshot = await request("thread/read", { threadId: created.thread.id, includeTurns: false });
-    status = snapshot.thread.status.type;
-  }
-  assert.equal(status, "notLoaded", "tool rotation must not inherit native's idle retention delay");
-  await request("thread/resume", { threadId: created.thread.id, excludeTurns: true, config: {
-    "mcp_servers.opencraft_session": mcp.config({ serverId: "fixture", threadId: created.thread.id,
-      execution: { inputId: "next", executionId: "execution-next" } }),
-  } });
-  assert(performance.now() - preparationStarted < 5_000);
+  await adapter.prepareSessionMcp(created.thread.id, "next", "execution-next");
+  assert(performance.now() - preparationStarted < 5_000, "tool rotation must not inherit native's idle retention delay");
+  assert.equal(methods.filter(method => method === "thread/unsubscribe").length, 1);
+  assert.equal(methods.filter(method => method === "thread/resume").length, 2);
+  assert.equal(adapter.sessionMcpRetirements.size, 0);
   const result = await request("mcpServer/tool/call", { threadId: created.thread.id, server: "opencraft_session", tool: "probe", arguments: {} });
   assert.equal(result.isError, false); assert.equal(calls, 1);
   const next = await request("turn/start", { threadId: created.thread.id, clientUserMessageId: "next", input: [{ type: "text", text: "Synthetic next execution", text_elements: [] }] });

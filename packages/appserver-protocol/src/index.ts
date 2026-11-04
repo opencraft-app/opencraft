@@ -11,6 +11,7 @@ export * from "./runtime-settings";
 export * from "./model-base-url";
 export * from "./server-requests";
 export * from "./transport";
+export * from "./request-trace";
 export * from "./process";
 export * from "./profile-skills";
 export * from "./skill-catalog";
@@ -18,6 +19,8 @@ export * from "./host-storage";
 export * from "./attachments";
 export * from "./thread-pins";
 export * from "./thread-catalog";
+export * from "./catalog-merkle";
+export * from "./catalog-merkle-pages";
 export * from "./message-sender";
 
 export * from "./tasks";
@@ -30,4 +33,10 @@ export * from "./turn-recovery";
 
 export * from "./shared-interactions";
 
+export * from "./thread-access";
+
 export * from "./thread-note";
+
+export * from "./goal-execution.js";
+
+export * from "./message-attachments";

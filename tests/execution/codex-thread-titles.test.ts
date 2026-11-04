@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { CodexThreadTitles } from "../../apps/opencraft-daemon/src/codex-thread-titles.js";
+import { codexSandboxRequestPolicy } from "../../apps/codex-core/src/execution-sandbox.js";
 
 type Row = Record<string, any>;
-function harness(options: { timeout?: number; output?: string; models?: string[]; failed?: boolean; pending?: boolean } = {}) {
+function harness(options: { cwd?: string; timeout?: number; output?: string; models?: Array<string | Row>; source?: Row; failed?: boolean; pending?: boolean } = {}) {
   const calls: { method: string; params: Row }[] = [], changed: Row[] = [];
   const names = new Map<string, string>();
   let sequence = 0, failures = 0, active = 0, peak = 0;
   const titles = new CodexThreadTitles({
+    cwd: options.cwd,
     request: async (method, params) => {
       calls.push({ method, params });
-      if (method === "thread/read") return { thread: { id: params.threadId, name: names.get(params.threadId as string) ?? null } };
-      if (method === "model/list") return { data: (options.models ?? ["gpt-6-luna"]).map(model => ({ model })) };
+      if (method === "thread/read") return { thread: { cwd: "/private/project", ...options.source, id: params.threadId, name: names.get(params.threadId as string) ?? null } };
+      if (method === "model/list") return { data: (options.models ?? ["gpt-6-luna"]).map(model => typeof model === "string" ? { model } : model) };
       if (method === "thread/start") {
         const id = `temp-${++sequence}`;
         titles.observeResult(method, params, { thread: { id, ephemeral: true } });
@@ -61,13 +63,76 @@ test("first accepted input uses a private structured AppServer turn and persists
     assert.equal(h.calls.filter(x => x.method === "thread/start").length, 1);
     const start = h.calls.find(x => x.method === "thread/start")!.params;
     assert.equal(start.ephemeral, true); assert.equal(start.model, "gpt-6-luna");
-    assert.equal(start.cwd, null); assert.equal(start.sandbox, "read-only");
+    assert.equal(start.cwd, "/private/project"); assert.equal(start.sandbox, "read-only");
     assert.equal(start.config.project_doc_max_bytes, 0);
+    assert.equal(start.config["features.image_generation"], false);
     const turn = h.calls.find(x => x.method === "turn/start")!.params;
     assert.equal(turn.threadId, "temp-1"); assert.equal(turn.outputSchema.additionalProperties, false);
     assert.ok(turn.input[0].text.includes("修复中文会话的自动标题"));
     await h.until(() => h.calls.some(x => x.method === "thread/unsubscribe"));
     assert.equal(h.calls.some(x => x.method === "turn/interrupt"), false);
+  } finally { h.titles.close(); }
+});
+
+test("a Host-owned workspace is used for sandbox admission without project documents", async () => {
+  const h = harness({ cwd: "/host/title-runtime" });
+  try {
+    h.create(); h.accepted(); await h.until(() => h.changed.length === 1);
+    const start = h.calls.find(x => x.method === "thread/start")!.params;
+    assert.equal(start.cwd, "/host/title-runtime"); assert.equal(start.config.project_doc_max_bytes, 0);
+    assert.deepEqual(start.runtimeWorkspaceRoots, []); assert.deepEqual(start.dynamicTools, []);
+    const sandbox = codexSandboxRequestPolicy(async () => { throw new Error("Creation must not read another Thread"); });
+    assert.deepEqual((await sandbox("thread/start", start)).environments, [{ environmentId: "opencraft", cwd: "/host/title-runtime" }]);
+    await assert.rejects(sandbox("thread/start", { ...start, cwd: null }), /workspace/u);
+  } finally { h.titles.close(); }
+});
+
+test("custom titles retain source model/provider and use a declared effort without a subscription request", async () => {
+  for (const levels of [["high", "max"], ["minimal", "low", "high"], []]) {
+    const source = { model: "custom-responses:fixture/thinking", modelProvider: "opencraft-custom-responses" };
+    const h = harness({ source, models: ["gpt-6-luna", { model: source.model,
+      supportedReasoningEfforts: levels.map(reasoningEffort => ({ reasoningEffort })), defaultReasoningEffort: "high" }] });
+    try {
+      h.create(); h.accepted(); await h.until(() => h.changed.length === 1);
+      const start = h.calls.find(x => x.method === "thread/start")!.params;
+      assert.equal(start.model, source.model); assert.equal(start.modelProvider, source.modelProvider);
+      assert.equal(h.calls.find(x => x.method === "turn/start")!.params.model, source.model);
+      const expected = levels.includes("low") ? "low" : levels[0] ?? "none";
+      assert.equal(start.config.model_reasoning_effort, expected);
+      assert.equal(h.calls.find(x => x.method === "turn/start")!.params.effort, expected);
+    } finally { h.titles.close(); }
+  }
+});
+
+test("an unavailable custom model never falls back to subscription even when a Luna model is listed", async () => {
+  const h = harness({ source: { model: "custom-responses:disabled/model", modelProvider: "opencraft-custom-responses" } });
+  try {
+    h.create(); h.accepted(); await h.until(() => h.titles.pendingCount === 0);
+    assert.equal(h.calls.some(x => x.method === "thread/start" || x.method === "thread/name/set"), false);
+  } finally { h.titles.close(); }
+});
+
+test("explicit resume of an untitled custom Thread repairs its title only after accepted text, using its original preview", async () => {
+  const source = { model: "custom-responses:fixture/model", modelProvider: "opencraft-custom-responses", preview: "最初的任务" };
+  const h = harness({ source, models: [source.model] });
+  try {
+    h.titles.observeResult("thread/resume", {}, { thread: { id: "old", ...source } });
+    await delay(10); assert.equal(h.calls.length, 0);
+    h.accepted("old", [{ type: "text", text: "继续" }]);
+    await h.until(() => h.changed.length === 1);
+    const prompt = h.calls.find(x => x.method === "turn/start")!.params.input[0].text;
+    assert.ok(prompt.endsWith("最初的任务")); assert.equal(h.names.has("old"), true);
+  } finally { h.titles.close(); }
+});
+
+test("subscription resume and named custom resume do not generate titles", async () => {
+  const h = harness();
+  try {
+    for (const thread of [{ id: "subscription", modelProvider: "opencraft-account-pool" },
+      { id: "named-custom", modelProvider: "opencraft-custom-responses", name: "手工名称" }]) {
+      h.titles.observeResult("thread/resume", {}, { thread }); h.accepted(thread.id);
+    }
+    await delay(10); assert.equal(h.calls.length, 0);
   } finally { h.titles.close(); }
 });
 

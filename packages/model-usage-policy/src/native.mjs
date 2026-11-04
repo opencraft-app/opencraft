@@ -48,7 +48,7 @@ export function assertModelPolicy(path, engine, model, effort, catalog = []) {
 }
 export function projectModels(path, engine, models, policy = readPolicy(path)) {
   const {rules} = policy;
-  return models.map(m=>({...m,policyRestricted:rules.some(r=>r.engine===engine),policyRestrictedEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>denied(rules,engine,m.model ?? m.id,e.reasoningEffort)).map(e=>e.reasoningEffort),hidden:m.hidden || rules.some(r=>r.engine===engine && r.effort===undefined && r.model===(m.model ?? m.id)),
+  return models.map(m=>({...m,policySelectable:!denied(rules,engine,m.model ?? m.id,undefined) && (!(m.supportedReasoningEfforts?.length) || m.supportedReasoningEfforts.some(e=>!denied(rules,engine,m.model ?? m.id,e.reasoningEffort))),policyRestricted:rules.some(r=>r.engine===engine),policyRestrictedEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>denied(rules,engine,m.model ?? m.id,e.reasoningEffort)).map(e=>e.reasoningEffort),hidden:m.hidden || rules.some(r=>r.engine===engine && r.effort===undefined && r.model===(m.model ?? m.id)),
     supportedReasoningEfforts:(m.supportedReasoningEfforts ?? []).filter(e=>!denied(rules,engine,m.model ?? m.id,e.reasoningEffort))}));
 }
 

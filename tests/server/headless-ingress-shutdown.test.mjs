@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
+import { createConnection } from 'node:net';
 import { once } from 'node:events';
 import ssh2 from 'ssh2';
 import { WebSocket } from 'ws';
@@ -22,6 +23,47 @@ async function fixture() {
 }
 async function bounded(operation,ms,label) {let timer;try{return await Promise.race([operation,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),ms);})]);}finally{clearTimeout(timer);}}
 const command=(node,input)=>node.command({revision:node.store.state.revision,...input},'fixture-administrator');
+
+test('a socket with incomplete HTTP headers cannot delay shutdown without any admitted request', {timeout:5000}, async()=>{
+  const f=await fixture();let web,socket,closing;
+  try {
+    web=await createWorkbenchWebServer({root:f.options.webRoot});
+    const address=await web.listen({host:'127.0.0.1',port:0});
+    socket=createConnection({host:'127.0.0.1',port:address.port});await once(socket,'connect');
+    socket.write('GET / HTTP/1.1\r\nHost: fixture\r\n');
+    // Ensure the parser has the partial header, but no request handler exists.
+    await new Promise(done=>setTimeout(done,20));
+    closing=web.close();
+    await bounded(closing,1000,'unadmitted HTTP socket held the gateway writer');
+  } finally {socket?.destroy();await closing;await rm(f.root,{recursive:true,force:true});}
+});
+
+test('shutdown preserves an admitted HTTP response until its handler finishes', {timeout:5000}, async()=>{
+  const f=await fixture();let web,release,admitted,closing;
+  const held=new Promise(done=>{release=done;}),entered=new Promise(done=>{admitted=done;});
+  let stopped=false;
+  try {
+    web=await createWorkbenchWebServer({root:f.options.webRoot,identityService:{admissionStatus:()=>204,connectionContext:()=>({sender:null}),async handle(_req,res){admitted();await held;res.end('accepted-response');return true;}}});
+    const address=await web.listen({host:'127.0.0.1',port:0});
+    const response=fetch(`http://127.0.0.1:${address.port}/accepted`).then(result=>result.text());
+    await entered;closing=web.close().then(()=>{stopped=true;});
+    await new Promise(done=>setTimeout(done,25));assert.equal(stopped,false);
+    release();assert.equal(await response,'accepted-response');await bounded(closing,1000,'completed HTTP response retained shutdown');
+  } finally {release?.();await closing;await rm(f.root,{recursive:true,force:true});}
+});
+
+test('an incomplete next request on an HTTP keepalive socket cannot retain shutdown', {timeout:5000}, async()=>{
+  const f=await fixture();let web,socket,closing;
+  try {
+    web=await createWorkbenchWebServer({root:f.options.webRoot});
+    const address=await web.listen({host:'127.0.0.1',port:0});
+    socket=createConnection({host:'127.0.0.1',port:address.port});await once(socket,'connect');
+    const response=once(socket,'data');socket.write('GET /version.json HTTP/1.1\r\nHost: fixture\r\n\r\n');
+    assert.match((await response)[0].toString(),/^HTTP\/1.1 200/);
+    socket.write('GET / HTTP/1.1\r\nHost: fixture\r\n');await new Promise(done=>setTimeout(done,20));
+    closing=web.close();await bounded(closing,1000,'an idle keepalive parser retained shutdown');
+  } finally {socket?.destroy();await closing;await rm(f.root,{recursive:true,force:true});}
+});
 
 test('a real admitted Hub peer cannot hold Headless HTTP shutdown open', {timeout:15000}, async()=>{
   const f=await fixture();let app,peer,server,hub;

@@ -12,13 +12,14 @@ const electronAppRoot = resolve(repositoryRoot, "apps/workbench-electron");
 export function electronAppEnvironment(source = process.env) {
   const environment = { ...source };
   delete environment.ELECTRON_RUN_AS_NODE;
+  delete environment.OPENCRAFT_ELECTRON_EXECUTABLE;
   return environment;
 }
 
 export function electronLaunchSpec(args = [], environment = process.env) {
-  const executable = require("electron");
+  const executable = environment.OPENCRAFT_ELECTRON_EXECUTABLE ?? require("electron");
   if (typeof executable !== "string" || executable.length === 0) {
-    throw new Error("The Electron package did not resolve to an executable path");
+    throw new Error("Electron did not resolve to an executable path");
   }
   return {
     executable,

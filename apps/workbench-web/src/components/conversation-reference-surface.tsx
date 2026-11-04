@@ -2,7 +2,7 @@ import { ExternalLinkIcon as ExternalLink } from "@opencraft/design-system-web/a
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationReferenceProvider, type ConversationReferencePort } from "@opencraft/composer-editor";
 import { encodeConversationRef, parseConversationRef, type ConversationRef } from "@opencraft/appserver-protocol/collaboration";
-import { createWorkbenchThreadLocation } from "@opencraft/workbench-runtime";
+import { resolveConversationReferenceNavigation } from "../runtime/conversation-reference-navigation";
 import { SettingsButton } from "@opencraft/extension-react";
 import { useIntl } from "@opencraft/i18n/react";
 import { ModalSurface } from "./modal";
@@ -45,18 +45,17 @@ export function ConversationReferenceSurface({catalog,hostId,children}:{catalog:
   }}),[open,command,catalog.threadManagement,intl]);
   const navigate=async(reference:string,source:string)=>{
     const ref=parseConversationRef(reference);if(!ref)return;
-    // A route/host hint never overrides resource identity.
-    const r=await command(source,{action:"reference",threadId:ref.threadId});
-    if(encodeConversationRef(r.ref as unknown as ConversationRef)!==encodeConversationRef(ref))throw Error("Different server");
-    await catalog.navigate(createWorkbenchThreadLocation(source,ref.threadId));
+    const hosts=[source,...catalog.hosts.map(host=>host.hostId)];
+    const location=await resolveConversationReferenceNavigation(ref,hosts,(id,method,params)=>catalog.agentRuntimes.request(id,method,params as never) as Promise<Record<string,unknown>>);
+    await catalog.navigate(location);
   };
-  const referenceAvailable=catalog.threadManagement.capabilities(hostId).reference===true;
+  const hostKey=JSON.stringify([hostId,...catalog.hosts.map(host=>host.hostId)]);
   const boot=useRef(false);
   useEffect(()=>{
-    if(boot.current||!referenceAvailable)return;
+    if(boot.current)return;
     const ref=parseConversationRef(window.location.href);if(!ref)return;boot.current=true;
     void navigate(encodeConversationRef(ref),hostId).catch(failure);
-  },[hostId,referenceAvailable]);
+  },[hostKey]);
   const send=async()=>{
     if(!target||pending||!draft.trim())return;setPending(true);
     const current=target;

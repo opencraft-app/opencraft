@@ -262,6 +262,28 @@ test('revocation refresh permits an unrevoked signed rollback while retaining bo
   await assert.rejects(verifyRetainedRelease(root,trust,{...state,revokedReleaseIds:['test-release']}),/policy/);
 });
 
+test('committed bootstrap reopening does not scan installed bytes, while installation and rollback still do', async t => {
+  const {initializeReplayState,verifyRetainedRelease}=await import('../../scripts/full-release/retained.mjs');
+  const root=await mkdtemp(join(tmpdir(),'full-release-reopen-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await mkdir(join(root,'release'));await writeInstalledFile(join(root,'LICENSE'),'license');
+  const record=fixture(), stateFile=join(root,'state.json');
+  await writeFile(join(root,'release/full-release.json'),bytes(record));
+  await writeFile(join(root,'release/full-release.sig'),JSON.stringify(signed(record)));
+  const installed=await initializeReplayState(root,trust,stateFile), before=await readFile(stateFile);
+  // Removing a payload file distinguishes metadata reopening from a full scan.
+  // These are isolated synthetic bytes, never a running installation.
+  await rm(join(root,'LICENSE'));
+  assert.deepEqual((await initializeReplayState(root,trust,stateFile,installed.identity)).identity,installed.identity);
+  assert.deepEqual(await readFile(stateFile),before);
+  await assert.rejects(initializeReplayState(root,trust,stateFile),/ENOENT/);
+  await assert.rejects(initializeReplayState(root,trust,join(root,'new-state.json'),installed.identity),/ENOENT/);
+  await assert.rejects(verifyRetainedRelease(root,trust,installed.state),/ENOENT/);
+  await assert.rejects(initializeReplayState(root,trust,stateFile,{...installed.identity,manifestSha256:'0'.repeat(64)}),/activation identity/);
+  const signature=signed(record);signature.signature='A'.repeat(signature.signature.length);
+  await writeFile(join(root,'release/full-release.sig'),JSON.stringify(signature));
+  await assert.rejects(initializeReplayState(root,trust,stateFile,installed.identity));
+});
+
 test('first bootstrap initializes authenticated state and reopening or explicit rollback never lowers it', async t => {
   const {initializeReplayState}=await import('../../scripts/full-release/retained.mjs');
   const root=await mkdtemp(join(tmpdir(),'full-release-initial-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -328,15 +350,25 @@ server.listen(0,'127.0.0.1',()=>process.send({protocol:1,version:pkg.version,bui
   const stateUrl=new URL('../../scripts/full-release/archive.mjs',import.meta.url).href;
   const scenario=`import assert from 'node:assert/strict';import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';import {join} from 'node:path';
 import {createManagedWebServer} from ${JSON.stringify(serverUrl)};import {readReplayState} from ${JSON.stringify(stateUrl)};
+import {selectInitialReadinessBudget,initialReadinessPolicy} from ${JSON.stringify(new URL('../../scripts/server-deployment/initial-readiness-budget.mjs', import.meta.url).href)};
 const root=process.argv[2],packages=JSON.parse(await readFile(join(root,'packages.json'),'utf8'));
 async function run(name,rollback,tree=false) {
  const stateDirectory=join(root,name);let selected='1.3.0',app,base,cookie='';
  const source={channel:'test',latest:async()=>packages[selected],download:async(release,directory)=>{await mkdir(directory,{recursive:true});const path=join(directory,'release.tgz');await copyFile(packages[release.version].archive,path);return path;}};
- const execution={status:async()=>null,apply:async()=>{},inspect:async(release)=>{if(!rollback&&release.version==='1.3.0')throw new Error('Synthetic preparation failure');},referencedRoots:async()=>[]};
+ const initialTarget={version:'1.2.0',buildId:packages['1.2.0'].buildId,manifestSha256:packages['1.2.0'].manifestSha256,releaseSequence:2};
+ const initialReadinessSelector=(path,release,jobId,existing)=>selectInitialReadinessBudget(path,release,jobId,existing,{readPolicy:async()=>({policy:initialReadinessPolicy(initialTarget),policySha256:'b'.repeat(64)})});
+ const execution={status:async()=>null,apply:async(release,options)=>{
+  if(release.version==='1.2.0') {
+   const disk=JSON.parse(await readFile(join(stateDirectory,'deployment.json'),'utf8'));
+   assert.deepEqual(options.initialReadiness,disk.job.initialReadinessBudget);
+   assert.equal(options.initialReadiness.jobId,disk.job.id);assert.equal(disk.job.phase,'starting');
+   assert.equal(options.initialReadiness.deadlineAt-options.initialReadiness.selectedAt,1800000);
+  } else assert.equal(options,undefined);
+ },inspect:async(release)=>{if(!rollback&&release.version==='1.3.0')throw new Error('Synthetic preparation failure');},referencedRoots:async()=>[]};
  const post=(action,input={})=>fetch(base+'/__opencraft_updates/'+action,{method:'POST',headers:{origin:base,cookie,'content-type':'application/json'},body:JSON.stringify(input)});
  const status=async()=>await(await fetch(base+'/__opencraft_updates',{headers:{cookie}})).json();
- async function until(predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await status();if(predicate(value))return value;await new Promise(r=>setTimeout(r,20));}throw new Error('Managed test timed out');}
- async function open(){cookie='';app=await createManagedWebServer({initialRelease:packages['1.1.0'].packageRoot,stateDirectory,source,execution});base='http://127.0.0.1:'+(await app.listen({port:0})).port;const key=(await readFile(app.adminKeyPath,'utf8')).trim();const login=await post('login',{key});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];}
+ async function until(predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await status();if(predicate(value))return value;await new Promise(r=>setTimeout(r,20));}throw new Error('Managed test timed out '+JSON.stringify(await status()));}
+ async function open(){cookie='';app=await createManagedWebServer({initialRelease:packages['1.1.0'].packageRoot,stateDirectory,source,execution,initialReadinessSelector});base='http://127.0.0.1:'+(await app.listen({port:0})).port;const key=(await readFile(app.adminKeyPath,'utf8')).trim();const login=await post('login',{key});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];}
  async function install(version,phase){selected=version;if(tree){assert.equal((await status()).localTreeInstall,1);assert.equal((await post('install-local-tree',{...packages[version],tree:packages[version].packageRoot})).status,202);}else if(!rollback){assert.equal((await post('install-local',packages[version])).status,202);}else{assert.equal((await post('check')).status,202);await until(s=>!s.checking&&s.latest?.version===version);assert.equal((await post('install',{version})).status,202);}return until(s=>s.job?.phase===phase);}
  try {
   await open();const initial=JSON.parse(await readFile(join(stateDirectory,'deployment.json'),'utf8')).current.fullRelease;

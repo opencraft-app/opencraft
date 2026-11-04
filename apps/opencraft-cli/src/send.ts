@@ -2,10 +2,11 @@ import { open, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CollaborationClient } from '@opencraft/appserver-client/collaboration';
-import type { ConversationRef, ConversationReceipt } from '@opencraft/appserver-protocol/collaboration';
+import type { ConversationRef, ConversationReceipt, ConversationInputSettings } from '@opencraft/appserver-protocol/collaboration';
 import { CliError, classify } from './errors';
 
 export interface SendInput { content: string; operationKey: string; generated: boolean; timeoutMs: number | null;
+  settings?: ConversationInputSettings;
   execution?: { mode: 'queue' } | { mode: 'steer'; expectedTurnId: string } }
 function invalid(message: string): never { throw new CliError(2, 'INVALID_INPUT', message); }
 async function readInput(source: AsyncIterable<Buffer | string>) {
@@ -52,6 +53,7 @@ export async function sendMessage(client: CollaborationClient, ref: Conversation
   scope: { instanceId: string; actorId: string; recordsDirectory: string }) {
   // Reject missing capabilities before persisting a generated key or issuing a mutation.
   const execution = input.execution ?? { mode: 'queue' };
+  if(input.settings){client.require('modelSettings');if(execution.mode!=='queue')invalid('Model settings require queue mode.');}
   client.require(execution.mode);
   client.require('lookup');
   if (input.timeoutMs !== null) client.require('deliveryMetadata');
@@ -65,8 +67,9 @@ export async function sendMessage(client: CollaborationClient, ref: Conversation
   let receipt: ConversationReceipt | undefined;
   try {
     // Exactly one invocation. Disconnection never retries this mutation.
-    const sent = await client.send(ref, input.content, input.operationKey, execution);
+    const sent = await client.send(ref, input.content, input.operationKey, execution, input.settings);
     receipt = { ref, operationKey: input.operationKey, messageId: sent.messageId, requestId: sent.requestId,
+      requestedSettings:input.settings??null,nativeConfirmedConfiguration:null,actualTurnSettings:null,
       mode: execution.mode, deliveryState: 'accepted', targetTurnId: null, observedAt: Date.now(), taskOutcome: 'unknown' };
     if (input.timeoutMs === null) return { ...receipt, replayed: sent.replayed };
     const deadline = performance.now() + input.timeoutMs;

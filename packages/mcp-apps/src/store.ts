@@ -3,8 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   openManagedDatabase,
-  createSchemaValidator,
-} from "@opencraft/sqlite-node";
+  } from "@opencraft/sqlite-node";
 import type { AppSpec } from "./spec";
 const schema = `
 CREATE TABLE apps(owner TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,active INTEGER,next INTEGER NOT NULL,draft TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(owner,id)) STRICT;
@@ -35,10 +34,10 @@ export class AppStore {
   readonly outcome;
   constructor(path: string) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    const opened = openManagedDatabase({
+    const opened = openManagedDatabase({ schemaId: "mcp-apps",
       path,
       legacyPolicy: "reject",
-      validateSchema: createSchemaValidator(schema),
+
       migrations: appMigrations,
     });
     this.database = opened.database;

@@ -1,3 +1,6 @@
+const defaultsBehavior=new Map(),defaultsWrites=[],heldDefaults=new Map();
+let defaultsRequirements=null,defaultsPermissionAllowed=true;
+const exactHistory = new Set();
 const seededHistory = new Set();
 const unsupportedItemHistory = new Set();
 const legacyItems = new Set();
@@ -9,6 +12,8 @@ const input = readline.createInterface({ input: process.stdin });
 let initialized = 0;
 let nextServerRequestId = 901;
 let nextTurnId = 1;
+const stopModes = new Map();
+const stopCounts = new Map();
 const turns = new Map();
 const threadTurns = new Map();
 const threadPaths = new Map();
@@ -28,6 +33,7 @@ const threadNames = new Map();
 const threadMetadata = new Map();
 const titleThreads = new Set();
 let nextTitleThread = 0;
+let nextFixtureThread = 0;
 let threadReadsPaused = false;
 const heldThreadReads = [];
 let itemReadsPaused = false;
@@ -91,7 +97,7 @@ input.on("line", line => {
     if (!itemReadsPaused) for (const read of heldItemReads.splice(0)) readItems(read);
     send({ id: message.id, result: {} }); return;
   }
-  if (message.method === "test/setHistory") {seededHistory.add(message.params.threadId);if(message.params.unsupportedItems)unsupportedItemHistory.add(message.params.threadId);threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
+  if (message.method === "test/setHistory") {seededHistory.add(message.params.threadId);if(message.params.exactResult)exactHistory.add(message.params.threadId);if(message.params.unsupportedItems)unsupportedItemHistory.add(message.params.threadId);threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
   if (message.method === "test/emitTool") {
     const id=nextServerRequestId++;testTools.set(String(id),message.params);send({id,method:"item/tool/call",params:{...message.params,callId:String(id)}});send({id:message.id,result:{requestId:id}});return;
   }
@@ -104,6 +110,24 @@ input.on("line", line => {
   if (message.method === "account/login/start" && process.env.OPENCRAFT_TEST_REJECT_POOL_AUTH) {
     send({ id: message.id, error: { code: -32000, message: "Native external auth rejected" } }); return;
   }
+  if(process.env.OPENCRAFT_TEST_THREAD_DEFAULTS){
+    if(message.method==='configRequirements/read'){send({id:message.id,result:{requirements:defaultsRequirements}});return;}
+    if(message.method==='collaborationMode/list'){send({id:message.id,result:{data:[{mode:'plan'},{mode:'default'}],nextCursor:null}});return;}
+    if(message.method==='test/defaultsBehavior'){defaultsBehavior.set(message.params.threadId,message.params.value);send({id:message.id,result:{}});return;}
+    if(message.method==='test/defaultsPermissionsAllowed'){defaultsPermissionAllowed=message.params.value;send({id:message.id,result:{}});return;}
+    if(message.method==='test/defaultsRequirements'){defaultsRequirements=message.params.value;send({id:message.id,result:{}});return;}
+    if(message.method==='test/defaultsWrites'){send({id:message.id,result:{data:defaultsWrites}});return;}
+    if(message.method==='test/releaseDefaults'){const held=heldDefaults.get(message.params.threadId);if(held){heldDefaults.delete(message.params.threadId);send({id:held,result:{}});}send({id:message.id,result:{}});return;}
+    if(message.method==='thread/settings/update'){
+      const p=message.params,mode=defaultsBehavior.get(p.threadId);defaultsWrites.push(p);
+      if(mode!=='ack-only')threadMetadata.set(p.threadId,{...threadMetadata.get(p.threadId),...(p.collaborationMode?{model:p.collaborationMode.settings.model,reasoningEffort:p.collaborationMode.settings.reasoning_effort,collaborationMode:p.collaborationMode}:{}),...(p.permissions?{activePermissionProfile:{id:p.permissions}}:{}),approvalPolicy:p.approvalPolicy});
+      if(mode==='hold'){heldDefaults.set(p.threadId,message.id);return;}if(mode==='lose-ack')return;
+      send({id:message.id,result:{}});return;
+    }
+  }
+  // The modern model-settings fixture also has the Native managed-profile directory.
+  if(message.method==='configRequirements/read' && process.env.OPENCRAFT_TEST_MODEL_SETTINGS){send({id:message.id,result:{requirements:null}});return;}
+  if(message.method==='model/list' && process.env.OPENCRAFT_TEST_MODEL_SETTINGS){send({id:message.id,result:{data:['gpt-test','gpt-6.1-sol','gpt-6-luna'].map(model=>({id:model,model,supportedReasoningEfforts:['low','medium','high'].map(reasoningEffort=>({reasoningEffort})),isDefault:model==='gpt-test'})),nextCursor:null}});return;}
   if (message.method === "model/list" && process.env.OPENCRAFT_TEST_AUTO_TITLES) {
     send({ id: message.id, result: { data: [{ model: "gpt-6-luna" }], nextCursor: null } });
     return;
@@ -129,6 +153,12 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/list") {
+    if(process.env.OPENCRAFT_TEST_NAME_DIRECTORY==='1'){
+      const start=Number(message.params.cursor??0),rows=Array.from({length:130},(_,i)=>({id:'name-'+i,name:'Needle '+i,preview:'preview-only',cwd:'/synthetic',createdAt:1,updatedAt:1,ephemeral:false,source:'cli',turns:[]}));
+      const data=message.params.archived?[]:rows.slice(start,start+Math.min(200,message.params.limit??200));
+      send({id:message.id,result:{data,nextCursor:!message.params.archived&&start+data.length<rows.length?String(start+data.length):null}});return;
+    }
+
     const thread = { ...(threadMetadata.get('fixture-thread-1') ?? {}), id: "fixture-thread-1", name: threadNames.get("fixture-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
     const matchesArchiveFilter = message.params?.archived === true ? archivedThreads.has(thread.id) : !archivedThreads.has(thread.id);
     const matchesFilters = (message.params.projectId === undefined || message.params.projectId === thread.projectId)
@@ -136,10 +166,14 @@ input.on("line", line => {
     send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter && matchesFilters ? [thread] : [], nextCursor: null } });
     return;
   }
+  if (message.method === "configRequirements/read" && process.env.OPENCRAFT_TEST_PERMISSION_REQUIREMENTS === "1") {
+    send({ id: message.id, result: { requirements: null } });
+    return;
+  }
   if (message.method === "permissionProfile/list") {
     send({ id: message.id, result: { data: [
       { id: ":read-only", description: "Inspect files", allowed: true },
-      { id: ":workspace", description: "Edit workspace", allowed: true },
+      { id: ":workspace", description: "Edit workspace", allowed: process.env.OPENCRAFT_TEST_THREAD_DEFAULTS?defaultsPermissionAllowed:true },
       { id: ":danger-full-access", description: "Unrestricted", allowed: true },
       { id: "team-custom", description: "Team policy", allowed: true },
     ], nextCursor: null } });
@@ -150,6 +184,9 @@ input.on("line", line => {
     else readThread(message);
     return;
   }
+  if (["thread/read","thread/turns/list","thread/items/list"].includes(message.method) && "sourceRead" in (message.params ?? {})) {
+    send({id:message.id,error:{code:-32602,message:"Host-only sourceRead reached Native"}});return;
+  }
   if (message.method === "thread/turns/list") {
     if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full"
       && (!unsupportedItemHistory.has(message.params.threadId) || message.params.limit > 2)) {
@@ -158,7 +195,7 @@ input.on("line", line => {
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
     if (message.params.sortDirection !== "asc") rows.reverse();
     const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
+    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(exactHistory.has(message.params.threadId)?{itemsView:message.params.itemsView === "full"?"full":"notLoaded"}:{}), ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
@@ -173,6 +210,7 @@ input.on("line", line => {
       send({ id: message.id, error: { code: -32600, message: "thread already has an active or pending turn" } });
       return;
     }
+    if(process.env.OPENCRAFT_TEST_MODEL_SETTINGS)threadMetadata.set(threadId,{...threadMetadata.get(threadId),...(message.params.model?{model:message.params.model}:{}),...(message.params.effort?{reasoningEffort:message.params.effort}:{})});
     const turnId = `turn-${nextTurnId++}`;
     systemErrorThreads.delete(threadId);
     turns.set(threadId, turnId);
@@ -190,6 +228,24 @@ input.on("line", line => {
       turns.delete(threadId);
       send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [] } } });
     }, 40);
+    return;
+  }
+  if (message.method === "test/stopBehavior") {
+    stopModes.set(message.params.threadId,message.params.mode);
+    send({id:message.id,result:{}});return;
+  }
+  if (message.method === "test/stopCounts") {send({id:message.id,result:{count:stopCounts.get(message.params.threadId)??0}});return;}
+  if (message.method === "turn/interrupt") {
+    const {threadId,turnId}=message.params;
+    stopCounts.set(threadId,(stopCounts.get(threadId)??0)+1);
+    if (turns.get(threadId)!==turnId) {send({id:message.id,error:{code:-32600,message:'Active Turn changed'}});return;}
+    const mode=stopModes.get(threadId);
+    if (mode==='ack-only') {send({id:message.id,result:{}});return;}
+    turns.delete(threadId);
+    const interrupted={id:turnId,status:'interrupted',items:[]};
+    threadTurns.set(threadId,(threadTurns.get(threadId)??[]).map(turn=>turn.id===turnId?interrupted:turn));
+    if(mode!=='lose-ack')send({id:message.id,result:{}});
+    if(subscribedThreads.has(threadId))send({method:'turn/completed',params:{threadId,turn:interrupted}});
     return;
   }
   if (message.method === "turn/steer") {
@@ -237,6 +293,9 @@ input.on("line", line => {
     }
     return;
   }
+  if (message.method === "test/emitNotification") {
+    send(message.params.notification); send({id:message.id,result:{}}); return;
+  }
   if (message.method === "test/emitThreadNotification") {
     const threadId = message.params.threadId;
     send({ id: message.id, result: { nativeSubscribed: subscribedThreads.has(threadId) } });
@@ -263,10 +322,19 @@ input.on("line", line => {
   }
   if (message.method === "thread/unsubscribe") {
     const threadId = message.params.threadId;
+    // This isolated fixture chooses immediate idle retirement after unsubscribe;
+    // active Turns keep their runtime. Real Native retirement is asynchronous.
+    if(process.env.OPENCRAFT_TEST_MODEL_SETTINGS && !turns.has(threadId))loadedThreads.delete(threadId);
     const status = !loadedThreads.has(threadId) ? "notLoaded"
       : subscribedThreads.delete(threadId) ? "unsubscribed" : "notSubscribed";
     send({ id: message.id, result: { status } });
     return;
+  }
+  if (message.method === "test/emitStructuredInteraction") {
+    const id=nextServerRequestId++;
+    testTools.set(String(id),{threadId:message.params.threadId,structured:true});
+    send({id,method:message.params.method,params:{...message.params.params,threadId:message.params.threadId}});
+    send({id:message.id,result:{requestId:id}});return;
   }
   if (message.method === "test/emitServerRequest") {
     const requestId = nextServerRequestId++;
@@ -296,13 +364,14 @@ input.on("line", line => {
   if (message.method === "thread/start") {
     const respond = () => {
       const title = process.env.OPENCRAFT_TEST_AUTO_TITLES && message.params.threadSource === "thread_title";
-      const thread = { id: title ? `title-thread-${++nextTitleThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
+      const thread = { id: title ? `title-thread-${++nextTitleThread}` : process.env.OPENCRAFT_TEST_UNIQUE_THREADS ? `fixture-thread-${++nextFixtureThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
       if (title) titleThreads.add(thread.id);
+      if(process.env.OPENCRAFT_TEST_MODEL_SETTINGS)threadMetadata.set(thread.id,{model:message.params.model??'gpt-test',reasoningEffort:message.params.config?.model_reasoning_effort??'low',...(process.env.OPENCRAFT_TEST_THREAD_DEFAULTS?{cwd:message.params.cwd}:{})});
       loadedThreads.add(thread.id);
       subscribedThreads.add(thread.id);
-      send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });
+      send({ id: message.id, result: { thread, model: process.env.OPENCRAFT_TEST_MODEL_SETTINGS?(message.params.model??'gpt-test'):"gpt-test",...(process.env.OPENCRAFT_TEST_MODEL_SETTINGS?{reasoningEffort:message.params.config?.model_reasoning_effort??'low'}:{}), modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });
       send({ method: "thread/started", params: { thread } });
-      if (!title && !message.params.testNoServerRequest) send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
+      if (!title && !message.params.testNoServerRequest && !process.env.OPENCRAFT_TEST_NO_SERVER_REQUEST) send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
       if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };
     if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);

@@ -1,5 +1,5 @@
+import { captureSqliteReadGuard, sqliteTransaction } from "@opencraft/sqlite-node";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
@@ -37,9 +37,13 @@ export class ActorStore {
   readonly #resourceAuthorities = new Set<(resource: string) => boolean>();
   /** Trusted local resource adapters only; registration confers no grants. */
   registerResourceAuthority(owns: (resource: string) => boolean): () => void { this.#resourceAuthorities.add(owns); return () => { this.#resourceAuthorities.delete(owns); }; }
+  #closed = false;
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
   readonly #permissionProjectionEnabled: boolean;
+  readonly #actorById: ReturnType<DatabaseSync["prepare"]>;
+  readonly #actorByBinding: ReturnType<DatabaseSync["prepare"]>;
+  readonly #bindingsForActor: ReturnType<DatabaseSync["prepare"]>;
   readonly authority: string;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
@@ -49,6 +53,9 @@ export class ActorStore {
     this.#db = managed.database;
     this.#permissionProjectionEnabled = typeof path !== "string";
     this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
+    this.#actorById = this.#db.prepare('SELECT * FROM actors WHERE id=?');
+    this.#actorByBinding = this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?');
+    this.#bindingsForActor = this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding');
     this.outcome = managed.outcome;
     this.#db.exec('PRAGMA foreign_keys=ON');
     this.#db.prepare('INSERT OR IGNORE INTO actor_authority(singleton,id) VALUES(1,?)').run(randomUUID());
@@ -69,19 +76,64 @@ export class ActorStore {
   }
   get managementResource() { return `actor-registry://${this.authority}`; }
   get(id: string): Actor | null {
-    const row = this.#readCache.get(JSON.stringify(['actor',id]), () => this.#db.prepare('SELECT * FROM actors WHERE id=?').get(id));
+    const row = this.#readCache.get(JSON.stringify(["actor", id]), () => this.#actorById.get(id));
     return row ? actor(row) : null;
   }
   list(): Actor[] { return this.#db.prepare('SELECT * FROM actors ORDER BY created_at,id').all().map(actor); }
   /** Lookup only: an unrecognized verified identity is not registered by a read. */
   findHuman(verified: Pick<Principal, 'provider' | 'subject'>): Actor | null {
     const binding = principalKey(verified);
-    const row = this.#readCache.get(JSON.stringify(['binding',binding]), () => this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(binding));
+    const row = this.#readCache.get(JSON.stringify(["binding", binding]), () => this.#actorByBinding.get(binding));
     return row ? this.get(row.actor_id as string) : null;
   }
   bindings(actorId: string): Pick<Principal, 'provider' | 'subject'>[] {
-    return (this.#readCache.get(JSON.stringify(['bindings',actorId]), () => this.#db.prepare('SELECT binding FROM actor_bindings WHERE actor_id=? ORDER BY binding').all(actorId)) ?? [])
+    return (this.#readCache.get(JSON.stringify(["bindings", actorId]), () => this.#bindingsForActor.all(actorId)) ?? [])
       .map(row => { const [provider, subject] = JSON.parse(row.binding as string); return { provider, subject }; });
+  }
+  /** Count-only bounded read on the original registry. No login or membership import.
+   * Batches finish their SQLite statements before yielding; no read transaction spans ACL IO.
+   * Null means an incomplete/unstable view, never an empty binding set.
+   */
+  async captureCountBindings(context: ActorContext, check: () => void): Promise<{
+    bindings: readonly Pick<Principal, 'provider' | 'subject'>[];
+    validate: () => boolean;
+  } | null> {
+    check();
+    const valid = captureSqliteReadGuard(this.#db, () => !this.#closed && this.isCurrent(context));
+    if (!valid || this.get(context.actorId)?.kind !== 'human') return null;
+    const bindings: Pick<Principal, 'provider' | 'subject'>[] = [];
+    let position: number | null = null, visited = 0, bytes = 0;
+    const sql = `SELECT rowid AS position,
+      CASE WHEN length(CAST(binding AS BLOB))<=1024 THEN binding END AS binding,
+      CASE WHEN length(CAST(actor_id AS BLOB))<=4096 THEN actor_id END AS actor_id
+      FROM actor_bindings`;
+    while (true) {
+      check();
+      if (!valid()) return null;
+      const limit = Math.min(256, 32769 - visited);
+      const rows: Record<string, unknown>[] = position === null
+        ? this.#db.prepare(sql + ' ORDER BY rowid LIMIT ?').all(limit)
+        : this.#db.prepare(sql + ' WHERE rowid>? ORDER BY rowid LIMIT ?').all(position, limit);
+      for (const row of rows) {
+        if (++visited > 32768 || !Number.isSafeInteger(row.position)
+          || typeof row.binding !== 'string' || typeof row.actor_id !== 'string') return null;
+        position = Number(row.position);
+        bytes += Buffer.byteLength(row.binding) + Buffer.byteLength(row.actor_id);
+        if (bytes > 4 * 1024 * 1024) return null;
+        if (row.actor_id !== context.actorId) continue;
+        try {
+          const parts: unknown = JSON.parse(row.binding);
+          if (!Array.isArray(parts) || parts.length !== 2) return null;
+          const principal = parsePrincipal({provider:parts[0],subject:parts[1],displayName:'count-read',expiresAt:context.expiresAt});
+          bindings.push(Object.freeze({provider:principal.provider,subject:principal.subject}));
+          if (bindings.length > 32) return null;
+        } catch { return null; }
+      }
+      check();
+      if (!valid()) return null;
+      if (rows.length < limit) return Object.freeze({bindings:Object.freeze(bindings),validate:valid});
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
   }
   /** Both arguments must come from trusted, independently verified authentication. */
   bindHuman(owner: ActorContext, verified: Principal): void {
@@ -133,7 +185,7 @@ export class ActorStore {
     let registered = false;
     const context = this.#transaction(() => {
       const key = principalKey(p);
-      const binding = this.#db.prepare('SELECT actor_id FROM actor_bindings WHERE binding=?').get(key);
+      const binding = this.#actorByBinding.get(key);
       const existing = binding ? this.get(binding.actor_id as string)! : null;
       if (existing && (!existing.enabled || existing.kind !== 'human')) return null;
       const identity = existing ?? this.#create('human', p.displayName, null);
@@ -225,7 +277,7 @@ export class ActorStore {
       && !!this.#readCache.get(JSON.stringify(['grant', actorId, resource, action]), () => this.#db.prepare('SELECT 1 FROM actor_grants WHERE actor_id=? AND resource=? AND action=? AND enabled=1').get(actorId, resource, action));
   }
   audit() { return this.#db.prepare('SELECT * FROM actor_audit ORDER BY id DESC LIMIT 1000').all(); }
-  close() { this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
+  close() { this.#closed = true; this.#readCache.close(); this.#humanRegistrationListeners.clear(); this.#closeDatabase(); }
 }
 
 export function isActorAuthorization(value: string | undefined): boolean {

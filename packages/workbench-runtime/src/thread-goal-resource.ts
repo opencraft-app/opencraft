@@ -113,7 +113,9 @@ export class ThreadGoalResource {
       throw cause;
     } finally {
       this.writes.delete(threadId);
-      if (generation === this.generation) this.publish(threadId, { ...this.getSnapshot(threadId), busy: false });
+      // Releasing this process-local write lock also clears the current projection.
+      // The old command result and error remain fenced by generation above.
+      this.publish(threadId, { ...this.getSnapshot(threadId), busy: false });
     }
   }
 

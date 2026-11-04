@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import {zstdDecompressSync} from "node:zlib";
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createTcpServer } from "node:net";
@@ -13,6 +14,7 @@ import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@o
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src/main.js";
 import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
+import { resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { DatabaseSync } from "node:sqlite";
@@ -26,16 +28,16 @@ const temporaryDirectory = realpathSync(process.platform === "darwin" ? "/tmp" :
 const token = "synthetic-core-token-".repeat(3);
 
 // Opt-in stock-native boundary. The isolated fixture has no real credentials.
-test("stock Native restart preserves a never-dispatched creation for its first input", {
+for(const explicitSettings of [false,true])test(`stock Native restart preserves first input settings (explicit=${explicitSettings})`, {
   skip: !process.env.OPENCRAFT_TEST_NATIVE_CLI,
 }, async () => {
-  let modelPosts = 0;
+  let modelPosts = 0;const requestedSettings:unknown[]=[];
   const f = await fixture(async options => ({ ...options,
     executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, spawnAppServer: undefined,
     fetch: async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       if (init?.method !== "POST" || !url.pathname.endsWith("/responses")) return Response.json({ plan_type: "pro" });
-      modelPosts++;
+      modelPosts++;const raw=typeof init?.body==='string'?Buffer.from(init.body):Buffer.from(init?.body as Uint8Array);const request=JSON.parse((raw.readUInt32LE(0)===0xfd2fb528?zstdDecompressSync(raw):raw).toString());requestedSettings.push({model:request.model,effort:request.reasoning?.effort});
       const item = { type: "message", id: "msg_stock_first", role: "assistant", status: "completed",
         content: [{ type: "output_text", text: "OK", annotations: [] }] };
       const response = { id: "resp_stock_first", object: "response", status: "in_progress", output: [] };
@@ -60,7 +62,7 @@ test("stock Native restart preserves a never-dispatched creation for its first i
     await writeFile(join(f.options.nativeCodexHomeDirectory!, "auth.json"), JSON.stringify({ auth_mode: "chatgpt",
       tokens: { access_token: access, refresh_token: "synthetic", account_id: "stock-fixture" } }));
     await a.rpc("browser", "opencraft/codex/accounts/import");
-    const { thread } = await a.rpc("browser", "thread/start", { cwd: f.root, ephemeral: false, model: "gpt-5.3-codex" });
+    const { thread } = await a.rpc("browser", "thread/start", { cwd: f.root, ephemeral: false, model: explicitSettings?"gpt-6.1-sol":"gpt-5.3-codex",...(explicitSettings?{config:{model_reasoning_effort:"medium"}}:{}) });
     assert.ok(existsSync(thread.path), "the Native allocation must survive restart before any client history read");
     const oldNative = (await f.control.health()).codexPid;
     const beforeRestart = await a.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
@@ -71,7 +73,7 @@ test("stock Native restart preserves a never-dispatched creation for its first i
     const b = await f.adapter(true); await b.rpc("browser", "initialize", initialization);
     const restored = await b.rpc("browser", "thread/resume", { threadId: thread.id, excludeTurns: true });
     assert.equal(restored.thread.id, thread.id);
-    const started = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "stock-first-after-restart",
+    const started = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "stock-first-after-restart",...(explicitSettings?{model:"gpt-6.1-sol",effort:"medium"}:{}),
       input: [{ type: "text", text: "synthetic first input" }] });
     assert.equal(typeof started.turn.id, "string");
     for (let n = 0; n < 500 && !b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id); n++) await delay(10);
@@ -80,6 +82,7 @@ test("stock Native restart preserves a never-dispatched creation for its first i
     assert.equal(completed?.params.turn.status, "completed");
     assert.equal(b.frames.filter(frame => frame.method === "turn/started" && frame.params.turn.id === started.turn.id).length, 1);
     assert.equal(modelPosts, 1, "the first input must reach the synthetic upstream exactly once");
+    if(explicitSettings){assert.deepEqual(requestedSettings,[{model:'gpt-6.1-sol',effort:'medium'}]);const read=await b.rpc('browser','thread/read',{threadId:thread.id,includeTurns:false});assert.equal(read.thread.model,'gpt-6.1-sol');assert.equal(read.thread.reasoningEffort,'medium');}
   } finally { await replacement?.close(); await f.close(); }
 });
 
@@ -637,7 +640,7 @@ test("Headless core mode retains overlay stores, sender and unique owner across 
     const initialized = await a.rpc("a", "initialize");
     assert.equal(initialized.capabilities.extensions["opencraft/bot-conversations"], undefined);
     assert.equal(initialized.capabilities.extensions["vela/bot-conversations"], undefined);
-    assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version));
+    assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === resolveStoreMigrations("opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS).at(-1)!.version));
     assert.ok(!a.engine.storageOutcomes.some(row => row.name === "account-pool"), "core is the sole account owner");
     const { thread } = await a.rpc("a", "thread/start", { cwd: "/synthetic" });
     const sendId = "verified-send";
@@ -1099,4 +1102,332 @@ for (const state of ["created", "active-peer", "persisted", "attempted", "unload
       if (state === "persisted") assert.equal(store.get("new")?.phase, "persisted");
     }
   } finally { store.close(); await rm(root, {recursive:true,force:true}); }
+});
+
+test('Native acknowledged root retains its ID when post-ACK materialization fails',async()=>{
+ const f=await fixture();
+ try{
+  const a=await f.adapter(true);await a.rpc('human','initialize');
+  // Fail the outer Host persistence observation after the real Core/Native ACK.
+  (a.engine as any).materializeCreation=async()=>{throw Error('synthetic persistence observation failed');};
+  await assert.rejects(a.rpc('human','thread/start',{cwd:f.root}),/Could not create this conversation/);
+  const response=a.frames.find(frame=>frame.error?.message==='Could not create this conversation');
+  assert.equal(response.error.data.resultUnknown,true);assert.equal(typeof response.error.data.threadId,'string');
+  const read=await a.rpc('human','thread/read',{threadId:response.error.data.threadId,includeTurns:false});
+  assert.equal(read.thread.id,response.error.data.threadId);
+ }finally{await f.close();}
+});
+
+test('stock Native exact final pages cross the real Core without starting another model call',{
+ skip:!process.env.OPENCRAFT_TEST_NATIVE_CLI,timeout:60000,
+},async()=>{
+ const final='🦉'.repeat(5001);let posts=0;
+ const f=await fixture(async options=>({...options,executable:process.env.OPENCRAFT_TEST_NATIVE_CLI!,spawnAppServer:undefined,
+  fetch:async(input,init)=>{
+   const url=new URL(input instanceof Request?input.url:String(input));
+   if(init?.method!=='POST'||!url.pathname.endsWith('/responses'))return Response.json({plan_type:'pro'});
+   posts++;const item={type:'message',id:'msg_exact',role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:final,annotations:[]}]};
+   const response={id:'resp_exact',object:'response',status:'in_progress',output:[]};
+   const events=[{type:'response.created',response},{type:'response.output_item.added',output_index:0,item:{...item,status:'in_progress',content:[]}},{type:'response.output_text.delta',item_id:item.id,output_index:0,content_index:0,delta:final},{type:'response.output_item.done',output_index:0,item},{type:'response.completed',response:{...response,status:'completed',output:[item],usage:{input_tokens:1,output_tokens:1,total_tokens:2}}}];
+   return new Response(events.map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''),{headers:{'content-type':'text/event-stream'}});
+  }}));
+ try{
+  const a=await f.adapter(true);await a.rpc('human','initialize',{clientInfo:{name:'isolated-exact',version:'1'},capabilities:{experimentalApi:true}});
+  await mkdir(f.options.nativeCodexHomeDirectory!,{recursive:true});
+  const synthetic=`${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'stock-fixture'}})).toString('base64url')}.synthetic`;
+  await writeFile(join(f.options.nativeCodexHomeDirectory!,'auth.json'),JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:synthetic,refresh_token:'synthetic',account_id:'stock-fixture'}}));
+  await a.rpc('human','opencraft/codex/accounts/import');
+  const {thread}=await a.rpc('human','thread/start',{cwd:f.root,ephemeral:false,model:'gpt-5.3-codex'});
+  const start=await a.rpc('human','turn/start',{threadId:thread.id,clientUserMessageId:'exact-stock-input',input:[{type:'text',text:'synthetic exact input'}]});
+  for(let n=0;n<500&&!a.frames.some(m=>m.method==='turn/completed'&&m.params.turn.id===start.turn.id);n++)await delay(10);
+  assert.equal(a.frames.find(m=>m.method==='turn/completed'&&m.params.turn.id===start.turn.id)?.params.turn.status,'completed');
+  let cursor:string|null=null,text='',last:any;
+  do {last=await a.rpc('human','opencraft/turn-result/read',{threadId:thread.id,turnId:start.turn.id,output:true,cursor});
+   assert.equal(last.turnId,start.turn.id);assert.equal(last.matched,true);assert.equal(last.finalUnavailable,false);assert.ok(Array.from(last.entries[0].text).length<=2000);
+   text+=last.entries[0].text;cursor=last.nextCursor;
+  }while(cursor);
+  assert.equal(last.complete,true);assert.equal(text,final);assert.equal(posts,1);
+  const configuration=await a.rpc('human','opencraft/turn-configuration/read',{threadId:thread.id,turnId:start.turn.id});
+  assert.equal(configuration.status,'observed');assert.equal(configuration.scope,'turn-first-recorded-context');
+  assert.equal(configuration.model,'gpt-5.3-codex');assert.equal(configuration.turnId,start.turn.id);assert.equal(configuration.initiality,'start-boundary-observed');
+  assert.equal(typeof configuration.recordedAt,'string');assert.equal(posts,1,'configuration read cannot start another model call');
+  const unknown=await a.rpc('human','opencraft/turn-result/read',{threadId:thread.id,turnId:'missing',output:true,cursor:null});assert.equal(unknown.matched,false);assert.equal(unknown.complete,false);assert.equal(posts,1);
+ }finally{await f.close();}
+});
+
+
+test('exact stop crosses the real Core callback transport and leaves other native Turns live',async()=>{
+ const f=await fixture();try{
+  const a=await f.adapter(true,()=>{},{collaboration:{serverId:'synthetic-server',started(){},continued(){},authorize(){},async command(){return {};},async tool(){return null;}} as any});await a.rpc('employee','initialize');
+  const first=(await a.rpc('employee','thread/start',{cwd:f.root})).thread.id;
+  const second=(await a.rpc('employee','thread/start',{cwd:f.root})).thread.id;
+  const target=(await a.rpc('employee','turn/start',{threadId:first,input:[]})).turn.id;
+  const other=(await a.rpc('employee','turn/start',{threadId:second,input:[]})).turn.id;
+  let current=true;const trusted={sender:null,actorContext:{actorId:'synthetic-human',generation:1,credentialId:null,expiresAt:Date.now()+60000},resourceOwner:{id:'synthetic-auth',assertCurrent(){assert.equal(current,true);}}};
+  const result=await a.rpc('employee','opencraft/conversation/stop',{threadId:first,expectedTurnId:target},trusted);
+  assert.equal(result.requestState,'acknowledged');assert.equal(result.observation.turnState,'interrupted');
+  const stoppedDb=new DatabaseSync(join(f.options.dataDirectory!,'interrupted-turn-recovery.sqlite'),{readOnly:true});
+  const stopped=JSON.parse(String(stoppedDb.prepare('SELECT value FROM interrupted_turns WHERE thread_id=?').get(first)!.value));stoppedDb.close();
+  assert.equal(stopped.turnId,target);assert.equal(stopped.state,'handled');assert.equal(stopped.handledReason,'user_stop');
+  const live=await a.rpc('employee','opencraft/conversation/stop-observe',{threadId:second,expectedTurnId:other},trusted);assert.equal(live.turnState,'inProgress');
+  await assert.rejects(a.rpc('employee','opencraft/conversation/stop',{threadId:second,expectedTurnId:target},trusted));
+  const race=(await a.rpc('employee','thread/start',{cwd:f.root})).thread.id;
+  const prior=(await a.rpc('employee','turn/start',{threadId:race,input:[]})).turn.id;
+  await a.rpc('employee','fixture/replaceAfterHeaders',{threadId:race});
+  try {const raced=await a.rpc('employee','opencraft/conversation/stop',{threadId:race,expectedTurnId:prior},trusted);assert.equal(raced.requestState,'unknown');}
+  catch(error){assert.match(String(error),/Conversation control unavailable/);}
+  const after=await a.rpc('employee','opencraft/conversation/stop-observe',{threadId:race,expectedTurnId:prior},trusted);
+  assert.notEqual(after.activeTurnId,prior);assert.ok(after.activeTurnId);const racedCount=await a.rpc('employee','fixture/interruptCount',{threadId:race});assert.ok(racedCount.count<=1);if(racedCount.count)assert.equal(racedCount.targetTurnId,prior);
+  const recoveryDb=new DatabaseSync(join(f.options.dataDirectory!,'interrupted-turn-recovery.sqlite'),{readOnly:true});
+  const recovery=JSON.parse(String(recoveryDb.prepare('SELECT value FROM interrupted_turns WHERE thread_id=?').get(race)!.value));recoveryDb.close();assert.equal(recovery.turnId,after.activeTurnId);assert.equal(recovery.state,'running');
+  current=false;await assert.rejects(a.rpc('employee','opencraft/conversation/stop',{threadId:second,expectedTurnId:other},trusted));
+ }finally{await f.close();}
+});
+
+
+test('stock Native precise interrupt observes a local-stub Turn without external inference', {skip:!process.env.OPENCRAFT_TEST_NATIVE_CLI},async()=>{
+ let posts=0,stream:ReadableStreamDefaultController<Uint8Array>|undefined;
+ const f=await fixture(async options=>({...options,executable:process.env.OPENCRAFT_TEST_NATIVE_CLI!,spawnAppServer:undefined,fetch:async(input,init)=>{
+  const url=new URL(input instanceof Request?input.url:String(input));
+  if(init?.method!=='POST'||!url.pathname.endsWith('/responses'))return Response.json({plan_type:'pro'});
+  posts++;return new Response(new ReadableStream<Uint8Array>({start(controller){stream=controller;controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({type:'response.created',response:{id:'synthetic-stop-response',object:'response',status:'in_progress',output:[]}})+'\n\n'));}}),{headers:{'content-type':'text/event-stream'}});
+ }}));
+ try{
+  const a=await f.adapter(true,()=>{},{collaboration:{serverId:'synthetic-server',started(){},continued(){},authorize(){},async command(){return {};},async tool(){return null;}} as any});
+  await a.rpc('employee','initialize',{clientInfo:{name:'stock-stop',version:'1'},capabilities:{experimentalApi:true}});
+  await mkdir(f.options.nativeCodexHomeDirectory!,{recursive:true});
+  const access=`${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic-stop'}})).toString('base64url')}.synthetic`;
+  await writeFile(join(f.options.nativeCodexHomeDirectory!,'auth.json'),JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:access,refresh_token:'synthetic',account_id:'synthetic-stop'}}));
+  await a.rpc('employee','opencraft/codex/accounts/import');
+  const {thread}=await a.rpc('employee','thread/start',{cwd:f.root,model:'gpt-6.1-sol'});
+  const {turn}=await a.rpc('employee','turn/start',{threadId:thread.id,input:[{type:'text',text:'Synthetic local stop probe'}]});
+  const trusted={sender:null,actorContext:{actorId:'synthetic-human',generation:1,credentialId:null,expiresAt:Date.now()+60000},resourceOwner:{id:'synthetic-auth',assertCurrent(){}}};
+  const observed=await a.rpc('employee','opencraft/conversation/stop-observe',{threadId:thread.id,expectedTurnId:turn.id},trusted);assert.equal(observed.turnState,'inProgress');
+  const result=await a.rpc('employee','opencraft/conversation/stop',{threadId:thread.id,expectedTurnId:turn.id},trusted);assert.equal(result.requestState,'acknowledged');
+  let final=result.observation;for(let i=0;i<20&&final.turnState!=='interrupted';i++){await delay(50);final=await a.rpc('employee','opencraft/conversation/stop-observe',{threadId:thread.id,expectedTurnId:turn.id},trusted);}
+  assert.equal(final.turnState,'interrupted');assert.ok(posts<=1,'no replay');
+ }finally{try{stream?.close();}catch{}await f.close();}
+});
+
+for(const failure of ['missing','read-failure','unavailable-model'] as const)test(`explicit settings cannot silently reach Native defaults (${failure})`,async()=>{
+ const f=await fixture();let reads=0;
+ try{
+  const input={available:()=>true,settingsAvailable:()=>failure!=='missing',mode:()=> 'queue' as const,authorize:()=>true,...(failure==='missing'?{}:{settings(){reads++;if(failure==='read-failure')throw Error('synthetic settings storage unavailable');return {model:'missing-from-native-catalog',reasoningEffort:'medium'};}})};
+  const a=await f.adapter(true,()=>{},{collaborationInput:input});const init=await a.rpc('human','initialize');assert.equal(init.capabilities.extensions['opencraft/thread-queue'].modelSettings,failure!=='missing');
+  const {thread}=await a.rpc('human','thread/start',{cwd:f.root});const inputId='actor-input:synthetic-request';
+  (a.engine as any).executionLeases.capture(thread.id,inputId,{principal:{provider:'synthetic',subject:'verified'},ownership:'human'});
+  const queued=await a.rpc('human','thread/queue/add',{threadId:thread.id,clientUserMessageId:inputId,input:[{type:'text',text:'synthetic'}]},{sender:null,collaborationRequestId:'synthetic-request'});
+  await assert.rejects(a.rpc('human','thread/queue/start',{threadId:thread.id,queuedSubmissionId:queued.queuedSubmission.id},{sender:null,collaborationRequestId:'synthetic-request'}));
+  const read=await a.rpc('human','thread/read',{threadId:thread.id,includeTurns:true});assert.deepEqual(read.thread.turns,[],'no Native Turn may consume default settings after failed explicit lookup');
+  if(failure!=='missing')assert.ok(reads>0);
+ }finally{await f.close();}
+ });
+
+for(const overlays of [false,true]) test(`structured human response retains trusted scope across real Core routing (overlays=${overlays})`,async()=>{
+ const f=await fixture();
+ try {
+  const a=await f.adapter(overlays);await a.rpc('browser','initialize');
+  const {thread}=await a.rpc('browser','thread/start',{cwd:f.root});
+  await a.rpc('browser','fixture/emitInteraction',{threadId:thread.id});
+  await a.rpc('human-cli','initialize',{capabilities:{extensions:{'opencraft/shared-interactions':{version:1}}}});
+  let admitted=true;
+  const context={sender:null,interactionScope:{threadId:thread.id,respond:true},resourceOwner:{id:'synthetic-hub',assertCurrent(){if(!admitted)throw Error('revoked human');}}};
+  const snapshot=await a.rpc('human-cli','opencraft/interactions/read',{threadId:thread.id},context);
+  assert.equal(snapshot.requests.length,1);
+  const submission={threadId:thread.id,interactionId:snapshot.requests[0].id,submissionId:'synthetic-human',expectedEpoch:snapshot.epoch,expectedRevision:snapshot.revision,response:{decision:'accept'}};
+  await assert.rejects(a.rpc('human-cli','opencraft/interactions/respond',submission,{...context,interactionScope:{threadId:thread.id,respond:false}}));
+  admitted=false;await assert.rejects(a.rpc('human-cli','opencraft/interactions/respond',submission,context));admitted=true;
+  const receipt=await a.rpc('human-cli','opencraft/interactions/respond',submission,context);
+  assert.equal(receipt.disposition,'submitted');
+  const replies=await a.rpc('browser','fixture/interactionReplies');
+  assert.equal(replies.data.length,1);assert.deepEqual(replies.data[0].result,{decision:'accept'});
+ } finally {await f.close();}
+});
+
+for(const overlays of [false,true]) test(`Hub employee interaction crosses initialized AppHost and real Core without message attribution (overlays=${overlays})`,async()=>{
+ const f=await fixture();let hub:any,host:any,actors:any,database:any;
+ try {
+  const a=await f.adapter(overlays);await a.rpc('browser','initialize');
+  const {thread}=await a.rpc('browser','thread/start',{cwd:f.root});await a.rpc('browser','fixture/emitInteraction',{threadId:thread.id});
+  const {AppHostServer}=await import('../../packages/app-host-server/src/index');
+  const {createRoutedConversationExecution}=await import('../../scripts/conversation-execution.mjs');
+  const {Collaboration}=await import('../../packages/access-control/src/collaboration');
+  const {ActorStore}=await import('../../packages/access-control/src/actors');
+  const {openServerDatabase}=await import('../../packages/storage-node/src/server/index');
+  database=await openServerDatabase(join(f.root,'hub'));actors=new ActorStore(database);
+  const human=actors.resolveHuman({provider:'synthetic',subject:'employee',displayName:'Employee',expiresAt:Date.now()+60000});
+  host=new AppHostServer({hostId:'hub',logicalClientRouting:true,physicalHostLifetime:'server',hostDefinitions:[{hostId:'local-codex',label:'Codex'}],createTransport:()=>a.engine});
+  const port=createRoutedConversationExecution(()=>host,{machineId:'fixture',engines:[],getInputs:async()=>null});
+  hub=new Collaboration(database,actors,port);
+  const ref={serverId:'server:fixture:codex',threadId:thread.id};
+  const snapshot=await hub.command(human,{action:'interactions',reference:ref});assert.equal(snapshot.interactions.length,1);
+  const result=await hub.command(human,{action:'respondInteraction',reference:ref,interactionId:snapshot.interactions[0].id,submissionId:'employee-answer',expectedEpoch:snapshot.epoch,expectedRevision:snapshot.revision,response:{decision:'accept'}},
+   {submission:{sender:{kind:'employee',loginName:'synthetic.employee'},actorContext:human}});
+  assert.equal(result.disposition,'submitted');assert.equal(result.executionState,'unknown');
+  assert.equal((await a.rpc('browser','fixture/interactionReplies')).data.length,1);
+ } finally {await hub?.close();await host?.close();actors?.close();await database?.close();await f.close();}
+});
+
+
+test("sandbox execution loss invalidates APP health and admission while Router history survives, then observes recovery without restarting", async () => {
+  const root = await mkdtemp(join(temporaryDirectory, "oc-exec-health-"));
+  const reservation = createTcpServer();
+  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  const port = (reservation.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "execution/control.sock"),
+    authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "data"),
+    nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
+  const configuration = join(root, "sandbox.json");
+  await writeFile(configuration, JSON.stringify({ schemaVersion: 1, backend: { id: "remote-test", options: {} }, pool: { idPrefix: "test" }, environment: {mode: "selected", names: []} }), {mode: 0o600});
+  const core = await startCodexCore(options);
+  let runtime: Awaited<ReturnType<typeof startCodexAppServer>> | undefined;
+  let socket: WebSocket | undefined, launches = 0;
+  let routing: Awaited<ReturnType<typeof import("../../apps/codex-core/src/generation-router.js")["startGenerationSocket"]>> | undefined;
+  let routingRuntime: import("../../apps/codex-core/src/generation-runtime.js").CodexGenerationRuntime | undefined;
+  try {
+    runtime = await startCodexAppServer({...options, endpoint: options.appServerEndpoint!, coreEndpoint: options.endpoint,
+      executionSandbox: {configuration, runner: join(root, "sandbox-command.mjs")},
+      spawnAppServer: ({args, cwd, env}) => { launches++; return spawn(process.execPath,
+        [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)], {cwd, env, stdio: ["pipe", "pipe", "pipe"]}); }});
+    const health = new CodexCoreControlClient(options.appServerEndpoint!, token);
+    const before = await health.health();
+    const {SystemdGenerationSupervisor} = await import("../../apps/codex-core/src/generation-supervisor.js");
+    const {CodexGenerationRuntime} = await import("../../apps/codex-core/src/generation-runtime.js");
+    const {CodexGenerationRouter, startGenerationSocket} = await import("../../apps/codex-core/src/generation-router.js");
+    const supervisor = new SystemdGenerationSupervisor({registryDirectory: join(root, "router"), coreEndpoint: options.endpoint,
+      dataDirectory: options.dataDirectory, tokenFile: join(root, "unused-token"), token, scope: "system"});
+    routingRuntime = new CodexGenerationRuntime({directory: join(root, "router"), dataDirectory: options.dataDirectory,
+      proxyBaseUrl: (before as any).proxyBaseUrl, requireHostUsage: false, replaceRetiredHome: async () => {}, supervisor: {
+        start: g => supervisor.start(g), inspect: g => supervisor.inspect(g),
+        identify: async () => ({ownerPid: process.pid, nativePid: before.codexPid, ownerStart: "1", nativeStart: "1", cliSha256: "fixed", cliVersion: "codex-cli 0.162.1"}),
+        async stop() {}, async discardUnready() {}, async processesQuiet() {return false;},
+      }});
+    const generation = await routingRuntime.prepare({id: "existing", endpoint: options.appServerEndpoint!, runtimeDataDirectory: options.dataDirectory,
+      executable: process.execPath, node: process.execPath, bundle: process.execPath, cwd: root}, true);
+    routingRuntime.registry.activate(generation.id, routingRuntime.registry.epoch());
+    const routerPath = join(root, "router-native.sock");
+    routing = await startGenerationSocket(routerPath, new CodexGenerationRouter(routingRuntime));
+    socket = new WebSocket(`ws+unix://${routerPath}:/`);
+    await new Promise<void>((resolve, reject) => {socket!.once("open", resolve); socket!.once("error", reject);});
+    const {nativeOwnerRequest} = await import("../../apps/codex-core/src/native-process.js");
+    const request = async (peer: WebSocket, method: string, params: unknown) => {
+      try {return await nativeOwnerRequest(peer, method, params);}
+      catch (cause) {throw new Error(`Fixture request failed: ${method}`, {cause});}
+    };
+    await request(socket, "initialize", {clientInfo: {name: "fixture", version: "1"}, capabilities: {experimentalApi: true}});
+    const created = await request(socket, "thread/start", {cwd: root}) as any;
+    assert.ok(await routingRuntime.inspectHealth("existing"));
+    for (const status of ["disconnected", "pending", "unknown", "unexpected-status", null]) {
+      await request(socket, "fixture/executionStatus", {status});
+      if (status === "disconnected") {
+        await delay(1_050); // Expire Router readiness cache after loss.
+        await assert.rejects(routingRuntime.activate("existing", routingRuntime.registry.epoch()));
+        await assert.rejects(routingRuntime.preparation("existing"));
+      }
+      await assert.rejects(routingRuntime.inspectHealth("existing"));
+      await assert.rejects(health.health(), /unavailable/i);
+      await assert.rejects(request(socket, "thread/start", {cwd: root}));
+      await assert.rejects(request(socket, "turn/start", {threadId: "missing", cwd: root}));
+      await assert.rejects(request(socket, "turn/steer", {threadId: "missing", input: []}));
+      await request(socket, "thread/list", {});
+      const history = await request(socket, "thread/read", {threadId: created.thread.id}) as any;
+      assert.equal(history.thread.id, created.thread.id);
+    }
+    await request(socket, "fixture/executionStatus", {status: "timeout"});
+    await assert.rejects(health.health(), /unavailable/i);
+    assert.ok(await health.appServerHealth("native"));
+    assert.ok(await routingRuntime.ensure("existing", false, true));
+    await request(socket, "fixture/executionStatus", {status: "ready"});
+    assert.equal((await health.health()).codexPid, before.codexPid);
+    assert.ok(await request(socket, "thread/start", {cwd: root}));
+    assert.equal(launches, 1);
+    await runtime.close("SIGTERM"); runtime = undefined;
+    const text = await readFile(join(root, "data/runtime/exec-server-lifecycle.jsonl"), "utf8");
+    assert.equal(text.includes("SYNTHETIC_SECRET_NATIVE_DETAIL"), false);
+    const events = text.trim().split("\n").map(line => JSON.parse(line));
+    assert.ok(events.some(e => e.event === "environment-status" && e.status === "disconnected"));
+    assert.ok(events.some(e => e.event === "owner-stop" && e.reason === "SIGTERM"));
+  } finally {socket?.terminate(); await routing?.close(); await routingRuntime?.close(); await runtime?.close(); await core.close(); await rm(root, {recursive: true, force: true});}
+});
+
+
+for (const overlays of [false, true]) test(`cached history admits passive interactions before native reconciliation (overlays=${overlays})`, async () => {
+  const { openServerDatabase } = await import("@opencraft/storage-node/server");
+  const { ConversationHistory } = await import("../../packages/app-host-server/src/conversation-history.js");
+  const { ConversationHistoryTransport } = await import("../../packages/app-host-server/src/conversation-history-transport.js");
+  const f = await fixture();
+  const a = await f.adapter(overlays);
+  const database = await openServerDatabase(join(f.root, "history-cache"));
+  const history = new ConversationHistory(database.database, "local-codex");
+  let allowed = true;
+  const { MachineIdentityTransport } = await import("../../apps/opencraft-daemon/src/machine-transport.js");
+  const { McpAppsTransport } = await import("../../packages/mcp-apps/src/transport.js");
+  const { McpAppsService } = await import("../../packages/mcp-apps/src/server.js");
+  const { ModelPolicyTransport } = await import("../../packages/model-usage-policy/src/transport.js");
+  const apps = new McpAppsService(join(f.root, "mcp-apps.sqlite"));
+  const decorated = new ModelPolicyTransport(new McpAppsTransport(new MachineIdentityTransport(null, "Codex", () => a.engine), apps), join(f.root, "model-policy.json"));
+  const { ExecutionEnvironmentTransport } = await import("../../scripts/execution-environment-transport.js");
+  const { ExecutionEnvironmentRuntime } = await import("../../scripts/execution-environment.js");
+  const { EmployeeGitVaultStore } = await import("../../scripts/employee-git-vault-store.js");
+  const environment = new ExecutionEnvironmentRuntime(join(f.root, "environment"), new EmployeeGitVaultStore(join(f.root, "environment")), true);
+  const transport = new ConversationHistoryTransport(new ExecutionEnvironmentTransport(decorated, environment, "local-codex"), history, undefined, 100, undefined, () => allowed);
+  const frames: any[] = [];
+  transport.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  let sequence = 0;
+  const rpc = async (clientId: string, method: string, params: object = {}) => {
+    const id = `cached-reader:${++sequence}`;
+    await transport.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: clientId }));
+    for (let n = 0; n < 300; n++) {
+      const reply = frames.find(frame => frame.id === id && frame[LOGICAL_CLIENT_FIELD] === clientId);
+      if (reply) return reply;
+      await delay(10);
+    }
+    throw Error(`No cached reader response: ${method}`);
+  };
+  const initialize = { capabilities: { extensions: { "opencraft/shared-interactions": { version: 1 } } } };
+  try {
+    const initialized = await a.rpc("writer", "initialize", initialize);
+    const { thread } = await a.rpc("writer", "thread/start");
+    history.importResult("initialize", {}, initialized, 0);
+    history.importResult("thread/read", { threadId: thread.id, includeTurns: true }, { thread }, 0);
+    await a.rpc("writer", "fixture/holdNextRead", { untilRelease: true });
+    await transport.connect();
+    assert.ok((await rpc("reader", "initialize", initialize)).result);
+    assert.ok((await rpc("reader", "thread/read", { threadId: thread.id, includeTurns: false, watch: true })).result);
+    const read = await rpc("reader", "opencraft/interactions/read", { threadId: thread.id });
+    assert.equal(read.error, undefined, "cached watch must admit interaction snapshots before a native read ACK");
+    assert.deepEqual(read.result.requests, []);
+    await a.rpc("writer", "fixture/emitInteraction", { threadId: thread.id });
+    for (let n = 0; n < 100 && !frames.some(frame => frame.method === "opencraft/interactions/changed"
+      && frame[LOGICAL_CLIENT_FIELD] === "reader" && frame.params.requests.length === 1); n++) await delay(10);
+    assert.ok(frames.some(frame => frame.method === "opencraft/interactions/changed"
+      && frame[LOGICAL_CLIENT_FIELD] === "reader" && frame.params.requests.length === 1), "passive reader receives pending approvals");
+    assert.equal((await rpc("reader", "opencraft/interactions/read", { threadId: "foreign" })).error.code, 403);
+    await rpc("stranger", "initialize", initialize);
+    assert.equal((await rpc("stranger", "opencraft/interactions/read", { threadId: thread.id })).error.code, 403);
+    await a.rpc("writer", "fixture/releaseReads");
+    const nativeReadAck = () => a.frames.some(frame => frame[LOGICAL_CLIENT_FIELD] === "reader"
+      && String(frame.id).startsWith("conversation-read:") && frame.result?.thread?.id === thread.id);
+    for (let n = 0; n < 100 && !nativeReadAck(); n++) await delay(10);
+    assert.ok(nativeReadAck(), "revocation is checked after the native watched read has succeeded");
+    allowed = false;
+    assert.ok((await rpc("reader", "opencraft/interactions/read", { threadId: thread.id })).error, "revoked history access cannot read interactions");
+    const start = frames.length;
+    await a.rpc("writer", "fixture/emitInteraction", { threadId: thread.id });
+    await delay(30);
+    assert.equal(frames.slice(start).some(frame => frame.method === "opencraft/interactions/changed"
+      && frame[LOGICAL_CLIENT_FIELD] === "reader"), false, "revoked readers receive no approvals");
+    allowed = true;
+    await rpc("reader", "thread/unsubscribe", { threadId: thread.id });
+    await a.rpc("writer", "fixture/releaseReads");
+    await delay(30);
+    assert.equal((await rpc("reader", "opencraft/interactions/read", { threadId: thread.id })).error.code, 403, "a late native read ACK cannot revive an unsubscribed reader");
+    await transport.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "reader" }));
+    await rpc("reader", "initialize", initialize);
+    assert.equal((await rpc("reader", "opencraft/interactions/read", { threadId: thread.id })).error.code, 403, "reusing a logical lane cannot revive its old watch");
+  } finally {
+    await a.rpc("writer", "fixture/releaseReads").catch(() => undefined);
+    await transport.close(); environment.close(); apps.close(); await database.close(); await f.close();
+  }
 });

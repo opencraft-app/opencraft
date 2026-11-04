@@ -17,6 +17,7 @@ import {
 } from "@opencraft/timeline-virtualizer";
 
 import { beginTimelineElementReflow, preserveTimelineElementPositionOnReflow, type TimelineReflowLease } from "./reflow";
+import { WebConversationContentWindow } from "./content-window";
 import {
   observeBorderBoxHeight,
   resizeObserverBlockSize,
@@ -98,6 +99,7 @@ export type WebConversationLatestTurnMeasurement =
  * observer for the same Turn rows.
  */
 export class WebConversationViewportOwner {
+  readonly contentWindow = new WebConversationContentWindow();
   readonly scrollElementRef: { current: HTMLDivElement | null } = { current: null };
   readonly turnElementsRef: { current: Map<string, HTMLDivElement> } = {
     current: new Map(),
@@ -121,7 +123,8 @@ export class WebConversationViewportOwner {
   private footerResizeViewportPreserveDisabled = false;
   private reflowLease: TimelineReflowLease | null = null;
 
-  constructor(initialDistanceFromBottomPx: number) {
+  constructor(initialDistanceFromBottomPx: number, contentHeights: Readonly<Record<string, number>> = {}) {
+    this.contentWindow.restore(contentHeights);
     this.scrollController = new TurnScrollController({
       getMetrics: () => {
         const element = this.scrollElementRef.current;
@@ -162,6 +165,7 @@ export class WebConversationViewportOwner {
     this.cancelReflowAnchor();
     this.scrollElementRef.current?.style.removeProperty("--thread-scroll-padding-bottom");
     this.scrollElementRef.current = element;
+    this.contentWindow.attach(element);
     this.rebindFooterObservation();
   };
 
@@ -585,6 +589,7 @@ export class WebConversationViewportOwner {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.contentWindow.dispose();
     this.cancelReflowAnchor();
     this.generation += 1;
     this.measurementListener = null;
@@ -704,6 +709,7 @@ export class WebConversationViewportOwner {
 
 export function createWebConversationViewportOwner(
   initialDistanceFromBottomPx: number,
+  contentHeights: Readonly<Record<string, number>> = {},
 ): WebConversationViewportOwner {
-  return new WebConversationViewportOwner(initialDistanceFromBottomPx);
+  return new WebConversationViewportOwner(initialDistanceFromBottomPx, contentHeights);
 }

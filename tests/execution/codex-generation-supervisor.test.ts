@@ -11,6 +11,11 @@ import type { GenerationRecord } from "../../apps/codex-core/src/generation-regi
 
 const temporaryDirectory = realpathSync(tmpdir());
 
+function systemctlForOwner(pid: number) {
+  return `#!${process.execPath}\nconst args=require('node:fs').readFileSync('/proc/${pid}/cmdline','utf8').split('\\0').filter(Boolean);if(process.argv.includes('--property=ExecStart'))console.log('{ path='+args[0]+' ; argv[]='+args.join(' ')+' ; ignore_errors=no ; pid=0 ; code=(null) ; status=0/0 }');else console.log('MainPID=${pid}\\nLoadState=loaded\\nActiveState=active\\nUnitFileState=static');\n`;
+}
+
+
 test("retirement detects a shell spawned by a Native worker thread", { skip: process.platform !== "linux" }, async () => {
   const source = `const {Worker}=require('node:worker_threads'); new Worker(\`const {spawn}=require('node:child_process'); const p=spawn('/bin/sh',['-c','sleep 120']); require('node:worker_threads').parentPort.postMessage(p.pid);\`,{eval:true}).on('message',pid=>console.log(JSON.stringify({pid})));`;
   const native = spawn(process.execPath, ["-e", source], { detached: true, stdio: ["ignore", "pipe", "inherit"] }); let shell = 0;
@@ -62,7 +67,7 @@ test("packaged Node CLI adoption binds launcher, native child and fixed artifact
   const wait = async (predicate: () => boolean) => { for (let n=0;n<400&&!predicate();n++) await new Promise(resolve=>setTimeout(resolve,5)); assert.ok(predicate()); };
   try {
     await wait(()=>lines.length>0); const native = lines[0];
-    await writeFile(systemctl, `#!/bin/sh\nprintf 'MainPID=${owner.pid}\nLoadState=loaded\nActiveState=active\nUnitFileState=static\n'\n`, { mode: 0o755 });
+    await writeFile(systemctl, systemctlForOwner(owner.pid!), { mode: 0o755 });
     process.env.PATH = root;
     const supervisor = new SystemdGenerationSupervisor({ registryDirectory: root, coreEndpoint: join(root,"control.sock"), dataDirectory: root, tokenFile: join(root,"token"), token: "synthetic", scope: "system" });
     const generation = { id:"launcher",state:"active",incarnation:1,externalUnit:"fixture.service",runtimeDataDirectory:root,cwd:root,executable:wrapper,bundle:ownerScript,node:process.execPath,nativeLauncher:{entrypoint,executable:"/bin/sleep"} } as GenerationRecord;
@@ -72,7 +77,8 @@ test("packaged Node CLI adoption binds launcher, native child and fixed artifact
     assert.deepEqual(await supervisor.identify(generation,health),identity);assert.equal(await supervisor.processesQuiet(identity),true);
     const programs=await supervisor.verifyHostRestart(generation,health,identity);
     assert.equal(programs.codexHome,join(root,"runtime"));assert.match(programs.bundleSha256,/^[a-f0-9]{64}$/u);
-    await assert.rejects(supervisor.verifyHostRestart({...generation,bundle:entrypoint},health,identity),/APP program/u);
+    assert.deepEqual(await supervisor.verifyHostRestart({...generation,bundle:entrypoint},health,identity),programs);
+    await assert.rejects(supervisor.verifyHostRestart({...generation,externalUnit:undefined,bundle:entrypoint},health,identity),/APP program/u);
     await assert.rejects(supervisor.verifyHostRestart(generation,{...health,runtimeDataDirectory:"/"},identity),/APP HOME/u);
     await assert.rejects(supervisor.verifyHostRestart(generation,{...health,codexHome:root},identity),/APP HOME/u);
     await assert.rejects(supervisor.identify({...generation,nativeLauncher:{entrypoint:ownerScript,executable:"/bin/sleep"}},health),/launcher command/u);
@@ -98,7 +104,7 @@ test("host adoption verifies actual Native HOME even when APP health claims the 
   const owner=spawn(process.execPath,[bundle,"--data-directory",root,"--runtime-directory",root,"--codex-executable","/bin/sleep"],{detached:true,cwd:root,stdio:["ignore","pipe","inherit"]});
   try{
     const nativePid=await new Promise<number>((resolve,reject)=>{owner.stdout!.once('data',raw=>resolve(Number(String(raw).trim())));owner.once('error',reject);});
-    await writeFile(join(root,"systemctl"),`#!/bin/sh\nprintf 'MainPID=${owner.pid}\nLoadState=loaded\nActiveState=active\nUnitFileState=static\n'\n`,{mode:0o755});process.env.PATH=root;
+    await writeFile(join(root,"systemctl"),systemctlForOwner(owner.pid!),{mode:0o755});process.env.PATH=root;
     const supervisor=new SystemdGenerationSupervisor({registryDirectory:root,coreEndpoint:join(root,'control.sock'),dataDirectory:root,tokenFile:join(root,'token'),token:'synthetic',scope:'system'});
     const g={id:'host',state:'active',incarnation:1,externalUnit:'fixture.service',runtimeDataDirectory:root,cwd:root,executable:'/bin/sleep',bundle,node:process.execPath}as GenerationRecord;
     const health={pid:owner.pid!,codexPid:nativePid,runtimeDataDirectory:root,codexHome:join(root,'runtime')}as any;

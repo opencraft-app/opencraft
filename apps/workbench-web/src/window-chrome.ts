@@ -203,7 +203,13 @@ export function useWindowChrome(): WindowChromeSnapshot {
       windowControlsOverlay?: WindowControlsOverlayLike;
     };
     const overlay = navigatorWithOverlay.windowControlsOverlay;
-    const update = () => setSnapshot(readWindowChrome());
+    const update = () => {
+      const next = readWindowChrome();
+      setSnapshot(current => current.kind === next.kind
+        && current.platform === next.platform
+        && current.safeArea.left === next.safeArea.left
+        && current.safeArea.right === next.safeArea.right ? current : next);
+    };
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
       attributes: true,

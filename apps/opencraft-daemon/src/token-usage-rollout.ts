@@ -166,6 +166,8 @@ export async function replayRolloutUsage(options: {
   readonly maxBytes?: number;
   /** Exclusions verified from native turn start/coverage, never request input. */
   readonly excludedTurnIds?: ReadonlySet<string>;
+  readonly beforeAdmissions?: (inputIds:string[]) => Promise<void>;
+  readonly beforeCommit?: () => Promise<void>;
   readonly onAdmission?: (fact: NativeAcceptedInputFact) => void;
   readonly onTerminal?: (turnId: string) => void;
   readonly maxFacts?: number;
@@ -202,6 +204,20 @@ export async function replayRolloutUsage(options: {
       skipTo = await findNextNewline(file, cursor, 64 * 1024 * 1024);
     }
 
+    // Resolve trusted receipt metadata before taking a SQLite write lock.
+    // No history body leaves this worker, only accepted input identifiers.
+    if(options.beforeAdmissions){
+      const inputs=new Set<string>();let start=0;
+      for(let index=0;index<bytesRead;index++){
+        if(buffer[index]!==10)continue;
+        const line=buffer.subarray(start,index).toString("utf8");start=index+1;
+        if(!/^\s*\{[^\n]*?"type"\s*:\s*"event_msg"/.test(line))continue;
+        try{const fact=nativeAcceptedInputFact(JSON.parse(line),options.threadId);if(fact)inputs.add(fact.inputId);}catch{}
+      }
+      const ids=[...inputs];
+      for(let i=0;i<ids.length;i+=32)await options.beforeAdmissions(ids.slice(i,i+32));
+    }
+    await options.beforeCommit?.();
     await options.source?.validate();
     options.signal?.throwIfAborted();
     return options.ledger.commitReplayBatch(() => {

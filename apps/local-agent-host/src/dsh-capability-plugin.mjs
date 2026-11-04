@@ -1,7 +1,7 @@
+import { registerDshSubprocessSandbox } from "./dsh-subprocess-sandbox.mjs";
 import { createDshPolicyBoundary } from '@opencraft/model-usage-policy/native';
 import { ExecutionEnvironmentRuntime } from "../../../scripts/execution-environment.ts";
 import { createDshNativeOwner } from "./dsh-native-owner.mjs";
-import { registerDshSubprocessSandbox } from "./dsh-subprocess-sandbox.mjs";
 import { registerDshExecutionEnvironment } from "./dsh-execution-environment.mjs";
 import { createBackgroundJobProofs } from "./dsh-background-jobs.mjs";
 import { recoverDshGeneration } from "./dsh-generation-recovery.mjs";
@@ -18,11 +18,13 @@ import { admitCapabilityOutput } from "./dsh-capability-output.mjs";
 import { createThreadEngine } from "./dsh-thread-engine.mjs";
 import { volatileSessions } from "./dsh-thread-storage.mjs";
 import { createDshSkillCatalog } from "./dsh-skill-catalog.mjs";
+import { liveDirectoryMetadata } from "./dsh-directory-metadata.mjs";
 import { validateSkillInvocations } from "./dsh-skill-invocation.mjs";
 import { createInstructionController, sessionInstructions, hasSessionInstructions, instructionOverrides } from "./dsh-instructions.mjs";
 
 export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments", "goals", "jobs", "settings"];
 export async function apply(ctx, config) {
+  await registerDshSubprocessSandbox(ctx);
   const policyKey = Symbol.for("opencraft.dsh.model-policy.v1");
   globalThis[policyKey] = createDshPolicyBoundary(config.modelPolicyPath, async current => {
     const providers = ctx.llm.listProviders();
@@ -291,13 +293,16 @@ export async function apply(ctx, config) {
         res.end(JSON.stringify(await nativeOwner.inspect())); return;
       }
       if (nativeOwner && route !== "/events") releaseBridge = nativeOwner.bridgeLease();
-      if (nativeOwner && !nativeOwner.open() && !["/native-owner","/events","/respond","/thread/describe","/thread/historySource","/resolve-generation","/background-proof","/model-info"].includes(route)
+      if (nativeOwner && !nativeOwner.open() && !["/native-owner","/events","/respond","/thread/describe","/thread/historySource","/resolve-generation","/background-proof","/model-info","/directory-metadata"].includes(route)
         && !(route === "/permissions" && !body.preset && !body.policy)) throw new Error("Native bridge fenced");
       if (req.method === "POST" && route === "/model-info") {
         if (typeof body.provider !== "string" || !body.provider || typeof body.model !== "string" || !body.model)
           throw new Error("Invalid model identity");
         const info = await ctx.llm.resolveModelInfo(body.provider, body.model);
         res.end(JSON.stringify({ input: info.inputModalities ?? null, reasoning: info.reasoning ?? null })); return;
+      }
+      if (req.method === "POST" && route === "/directory-metadata") {
+        res.end(JSON.stringify(liveDirectoryMetadata(ctx, body.sessionIds))); return;
       }
       if (req.method === "POST" && route.startsWith("/thread/")) {
         const operation = route.slice("/thread/".length);

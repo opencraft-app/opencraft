@@ -7,6 +7,92 @@ import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@op
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const initialized = { codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "elapsed-budget" };
+
+for (const probe of [false, true]) test(`initial history read retires a held child at its total deadline (${probe ? "overdue admission" : "timer"})`, async () => {
+  let now = 0, sequence = 0, reads = 0, reply: (() => void) | undefined;
+  const timers = new Map<number, { at: number; run(): void }>();
+  const body = (text: string) => ({
+    thread: { id: "a", sessionId: "a", path: "/fixture/history", cwd: "/fixture", historyMode: "paginated", turns: [] },
+    initialTurnsPage: { data: [{ id: "turn", status: "completed", itemsView: "full", items: [{ id: "item", type: "agentMessage", text }] }], nextCursor: null },
+  });
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    const send = (result: unknown) => peer.send(encodeJsonRpcMessage({ id: request.id, result }));
+    if (request.method === "initialize") send({ ...initialized, capabilities: { extensions: { "opencraft/read-history": { version: 1, boundedRecovery: true } } } });
+    else if (request.method === "thread/read") {
+      if (++reads === 1) reply = () => send(body("retired-body"));
+      else send(body("fresh-successor"));
+    }
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "initial-budget", transport });
+  await client.connect({ clientInfo: { name: "initial-budget", version: "1" } });
+  const request = client.request.bind(client);
+  // Model a child that does not settle when the local owner aborts it.
+  client.request = ((method, params, options) => request(method, params, { ...options, signal: undefined })) as typeof client.request;
+  const session = await createCordisThreadSessionRuntime({ client, requestTimeoutMs: 1000, readClock: {
+    now: () => now,
+    setTimeout(run, delay) { const id = ++sequence; timers.set(id, { at: now + delay, run }); return id; },
+    clearTimeout(id) { timers.delete(id as number); },
+  } });
+  let settled = false, failure: unknown;
+  try {
+    const observed = session.resume.read("a").then(() => { settled = true; }, error => { settled = true; failure = error; });
+    for (let i = 0; i < 12 && !reply; i++) await flush(); assert.ok(reply);
+    now = 1001;
+    if (!probe) for (const [id, timer] of [...timers]) if (timer.at <= now && timers.delete(id)) timer.run();
+    const next = probe ? session.resume.read("a") : undefined;
+    for (let i = 0; i < 8; i++) await flush();
+    assert.equal(settled, true, "the first read must settle without a quiet reread or a child reply");
+    assert.equal((failure as { code?: string })?.code, "TIMEOUT");
+    await observed; await (next ?? session.resume.read("a"));
+    assert.equal(reads, 2);
+    reply(); for (let i = 0; i < 5; i++) await flush();
+    assert.match(JSON.stringify(session.views.get("a")?.turns), /fresh-successor/);
+    assert.doesNotMatch(JSON.stringify(session.views.get("a")?.turns), /retired-body/);
+    assert.equal(timers.size, 0);
+  } finally { reply?.(); await session.dispose(); await client.close(); }
+});
+
+test("initial history budget includes individually successful Item pages and preserves the previous display", async () => {
+  let now = 0, healthy = true, pages = 0, sequence = 0;
+  const timers = new Map<number, { at: number; run(): void }>();
+  const methods: string[] = [];
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    methods.push(request.method);
+    const send = (result: unknown) => peer.send(encodeJsonRpcMessage({ id: request.id, result }));
+    if (request.method === "initialize") send({ ...initialized, capabilities: { extensions: { "opencraft/read-history": { version: 1, boundedRecovery: true } } } });
+    else if (request.method === "thread/read") send({
+      thread: { id: "a", sessionId: "a", path: "/fixture/history", cwd: "/fixture", historyMode: "paginated", turns: [] },
+      initialTurnsPage: { data: [{ id: healthy ? "retained" : "hydrating", status: "completed", itemsView: healthy ? "full" : "notLoaded",
+        items: healthy ? [{ id: "retained-item", type: "agentMessage", text: "retained display" }] : [] }], nextCursor: null },
+    });
+    else if (request.method === "thread/items/list") {
+      now += 400; pages++;
+      for (const [id, timer] of [...timers]) if (timer.at <= now && timers.delete(id)) timer.run();
+      send({ data: [{ id: `body-${pages}`, type: "agentMessage", text: "partial hydration" }], nextCursor: pages < 5 ? `items-${pages}` : null });
+    }
+  } });
+  const client = new JsonRpcAppServerClient({ hostId: "initial-pages-budget", transport });
+  await client.connect({ clientInfo: { name: "initial-pages-budget", version: "1" } });
+  const session = await createCordisThreadSessionRuntime({ client, requestTimeoutMs: 1000, readClock: {
+    now: () => now,
+    setTimeout(run, delay) { const id = ++sequence; timers.set(id, { at: now + delay, run }); return id; },
+    clearTimeout(id) { timers.delete(id as number); },
+  } });
+  try {
+    await session.resume.read("a");
+    const retained = session.views.get("a")!.turns;
+    healthy = false;
+    await assert.rejects(session.resume.read("a"), error => (error as { code?: string })?.code === "TIMEOUT");
+    assert.ok(pages < 5, "successful pages cannot renew the whole operation's budget");
+    assert.equal(session.views.get("a")!.turns, retained);
+    healthy = true; await session.resume.read("a");
+    assert.match(JSON.stringify(session.views.get("a")!.turns), /retained display/);
+    assert.equal(methods.includes("thread/resume"), false);
+    assert.equal(methods.includes("turn/start"), false);
+  } finally { await session.dispose(); await client.close(); }
+});
 function clocks() {
   let wall = 1_000_000, elapsed = 0;
   const dateNow = Date.now, descriptor = Object.getOwnPropertyDescriptor(performance, "now");
@@ -198,11 +284,11 @@ test("quiet initial pagination retains its existing per-RPC progress budget", as
   } finally { await session?.dispose(); await client.close(); clock.restore(); }
 });
 
-test("an explicit zero timeout leaves the quiet-cut phase cancellable without an automatic deadline", async () => {
+test("an explicit zero timeout leaves bounded initial and quiet-cut history without an automatic deadline", async () => {
   const clock = clocks(); let reads = 0;
   const transport = new MemoryTransport({ receive(frame, peer) {
     const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
-    if (request.method === "initialize") { peer.send(encodeJsonRpcMessage({ id: request.id, result: { ...initialized, capabilities: { extensions: { "opencraft/read-history": { version: 1 } } } } })); return; }
+    if (request.method === "initialize") { peer.send(encodeJsonRpcMessage({ id: request.id, result: { ...initialized, capabilities: { extensions: { "opencraft/read-history": { version: 1, boundedRecovery: true } } } } })); return; }
     clock.advance(1_000_000, ++reads * 600);
     if (reads === 1) peer.send(encodeJsonRpcMessage({ method: "item/agentMessage/delta", params: { threadId: "a", turnId: "turn", itemId: "item", delta: "x" } }));
     peer.send(encodeJsonRpcMessage({ id: request.id, result: { thread: { id: "a", sessionId: "a", path: "/fixture/history", cwd: "/fixture", historyMode: "paginated", turns: [] }, initialTurnsPage: { data: [], nextCursor: null } } }));

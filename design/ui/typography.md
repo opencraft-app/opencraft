@@ -172,3 +172,26 @@ styles do not silently re-emit every global font variable. The application loads
 the global typography/tokens entry once. `generate:typography --check` checks both
 files, and the real Sass regression checks that a local numeric role emits no
 `:root` while global typography still supplies the required variables.
+
+
+Component SCSS that only consumes `typography.role` imports
+`@opencraft/design-system/typography-mixins.web`. The `typography.web` entry also
+emits global tokens and `.ui-text--*` utilities; the application stylesheet owns
+that entry. Shortcut help and async notices use the local mixin entry so their
+independent startup chunks do not repeat the global stylesheet. Role declarations,
+font choices and the application's global utilities remain unchanged.
+
+The same mixin-only rule applies to conversation rename and the extension library,
+which can share emitted CSS chunks with notices and shortcut help. Every mixin-only
+consumer in such a chunk must avoid the global entry; changing only one importer
+can leave the entire duplicate global stylesheet in that chunk.
+
+### Optical start in touch conversation lists
+
+Touch drawer conversation titles opt into the shared `optical-start` mixin when
+starting with fullwidth opening punctuation, such as `【` or `（`. Prefer native
+`text-spacing-trim: trim-start`; older engines use a half-em leading-bearing
+trim. Never apply both. Preserve the title string, text box, hit target, nested
+indentation and ellipsis. Latin, Han and ASCII punctuation stay unchanged.
+Desktop retains its current spacing. This is an optical edge policy, not a font
+replacement or a per-title padding adjustment.

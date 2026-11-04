@@ -52,7 +52,10 @@ test('broker distinguishes unconfigured/configured/unavailable/expired and exact
   assert.equal((await credential('github.com', 'http')).status, 'denied');
   f.setIdentity({ status: 'active', account: 'synthetic:1', executionId: 'next-turn' });
   assert.equal((await credential('github.com')).status, 'expired', 'an old command cannot borrow the next Turn');
-  f.setIdentity({ status: 'unknown' }); assert.equal((await credential('github.com')).status, 'unavailable');
+  f.setIdentity({ status: 'unknown', reason: 'live-inspection-unavailable' });
+  const unavailable = await credential('github.com');
+  assert.equal(unavailable.status, 'unavailable'); assert.equal(unavailable.reason, 'live-inspection-unavailable');
+  assert.match(unavailable.requestId, /^[a-f0-9-]{36}$/u);
   f.setIdentity({ status: 'active', account: 'synthetic:1', executionId: 'turn1' });
   f.store.write('synthetic:1', 'github.com', 1, null); assert.equal((await credential('github.com')).status, 'expired');
   f.setIdentity({ status: 'unknown' }); assert.equal((await open()).status, 'unconfigured');
@@ -103,7 +106,7 @@ test('real wrapper preserves original authors on amend/cherry-pick/rebase and ne
   assert.equal((await git('show', '-s', '--format=%an|%cn')).out, 'Employee|Employee');
   const hook = join(work, '.git/hooks/pre-commit');
   const node = `'${process.execPath.replaceAll("'", "'\\''")}'`;
-  await writeFile(hook, `#!/bin/sh\nset -eu\ntest -z "$(/usr/bin/git config --get-urlmatch http.extraHeader https://github.com/synthetic/fixture.git)"\nprintf 'protocol=https\\nhost=github.com\\n\\n' | /usr/bin/git credential fill | ${node} -e 'let s="";process.stdin.on("data",b=>s+=b);process.stdin.on("end",()=>{if(!s.includes("username=synthetic")||!s.includes("password=synthetic-only"))process.exit(1)})'\n`, { mode: 0o700 });
+  await writeFile(hook, `#!/bin/sh\nset -eu\ntest "$OPENCRAFT_EXECUTION_ID" = turn1\ntest -z "$(/usr/bin/git config --get-urlmatch http.extraHeader https://github.com/synthetic/fixture.git)"\nprintf 'protocol=https\\nhost=github.com\\n\\n' | /usr/bin/git credential fill | ${node} -e 'let s="";process.stdin.on("data",b=>s+=b);process.stdin.on("end",()=>{if(!s.includes("username=synthetic")||!s.includes("password=synthetic-only"))process.exit(1)})'\n`, { mode: 0o700 });
   await git('config', 'credential.helper', '!exit 23');
   await git('config', 'http.https://github.com/.extraHeader', 'Authorization: SyntheticOldHeader');
   const withHelper = await managed('commit', '--allow-empty', '-qm', 'helper protocol');
@@ -137,7 +140,7 @@ test('real wrapper preserves original authors on amend/cherry-pick/rebase and ne
   managedEnv.OPENCRAFT_GIT_BROKER_SOCKET = join(f.root, 'missing.sock');
   managedEnv.CODEX_THREAD_ID = 'synthetic-thread';
   const unavailable = await managed('commit', '--allow-empty', '-qm', 'broker down');
-  assert.equal(unavailable.code, 128); assert.match(unavailable.err, /broker unavailable/u);
+  assert.equal(unavailable.code, 128); assert.match(unavailable.err, /ipc-connect-failed/u);
   assert.equal((await git('rev-parse', 'HEAD')).out, before);
 });
 test('config encoding and Git global options retain exact worktree context', () => {
@@ -305,7 +308,7 @@ test('bound SSH remote uses personal HTTPS for real push/delete without changing
     assert.equal(await readFile(join(f.work,'.git/config'),'utf8'),before);
   }
   assert.ok(received.length>0&&received.every(v=>v===expected));assert.ok(f.credentials()>0);await assert.rejects(readFile(marker));
-  const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/broker unavailable/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
+  const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/ipc-connect-failed/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
 });
 
 
@@ -379,7 +382,27 @@ esac
   f.setIdentity({ status: 'active', account: 'synthetic:unbound', executionId: 'other-turn' });
   const unbound = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unbound.code, 0, unbound.err);
   f.setIdentity({ status: 'unknown' });
-  const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /broker unavailable/u);
+  const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /origin-unresolved/u);
+});
+
+test('installation launcher restores its broker connection when callers filter inherited environment', async t => {
+  const f = await managedRepository(t);
+  f.bind();
+  await f.native('remote', 'add', 'origin', 'https://github.com/synthetic/repo.git');
+  await writeFile(join(f.root, 'git-identity-wrapper.mjs'), await readFile(join(f.root, 'git.mjs')));
+  const prepared = renderGitIdentityInstallation({ installationDirectory: f.root, runtimeDirectory: f.root,
+    node: process.execPath, nativeGit: '/usr/bin/git', brokerSocket: f.socket,
+    hosts: ['github.com'], basePath: '/usr/bin:/bin' });
+  const launcher = join(f.root, 'installed-git');
+  await writeFile(launcher, prepared.launcher, { mode: 0o700 });
+  for (const removed of [['OPENCRAFT_GIT_BROKER_SOCKET'], Object.keys(f.managedEnv).filter(key => key.startsWith('OPENCRAFT_GIT_'))]) {
+    const env = { ...f.managedEnv };
+    for (const key of removed) delete env[key];
+    const result = await child(launcher, ['commit', '--allow-empty', '-m', 'through installed broker'], env, f.work);
+    assert.equal(result.code, 0, result.err);
+    assert.equal((await f.native('log', '-1', '--format=%an <%ae>')).out, 'Employee <employee@example.test>');
+  }
+  assert.ok(f.opens.includes('github.com'), 'the real wrapper must contact the installed broker');
 });
 
 test('installation launcher restores its broker connection when callers filter inherited environment', async t => {

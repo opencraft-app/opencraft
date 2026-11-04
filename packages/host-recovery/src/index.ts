@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 import type { TurnRecoveryNotice } from "@opencraft/appserver-protocol";
 
 const schema = `CREATE TABLE interrupted_turns (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;`;
@@ -36,8 +36,8 @@ export class InterruptedTurnRecovery {
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
   constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "interrupted-turn-recovery.sqlite"),
-      migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
+    this.managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
+      migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown" });
     this.outcome = this.managed.outcome;
   }
   private get(threadId: string): RecoveryTurn | null {
@@ -76,10 +76,10 @@ export class InterruptedTurnRecovery {
     // Synthetic failure on connection/process loss is not a native completion.
     if (row?.turnId === turnId && row.state === "running") this.put({ ...row, state: "complete" });
   }
-  handled(threadId: string, reason: "user_stop" | "user_input" = "user_input"): void {
+  handled(threadId: string, reason: "user_stop" | "user_input" = "user_input", expectedTurnId?: string): void {
     if (this.closed) return;
     const row = this.get(threadId);
-    if (row) this.put({ ...row, state: "handled", handledReason: reason });
+    if (row && (expectedTurnId === undefined || row.turnId === expectedTurnId)) this.put({ ...row, state: "handled", handledReason: reason });
   }
   lost(threadId?: string): void {
     if (this.closed) return;

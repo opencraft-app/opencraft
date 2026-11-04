@@ -24,6 +24,12 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
 | `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Configured public application ID, signed APK and filing text | Linux with JDK, Android SDK and release key |
 
+Headless history uses a separate bundled worker. Both server layouts must carry
+`conversation-history-worker.mjs` beside their gateway bundle: the standalone
+Headless tar under `runtime/`, and managed Web execution under `execution/`.
+Package verification starts that emitted worker without source/TypeScript loader
+resolution; a successful standalone build does not verify the managed layout.
+
 ## Local source development
 
 `npm run dev` aliases `dev:local`: the existing pinned engine preparation,
@@ -46,8 +52,21 @@ initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
 Normal desktop and browser-runtime packages continue using their existing pinned
 distribution until a compiled custom artifact is explicitly integrated and
-validated. The fork's initial build entry targets Linux; macOS/Windows builds and
-physical input-method validation remain separate work.
+validated. The fork build entry runs on native Linux, macOS, and Windows
+runners; each target must be compiled and probed on its own runner before it is
+eligible for packaging. Physical input-method validation remains a separate
+runtime gate.
+
+| Native target | Required marker variable | Runtime executable in the stamped distribution |
+| --- | --- | --- |
+| Linux x64 | `OPENCRAFT_ELECTRON_DISTRIBUTION_LINUX_X64` | `electron` |
+| Windows x64 | `OPENCRAFT_ELECTRON_DISTRIBUTION_WIN32_X64` | `electron.exe` |
+| macOS arm64 | `OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_ARM64` | `Electron.app/Contents/MacOS/Electron` |
+| macOS x64 | `OPENCRAFT_ELECTRON_DISTRIBUTION_DARWIN_X64` | `Electron.app/Contents/MacOS/Electron` |
+
+The generic `OPENCRAFT_ELECTRON_DISTRIBUTION` is retained only as a compatibility
+fallback. Release jobs should configure the target-specific variable so an
+architecture cannot silently consume another runner's artifact.
 
 ## Developer diagnostics and browser evidence
 
@@ -329,10 +348,12 @@ Desktop packaging jobs are downstream targets. Linux AppImage, RPM, and DEB
 consume the same standard-Oxc-minified renderer and bundled host. No desktop
 target applies the retired ultra compression or high-obfuscation pass. RPM is the native
 TencentOS/RHEL/Fedora installation contract; AppImage is the portable smoke
-artifact; DEB covers Debian/Ubuntu. Application ZIPs can be
-cross-built, while DMG creation, signing, notarization, and the final smoke test
-run on macOS. Every package consumes only the verified `electron-renderer`
-artifact and separately compiled Electron host.
+artifact; DEB covers Debian/Ubuntu. Application archives can be assembled by
+electron-builder, while the modified Electron runtime itself is never
+cross-compiled: Linux, Windows, and macOS native artifact markers must come
+from their matching runners. DMG creation, signing, notarization, and the final
+smoke test run on macOS. Every package consumes only the verified
+`electron-renderer` artifact and separately compiled Electron host.
 
 The explicit macOS preview command is a local QA contract, not a distribution
 artifact. It writes below `release/preview`, uses product name `OpenCraft
@@ -538,7 +559,7 @@ Developer ID 身份名称（electron-builder 的 identity 选项使用姓名/团
 signing_identity="已核验的姓名与团队标识"
 signed_output="release/signed-$(date -u +%Y%m%d-%H%M%S)"
 rtk proxy env -u CSC_IDENTITY_AUTO_DISCOVERY -u OPENCRAFT_MAC_PREVIEW \
-  ../../node_modules/.bin/electron-builder --mac dmg zip --arm64 --publish never \
+  node ../../scripts/package-electron-desktop.mjs --mac dmg zip --arm64 --publish never \
   --config.directories.output="$signed_output" \
   --config.mac.identity="$signing_identity" \
   --config.forceCodeSigning=true --config.dmg.sign=true
@@ -765,6 +786,20 @@ initial Thread baseline and cancellation admission remain in the Session core.
 Both ordinary hidden-map builds and release builds retain their existing asset
 naming, minification, startup byte limits and separate browser compatibility checks.
 
+
+### Remote browser regression selection
+
+`test:remote-interaction` includes every `remote-browser-*` and
+`remote-interaction-*` test under `tests/browser`, plus the shared browser input,
+viewport, manager and decoder cases. The CI-plan contract checks both that named
+files exist and that no family member is omitted. `test:headless-server` executes
+this gate, so the normal Linux headless job and full `gate` exercise it.
+Workbench browser JavaScript/TypeScript changes select those server checks as
+well as their Web build, without selecting native compilation or a headless
+archive. Browser styles retain their existing Web-only selection. These Node
+regressions complement actual native/browser smoke; they do not prove physical
+mobile system keyboard or touch behavior.
+
 ## Full-runtime packaging cache
 
 On Linux x64, `OPENCRAFT_PACKAGE_CACHE_DIR` optionally reuses assembled Codex/DSH
@@ -805,3 +840,9 @@ are always processed. External or broken links disable reuse, and a damaged cach
 causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
 `[package-selection]` reports reuse and elapsed time. Removing the cache restores
 cold selection; this cache never replaces signing or independent archive checks.
+
+## Focused lifecycle and CLI checks
+
+`npm run test:watch-lifecycle` runs the ten cached-watch authorization and cancellation regressions through the existing history/Core boundaries. It is a focused check; it does not replace type checks or the deployment gate. Install native dependencies (including node-pty) before running it.
+
+`npm run test:cli` retains every CLI test and assertion with `--test-concurrency=1`: large SQLite directories and deadline tests share one file budget instead of competing across all files. The full `gate` remains unchanged. Retain output and summarize it with `node scripts/test-summary.mjs <log> [--baseline <baseline-log>]`. Baseline matches are labeled for diagnosis; any failure still exits nonzero, and an incomplete log exits 2. Confirm a baseline against unchanged source before calling a failure pre-existing.

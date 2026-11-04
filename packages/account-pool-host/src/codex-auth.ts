@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { accountFailureDiagnostic } from "./account-diagnostics.js";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -20,6 +21,7 @@ export interface CodexMaintenanceClient {
   request<T>(method: string, params: unknown): Promise<T>;
   subscribeNotification(listener: (method: string, params: unknown) => void): () => void;
   close(): Promise<void>;
+  diagnostics?(): ReturnType<typeof accountFailureDiagnostic>;
 }
 
 export type CodexMaintenanceClientFactory = (codexHome: string) => Promise<CodexMaintenanceClient>;
@@ -378,14 +380,35 @@ export function createManagedCodexRefresh(options: {
     await ready();
     const codexHome = await mkdtemp(join(options.refreshRoot, "flight-"));
     let client: CodexMaintenanceClient | null = null;
+    let stage = "credential-write";
+    const startedAt = Date.now();
     try {
       if (!secret.refreshToken) throw new Error("Codex account cannot refresh without a refresh token");
       await writeCodexCredential(codexHome, account, secret);
+      stage = "maintenance-start";
       client = await options.createClient(codexHome);
-      await client.request("account/read", { refreshToken: true });
+      stage = "oauth-refresh";
+      const reply = await client.request<unknown>("account/read", { refreshToken: true });
+      stage = "credential-read";
       const refreshed = await readCodexCredential(codexHome);
       if (refreshed.accountId !== account.upstreamAccountId) throw new Error("Codex refresh changed account identity");
+      const now = Date.now();
+      const stillExpired = refreshed.secret.expiresAt !== null && refreshed.secret.expiresAt <= now;
+      if (stillExpired) {
+        const response = reply && typeof reply === "object" ? reply as Record<string, unknown> : undefined;
+        console.warn("[opencraft account-pool]", JSON.stringify({ event: "credential-refresh-incomplete",
+          accountId: account.id, stage: "credential-validation", durationMs: now - startedAt,
+          accessTokenChanged: refreshed.secret.accessToken !== secret.accessToken,
+          expiresAtBefore: secret.expiresAt, expiresAtAfter: refreshed.secret.expiresAt,
+          nativeAccountPresent: response ? response.account !== null && response.account !== undefined : null,
+          nativeRequiresOpenaiAuth: typeof response?.requiresOpenaiAuth === "boolean" ? response.requiresOpenaiAuth : null,
+          nativeDiagnostic: client.diagnostics?.() ?? null }));
+      }
       return refreshed.secret;
+    } catch (error) {
+      console.warn("[opencraft account-pool]", JSON.stringify({ event: "credential-refresh-failed",
+        accountId: account.id, stage, durationMs: Date.now() - startedAt, ...accountFailureDiagnostic(error) }));
+      throw error;
     } finally {
       await client?.close().catch(() => undefined);
       await rm(codexHome, { recursive: true, force: true });

@@ -5,7 +5,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { IntlProvider } from "react-intl";
 import messages from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
-import { ModelServicesController } from "../../plugins/builtin-agents/src/model-services/controller";
+import { ModelServicesController, fillMissingModelCapabilities } from "../../plugins/builtin-agents/src/model-services/controller";
 import { createModelServicesView } from "../../plugins/builtin-agents/src/model-services/view";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugins/builtin-agents/src/local-agent-settings-service";
 
@@ -23,6 +23,8 @@ function fixture(discovered: readonly { id: string; input?: readonly ("text" | "
     if (method === "runtime/models/discover") return { models: discovered };
     if (method === "runtime/providers/apply") { if (params.expectedRevision !== revision) throw new Error("settings-conflict"); config = { ...config, baseURL: params.baseURL, ...(params.models ? { models: params.models } : {}), ...(params.credential.kind === "unauthenticated" ? {authentication:"none",apiKeyEnv:undefined} : {authentication:undefined,apiKeyEnv:"UPDATED_REF"}) }; revision++; return { saved: true, revision }; }
     if (method === "runtime/models/probe") return { ok: true, elapsedMs: 1, model: params.model };
+    if (method === "runtime/models/inspect") return { model: params.model, revision: params.expectedRevision, checkedAt: new Date().toISOString(),
+      capabilities: { contextWindow: 1048576, maxTokens: 393216, input: ["text", "image"], reasoningEfforts: { high: "high" } }, sources: { contextWindow: "原厂参考" }, checks: [], notes: [] };
     if (method === "runtime/models/check") return { ok: true, elapsedMs: 1, model: params.model };
     if (method === "runtime/credentials/describe") return { credentials: { UPDATED_REF: { configured: true } } };
     return {};
@@ -227,4 +229,43 @@ test("choosing no-auth clears draft key and preserves an explicit mode through s
  f.controller.edit(provider,{authentication:undefined,credentialRef:""});await f.controller.save(provider);
  assert.equal(f.calls.filter(call=>call.method==="runtime/providers/apply").at(-1)!.params.credential.kind,"none");
  f.controller.dispose();f.service.dispose();
+});
+
+
+test("capability preview is read-only; filling preserves user context, modalities and disabled reasoning", async () => {
+  const f = fixture(); await f.service.refresh(); f.controller.select('test');
+  f.controller.edit(f.provider,{models:[{id:'test-model',contextWindow:262144,input:['text'],reasoningEfforts:false}]}); await f.controller.save(f.provider);
+  const before = f.calls.filter(c=>c.method==='runtime/providers/apply').length;
+  await f.controller.inspectModel(f.provider,'test-model','metadata');
+  assert.equal(f.calls.filter(c=>c.method==='runtime/providers/apply').length,before);
+  assert.equal(f.controller.inspection(f.provider,'test-model')!.capabilities.contextWindow,1048576);
+  await f.controller.fillModelCapabilities(f.provider,'test-model');
+  const saved = f.calls.filter(c=>c.method==='runtime/providers/apply').at(-1)!.params.models[0];
+  assert.equal(saved.contextWindow,262144); assert.deepEqual(saved.input,['text']);assert.equal(saved.reasoningEfforts,false);
+  assert.equal(saved.maxTokens,undefined,'incompatible output suggestion must not invalidate a manual window');
+  assert.equal(f.controller.inspection(f.provider,'test-model'),undefined,'saved revision invalidates evidence');
+  f.controller.dispose();f.service.dispose();
+});
+test("model limits use the existing CAS and reject invalid pairs before saving", async () => {
+  const f=fixture();await f.service.refresh();
+  await f.controller.setModelLimits(f.provider,'test-model',262144,4096);
+  assert.equal(f.calls.filter(c=>c.method==='runtime/providers/apply').at(-1)!.params.models[0].contextWindow,262144);
+  const count=f.calls.length; await f.controller.setModelLimits(f.provider,'test-model',100,200);assert.equal(f.calls.length,count);assert.match(f.controller.error!,/正整数/);
+  f.controller.dispose();f.service.dispose();
+});
+test("filling unknown fields does not overwrite manual values or create impossible length pairs", () => {
+  assert.deepEqual(fillMissingModelCapabilities({id:'m',maxTokens:4096},{contextWindow:1024,input:['text','image']}),{id:'m',maxTokens:4096,input:['text','image']});
+  assert.deepEqual(fillMissingModelCapabilities({id:'m'},{contextWindow:262144,maxTokens:4096}),{id:'m',contextWindow:262144,maxTokens:4096});
+});
+
+test('late capability saves keep connection edits made while the request was pending', async () => {
+  const f=fixture();await f.service.refresh();
+  const original=f.service.saveProvider.bind(f.service);let release!:()=>void;
+  f.service.saveProvider=async(...args)=>{await new Promise<void>(r=>{release=r});return original(...args)};
+  const pending=f.controller.setModelLimits(f.provider,'test-model',262144,4096);
+  f.controller.edit(f.provider,{baseURL:'https://new-draft.invalid/v1'});
+  release();await pending;
+  assert.equal(f.controller.draft(f.provider).config.baseURL,'https://new-draft.invalid/v1');
+  assert.equal(f.controller.draft(f.provider).dirty,true);
+  f.controller.dispose();f.service.dispose();
 });

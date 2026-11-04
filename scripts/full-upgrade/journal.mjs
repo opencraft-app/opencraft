@@ -1,3 +1,4 @@
+import { validateInitialReadinessAttempt } from '../server-deployment/initial-readiness-budget.mjs';
 import { join } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { atomicJson, privateDirectory, readPrivateJson, acquireLock, identifier, invariant } from './durable.mjs';
@@ -52,7 +53,14 @@ export class Journal {
   async save(job) {
     invariant(this.release && !this.poisoned && states.has(job.state), 'journal-unavailable');
     invariant(Object.keys(job).every(k => ['schemaVersion', 'operationId', 'planDigest', 'manifestSha256', 'inventoryFingerprint',
-      'bootId', 'revision', 'state', 'steps', 'automaticSnapshotRestore', 'oldArtifactId', 'newArtifactId', 'rollbackIntent', 'rollbackReceipt', 'startedAt', 'finishedAt', 'stopRequested', 'reason', 'releaseId', 'targetVersion', 'targetBuildId'].includes(k)), 'unknown-journal-field');
+      'bootId', 'revision', 'state', 'steps', 'automaticSnapshotRestore', 'oldArtifactId', 'newArtifactId', 'rollbackIntent', 'rollbackReceipt', 'startedAt', 'finishedAt', 'stopRequested', 'reason', 'releaseId', 'targetVersion', 'targetBuildId', 'initialReadinessBudget'].includes(k)), 'unknown-journal-field');
+    if (Object.hasOwn(job, 'initialReadinessBudget')) {
+      const budget = validateInitialReadinessAttempt(job.initialReadinessBudget);
+      invariant(job.steps.length === 1 && job.steps[0].action === 'official-web-transaction'
+        && job.steps[0].fence === budget.jobId && job.targetVersion === budget.target.version
+        && job.targetBuildId === budget.target.buildId && job.manifestSha256 === budget.target.manifestSha256,
+        'readiness-attempt-identity-conflict');
+    }
     for (const step of job.steps) {
       invariant(Object.keys(step).every(k => ['stepId', 'ownerId', 'action', 'epoch', 'fence', 'intent', 'receipt'].includes(k)), 'unknown-step-field');
       if (step.intent) invariant(Object.keys(step.intent).every(k => ['stepId', 'action', 'epoch', 'fence', 'childJobId'].includes(k)), 'unknown-intent-field');

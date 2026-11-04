@@ -47,6 +47,7 @@ export class PiShellWorker {
         cwd: this.options.cwd, env: invocation.env, stdio: ["pipe", "pipe", "inherit"],
       }) : fork(entry, workerArgs, { stdio: ["ignore", "ignore", "inherit", "ipc"], env, execArgv });
       if (invocation) child.stdin!.write(invocation.input);
+      child.once("close", () => invocation?.dispose()); child.once("error", () => invocation?.dispose());
       const deadline = setTimeout(() => { reject(new Error("Pi shell worker did not initialize")); void this.stop(); }, 30_000);
       const message = (message: any) => {
         if (message?.type === "ready") { clearTimeout(deadline); resolve({ parameters: message.parameters }); }

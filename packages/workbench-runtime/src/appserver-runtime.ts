@@ -1,4 +1,5 @@
-import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
+import { isCatalogSnapshotHead } from "@opencraft/appserver-protocol";
+import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason, THREAD_DIRECTORY_SNAPSHOT_START } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -214,6 +215,8 @@ export interface AppServerWorkbenchRuntimeConfig {
   readonly transport?: DuplexTransport;
   /** Creates one transport for each AppServer Client generation. */
   readonly createTransport?: () => DuplexTransport;
+  /** Host-lifetime route observation; remains live during failed Client cleanup/backoff. */
+  readonly subscribeRecoveryHint?: (listener: () => void) => () => void;
   readonly hostKind?: AppServerHostKind;
   readonly initialize?: AppServerInitializeParams;
   readonly requestTimeoutMs?: number;
@@ -292,7 +295,7 @@ export interface AppServerThreadResourcePort {
   unarchive?(threadId: string): Promise<ProtocolThread>;
   injectItems?(threadId: string, items: ThreadInjectItemsParams["items"]): Promise<void>;
   supportsSideChat?(threadId?: string): boolean;
-  list(params?: Partial<ThreadListParams>): Promise<ThreadListResponse>;
+  list(params?: Partial<ThreadListParams>, options?: import("@opencraft/appserver-protocol").AppServerRequestOptions): Promise<ThreadListResponse>;
   start(options: StartThreadOptions): Promise<ProtocolThread>;
   fork?(params: ThreadForkParams): Promise<ProtocolThread>;
   unsubscribe?(threadId: string): Promise<void>;
@@ -605,15 +608,42 @@ export function createAppServerWorkbenchRuntime(
   let terminalController: AppServerTerminalController | null = null;
   let removeTransportListener: (() => void) | null = null;
   let removeRecoveryHintListener: (() => void) | null = null;
+  let removeHostRecoveryHintListener: (() => void) | null = null;
   let removeRecoveryMetrics: (() => void) | null = null;
   let removeClientHandlers: (() => void) | null = null;
   let removeFileSystemNotificationListener: (() => void) | null = null;
   let removeSkillsNotificationListener: (() => void) | null = null;
   let removeGoalNotificationListener: (() => void) | null = null;
+  let goalProjectionConnection: { client: AppServerClient; generation: number } | null = null;
   const goals = new ThreadGoalResource({
     capability: threadId => parseThreadGoalCapability(executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_GOAL_EXTENSION)),
     get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
-    set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
+    set: async (threadId, change) => {
+      const dispatchClient = requireClient(), dispatchSession = requireSession();
+      const generation = dispatchClient.connectionGeneration, revision = connectionRevision;
+      const beforeSend = () => {
+        if (disposed || phase !== "ready" || connection.snapshot.phase !== "usable"
+          || client !== dispatchClient || session !== dispatchSession || connectionRevision !== revision
+          || dispatchClient.connectionGeneration !== generation || dispatchClient.status.state !== "open"
+          || unavailableThreads.has(threadId) || !goals.capability(threadId)?.write)
+          throw new AppServerClientError("NOT_CONNECTED", "The Goal connection changed before submission");
+      };
+      beforeSend();
+      const status = change.status ?? goals.getSnapshot(threadId).goal?.status ?? "active";
+      // Passive history does not load an execution session. Explicit Goal
+      // activation uses the same metadata-only Resume owner as user input.
+      if (status === "active") {
+        if (!dispatchSession.views.get(threadId)?.thread) {
+          const result = await dispatchClient.request("thread/read", { threadId, includeTurns: false }, { beforeSend });
+          beforeSend();
+          if (result.thread.id !== threadId) throw new Error("Goal metadata belongs to a different conversation");
+          dispatchSession.views.seedMetadata(result.thread);
+        }
+        await dispatchSession.resume.activate({ threadId, retryRejected: true });
+      }
+      beforeSend();
+      return dispatchClient.request("thread/goal/set", { threadId, ...change }, { beforeSend, priority: "user-blocking" });
+    },
     clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
   });
   const turnRecovery = new ThreadRecoveryResource({
@@ -738,6 +768,8 @@ export function createAppServerWorkbenchRuntime(
       // Assembly settles on revocation. Retired bundles clean only their own
       // resources in the background; they cannot hold a successor's admission.
       attempt.progress("services");
+      if (config.subscribeRecoveryHint && removeHostRecoveryHintListener === null)
+        removeHostRecoveryHintListener = config.subscribeRecoveryHint(onRecoveryHint);
       if (initializeServicesOperation !== null) await initializeServicesOperation.catch(() => undefined);
       attempt.assertCurrent();
       automaticReconnectBlock = null;
@@ -774,7 +806,16 @@ export function createAppServerWorkbenchRuntime(
       publish();
     },
     backoff: (attempt, delayMs) => recovery.connectionBackoff(attempt, delayMs),
-    usable: () => { if (bindings.size > 0) restoreResources(); },
+    usable: hostBinding => {
+      // Services survive physical reconnects; Goal projections do not. Reset
+      // only after admission, so visible/catalog demand can read the new owner.
+      if (goalProjectionConnection?.client !== hostBinding.client
+        || goalProjectionConnection.generation !== hostBinding.generation) {
+        goalProjectionConnection = { client: hostBinding.client, generation: hostBinding.generation };
+        goals.reset();
+      }
+      if (bindings.size > 0) restoreResources();
+    },
   });
 
   const requireClient = (): AppServerClient => {
@@ -1049,7 +1090,11 @@ export function createAppServerWorkbenchRuntime(
     let navigation: ConversationNavigationController | null = null;
     try {
       await replica.prepare();
-      const afterAuthoritativeBaseline = async <T>(operation: (canDispatch: () => boolean) => Promise<T>, requiresCapabilities = false): Promise<T> => {
+      const afterAuthoritativeBaseline = async <T>(operation: (
+        canDispatch: () => boolean,
+        dispatchClient: typeof currentClient,
+        dispatchCommandPort: typeof currentCommandPort,
+      ) => Promise<T>, requiresCapabilities = false): Promise<T> => {
         const owner = bindings.get(threadId);
         if (!owner) throw new Error(`Thread ${threadId} is unavailable`);
         const assertOwner = () => {
@@ -1083,14 +1128,21 @@ export function createAppServerWorkbenchRuntime(
             throw cause;
           }
           assertOwner();
-          const dispatchClient = requireClient(), generation = dispatchClient.connectionGeneration;
+          const dispatchClient = requireClient(), dispatchCommandPort = commandPort;
+          if (dispatchCommandPort === null) continue;
+          const generation = dispatchClient.connectionGeneration;
           const canDispatch = () => !owner.disposed && bindings.get(threadId) === owner
             && phase === "ready" && connection.snapshot.phase === "usable"
             && client === dispatchClient && generation === dispatchClient.connectionGeneration
+            && commandPort === dispatchCommandPort
             && connectionRevision === revision && dispatchClient.status.state === "open"
             && owner.runtime.getSnapshot().authoritative;
           if (!canDispatch()) continue;
-          return operation(canDispatch);
+          // A retained Thread binding spans transport replacement. Resolve the
+          // client and command port only after the current generation owns an
+          // authoritative baseline; the objects captured when this binding was
+          // created belong to the retired connection.
+          return operation(canDispatch, dispatchClient, dispatchCommandPort);
         }
       };
       const afterCurrentHost = async <T>(operation: (canDispatch: () => boolean) => Promise<T>): Promise<T> => {
@@ -1109,49 +1161,49 @@ export function createAppServerWorkbenchRuntime(
       };
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
-        submit: (intent, options) => afterAuthoritativeBaseline(canDispatch => {
-          const followUp = executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up");
+        submit: (intent, options) => afterAuthoritativeBaseline((canDispatch, dispatchClient, dispatchCommandPort) => {
+          const followUp = executionEngineExtension(dispatchClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up");
           const dispatched = intent.target.type === "enqueue-follow-up" && followUp?.queue === false
             ? { ...intent, target: { type: "existing-thread" as const, key: intent.target.key } } : intent;
-          return currentCommandPort.submit(dispatched, { ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch() });
+          return dispatchCommandPort.submit(dispatched, { ...options, canDispatch: () => (options?.canDispatch() ?? true) && canDispatch() });
         }, true),
         interrupt: (key, turnId, provenance, options) => afterCurrentHost(canDispatch => currentCommandPort.interrupt(key, turnId, provenance, {
           canDispatch: () => (options?.canDispatch() ?? true) && canDispatch(),
         })),
-        continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId), true),
+        continueTurn: (key, turnId) => afterAuthoritativeBaseline((_canDispatch, _client, port) => port.continueTurn(key, turnId), true),
         // The Broker validates the exact native request context. Historical
         // authority cannot grant or revoke its already-admitted reply channel.
         respond: (key, response) => currentCommandPort.respond(key, response),
         updateQueuedSubmission: (key, id, input) => afterAuthoritativeBaseline(
-          () => currentCommandPort.updateQueuedSubmission(key, id, input),
+          (_canDispatch, _client, port) => port.updateQueuedSubmission(key, id, input),
         ),
         deleteQueuedSubmission: (key, id) => afterAuthoritativeBaseline(
-          () => currentCommandPort.deleteQueuedSubmission(key, id),
+          (_canDispatch, _client, port) => port.deleteQueuedSubmission(key, id),
         ),
         reorderQueuedSubmissions: (key, ids) => afterAuthoritativeBaseline(
-          () => currentCommandPort.reorderQueuedSubmissions(key, ids),
+          (_canDispatch, _client, port) => port.reorderQueuedSubmissions(key, ids),
         ),
         startQueuedSubmission: (key, id) => afterAuthoritativeBaseline(
-          () => currentCommandPort.startQueuedSubmission(key, id), true,
+          (_canDispatch, _client, port) => port.startQueuedSubmission(key, id), true,
         ),
         steerQueuedSubmission: (key, submission, activeTurnId) => afterAuthoritativeBaseline(
-          () => currentCommandPort.steerQueuedSubmission(key, submission, activeTurnId), true,
+          (_canDispatch, _client, port) => port.steerQueuedSubmission(key, submission, activeTurnId), true,
         ),
       };
       conversation = createReplicaConversationRuntime({
         localOutbox: localOutbox(threadId) ?? undefined,
         canDispatchOutbox: (intent) => config.canDispatchOutbox?.() !== false && phase === "ready" && connection.snapshot.phase === "usable" && currentTransport?.status.state === "open"
           && (intent?.target.type === "steer-active-turn"
-            || executionEngineExtension(currentClient.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false
+            || executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, "opencraft/thread-follow-up")?.queue !== false
             || !conversation?.getSnapshot().activeTurn),
-        canAutoContinueCapacity: () => currentClient.initializeResult?.capabilities?.extensions?.["opencraft/capacity-retry"] === undefined,
+        canAutoContinueCapacity: () => client?.initializeResult?.capabilities?.extensions?.["opencraft/capacity-retry"] === undefined,
         getSubmissionSender: config.getSubmissionSender,
         key: createConversationKey(hostId, threadId),
         replica,
         commands: baselineGatedCommands,
         history: {
           loadOlder: async () => {
-            try { await currentSession.resume.loadOlder(threadId); }
+            try { await requireSession().resume.loadOlder(threadId); }
             catch (error) {
               // Local history retirement is normal navigation/recovery, not a
               // cached history failure for the next View.
@@ -1167,8 +1219,14 @@ export function createAppServerWorkbenchRuntime(
           threadId,
           port: {
             getView: () => currentSession.views.get(threadId),
-            subscribeView: (listener) =>
-              currentSession.views.subscribeThread(threadId, listener),
+            historyReady: () => replica.getSnapshot().authoritative && client === currentClient
+              && currentClient.initializeResult !== null && phase === "ready"
+              && currentSession.views.get(threadId)?.historySyncRequired !== true,
+            subscribeView: (listener) => {
+              const removeView = currentSession.views.subscribeThread(threadId, listener);
+              const removeAuthority = replica.subscribe(listener);
+              return () => { removeAuthority(); removeView(); };
+            },
             listTurns: (params) =>
               currentClient.request("thread/turns/list", params, {
                 priority: "background", historySource: "navigation",
@@ -1227,6 +1285,14 @@ export function createAppServerWorkbenchRuntime(
         const view = currentSession.views.get(threadId), previous = liveView;
         liveView = view;
         if (!view || binding.disposed || session !== currentSession || client !== currentClient) return;
+        if (view.historySyncRequired) {
+          if (binding.replica.getSnapshot().authoritative) binding.replica.reportSyncStarted();
+          if (phase === "ready" && !binding.hydrationOperation) {
+            void recovery.recover({key:binding,demand:()=>recoveryDemand(binding),
+              run:signal=>hydrateBinding(binding,true,true,undefined,signal),retryable:retryableHistoryFailure}).catch(()=>undefined);
+          }
+          return;
+        }
         const status = view.thread?.status;
         const waiting = humanInteractionWaitReason(status) !== null;
         if (!waiting || view.pendingInteractions.length > 0) interactionRecoveryKey = null;
@@ -1560,6 +1626,9 @@ export function createAppServerWorkbenchRuntime(
         );
         await recovery.span("replica-ready", () => binding.replica.synchronize(source));
         if (!current()) return;
+        if (currentSession.views.get(binding.threadId)?.historySyncRequired) {
+          throw new AppServerRpcError({code:-32075,message:"History changed during baseline attachment",data:{retryable:true}});
+        }
         // Queue notifications can be lost with the old connection, including
         // the receipt for a locally persisted input. Reconcile independently
         // after history authority returns; do not wait for another queue event.
@@ -1676,6 +1745,20 @@ export function createAppServerWorkbenchRuntime(
     }, cause => { attempt.signal.removeEventListener("abort", abort); reject(cause); });
   });
 
+  const onRecoveryHint = () => {
+    if (disposed || config.autoReconnect === false || !connection.admitRecoveryHint()) return;
+    if (phase !== "ready") {
+      void connection.connect(true).catch(() => undefined);
+    } else {
+      for (const binding of bindings.values()) {
+        if (binding.visibleCount === 0 || binding.runtime.getSnapshot().authoritative) continue;
+        void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
+          run: signal => hydrateBinding(binding, true, true, undefined, signal), retryable: retryableHistoryFailure,
+        }, true).catch(() => undefined);
+      }
+    }
+  };
+
   const initializeServices = (attempt: ConnectionAttempt): Promise<void> => {
     if (disposed)
       return Promise.reject(new Error("AppServer Workbench is disposed"));
@@ -1712,6 +1795,15 @@ export function createAppServerWorkbenchRuntime(
         }
       });
       removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === 'opencraft/thread-access/revoked' && (notification.params as {local?:boolean}).local !== false) {
+          const threadId = (notification.params as {threadId:string}).threadId;
+          catalogMetadata.delete(threadId); unlistedForks.delete(threadId);
+          markThreadUnavailable(threadId,'not-found');
+          const binding = bindings.get(threadId);
+          if (binding) disposeBinding(binding);
+          publish();
+          return;
+        }
         if (notification.method === "opencraft/turn-recovery/updated") {
           const value = notification.params as { threadId: string; recovery: import("@opencraft/appserver-protocol").TurnRecoveryNotice | null };
           turnRecovery.observe(value.threadId, value.recovery);
@@ -1783,22 +1875,11 @@ export function createAppServerWorkbenchRuntime(
         connection.lost(status.reason === undefined ? new Error("Host connection lost") : new Error(status.reason),
           status.failure?.recovery === "manual", status.failure?.diagnostic?.closeCode === 1012 || status.failure?.code === 'APP_SERVER_RESTARTING');
       });
-      removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(() => {
-        if (disposed || config.autoReconnect === false || !connection.admitRecoveryHint()) return;
-        if (phase !== "ready") {
-          void connection.connect(true).catch(() => undefined);
-        } else {
-          for (const binding of bindings.values()) {
-            if (binding.visibleCount === 0 || binding.runtime.getSnapshot().authoritative) continue;
-            void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: signal => hydrateBinding(binding, true, true, undefined, signal), retryable: retryableHistoryFailure,
-            }, true).catch(() => undefined);
-          }
-        }
-      }) ?? null;
+      // Legacy/fixed transports can still provide generation-scoped hints.
+      if (!config.subscribeRecoveryHint)
+        removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(onRecoveryHint) ?? null;
       await duringAttempt(connectPhysicalHost(generation, attempt), attempt, async () => {});
       ensureLifecycle(generation);
-      goals.reset();
       turnRecovery.reset();
       orchestration.reset();
       const historyModeHint = () => {
@@ -2098,7 +2179,7 @@ export function createAppServerWorkbenchRuntime(
           ephemeralThreadIds.delete(threadId);
           requireSession().resume.release(threadId);
         },
-        async list(params = {}) {
+        async list(params = {}, options) {
           const current = requireClient(), generation = current.connectionGeneration;
           const response = await current.request("thread/list", {
             archived: false,
@@ -2111,14 +2192,17 @@ export function createAppServerWorkbenchRuntime(
             // share it; an explicit repair caller can still override it.
             ...(config.hostKind === "remote-ssh" ? { useStateDbOnly: true } : {}),
             ...params,
-          });
+          }, options);
+          const snapshotHead = isCatalogSnapshotHead(params.cursor);
           const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
-            && params.cursor == null;
+            && (params.cursor == null || snapshotHead);
+          const decorations: { pins?: ProtocolThread[]; provisional?: ProtocolThread[] } = {};
           if (defaultCatalog && supportsThreadPinDiscovery(current.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_PINS_EXTENSION])) {
             const pins = await pinResource(current).read();
             if (client !== current || current.connectionGeneration !== generation) throw new Error("Thread catalog connection changed");
             const pinned = new Map(pins.data.map(thread => [thread.id, thread]));
-            response.data = [
+            if (snapshotHead) decorations.pins = pins.data;
+            else response.data = [
               ...pins.data.map(thread => ({ ...thread, pinned: true })),
               ...response.data.filter(thread => !pinned.has(thread.id)).map(thread => ({ ...thread, pinned: false })),
             ];
@@ -2128,10 +2212,12 @@ export function createAppServerWorkbenchRuntime(
             for (const id of listed) unlistedForks.delete(id);
             const missing = [...unlistedForks.values()];
             if (missing.length > 0) {
-              response.data = [...missing, ...response.data]
+              if (snapshotHead) decorations.provisional = missing;
+              else response.data = [...missing, ...response.data]
                 .sort((left, right) => right.updatedAt - left.updatedAt);
             }
           }
+          if (snapshotHead) Object.assign(response, { catalogDecorations: decorations });
           const views = requireSession().views;
           // Catalog rows are metadata, not read subscriptions. Do not create
           // unbounded Session Views merely by paging the sidebar directory.
@@ -2594,6 +2680,8 @@ export function createAppServerWorkbenchRuntime(
       void (async () => {
         if (disposed) return;
         connection.dispose();
+        removeHostRecoveryHintListener?.();
+        removeHostRecoveryHintListener = null;
         recovery.dispose();
         orchestration.dispose();
         if (detachRetryTimer !== null) clock.clearTimeout(detachRetryTimer);

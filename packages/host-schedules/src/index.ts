@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 import type { ConversationSchedule, ConversationScheduleRun, ConversationScheduleView, ConversationScheduleSummary, OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import { nextCalendarRun, nextIntervalRun, validScheduleCalendar, validScheduleWindow } from "@opencraft/appserver-protocol";
 
@@ -47,8 +47,8 @@ export class ConversationSchedules {
     private readonly now = Date.now, private readonly diagnostic: (event: { event: string; scheduleId?: string }) => void = () => {},
     private readonly changed: () => void = () => {},
     private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
-      validateSchema: createSchemaValidator(schema), migrations: [{ version: 1, name: "conversation-schedules", sql: schema }] });
+    this.managed = openManagedDatabase({ schemaId: "host-schedules", path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
+       migrations: [{ version: 1, name: "conversation-schedules", sql: schema }] });
     this.outcome = this.managed.outcome;
     this.summarySignature = JSON.stringify(this.list());
     this.unsubscribe = port.subscribe?.(event => this.executionChanged(event));

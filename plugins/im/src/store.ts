@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   openManagedDatabase,
-  createSchemaValidator,
-} from "@opencraft/sqlite-node";
+  } from "@opencraft/sqlite-node";
 import {
   conversationRef,
   type ConversationRef,
@@ -74,11 +73,11 @@ export interface StoredMessage {
 export class SwitchboardStore {
   private readonly managed;
   constructor(path: string) {
-    this.managed = openManagedDatabase({
+    this.managed = openManagedDatabase({ schemaId: "im",
       path,
       legacyPolicy: "reject",
       migrations: switchboardMigrations,
-      validateSchema: createSchemaValidator(schema + v2 + v3),
+
     });
   }
   get outcome() {

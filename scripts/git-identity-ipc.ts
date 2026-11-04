@@ -3,6 +3,10 @@ import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import type { GitIdentityBroker } from './git-identity-broker.js';
 
+export class GitIdentityTransportError extends Error {
+  constructor(readonly reason: 'ipc-timeout' | 'ipc-disconnected' | 'ipc-connect-failed' | 'ipc-invalid-response') { super(`Git identity ${reason}`); }
+}
+
 /** Only the bridge can write this inherited pipe; requests cannot supply their own peer identity. */
 export async function serveGitIdentityBroker(broker: GitIdentityBroker, socket: string, bridgePath: string) {
   const child = spawn('python3', [bridgePath, socket], { stdio: ['pipe', 'pipe', 'ignore'] });
@@ -26,17 +30,19 @@ export async function serveGitIdentityBroker(broker: GitIdentityBroker, socket: 
 export async function queryGitIdentityBroker(socket: string, request: unknown, timeout = 2_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const client = createConnection(socket); let pending = '';
-    const timer = setTimeout(() => { client.destroy(); reject(new Error('Git identity broker unavailable')); }, timeout);
+    const timer = setTimeout(() => { client.destroy(); reject(new GitIdentityTransportError('ipc-timeout')); }, timeout);
     const finish = (error?: Error) => { clearTimeout(timer); client.destroy(); if (error) reject(error); };
-    client.once('error', error => finish(error));
+    client.once('error', () => finish(new GitIdentityTransportError('ipc-connect-failed')));
     client.once('connect', () => client.write(`${JSON.stringify(request)}\n`));
     client.on('data', data => {
       pending += data.toString('utf8');
-      if (pending.length > 32768) { finish(new Error('Git identity response too large')); return; }
+      if (pending.length > 32768) { finish(new GitIdentityTransportError('ipc-invalid-response')); return; }
       if (!pending.includes('\n')) return;
-      try { const result = JSON.parse(pending.slice(0, pending.indexOf('\n'))); finish(); resolve(result); }
-      catch { finish(new Error('Git identity response invalid')); }
+      try { const result = JSON.parse(pending.slice(0, pending.indexOf('\n')));
+        if (!result || typeof result !== 'object' || typeof result.status !== 'string') throw new Error();
+        finish(); resolve(result); }
+      catch { finish(new GitIdentityTransportError('ipc-invalid-response')); }
     });
-    client.once('end', () => { if (!pending.includes('\n')) finish(new Error('Git identity broker disconnected')); });
+    client.once('end', () => { if (!pending.includes('\n')) finish(new GitIdentityTransportError('ipc-disconnected')); });
   });
 }

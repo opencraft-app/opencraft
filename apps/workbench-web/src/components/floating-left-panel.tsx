@@ -65,8 +65,9 @@ function FloatingLeftPanelContent({
   const headerOffset = useTransform(horizontalOffset, (offset) => -offset);
   const fullyOpen = useMotionValue(1);
   const depthProgress = mobileProgress ?? fullyOpen;
+  // The panel owns geometry only. Its glass descendants must not inherit an
+  // animated opacity compositing root; the sibling wash owns the reveal fade.
   const depthScale = useTransform(depthProgress, [0, 1], [0.9, 1]);
-  const depthOpacity = useTransform(depthProgress, [0, 1], [0.45, 1]);
   const washOpacity = useTransform(depthProgress, [0, 1], [0.65, 0]);
   const mobile = mobileProgress !== undefined;
 
@@ -92,7 +93,6 @@ function FloatingLeftPanelContent({
           x: horizontalOffset,
           ...(mobile ? {
             scale: reducedMotion ? 1 : depthScale,
-            opacity: reducedMotion ? 1 : depthOpacity,
             transformOrigin: "0% 50%",
           } : {}),
         }}

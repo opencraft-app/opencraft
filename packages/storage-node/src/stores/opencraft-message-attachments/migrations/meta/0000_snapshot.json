@@ -1,0 +1,82 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "5c105a7f-ffb6-4398-8e7f-00a6fd920b07",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "opencraft_message_attachments": {
+      "name": "opencraft_message_attachments",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_message_id": {
+          "name": "client_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attachment_id": {
+          "name": "attachment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ref_json": {
+          "name": "ref_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "opencraft_message_attachments_message": {
+          "name": "opencraft_message_attachments_message",
+          "columns": [
+            "thread_id",
+            "client_message_id",
+            "ordinal"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "opencraft_message_attachments_thread_id_client_message_id_attachment_id_pk": {
+          "columns": [
+            "thread_id",
+            "client_message_id",
+            "attachment_id"
+          ],
+          "name": "opencraft_message_attachments_thread_id_client_message_id_attachment_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

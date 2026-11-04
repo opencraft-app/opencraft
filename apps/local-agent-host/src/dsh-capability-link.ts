@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { DshCapabilityBroker, type DshHostCapability } from "./dsh-capability-broker.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
 import type { DshSessionRouting } from "./dsh-session-routing.js";
+import type { DshSessionSummary } from "./dsh-appserver-adapter.js";
 
 export interface DshCapabilityRegistrationResult {
   readonly registered: number;
@@ -105,6 +106,25 @@ export class DshCapabilityLink {
   }
   async validate(capabilities: readonly DshHostCapability[]) {
     await this.request("/validate-capabilities", { capabilities });
+  }
+  async directoryMetadata(threadIds: readonly string[]): Promise<{ items: DshSessionSummary[]; missing: string[] }> {
+    const nativeIds = threadIds.map(id => this.routing?.native(id) ?? id);
+    const requested = new Set(nativeIds);
+    const response = await this.request("/directory-metadata", { sessionIds: nativeIds });
+    if (!Array.isArray(response.items) || !Array.isArray(response.missing)) throw new Error("Invalid directory metadata reply");
+    const seen = new Set<string>();
+    for (const item of response.items) {
+      if (!item || !requested.has(item.sessionId) || seen.has(item.sessionId) || !Number.isFinite(item.updatedAt)
+        || typeof item.blank !== "boolean" || typeof item.running !== "boolean") throw new Error("Invalid directory metadata entry");
+      seen.add(item.sessionId);
+    }
+    for (const id of response.missing) {
+      if (!requested.has(id) || seen.has(id)) throw new Error("Invalid missing directory identity");
+      seen.add(id);
+    }
+    if (seen.size !== requested.size) throw new Error("Incomplete directory metadata reply");
+    return { items: response.items.map((item: DshSessionSummary) => ({ ...item, sessionId: this.routing?.logical(item.sessionId) ?? item.sessionId })),
+      missing: response.missing.map((id: string) => this.routing?.logical(id) ?? id) };
   }
   async thread(operation: "create" | "describe" | "historySource" | "resume" | "fork" | "inject" | "release" | "goal", params: Record<string, unknown>): Promise<any> {
     return this.request("/thread/" + operation, params);

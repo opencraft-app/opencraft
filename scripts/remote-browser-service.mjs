@@ -9,8 +9,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import nativeDiagnostics from './remote-browser/diagnostics.cjs';
 import displayFlow from './remote-browser/display.cjs';
 import mediaPolicy from '@opencraft/remote-interaction/policy';
-import { BrowserStateFile, acquireBrowserStateWriter, sessionError, sessionLink, linkedSessions, occupied } from './remote-browser-state-file.mjs';
-import { startBrowserOwner } from './remote-browser-owner.mjs';
+import { acquireBrowserStateWriter, sessionError, sessionLink, occupied } from './remote-browser-state-file.mjs';
+import { BrowserRecordRepository, fenceLegacyBrowserState } from './remote-browser-records.mjs';
+import { startBrowserOwnerPool } from './remote-browser-owner-pool.mjs';
 
 const methods = new Set(['viewport', 'navigate', 'reload', 'stop', 'back', 'forward', 'visible', 'keyframe', 'capture', 'zoom', 'input', 'text', 'ime', 'copy', 'automation', 'close']);
 const quietMethods = new Set(['visible', 'keyframe', 'input', 'text']);
@@ -36,7 +37,7 @@ function removedStorageLeases(previous, next) {
  * never a CDP endpoint, filesystem path or arbitrary JavaScript evaluator. */
 export class RemoteBrowserService {
   constructor({ root, dataDirectory, executable, allowNoSandbox = false, spawnImpl = spawn, mediaBuckets,
-    ownerConnector = process.platform === 'linux' && process.getuid?.() === 0 && !allowNoSandbox && spawnImpl === spawn ? startBrowserOwner : null }) {
+    ownerConnector = process.platform === 'linux' && process.getuid?.() === 0 && !allowNoSandbox && spawnImpl === spawn ? startBrowserOwnerPool : null }) {
     this.directory = join(root, 'runtime/browser');
     this.executable = executable ?? join(this.directory, 'electron/electron');
     this.dataDirectory = join(dataDirectory, 'remote-browser');
@@ -56,9 +57,17 @@ export class RemoteBrowserService {
     this.loading ??= (async () => {
       await mkdir(this.dataDirectory, { recursive: true, mode: 0o700 });
       this.releaseWriter = await acquireBrowserStateWriter(this.dataDirectory);
-      let saved;
-      try { saved = JSON.parse(await readFile(join(this.dataDirectory, 'tabs.json'), 'utf8')); }
+      let saved,legacyBytes=null;
+      try { legacyBytes=await readFile(join(this.dataDirectory,'tabs.json'),'utf8');saved=JSON.parse(legacyBytes); }
       catch (error) { if (error.code === 'ENOENT') saved = { schemaVersion: 1, pages: [], retired: [], states: [] }; else throw new Error('Browser state could not be read'); }
+      const canonical=saved.schemaVersion===2;
+      let sourceDigest;
+      if(canonical){
+        if(saved.database!=='resources.sqlite')throw new Error('Unsupported browser record database');
+        await access(join(this.dataDirectory,'resources.sqlite'));
+        sourceDigest=saved.legacyDigest;
+        saved={schemaVersion:1,pages:[],retired:[],states:[]};
+      }else sourceDigest=createHash('sha256').update(legacyBytes??JSON.stringify(saved)).digest('hex');
       if (saved.schemaVersion !== 1 || !Array.isArray(saved.pages) || !Array.isArray(saved.states)) throw new Error('Unsupported browser state');
       for (const p of saved.pages) {
         if (typeof p.ownerId !== 'string' || typeof p.key !== 'string' || p.id !== createHash('sha256').update(p.key).digest('hex')
@@ -77,7 +86,15 @@ export class RemoteBrowserService {
       saved.retired ??= [];
       this.retiredLeases = new Set(saved.retired);
       for (const [owner, state] of saved.states) this.states.set(owner, state);
-      this.store = new BrowserStateFile(this.dataDirectory, saved);
+      this.store = new BrowserRecordRepository(join(this.dataDirectory, 'resources.sqlite'), saved,sourceDigest,canonical);
+      if(!canonical)await fenceLegacyBrowserState(this.dataDirectory,legacyBytes,sourceDigest);
+      this.storageOutcome = this.store.outcome;
+      this.pages.clear();
+      for (const record of this.store.sessions()) {
+        const runtime = record.runtime?.kind === 'absent' ? record.runtime : { ...record.runtime, kind: this.ownerConnector ? 'unknown' : 'absent' };
+        this.pages.set(record.key, { ...record, runtime, url: checkpointUrl(record.url), controller: null, live: false });
+      }
+      this.retiredLeases = new Set(this.store.retiredKeys());
       this.loaded = true;
       for (const page of this.pages.values()) if (page.closing) this.retryRetirement(page, 0);
     })();
@@ -92,7 +109,7 @@ export class RemoteBrowserService {
   }
   commit(reduce) {
     if (this.closed) return Promise.reject(new Error('Browser service closed'));
-    const operation = this.store.transact(reduce);
+    const operation = this.store.queue(() => reduce(this.store));
     this.persistence = this.store.tail;
     return operation;
   }
@@ -102,44 +119,43 @@ export class RemoteBrowserService {
     const checkpoints = [...this.pages.values()].map(({ key, url, viewport, zoom }) => ({ key, url, viewport, zoom }));
     return this.commit(draft => {
       for (const value of checkpoints) {
-        const record = draft.pages.find(p => p.key === value.key);
-        if (record && record.lifecycle !== 'closed') Object.assign(record, value);
+        const record = draft.session(value.key);
+        if (record && record.lifecycle !== 'closed') draft.saveSession(Object.assign(record, value));
       }
     });
   }
   async catalog(ownerId, authorize) {
     await this.load(); await this.store.tail; authorize();
-    return { sessions: this.store.current.pages.filter(p => p.ownerId === ownerId && p.lifecycle !== 'closed').map(p => ({
+    return { sessions: this.store.sessions(ownerId).filter(p => p.lifecycle !== 'closed').map(p => ({
       sessionId: p.id, lease: JSON.parse(p.key)[1], lifecycle: p.lifecycle,
       runtime: p.runtime?.kind ?? 'unknown', link: p.link ?? null, url: p.url,
       createdAt: p.createdAt ?? null,
-    })), capacity: { limit: 64, used: this.store.current.pages.filter(occupied).length, accountLimit: 16,
-      accountUsed: this.store.current.pages.filter(p => p.ownerId === ownerId && occupied(p)).length } };
+    })), capacity: { limit: 64, used: this.store.sessions().filter(occupied).length, accountLimit: 16,
+      accountUsed: this.store.sessions(ownerId).filter(p => occupied(p)).length } };
   }
   async reserve(ownerId, key, input, authorize) {
     return this.commit(draft => {
       authorize();
-      if (draft.retired.includes(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
-      let record = draft.pages.find(p => p.key === key);
-      const state = draft.states.find(([owner]) => owner === ownerId)?.[1];
-      const link = sessionLink(state, JSON.parse(key)[1]);
+      if (draft.retired(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
+      let record = draft.session(key);
+      const link = draft.link(ownerId, JSON.parse(key)[1]);
       if (input.metadataRequired && !link) throw sessionError('STATE_CONFLICT', 'Browser tab metadata has not been committed; reload to synchronize');
       if (record?.lifecycle === 'closing') throw sessionError('SESSION_CLOSING', 'Browser tab is closing');
       const page = this.pages.get(key);
       if (record?.runtime?.kind === 'unknown' && !page?.live)
         throw sessionError('RUNTIME_UNKNOWN', 'Browser page outcome is being reconciled; reconnect to check again', true);
       if (!record || !occupied(record)) {
-        const used = draft.pages.filter(occupied);
+        const used = draft.sessions().filter(occupied);
         if (used.filter(p => p.ownerId === ownerId).length >= 16)
           throw sessionError('ACCOUNT_CAPACITY', 'Your active browser page limit (16) is reached; close a page in Browser resources');
         if (used.length >= 64)
           throw sessionError('RUNTIME_CAPACITY', 'Shared browser capacity (64) is full; use Browser resources to manage your pages', true);
       }
       if (!record) {
-        if (draft.pages.filter(p => p.ownerId === ownerId).length >= 256) throw sessionError('SESSION_CAPACITY', 'Your saved browser session limit (256) is reached; close a session in Browser resources');
+        if (draft.sessions(ownerId).length >= 256) throw sessionError('SESSION_CAPACITY', 'Your saved browser session limit (256) is reached; close a session in Browser resources');
         record = { id: createHash('sha256').update(key).digest('hex'), key, ownerId, lifecycle: 'open',
           createdAt: Date.now(), version: 0, url: checkpointUrl(input.initialUrl ?? null), zoom: 100, viewport: input.viewport, runtime: { kind: 'absent', generation: 0 } };
-        draft.pages.push(record);
+        draft.saveSession(record);
       }
       if (link) record.link = link;
       if (!page?.live) {
@@ -147,17 +163,19 @@ export class RemoteBrowserService {
         record.runtime = { kind: 'starting', generation, operationId: randomUUID() };
       }
       record.version = (record.version ?? 0) + 1;
-      return structuredClone(record);
+      draft.saveSession(record);
+      return record;
     });
   }
   async runtimeState(page, kind, epoch = page.runtimeEpoch ?? 0) {
     return this.commit(draft => {
-      const record = draft.pages.find(p => p.key === page.key);
+      const record = draft.session(page.key);
       if (!record || (page.runtimeEpoch ?? 0) !== epoch) return;
       // A close intent wins over every late create/config ACK.
       if (record.lifecycle !== 'open' && kind === 'live') return;
       record.runtime = { ...record.runtime, kind };
       if (kind === 'live') { record.url = page.url; record.viewport = page.viewport; record.zoom = page.zoom; }
+      draft.saveSession(record);
     });
   }
   checkpoint() {
@@ -173,62 +191,32 @@ export class RemoteBrowserService {
   }
   async metadata(ownerId, input, authorize) {
     await this.load();
-    if (input === undefined) {
-      await this.store.tail; authorize();
-      const previous = this.store.current.states.find(([owner]) => owner === ownerId)?.[1] ?? { revision: 0, values: {} };
-      return { ...previous, scope: createHash('sha256').update(this.dataDirectory + '\0' + ownerId).digest('hex') };
-    }
-    const retiring = [];
-    const result = await this.commit(draft => {
-      if (this.closed) throw new Error('Browser service closed');
-      authorize();
-      const previous = draft.states.find(([owner]) => owner === ownerId)?.[1] ?? { revision: 0, values: {} };
-      const scope = createHash('sha256').update(this.dataDirectory + '\0' + ownerId).digest('hex');
-      if (input.scope !== scope) throw sessionError('STATE_CONFLICT', 'Browser account changed; reload to synchronize');
-      if (!['pages', 'tabs', 'storage', 'bindings'].includes(input.key) || typeof input.value !== 'string' || input.value.length > browserMetadataValueLimit(input.key)
-        || !/^[a-zA-Z0-9-]{20,100}$/.test(input.mutationId ?? '')) throw new Error('Invalid browser metadata');
-      const fingerprint = createHash('sha256').update(JSON.stringify([input.key, input.value])).digest('hex');
-      const receipt = previous.receipts?.find(r => r.id === input.mutationId);
-      if (receipt) {
-        if (receipt.fingerprint !== fingerprint) throw sessionError('OPERATION_CONFLICT', 'Browser operation ID reused with different content');
-        return { revision: receipt.revision, keyRevision: receipt.keyRevision };
-      }
-      if (input.mutationId === previous.lastMutation && !previous.receipts) return { revision: previous.revision };
-      if (input.expectedKeyRevision !== undefined ? input.expectedKeyRevision !== (previous.keyRevisions?.[input.key] ?? 0) : input.expectedRevision !== previous.revision) throw sessionError('STATE_CONFLICT', 'Browser state changed in another client; reload to synchronize');
-      const keyRevision = (previous.keyRevisions?.[input.key] ?? 0) + 1;
-      const next = { revision: previous.revision + 1, keyRevisions: { ...previous.keyRevisions, [input.key]: keyRevision }, lastMutation: input.mutationId,
-        values: { ...previous.values, [input.key]: input.value },
-        receipts: [...(previous.receipts ?? []), { id: input.mutationId, fingerprint, revision: previous.revision + 1, keyRevision }].slice(-256) };
-      // Old receipts can never execute again: their original CAS revision is
-      // below the monotonically increasing revision even after compaction.
-      draft.states = draft.states.filter(([owner]) => owner !== ownerId); draft.states.push([ownerId, next]);
-      for (const record of draft.pages.filter(p => p.ownerId === ownerId)) {
-        const link = sessionLink(next, JSON.parse(record.key)[1]);
-        if (link) record.link = link;
-      }
-      // Import complete legacy projections into the canonical directory in the
-      // same commit as their final dependency. Listing does not reserve native.
-      for (const candidate of linkedSessions(ownerId, next)) {
-        if (draft.retired.includes(candidate.key) || draft.pages.some(p => p.key === candidate.key)) continue;
-        if (draft.pages.filter(p => p.ownerId === ownerId).length >= 256) throw sessionError('SESSION_CAPACITY', 'Your saved browser session limit (256) is reached');
-        draft.pages.push({ ...candidate, id: createHash('sha256').update(candidate.key).digest('hex'), ownerId,
-          lifecycle: 'open', version: 1, createdAt: Date.now(), zoom: 100, runtime: { kind: 'absent', generation: 0 } });
-      }
-      // Compatibility close intent for old clients. Only explicit removal of a
-      // previously committed reference counts; missing/malformed maps do not.
-      for (const lease of input.key === 'storage' ? removedStorageLeases(previous.values.storage, input.value) : []) {
-        const key = JSON.stringify([ownerId, lease]);
-        if (!draft.retired.includes(key)) draft.retired.push(key);
-        const record = draft.pages.find(p => p.key === key);
-        if (record) { record.lifecycle = 'closing'; record.closing = true; record.runtime = { ...record.runtime, kind: 'stopping' }; retiring.push(key); }
-      }
-      return { revision: next.revision, keyRevision };
+    if (input === undefined) { await this.store.tail; authorize(); return { ...this.store.snapshot(ownerId), scope: this.metadataScope(ownerId) }; }
+    if(input.scope !== this.metadataScope(ownerId)) throw sessionError('STATE_CONFLICT','Browser account changed; reload to synchronize');
+    const result=await this.commit(store=>{authorize();return store.legacyMutation(ownerId,input);});
+    this.refreshRecords(ownerId,result.retiring??[]);const {retiring,...reply}=result;return reply;
+  }
+  metadataScope(ownerId) { return createHash('sha256').update(this.dataDirectory+'\0'+ownerId).digest('hex'); }
+  refreshRecords(ownerId,retiring=[]) {
+    for(const record of this.store.sessions(ownerId))if(!this.pages.has(record.key))this.pages.set(record.key,{...record,controller:null,live:false});
+    for(const key of retiring){this.retiredLeases.add(key);const page=this.pages.get(key);if(page){page.closing=true;this.retryRetirement(page,0);}}
+  }
+  async recordCommand(ownerId,input,authorize) {
+    await this.load();
+    if(input===undefined)return this.commit(store=>{authorize();return {...store.bootstrap(ownerId),scope:this.metadataScope(ownerId)};});
+    if(input.scope!==this.metadataScope(ownerId))throw sessionError('STATE_CONFLICT','Browser account changed; reload to synchronize');
+    if(input.action==='legacy-import-complete')return this.commit(store=>{
+      authorize();store.db.prepare("UPDATE resource_imports SET digest='complete' WHERE id=? AND digest='pending'").run('local-v1:'+ownerId);return {complete:true};
     });
-    this.states = new Map(this.store.current.states); this.retiredLeases = new Set(this.store.current.retired);
-    for (const record of this.store.current.pages) if (!this.pages.has(record.key))
-      this.pages.set(record.key, { ...record, controller: null, live: false });
-    for (const key of retiring) { const page = this.pages.get(key); if (page) { page.closing = true; this.retryRetirement(page, 0); } }
-    return result;
+    if(input.action==='read'||input.action==='list'){
+      if(!['pages','tabs','storage','bindings'].includes(input.collection)||typeof input.id!=='string'||input.id.length>2048)throw new Error('Invalid resource read');
+      await this.store.tail;authorize();
+      if(input.action==='read')return this.store.get(ownerId,input.collection,input.id)??{collection:input.collection,id:input.id,revision:0,value:null};
+      const records=this.store.list(ownerId,input.collection,input.id,256);return {records,cursor:records.length===256?records.at(-1).id:null};
+    }
+    const result=await this.commit(store=>{authorize();return store.mutation(ownerId,input);});
+    if(input.collection!=='bindings')this.refreshRecords(ownerId,result.retiring);
+    const {retiring,...reply}=result;return reply;
   }
   viewers(page) { return page.viewers ??= new Map(); }
   controlState(page, ws) {
@@ -291,12 +279,13 @@ export class RemoteBrowserService {
   displayPace(page) {
     if (page.productionDemand) { this.production(page); return; }
     if (page.displayRateUnsupported) return;
-    const native = this.child;
+    const native = this.child, generation = page.runtimeEpoch ?? 0;
     const fps = Math.max(5, ...[...this.viewers(page).values()].filter(viewer => viewer.visible).map(viewer => viewer.decodeFps ?? 30));
     if (page.closing || !page.live || page.displayFps === fps) return;
     page.displayFps = fps;
+    const revision = page.displayPaceRevision = (page.displayPaceRevision ?? 0) + 1;
     void this.request(page.id, 'display-rate', { fps }).catch(error => {
-      if (this.child !== native) return;
+      if (this.child !== native || (page.runtimeEpoch ?? 0) !== generation || page.displayPaceRevision !== revision) return;
       page.displayFps = undefined;
       if (error.message === 'Unsupported browser command') page.displayRateUnsupported = true;
     });
@@ -351,7 +340,11 @@ export class RemoteBrowserService {
           // A failed/unknown outcome cannot be cached as applied. These setters
           // are idempotent; input and composition are never retried here.
           page.painted = null;
-          if (error.retryable === false) throw error;
+          // Retained native owners may predate retryable reveal captures. The
+          // observed legacy IPC error still means this idempotent setter can
+          // retry; do not extend the exception to auth or other native errors.
+          const legacyCapture = error.code === 'BROWSER_ERROR' && error.message === 'UnknownVizError';
+          if (error.retryable === false && !legacyCapture) throw error;
           if (++failures > 3)
             throw unavailable('Browser display unavailable; reconnecting');
           await new Promise(resolve => {
@@ -395,9 +388,9 @@ export class RemoteBrowserService {
     clearTimeout(page.retirementTimer); page.retirementTimer = null;
     page.retirement = (async () => {
       await this.commit(draft => {
-        if (!draft.retired.includes(page.key)) draft.retired.push(page.key);
-        const record = draft.pages.find(p => p.key === page.key);
-        if (record) { record.lifecycle = 'closing'; record.closing = true; record.runtime = { ...record.runtime, kind: 'stopping', closeOperationId: record.runtime?.closeOperationId ?? randomUUID() }; }
+        draft.retire(page.key);
+        const record = draft.session(page.key);
+        if (record) { record.lifecycle = 'closing'; record.closing = true; record.runtime = { ...record.runtime, kind: 'stopping', closeOperationId: record.runtime?.closeOperationId ?? randomUUID() }; draft.saveSession(record); }
       });
       for (const ws of this.viewers(page).keys()) if (ws !== replying) ws.close(1000, 'Browser tab closed');
       // A close is a tab-owner operation, not a viewer reply. Once accepted it
@@ -406,10 +399,11 @@ export class RemoteBrowserService {
       await this.start();
       // Even an unknown create must cross an acknowledged retirement barrier.
       await this.request(page.id, 'close');
+      await this.child?.releasePage?.(page.id);
       page.live = false;
       if (this.pages.get(page.key) === page) this.pages.delete(page.key);
       page.controller = null; this.viewers(page).clear();
-      await this.commit(draft => { draft.pages = draft.pages.filter(p => p.key !== page.key); });
+      await this.commit(draft => { draft.deleteSession(page.key); });
       // A stale runtime remains pinned while any Tab exists. Releasing an idle
       // transport lets the next open safely upgrade an empty native owner.
       if (this.ownerConnector && this.child?.runtimeCurrent === false && !this.pages.size
@@ -436,8 +430,10 @@ export class RemoteBrowserService {
     if (this.starting) return this.starting;
     this.starting = (async () => {
       await this.load();
+      if (this.closed) throw new Error('Browser service closed');
       if (!await this.available()) throw new Error('Bundled browser runtime unavailable');
       await mkdir(this.dataDirectory, { recursive: true, mode: 0o700 });
+      if (this.closed) throw new Error('Browser service closed');
       if (this.ownerConnector) {
         let child;
         try { child = await this.ownerConnector({ directory: this.directory, dataDirectory: this.dataDirectory }); }
@@ -446,10 +442,11 @@ export class RemoteBrowserService {
           this.diagnose('owner_attach_failed');
           throw unavailable('Browser owner unavailable; reconnecting');
         }
-        if (this.closed) { child.kill(); throw new Error('Browser service closed'); }
+        if (this.closed) { await child.kill(); throw new Error('Browser service closed'); }
         this.child = child; this.isolated = false;
+        let retirement;
         const retire = event => {
-          if (this.child !== child) return;
+          if (this.child !== child) return retirement;
           this.child = null; this.starting = null; this.diagnose(event);
           for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(unavailable('Browser owner disconnected')); }
           this.requests.clear();
@@ -457,32 +454,57 @@ export class RemoteBrowserService {
             this.resetVisibility(page); page.live = false; page.painted = false; page.controller = null; page.controlToken = null; page.controlKind = null; page.controlEpoch = (page.controlEpoch ?? 0) + 1;
             for (const ws of this.viewers(page).keys()) ws.close(1011, 'Browser owner disconnected; reconnecting');
           }
-          void this.commit(draft => { for (const record of draft.pages) if (occupied(record)) record.runtime = { ...record.runtime, kind: 'unknown' }; }).catch(() => {});
-          child.kill();
+          void this.commit(draft => { for (const record of draft.sessions()) if (occupied(record)) { record.runtime = { ...record.runtime, kind: 'unknown' }; draft.saveSession(record); } }).catch(() => {});
+          retirement = Promise.resolve(child.kill()).catch(() => this.diagnose('owner_detach_failed'));
+          return retirement;
         };
         child.on('error', () => retire('owner_transport_error')); child.on('exit', () => retire('owner_detached'));
+        child.on('owner-slot-failure', ({ pages, native }) => {
+          if (this.child !== child) return;
+          if (native !== undefined) this.lastBrowserFailure = { event: 'owner_exited', native };
+          const affected = new Set(pages);
+          this.diagnose('owner_slot_disconnected');
+          for (const page of this.pages.values()) {
+            if (!affected.has(page.id)) continue;
+            this.resetVisibility(page); page.live = false; page.controller = null; page.controlToken = null; page.controlKind = null;
+            page.controlEpoch = (page.controlEpoch ?? 0) + 1;
+            for (const ws of this.viewers(page).keys()) ws.close(1011, 'Browser owner disconnected; reconnecting');
+          }
+          void this.commit(draft => {
+            for (const record of draft.sessions()) if (affected.has(record.id) && occupied(record)) { record.runtime = { ...record.runtime, kind: 'unknown' }; draft.saveSession(record); }
+          }).catch(() => {});
+        });
         child.on('message', message => { if (this.child !== child) return;
           if (message.type === 'owner-failure') this.lastBrowserFailure = { event: 'owner_exited', native: message.native };
           else this.receive(message);
         });
         // Only durable logical pages may adopt a live native page. Unknown
         // native IDs are orphans, never a source of new authorization.
-        const inventory = new Map(child.inventory.map(config => [config.id, config]));
-        for (const page of this.pages.values()) {
-          const config = inventory.get(page.id); if (!config) continue;
-          inventory.delete(page.id); page.live = true; page.painted = false; page.document = config.document;
-          page.viewport = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
-          page.url = checkpointUrl(config.navigation?.url); page.controller = null; page.controlToken = null; page.controlKind = null;
-          if (Number.isInteger(config.zoom)) page.zoom = config.zoom;
-        }
-        for (const id of inventory.keys()) await this.request(id, 'close');
-        await this.commit(draft => {
-          for (const record of draft.pages) {
-            const page = this.pages.get(record.key);
-            record.runtime = { ...record.runtime, kind: page?.live ? 'live' : 'absent' };
+        try {
+          const inventory = new Map(child.inventory.map(config => [config.id, config]));
+          for (const page of this.pages.values()) {
+            const config = inventory.get(page.id); if (!config) continue;
+            inventory.delete(page.id); page.live = true; page.painted = false; page.document = config.document;
+            page.viewport = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
+            page.url = checkpointUrl(config.navigation?.url); page.controller = null; page.controlToken = null; page.controlKind = null;
+            if (Number.isInteger(config.zoom)) page.zoom = config.zoom;
           }
-        });
-        return;
+          for (const id of inventory.keys()) { await this.request(id, 'close'); await child.releasePage?.(id); }
+          await this.commit(draft => {
+            for (const record of draft.sessions()) {
+              const page = this.pages.get(record.key);
+              record.runtime = { ...record.runtime, kind: page?.live ? 'live' : child.unavailablePages?.has(record.id) ? 'unknown' : 'absent' }; draft.saveSession(record);
+            }
+          });
+          if (this.child !== child || !child.connected) throw unavailable('Browser owner disconnected');
+          return;
+        } catch (error) {
+          // An attached owner is not yet an adopted service. Failed orphan
+          // reconciliation or persistence must release this Gateway's lease
+          // before retry, without stopping any persistent native process.
+          await retire('owner_adoption_failed');
+          throw error;
+        }
       }
       const env = { ...process.env, OPENCRAFT_BROWSER_DATA_DIR: this.dataDirectory };
       // A trusted runtime needs no inherited Node hooks or ambient desktop.
@@ -527,7 +549,7 @@ export class RemoteBrowserService {
         for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(unavailable('Browser process exited')); }
         this.requests.clear();
         for (const p of this.pages.values()) { this.resetVisibility(p); p.live = false; p.painted = false; p.controller = null; p.controlToken = null; p.controlKind = null; p.controlEpoch = (p.controlEpoch ?? 0) + 1; for (const ws of this.viewers(p).keys()) ws.close(1011, 'Browser process exited; reconnecting'); }
-        void this.commit(draft => { for (const record of draft.pages) if (occupied(record)) record.runtime = { ...record.runtime, kind: 'unknown' }; }).catch(() => {});
+        void this.commit(draft => { for (const record of draft.sessions()) if (occupied(record)) { record.runtime = { ...record.runtime, kind: 'unknown' }; draft.saveSession(record); } }).catch(() => {});
         // Retire this transport only. EOF/disconnect asks a still-running owned
         // worker to quit; its late messages/errors cannot touch the replacement.
         child.stdin?.destroy();
@@ -570,7 +592,7 @@ export class RemoteBrowserService {
     try {
       await attempt;
       if (!this.ownerConnector && !this.nativeReconciled) {
-        await this.commit(draft => { for (const record of draft.pages) record.runtime = { ...record.runtime, kind: 'absent' }; });
+        await this.commit(draft => { for (const record of draft.sessions()) { record.runtime = { ...record.runtime, kind: 'absent' }; draft.saveSession(record); } });
         this.nativeReconciled = true;
       }
       return;
@@ -656,6 +678,9 @@ export class RemoteBrowserService {
           authorize(); message = JSON.parse(bytes.toString());
           if (typeof message.id !== 'string' || message.id.length > 100) throw new Error('Invalid request id');
           if (message.method === 'catalog') { reply(message.id, await this.catalog(ownerId, authorize)); return; }
+          if (message.method === 'records') {
+            const value=await this.recordCommand(ownerId,message.input,authorize);authorize();reply(message.id,value);return;
+          }
           if (message.method === 'state') {
             const value = await this.metadata(ownerId, message.input, authorize); authorize(); reply(message.id, value); return;
           }
@@ -664,8 +689,8 @@ export class RemoteBrowserService {
             await this.load(); authorize();
             const key = JSON.stringify([ownerId, message.input.lease]);
             await this.commit(draft => {
-              authorize(); if (!draft.retired.includes(key)) draft.retired.push(key);
-              const record = draft.pages.find(p => p.key === key);
+              authorize(); draft.retire(key);
+              const record = draft.session(key);
               if (record) { record.lifecycle = 'closing'; record.closing = true; }
             });
             this.retiredLeases.add(key);
@@ -701,12 +726,28 @@ export class RemoteBrowserService {
             await this.start(); authorize();
             if (this.retiredLeases.has(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
             if (ws.readyState !== WebSocket.OPEN) return;
-            const unknown = this.store.current.pages.find(p => p.key === key)?.runtime?.kind === 'unknown';
-            if (unknown && existing && !existing.live) {
-              try { const config = await this.request(existing.id, 'snapshot'); existing.live = true; existing.document = config.document; await this.runtimeState(existing, 'live'); }
+            const record = this.store.session(key);
+            // A durable live/starting record is a checkpoint, not proof of
+            // current residency. Its unknown update may still be queued or fail.
+            if (record && record.runtime?.kind !== 'absent' && existing && !existing.live) {
+              const native = this.child, epoch = existing.runtimeEpoch ?? 0, document = existing.document;
+              const requireCurrent = () => {
+                authorize();
+                if (this.closed || this.child !== native || this.pages.get(key) !== existing || existing.closing
+                  || (existing.runtimeEpoch ?? 0) !== epoch) throw unavailable('Browser runtime changed; reconnecting');
+              };
+              try {
+                const config = await this.request(existing.id, 'snapshot'); requireCurrent();
+                if (existing.document !== document && existing.document !== config.document)
+                  throw unavailable('Browser runtime changed; reconnecting');
+                existing.live = true; existing.document = config.document;
+                await this.runtimeState(existing, 'live', epoch); requireCurrent();
+              }
               catch (error) {
+                requireCurrent();
                 if (error.message !== 'Browser page closed') throw error;
-                await this.request(existing.id, 'close'); await this.runtimeState(existing, 'absent');
+                await this.request(existing.id, 'close'); requireCurrent();
+                await this.runtimeState(existing, 'absent', epoch); requireCurrent();
               }
             }
             // Metadata can register a logical tab before it has ever owned a
@@ -851,12 +892,18 @@ export class RemoteBrowserService {
       ws.once('close', () => clearTimeout(timer));
     }
     clearTimeout(this.checkpointTimer);
-    const releasing = Promise.resolve(this.loading).catch(() => {}).then(() => this.store?.tail).then(() => this.releaseWriter?.());
-    this.persistence = releasing.catch(() => {});
+    // Cold attachment can still be copying/preparing a runtime. Keep the logical
+    // writer until its late result has detached; another Gateway must not start
+    // concurrently against this owner directory after shutdown.
+    const starting = this.starting;
     for (const page of this.pages.values()) { this.resetVisibility(page); clearTimeout(page.retirementTimer); clearTimeout(page.keyTimer); }
     for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error('Browser service closed')); }
     this.requests.clear();
-    if (this.isolated) this.child?.stdin.end(); else this.child?.kill();
+    let closing;
+    if (this.isolated) this.child?.stdin.end();
+    else closing = this.child?.kill();
+    this.persistence = Promise.allSettled([this.loading, starting, closing])
+      .then(() => this.store?.tail).then(() => {this.store?.close();return this.releaseWriter?.();}).catch(() => {});
     this.server.close();
   }
 }

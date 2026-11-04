@@ -23,7 +23,7 @@ export async function packageBrowserRuntime(destination) {
   }
   await mkdir(destination, { recursive: true });
   await cp(distribution, join(destination, 'electron'), { recursive: true });
-  for (const name of ['worker.cjs','owner.cjs','diagnostics.cjs','controls.cjs','touch.cjs','clipboard.cjs','ime.cjs','focus.cjs','encoder-preload.cjs','encoder.html'])
+  for (const name of ['worker.cjs','owner.cjs','diagnostics.cjs','controls.cjs','touch.cjs','clipboard.cjs','activation.cjs','ime.cjs','focus.cjs','encoder-preload.cjs','encoder.html'])
     await cp(join(root, 'scripts/remote-browser', name), join(destination, name));
   // The private worker uses shared input/media policies. Bundle their closure
   // so an isolated installed runtime never depends on source-workspace links.

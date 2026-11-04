@@ -3,3 +3,7 @@ export { type Migration, schemaFingerprint, transaction as sqliteTransaction } f
 export { SqliteLifecycleError, type SqliteLifecycleErrorKind } from "./errors.js";
 export { durableJson, assertRecoveryState } from "./recovery.js";
 export { acquireProcessWriter } from './writer-lock.js';
+
+export { resolveStoreMigrations, resolveMigrationContract, type StorageMigrationContract, type StorageSchemaId } from "./store-migrations.js";
+
+export { captureSqliteReadGuard } from "./read-guard.js";

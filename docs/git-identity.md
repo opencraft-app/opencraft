@@ -30,28 +30,39 @@ allows the original server environment. Before origin lookup, the broker
 permits the original environment if a metadata-only query proves there are no
 configured accounts for that exact host. Unbound commands therefore do not wait
 on execution adapters. This is checked on each command; adding
-any binding immediately requires attested account lookup again. Unknown ownership and broker outages
-fail after bounded lookup retries. Git itself is never replayed. The Linux IPC
-bridge obtains PID/UID using `SO_PEERCRED`; the resolver attests native process
-ancestry and birth time against the existing engine registry and immutable
-execution intervals. A Thread ID is a locator, not authority. Long-lived tool
-bridges do not supply the birth time of a later command. Boundary ambiguity or
-an unrecognized engine fails closed.
+any binding requires a known execution attribution. Unknown attribution and
+broker outages fail after bounded lookup retries. Git itself is never replayed.
 
-The native adapter fixes the tool-root Thread field (`CODEX_THREAD_ID` for
-Codex, `OPENCRAFT_THREAD_ID` for local engines). The resolver reads it from the
-attested tool root's kernel environment and checks it against the locator before
-querying a lease. Missing, duplicated or mismatched metadata stays unknown, so
-concurrent Threads in one native cannot select each other's overlapping interval.
-This check assumes the stated trusted-maintainer boundary; it is not protection
-against a same-UID adversary deliberately replacing the root environment.
+## Execution context, not live authorization
 
-Origin readers advertise `originClock: 'boot-monotonic-v1'` and match the
-attested boot ID and process birth ticks against intervals from that same boot.
-Legacy wall-clock records cannot authorize personal credentials: clock changes
-must not move an old tool into another execution. Personal credentials and each
-signature also require a live read of the original native Turn; a stale SQLite
-active row after Gateway loss is insufficient. Command expiry uses monotonic time.
+`OPENCRAFT_EXECUTION_ID` is an opaque execution locator, not a credential. The
+Host records immutable input ownership before dispatch. Pi/DSH process snapshots
+carry that ID automatically; each snapshot key includes the execution so workers
+from a previous run keep their own locator. Nothing is added to model prompts or
+Git command arguments, and shared `process.env` is never changed.
+
+The wrapper sends the ID with its existing broker request. An indexed lookup of
+execution ID plus Thread ID reads the original accepted principal from the
+existing Host store. Suspended, unknown or completed execution state does not
+change attribution. Git does not read native Turn status or reconstruct history.
+The adapter retains its legacy internal `active` result spelling for a resolved
+binding; it no longer means that the native Turn must still be running.
+
+Older engines, including an already-running Codex generation, may only expose
+`CODEX_THREAD_ID` or `OPENCRAFT_THREAD_ID`. Their first lookup reuses the existing
+kernel peer/command-birth locator to select the original immutable execution
+interval. It never selects the latest sender. The wrapper then passes the
+resolved `OPENCRAFT_EXECUTION_ID` into native Git and hooks; subsequent signing
+and credential requests resolve that same ID directly. Boundary ambiguity and
+missing attribution remain errors. A wrong explicit ID never falls back to a
+newer execution or another user.
+
+This replaces the earlier requirement to revalidate a live Turn for Git. Other
+platform tools retain their existing execution-authority rules. Git account
+admission, credential revisions, command expiry and process-scoped helpers still
+apply, while application recovery is outside attribution lookup. This mechanism
+provides convenient account selection in a shared trusted runtime, not isolation
+against malicious code running under the same Unix account.
 
 Each configured command receives an expiring capability bound to its process
 tree and account generation. Its credential helper resets inherited helpers,
@@ -138,3 +149,32 @@ still applies to authentication sockets and encrypted storage.
 
 
 Deployments can restrict bearer-token delivery with `httpsCredentialHosts`. Hosts outside that allowlist never receive an HTTPS credential, including while an old token is being retired. An explicit `sshAuth: null` record can retain identity metadata before an SSH key is generated; it does not contain an authentication token or generate a key.
+
+## Lookup recovery and diagnostics
+
+Authorization lookup has a 15-second monotonic budget including IPC time and
+exponential backoff (100ms up to 1.6s). Only lookup is retried; Git is invoked once
+after authorization. Expired command capabilities, changed credentials and invalid peer/request
+fail immediately. Every retry resolves the original execution attribution; no latest-user mapping
+is substituted across an application restart. A process health
+reply therefore does not promise that a particular execution can be authorized.
+
+IPC distinguishes timeout, disconnect, connection failure and invalid responses.
+The broker keeps the existing status contract and adds controlled reason codes
+for unavailable attribution and legacy origin lookup. Failure logs carry
+a generated request ID, operation, peer PID and duration; the client reports that
+ID with the final reason. Arbitrary error messages, credentials, account records
+and request bodies are never logged. Lease recovery diagnostics separately carry
+thread ID, request ID, phase and duration. These IDs diagnose a failure; they are
+not authorization evidence. A later lookup always validates current authority.
+
+A separately installed broker and stable Git launcher must be updated explicitly
+from a fixed managed artifact. Updating the application alone does not update
+either independent runtime. Existing in-flight capabilities are retired if the
+broker restarts; the next command opens a new capability after full validation.
+
+Lease recovery schedules unsettled conversations by their most recent admitted
+execution, with a stable thread-ID tie break. This is scheduling only: old leases
+are still scanned and every lease needs native confirmation. Admission timestamps
+are never used here as evidence for credential authorization. This avoids making
+a current command wait behind hundreds of historical unresolved conversations.

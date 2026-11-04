@@ -213,12 +213,32 @@ Supervisor、多个有清晰所有权的 Runtime scope，以及可被两种以�
 Browser 协议能力发现；它们必须由第二实现或真实服务证据决定。身份、生命周期与 Host
 client 所有权不应再因这些 Adapter 细节反复改动。
 
-### Physical input under device emulation
+### 逐实体存储迁移（2026-10-30）
 
-A target device profile does not identify the viewer's current physical input.
-Explicit mouse and pen events retain mouse semantics under phone/tablet profiles;
-legacy senders without pointer identity retain the existing profile fallback.
-The native smoke uses a touch-capable viewer and separately checks physical mouse
-(`Pointer mouse`, no `touchstart`) and real touchscreen input (`Pointer touch`,
-`Touched`). Responsive mode follows that hybrid viewer; the laptop preset separately
-checks a non-touch desktop. Touch counts must match the shared runtime maximum.
+首次启动在既有排他 writer lock 下，将 v1 tabs.json 的 Session、retired lease 和各 metadata
+实体在一个 SQLite 事务中导入 resources.sqlite，保留导入摘要。随后精确备份原始字节为
+`tabs-v1-<sha256>.json`，fsync 后原子写入 schemaVersion=2 的 tabs.json 格式标记。
+导入中断可以从保留的源继续；已经导入但源发生分叉时拒绝启动，保留双方，不以空库覆盖。
+已有 schemaVersion=2 而 SQLite 或导入收据丢失时同样拒绝自动重建。
+
+新版客户端激活一个 owner 后禁止旧版全目录写入，要求旧页面刷新。v1 兼容协议仅服务
+尚未切换的 owner。全新远端目录允许一次旧客户端本地记录迁移，逐记录 CAS，已有记录和
+删除 tombstone 优先；完成后记录收据，不能在后续刷新重复导入。Web/Electron 本地导入也保留
+旧源并记录一次完成标记，未完成导入不替换已经提交的行。
+
+迁移不删除浏览器 profile、账户、会话或配置。**旧版 server 无法安全降级写入新格式**；
+回退必须保留 resources.sqlite 并使用理解 v2 的版本或向前修复，不能恢复陈旧 JSON 后继续写。
+安装包和上一部署仍保留供非数据格式故障排查；不能宣称任意旧包支持此数据回退。
+
+验收覆盖：全部旧 alias 的身份保留、分页、重启、事务回滚、命令重放、冲突隔离、删除后
+不复活，以及一万条历史下的单实体网络/SQLite写入量。测试见
+`tests/browser/remote-browser-records.test.ts` 和 `local-browser-records.test.ts`。
+
+### Remote 输入身份验收
+
+设备 profile 与实际输入来源分开验证。显式 `pointerType=mouse/pen` 在手机或平板
+profile 下仍走鼠标路径；不能用 `mouse.click` 等待网页的 `touchstart`，也不能据此
+把真实鼠标改成触控。`smoke-remote-browser.ts` 的 viewer 开启触屏能力，先确认手机
+profile 下 mouse 保持 `Pointer mouse` / `Untouched`，再经实际 touchscreen tap、canvas
+输入队列、认证 controller 和 native dispatcher 确认 `Pointer touch` / `Touched`。
+合成 DOM 事件、viewport 缩窄或只看 maxTouchPoints 都不能替代该链路验收。

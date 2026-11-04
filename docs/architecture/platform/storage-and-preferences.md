@@ -46,7 +46,7 @@ and gateway/Headless health project only actual owner opening results. These are
 migration dispositions, not claims that every optional engine is initialized.
 See [storage lifecycle](../../sqlite-lifecycle.md) for implemented behavior, manual
 recovery and verification limits, and [plugin persistence](../../plugin-persistence.md)
-for payload migration. Server core consolidates six domains in `opencraft-server.sqlite`; Drizzle owns its schema authoring and SQL generation, while the single managed executor retains node:sqlite at runtime. Host and Electron physical consolidation is deferred; Web retains IndexedDB. Known database identity handoffs wait for other windows to release
+for payload migration. Server core consolidates six domains in `opencraft-server.sqlite`; Drizzle owns its schema authoring and SQL generation, while one managed Server owner retains node:sqlite and migration/installation ownership at runtime. After migration the owner lends one WAL connection to a single history Worker Thread shared across all history scopes; account repositories retain their existing connection. The child never migrates or opens a legacy store, and drains before the owner releases its lock. See [history worker and ordering](../chat-ui/history-and-recovery.md#platform-owned-conversation-facts). Host and Electron physical consolidation is deferred; Web retains IndexedDB. Known database identity handoffs wait for other windows to release
 connections within a bounded deadline; the Sidebar adapter closes on versionchange
 and startup rollback owns its handle before loading layout rows. Expired migration
 opens retain late-handle cleanup and abort late upgrades. Both bootstrap recovery
@@ -335,6 +335,30 @@ usable paint. It precaches public build assets and sanitized deployment recipes,
 never private HTML or account/Host API responses. A prepared shell can start a
 new document fully offline and restore local input. Browser storage remains
 evictable; this provides neither an offline model nor background sending.
+
+### Shared conversation notes
+
+The optional thread-summary plugin presents a shared Markdown note before its
+existing read-only task projections. Headless owns `thread-notes.sqlite` through
+ThreadNoteStore and sqlite-node migrations. Its key is the trusted route's
+`serverId` plus `threadId`; it never opens native engine, identity, access policy,
+browser resources or preferences databases and uses no cross-database transaction.
+The authenticated ThreadAccessSession intercepts `opencraft/thread-note/exchange`,
+checks current membership and private-thread policy on every request, and rejects
+a client-supplied server identity. Initialize advertises the optional version-1
+capability only when this store is wired. Local and remote Hosts without it do
+not advertise a working editor.
+
+Yjs updates merge into one bounded document per conversation; state vectors return
+only missing updates, and duplicate submissions are idempotent. The SQLite commit
+precedes acknowledgement. Notes allow 64 Ki UTF-16 code units and 512 KiB encoded
+CRDT state. Invalid or oversized input rolls back. The current client retains
+unacknowledged edits in its in-memory conversation session; it does not promise
+offline drafts across page reload. Closing/repositioning the panel does not
+discard pending edits. Remote integration waits during IME composition and uses
+relative positions to preserve the active selection. Markdown preview uses the
+shared document renderer with restricted external resources. The existing goal,
+plan, changed-files and activity projections remain below the note.
 
 ### Disposable native transcript cache directory
 

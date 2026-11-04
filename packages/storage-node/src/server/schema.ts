@@ -461,3 +461,68 @@ export const executionCapabilityBindings = sqliteTable("execution_capability_bin
   threadId: text("thread_id").notNull(),
   sessionJson: text("session_json"),
 }, table => [uniqueIndex("execution_capability_bindings_server_id_thread_id_unique").on(table.serverId, table.threadId)]);
+
+// Display facts are independent of engine-native execution recovery.
+export const conversationThreads = sqliteTable("conversation_threads", {
+  scope: text("scope").notNull(), id: text("id").notNull(), epoch: text("epoch").notNull(),
+  metadata: text("metadata").notNull(), revision: integer("revision").notNull(),
+  history: text("history").notNull(), archived: integer("archived").notNull(), deleted: integer("deleted").notNull(),
+  recency: real("recency").notNull(),
+  modelVersion: integer("model_version").notNull().default(0),
+  searchRevision: integer("search_revision").notNull().default(-1),
+}, table => [primaryKey({columns:[table.scope,table.id]}),index("conversation_directory").on(table.scope,table.archived,table.deleted,table.recency,table.id)]);
+export const conversationEvents = sqliteTable("conversation_events", {
+  scope: text("scope").notNull(), threadId: text("thread_id").notNull(), revision: integer("revision").notNull(),
+  eventKey: text("event_key").notNull(), eventType: text("event_type").notNull(), hash: text("hash").notNull(),
+  current: integer("current").notNull(), recordId: text("record_id"), groupId: text("group_id"),
+  kind: text("kind").notNull(), type: text("type").notNull(), position: real("position").notNull(),
+  preview: text("preview").notNull(), coverage: text("coverage").notNull(), sourceCursor: text("source_cursor"), createdAt: integer("created_at").notNull(),
+}, table => [primaryKey({columns:[table.scope,table.threadId,table.revision]}),
+  index("conversation_events_identity").on(table.scope,table.threadId,table.eventKey,table.current),
+  uniqueIndex("conversation_events_current").on(table.scope,table.threadId,table.eventKey).where(sql.raw("current=1")),
+  index("conversation_events_order").on(table.scope,table.threadId,table.current,table.kind,table.groupId,table.position),
+  index("conversation_events_summary").on(table.scope,table.threadId,table.current,table.groupId,table.type,table.position),
+  check("conversation_events_coverage",sql.raw("coverage IN ('headers','partial','complete')")),
+  check("conversation_events_current_flag",sql.raw("current IN (0,1)")),
+  foreignKey({columns:[table.scope,table.threadId],foreignColumns:[conversationThreads.scope,conversationThreads.id]}),
+  foreignKey({columns:[table.scope,table.hash],foreignColumns:[conversationPayloads.scope,conversationPayloads.hash]})]);
+export const conversationPayloads = sqliteTable("conversation_payloads", {
+  scope: text("scope").notNull(), hash: text("hash").notNull(), body: text("body").notNull(),
+}, table => [primaryKey({columns:[table.scope,table.hash]})]);
+
+// Per-scope directory observation; not a synthetic conversation or execution owner.
+export const conversationCatalogs = sqliteTable("conversation_catalogs", {
+  scope: text("scope").notNull().primaryKey(), revision: integer("revision").notNull(), syncState: text("sync_state").notNull(),
+}, table => [check("conversation_catalog_revision",sql.raw("typeof(revision)='integer' AND revision>=0")),
+  check("conversation_catalog_state",sql.raw("json_valid(sync_state) AND json_type(sync_state)='object'"))]);
+
+export const conversationSearchDocuments = sqliteTable("conversation_search_documents", {
+  id: integer("id").primaryKey({autoIncrement:true}),scope:text("scope").notNull(),threadId:text("thread_id").notNull(),
+  recordId:text("record_id").notNull(),groupId:text("group_id"),itemId:text("item_id"),type:text("type").notNull(),
+  title:text("title").notNull(),text:text("text").notNull(),titleTokens:text("title_tokens").notNull(),textTokens:text("text_tokens").notNull(),sourceRevision:integer("source_revision").notNull(),
+}, table=>[uniqueIndex("conversation_search_identity").on(table.scope,table.threadId,table.recordId),
+  foreignKey({columns:[table.scope,table.threadId],foreignColumns:[conversationThreads.scope,conversationThreads.id]})]);
+
+export const actorConversationCreations = sqliteTable("actor_conversation_creations", {
+  actorId: text("actor_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  operationId: text("operation_id").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  serverId: text("server_id").notNull(),
+  projectId: text("project_id").notNull(),
+  cwd: text("cwd").notNull(),
+  settingsJson: text("settings_json").notNull(),
+  creationState: text("creation_state").notNull(),
+  threadId: text("thread_id"),
+  firstMessageState: text("first_message_state").notNull(),
+  requestId: text("request_id"),
+  updatedAt: integer("updated_at").notNull(),
+}, table => [primaryKey({ columns: [table.actorId, table.idempotencyKey] }),
+  uniqueIndex("actor_conversation_creation_operation").on(table.operationId)]);
+
+/** Explicit per-input settings; absence is a legacy/default input, never inferred. */
+export const conversationInputSettings = sqliteTable("conversation_input_settings", {
+  requestId: text("request_id").primaryKey().references(() => actorExecutionRequests.id),
+  model: text("model"),
+  reasoningEffort: text("reasoning_effort"),
+}, table => [check("conversation_input_settings_explicit", sql.raw("model IS NOT NULL OR reasoning_effort IS NOT NULL"))]);

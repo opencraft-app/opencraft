@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ActorStore } from '../../packages/access-control/src/actors';
+import { InstanceAccess, MembershipStore } from '../../packages/access-control/src/index';
+import { ThreadAccessStore } from '../../packages/access-control/src/thread-access';
+
+test('bounded admission preserves revocation/membership and private access with stable proof',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'count-admission-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const actors=new ActorStore(join(dir,'server')),members=new MembershipStore(join(dir,'members'));
+  const resources=new ThreadAccessStore(join(dir,'access'),actors);
+  t.after(()=>{resources.close();members.close();actors.close();});
+  const identity={provider:'fixture',subject:'one',displayName:'one',expiresAt:Date.now()+60000};
+  const context=actors.resolveHuman(identity)!;
+  let revision=0, allow=true;
+  const policy={prepare:async()=>{throw Error('no prepare');},allows:()=>allow,allowsBinding:()=>allow,
+    captureCountReadGuard:()=>{const captured=revision;return ()=>captured===revision;}};
+  const access=new InstanceAccess(members,[],actors,['fixture'],policy);
+  actors.bindings=()=>{throw Error('old bindings');};
+  access.admitsActor=()=>{throw Error('old admitsActor');};
+  let view=await access.captureCountAdmission(context,()=>{});
+  assert.ok(view?.admitted);assert.equal(view.validate(),true);
+  members.set(identity,'member',false,'fixture');members.set(identity,'member',true,'fixture');
+  assert.equal(view.validate(),false);
+  members.setActor(context.actorId,'member',false,'fixture');
+  view=await access.captureCountAdmission(context,()=>{});assert.equal(view?.admitted,false);
+  members.setActor(context.actorId,'member',true,'fixture');
+  view=await access.captureCountAdmission(context,()=>{});assert.ok(view?.admitted);
+  allow=false;revision++;assert.equal(view.validate(),false);
+  assert.equal((await access.captureCountAdmission(context,()=>{}))?.admitted,false);
+  const noProof=new InstanceAccess(members,[],actors,['fixture'],{prepare:async()=>{},allows:()=>true,allowsBinding:()=>true});
+  assert.equal(await noProof.captureCountAdmission(context,()=>{}),null);
+  resources.created('server','private',context);
+  const other=actors.resolveHuman({...identity,subject:'two'})!;
+  resources.set('server','private','private',1,context);
+  const own=resources.captureCountReadView(context)!,foreign=resources.captureCountReadView(other)!;
+  assert.equal(own.allows('server','private'),true);assert.equal(foreign.allows('server','private'),false);
+  assert.equal(foreign.allows('server','historical'),true);
+  resources.set('server','private','shared',2,context);resources.set('server','private','private',3,context);
+  assert.equal(own.validate(),false);assert.equal(foreign.validate(),false);
+});

@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep, dirname, basename } from "node:path";
 import { generationDirectory } from "./generation-files.js";
 import { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, verifyManagedDatabaseHistory, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, verifyManagedDatabaseHistory, resolveStoreMigrations, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 export interface GenerationDefinition {
   readonly id: string;
@@ -63,7 +63,7 @@ export class CodexGenerationRegistry {
     this.lock = new DatabaseSync(join(realpathSync(directory), ".codex-routing-owner.sqlite"));
     try {
       this.lock.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
-      const managed = openManagedDatabase({ path: join(directory, "codex-generations.sqlite"),
+      const managed = openManagedDatabase({ schemaId: "generation-registry", path: join(directory, "codex-generations.sqlite"),
         legacyPolicy: "reject", migrations: CODEX_GENERATION_MIGRATIONS });
       this.database = managed.database; this.outcome = managed.outcome;
       this.database.exec("PRAGMA foreign_keys=ON");
@@ -328,7 +328,7 @@ export function inspectGenerationRegistry(directory: string) {
   const database = new DatabaseSync(join(directory, "codex-generations.sqlite"), { readOnly: true });
   try {
     database.exec("PRAGMA query_only=ON; BEGIN");
-    verifyManagedDatabaseHistory(database, CODEX_GENERATION_MIGRATIONS);
+    verifyManagedDatabaseHistory(database, resolveStoreMigrations("generation-registry", CODEX_GENERATION_MIGRATIONS));
     const snapshot = registrySnapshot(database);
     const metadata = database.prepare("SELECT key,value FROM routing_metadata ORDER BY key").all();
     const generations = database.prepare("SELECT definition,state,incarnation FROM generations ORDER BY id").all().map(row => ({ ...JSON.parse(String(row.definition)), state: row.state, incarnation: row.incarnation })) as GenerationRecord[];

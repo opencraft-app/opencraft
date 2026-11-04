@@ -73,6 +73,58 @@ snapshot and invokes one explicit enable/disable action. The server alone observ
 See [Web Push](../../web-push.md) for the subscription, authorization and outbox
 contract. Runtime or DOM identity never authorizes a push subscription on the server.
 
+
+### Stable window chrome projection
+
+Window chrome snapshots publish only when renderer kind, platform or either safe-area
+inset changes. Viewport resize still reaches the CSS and layout owners; an unchanged
+chrome projection must not independently rerender the whole Workbench. Overlay,
+fullscreen and native safe-area changes continue through the same hook.
+
+
+## Management presentation loads on entry
+
+Shell region registration exposes lightweight deferred components for the
+Connector Library and Extension Library. Registering the regions does not import
+these management interfaces or their setup/detail presentation. Their existing
+managers, authorization and application lifetime remain unchanged. The selected
+View acquires its presentation through `createDeferredView`: a late import cannot
+mount into a retired consumer, the loaded component receives current props, and
+successful modules are shared on reentry. Loading stays inside the selected
+region instead of suspending or unmounting the surrounding Shell or Composer.
+The startup graph policy keeps these management modules outside its critical
+closure; production graph evidence and browser navigation tests cover different
+parts of this contract.
+
+Shared modal primitives and catalog/icon metadata already needed by entry controls
+remain in one explicit shared output group. Deferring a management consumer must
+not fragment those same startup dependencies into a separate request per consumer
+set. Startup evidence records both byte counts and request counts; it never treats
+fewer bytes alone as proof of a faster first paint.
+
+
+## Bounded display-paint observation
+
+Display diagnostics retain their existing timestamp visibility semantics and
+anonymous per-page report budget. A paint batch reads each shared ancestor's
+computed visibility at most once, and releases that cache after measurement.
+Later opacity, visibility, display or geometry changes therefore remain visible
+to the next batch. The measurement entrance rechecks the reporting budget after
+its scheduled frame starts; an exhausted episode must not scan the DOM merely
+to produce an observation the reporter will discard.
+
+## Shared overlay dependencies
+
+The Web bundle groups the existing top-level popup, focus and positioning
+primitives into one shared runtime instead of fragmenting them by every new
+consumer set. The group matches only the real workspace node_modules owner;
+product-plugin copies, nested drawing-engine copies and optional slider controls
+remain independent. Verify both public and assembled product resource graphs,
+since product dependencies can contain another copy of the same library.
+Resource comparisons verify it adds no third-party modules to
+the critical closure, preserves demand-only presentation and reduces request
+fanout without increasing core resource budgets.
+
 ## Standalone Web setup
 
 A truly unconfigured standalone Web client does not fabricate an execution Host.

@@ -8,7 +8,7 @@ import { useIntl } from "@opencraft/i18n/react";
 import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsPageHeader, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { RuntimeProviderView, RuntimeModelView } from "@opencraft/appserver-protocol";
 import { modelBaseUrlError } from "@opencraft/appserver-protocol";
-import { ModelServicesController } from "./controller";
+import { ModelServicesController, fillMissingModelCapabilities } from "./controller";
 import { BrandMark } from "./brand-mark";
 
 const REASONING_LEVELS = [
@@ -29,8 +29,9 @@ function ProviderDefaultAction({ provider, controller, disabled }: { provider: R
     .find(group => group.id === provider.provider)?.models
     .filter(model => model.enabled !== false) ?? [];
   const defaults = snapshot.settings?.namespaces
-    .find(entry => entry.ns === "agent-default-model")?.value as { provider?: string; model?: string } | undefined;
-  const currentModel = defaults?.provider === provider.provider ? defaults.model : undefined;
+    .find(entry => entry.ns === (provider.configuration?.modelType === "image" ? "image-generation" : "agent-default-model"))?.value as { provider?: string; model?: string; defaultModel?: {provider: string; model: string} } | undefined;
+  const chosen = provider.configuration?.modelType === "image" ? defaults?.defaultModel : defaults;
+  const currentModel = chosen?.provider === provider.provider ? chosen.model : undefined;
   const unavailable = disabled || !provider.active || availableModels.length === 0;
   if (availableModels.length <= 1) {
     const model = availableModels[0];
@@ -58,7 +59,7 @@ function ProviderDefaultAction({ provider, controller, disabled }: { provider: R
 function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; controller: ModelServicesController }) {
   const [action, setAction] = useState<{ kind: "rename" | "delete"; revision: number } | null>(null);
   const [name, setName] = useState(""), [error, setError] = useState<string | null>(null), [saving, setSaving] = useState(false);
-  const custom = provider.declared && provider.settingsNs === "llm-pi-ai";
+  const custom = provider.declared && ["llm-pi-ai", "image-generation"].includes(provider.settingsNs);
   const disabled = controller.busy || controller.service.getSnapshot().settings?.writable !== true || controller.draft(provider).dirty;
   const canToggle = provider.configuration?.canToggle === true;
   const defaults = controller.service.getSnapshot().settings?.namespaces.find(entry => entry.ns === "agent-default-model")?.value as {provider?: string} | undefined;
@@ -103,15 +104,16 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   </AlertDialog.Portal></AlertDialog.Root></>;
 }
 
-function CreatePopover({ label, disabled, allowSpeech = false, onCreate }: { label: string; disabled: boolean; allowSpeech?: boolean; onCreate(name: string, type: "chat" | "asr"): Promise<void> }) {
+function CreatePopover({ label, disabled, allowSpeech = false, allowImage = false, onCreate }: { label: string; disabled: boolean; allowSpeech?: boolean; allowImage?: boolean; onCreate(name: string, type: "chat" | "asr" | "image"): Promise<void> }) {
+  const intl = useIntl();
   const [open, setOpen] = useState(false), [name, setName] = useState(""), [error, setError] = useState<string | null>(null), [saving, setSaving] = useState(false);
-  const [type, setType] = useState<"chat" | "asr">("chat");
+  const [type, setType] = useState<"chat" | "asr" | "image">("chat");
   return <Popover.Root open={open} onOpenChange={value => { if (!saving) { setOpen(value); setName(""); setError(null); } }}>
     <Popover.Trigger asChild><SettingsIconButton label={label} disabled={disabled}><Plus size={16} /></SettingsIconButton></Popover.Trigger>
     <Popover.Portal><Popover.Content className="model-services-create" align="end" sideOffset={6} collisionPadding={12} aria-label={label}>
       <form onSubmit={event => { event.preventDefault(); if (!name.trim() || saving) return; setSaving(true); setError(null);
         void onCreate(name.trim(), type).then(() => setOpen(false)).catch(cause => setError(cause instanceof Error ? cause.message : "创建失败")).finally(() => setSaving(false)); }}>
-        {allowSpeech ? <label>用途<SettingsSelect aria-label="提供商用途" value={type} disabled={saving} onChange={event => setType(event.target.value as "chat" | "asr")}><option value="chat">聊天</option><option value="asr">混元语音转写</option></SettingsSelect></label> : null}
+        {allowSpeech || allowImage ? <label>用途<SettingsSelect aria-label="提供商用途" value={type} disabled={saving} onChange={event => setType(event.target.value as "chat" | "asr" | "image")}><option value="chat">聊天</option>{allowSpeech ? <option value="asr">混元语音转写</option> : null}{allowImage ? <option value="image">{intl.formatMessage({id: "modelServices.image", defaultMessage: "Image generation"})}</option> : null}</SettingsSelect></label> : null}
         <label>{label}<SettingsTextInput value={name} disabled={saving} placeholder={label === "添加模型" ? "模型 ID" : "提供商名称"} onChange={event => setName(event.target.value)} required /></label>
         {error ? <SettingsNotice tone="error">{error}</SettingsNotice> : null}
         <div><Popover.Close asChild><SettingsButton disabled={saving}>取消</SettingsButton></Popover.Close><SettingsButton variant="primary" type="submit" disabled={saving || !name.trim()}>{saving ? "添加中…" : "添加"}</SettingsButton></div>
@@ -120,12 +122,47 @@ function CreatePopover({ label, disabled, allowSpeech = false, onCreate }: { lab
   </Popover.Root>;
 }
 
+function ModelCapabilityPanel({ controller, provider, modelId, onClose }: { controller: ModelServicesController; provider: RuntimeProviderView; modelId: string; onClose(): void }) {
+  const intl = useIntl();
+  const draft = controller.draft(provider), model = draft.config.models.find(m => m.id === modelId);
+  const [context, setContext] = useState(String(model?.contextWindow ?? "")), [output, setOutput] = useState(String(model?.maxTokens ?? ""));
+  if (!model) return null;
+  const result = controller.inspection(provider, modelId);
+  const disabled = controller.busy || controller.isModelCapabilityPending(provider.provider, modelId) || draft.dirty || controller.service.getSnapshot().settings?.writable !== true;
+  const fields = [["contextWindow", intl.formatMessage({id: "modelServices.capabilities.contextField", defaultMessage: "Context length"})], ["maxTokens", intl.formatMessage({id: "modelServices.capabilities.outputField", defaultMessage: "Maximum output"})], ["input", intl.formatMessage({id: "modelServices.capabilities.inputField", defaultMessage: "Input types"})], ["reasoningEfforts", intl.formatMessage({id: "modelServices.capabilities.reasoningField", defaultMessage: "Reasoning levels"})]] as const;
+  const format = (value: unknown) => value === undefined ? intl.formatMessage({id: "modelServices.capabilities.unknown", defaultMessage: "Unknown"}) : value === false ? intl.formatMessage({id: "modelServices.capabilities.noReasoning", defaultMessage: "Adjustable levels not declared"}) : typeof value === "number" ? `${value.toLocaleString()} token` : Array.isArray(value) ? value.includes("image") ? intl.formatMessage({id: "modelServices.capabilities.textImage", defaultMessage: "Text and images"}) : intl.formatMessage({id: "modelServices.capabilities.textInput", defaultMessage: "Text"}) : Object.keys(value as object).join("、");
+  const canFill = result && JSON.stringify(fillMissingModelCapabilities(model, result.capabilities)) !== JSON.stringify(model);
+  return <section className="model-services-capabilities" aria-label={intl.formatMessage({id: "modelServices.capabilities.label", defaultMessage: "Model capabilities: {modelId}"}, {modelId})}>
+    <header><div><strong>{intl.formatMessage({id: "modelServices.capabilities.title", defaultMessage: "Model capabilities"})}</strong><small>{model.name ?? modelId}</small></div><SettingsButton variant="quiet" onClick={onClose}>{intl.formatMessage({id: "modelServices.capabilities.collapse", defaultMessage: "Collapse"})}</SettingsButton></header>
+    <div className="model-services-capabilities__actions">
+      <SettingsButton disabled={disabled} onClick={() => { void controller.inspectModel(provider, modelId, "metadata"); }}>{intl.formatMessage({id: "modelServices.capabilities.fetch", defaultMessage: "Get known capabilities"})}</SettingsButton>
+      {provider.configuration?.canCheckSaved ? <SettingsButton disabled={disabled} onClick={() => { void controller.inspectModel(provider, modelId, "verify"); }}>{intl.formatMessage({id: "modelServices.capabilities.verify", defaultMessage: "Verify API capabilities"})}</SettingsButton> : null}
+    </div>
+    <small>{intl.formatMessage({id: "modelServices.capabilities.notice", defaultMessage: "Discovery queries provider metadata and public catalogs. Verification sends synthetic text, images and six reasoning levels and may incur charges. Existing conversations are never sent."})}</small>
+    {controller.busy ? <p role="status">{intl.formatMessage({id: "modelServices.capabilities.checking", defaultMessage: "Checking, please wait…"})}</p> : null}
+    <div className="model-services-capabilities__fields">
+      <label>{intl.formatMessage({id: "modelServices.capabilities.context", defaultMessage: "Context length (tokens)"})}<SettingsTextInput aria-label={intl.formatMessage({id: "modelServices.capabilities.contextLabel", defaultMessage: "Model context length"})} inputMode="numeric" value={context} disabled={disabled} placeholder={intl.formatMessage({id: "modelServices.capabilities.contextPlaceholder", defaultMessage: "Unknown; enter the value confirmed by your provider"})} onChange={e => setContext(e.target.value)} /></label>
+      <label>{intl.formatMessage({id: "modelServices.capabilities.output", defaultMessage: "Maximum output (tokens)"})}<SettingsTextInput aria-label={intl.formatMessage({id: "modelServices.capabilities.outputLabel", defaultMessage: "Model maximum output"})} inputMode="numeric" value={output} disabled={disabled} placeholder={intl.formatMessage({id: "modelServices.capabilities.unset", defaultMessage: "Not set"})} onChange={e => setOutput(e.target.value)} /></label>
+      <SettingsButton disabled={disabled || context === String(model.contextWindow ?? "") && output === String(model.maxTokens ?? "")} onClick={() => { void controller.setModelLimits(provider, modelId, context.trim() ? Number(context) : undefined, output.trim() ? Number(output) : undefined); }}>{intl.formatMessage({id: "modelServices.capabilities.saveLimits", defaultMessage: "Save limits"})}</SettingsButton>
+    </div>
+    {result ? <>
+      <div className="model-services-capabilities__results">{fields.map(([field, label]) => <div key={field}><strong>{label}</strong><span>{format(result.capabilities[field])}</span><small>{result.sources[field] ?? intl.formatMessage({id: "modelServices.capabilities.noEvidence", defaultMessage: "No reliable information"})}{model[field] !== undefined ? intl.formatMessage({id: "modelServices.capabilities.preserved", defaultMessage: " · Existing configuration retained"}) : ""}</small></div>)}</div>
+      {result.notes.map(note => <p key={note}>{note}</p>)}
+      {result.checks.length ? <ul>{result.checks.map((check, i) => <li key={i}>{check.kind === "image" ? intl.formatMessage({id: "modelServices.capabilities.imageInput", defaultMessage: "Image"}) : check.kind === "text" ? intl.formatMessage({id: "modelServices.capabilities.textInput", defaultMessage: "Text"}) : intl.formatMessage({id: "modelServices.capabilities.reasoning", defaultMessage: "Reasoning {effort}"}, {effort: check.effort ?? ""})}：{check.status === "verified" ? intl.formatMessage({id: "modelServices.capabilities.verified", defaultMessage: "Verified"}) : check.status === "accepted" ? intl.formatMessage({id: "modelServices.capabilities.accepted", defaultMessage: "Parameter accepted"}) : intl.formatMessage({id: "modelServices.capabilities.unknown", defaultMessage: "Unknown"})} · {check.detail}</li>)}</ul> : null}
+      <small>{intl.formatMessage({id: "modelServices.capabilities.fillNotice", defaultMessage: "Only empty fields are filled. Output suggestions exceeding the current context are skipped. Image input and reasoning levels remain editable in the model menu."})}</small>
+      <SettingsButton disabled={disabled || !canFill} onClick={() => { void controller.fillModelCapabilities(provider, modelId); }}>{intl.formatMessage({id: "modelServices.capabilities.fillSave", defaultMessage: "Fill empty fields and save"})}</SettingsButton>
+    </> : null}
+  </section>;
+}
+
 function ProviderDetail({ controller, provider }: { controller: ModelServicesController; provider: RuntimeProviderView }) {
   const { service } = controller;
   const snapshot = service.getSnapshot();
   const draft = controller.draft(provider);
   const speech = provider.configuration?.modelType === "asr";
+  const image = provider.configuration?.modelType === "image";
   const [showKey, setShowKey] = useState(false);
+  const [capabilityModel, setCapabilityModel] = useState<string | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const revision = controller.revision(provider);
   const conflict = draft.dirty && revision !== draft.revision;
@@ -136,8 +173,9 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   for (const model of draft.config.models) if (!models.has(model.id)) models.set(model.id, { ...model, name: model.name ?? model.id });
   const declarations = new Map(draft.config.models.map(model => [model.id, model]));
   const filtered = [...models.values()].filter(model => `${model.name} ${model.id}`.toLowerCase().includes(controller.modelQuery.toLowerCase()));
-  const defaults = snapshot.settings?.namespaces.find(entry => entry.ns === "agent-default-model")?.value as { provider?: string; model?: string } | undefined;
-  const isDefault = (model: string) => defaults?.provider === provider.provider && defaults.model === model;
+  const defaults = snapshot.settings?.namespaces.find(entry => entry.ns === (provider.configuration?.modelType === "image" ? "image-generation" : "agent-default-model"))?.value as { provider?: string; model?: string; defaultModel?: {provider: string; model: string} } | undefined;
+  const chosenDefault = image ? defaults?.defaultModel : defaults;
+  const isDefault = (model: string) => chosenDefault?.provider === provider.provider && chosenDefault.model === model;
   const testModel = models.has(draft.testModel) ? draft.testModel : models.keys().next().value ?? "";
   const change = (patch: Parameters<ModelServicesController["edit"]>[1], key?: string) => { controller.edit(provider, patch, key); };
   const noAuthentication = draft.config.authentication === "none";
@@ -151,7 +189,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     // RuntimeModelView is the final resolved capability (native answer,
     // declaration fallback, then conservative text). Show what Chat will use.
     const supportsImages = model.input?.includes("image") === true;
-    const capabilityEditable = !speech && provider.configuration?.modelDeclarations === true && declared !== undefined;
+    const capabilityEditable = !speech && !image && provider.configuration?.modelDeclarations === true && declared !== undefined;
     const capabilityPending = controller.isModelCapabilityPending(provider.provider, model.id);
     const declaredEfforts = declared?.reasoningEfforts;
     const reasoningEditable = capabilityEditable && (declaredEfforts !== undefined || !model.reasoning?.efforts.length);
@@ -161,11 +199,12 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
         : model.reasoning?.efforts.some(effort => effort.id === level)).map(([, label]) => label);
     return <div className="model-services__model" key={model.id}>
     <BrandMark kind="model" id={model.id} size={32} />
-    <div><strong>{model.name}</strong>{reasoningLabels.length ? <small>思考档位：{reasoningLabels.join("、")}</small> : null}</div>
+    <div><strong>{model.name}</strong>{declared?.contextWindow ? <small>{intl.formatMessage({id: "modelServices.capabilities.contextSummary", defaultMessage: "Context: {count} tokens"}, {count: declared.contextWindow.toLocaleString()})}</small> : null}{reasoningLabels.length ? <small>思考档位：{reasoningLabels.join("、")}</small> : null}</div>
     {isDefault(model.id) ? <span className="model-services__kind">默认</span> : null}
-    {speech ? <span className="model-services__kind">语音转写</span> : null}
+    {speech ? <span className="model-services__kind">语音转写</span> : null}{image ? <span className="model-services__kind">{intl.formatMessage({id: "modelServices.image", defaultMessage: "Image generation"})}</span> : null}
     {!speech ? <MoreActions label={`模型操作：${model.id}`}><small>{model.id}</small>
       {!speech ? <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || model.enabled === false || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close> : null}
+      {capabilityEditable && provider.configuration?.canInspectSaved ? <Popover.Close asChild><SettingsButton variant="quiet" disabled={!editable || draft.dirty} onClick={() => setCapabilityModel(model.id)}>{intl.formatMessage({id: "modelServices.capabilities.open", defaultMessage: "View and check capabilities"})}</SettingsButton></Popover.Close> : null}
       {capabilityEditable ? <div className="model-services-actions__toggle">
         <span><strong>图片输入</strong><small>允许在聊天时向该模型发送图片附件</small></span>
         {capabilityPending
@@ -194,7 +233,9 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   });
   const canTest = !!provider.configuration?.canCheckSaved && !!(draft.config.api ?? provider.configuration.defaultApi);
   return <div className="model-services__detail">
+    {capabilityModel ? <ModelCapabilityPanel key={`${provider.provider}/${capabilityModel}/${revision}`} controller={controller} provider={provider} modelId={capabilityModel} onClose={() => setCapabilityModel(null)} /> : null}
     {conflict ? <SettingsNotice tone="error">配置已在其他位置更新，当前输入保留。<SettingsButton onClick={() => controller.discard(provider)}>放弃输入并刷新</SettingsButton></SettingsNotice> : null}
+    {image ? <SettingsNotice>{intl.formatMessage({id: "modelServices.imageNotice", defaultMessage: "Used for image generation outside a Codex subscription. Subscription models retain their existing image service. Solid backgrounds and one reference image are currently verified."})}</SettingsNotice> : null}
     <section className="model-services__config" aria-label="提供商配置">
       <header><BrandMark kind="provider" id={provider.provider} size={24} /><h2>{provider.displayName}</h2>
         <MoreActions label="提供商操作">{provider.configuration?.canToggle ? <Popover.Close asChild><SettingsButton variant="quiet" disabled={!editable || (!provider.enabled && !provider.configured) || draft.dirty} onClick={() => { void controller.toggle(provider, !provider.enabled); }}>{provider.enabled ? "停用" : "启用"}</SettingsButton></Popover.Close> : <span className="model-services__managed">运行时管理</span>}</MoreActions>
@@ -213,7 +254,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
           <SettingsIconButton label={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</SettingsIconButton>
         </div>
       </div> : null}
-      <div className="model-services__row"><div><label htmlFor="model-service-url">{speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址"}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
+      <div className="model-services__row"><div><label htmlFor="model-service-url">{image ? intl.formatMessage({id: "modelServices.imageEndpoint", defaultMessage: "Full image service URL"}) : speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{image ? intl.formatMessage({id: "modelServices.imageEndpointHint", defaultMessage: "Enter the full Hunyuan Image v3.5 generation endpoint."}) : speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址"}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
       {canTest ? <div className="model-services__row"><div><label htmlFor="model-service-test-model">连通性检查</label><p>{draft.dirty ? "请先保存修改，再检查连接" : "使用已保存的连接和密钥发送文本请求，可能计费"}</p></div>
         <div className="model-services__checker"><SettingsSelect id="model-service-test-model" value={testModel} disabled={!editable} onChange={event => { draft.testModel = event.target.value; draft.probe = null; controller.notify(); }}>
           {!testModel ? <option value="">暂无可用模型</option> : null}{[...models.values()].map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
@@ -230,8 +271,9 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     {draft.probe ? <SettingsNotice tone={draft.probe.ok ? "neutral" : "error"}>{draft.probe.ok ? "已收到文本响应；不代表工具、图像或流式能力均已验证。" : draft.probe.error}</SettingsNotice> : null}
     <section className="model-services__models" aria-label="模型列表">
       <div className="model-services__model-heading"><h3>模型</h3><div>{searchVisible || controller.modelQuery ? <SettingsTextInput autoFocus aria-label="搜索模型" placeholder="搜索模型" value={controller.modelQuery} onChange={event => { controller.modelQuery = event.target.value; controller.notify(); }} /> : <SettingsIconButton label="搜索模型" onClick={() => setSearchVisible(true)}><Search size={16} /></SettingsIconButton>}
-        {!speech ? <SettingsButton disabled={!editable || draft.dirty} onClick={() => { if (provider.configuration?.modelDeclarations) void controller.fetchModels(provider); else void controller.run(async () => { await service.refresh(); controller.message = "模型目录已刷新"; }); }}><RefreshCw size={14} />{provider.configuration?.modelDeclarations ? "获取模型" : "刷新模型"}</SettingsButton> : null}
-        {provider.configuration?.modelDeclarations ? <CreatePopover label="添加模型" disabled={!editable || draft.dirty} onCreate={async name => { await controller.addModel(provider, { id: name }); if (controller.error) throw new Error(controller.error); }} /> : null}
+        {!speech && !image ? <SettingsButton disabled={!editable || draft.dirty} onClick={() => { if (provider.configuration?.modelDeclarations) void controller.fetchModels(provider); else void controller.run(async () => { await service.refresh(); controller.message = "模型目录已刷新"; }); }}><RefreshCw size={14} />{provider.configuration?.modelDeclarations ? "获取模型" : "刷新模型"}</SettingsButton> : null}
+        {provider.configuration?.modelDeclarations ? <CreatePopover label="添加模型" disabled={!editable || draft.dirty} onCreate={async name => { await controller.addModel(provider, { id: name }); if (controller.error) throw new Error(controller.error);
+          if (!speech && !image && provider.configuration?.canInspectSaved) { setCapabilityModel(name); void controller.inspectModel(provider, name, "metadata"); } }} /> : null}
       </div></div>
       {rows(true)}
       {filtered.some(model => model.enabled === false) ? <details><summary className="ui-native-disclosure">未启用模型</summary>{rows(false)}</details> : null}
@@ -258,11 +300,11 @@ export function createModelServicesView(controller: ModelServicesController) {
       <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />
-          <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />
+          <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} allowImage={!!snapshot.providers?.creation?.image} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />
         </div>
         {([ ["已启用", (p: RuntimeProviderView) => p.enabled], ["自定义", (p: RuntimeProviderView) => !p.enabled && p.declared], ["未启用", (p: RuntimeProviderView) => !p.enabled && !p.declared] ] as const).map(([title, filter]) => <details open={title !== "未启用" || !!controller.query || !!(selected && filter(selected))} key={title} hidden={!visible.some(filter)}><summary className="ui-native-disclosure">{title}</summary>{visible.filter(filter).map(providerRow)}</details>)}
       </aside>
-      <div className="model-services__main"><div className="model-services__mobile-select"><SettingsSelect aria-label="选择提供商" value={selected?.provider ?? ""} onChange={event => pick(event.target.value || null)}><option value="">全部提供商</option>{providers.map(provider => <option key={provider.provider} value={provider.provider}>{provider.displayName}</option>)}</SettingsSelect><CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} /></div>
+      <div className="model-services__main"><div className="model-services__mobile-select"><SettingsSelect aria-label="选择提供商" value={selected?.provider ?? ""} onChange={event => pick(event.target.value || null)}><option value="">全部提供商</option>{providers.map(provider => <option key={provider.provider} value={provider.provider}>{provider.displayName}</option>)}</SettingsSelect><CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} allowImage={!!snapshot.providers?.creation?.image} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} /></div>
         {snapshot.providers?.application?.state === "failed" ? <SettingsNotice tone="error">{snapshot.providers.application.error}<SettingsButton disabled={controller.busy} onClick={() => { void controller.run(()=>controller.service.reapply()); }}>重试应用</SettingsButton></SettingsNotice> : null}
         {snapshot.error ? <SettingsNotice tone="error">{snapshot.error}<SettingsButton onClick={() => { void controller.service.refresh(); }}>重试</SettingsButton></SettingsNotice> : null}
         {selected ? <ProviderDetail key={selected.provider} controller={controller} provider={selected} /> : <div className="model-services__overview"><h2>全部提供商</h2>{visible.map(providerRow)}{!providers.length ? snapshot.phase === "loading" ? <div className="model-services__pending" role="status" aria-label="正在加载提供商"><LoaderCircle aria-hidden="true" className="is-spinning" size={16} /></div> : <p>暂无提供商</p> : null}</div>}

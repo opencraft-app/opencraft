@@ -25,6 +25,8 @@ interface PendingRequest {
 
 export interface AppHostClientOptions {
   readonly controlTimeoutMs?: number;
+  /** Ambiguous release closes the bridge; Server cleanup still gates reacquisition. */
+  readonly releaseTimeoutMs?: number;
   readonly maxPendingRequests?: number;
 }
 
@@ -418,8 +420,14 @@ export class MessagePortAppHostClient {
       const timer = input.type === "host/send" ? null : setTimeout(() => {
         requests.delete(requestId);
         if (onLateResult) this.lateResults.set(requestId, onLateResult);
-        reject(new Error(`App Host ${input.type} timed out`));
-      }, this.options.controlTimeoutMs ?? 30_000);
+        const error = new Error(`App Host ${input.type} timed out`);
+        reject(error);
+        if (cleanup) {
+          // A missing ACK cannot leave a remote claim on a healthy-looking bridge.
+          // Closing it revokes every claim; the Server retains physical cleanup.
+          try { this.terminate(error); } catch { /* A raw close debt remains with the Port owner. */ }
+        }
+      }, (cleanup ? this.options.releaseTimeoutMs : undefined) ?? this.options.controlTimeoutMs ?? 30_000);
       const abort = () => {
         requests.delete(requestId);
         clearTimer();

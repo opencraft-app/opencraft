@@ -1,4 +1,6 @@
+import { INITIAL_TARGET_READINESS_FILE, selectInitialReadinessBudget } from '../server-deployment/initial-readiness-budget.mjs';
 import { verifyCurrentRecovery } from './recover-current.mjs';
+import { targetRecoveryInput, verifyFailedTarget } from './recover-target.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { upgradeBridge } from './full-upgrade.mjs';
 import { atomicJson as durableJson } from '../full-upgrade/durable.mjs';
@@ -100,6 +102,9 @@ function lease(worker) {
 }
 
 export async function createManagedWebServer({ initialRelease, stateDirectory, registry, channel, userconfig, publicOrigin,
+  administratorState = null,
+  reconcileExecutionOnStartup = true,
+  initialReadinessSelector = selectInitialReadinessBudget,
   appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, rollbackRecovery = null, recoveryMarker = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const relayIngress = createHeadlessBackendProxy(relayIngressTarget);
@@ -126,8 +131,21 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
   const keyPath = join(directory, 'admin-key');
   const workers = new Set(); const tunnels = new Set();
   let recovery = null;
-  let active; let persisted; let closed = false; let operation = null; let checking = null; let latest = null;
+  let active; let persisted; let closed = false; let retiring = false; let controlRequests = 0;
+  let operation = null; let checking = null; let latest = null;
   let checkedAt = null; let checkError = null; let checkErrorCode = null; const sessions = new Map(); let loginAttempts = [];
+  if (administratorState !== null) {
+    if (administratorState?.schemaVersion !== 1 || !Array.isArray(administratorState.sessions)
+      || administratorState.sessions.length > 1000 || !Array.isArray(administratorState.loginAttempts)
+      || administratorState.loginAttempts.length > 10
+      || administratorState.sessions.some(entry => !Array.isArray(entry) || entry.length !== 2
+        || !/^[a-f0-9]{64}$/.test(entry[0]) || !Number.isFinite(entry[1]) || entry[1] > Date.now() + 3600_000)
+      || administratorState.loginAttempts.some(value => !Number.isFinite(value) || value > Date.now())) {
+      await releaseLock(); throw new Error('Invalid administrator handoff state');
+    }
+    for (const [id, until] of administratorState.sessions) if (until > Date.now()) sessions.set(id, until);
+    loginAttempts = administratorState.loginAttempts.filter(value => value > Date.now() - 60_000);
+  }
   const environment = { OPENCRAFT_USER_PLUGIN_DIRECTORY: join(directory, 'user-plugins'), OPENCRAFT_RESOURCE_CACHE_DIRECTORY: process.env.OPENCRAFT_RESOURCE_CACHE_DIRECTORY || join(directory, 'resource-cache'),
     OPENCRAFT_NPM_REGISTRY: registry || process.env.OPENCRAFT_NPM_REGISTRY || 'https://registry.npmjs.org/',
     OPENCRAFT_NPM_USERCONFIG: userconfig || process.env.OPENCRAFT_NPM_USERCONFIG || '', OPENCRAFT_APPSERVER_URL: appServerTarget || '', OPENCRAFT_CODEX_APPSERVER_URL: codexServerTarget || '', OPENCRAFT_HYPERNODE_USER: hyperNodeUser };
@@ -163,11 +181,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       workers.add(worker);
       worker.child.once('exit', () => {
         workers.delete(worker);
-        if (closed || worker !== active || recovery) return;
+        if (closed || retiring || worker !== active || recovery) return;
         recovery = (async () => {
-          while (!closed && !active.alive) {
+          while (!closed && !retiring && !active.alive) {
             await new Promise(done => setTimeout(done, 250));
-            if (closed || active.alive) break;
+            if (closed || retiring || active.alive) break;
             const expected = active;
             try {
               const replacement = await startWorker(persisted.current, environment);
@@ -180,7 +198,15 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       });
     }
     await assertUserPluginCompatibility(current, await loadUserPlugins(environment.OPENCRAFT_USER_PLUGIN_DIRECTORY));
-    if (execution) await execution.apply(current);
+    if (execution) {
+      if (reconcileExecutionOnStartup) await execution.apply(current);
+      else {
+        await execution.inspect(current);
+        const observed = await execution.status();
+        if (!observed.ready || observed.version !== current.version || observed.buildId !== current.buildId)
+          throw new Error('Existing execution changed during entry handoff');
+      }
+    }
     active = await startWorker(current, environment); track(active);
     const cookieName = 'opencraft_web_admin';
     function authenticated(request) {
@@ -215,10 +241,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       catch (error) { if (!closed) { latest = null; checkError = error.message; checkErrorCode = ['authentication', 'network', 'unavailable', 'registry'].includes(error.code) ? error.code : null; } }
       finally { checkedAt = new Date().toISOString(); checking = null; }
     }
-    async function activate(release, job, rollback = false) {
+    async function activate(release, job, rollback = false, recoverTarget = false) {
       const candidate = await startWorker(release, environment); track(candidate);
       try {
-        if (execution) await execution.apply(release);
+        if (execution) await execution.apply(release, recoverTarget ? { recoverTarget: true }
+          : job.initialReadinessBudget ? { initialReadiness: job.initialReadinessBudget } : undefined);
         if (rollback && rollbackRecovery) await rollbackRecovery();
         if (closed) throw new Error('Deployment is stopping');
         const next = { schemaVersion: 1, current: release, previous: persisted.current, job: { ...job, phase: 'completed', error: null } };
@@ -292,6 +319,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         if (execution) await execution.inspect(release);
         child.manifestSha256 = release.fullRelease?.manifestSha256 ?? null;
         child.releaseId = release.fullRelease?.releaseId ?? child.releaseId;
+        if (!rollback) child.retainedRoot = release.releaseRoot;
         await childState('prepared');
         if (upgrade) {
           const observed = await upgrade({ action: 'page-status' });
@@ -301,7 +329,14 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             const stopped = new Error('upgrade-cancelled-at-safe-point'); stopped.code = 'UPGRADE_CANCELLED'; throw stopped;
           }
         }
+        if (!rollback && execution) {
+          const budget = await initialReadinessSelector(join(directory, INITIAL_TARGET_READINESS_FILE), release, job.id,
+            job.initialReadinessBudget ?? null);
+          if (budget) { job.initialReadinessBudget = budget; child.initialReadinessBudget = budget; }
+        }
         job.phase = 'starting'; persisted.job = { ...job };
+        // Persist the absolute attempt deadline before starting any candidate or execution lifecycle.
+        if (job.initialReadinessBudget) await writeDeploymentState(statePath, persisted);
         await childState('starting');
         await activate(release, job, rollback); activated = true;
         try { await childState('completed'); } catch { console.error('[opencraft update] Child receipt requires reconciliation'); }
@@ -390,6 +425,50 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             json(response, 202, { ok: true, jobId: persisted.job.id }); return;
           }
           if (operation || busy(persisted.job) || checking) { json(response, 409, { error: 'Another update operation is running' }); return; }
+          if (pathname === `${WEB_UPDATE_PATH}/recover-target`) {
+            if (!execution || !upgrade || !fullReleaseTrust || !targetRecoveryInput(persisted, input)) {
+              json(response, 409, { error: 'target-recovery-identity-mismatch' }); return;
+            }
+            if (recoveryMarker && existsSync(recoveryMarker)
+              && request.headers['x-opencraft-recovery-id'] !== readFileSync(recoveryMarker, 'utf8').trim()) {
+              json(response, 409, { error: 'Managed recovery maintenance is active' }); return;
+            }
+            const original = persisted;
+            // Reserve before the first await. The lifetime Web writer lock and
+            // fixed shared lifecycle flock exclude updates, handoffs and parents.
+            operation = (async () => {
+              const unlock = await upgrade.acquireRecoveryLock();
+              try {
+                const verified = await verifyFailedTarget({ directory, persisted: original, trust: fullReleaseTrust, input, upgrade,
+                  active: () => !closed && persisted === original });
+                await assertReleaseProfile(verified.release, original.current);
+                await execution.inspect(verified.release);
+                await verified.unchanged();
+                if (recoveryMarker && existsSync(recoveryMarker)
+                  && request.headers['x-opencraft-recovery-id'] !== readFileSync(recoveryMarker, 'utf8').trim())
+                  throw new Error('target-recovery-owner-changed');
+                // Preserve the original failure even after the same job commits.
+                const failure = original.job.failure ?? {
+                  job: { id: original.job.id, version: original.job.version, phase: original.job.phase, error: original.job.error },
+                  child: Object.fromEntries(['id', 'version', 'buildId', 'phase', 'manifestSha256', 'releaseId', 'startedAt', 'finishedAt']
+                    .map(key => [key, verified.child[key] ?? null])),
+                };
+                await activate(verified.release, { ...original.job, failure, targetRecoveryError: null }, false, true);
+                const completed = { ...verified.child, failure, phase: 'completed', finishedAt: new Date().toISOString() };
+                await durableJson(join(directory, 'upgrade-children', input.jobId + '.json'), completed);
+                try { await upgrade({ action: 'web-child', operationId: input.jobId }); } catch { /* durable receipt reconciles later */ }
+              } finally { await unlock(); }
+            })().catch(async () => {
+              // A committed activation followed by an uncertain child write is
+              // left unknown. Never overwrite that pointer or erase failed history.
+              if (persisted === original) {
+                persisted = { ...original, job: { ...original.job, targetRecoveryError: 'target-recovery-failed' } };
+                await writeDeploymentState(statePath, persisted);
+              }
+            }).catch(() => console.error('[opencraft update] Target recovery receipt requires inspection'))
+              .finally(() => { operation = null; });
+            json(response, 202, { ok: true, jobId: input.jobId }); return;
+          }
           if (pathname === `${WEB_UPDATE_PATH}/recover-current`) {
             // Reserve synchronously before any verification await. The server
             // already owns the deployment writer lock; updates/handoffs wait.
@@ -481,6 +560,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       request.pipe(upstream);
     };
     const handleUpgrade = (request, socket, head, internal = false) => {
+      if (retiring || closed) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
       let pathname;
       try { pathname = new URL(request.url || '/', 'http://localhost').pathname; }
       catch { socket.destroy(); return; }
@@ -509,14 +589,36 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         socket.pipe(upstream); upstream.pipe(socket);
       });
     };
-    const server = createServer((req, res) => { void handleRequest(req, res); });
+    const dispatchRequest = (req, res, internal = false) => {
+      if (retiring || closed) { res.setHeader('connection', 'close'); json(res, 503, { error: 'Entry generation retired' }); return; }
+      let control = false;
+      try {
+        const path = new URL(req.url || '/', 'http://localhost').pathname;
+        control = req.method === 'POST' && (path === WEB_UPDATE_PATH || path.startsWith(`${WEB_UPDATE_PATH}/`));
+      } catch { /* The normal handler returns the existing invalid-URL response. */ }
+      if (control) controlRequests++;
+      void handleRequest(req, res, internal).catch(() => {
+        if (!res.headersSent) json(res, 502, { error: 'Web request failed' }); else res.destroy();
+      }).finally(() => { if (control) controlRequests--; });
+    };
+    const server = createServer((req, res) => dispatchRequest(req, res));
     server.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head));
-    const internalServer = relayIngress ? createServer((req, res) => { void handleRequest(req, res, true); }) : null;
+    const internalServer = relayIngress ? createServer((req, res) => dispatchRequest(req, res, true)) : null;
     internalServer?.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head, true));
     return {
-      server, adminKeyPath: keyPath, internalAddress: () => internalServer?.address() ?? null,
-      async listen({ host = '127.0.0.1', port = 10000 } = {}) {
-        if (internalServer) await new Promise((accept, reject) => { internalServer.once('error', reject); internalServer.listen(relayInternalPort, '127.0.0.1', () => { internalServer.off('error', reject); accept(); }); });
+      server, internalServer, adminKeyPath: keyPath, internalAddress: () => internalServer?.address() ?? null,
+      async deactivate() {
+        if (closed || retiring || operation || recovery || checking || controlRequests || busy(persisted.job))
+          throw Object.assign(new Error('Entry is busy'), { code: 'entry-busy' });
+        // No await between closing admission and observing outstanding writers.
+        // Existing backend tunnels and already-admitted HTTP responses survive.
+        retiring = true;
+        try { await releaseLock(); }
+        catch (error) { retiring = false; throw error; }
+        return { schemaVersion: 1, sessions: [...sessions], loginAttempts: [...loginAttempts] };
+      },
+      async listen({ host = '127.0.0.1', port = 10000, internalPort = relayInternalPort } = {}) {
+        if (internalServer) await new Promise((accept, reject) => { internalServer.once('error', reject); internalServer.listen(internalPort, '127.0.0.1', () => { internalServer.off('error', reject); accept(); }); });
         return new Promise((accept, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); accept(server.address()); }); });
       },
       async close() {

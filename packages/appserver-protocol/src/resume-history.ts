@@ -49,6 +49,8 @@ export interface AppServerThread {
 }
 
 export interface ThreadTurnsListRequest {
+  /** Bounded latest headers only; requires read-history sourceRead. */
+  sourceRead?: true;
   threadId: string;
   /** Only with read-history itemDetails; never forwarded to native. */
   detailItemId?: string;
@@ -59,6 +61,8 @@ export interface ThreadTurnsListRequest {
 }
 
 export interface ThreadItemsListRequest {
+  /** Bounded latest items only; requires read-history sourceRead. */
+  sourceRead?: true;
   threadId: string;
   turnId: string;
   cursor: string | null;
@@ -137,4 +141,22 @@ export function buildResumeHistoryRequest({
         }
       : {}),
   };
+}
+
+/** Sparse committed display facts. Omitted Turns/Items are retained; this is
+ * neither a history page nor an execution notification. */
+export interface ThreadHistoryVersion {
+  epoch: string;
+  revision: number;
+}
+
+export interface ThreadHistoryUpdate {
+  /** Exact transaction coverage; absent only on legacy providers. */
+  baseVersion?: ThreadHistoryVersion | null;
+  version?: ThreadHistoryVersion;
+  metadata?: Partial<AppServerThread>;
+  turns: { turn: AppServerTurn; completedItemIds: string[]; latest: boolean; itemOrder?: string[] }[];
+  removedTurnIds: string[];
+  removedItems: { turnId: string; itemId: string }[];
+  turnOrder?: string[];
 }

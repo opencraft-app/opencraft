@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
 import type { BrowserPageId } from '@opencraft/browser-core';
+import { AdaptiveInputWindow } from '@opencraft/remote-interaction';
 
 test('transferred viewer stops retries and implicit navigation; explicit reload takes over', async t => {
   const sockets: FakeSocket[] = [];
@@ -18,14 +19,17 @@ test('transferred viewer stops retries and implicit navigation; explicit reload 
     } }) }); }
   }
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const originals = new Map(['WebSocket', 'window', 'location'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const originals = new Map(['WebSocket', 'window', 'location', 'VideoDecoder', 'EncodedVideoChunk'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: FakeSocket });
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
   Object.defineProperty(globalThis, 'location', { configurable: true, value: { href: 'https://example.test/' } });
+  // Existence must not override the explicitly selected MSE decoder.
+  Object.defineProperty(globalThis, 'VideoDecoder', { configurable: true, value: {} });
+  Object.defineProperty(globalThis, 'EncodedVideoChunk', { configurable: true, value: class {} });
   const errors: string[] = [], events = { onError: (value: string) => errors.push(value), onLoaded() {}, onNavigation() {} };
-  const host: any = new RemoteBrowserSurfaceHost({ getItem: () => null, setItem() {} }, 'proof');
+  const host: any = new RemoteBrowserSurfaceHost('mse', { getItem: () => null, setItem() {} }, 'proof');
   const id = 'page-owned' as BrowserPageId;
-  const p: any = { control: {epoch:0,active:false,controller:false,kind:null}, controlGeneration:0, lease: 'browser-12345678901234567890', connection: 0, closed: false, displaced: false,
+  const p: any = { inputPolicy: new AdaptiveInputWindow(), control: {epoch:0,active:false,controller:false,kind:null}, controlGeneration:0, lease: 'browser-12345678901234567890', connection: 0, closed: false, displaced: false,
     viewportMeasured: false, pending: new Map(), retries: 0, events, visible: true,
     navigation: 0, url: 'https://example.test/live' };
   // Exercise real connection and navigation; media/DOM teardown is independent.
@@ -37,6 +41,7 @@ test('transferred viewer stops retries and implicit navigation; explicit reload 
     p.ready = host.connect(p); sockets[0].onopen?.();
     assert.equal(sockets[0].sent[0].input.multiView, true);
     assert.equal(sockets[0].sent[0].input.documentInput, true);
+    assert.equal(sockets[0].sent[0].input.mediaStage, 'received');
     assert.equal(sockets[0].sent[0].input.takeover, undefined);
     sockets[0].result(); await p.ready;
     assert.equal(p.document, 'doc-open-1');
@@ -99,6 +104,7 @@ test('attaching a modern blank tab cannot replay stale client URL or acquire inp
 test('native connection waits for durable metadata and a failed or abandoned flush cannot start it', async () => {
   const host: any = Object.create(RemoteBrowserSurfaceHost.prototype);
   let finish!: () => void, attempts = 0;
+  host.admitted = () => true;
   host.storage = { flush: () => new Promise<void>(resolve => finish = resolve) };
   host.inputFailed = false;
   host.connectTransport = async () => { attempts++; };

@@ -5,6 +5,7 @@ export class ThreadPinningResource {
   private revision = 0;
   private readonly writes = new Map<string, Promise<void>>();
   private supported = false;
+  private readOperation: Promise<ThreadPinsSnapshot> | null = null;
   constructor(private readonly port: {
     read(): Promise<unknown>;
     write(threadId: string, pinned: boolean): Promise<{ pinned: boolean }>;
@@ -13,7 +14,18 @@ export class ThreadPinningResource {
   available() { return this.port.current() && this.supported; }
   private assertCurrent() { if (!this.port.current()) throw new Error("会话连接已改变，请刷新列表后重试"); }
 
-  async read(): Promise<ThreadPinsSnapshot> {
+  read(): Promise<ThreadPinsSnapshot> {
+    if (this.readOperation !== null) return this.readOperation;
+    // Catalog consumers share a pending discovery, not a cached authority.
+    // Install ownership before invoking the port or any mutation observers.
+    const operation = Promise.resolve().then(() => this.readCurrent()).finally(() => {
+      if (this.readOperation === operation) this.readOperation = null;
+    });
+    this.readOperation = operation;
+    return operation;
+  }
+
+  private async readCurrent(): Promise<ThreadPinsSnapshot> {
     for (;;) {
       this.assertCurrent();
       await Promise.all(this.writes.values());

@@ -195,3 +195,18 @@ test("discard and explicit APP recovery exclude each other throughout asynchrono
     } finally { release?.(); await f.close(); }
   }
 });
+
+
+test("health observes the existing execution owner and never starts a failed environment", async () => {
+  const f = await fixture();
+  try {
+    const starts = f.starts.length;
+    assert.ok(await f.runtime.inspectHealth("old"));
+    f.beforeInspect(async () => {throw Error("Execution environment unavailable");});
+    await assert.rejects(f.runtime.inspectHealth("old"), /Execution environment unavailable/);
+    assert.equal(f.starts.length, starts);
+    f.beforeInspect(async () => {});
+    assert.ok(await f.runtime.inspectHealth("old"));
+    assert.equal(f.starts.length, starts);
+  } finally {await f.close();}
+});

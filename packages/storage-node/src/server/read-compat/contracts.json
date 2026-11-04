@@ -1,0 +1,44 @@
+{
+  "sourceRevision": "04a33a5e298bf97e3f67d058c5f621694d5d13ea",
+  "baseVersion": 5,
+  "baseHash": "729e4e03a328d1d341b5c9b890ad0888d5161ddf3d1d45fe52c828612fdbc1bb",
+  "targetHash": "2a9a0a2efbba087aa36255f2c4e2024e1d41a2b4d8031936d21682a77a43c771",
+  "migration": {
+    "tag": "0005_mushy_karma",
+    "when": 1793597320124,
+    "version": 6,
+    "sqlChecksum": "03afd1d25a011359bcc3e5c6502219d0fcdb51fc23fbf941dd9e6cd5bdc31cc5",
+    "snapshotChecksum": "c79bf94bffde495c7231fef078b3cb14f8041603cc726b608c2bfd7abcacf922",
+    "compiledChecksum": "03afd1d25a011359bcc3e5c6502219d0fcdb51fc23fbf941dd9e6cd5bdc31cc5"
+  },
+  "nextSourceRevision": "3c62eca00d67e6111b82963430cc97d011ecbbde",
+  "nextMigration": {
+    "tag": "0006_serious_stellaris",
+    "when": 1793628615643,
+    "version": 7,
+    "sqlChecksum": "5ed14c4742eb465e869a7a4d0c745cb6ca74bf65688fe29dae14a02ab3c967ef",
+    "snapshotChecksum": "4499c0cfdac9592f3ffec89d096d2e65e23161536af531856b199e7d4f09c8bd",
+    "compiledChecksum": "5ed14c4742eb465e869a7a4d0c745cb6ca74bf65688fe29dae14a02ab3c967ef"
+  },
+  "nextHash": "b5238d550289e111e1f94d0212f4273a34768ec26de6fc195ec3906258d539dd",
+  "onceTierMigration": {
+    "tag": "0007_harsh_marten_broadcloak",
+    "when": 1793659788045,
+    "version": 8,
+    "sqlChecksum": "09831bdb3629047ff3d91d398f223941d43070a381b29496756561f00b18a83b",
+    "snapshotChecksum": "2f3cf6d232b62efa4bf12d06b906afca71a928512b7c897d90104cd5d0113bff",
+    "compiledChecksum": "09831bdb3629047ff3d91d398f223941d43070a381b29496756561f00b18a83b"
+  },
+  "onceTierHash": "97c64637c06de25f823e48159ea2223932324c708b363443d5ea1ad767af3fd3",
+  "onceTierBaseSourceRevision": "d50ec464a2d4e5d8f62d957c6c00456415adb2c4",
+  "attachmentMigration": {
+    "tag": "0008_cli_message_attachments",
+    "when": 1793780000202,
+    "version": 9,
+    "sqlChecksum": "ffe38aa4f850baf59fbb7311fa014921fd7a1c291cd8d41bae420a389bbd28a8",
+    "snapshotChecksum": "05c815425a9774b8421de91c75d0286f8c9837144d956596debba27a3d066111",
+    "compiledChecksum": "ffe38aa4f850baf59fbb7311fa014921fd7a1c291cd8d41bae420a389bbd28a8"
+  },
+  "attachmentHash": "249d8d23ecd441b2872c2e508c7413ec249f79cf7f3ddaaf9dfb05df4fcc295e",
+  "attachmentBaseSourceRevision": "27a29eb65756ac417e0c0245da1262d8f302c082"
+}

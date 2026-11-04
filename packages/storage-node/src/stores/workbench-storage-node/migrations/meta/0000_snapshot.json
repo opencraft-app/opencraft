@@ -1,0 +1,236 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "b3e0b9a9-1c30-44de-b12a-6cbbe3c81064",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "resource_imports": {
+      "name": "resource_imports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "resource_legacy_heads": {
+      "name": "resource_legacy_heads",
+      "columns": {
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "resource_mutations": {
+      "name": "resource_mutations",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "resource_mutations_owner_seq": {
+          "name": "resource_mutations_owner_seq",
+          "columns": [
+            "owner",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "legacy_unique_resource_mutations_1": {
+          "name": "legacy_unique_resource_mutations_1",
+          "columns": [
+            "owner",
+            "id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "resource_records": {
+      "name": "resource_records",
+      "columns": {
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "collection": {
+          "name": "collection",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "page_ref": {
+          "name": "page_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_ref": {
+          "name": "lease_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scope_ref": {
+          "name": "scope_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "resource_records_scope": {
+          "name": "resource_records_scope",
+          "columns": [
+            "owner",
+            "collection",
+            "scope_ref"
+          ],
+          "isUnique": false
+        },
+        "resource_records_lease": {
+          "name": "resource_records_lease",
+          "columns": [
+            "owner",
+            "collection",
+            "lease_ref"
+          ],
+          "isUnique": false
+        },
+        "resource_records_page": {
+          "name": "resource_records_page",
+          "columns": [
+            "owner",
+            "collection",
+            "page_ref"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "resource_records_owner_collection_id_pk": {
+          "columns": [
+            "owner",
+            "collection",
+            "id"
+          ],
+          "name": "resource_records_owner_collection_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "resource_records_check_0": {
+          "name": "resource_records_check_0",
+          "value": "revision>0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

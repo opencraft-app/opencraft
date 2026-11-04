@@ -12,7 +12,7 @@ import { ThreadIdentity, assertSubmissionIdentity, identityRecord as record, rea
 
 const clientId = (message: IdentityRecord): string => typeof message[LOGICAL_CLIENT_FIELD] === "string" ? message[LOGICAL_CLIENT_FIELD] as string : "";
 const requestKey = (message: IdentityRecord): string => JSON.stringify([clientId(message), typeof message.id, message.id]);
-const mutations = new Set(["thread/start", "thread/fork", "turn/start", "turn/steer", "thread/queue/add"]);
+const mutations = new Set(["thread/start", "thread/fork", "turn/start", "turn/steer", "thread/queue/add", "thread/goal/set", "thread/goal/clear"]);
 const submissions = new Set(["turn/start", "turn/steer", "thread/queue/add"]);
 
 /** Hub-side overlay for a native AppServer socket. Does not open or restart engine stores. */

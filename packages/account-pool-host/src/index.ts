@@ -11,3 +11,4 @@ export * from "./store.js";
 export * from "./codex-account-service.js";
 export * from "./codex-writer-lock.js";
 export * from "./codex-core-control.js";
+export * from "./account-diagnostics.js";

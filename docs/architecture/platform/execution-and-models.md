@@ -423,14 +423,25 @@ The shared local or SSH Codex product adapter observes newly created durable Thr
 one background title attempt after their first accepted text input. It uses the existing initialized AppServer connection for a
 private
 ephemeral Thread, a structured `turn/start` result, then `thread/name/set` on the
-original Thread. Actual `model/list` availability selects Luna, then mini; it
-never changes the conversation model or creates a second credential owner.
-A missing small model, invalid result, error or 30-second deadline preserves the
-existing preview. Existing/resumed/forked Threads are not bulk renamed.
+original Thread. Built-in `openai` and `opencraft-account-pool` routes use actual
+`model/list` availability to select Luna, then mini. Explicit custom providers use
+the original Thread's listed model and provider, selecting a declared low/minimal
+reasoning effort or another supported value. No available custom model means no
+inference, with no subscription or cross-provider fallback. This never changes
+the conversation model or creates a second credential owner.
+A missing model, invalid result, error or 30-second deadline preserves the
+existing preview. Explicit resume of an untitled custom Thread arms one attempt
+after its next accepted text input, using its original preview where available.
+Existing/resumed subscription and forked Threads are not retrospectively titled;
+there is no bulk history rename.
 
 The Host owns at most two simultaneous inference turns and 32 pending jobs; a
 View disconnect does not cancel title generation. Inference has no project
 documents, tools, plugins, hooks, memory, search or runtime workspace roots.
+Its configuration also disables image generation, image viewing, goals and
+interactive input tools; the custom model decorator preserves explicit image
+generation disablement. Cached name reads use a non-empty native name first and
+the native preview as their display fallback, without persisting a fallback name.
 Private frames do not enter the conversation UI, completion notifications or
 product metadata indexes. Cleanup interrupts only an unfinished private turn
 and unsubscribes its ephemeral Thread. Host disposal cancels all pending work.
@@ -538,6 +549,54 @@ and [session capabilities](../../session-capabilities.md).
 
 Headless connector reads use the selected browser server context. Polling owns state and pending approvals; a successful read only invalidates managed configuration when supported definitions or instances change. Management views retain and release their Host subscription independently of background connection/approval synchronization. List reads coalesce while in flight and support cancellation; a configuration invalidation during a read schedules at most one subsequent read. Authentication failure revokes earlier requests across Hosts and backs off recovery; stale rejections cannot invalidate a newer successful response. Origin/protocol or resource denial clears only the affected Host and waits for an explicit retry. Mutations are never automatically replayed.
 
+
+### Session MCP configuration and first input
+
+A durable Thread may be loaded before its first rollout exists. Install the
+session MCP credential in `thread/start`; do not use `thread/resume` to configure
+that first input. Creation reserves an opaque, in-memory credential, and the
+Host binds it once to the exact Thread, input and attested execution before
+native dispatch. MCP tool discovery can wait for that binding; unbound or
+cancelled credentials cannot invoke capabilities. Domain providers still
+reauthorize every call. Completion and connection retirement revoke the
+creation reservation; later inputs receive their own execution configuration.
+
+A settled native `systemError` can retire and reload its tools. Preserve the
+live settings once, unsubscribe once, and confirm `notLoaded` before applying
+new configuration. While retirement is pending, history recovery must not
+rejoin the old native runtime and restart its unload countdown. Active Turns
+remain protected. A pending tool refresh is an explicit rejected input, not an
+unknown execution and not an instruction to replay user input automatically.
+
+Host adapters may preserve a mutation's uncertain acknowledgement with
+`error.data.submissionOutcome = "unknown"`. Clients retain the input for
+reconciliation rather than treating that error as a definitive rejection.
+Read/resume preflight failures do not imply the later mutation was dispatched.
+Missing Threads use the stable `error.data.code = "THREAD_NOT_FOUND"` contract;
+translated or redacted error text is diagnostic presentation, not classification.
+
+Creation credential reservation is followed by a final logical-client admission check. A retired creator cannot send a late Thread creation, and a failed send revokes its reservation. History recovery never replaces an in-flight input-scoped tool refresh with a session-only refresh.
+
+Tool preparation preserves the same missing/archived Thread classification as direct RPCs, including native legacy messages, while returning fixed redacted presentation text. An unavailable Thread is never a retryable tool-retirement wait.
+
+Tool-preparation errors expose a bounded `error.data.stage`, `reason`, `nativeCode`
+and opaque `diagnosticId`. The displayed error includes the same stage/reason and
+reference ID as the `session-mcp-preparation-failed` Host diagnostic, which also
+identifies the Thread and input when available. Busy Threads report that the
+previous Turn is still active. Only controlled local failure reasons and known
+native status values are exposed; raw native exception text, credentials, MCP
+configuration and environment values are omitted. These diagnostics preserve
+missing/archived classification, recovery retryability and rejected-input semantics;
+they do not authorize automatic replay.
+
+Host queue dispatch uses `RecoveryNotSubmitted` for tool-preparation failures before the final native write. Only failures after dispatch can retain an unknown execution claim.
+
+### 会话工具刷新与原生异步卸载
+
+原生 `thread/unsubscribe` 释放订阅，运行实例仍由原生延迟回收；成功返回不代表工具配置已经可以重新载入。执行级工具刷新保留原设置和执行身份，单次释放后在当前准备事务内有界等待 `notLoaded`，再载入该输入的配置。等待期间队列状态检查不能恢复该 Thread，前台重新打开也不能用无执行身份的配置替换它；历史只读仍沿既有隔离读取路径。
+
+工具准备等待不计入物理发送计时。内部队列在准备完成、取消和准入复核之后才创建原生发送事务；客户端单次启动回复预算覆盖最长九十秒的准备等待。超时、断线或身份失效时保留明确的未发送结果，不自动重放输入。工具重新配置与上一条模型回复的恢复是不同状态，错误文字不得混淆两者。
+
 ### Responses stream completion and account-owner handoff
 
 A successful `/v1/responses` SSE stream ends at a complete JSON data record
@@ -561,6 +620,10 @@ bridge, no historical uncertainty is removed, and installing a Web package does
 not replace an independently running account Core. Owner handoff must separately
 preserve its exact historical uncertainty list.
 
+
+### 工具准备后未发送执行的收尾（2026-10-29）
+
+工具准备期间创建的execution lease仍为pending，不能据此显示为已有原生Turn。发送前工具准备失败、逻辑连接代次失效、执行身份失效或最终发送准入撤销时，适配器必须通过既有租约owner将未发送pending标为rejected；不得只return留下永久待执行。调用进入物理传输后出现错误时仍按unknown或原生ACK/terminal对账，不得以页面断连推断模型未执行，也不得自动重放输入。stdio传输适配器回归覆盖等待准备时的断连和失败；此前模型容量、工具退休与本项发送前租约收尾分别取证。
 ## Advisory service tier capability
 
 Capability lookup reuses recent successful pages from the same runtime Host (preferring the Thread scope), with a two-second total pre-send budget. An uncached catalog request has a 1.8-second timeout. Submission includes a selected service tier only when the resolved model catalog declares it. Catalog failures or missing models omit the tier and leave model and reasoning validation to the Host. An explicit model-selection policy rejection and cancelled dispatch still block submission. Unsupported tiers are omitted silently without changing the saved preference.
@@ -705,6 +768,109 @@ configuration and environment values are omitted. These diagnostics preserve
 missing/archived classification, recovery retryability and rejected-input semantics;
 they do not authorize automatic replay.
 
+Router maintenance reads complete account Core owner proofs with a bounded
+16 MiB response budget. Historical unknown records are preserved in full; a
+proof above that limit is rejected rather than truncated or treated as idle.
+
+### Stored history read and write scheduling
+
+The managed Server history owner uses one writer worker and one read-only WAL
+worker. It owns dependency tracking across all logical handles of a history
+scope. A conversation read waits for writes accepted for that conversation
+before its admission; unrelated conversation writes do not hold the read-only
+worker. Scope-wide reads, including directory and search reads, conservatively
+wait for accepted writes in their scope. This is execution isolation within one
+installation owner, not a new source of history authority.
+
+Live observations register their dependencies before yielding. Synchronous
+history adapters retain their transport-local FIFO. Native content imports keep
+the existing source fences and ordered persistence path; initialization and
+collaboration control receipts retain their independent authorization checks.
+
+The read-only connection cannot initialize scopes or lazily migrate legacy
+models. The writer initializes each scope, and a read requiring legacy model
+preparation explicitly waits for writer preparation before taking a fresh read
+snapshot. Read results retain epoch/revision and are reauthorized before
+publication. Closing a logical handle drains its accepted work without closing
+other handles; closing the Server owner drains both workers before releasing the
+installation lock.
+
+Slow history work records dependency wait separately from worker queue time,
+execution time and SQLite contention retry time/count. Diagnostics contain no
+conversation content or identity. These measurements do not replace end-to-end
+client request timing.
+
+
+### Paged directory snapshots and live status facts
+
+The paged directory QueryClient stores source snapshots. Its existing live-fact
+journal projects committed directory changes and execution-owner status over
+those pages, including facts for rows not loaded yet. Canonical catalog status
+patches and raw execution status notifications feed that same projection;
+active journal-backed readers do not cancel or invalidate their metadata pages
+for a known status change. Legacy consumers and unknown directory mutations
+retain their reconciliation path. Access revocation still removes cached rows
+and pending directory facts through the authorization-scoped owner.
+
+A local read-start sequence is only an ordering boundary, not proof that the
+Server snapshot contains every earlier fact. A fact is acknowledged only when
+the raw snapshot covers its row and values; absence can acknowledge removal
+only for a complete directory. The journal never folds its overlay into raw
+query pages to acknowledge its own output. Thus an early page cannot discard a
+status patch for a later page, and stale metadata cannot settle a live status.
+
+### Shared thread directory projection
+
+`app-host-server/thread-directory` owns metadata synchronization, not native
+execution, content history, credentials, database paths or a borrowed connection's
+lifecycle. Codex retains its existing durable Host-state owner. DSH retains its
+manual title, archive and configuration authority documents and migrates separate
+indexed projection tables. Source scans do not write those authority documents;
+local committed overrides compose into the projection. Legacy documents seed it
+once at startup and remain authoritative even when native discovery omits them.
+Advanced filters retain their previous compatibility path.
+
+EngineHost partitions disposable projections by engine and admitted logical
+reader. Each partition reconciles independently; a successful source cannot
+remove another source's rows, and a slow source does not hold ready siblings.
+Paging merges bounded indexed keyset reads rather than repeating full native
+scans. Connections revoke and close these projections with their owning reader;
+a cached directory never grants execution or read authorization.
+
+A source scan is single-flight. Native I/O precedes a short projection transaction;
+new observations and tombstones fence late results. Incremental watermark early
+stop is opt-in; absence reconciliation requires a successful full scan with
+complete coverage. Equal normalized metadata produces no row write, content
+revision or content event. Committed deltas use the existing catalog protocol;
+readiness/coverage remains separate from content revision. Owner-bound cursors
+survive ordinary content changes but cannot cross owner incarnations.
+
+Turn notifications coalesce dirty thread metadata reads. They neither read
+history nor infer execution status; observed execution status, including facts
+received before directory discovery, survives later metadata reads. The memory
+dirty queue is disposable: restart performs source reconciliation, not durable
+outbox replay. Closing revokes late source continuations before storage closes.
+
+Only Hosts advertising `opencraft/thread-directory-updates` v1 allow Web readers
+to suppress raw turn-driven directory invalidation. Other Hosts retain fallback.
+Warming/degraded coverage cannot acknowledge absent rows or declare a complete
+empty directory. Known rows remain visible and the reader reconciles readiness.
+The history compatibility projection consumes canonical metadata increments;
+catalog removal hides directory membership without deleting content history.
+DSH/EngineHost/Codex process activation remains a separate managed owner handoff.
+
+DSH dirty metadata uses one fresh native summary scan per coalesced batch, rather
+than reading the adapter's potentially old summary cache for each thread.
+EngineHost consumes source canonical increments directly with revision fences,
+so a late cached metadata reply cannot undo a newly published source fact.
+
+Projection reconciliation commits at most 128 rows per transaction and yields to
+the event loop between batches; no SQLite transaction spans the yield. Source
+I/O must finish successfully before reconciliation can remove absent rows.
+Coverage becomes ready only after all batches finish. Failed later batches keep
+committed facts and mark coverage degraded; manual observations between batches
+continue to fence old staged values.
+
 ### Recovering definitely unsent session inputs
 
 Tool preparation marks only controlled transient reasons (busy Thread, retired or
@@ -723,3 +889,40 @@ wakeup; permanent preparation errors pause for explicit correction. A new queued
 preparation may finish abandoned retirement after the previous owner exits,
 without an observation `thread/resume` reviving the old runtime. Lost native send
 acknowledgements remain `unknown` and never schedule a resend.
+
+For a Codex `turn/start` with both model and reasoning effort explicitly resolved,
+the gateway checks current policy directly using native override precedence,
+without nested discovery inside submission. Partial selections still resolve
+Thread defaults and denials still obtain catalog alternatives. The native adapter
+rechecks policy at final admission. Auxiliary title turns also submit their chosen
+model explicitly.
+
+Private title requests are identified by Host-owned internal RPC admission and the
+private inference Thread, never by a caller's analytics label alone. They do not
+acquire execution leases, session MCP credentials, collaboration delegation or
+product dynamic tools, and do not invoke conversation-started callbacks. They
+inherit their explicit reasoning-summary configuration rather than the product's
+normal chat summary default. Usage accounting and model-policy admission remain
+in place. Failure diagnostics record only the closed processing stage, including
+deadline failures, without prompts or upstream errors.
+
+The private Thread still obeys native execution-environment admission. Local Hosts
+supply their runtime directory as an absolute cwd; SSH falls back to the source
+Thread's native cwd. A missing workspace preserves the preview. No workspace roots,
+project documents, product credentials or tools are added by this selection.
+Passing null cwd is incompatible with a sandbox owner that requires an explicit
+workspace, even when no tools will be used.
+
+
+### Stored history and passive interaction watches
+
+A successful authorized stored `thread/read(watch=true)` establishes a passive
+interaction reader before replying. Native history reconciliation runs independently:
+its latency or failure must not cause `opencraft/interactions/read` to reject that
+reader. The optional in-process `DuplexTransport.watchConversation` port carries
+this admission through local transport decorators, including lazy machine startup.
+It carries a live owner check, never a wire field or an execution grant. Each read
+and notification rechecks the current watch and ACL; unsubscribe, logical disconnect,
+reinitialization and owner closure revoke the registration. Native read replies
+arriving after unsubscribe cannot establish a confirmed reader. Providers without
+this local port retain their existing native subscription contract.

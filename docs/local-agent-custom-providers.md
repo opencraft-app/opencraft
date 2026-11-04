@@ -170,3 +170,78 @@ omission in the client read projection so round-trip saves keep inherited semant
 ## 不需要 API Key 的本地接口
 
 支持此能力的 Host 会在 OpenAI 兼容连接表单提供“无需鉴权”开关。填写明确的 API 基础地址，开启该项，保存连接、添加/获取模型并启用；仍需显式选择模型或设为默认。无需填写占位 Key；已保存 Key 和环境 Key 都不会发送。关闭该模式后须明确提供鉴权方式，不自动恢复旧凭据。原生提供商、OAuth 和语音连接不提供这个选项。详见[模型配置所有权](../design/model-configuration.md#显式免鉴权连接)。
+
+
+## Model capability inspection
+
+Hosts declaring `configuration.canInspectSaved` expose **查看与检测模型能力** on a
+saved chat model's action menu. Adding a model opens that panel and fetches metadata.
+The panel edits context/output limits, fetches known capabilities, and optionally
+verifies the endpoint. The current model-service repository remains the only
+configuration owner; no separate Codex model database is created.
+
+`runtime/models/inspect` accepts only saved provider/model IDs, expected revision,
+and `mode: metadata | verify`. The Host resolves and rechecks the committed endpoint
+and credentials. `/models` declarations have priority over the public models.dev
+catalog; exact deployment matches precede an explicitly prefixed vendor/model
+reference. Reference limits can differ from a relay deployment and are labeled.
+Public catalog requests never receive provider credentials. Catalog fetches are
+bounded, redirect-free, timed out, cached in memory for one hour, and do not invoke
+a model. Failed lookups leave fields unknown.
+
+Verification sends only project-owned synthetic text/image fixtures and six effort
+parameters, at most eight inference requests with concurrency limited to two.
+It has a 25-second overall network deadline and no retries. Text/image checks
+require the expected answer. Reasoning checks report parameter acceptance and
+returned reasoning-token counts; they do not establish distinct compute budgets.
+Failure means unknown, not unsupported. Short probes never establish a maximum
+context window. Results are bound to the checked revision and stay read-only until
+**补全空值并保存**. Existing values, including explicit text-only or disabled
+reasoning, are preserved. Incompatible length suggestions are skipped. Manual
+length changes use the existing provider CAS; new Codex sessions consume the new
+budget. Old loaded sessions can retain their creation settings.
+
+The UI keeps connection drafts across late capability-save replies, invalidates
+stale evidence, and displays each suggested field's source. Evidence is transient;
+only selected configuration values are persisted by the original owner. See
+`tests/execution/model-capability-inspection.test.ts` and
+`scripts/smoke/extensions/smoke-model-capabilities.ts`.
+
+Headless attaches `ModelCapabilityTransport` to its admitted model-service Host
+transport. It augments discovery and serves this read-only method from the same
+configuration/credential repositories even when the independent execution engine
+has not been upgraded. Execution/settings writes still use the existing engine
+owner; enabling inspection does not restart or replace that owner. Logical-client
+routing and transport submission context are preserved.
+
+Reasoning probe results and suggested effort-map keys use canonical level order,
+independent of parallel response completion. A new declaration therefore cannot
+change its initial effort merely because another probe returned first.
+
+## 非订阅 Codex 原生图像生成
+
+模型服务可以创建“图像生成”连接，配置混元 Image v3.5 完整接口、凭据和 deployment ID，再把其中一个已启用模型设为生图默认。生图选择独立于聊天/推理模型与思考档位；推理模型负责工具调用，图像服务负责生成。仅装配了自定义 Responses 网关的非订阅路径消费该选择。订阅/账号池的图片路由、凭据和配额保持原 owner，不发生跨路径回落。
+
+图像配置由 Host 的 ImageGenerationConfiguration 持有，放在同一 models 目录的 image-generation.json（独立 revision/CAS），密钥复用 ModelCredentialRepository。此应用能力不投影到文本执行引擎，因而不要求独立 DSH/Core 随 Web 包升级。设置协议通过 image-generation 命名空间和既有 providers/models 命令读写；图像模型只加入 includeDisabled 管理目录，不进入普通聊天模型目录或聊天默认。删除/停用不悄悄替换原生图像默认，执行时明确不可用。
+
+自定义模型创建/恢复时，只有已配置生图服务、且聊天模型明确支持图片输入，才开启原生 image_gen。当前固定 Codex 0.162.1 通过受控 loopback actor 网关配置识别原生工具；本地 Bearer 与 actor 值仅用于本地校验，绝不转交供应商。该识别属于版本相关实现，升级须回归，不能当作第三方授权。已缓存 Free 计划的原生限制仍可能关闭工具，不伪造模型输入能力或账号权益。配置后使用新会话或重新恢复原会话生效，已加载旧会话不承诺热更新。
+
+图片请求携带原生 turn ID；网关只接受已通过自定义 Responses 请求登记的回合，并校验原聊天模型仍启用、同一图像配置/凭据绑定仍有效。未知回合、订阅回合、停用或配置更改均拒绝。图像请求不传历史对话，只传本次提示词和显式参考图；每次使用独立 session，避免服务端残留历史串线。原生固定的图片模型值在适配器映射为配置 deployment ID。
+
+混元适配器当前支持普通背景、单张内联 PNG/JPEG/WebP 参考图、PNG 结果。未验证的透明背景、尺寸/质量控制、多参考图及 file_id 显式拒绝。返回 JSON 的 choices[].delta.image.url 被下载并转换为原生 created/data[].b64_json；下载不带凭据、拒绝重定向，仅接受此协议已验证的 HTTPS 腾讯 COS 来源，结果上限32MiB。配置保存不自动发起生图或证明能力。原生负责图片事件、保存路径与展示；失败不自动换服务或重试付费请求。
+
+### Custom Codex conversation titles
+
+Automatic titles use the same saved custom model and provider as the conversation,
+through the existing admitted native connection. The selected model must still be
+listed; unavailable models preserve the preview rather than falling back to a
+subscription. Title reasoning uses a supported low/minimal effort, then a declared
+default/other supported value, or none for a non-reasoning model. Image generation
+and other tools are disabled for this isolated task; normal chat tool settings
+remain independent. Native `thread/name/set` owns persistence and manual names win.
+
+A new durable conversation is titled after its first accepted text input. An
+explicitly resumed untitled custom conversation gets an attempt after its next
+accepted text, using its original preview as the task seed. This does not scan or
+bulk rename historical conversations. Name display falls back to native preview
+when inference is unavailable. Subscription Luna/mini selection is unchanged.

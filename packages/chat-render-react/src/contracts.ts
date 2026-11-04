@@ -32,6 +32,19 @@ export interface ChatMeasurementEvent extends ChatMeasurementRequest {
   readonly generation: number;
 }
 
+/** Presentation diagnostics stay separate from geometry and resource authority. */
+export interface ChatMediaDiagnostic {
+  readonly documentId: string;
+  readonly phase: "policy" | "source" | "decode";
+  readonly sourceKind: "file" | "resource" | "external" | "data" | "other";
+  readonly transport: "host" | "direct";
+  readonly outcome: "ok" | "failed";
+  readonly contentType?: string;
+  readonly policy?: "resource" | "csp";
+  readonly error?: unknown;
+  readonly readAttempts?: number;
+}
+
 export interface ChatRenderContext {
   readonly documentId: string;
   readonly dialect?: ChatDocumentDialect;
@@ -58,6 +71,7 @@ export interface ChatRenderContext {
    * owns loading/error presentation; the host owns transport and caching.
    */
   readonly loadMediaSource?: ChatMediaSourceLoader;
+  readonly onMediaDiagnostic?: (event: ChatMediaDiagnostic) => void;
   readonly requestMeasurement?: (request: ChatMeasurementRequest) => void;
 }
 
@@ -109,11 +123,28 @@ export interface ChatMediaSourceResult {
   readonly release?: () => void;
   /** Browser-readable `data:`, `blob:`, or HTTP(S) source. */
   readonly source: string;
+  /** Original transport content type, before the Host applies a display hint. */
+  readonly contentType?: string;
+  readonly readAttempts?: number;
 }
 
-export type ChatMediaSourceLoader = (
-  request: ChatMediaSourceRequest,
-) => Promise<ChatMediaSourceResult | null>;
+export interface ChatMediaSourceSnapshot {
+  /** Existing results may remain ready during refresh or after a refresh error. */
+  readonly isFetching?: boolean;
+  readonly error?: unknown | null;
+  readonly status: "loading" | "ready" | "unavailable";
+  readonly value: ChatMediaSourceResult | null;
+}
+export interface ChatMediaSourceLoader {
+  (request: ChatMediaSourceRequest): Promise<ChatMediaSourceResult | null>;
+  /** Explicit retry evicts failed bytes through the Host's existing resource owner. */
+  retry?: (request: ChatMediaSourceRequest) => Promise<void>;
+  /** Recognize only this Host's own download URLs as file sources. */
+  resolveFileSource?: (source: string) => string | null;
+  /** Optional shared resource projection. Reading never starts IO. */
+  getSnapshot?: (request: ChatMediaSourceRequest) => ChatMediaSourceSnapshot;
+  subscribe?: (request: ChatMediaSourceRequest, listener: () => void) => () => void;
+}
 
 export type ChatResourceKind =
   | "anchor"

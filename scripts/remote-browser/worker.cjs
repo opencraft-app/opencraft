@@ -8,7 +8,7 @@ const { installClipboard } = require('./clipboard.cjs');
 const { installIme } = require('./ime.cjs');
 const { initializeNativeFocus } = require('./focus.cjs');
 const { createControls } = require('./controls.cjs');
-const { isTouchInput, createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS } = require('./touch.cjs');
+const { createTouchInput, isTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS } = require('./touch.cjs');
 app.commandLine.appendSwitch('opencraft-remote-clipboard');
 // Keep per-contact release semantics stable on our pinned Chromium runtime.
 app.commandLine.appendSwitch('disable-features', 'SyntheticPointerActions');
@@ -32,7 +32,7 @@ function deviceProfile(input = {}) {
   if (!deviceProfiles.has(profile)) throw new Error('Invalid device profile');
   return profile;
 }
-const configuration = p => ({ document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
+const configuration = p => ({ document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, nativeImeActivation: p.ime?.activationAvailable() === true, nativeEditCommands: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
 function userAgent(p, profile) {
   const chrome = process.versions.chrome;
   if (profile === 'iphone') return 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -196,6 +196,7 @@ function state(p) {
   send({ type: 'navigation', page: p.id, state: navigation(p) });
 }
 async function resetInput(p) {
+  p.touchActivation = null; p.ime?.resetActivation();
   await p.touch.reset();
   await p.ime?.retire();
   if (p.closed) return;
@@ -232,7 +233,7 @@ async function createPage(id, input) {
     desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), bridgeInstalled: null, interactive: false, productionGated: input.productionDemand === true };
   pages.set(id, p);
   const wc = window.webContents;
-  p.touch = createTouchInput(createWidgetTouchDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document), undefined, () => p.document);
+  p.touch = createTouchInput(createWidgetTouchDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document, () => p.ime?.activationAvailable() === true), undefined, () => p.document);
   p.wheel = createWidgetWheelDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document);
   p.clipboard = installClipboard(p, send); p.ime = installIme(p, send);
   wc.setFrameRate(2); wc.stopPainting();
@@ -371,12 +372,22 @@ async function command(message) {
   if (method === 'forward') { if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); return; }
   if (method === 'visible') {
     p.visible = input.visible === true;
-    if (!p.visible) p.clipboard.retire();
+    if (!p.visible) { p.clipboard.retire(); p.ime.observe(); }
     if (p.visible) {
       wc.startPainting(); activity(p); refresh(p); p.ime.observe();
       // Paint may initially return the surface cached before parking. Capture
       // once on reveal so changes made while parked reach the viewer too.
-      const epoch = p.epoch, image = await wc.capturePage();
+      const epoch = p.epoch;
+      let image;
+      try { image = await wc.capturePage(); }
+      catch (error) {
+        // A newly created/revealed compositor can lack a Viz surface briefly.
+        // Preserve the existing finite, idempotent visibility retry at Gateway;
+        // the worker's default error serialization otherwise makes this final.
+        if (error?.message === 'UnknownVizError')
+          throw Object.assign(new Error('Browser display is not ready'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
+        throw error;
+      }
       if (!p.closed && p.visible && p.epoch === epoch && image.getSize().width === p.width && image.getSize().height === p.height) { queueFrame(p, image); }
     }
     else { await resetInput(p); wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
@@ -388,7 +399,7 @@ async function command(message) {
   if (method === 'ime') { activity(p); return p.ime.apply(input); }
   if (method === 'text') { if (typeof input.text !== 'string' || input.text.length > 10000) throw new Error('Invalid text'); activity(p); await wc.insertText(input.text); return; }
   if (method === 'input') {
-    const allowed = ['mouseMove','mouseDown','mouseUp','mouseWheel','keyDown','keyUp','char','touchStart','touchMove','touchEnd','touchCancel'];
+    const allowed = ['mouseMove','mouseDown','mouseUp','mouseWheel','keyDown','keyUp','char','touchStart','touchMove','touchEnd','touchCancel','edit'];
     if (!allowed.includes(input.type)) throw new Error('Invalid input');
     if (['mouseDown', 'keyDown', 'touchStart'].includes(input.type)) {
       p.clipboard.retire(); await p.ime.retire();
@@ -398,16 +409,32 @@ async function command(message) {
     // A held touch/drag is active work even without another down/up event.
     // Otherwise native touch ACKs fall to the idle 2 fps cadence mid-gesture.
     if (input.type !== 'mouseMove' || p.touch.active || input.modifiers?.includes('leftButtonDown')) activity(p);
+    if (input.type === 'edit') return p.ime.edit(input, checkDocument);
     if (input.type === 'touchCancel') return resetInput(p);
-    if (['touchStart', 'touchMove', 'touchEnd'].includes(input.type)) return p.touch.apply(input);
+    if (['touchStart', 'touchMove', 'touchEnd'].includes(input.type)) {
+      if (input.type === 'touchStart') p.touchActivation = input.touchPoints?.length === 1 ? input.activation : null;
+      const target = input.type === 'touchEnd' && input.touchPoints?.length === 0
+        && input.activation === p.touchActivation && p.ime.activationAvailable() ? input.activation : undefined;
+      if (target) p.ime.startActivation(target);
+      const receipt = await p.touch.apply(input);
+      if (input.type === 'touchEnd' && input.touchPoints?.length === 0) p.touchActivation = null;
+      if (target) return { activation:target, bound:await p.ime.bindActivation(target,receipt) };
+      return;
+    }
     // Copy the finite, typed input surface; no arbitrary Electron options.
     const event = { type: input.type };
     for (const name of ['x','y','deltaX','deltaY','clickCount']) if (Number.isFinite(input[name])) event[name] = Math.max(-10000, Math.min(10000, input[name]));
     if (['left','right','middle'].includes(input.button)) event.button = input.button;
     if (typeof input.keyCode === 'string' && input.keyCode.length <= 64) event.keyCode = input.keyCode;
     if (Array.isArray(input.modifiers)) event.modifiers = input.modifiers.filter(v => ['shift','control','alt','meta','leftButtonDown'].includes(v));
-    const touch = isTouchInput(input, p.deviceProfile);
-    if (touch && ['mouseMove','mouseDown','mouseUp'].includes(event.type) && (!event.button || event.button === 'left')) return p.touch.mouse(event);
+    const touch = isTouchInput(input,p.deviceProfile);
+    if (touch && ['mouseMove','mouseDown','mouseUp'].includes(event.type) && (!event.button || event.button === 'left')) {
+      const target = event.type === 'mouseUp' && input.activation && p.ime.activationAvailable() ? input.activation : undefined;
+      if (target) p.ime.startActivation(target);
+      const receipt = await p.touch.mouse(event);
+      if (target) return {activation:target,bound:await p.ime.bindActivation(target,receipt)};
+      return;
+    }
     p.pressedKeys ??= new Set(); p.pressedButtons ??= new Set();
     if (event.type === 'keyDown' && event.keyCode) p.pressedKeys.add(event.keyCode);
     if (event.type === 'keyUp') p.pressedKeys.delete(event.keyCode);
@@ -415,6 +442,11 @@ async function command(message) {
     if (event.type === 'mouseUp') p.pressedButtons.delete(event.button);
     if (event.x !== undefined && event.y !== undefined) p.pointer = { x: event.x, y: event.y };
     if (event.type === 'mouseWheel') return p.wheel(event);
+    if (input.activation && ['mouseDown','mouseUp','keyDown'].includes(event.type) && p.ime.activationAvailable()) {
+      p.ime.startActivation(input.activation);
+      const receipt = await wc.sendInputEventWithNativeInputTicket(event);
+      return {activation:input.activation,bound:await p.ime.bindActivation(input.activation,receipt)};
+    }
     wc.sendInputEvent(event); return;
   }
   if (method === 'automation') { activity(p); return automation(p, input.method, input.input); }

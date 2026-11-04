@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { spawnSync } from "node:child_process";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
+import { SERVER_SCHEMA_EXTRAS_SQL } from "../../packages/storage-node/src/server/migrations.generated.js";
 import { openServerDatabase, SERVER_DATA_CONTRACT, SERVER_MIGRATIONS } from "@opencraft/storage-node/server";
 import { importServerData } from "../../packages/storage-node/src/server/import.js";
 import { openServerRepository } from "@opencraft/storage-node/server-repository";
@@ -51,7 +52,9 @@ async function seed(root: string) {
 }
 
 test("Drizzle schema and recorded snapshot have no ungenerated structural changes", async () => {
-  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0001_snapshot.json", import.meta.url), "utf8"));
+  const journal = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/_journal.json", import.meta.url), "utf8"));
+  const latest = String(journal.entries.length - 1).padStart(4, '0');
+  const previous = JSON.parse(readFileSync(new URL(`../../packages/storage-node/src/server/migrations/meta/${latest}_snapshot.json`, import.meta.url), "utf8"));
   const next = await generateSQLiteDrizzleJson(schema, previous.id);
   assert.deepEqual(await generateSQLiteMigration(previous, next), []);
   const empty = await generateSQLiteDrizzleJson({});
@@ -59,7 +62,7 @@ test("Drizzle schema and recorded snapshot have no ungenerated structural change
   const expectedSql = statements.map(statement => /^\s*CREATE TABLE\b/i.test(statement)
     ? statement.replace(/\);\s*$/, ") STRICT;") : statement).join("\n");
   const current = openManagedDatabase({ path: ":memory:", migrations: SERVER_MIGRATIONS });
-  try { createSchemaValidator(expectedSql)(current.database); } finally { current.database.close(); }
+  try { createSchemaValidator(expectedSql+"\n"+SERVER_SCHEMA_EXTRAS_SQL)(current.database); } finally { current.database.close(); }
 });
 
 test("published source SQL retains all migration identities and checksums", () => {

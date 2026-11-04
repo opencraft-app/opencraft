@@ -3,7 +3,7 @@ import { createConnection } from 'node:net';
 
 /** Only Headless-owned API routes. Static files and update authority stay in Web. */
 export const headlessBackendRoutes = Object.freeze({
-  http: ['/setup', '/appserver', '/apphost', '/ssh-apphost', '/desktop/connect', '/__opencraft_push', '/__opencraft_health', '/health', '/__opencraft_ssh_servers', '/__opencraft_apphost_diagnostic', '/__opencraft_files'],
+  http: ['/setup', '/appserver', '/apphost', '/ssh-apphost', '/desktop/connect', '/__opencraft_push', '/__opencraft_health', '/health', '/__opencraft_ssh_servers', '/__opencraft_apphost_diagnostic', '/__opencraft_files', '/__opencraft_model_policy'],
   prefixes: ['/__opencraft_preview', '/__opencraft_account', '/__opencraft_observe', '/__opencraft_browser', '/__opencraft_hub', '/__opencraft_auth', '/__opencraft_actors', '/__opencraft_connectors', '/__opencraft_im', '/__opencraft_access', '/__opencraft_ssh', '/__opencraft_enterprise_identity', '/__opencraft_speech', '/__opencraft_apphost'],
   upgrade: ['/__opencraft_browser/stream', '/appserver', '/apphost', '/ssh-apphost', '/desktop/connect', '/__opencraft_hub/control', '/__opencraft_hub/data'],
 });
@@ -22,6 +22,7 @@ export function createHeadlessBackendProxy(target) {
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
     throw new Error('Headless backend must be a loopback HTTP origin');
   const port = Number(url.port || 80);
+  let pendingUpgrades = 0;
   return {
     // Documents are served by the static worker, but installation admission belongs to Headless.
     // The private relay entry probes every static request, independent of Accept.
@@ -89,14 +90,50 @@ export function createHeadlessBackendProxy(target) {
       connect();
     },
     upgrade(request, socket, head, release, tunnels) {
-      const upstream = createConnection({ host: '127.0.0.1', port }); tunnels.add(socket);
-      socket.once('close', () => { tunnels.delete(socket); upstream.destroy(); release(); });
-      socket.on('error', () => upstream.destroy()); upstream.on('error', () => socket.destroy()); upstream.once('close', () => socket.destroy());
-      upstream.once('connect', () => {
-        const headers = request.rawHeaders;
-        upstream.write(`${request.method} ${request.url} HTTP/${request.httpVersion}\r\n${Array.from({ length: headers.length / 2 }, (_, i) => `${headers[i * 2]}: ${headers[i * 2 + 1]}`).join('\r\n')}\r\n\r\n`);
-        if (head.length) upstream.write(head); socket.pipe(upstream); upstream.pipe(socket);
-      });
+      // A new gateway can take seconds to listen. Keep one browser handshake
+      // pending instead of making it fail and enter another client backoff.
+      // No bytes reach a backend until TCP connects; after that, never retry.
+      if (socket.destroyed || pendingUpgrades >= 128) { socket.destroy(); release(); return; }
+      pendingUpgrades++; socket.pause(); tunnels.add(socket);
+      const started = performance.now();
+      let upstream, retryTimer, deadline, retries = 0, pending = true, connected = false, closed = false;
+      const stopWaiting = () => {
+        if (!pending) return;
+        pending = false; pendingUpgrades--;
+        clearTimeout(retryTimer); clearTimeout(deadline);
+      };
+      const finish = () => {
+        if (closed) return; closed = true;
+        stopWaiting(); tunnels.delete(socket); upstream?.destroy(); release();
+      };
+      socket.once('close', finish);
+      socket.on('error', () => socket.destroy());
+      // A peer that abandons an otherwise empty handshake must not linger.
+      socket.once('end', () => socket.destroy());
+      deadline = setTimeout(() => socket.destroy(), 5_000);
+      const dial = () => {
+        if (closed || socket.destroyed) return;
+        const candidate = upstream = createConnection({ host: '127.0.0.1', port });
+        candidate.once('error', error => {
+          if (closed || socket.destroyed) return;
+          if (!connected && error.code === 'ECONNREFUSED') {
+            retries++; retryTimer = setTimeout(dial, 100); return;
+          }
+          socket.destroy();
+        });
+        candidate.once('close', hadError => { if (connected || !hadError) socket.destroy(); });
+        candidate.once('connect', () => {
+          if (closed || socket.destroyed) { candidate.destroy(); return; }
+          connected = true; stopWaiting();
+          if (retries) console.info('[opencraft upgrade]', JSON.stringify({ event: 'backend-listener-recovered',
+            waitMs: Math.round(performance.now() - started), retries }));
+          const headers = request.rawHeaders;
+          candidate.write(`${request.method} ${request.url} HTTP/${request.httpVersion}\r\n${Array.from({ length: headers.length / 2 }, (_, i) => `${headers[i * 2]}: ${headers[i * 2 + 1]}`).join('\r\n')}\r\n\r\n`);
+          if (head.length) candidate.write(head);
+          socket.pipe(candidate); candidate.pipe(socket); socket.resume();
+        });
+      };
+      dial();
     },
   };
 }

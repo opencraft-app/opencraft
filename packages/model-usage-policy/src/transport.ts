@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DuplexTransport, TransportSubmissionContext } from '@opencraft/appserver-client/transport';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
-import { assertModelPolicy, projectModels, readPolicy, resolvePolicySelection } from './native.mjs';
+import { assertModelPolicy, ModelPolicyError, projectModels, readPolicy, resolvePolicySelection } from './native.mjs';
 type V=Record<string,any>;
 export function modelEngine(model:unknown,fallback='codex'):string {
   const id=String(model ?? '');
@@ -25,6 +25,9 @@ export class ModelPolicyTransport implements DuplexTransport {
       this.requests.delete(requestKey);for(const listener of this.listeners)listener(JSON.stringify(message));
     });
   }
+  watchConversation(threadId: string, clientId: string, current: () => boolean): () => void {
+    return this.inner?.watchConversation?.(threadId, clientId, current) ?? (() => {});
+  }
   get status(){return this.inner.status;}
   captureMessageScope(){return this.inner.captureMessageScope?.() ?? (()=>true);}
   connect(signal?:AbortSignal){return this.inner.connect(signal);}
@@ -45,13 +48,27 @@ export class ModelPolicyTransport implements DuplexTransport {
     signal?.throwIfAborted();
     const message=JSON.parse(frame),p=message.params ?? {};
     try {
-      if((['turn/start','turn/steer','thread/queue/start','thread/queue/steer'].includes(message.method)||message.method==='thread/goal/set'&&!["paused","complete","blocked"].includes(p.status))&&readPolicy(this.path).rules.length){
+      if((['thread/settings/update','turn/start','turn/steer','thread/queue/start','thread/queue/steer'].includes(message.method)||message.method==='thread/goal/set'&&!["paused","complete","blocked"].includes(p.status))&&readPolicy(this.path).rules.length){
         const logical=message[LOGICAL_CLIENT_FIELD];
+        // A complete Codex turn already declares the native selection. Avoid
+        // nested discovery RPCs while its ordered send lane is being admitted.
+        // Partial selections still resolve Thread defaults; denials still read
+        // the catalog for permitted alternatives. Native admission checks again.
+        let checked=false;
+        if(this.fallback==='codex'&&message.method==='turn/start'){
+          const selection=resolvePolicySelection('codex',p,{},[]);
+          if(typeof selection.model==='string'&&selection.model&&typeof selection.effort==='string'&&selection.effort){
+            try{assertModelPolicy(this.path,'codex',selection.model,selection.effort);checked=true;}
+            catch(error){if(!(error instanceof ModelPolicyError))throw error;}
+          }
+        }
+        if(!checked){
         const thread=(await this.rpc('thread/read',{threadId:p.threadId,includeTurns:false},context,logical)).thread ?? {};
         const catalog=(await this.rpc('model/list',{},context,logical)).data ?? [];
         const engine=this.fallback === "codex" ? "codex" : modelEngine(p.collaborationMode?.settings?.model ?? p.model ?? thread.model,this.fallback);
         const {model,effort}=resolvePolicySelection(engine,p,thread,catalog);
         assertModelPolicy(this.path,engine,model,effort,catalog);
+        }
       }
       signal?.throwIfAborted();
       if(message.id!==undefined)this.requests.set(JSON.stringify([message[LOGICAL_CLIENT_FIELD] ?? null,message.id]),message.method);

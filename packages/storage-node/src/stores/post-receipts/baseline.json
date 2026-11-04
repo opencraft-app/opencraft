@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "im-channel-post-receipts",
+      "checksum": "1dc00d056c8c8f12ae0e36774c1885f8292bc6321bd0c995a167e1c6ba14683f"
+    }
+  ],
+  "tableOptions": {
+    "im_post_receipts": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "d163bc46f3a040081ef53f2f500c17ead123f3a32e897a9b9fc29b42ae69e319",
+  "baselineSnapshotChecksum": "e46f29d4b88ae6eed036250a55a73b73738f187c7b8528360b90eaf9046a405d"
+}

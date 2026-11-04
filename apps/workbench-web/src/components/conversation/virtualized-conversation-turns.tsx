@@ -1,3 +1,4 @@
+import { findConversationItemElement } from "./search-target";
 import { timelineTurnRenderKey, type TimelineTurnView } from "@opencraft/chat-core";
 import {
   buildTurnLayout,
@@ -513,14 +514,7 @@ export function VirtualizedConversationTurns({
     const targetElement =
       request.targetKey === undefined
         ? turnElement
-        : ([
-            ...turnElement.querySelectorAll<HTMLElement>(
-              "[data-content-search-unit-key]",
-            ),
-          ].find(
-            (candidate) =>
-              candidate.dataset.contentSearchUnitKey === request.targetKey,
-          ) ?? null);
+        : findConversationItemElement(turnElement, request.targetKey);
     if (targetElement === null) {
       pendingScrollRequestRef.current = null;
       request.complete("unavailable");

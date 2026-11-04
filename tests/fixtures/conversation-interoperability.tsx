@@ -13,7 +13,7 @@ initializeAppearanceTheme();setThemePreference(new URLSearchParams(location.sear
 const controller=createComposerController({type:'existing-thread',key:createConversationKey('fixture','fixture-thread-1')},{now:Date.now,createId:()=>crypto.randomUUID()});
 let held=false,reject=false;
 const command=async(body:Record<string,unknown>)=>{if(held&&body.action==='send')await new Promise(r=>setTimeout(r,150));if(reject&&body.action==='send')throw Error('offline');const r=await fetch('/fixture/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error('denied');return r.json();};
-const catalog:any={agentRuntimes:{request:(_id:string,_method:string,body:any)=>command(body)},threadManagement:{capabilities:()=>({reference:true})},navigate:async(location:any)=>{(window as any).navigated=location;return true;}};
+const catalog:any={hosts:[{hostId:'fixture'}],agentRuntimes:{request:(_id:string,method:string,body:any)=>method==='thread/read'?Promise.resolve({thread:{id:body.threadId}}):command(body)},threadManagement:{capabilities:()=>({reference:!new URLSearchParams(location.search).has("cold")})},navigate:async(location:any)=>{(window as any).navigated=location;return true;}};
 function App(){
  const[kind,setKind]=useState<'context'|'dropdown'|null>(null);
  const owner=useThreadActionOwner({onCopyReference:target=>copyConversationReference(command,location.href,target),onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{}});

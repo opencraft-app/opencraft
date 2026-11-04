@@ -82,6 +82,7 @@ export interface NewThreadDraftPageProps {
   activeTabId?: string | null;
   composerPresentationEnabled?: boolean;
   readonly placeholder?: string;
+  readonly placeholderPending?: boolean;
   readonly heading?: string;
   readonly setupNotice?: ReactNode;
   readonly setupBlocksSubmission?: boolean;
@@ -450,6 +451,7 @@ export function NewThreadDraftPage({
   activeTabId = null,
   composerPresentationEnabled = true,
   placeholder,
+  placeholderPending,
   heading,
   setupNotice,
   setupBlocksSubmission = false,
@@ -520,6 +522,9 @@ export function NewThreadDraftPage({
     disabled={goalBusy || draftSubmissionOwnsNavigation(draft.phase)}
     submissionDisabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission}
     isStreaming={false}
+    isRecovering={placeholderPending === true}
+    isUnstable={connectionPhase === "reconnecting"}
+    placeholderPending={placeholderPending}
     placeholder={placeholder ?? intl.formatMessage({ id: "chat.companionPlaceholder", defaultMessage: "Share your thoughts, or ask me to help with something" })}
     onResolveAttachment={onResolveAttachment}
     onRemoveAttachment={onRemoveAttachment}

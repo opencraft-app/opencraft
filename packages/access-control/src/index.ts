@@ -1,5 +1,5 @@
+import { captureSqliteReadGuard, sqliteTransaction } from "@opencraft/sqlite-node";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
-import { sqliteTransaction } from "@opencraft/sqlite-node";
 import type { DatabaseSync } from "node:sqlite";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
@@ -14,12 +14,16 @@ export type MemberRole = "admin" | "member";
 export interface InstanceAdmissionPolicy {
   prepare(identity: Principal): Promise<void>;
   allows(identity: Principal): boolean;
+  captureCountReadGuard?(): (() => boolean) | null;
   allowsBinding(binding: Pick<Principal, 'provider' | 'subject'>): boolean;
 }
 export class MembershipStore {
+  #closed = false;
   readonly permissionProjectionEnabled: boolean;
   readonly #db: DatabaseSync;
   readonly #readCache: PermissionReadCache;
+  readonly #bindingMembership: ReturnType<DatabaseSync["prepare"]>;
+  readonly #actorMembership: ReturnType<DatabaseSync["prepare"]>;
   readonly outcome: DatabaseOutcome;
   readonly #closeDatabase: () => void;
   constructor(path: ServerDatabaseSource) {
@@ -28,15 +32,20 @@ export class MembershipStore {
     this.#closeDatabase = managed.close;
     this.#db = managed.database; this.outcome = managed.outcome;
     this.#readCache = new PermissionReadCache(() => this.#permissionRows(), { enabled: typeof path !== "string", owner: typeof path === "string" ? this.#db : path.database });
+    this.#bindingMembership = this.#db.prepare("SELECT role,enabled FROM members WHERE binding=?");
+    this.#actorMembership = this.#db.prepare('SELECT role,enabled FROM actor_members WHERE actor_id=?');
   }
   *#permissionRows(): Iterable<readonly [string, unknown]> {
     for (const row of this.#db.prepare('SELECT binding,role,enabled FROM members').iterate()) yield [JSON.stringify(["member", row.binding]), row];
     for (const row of this.#db.prepare('SELECT actor_id,role,enabled FROM actor_members').iterate()) yield [JSON.stringify(["actor-member", row.actor_id]), row];
-
+    const revisions = new Map<string, number>();
+    for (const row of this.#db.prepare(`SELECT id,binding FROM access_audit WHERE CASE WHEN json_valid(action) THEN json_extract(action,'$.enabled') END = 0`).iterate())
+      revisions.set(String(row.binding), Math.max(revisions.get(String(row.binding)) ?? 0, Number(row.id)));
+    for (const [binding, revision] of revisions) yield [JSON.stringify(["revocation", binding]), revision];
   }
   membership(p: Pick<Principal, "provider" | "subject">): { role: MemberRole; enabled: boolean } | null {
     const binding = principalKey(p);
-    const row = this.#readCache.get(JSON.stringify(["member",binding]), () => this.#db.prepare("SELECT role,enabled FROM members WHERE binding=?").get(binding));
+    const row = this.#readCache.get(JSON.stringify(["member", binding]), () => this.#bindingMembership.get(binding));
     return row ? { role: row.role as MemberRole, enabled: row.enabled === 1 } : null;
   }
   role(p: Pick<Principal, "provider" | "subject">): MemberRole | null {
@@ -46,8 +55,13 @@ export class MembershipStore {
   bindLegacyAlias(p: Principal) {
     const binding = principalKey(p);
     // An explicit stable-subject grant/revocation always wins over a legacy name.
-    if (this.#db.prepare('SELECT binding FROM members WHERE binding=?').get(binding)) return;
+    if (this.#bindingMembership.get(binding)) return;
+    const aliases = (p.aliases ?? []).map(subject => principalKey({provider:p.provider,subject}));
+    if (!aliases.some(alias => this.#bindingMembership.get(alias)?.enabled === 1)) return;
     this.#transaction(() => {
+      // The preflight is not authorization caching: a stable revocation or
+      // alias change while waiting for the writer must win inside the lock.
+      if (this.#bindingMembership.get(binding)) return;
       for (const subject of p.aliases ?? []) {
         const alias = principalKey({ provider: p.provider, subject });
         const row = this.#db.prepare('SELECT role FROM members WHERE binding=? AND enabled=1').get(alias);
@@ -62,8 +76,15 @@ export class MembershipStore {
   list() { return this.#db.prepare("SELECT binding,role,enabled FROM members ORDER BY binding").all(); }
   listActors() { return this.#db.prepare('SELECT actor_id,role,enabled FROM actor_members ORDER BY actor_id').all(); }
   actorMembership(actorId: string): { role: MemberRole; enabled: boolean } | null {
-    const row = this.#readCache.get(JSON.stringify(['actor-member',actorId]), () => this.#db.prepare('SELECT role,enabled FROM actor_members WHERE actor_id=?').get(actorId));
+    const row = this.#readCache.get(JSON.stringify(["actor-member", actorId]), () => this.#actorMembership.get(actorId));
     return row ? { role: row.role as MemberRole, enabled: row.enabled === 1 } : null;
+  }
+  /** Durable fence: a disable/enable between connection polls must still retire credentials. */
+  revocationRevision(actorId: string, bindings: readonly Pick<Principal, 'provider' | 'subject'>[]): number {
+    const keys = [actorId, ...bindings.map(principalKey)];
+    return Math.max(0, ...keys.map(key => this.#readCache.get(JSON.stringify(["revocation", key]),
+      () => Number(this.#db.prepare(`SELECT COALESCE(MAX(id),0) AS revision FROM access_audit WHERE binding=?
+        AND CASE WHEN json_valid(action) THEN json_extract(action,'$.enabled') END = 0`).get(key)!.revision)) ?? 0));
   }
   importActorMembership(actorId: string, role: MemberRole) {
     this.#transaction(() => {
@@ -103,8 +124,9 @@ export class MembershipStore {
       this.#db.prepare("INSERT INTO access_audit(at,operator,binding,action) VALUES(?,?,?,?)").run(Date.now(), "local-operator", source, "legacy-membership-import");
     });
   }
+  captureCountReadGuard() { return captureSqliteReadGuard(this.#db, () => !this.#closed); }
   #transaction<T>(write: () => T): T { return withPermissionWrite(() => sqliteTransaction(this.#db, write), this.#readCache); }
-  close() { this.#readCache.close(); this.#closeDatabase(); }
+  close() { this.#closed = true; this.#readCache.close(); this.#closeDatabase(); }
 }
 export class InstanceAccess {
   readonly #cache = new WeakMap<object, Principal | null>();
@@ -162,6 +184,30 @@ export class InstanceAccess {
     // Compatibility grants are evaluated from memory; durable import stays in verified login.
     const roles = this.actors.bindings(actor.id).map(binding => this.store.role(binding));
     return roles.includes('admin') ? 'admin' : roles.includes('member') ? 'member' : implicit;
+  }
+  /** Original admission semantics over one bounded, stable registry read. Count only;
+   * never prepares a login, imports membership, or scans the audit history.
+   */
+  async captureCountAdmission(context: import('@opencraft/identity-core/actors').ActorContext, check: () => void): Promise<{
+    admitted: boolean; validate: () => boolean;
+  } | null> {
+    check();
+    const members = this.store.captureCountReadGuard(), policy = this.admissionPolicy;
+    const provider = policy ? policy.captureCountReadGuard?.() : () => true;
+    if (!members || !provider || !this.actors) return null;
+    const bindings = await this.actors.captureCountBindings(context, check);
+    if (!bindings) return null;
+    const validate = () => members() && provider() && bindings.validate() && this.admissionPolicy === policy;
+    if (!validate()) return null;
+    const values = bindings.bindings;
+    check();
+    const revoked = values.some(binding => policy?.allowsBinding(binding) === false
+      || this.store.membership(binding)?.enabled === false);
+    const member = this.store.actorMembership(context.actorId);
+    const admitted = !revoked && (member ? member.enabled : values.some(binding =>
+      this.store.membership(binding)?.enabled === true || this.authenticatedMemberProviders.has(binding.provider)));
+    check();
+    return validate() ? {admitted,validate} : null;
   }
   /** Stable membership recheck for work already admitted; never authenticates a login. */
   admitsActor(actorId: string): boolean {

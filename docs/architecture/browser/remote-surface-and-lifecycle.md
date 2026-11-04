@@ -233,9 +233,13 @@ above. Multi-contact touch is an independent native input path.
 
 Durable metadata uses the existing authenticated WebSocket admission. Browser
 records and conversation aliases are scoped to the gateway owner; their IDs
-never grant access. Concurrent stale metadata writes fail with STATE_CONFLICT
-and require synchronization rather than silently replacing another client's
-tabs. Ordinary client cleanup detaches; explicit tab close deletes its remote
+never grant access. A stale metadata mutation whose value exactly equals the
+current value is acknowledged as a no-op with a durable receipt and unchanged
+revision. This lets viewers project the same native navigation without poisoning
+one another. Different stale values still fail with STATE_CONFLICT and require
+synchronization rather than silently replacing another client's tabs; future or
+invalid revisions do not qualify for convergence. Unknown no-op ACKs retain their
+original receipt after subsequent changes, without replaying old state. Ordinary client cleanup detaches; explicit tab close deletes its remote
 recovery record. A worker restart recreates the tab from the saved URL and
 configuration using its persistent partition. In-memory selection, scroll,
 forms, navigation history and JavaScript heap are preserved only while that
@@ -385,10 +389,13 @@ epoch. Real native resizing continues while the last readable picture is held.
 
 The MSE path copies its currently presented video into the existing canvas once
 before disposing the old media source. An incoming video stays transparent above
-the canvas until requestVideoFrameCallback confirms its first presented frame;
-then the current video identity is checked, the canvas cover is updated and the
-video is revealed. Older browsers use readable data, completed seek and one RAF
-as the fallback fence. Cancelling a replacement removes callbacks/listeners.
+the canvas until a native frame notification or a verified readable AVC frame
+allows reveal. Sparse streams can expose decoded pixels without delivering a
+compositor callback. After loaded-data/seek/play events, one RAF may verify a
+single opaque pixel from this origin-owned video; readiness and dimensions alone
+cannot pass. A seek in progress remains fenced. The current video identity is
+then checked, the canvas cover is updated and the video is revealed. Cancelling
+a replacement removes all callbacks/listeners and the one-pixel probe.
 An unready video never replaces the existing cover during a second reset.
 Temporary snapshot storage is released immediately; a failed video read leaves
 the earlier readable cover intact. There is no retained second decoder, permanent
@@ -491,6 +498,11 @@ A `waiting` event can itself be caused by a seek. Do not seek while a previous
 seek is pending, or repeat an unchanged target (within 1 ms); otherwise the
 video can remain in HAVE_METADATA despite a complete decoded page in its
 buffer. A later waiting/update event may advance to a new buffered target.
+Each buffered tail is caught up at most once. Normal playback advances
+`currentTime` before emitting another `waiting`; that drift must not rewind the
+same unchanged tail. A new buffered end remains eligible after a pending seek
+settles. This bounds static-page seek activity without generating extra media
+packets or a polling timer.
 This does not change the received-stage media credit contract for MSE.
 
 
@@ -538,3 +550,347 @@ window; native ACK results and no-progress recovery remain required.
 A retained worker rejecting display-rate as unsupported is probed only once
 per native generation. Transport failures remain retryable; late old-worker
 rejections cannot change the replacement generation.
+
+
+A viewer recovering from WebSocket byte backlog requests a keyframe from its
+current subscribed encoding bucket, including after a bucket change while
+blocked. The byte-backlog fence is independent of media acknowledgement credits:
+empty credits do not prove that the viewer has received the missing prediction
+reference. Other viewers and the shared encoding streams remain independent.
+
+
+### Metadata outage recovery and bounded snapshots
+
+The metadata port retries transient disconnection with capped 30s backoff until
+recovery or disposal, matching display continuity. It holds one uncertain
+in-flight transaction and at most one unsent snapshot per metadata key (four
+keys). Only unsent snapshots can supersede each other. Every retry retains the
+original mutation id, value, scope and CAS revisions: a lost committed ACK is
+settled by the server receipt, not a fresh write or inferred outcome. Same-key
+conflicts still stop until authoritative reload; no automatic rebase over a
+peer's state is permitted.
+
+A flush fence captures per-key local versions and completes when ACKed snapshots
+cover those versions. Future title/navigation updates cannot starve an earlier
+caller; a superseding snapshot may cover that caller. Native admission still
+checks current committed linkage and closed/disposed surfaces cannot open after
+a delayed flush. Coalescing never authorizes native creation or revives a
+retired lease. Server ownership and explicit close stay authoritative.
+
+Dispose cancels backoff, rejects waiting fences and prohibits late writes.
+Authorization/protocol/oversize failures are terminal, not network recovery.
+The existing 64KiB character and 128KiB UTF8 frame bounds are checked before
+transmission so an oversized frame cannot become an endless reconnect loop.
+No field contents appear in failure diagnostics. These transport limits do not
+promise that arbitrary history growth fits the metadata contract.
+
+Server `BROWSER_UNAVAILABLE` is retried only when explicitly marked retryable;
+CAS, authorization and protocol failures cannot enter that path. A canceled
+flush fence does not cancel recovery for another consumer. Legacy promotion at
+startup has a 25s flush budget, and Application teardown grants up to 2s for
+final metadata acknowledgement before disposal. Neither startup promotion nor
+shutdown waits forever on a persistent network outage. Unacknowledged offline
+metadata has no new durability guarantee.
+
+
+### Initial metadata admission and startup cancellation
+
+The initial authoritative state read uses the same capped transient backoff as
+subsequent writes. A brief disconnect or explicitly retryable owner handoff must
+not permanently fail Application creation. No empty/local writable projection
+or legacy promotion is exposed before a valid scope, revisions and value-map
+envelope arrive. Authentication, protocol, size and nonretryable failures still
+terminate admission. This keeps canonical-state restoration as a startup
+dependency; it does not provide an offline browser workspace.
+
+The bootstrap owns an AbortController until metadata admission completes. Page
+retirement/unmount cancels a pending handshake, state read or backoff and closes
+its storage owner; late responses cannot create an Application from that owner.
+Once startup returns, the Application owns storage disposal and later aborting
+the startup signal cannot close live tabs. Other plugin initialization retains
+its existing disposal contract. The 25s legacy-promotion budget and 2s shutdown
+grace remain separate from cancellable initial-read recovery.
+
+Handshake and RPC timeouts retire their captured socket identity and reject its
+waiters before requesting physical close. Reconnection and cancellation cannot
+wait indefinitely for the transport's close event. Old open/close/data callbacks
+are fenced from the replacement, including an old authorization close.
+
+
+### H.264 decoder admission and failure
+
+Application startup probes the exact WebCodecs H.264 configuration before
+constructing a remote surface. The support query is bounded to two seconds and
+startup cancellation terminates admission without choosing a fallback. Unsupported,
+rejected, missing or timed-out WebCodecs capability selects native MSE only when
+its H.264 MIME capability is supported; otherwise no remote decoder is admitted.
+The selected mode is passed to the surface: both actual decoding and the open
+protocol's rendered/received feedback stage use that mode, never API presence.
+The standalone browser smoke consumers use the same preflight.
+
+Capability support cannot guarantee later decoder allocation. Constructor/configure
+exceptions and asynchronous NotSupportedError release that decoder, preserve the
+last readable frame and report an actionable surface error once. Further packets
+are ignored for that failed decoder epoch; explicit reload or a new media epoch
+can retry. Malformed/decode-recovery errors retain the existing keyframe recovery
+policy. This does not establish sparse MSE first-frame presentation in WebKit or
+physical iOS compatibility, and does not add periodic idle frames.
+
+
+### Capability discovery is startup admission
+
+A headless Web Application uses its selected Server's scoped capability route
+before choosing a browser backend. Only HTTP200 with an explicit boolean
+`available` admits remote rendering or confirms the existing iframe fallback.
+Network errors, request/body deadlines, HTTP408/429 and5xx retain this admission
+with capped250ms-to30s backoff. They cannot permanently switch the Application
+to iframe. Each discovery attempt has a two-second deadline, response bodies
+are limited to4KiB, and only one attempt/backoff is active per startup owner.
+
+The existing startup signal cancels headers, body reading or backoff; it retires
+the request before a later attempt can be admitted. Late responses are ignored
+and their unread bodies cancelled. Authorization failures and login redirects
+are terminal without following the redirect. Invalid JSON, malformed/oversized
+availability and unexpected nontransient HTTP statuses are protocol failures,
+not negative capabilities. In particular404 cannot silently bypass a headless
+Server's required route. Errors do not include response bodies.
+
+Desktop and nonheadless Web skip this discovery. An explicit `available:false`
+retains the prior iframe choice; no offline metadata or empty writable remote
+projection is introduced. Product bootstrap, canonical restoration and other
+plugins keep their existing startup ownership. This repairs pre-admission
+recovery, not live hot-swapping of a running browser backend.
+
+
+### Keyboard capture during human-control handoff
+
+Raw keyboard capture and pointer capture use the same eligibility predicate:
+a current human controller or a pending human-control request for the current
+control generation. The first click and immediately following modifiers/letters
+enter the existing bounded input queue in order. That queue still waits for the
+actual validated control grant and preserves its document, connection and reset
+fences before sending. This avoids losing keyDown while forwarding keyUp and
+later letters during the first few milliseconds of handoff.
+
+No human intent, Agent intent and obsolete intent cannot capture raw keys or
+implicitly claim control. Blur/reset, hidden presentation, replacement, close
+and denied grants cannot replay retained keys into the next interaction. The
+128-item bound and overflow cancellation remain unchanged. Composition/sentinel
+events keep the native IME bridge; this is not a mirror editor or a new global
+keyboard buffer, and does not establish physical mobile IME compatibility.
+
+
+### Resource use and server input authority
+
+The remote surface explicitly declares server input authority. The presentation
+coordinator retains exclusive resource-use accounting and balanced keepalive /
+release, including when its presentation is hidden. A use claim neither disables
+local input nor imposes the legacy automation viewport on a remote page. Human
+and Agent mutation grants continue to be arbitrated by server control leases;
+resource use cannot grant, revoke or replace those leases. Local iframe and
+Electron surfaces retain their existing presentation input exclusion and hidden
+automation viewport.
+
+Read-only inspection, context, copy and capture fence input captured before the
+read. Their RPC starts outside the exclusive queue barrier, so a long wait can
+observe changes caused by future human input. Editing / mutation barriers remain
+exclusive through acknowledgement. Queued reads still check captured connection
+and control generation, and carry the original document identity; replacement,
+close and queue cancellation cannot retarget them. No second event queue, DOM
+heuristic or website exception is introduced.
+
+
+### Composition admission during human-control handoff
+
+A local composition, direct final-text edit or paste may stage during explicit
+human-control intent in the current generation. IME begin/preedit/terminal commands
+enter the same bounded input queue as the preceding pointer/focus input. A composition
+transaction retains its exclusive barrier through all native acknowledgements;
+its own phases may pipeline within the existing bounded ACK window because the
+worker serializes execution. Later transactions and keys cannot overtake it. Admission waits only for that intent's real grant,
+then rechecks queue lifetime, connection, document, control generation, human
+lease token and the originally observed native editor. The transport is invoked
+inside this barrier directly, avoiding a recursive barrier behind itself.
+
+Queue reset, denial, hide, blur, close and target replacement invalidate unsent
+composition. Cancellation retains its own transaction ID and cannot cancel a
+newer transaction. A composition event cannot acquire control on its own: no
+human intent, Agent intent or an obsolete request is ineligible. An unknown
+native editor is explicitly rejected with a focus-again action; staging is never
+rebound to whichever editor appears later. Native password policies/capabilities
+remain authoritative. These are bridge admission guarantees, not physical mobile
+system-keyboard or unknown-first-focus compatibility claims.
+
+
+The stable-known-editor pending-intent case is a conditional admission guarantee,
+not a claim that the first viewer gesture already knows its native editor.
+Editing observations are private to the current server controller; losing
+control clears the client target. An ordinary first handoff can therefore have
+no known editor until after grant and native focus observation. Such early local
+composition is explicitly rejected, not buffered for an arbitrary later target.
+A full unknown-first-focus path needs its own causal native binding; it is not
+provided by this admission change.
+
+
+### Nonfatal local input feedback
+
+Editing, clipboard and human-control refusals use a separate finite semantic
+feedback port. The logical Page forwards only current-record feedback to its
+application consumers; it does not change navigation state, history, loading,
+revision or durable metadata. A per-Workbench bridge under the existing scoped
+notification provider shows a localized warning keyed by Page and operation.
+Multiple views do not create duplicate subscribers; roots and their histories
+remain isolated. No raw RPC/native message is displayed through this port.
+
+Close/dispose retires old feedback ownership. Genuine navigation, connection
+and decoder failures retain the existing page-error path. Successful editing
+never clears an unrelated navigation failure. Standalone legacy surface ports
+without the new callback retain their previous error fallback; the actual Page
+runtime always supplies the nonfatal input channel.
+
+### Long MSE decode timelines
+
+Fragmented MP4 `tfdt` version 1 writes both halves of the 64-bit decode time.
+The 90kHz virtual timeline stays monotonic past 1,431,656 encoded frames; it
+must not wrap to zero after the low 32 bits overflow. This is encoded media
+progress, not a fixed wall-clock lifetime for sparse/VFR tabs. The change adds
+no idle frames, keyframes, encoding work or retained decoder.
+
+### Runtime identity admission
+
+A candidate runtime must be readable and contain its executable/worker/owner
+entry points before attachment or empty-owner replacement. Candidate identity
+failure is an error; it cannot become a successful current-runtime observation.
+Unidentified retained bytes are not current, but a live native inventory still
+preserves the process and document. Only an empty, exclusively attached owner
+may be replaced. Identity includes every immutable byte and executable
+capability; private install `0700` and normalized mount `0755` represent the same
+executable capability. Losing that capability remains an identity change.
+
+### Native runtime placement and compatible rollback
+
+A pool-aware physical placement adapter can retain old native documents while
+new tabs use the current runtime. Logical page identity, authorization, account
+and global quotas, retirement and metadata remain in RemoteBrowserService.
+The private schema1 owner-pool manifest records only server-selected slots and
+page-to-slot placements, under an independent OS-held single-writer lease.
+Each slot has its own managed process and profile. Up to three generations may
+coexist; capacity never evicts a live page. New placement commits before native
+creation. An uncertain outcome stays assigned to the same slot for inventory
+reconciliation, without replaying accepted input.
+
+Explicit retirement commits logical closure, acknowledges native close, releases
+physical placement, then removes the logical record. A native recovery close
+alone never releases placement. Empty draining owners are stopped only under
+their exclusive attachment after empty inventory and settled work; matching
+current owners stay warm. Slot transport failure invalidates only that slot's
+pages and control generations. Gateway teardown detaches transports and drains
+placement writes before releasing the writer, without killing live owners.
+Disconnect initiation is not detach completion: each slot waits for the old
+transport's close acknowledgement before reconnecting. Shutdown also drains
+already-failed peers and attachment results arriving after shutdown began;
+only then may the placement writer transfer. Failed detach completion keeps
+the writer fenced rather than advertising safe handover.
+
+Generation allocation is enabled after separately installing the complete
+allocation-disabled reader/writer. That compatible implementation is the
+supported rollback floor for pooled placements; pre-pool releases cannot safely
+recover their ownership. Disabling allocation still honors any existing
+manifest and uses its current owner for new placements. Native JS heap is
+retained only while its actual process survives, never migrated between
+processes. Each pool prepares and fingerprints its immutable candidate once;
+every retained mount is still fully compared before reuse, and candidate entry
+or fingerprint failures remain terminal. New immutable copies request filesystem
+reflinks with normal copy fallback; this does not share live profiles.
+
+Native failure diagnostics follow the slot's existing sanitized in-memory
+snapshot to Service, without creating a disk log or exposing page contents.
+Intentional empty-owner collection does not report a user-page disconnection.
+
+Attachment events are bounded and buffered until the consumer subscribes,
+including events arriving in the greeting packet. Pool dispatch leaves separate
+64-edit and16-read credits below the native128-request limit, so long read waits
+do not consume the edit window. Total accepted work is bounded to1024 requests
+and4MiB. Overload retires the affected slot transport, fencing held input through
+the existing native owner; it does not discard only a gesture end or replay an
+unknown write. These limits do not establish physical mobile IME or OOPIF focus
+acknowledgement support.
+
+Pacing failure callbacks are fenced by both page runtime generation and the
+latest pacing request revision, in addition to transport identity. A retained
+pool transport does not mean a renderer/page generation survived. An old
+unsupported response cannot disable a recovered page, and a delayed transient
+failure cannot invalidate a newer acknowledged pacing value. Native unsupported
+caching and transient retry behavior remain scoped to their actual generation.
+
+Attachment is not completed adoption. If startup orphan reconciliation or its
+state commit fails, the Gateway invalidates that attempt, preserves unknown
+logical occupancy and detaches/drains its exclusive transport before retry.
+Persistent native processes and their documents survive this cleanup. A retired
+transport cannot report successful startup after a delayed commit. Socket
+transports expose their physical close completion alongside pool writer drain.
+
+Shutdown keeps the logical state writer until any pending owner startup settles,
+its late attachment has detached and the final state queue drains. Cancellation
+is checked after loading and directory preparation; an already admitted cold
+attachment must finish its cleanup before another Gateway writes that directory.
+No accepted input is replayed, and no live profile is opened concurrently.
+
+A non-live in-memory page with a durable runtime checkpoint other than explicit
+`absent` must query the native snapshot before reservation or URL restoration.
+The queued transition to `unknown` can be delayed or fail independently of the
+native document. Durable `live`, `starting`, `unknown`, and legacy missing kinds
+therefore cannot authorize a second navigation. A successful snapshot resumes
+the existing document without replaying input or the caller's initial URL.
+
+Snapshot replies, confirmed-missing close acknowledgements and state commits
+remain scoped to the original transport, page object, runtime epoch, authority
+and closing state across every await. A late missing reply cannot close a
+replacement page. A snapshot cannot overwrite a newer observed document. Only
+a current confirmed-missing reply followed by close and an `absent` commit
+permits the existing restoration path; explicit absent and generation-zero
+creation keep their original admission rules.
+
+Managed owners bind a verified content-addressed `owner-runtimes/<identity>`
+directory. Publication normalizes only the private staging copy, verifies its
+full identity and atomically renames it; a concurrent publisher verifies the
+existing winner without deleting it. Existing payloads and legacy mounted
+directories are never removed by startup. A compatibility alias is created only
+when the old reader path is absent and never determines actual runtime identity.
+Existing identity roots must be directories, not aliases to mutable candidates.
+
+The Gateway reads bounded unit metadata and fingerprints the actual MainPID's
+mounted public payload before attachment. The greeting is followed by a short
+MainPID/InvocationID recheck; this cannot promote a different managed instance
+to the prepared candidate. Unknown metadata or identity fails closed, drains
+only the attempted transport and preserves native documents. Empty stale owners
+can still be upgraded only under their exclusive drained-inventory attachment.
+Starting instances are awaited. A competing start may win after observation;
+the losing caller adopts/reconciles that actual winner and never blindly labels
+its own candidate current. Cold start submissions are bounded to two per call.
+Buffered greeting events and the existing operation budgets remain in force;
+no accepted input is replayed, and payload retention/GC remains separate.
+
+
+The managed metadata query deadline and output cap settle the caller immediately
+and SIGKILL only that query subprocess; they never wait for its cooperative exit
+and never signal the native owner. Late output/error/close callbacks cannot
+settle or mutate the already retired result. Normal process-close still captures
+the complete bounded metadata before parsing. A failed post-greeting query drains
+only the attempted attachment, so the same persistent worker can be retried.
+
+### Reveal capture surface readiness
+
+The one-shot reveal capture can report `UnknownVizError` before Chromium has a
+compositor surface. Only this transient reveal error is retryable; the existing
+Gateway visibility writer owns its finite four-attempt budget and visibility
+recheck. Other failures and explicit screenshot requests retain their error
+semantics. This adds neither periodic capture nor input replay, and parking
+during backoff prevents another reveal capture.
+
+Retained workers may still serialize the observed reveal failure as
+`BROWSER_ERROR` / `UnknownVizError` / `retryable:false`. The visibility writer
+recognizes only this exact code/message pair within its existing retry budget,
+so old live documents also recover without replacing their native process.
+Matching text with another error code, including authorization failure, keeps
+its terminal decision.

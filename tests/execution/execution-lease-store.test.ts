@@ -144,8 +144,27 @@ test('published v15 upgrades append-only and leaves old execution clock unknown'
   prior.database.exec("INSERT INTO execution_leases(execution_id,thread_id,input_id,generation,turn_id,engine_incarnation,state,admitted_at_ms) VALUES('old','t','A',1,'one','engine','active',1000);");
   const original=prior.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get();prior.database.close();
   const next=new OpenCraftHostStateDatabase(dir);try{
-    assert.equal(next.outcome.appliedVersion,16);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
+    assert.equal(next.outcome.appliedVersion,17);assert.deepEqual(next.database.prepare('SELECT * FROM schema_migrations WHERE version=15').get(),original);
     const reader=new ExecutionLeaseReader(next.database);
     assert.equal(reader.resolveJobOrigin({threadId:'t',engineIncarnation:'engine',startedAtMs:1100,uncertaintyMs:20,bootId:'boot',startedAtBootMs:1100}).status,'unknown');
   }finally{next.close();}
+});
+
+// Recovery scheduling must not inherit a historical thread/index insertion order.
+test("recovery prioritizes recent execution without omitting or authorizing historical leases", t => {
+  const f = fixture(t);
+  for (const [thread, at] of [["a-old", 1000], ["b-new", 9000], ["c-middle", 4000]] as const) {
+    f.store.capture(thread, "input", A); const id = f.store.begin(thread, "input");
+    f.store.started(thread, "turn", "input", "native");
+    f.owner.database.prepare("UPDATE execution_leases SET admitted_at_ms=? WHERE execution_id=?").run(at, id);
+  }
+  f.store.suspend();
+  assert.deepEqual(f.store.unsettledThreads(), ["b-new", "c-middle", "a-old"]);
+  for (const thread of f.store.unsettledThreads()) {
+    assert.equal(f.store.unsettledTargets(thread).length, 1);
+    assert.equal(f.owner.database.prepare("SELECT state FROM execution_leases WHERE thread_id=?").get(thread)?.state, "unknown");
+  }
+  f.store.reconcile("b-new", [{id:"turn",status:"inProgress"}], "native");
+  assert.equal(f.owner.database.prepare("SELECT state FROM execution_leases WHERE thread_id='b-new'").get()?.state, "active");
+  assert.equal(f.owner.database.prepare("SELECT state FROM execution_leases WHERE thread_id='a-old'").get()?.state, "unknown");
 });

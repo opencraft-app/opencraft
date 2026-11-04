@@ -56,6 +56,13 @@ registration records must never become the listener's `this` receiver. Separate
 raw/Cordis tests cover that concrete JavaScript boundary, which is absent from
 the abstract admission model.
 
+A request may separately own a local `receiveResult` projection. The Client invokes
+it after releasing that request's pending reservation and before resolving its
+Promise or receiving a later same-batch frame. This is an authoritative boundary
+of that request, not a diagnostic subscription, and is never serialized onto the
+wire. A projection exception rejects only its request. History uses it to capture
+the versioned snapshot receive cut; it does not grant execution authority.
+
 These observers do not use the native notification connection fence. Transport
 loss must still publish a pending request's failure before a successor
 initializes. Client close publishes pending-request termination before clearing
@@ -1426,6 +1433,20 @@ recovery disposition. A native-local no-dispatch RPC id must never cross this
 boundary: another logical claim may have reused that numeric id for a write that
 was already admitted. Only the matching `host/send` rejection grants local proof.
 
+
+## Recipient-local publication failure
+
+An AppHost native publication rechecks each recipient's access projection at
+its current lease. A projection exception (including an expired admission proof)
+or a failing output Port retires only that connection. No rejected frame is
+forwarded, healthy recipients continue, and the shared physical Host is not
+restarted. Projection reentry that closes or replaces the lease cannot publish
+its returned frame. Trusted access-session emissions use the same recipient
+boundary. Failed recipient cleanup stays retained for explicit Server shutdown
+retry; observing a publication failure is not a successful disposal receipt.
+A normal null projection filters a frame without retiring a healthy recipient.
+
+
 ## Core health during history recovery
 
 Concurrent consumers of one Core control client share only the health request
@@ -1459,3 +1480,49 @@ Host 在返回持久会话的创建成功前，要求 Native 通过原 `thread/r
 
 行为证据是 stock Native 的创建→真实 Core/Native 重启→原 ID resume→首次 Turn 完整
 completed，模型请求恰一次；Host 替换、缺 callback、丢首 Turn ACK 继续保留各自边界。
+
+
+## Route observation across failed Client assembly
+
+The provider may expose `subscribeRecoveryHint` for the resident Host lifetime.
+The Runtime subscribes before its first Client assembly and retains that
+subscription through failed initialization, Client cleanup and retry backoff.
+It unsubscribes when the Host Runtime is disposed. The Web AppHost factory keeps
+its existing shared visible-route timer while either a transport or a Host route
+subscriber still needs observations; hidden pages and absent demand pause it.
+
+Closing a failed transport still revokes its messages and releases its lease.
+Route observations neither retain that transport nor acknowledge its physical
+release. They only wake the original connection owner, which preserves deadline,
+manual-block, backoff and at-most-one-attempt rules. Providers without the hook
+retain the existing transport-scoped observation behavior. A bridge probe still
+proves only route reachability; Host initialization and Thread history authorize
+their own readiness. The regression waits for failed Client cleanup to finish
+before restoring the route, so cleanup cannot race the recovery assertion.
+
+
+## Browser release and return validation
+
+The Web AppHost uses a five-second release acknowledgement budget. Expiry
+revokes the ambiguous bridge, rather than carrying its claim into a new lease.
+The Server still serializes physical cleanup before reacquisition; an unresolved
+raw Port close continues to block replacement. Other Hosts sharing that failed
+bridge recover through their existing lifecycle owners. This is not a remote
+execution cancellation or an input replay.
+
+SSH connection admission shares the session authentication read and optional
+installation grant renewal with discovery, but does not wait for connection or
+legacy catalogs. Authentication changes invalidate the read; catalog failures
+cannot downgrade a confirmed session. Origin checks and explicit access-key
+unlock remain required.
+
+Browser foreground validation treats a prior offline hint as a reason to read,
+even if no online event arrives. Hidden or unready online/pageshow events cannot
+consume the history validation cooldown. Pageshow also requests validation of
+the current conversation. These read-only hints join Runtime history recovery;
+they do not create a second Host reconnect scheduler or replace the page.
+
+
+## Response and wake diagnostic boundaries
+
+Request lifecycle completion/failure observations optionally include the local response callback entry and callback-to-settlement duration. The entry precedes decoding and the request-owned synchronous receive projection; neither measures network packet arrival or UI paint. Timeout/abort retains its existing deadline and settlement semantics. Browser lifecycle observations report wall and monotonic gaps separately, run their gap timer only while visible, and retire on owner disposal. Freeze/resume support is reported only when the browser actually supplies an event. These diagnostics do not replay requests, restart a connection, or own recovery state.

@@ -212,3 +212,17 @@ Metadata-only `thread/read` does not imply that this provider can bootstrap a
 window without Resume. Explicit read-history support opts that provider into
 read-only opening; Codex paging remains read-only without requiring this legacy
 message-window handshake.
+
+### Recovery placeholder shimmer
+
+The App projects active connection/history recovery through `placeholderPending` on
+both draft and conversation composers. The placeholder plugin decorates only the
+empty editable paragraph; generated highlight copy adds no editor widget or caret
+boundary. Motion consumes `recoveryPlaceholderShimmerMotion` cadence (2s sweep, 3s cycle), leaves readable base text,
+and disappears with content, completed/terminal recovery, reduced motion or forced
+colors. The normal follow-up placeholder remains static. No recovery state, input
+admission or Draft ownership changes.
+
+The placeholder highlight travels two text widths per sweep; excess offscreen
+travel must not compress the visible sweep into a short flash. Execution activity
+text retains its independent working cadence.

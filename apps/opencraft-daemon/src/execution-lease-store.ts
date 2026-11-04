@@ -1,3 +1,4 @@
+import type { GoalExecutionProof } from "@opencraft/appserver-protocol";
 import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -21,7 +22,7 @@ export interface ExecutionLease extends ExecutionSubmission {
 }
 export type ExecutionLeaseResolution =
   | { readonly status: "active" | "expired" | "unowned"; readonly lease: ExecutionLease }
-  | { readonly status: "unknown" };
+  | { readonly status: "unknown"; readonly reason?: "lease-unresolved" | "live-inspection-unavailable" | "lease-changed" };
 
 /** Native original input IDs exclude both the dedicated steer item and Pi's
  * userMessage projection of steering. Displayed authors are never consulted. */
@@ -38,6 +39,11 @@ export function originalExecutionInputIds(turn: { items?: readonly unknown[] }):
 function text(value: unknown): string {
   if (typeof value !== "string" || !value || value.length > 512) throw new Error("Invalid execution identity");
   return value;
+}
+function validateExecutionSubmission(value: ExecutionSubmission): void {
+  if (!["human", "unowned", "unknown"].includes(value.ownership) || (value.ownership === "human") !== (value.principal !== null))
+    throw new Error("Invalid execution ownership");
+  if (value.principal) { text(value.principal.provider); text(value.principal.subject); }
 }
 export function snapshotExecutionSubmission(context: TransportSubmissionContext): ExecutionSubmission {
   const principal = context.executionPrincipal;
@@ -122,11 +128,89 @@ export class ExecutionLeaseReader {
 
 /** Borrows the Host owner's managed connection; never migrates/closes it. */
 export class ExecutionLeaseStore extends ExecutionLeaseReader {
+  /** Prepare a new, explicit delegation. A native receipt must acknowledge its
+   * nonce before automatic work can use it. Unknown/anonymous mutations revoke. */
+  prepareGoal(threadId: string, value: ExecutionSubmission): string | null {
+    text(threadId); validateExecutionSubmission(value);
+    this.revokeGoal(threadId);
+    if (value.ownership === "unknown") return null;
+    const id = randomUUID();
+    this.db.prepare(`INSERT INTO execution_goal_grants(thread_id,authorization_id,principal_json,state,round)
+      VALUES(?,?,?,'pending',0)`)
+      .run(threadId, id, JSON.stringify(value.principal));
+    return id;
+  }
+  confirmGoal(threadId: string, authorizationId: unknown): void {
+    if (typeof authorizationId !== "string") return;
+    this.db.prepare("UPDATE execution_goal_grants SET state='active' WHERE thread_id=? AND authorization_id=? AND state='pending'")
+      .run(threadId, authorizationId);
+  }
+  /** Native create_goal inside an admitted Turn is explicit delegation from
+   * that exact execution, never a lookup of the last human in the Thread. */
+  authorizeGoalFromTurn(threadId: string, turnId: string, authorizationId: string, inputId?: string): boolean {
+    text(authorizationId);
+    if (inputId && this.getSubmission(threadId, inputId)) this.started(threadId, turnId, inputId);
+    const row = this.db.prepare(`${SELECT} WHERE l.thread_id=? AND l.turn_id=?`).get(threadId, turnId);
+    const origin = resolution(row);
+    if (origin.status !== "active" && origin.status !== "unowned") return false;
+    const existing = this.db.prepare("SELECT * FROM execution_goal_grants WHERE thread_id=? AND authorization_id=?").get(threadId, authorizationId);
+    // Replayed lifecycle/accounting events cannot replace or revive a grant.
+    if (existing?.authorization_id === authorizationId) return existing.state === "active";
+    this.revokeGoal(threadId);
+    this.db.prepare(`INSERT INTO execution_goal_grants(thread_id,authorization_id,principal_json,state,round)
+      VALUES(?,?,?,'active',0)`)
+      .run(threadId, authorizationId, JSON.stringify(origin.lease.principal));
+    return true;
+  }
+  revokeGoal(threadId: string): void {
+    this.db.prepare("UPDATE execution_goal_grants SET state='revoked' WHERE thread_id=?").run(threadId);
+    // Revoking a Goal also withdraws its current delegated credential lease.
+    const clock = bootClock();
+    this.db.prepare(`UPDATE execution_leases SET state='ended',ended_at_ms=?,ended_at_boot_ms=? WHERE thread_id=?
+      AND execution_id IN (SELECT execution_id FROM execution_goal_rounds)
+      AND ended_at_ms IS NULL AND state IN ('active','pending','unknown')`).run(Date.now(), clock?.at ?? null, threadId);
+  }
+  /** Only call for metadata received on the authenticated native event lane.
+   * Renderer input, prompt text and thread/read history cannot provide proof. */
+  goalContinuation(threadId: string, turnId: string, proof: unknown, incarnation?: string): boolean {
+    if (!proof || typeof proof !== "object") return false;
+    const { authorizationId, round } = proof as Partial<GoalExecutionProof>;
+    if (typeof authorizationId !== "string" || typeof round !== "number" || !Number.isSafeInteger(round) || round < 1) return false;
+    const grant = this.db.prepare("SELECT * FROM execution_goal_grants WHERE thread_id=? AND authorization_id=?").get(threadId, authorizationId);
+    if (!grant || !["active", "pending"].includes(String(grant.state)) || grant.authorization_id !== authorizationId || round <= Number(grant.round)) return false;
+    // A distinct input/start already bound to this Turn always wins. A Goal
+    // event cannot relabel a human, schedule, queued input or historical Turn.
+    const existing = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND turn_id=?").get(threadId, turnId);
+    if (existing && (existing.input_id !== `native:${turnId}` || existing.ended_at_ms !== null)) return false;
+    const pending = this.db.prepare(`SELECT 1 FROM execution_leases WHERE thread_id=? AND state='pending'
+      AND turn_id IS NULL AND ended_at_ms IS NULL
+      AND execution_id NOT IN (SELECT execution_id FROM execution_goal_rounds) LIMIT 1`).get(threadId);
+    if (pending) return false;
+    this.db.exec("SAVEPOINT goal_execution_admission");
+    try {
+      const inputId = `goal:${authorizationId}:${round}`;
+      const principal = JSON.parse(String(grant.principal_json)) as ExecutionPrincipal | null;
+      this.capture(threadId, inputId, { principal, ownership: principal ? "human" : "unowned" }, "accepted", "system");
+      this.started(threadId, turnId, inputId, incarnation);
+      const bound = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND turn_id=?").get(threadId, turnId);
+      if (!bound || bound.input_id !== inputId || bound.state !== "active") {
+        this.db.exec("ROLLBACK TO goal_execution_admission; RELEASE goal_execution_admission");
+        return false;
+      }
+      this.db.prepare("INSERT INTO execution_goal_rounds(execution_id,authorization_id,round) VALUES(?,?,?)")
+        .run(bound.execution_id!, authorizationId, round);
+      this.db.prepare("UPDATE execution_goal_grants SET round=?,state='active' WHERE thread_id=? AND authorization_id=? AND state IN ('active','pending')")
+        .run(round, threadId, authorizationId);
+      this.db.exec("RELEASE goal_execution_admission");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK TO goal_execution_admission; RELEASE goal_execution_admission");
+      throw error;
+    }
+  }
   capture(threadId: string, inputId: string, value: ExecutionSubmission, admission: "pending" | "accepted" = "accepted", kind: ExecutionInputKind = "start"): void {
     text(threadId); text(inputId);
-    if (!["human", "unowned", "unknown"].includes(value.ownership) || (value.ownership === "human") !== (value.principal !== null))
-      throw new Error("Invalid execution ownership");
-    if (value.principal) { text(value.principal.provider); text(value.principal.subject); }
+    validateExecutionSubmission(value);
     const existing = this.getSubmission(threadId, inputId);
     if (existing) {
       if (existing.ownership !== value.ownership || existing.principal?.provider !== value.principal?.provider
@@ -170,6 +254,9 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
     }
   }
   private bindExactInput(threadId: string, turnId: string, inputId: string, incarnation?: string): void {
+    const delegated = this.db.prepare(`SELECT l.turn_id FROM execution_leases l JOIN execution_goal_rounds g
+      ON g.execution_id=l.execution_id WHERE l.thread_id=? AND l.input_id=? LIMIT 1`).get(threadId, inputId);
+    if (delegated && delegated.turn_id !== turnId) return;
     let existing = this.db.prepare("SELECT * FROM execution_leases WHERE thread_id=? AND turn_id=?").get(threadId, turnId);
     const placeholder = existing?.input_id === `native:${turnId}`;
     incarnation ??= typeof existing?.engine_incarnation === "string" ? existing.engine_incarnation : undefined;
@@ -255,7 +342,7 @@ export class ExecutionLeaseStore extends ExecutionLeaseReader {
       .run(...(threadId ? [threadId] : []));
   }
   unsettledThreads(): string[] {
-    return this.db.prepare("SELECT DISTINCT thread_id FROM execution_leases WHERE ended_at_ms IS NULL AND state IN ('active','pending','unknown')").all().map(row => String(row.thread_id));
+    return this.db.prepare("SELECT thread_id FROM execution_leases WHERE ended_at_ms IS NULL AND state IN ('active','pending','unknown') GROUP BY thread_id ORDER BY MAX(admitted_at_ms) DESC, thread_id").all().map(row => String(row.thread_id));
   }
   unsettledTargets(threadId: string): readonly { turnId: string | null; inputId: string }[] {
     return this.db.prepare("SELECT turn_id,input_id FROM execution_leases WHERE thread_id=? AND ended_at_ms IS NULL AND state IN ('active','pending','unknown')")
@@ -290,16 +377,16 @@ export class LiveExecutionLeaseReader {
   async resolveJobOrigin(input: JobOriginQuery): Promise<ExecutionLeaseResolution> {
     if (this.reader.originClock !== this.originClock) return {status:"unknown"};
     const before = this.reader.resolveJobOrigin(input);
-    if (before.status !== "active") return before;
+    if (before.status !== "active") return before.status === "unknown" ? { ...before, reason: "lease-unresolved" } : before;
     let state: NativeExecutionState;
-    try { state = await this.inspect(before.lease); } catch { return { status: "unknown" }; }
-    if (state === "unknown") return { status: "unknown" };
+    try { state = await this.inspect(before.lease); } catch { return { status: "unknown", reason: "live-inspection-unavailable" }; }
+    if (state === "unknown") return { status: "unknown", reason: "live-inspection-unavailable" };
     if (state === "finished") return { status: "expired", lease: before.lease };
     // Re-read after the asynchronous boundary. Never follow a successor Turn,
     // changed process origin or a lease closed while the native read was pending.
     const after = this.reader.resolveJobOrigin(input);
-    if (after.status !== "active") return after;
+    if (after.status !== "active") return after.status === "unknown" ? { ...after, reason: "lease-changed" } : after;
     return after.lease.executionId === before.lease.executionId && after.lease.generation === before.lease.generation
-      ? after : { status: "unknown" };
+      ? after : { status: "unknown", reason: "lease-changed" };
   }
 }

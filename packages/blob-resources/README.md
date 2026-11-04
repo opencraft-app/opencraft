@@ -50,3 +50,37 @@ stable authenticated scope and version; a path alone is insufficient.
 Defaults: 3 active jobs, 64 MiB/256 memory entries; browser storage 256 MiB/512
 entries. Idle expired entries are rejected on access and swept on writes. This
 module does not add PTYs, physical sockets, or claim independent enterprise service bandwidth.
+
+## Shared resource state
+
+`ResourceStore<T>` is an OpenCraft foundation component for prepared resource
+results. `getSnapshot(resource)` is synchronous, stable and never starts IO;
+`subscribe(resource, notify)` starts or joins preparation. The first render of a
+returning view reads a valid result immediately. A view owns its subscription;
+the store owns retained results and their disposers. Leaving the last pending
+consumer aborts preparation; a late result is disposed. Cold failures are not retained
+once the last subscriber leaves. Idle results expire and obey entry/byte LRU
+budgets; active consumers pin their results until release or explicit invalidation.
+
+Create stores through `BlobResourceService.createResourceStore` so file
+invalidation and application disposal also reach prepared results. Store loaders
+reuse existing Blob acquisition and its authority identity. Browser media URLs
+are held by these results rather than by individual image components. The chat
+media contract exposes optional synchronous snapshots/subscriptions; legacy
+Promise-only loaders continue to use consumer leases. This first integration
+covers Markdown images, sent attachments and tool/generated-image consumers.
+It does not preserve decoded DOM nodes or invent dimensions before loading.
+
+Ordinary file changes use `BlobResourceService.refresh(resource)`: expire the
+underlying file bytes and revalidate active prepared results. Snapshots expose
+`isFetching` and `error` independently of availability. A successful old value
+stays `ready` during refresh and after a refresh error; success publishes the new
+value before disposing the old cache lease. No silent retry is scheduled. Leaving
+the final subscriber cancels refresh IO; idle/expired results retain the original
+bounded lifetime. Explicit `invalidate(resource)` still discards prepared values.
+Applications must continue using authority-scope retirement for session changes.
+
+For an already displayed browser image, the media adapter prepares the replacement
+image before publishing its new URL. This is part of one refresh transaction, not
+a separate decoded-image cache. Cancellation releases the uncommitted URL. Cold
+images retain the existing rendering behavior.

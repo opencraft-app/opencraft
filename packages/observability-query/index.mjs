@@ -28,6 +28,12 @@ export const definitions = Object.freeze({
   'usage.activity': { title: '已校验交互真人用户数（7天去重）', kind: 'exact_domain_aggregation', promql: 'opencraft_active_humans_7d', unit: 'humans', windowSemantics:'rolling_7d_at_evaluation' },
   'components.versions': { title: '组件身份识别覆盖率', kind: 'resource_sample', promql: 'opencraft_component_identity_known', unit: 'boolean' },
   'data.coverage': { title: '遥测数据采集丢弃数', kind: 'resource_sample', promql: 'opencraft_telemetry_losses_total', unit: 'events' },
+  'relay.connections': { title: '中继连接与预留槽位', kind: 'resource_sample', promql: '{__name__=~"opencraft_relay_(active_streams|pending_streams|control_connections)"}', unit: 'connections', windowSemantics:'fresh_owner_samples_at_evaluation' },
+  'relay.capacity': { title: '中继占用与上限', kind: 'resource_sample', promql: 'label_replace(opencraft_relay_active_streams + opencraft_relay_pending_streams, "capacity", "global_used", "", "") or label_replace(opencraft_relay_global_limit, "capacity", "global_limit", "", "") or label_replace(opencraft_relay_max_instance_slots, "capacity", "busiest_instance_used", "", "") or label_replace(opencraft_relay_instance_limit, "capacity", "instance_limit", "", "")', unit: 'slots', windowSemantics:'fresh_owner_samples_at_evaluation' },
+  'relay.peaks': { title: '中继槽位峰值（当前进程生命周期）', kind: 'resource_sample', promql: '{__name__=~"opencraft_relay_peak_(slots|instance_slots)"}', unit: 'slots' },
+  'relay.rejections': { title: '中继满载拒绝次数（5分钟增量）', kind: 'histogram_approximation', promql: 'increase(opencraft_relay_capacity_rejections_total[5m])', unit: 'attempts', windowSemantics:'rolling_5m_at_evaluation' },
+  'relay.timeouts': { title: '中继建连超时次数（5分钟增量）', kind: 'histogram_approximation', promql: 'increase(opencraft_relay_open_timeouts_total[5m])', unit: 'attempts', windowSemantics:'rolling_5m_at_evaluation' },
+  'relay.freshness': { title: '中继采样距今时长（缺失表示未接入）', kind: 'resource_sample', promql: 'opencraft_relay_sample_age_seconds', unit: 'seconds' },
   'incident.read': { title: '捕获的故障现场证据', kind: 'event_sample', unit: 'events' },
   'baseline.compare': { title: '基线对比操作样本', kind: 'event_sample', unit: 'milliseconds' },
 });

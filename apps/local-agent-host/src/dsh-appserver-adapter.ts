@@ -11,6 +11,7 @@ import { basename, extname, join } from "node:path";
 import { DshClient, DshClientError, type DshEvent, type DshHistoryEntry } from "./dsh-client.js";
 import { RuntimeProviderService, type RuntimeModelInfoReader } from "./runtime-provider-service.js";
 import { checkSavedModel } from "./saved-model-check.js";
+import {inspectSavedModel} from './model-capability-inspection.js';
 import { reasoningCapability, modelInputModalities, unsupportedModelInput } from "@opencraft/composer-core";
 import type { RuntimeModelProbeParams, RuntimeSettingsDescribeResponse } from "@opencraft/appserver-protocol";
 import { DshInteractions } from "./dsh-interactions.js";
@@ -52,7 +53,7 @@ export interface DshThreadEnginePort {
   release(params: RecordValue): Promise<any>;
 }
 
-interface DshSessionSummary {
+export interface DshSessionSummary {
   sessionId: string;
   updatedAt: number;
   running: boolean;
@@ -1053,6 +1054,33 @@ export class DshAppServerAdapter {
     return this.pinStore!;
   }
 
+  /** One native summary scan per directory synchronization, independent of UI pages. */
+  private directoryMetadataFlight: Promise<AppServerThread[]> | undefined;
+  private directoryMetadataReader?: (ids: readonly string[]) => Promise<{ items: DshSessionSummary[]; missing: string[] }>;
+  setDirectoryMetadataReader(reader: NonNullable<DshAppServerAdapter["directoryMetadataReader"]>): void { this.directoryMetadataReader = reader; }
+  directoryMetadata(threadIds?: readonly string[]): Promise<AppServerThread[]> {
+    if (threadIds && this.directoryMetadataReader) return this.readDirectoryMetadataBatch(threadIds);
+    if (this.directoryMetadataFlight) return this.directoryMetadataFlight;
+    const flight = this.summariesList().then(items => items.filter(entry => !entry.blank).map(entry => makeThread(entry)));
+    this.directoryMetadataFlight = flight;
+    void flight.finally(() => { if (this.directoryMetadataFlight === flight) this.directoryMetadataFlight = undefined; }).catch(() => {});
+    return flight;
+  }
+  private async readDirectoryMetadataBatch(ids: readonly string[]): Promise<AppServerThread[]> {
+    const started = performance.now();
+    let result: { items: DshSessionSummary[]; missing: string[] };
+    try { result = await this.directoryMetadataReader!(ids); }
+    catch { result = { items: [], missing: [...ids] }; }
+    const wanted = new Set(ids), missing = new Set(result.missing);
+    const live = result.items.filter(item => wanted.has(item.sessionId)).map(item => ({ ...this.summaries.get(item.sessionId), ...item,
+      ephemeral: this.summaries.get(item.sessionId)?.ephemeral ?? item.ephemeral }));
+    for (const item of live) this.summaries.set(item.sessionId, item);
+    const fallback = missing.size ? (await this.directoryMetadata()).filter(row => missing.has(row.id)) : [];
+    console.info(JSON.stringify({ event: "thread-directory-source", mode: missing.size ? "batch-with-full-fallback" : "live-batch",
+      requested: ids.length, live: live.length, fallback: missing.size, durationMs: Math.round(performance.now() - started) }));
+    return [...live.filter(item => !item.blank).map(item => makeThread(item)), ...fallback];
+  }
+
   private async summariesList(): Promise<DshSessionSummary[]> {
     const value = await this.client.call<{ items: DshSessionSummary[] }>("session.list");
     const items = value.items.map(summary => ({ ...summary, ephemeral: this.summaries.get(summary.sessionId)?.ephemeral ?? summary.ephemeral }));
@@ -1480,7 +1508,7 @@ export class DshAppServerAdapter {
       case "runtime/credentials/unset":
         return (this.modelConfiguration ?? this.client).call("credentials.unset", value);
       case "runtime/providers/list":
-        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration&&p.configuration.modelType!=="asr"}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
+        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration&&p.configuration.modelType!=="asr",canInspectSaved:!!this.modelConfiguration&&p.configuration.modelDeclarations&&p.configuration.modelType!=="asr"}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
       case "runtime/providers/reapply":
         return this.modelConfiguration ? this.modelConfiguration.config.synchronize(true) : null;
       case "runtime/providers/apply":
@@ -1500,6 +1528,13 @@ export class DshAppServerAdapter {
         return this.providers.discover(params as RuntimeModelsDiscoverParams);
       case "runtime/models/probe":
         return this.providers.probe(params as RuntimeModelProbeParams);
+      case "runtime/models/inspect": {
+        if(!this.modelConfiguration)throw new Error("当前运行时不支持模型能力检查");
+        const config=this.modelConfiguration.config;
+        return inspectSavedModel(params as import('@opencraft/appserver-protocol').RuntimeModelInspectionParams,{
+          read:()=>config.repository.read(),credential:async ref=>(await config.credentials.resolve(ref))??process.env[ref],
+        });
+      }
       case "runtime/models/check": {
         if(!this.modelConfiguration)throw new Error("当前运行时不支持已保存连接检查");
         const config=this.modelConfiguration.config;

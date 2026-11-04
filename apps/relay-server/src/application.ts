@@ -1,4 +1,5 @@
 import { AssertionSigner, readPrivateJson, type IdentityProvider } from '@opencraft/identity-core/node';
+import { nodeObserver } from '../../../packages/observability-contract/node.mjs';
 import { createRelayServer, type RelayRoute } from './server.js';
 import { createServer as createHttpsServer } from 'node:https';
 import type { Server } from 'node:http';
@@ -102,10 +103,12 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
   const selectionDefaults = config.serverSelectionDefaultsFile ? parseSelectionDefaults(await readPrivateJson(config.serverSelectionDefaultsFile)) : undefined;
   let identity: RelayIdentityAdapter | undefined, hub: HubNetwork | undefined;
   let app: ReturnType<typeof createRelayServer> | undefined, listener: Server | undefined, peerListener: Server | undefined;
+  let observation: ReturnType<typeof nodeObserver> | undefined, observationTimer: ReturnType<typeof setInterval> | undefined;
   let closing: Promise<void> | undefined;
   const close = () => closing ??= (async () => {
     // Retire forwarding/upgrade streams before listeners and identity credentials.
     // allSettled ensures one failing disposer cannot leak another resource or lock.
+    if (observationTimer) clearInterval(observationTimer); observation?.close();
     const failures: unknown[] = [];
     try { hub?.close(); } catch (error) { failures.push(error); }
     for (const result of await Promise.allSettled([app?.close(), closeServer(peerListener), listener !== app?.server ? closeServer(listener) : undefined])) {
@@ -153,6 +156,9 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
     }
     await listen(listener, config.port, config.host);
     hub?.start(config.port);
+    observation = nodeObserver('relay', { sourceRevision: composition.build?.sourceRevision ?? null, buildId: composition.build?.buildId ?? null });
+    const capture = () => { const sample = app!.capacity(); observation!.emit({ kind: 'relay_capacity', ...sample, at: sample.relayCapturedAt, originClass: 'operator' }); };
+    capture(); observationTimer = setInterval(capture, 10000); observationTimer.unref();
     return { server: listener, hub, close };
   } catch (error) {
     try { await close(); } catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Relay startup and rollback failed'); }

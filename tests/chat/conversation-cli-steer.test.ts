@@ -102,3 +102,19 @@ test('native metadata and attention remain readable when recovery is unsupported
     assert.equal(metadata.recovery, null); assert.equal(JSON.stringify(metadata).includes('private'), false);
   }
 });
+
+test('all send outcomes expose a human link without an auxiliary read for submitted or steer',async()=>{
+ const ref={serverId:'s',threadId:'t/中文'},profile={sshAlias:'fixture',instanceId:'i',webUrl:'https://example.test/base/'};
+ let reads=0;
+ const client={require(){},async send(){return {messageId:'m',requestId:'r',replayed:false};},
+  async delivery(){return {ref,deliveryState:'submitted'};},async metadata(){reads++;return {ref,attention:null};}} as unknown as CollaborationClient;
+ const scope={instanceId:'i',actorId:'a',recordsDirectory:'/unused'};
+ const input={content:'text',operationKey:'k',generated:false,timeoutMs:null};
+ for(const execution of [{mode:'queue' as const},{mode:'steer' as const,expectedTurnId:'turn'}]){
+  const receipt=await sendWithAttention(client,ref,{...input,execution},scope,profile);
+  assert.equal(new URL(receipt.uiLink!).pathname,'/base/');
+  assert.deepEqual((await import('../../packages/appserver-protocol/src/collaboration')).parseConversationRef(receipt.uiLink!),ref);
+ }
+ const submitted=await sendWithAttention(client,ref,{...input,timeoutMs:1000},scope,profile);assert.ok(submitted.uiLink);assert.equal(reads,1);
+ const noUrl=await sendWithAttention(client,ref,{...input,execution:{mode:'steer',expectedTurnId:'turn'}},scope,{sshAlias:'fixture',instanceId:'i'});assert.equal(noUrl.uiLink,null);
+});

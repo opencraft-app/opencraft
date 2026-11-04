@@ -98,6 +98,8 @@ export interface HostConnectionProvider<TConfig extends HostConnectionJson = Hos
     context: HostConnectionProviderContext,
     preflight: HostConnectionPreflightContext,
   ): void | Promise<void>;
+  /** Route observations live with the Host/provider lease, across failed Client generations. */
+  subscribeRecoveryHint?(config: TConfig, context: HostConnectionProviderContext, listener: () => void): () => void;
   createTransport(config: TConfig, context: HostConnectionProviderContext): DuplexTransport;
 }
 

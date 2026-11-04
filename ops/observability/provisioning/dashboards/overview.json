@@ -259,6 +259,92 @@
           "range": true
         }
       ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^navigation /",
+            "renamePattern": "页面导航 (navigation) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^thread_open /",
+            "renamePattern": "打开会话 (thread_open) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^thread_history_first_paint /",
+            "renamePattern": "历史首屏显示完成 (thread_history_first_paint) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^catalog_first /",
+            "renamePattern": "模型首选 (catalog_first) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^catalog_complete /",
+            "renamePattern": "完整目录加载 (catalog_complete) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^configuration_confirmed /",
+            "renamePattern": "配置确认 (configuration_confirmed) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^submit_ready /",
+            "renamePattern": "输入就绪 (submit_ready) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^preference_save /",
+            "renamePattern": "偏好保存 (preference_save) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^recovery /",
+            "renamePattern": "状态恢复 (recovery) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^other /",
+            "renamePattern": "其他操作 (other) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[cold\\]/",
+            "renamePattern": "[冷启动 (cold)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[warm\\]/",
+            "renamePattern": "[热启动 (warm)]"
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -326,6 +412,57 @@
           "range": true
         }
       ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[cold\\]/",
+            "renamePattern": "[冷启动 (cold)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[warm\\]/",
+            "renamePattern": "[热启动 (warm)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/lt50轮/",
+            "renamePattern": "<50轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/50to199轮/",
+            "renamePattern": "50–199轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/200to499轮/",
+            "renamePattern": "200–499轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/500plus轮/",
+            "renamePattern": "500+轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/unknown轮/",
+            "renamePattern": "总轮数未知"
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -357,6 +494,57 @@
           "range": true
         }
       ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[cold\\]/",
+            "renamePattern": "[冷启动 (cold)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[warm\\]/",
+            "renamePattern": "[热启动 (warm)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/lt50轮/",
+            "renamePattern": "<50轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/50to199轮/",
+            "renamePattern": "50–199轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/200to499轮/",
+            "renamePattern": "200–499轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/500plus轮/",
+            "renamePattern": "500+轮"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/unknown轮/",
+            "renamePattern": "总轮数未知"
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -386,6 +574,141 @@
           "expr": "sum by (operation, outcome, origin) (increase(opencraft_observed_operations_total[5m]))",
           "legendFormat": "{{operation}} - {{outcome}} ({{origin}})",
           "range": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^navigation /",
+            "renamePattern": "页面导航 (navigation) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^thread_open /",
+            "renamePattern": "打开会话 (thread_open) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^thread_history_first_paint /",
+            "renamePattern": "历史首屏显示完成 (thread_history_first_paint) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^catalog_first /",
+            "renamePattern": "模型首选 (catalog_first) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^catalog_complete /",
+            "renamePattern": "完整目录加载 (catalog_complete) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^configuration_confirmed /",
+            "renamePattern": "配置确认 (configuration_confirmed) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^submit_ready /",
+            "renamePattern": "输入就绪 (submit_ready) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^preference_save /",
+            "renamePattern": "偏好保存 (preference_save) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^recovery /",
+            "renamePattern": "状态恢复 (recovery) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/^other /",
+            "renamePattern": "其他操作 (other) "
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - started \\(/",
+            "renamePattern": " - 已启动 (started) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - progress \\(/",
+            "renamePattern": " - 进行中 (progress) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - ok \\(/",
+            "renamePattern": " - 成功 (ok) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - failed \\(/",
+            "renamePattern": " - 失败 (failed) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - timeout \\(/",
+            "renamePattern": " - 超时 (timeout) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - aborted \\(/",
+            "renamePattern": " - 已中止 (aborted) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - empty \\(/",
+            "renamePattern": " - 空会话 (empty) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - unfinished \\(/",
+            "renamePattern": " - 未完成 (unfinished) ("
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/ - unknown \\(/",
+            "renamePattern": " - 未知 (unknown) ("
+          }
         }
       ],
       "fieldConfig": {
@@ -628,6 +951,71 @@
           "range": true
         }
       ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[started\\]/",
+            "renamePattern": "[已启动 (started)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[progress\\]/",
+            "renamePattern": "[进行中 (progress)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[ok\\]/",
+            "renamePattern": "[成功 (ok)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[failed\\]/",
+            "renamePattern": "[失败 (failed)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[timeout\\]/",
+            "renamePattern": "[超时 (timeout)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[aborted\\]/",
+            "renamePattern": "[已中止 (aborted)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[empty\\]/",
+            "renamePattern": "[空会话 (empty)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[unfinished\\]/",
+            "renamePattern": "[未完成 (unfinished)]"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/\\[unknown\\]/",
+            "renamePattern": "[未知 (unknown)]"
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -742,6 +1130,71 @@
           "expr": "opencraft_executions",
           "legendFormat": "执行状态: {{outcome}}",
           "range": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: started$/",
+            "renamePattern": ": 已启动 (started)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: progress$/",
+            "renamePattern": ": 进行中 (progress)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: ok$/",
+            "renamePattern": ": 成功 (ok)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: failed$/",
+            "renamePattern": ": 失败 (failed)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: timeout$/",
+            "renamePattern": ": 超时 (timeout)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: aborted$/",
+            "renamePattern": ": 已中止 (aborted)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: empty$/",
+            "renamePattern": ": 空会话 (empty)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: unfinished$/",
+            "renamePattern": ": 未完成 (unfinished)"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "/: unknown$/",
+            "renamePattern": ": 未知 (unknown)"
+          }
         }
       ],
       "fieldConfig": {
@@ -938,6 +1391,9 @@
                 "core": {
                   "text": "核心内核 (core)"
                 },
+                "relay": {
+                  "text": "中继 (relay)"
+                },
                 "codex": {
                   "text": "Codex 引擎 (codex)"
                 },
@@ -981,7 +1437,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(opencraft_process_cpu_seconds_total[5m])",
+          "expr": "sum by(component) (rate(opencraft_process_cpu_seconds_total{mode=\"native\"}[5m]))",
           "legendFormat": "{{component}} CPU 核数",
           "range": true
         }
@@ -1001,6 +1457,9 @@
                 },
                 "core": {
                   "text": "核心内核 (core)"
+                },
+                "relay": {
+                  "text": "中继 (relay)"
                 },
                 "codex": {
                   "text": "Codex 引擎 (codex)"
@@ -1040,13 +1499,181 @@
       }
     },
     {
+      "id": 91,
+      "type": "timeseries",
+      "title": "宿主 CPU 与 IO 等待",
+      "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_resource_cpu_busy_percent{scope=\"host\"}",
+          "legendFormat": "CPU 忙碌",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "opencraft_resource_iowait_percent{scope=\"host\"}",
+          "legendFormat": "IO 等待",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 92,
+      "type": "timeseries",
+      "title": "服务 CPU 使用核数",
+      "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_resource_cpu_cores{scope=\"cgroup\"}",
+          "legendFormat": "{{target}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 101,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 93,
+      "type": "timeseries",
+      "title": "CPU 与 IO 压力（some avg10）",
+      "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_resource_cpu_pressure_percent",
+          "legendFormat": "{{scope}}/{{target}} CPU",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "opencraft_resource_io_pressure_percent",
+          "legendFormat": "{{scope}}/{{target}} IO",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 94,
+      "type": "timeseries",
+      "title": "服务磁盘读写速率",
+      "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_resource_read_bytes / on(scope,target) (opencraft_resource_sample_milliseconds / 1000)",
+          "legendFormat": "{{target}} 读",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "opencraft_resource_write_bytes / on(scope,target) (opencraft_resource_sample_milliseconds / 1000)",
+          "legendFormat": "{{target}} 写",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 109,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 95,
+      "type": "timeseries",
+      "title": "资源采样年龄",
+      "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_resource_sample_age_seconds",
+          "legendFormat": "{{scope}}/{{target}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 117,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
       "id": 27,
       "type": "row",
       "title": "平台健康度与采集覆盖",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 101,
+        "y": 125,
         "w": 24,
         "h": 1
       }
@@ -1058,7 +1685,7 @@
       "description": "platform.status; resource_sample; observe-v1.3.0。各遥测数据生产者的生存心跳与年龄（秒）。生产者长期未心跳可能表明采集管道中断。",
       "gridPos": {
         "x": 0,
-        "y": 102,
+        "y": 126,
         "w": 12,
         "h": 8
       },
@@ -1089,6 +1716,9 @@
                 },
                 "core": {
                   "text": "核心内核 (core)"
+                },
+                "relay": {
+                  "text": "中继 (relay)"
                 },
                 "codex": {
                   "text": "Codex 引擎 (codex)"
@@ -1128,7 +1758,7 @@
       "description": "components.versions; resource_sample; observe-v1.3.0。各运行组件的版本与构建身份是否已成功识别和关联。",
       "gridPos": {
         "x": 12,
-        "y": 102,
+        "y": 126,
         "w": 12,
         "h": 8
       },
@@ -1159,6 +1789,9 @@
                 },
                 "core": {
                   "text": "核心内核 (core)"
+                },
+                "relay": {
+                  "text": "中继 (relay)"
                 },
                 "codex": {
                   "text": "Codex 引擎 (codex)"
@@ -1198,7 +1831,7 @@
       "description": "data.coverage; resource_sample; observe-v1.3.0。各组件在客户端队列、传输或服务端由于溢出或反压丢弃的遥测事件计数。",
       "gridPos": {
         "x": 0,
-        "y": 110,
+        "y": 134,
         "w": 12,
         "h": 8
       },
@@ -1229,6 +1862,9 @@
                 },
                 "core": {
                   "text": "核心内核 (core)"
+                },
+                "relay": {
+                  "text": "中继 (relay)"
                 },
                 "codex": {
                   "text": "Codex 引擎 (codex)"
@@ -1264,11 +1900,209 @@
     {
       "id": 31,
       "type": "row",
+      "title": "中继连接与容量",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 142,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "中继连接与预留槽位",
+      "description": "中继 owner 内部活动数据流、等待建立的预留槽位与控制连接；不含 Hub peer-link。每10秒采样，超过90秒不显示占用。",
+      "gridPos": {
+        "x": 0,
+        "y": 143,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"opencraft_relay_(active_streams|pending_streams|control_connections)\"}",
+          "legendFormat": "{{__name__}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "中继占用与上限",
+      "description": "总占用和4096全局上限；最忙实例占用与512单实例上限。占用包含活动与预留。",
+      "gridPos": {
+        "x": 12,
+        "y": 143,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(opencraft_relay_active_streams + opencraft_relay_pending_streams, \"capacity\", \"global_used\", \"\", \"\") or label_replace(opencraft_relay_global_limit, \"capacity\", \"global_limit\", \"\", \"\") or label_replace(opencraft_relay_max_instance_slots, \"capacity\", \"busiest_instance_used\", \"\", \"\") or label_replace(opencraft_relay_instance_limit, \"capacity\", \"instance_limit\", \"\", \"\")",
+          "legendFormat": "{{capacity}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "中继槽位峰值（当前进程生命周期）",
+      "description": "在申请槽位时捕获的进程生命周期高水位，包含两次采样之间的短峰值；重启归零。",
+      "gridPos": {
+        "x": 0,
+        "y": 151,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"opencraft_relay_peak_(slots|instance_slots)\"}",
+          "legendFormat": "{{__name__}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "中继满载拒绝次数（5分钟增量）",
+      "description": "只统计达到单实例/全局容量上限的拒绝；离线、认证失败和停机不计入。",
+      "gridPos": {
+        "x": 12,
+        "y": 151,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(opencraft_relay_capacity_rejections_total[5m])",
+          "legendFormat": "{{scope}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "中继建连超时次数（5分钟增量）",
+      "description": "已预留但10秒内未建立数据通道的请求；不含客户端取消。",
+      "gridPos": {
+        "x": 0,
+        "y": 159,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(opencraft_relay_open_timeouts_total[5m])",
+          "legendFormat": "建连超时",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "中继采样距今时长（缺失表示未接入）",
+      "description": "缺失表示未接入，超过90秒为过期；缺失/过期不能解释为零连接或健康。",
+      "gridPos": {
+        "x": 12,
+        "y": 159,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opencraft-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opencraft_relay_sample_age_seconds",
+          "legendFormat": "距今秒数",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 38,
+      "type": "row",
       "title": "结构化诊断日志",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 118,
+        "y": 167,
         "w": 24,
         "h": 1
       }
@@ -1292,7 +2126,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 119,
+        "y": 168,
         "w": 24,
         "h": 10
       }

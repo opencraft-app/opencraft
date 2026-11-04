@@ -8,6 +8,7 @@ import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as Chevr
 import { LoadingRingIcon, ResetIcon, LightningIcon, PermissionDocumentIcon, PermissionShieldIcon, StopCircleIcon } from "@opencraft/design-system-web/action-icons";
 import { SessionModelPicker, groupComposerModels } from "./session-model-picker";
 import { useInputAuxiliaryMenuFocus } from "./use-input-auxiliary-menu-focus";
+import { recoveryPlaceholderShimmerMotion } from "@opencraft/design-system/tokens";
 import { ComposerRecoveryScan } from "./recovery-scan";
 import { ComposerAttachedRail } from "./attached-rail";
 // AppServer state remains externally owned.
@@ -550,7 +551,7 @@ export const composerSchema = new Schema({
   },
 });
 
-function createPlaceholderPlugin(placeholder: () => string): Plugin {
+function createPlaceholderPlugin(placeholder: () => string, pending: () => boolean): Plugin {
   return new Plugin({
     key: new PluginKey("opencraft-composer-placeholder"),
     props: {
@@ -572,6 +573,8 @@ function createPlaceholderPlugin(placeholder: () => string): Plugin {
         return DecorationSet.create(state.doc, [Decoration.node(0, first.nodeSize, {
           class: "opencraft-composer-placeholder",
           "data-placeholder": placeholder(),
+          "data-placeholder-pending": pending() ? "true" : "false",
+          style: pending() ? `--working-shimmer-cycle-duration: ${recoveryPlaceholderShimmerMotion.cycleMs}ms; --working-shimmer-first-delay: ${recoveryPlaceholderShimmerMotion.firstSweepDelayMs}ms` : "",
         })]);
       },
     },
@@ -757,6 +760,8 @@ export interface OpenCraftComposerProps {
    */
   submissionDisabled?: boolean;
   placeholder?: string;
+  /** Animate empty recovery copy while preserving the native editable paragraph. */
+  placeholderPending?: boolean;
   selectionCatalog?: ComposerSelectionCatalog;
   /** user remembers defaults; session overrides only this conversation; host-default offers no override. */
   modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;
@@ -828,6 +833,7 @@ export const OpenCraftComposer = forwardRef<
     portalContainer,
     submissionDisabled = false,
     placeholder: suppliedPlaceholder,
+    placeholderPending = false,
     selectionCatalog,
     modelSelectionPolicy = "user",
     modelDisplayOnly = false,
@@ -855,6 +861,8 @@ export const OpenCraftComposer = forwardRef<
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
   const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
+  const placeholderPendingRef = useRef(placeholderPending);
+  placeholderPendingRef.current = placeholderPending;
   const placeholderRef = useRef(placeholder);
   placeholderRef.current = placeholder;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -1709,7 +1717,7 @@ export const OpenCraftComposer = forwardRef<
           "Alt-Enter": (state, dispatch) => splitBlock(state, dispatch),
         }),
         keymap(composerBaseKeymap),
-        createPlaceholderPlugin(() => placeholderRef.current),
+        createPlaceholderPlugin(() => placeholderRef.current, () => placeholderPendingRef.current),
         new Plugin({
           key: suggestionPluginKey,
           props: {
@@ -1816,7 +1824,7 @@ export const OpenCraftComposer = forwardRef<
   useLayoutEffect(() => {
     const view = editorViewRef.current;
     if (view) view.setProps({ attributes: { ...view.props.attributes, "aria-label": placeholder } });
-  }, [placeholder]);
+  }, [placeholder, placeholderPending]);
 
   useLayoutEffect(() => {
     const view = editorViewRef.current;
@@ -2151,9 +2159,6 @@ export const OpenCraftComposer = forwardRef<
             ? intl.formatMessage({ id: "chat.steerActiveResponse", defaultMessage: "Steer active response" })
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
-  // Typed content that cannot be sent yet explains why, instead of a silently grey button.
-  const waitingForHostWithContent = submissionDisabled && !disabled && primaryAction !== "stop"
-    && composerSnapshot.canSubmit;
   const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
     ? intl.formatMessage({ id: "chat.waitingForHost", defaultMessage: "Waiting for execution host" })
     : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
@@ -2787,11 +2792,6 @@ export const OpenCraftComposer = forwardRef<
           </div>
         </div>
       </div>
-      {waitingForHostWithContent ? (
-        <p className="opencraft-composer-connection-hint" role="status">
-          {intl.formatMessage({ id: "chat.waitingForHostToSend", defaultMessage: "Connecting. You can send once connected." })}
-        </p>
-      ) : null}
     </div></TouchContactScope>
   );
 });

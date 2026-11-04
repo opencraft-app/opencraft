@@ -64,18 +64,18 @@ export interface RuntimeProviderView {
   readonly configured?: boolean;
   readonly enabled?: boolean;
   readonly declared?: boolean;
-  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeProviderProtocol[]; readonly modelType?: "chat" | "asr"; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean; readonly canUseWithoutAuthentication?: boolean;
+  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeProviderProtocol[]; readonly modelType?: "chat" | "asr" | "image"; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean; readonly canInspectSaved?: boolean; readonly canUseWithoutAuthentication?: boolean;
     readonly defaultBaseURL?: string; readonly defaultApi?: RuntimeProviderProtocol; readonly defaultCredentialRef?: string };
 }
 
 export interface RuntimeProvidersListResponse {
   readonly application?: { readonly state: "pending" | "applied" | "failed"; readonly revision: number; readonly error?: string };
   readonly providers: readonly RuntimeProviderView[];
-  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly speech?: { readonly api: "hunyuan-asr"; readonly baseURL: string; readonly model: string }; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
+  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly image?: { readonly api: "hunyuan-image-v35"; readonly baseURL: string; readonly model: string; readonly revision: number }; readonly speech?: { readonly api: "hunyuan-asr"; readonly baseURL: string; readonly model: string }; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
 }
 
 export type RuntimeOpenAIProtocol = "openai-completions" | "openai-responses";
-export type RuntimeProviderProtocol = RuntimeOpenAIProtocol | "hunyuan-asr";
+export type RuntimeProviderProtocol = RuntimeOpenAIProtocol | "hunyuan-asr" | "hunyuan-image-v35";
 
 /** Host application command: credentials and settings are coordinated behind this boundary. */
 export interface RuntimeProviderApplyParams {
@@ -110,7 +110,7 @@ export interface RuntimeProviderSetEnabledParams {
 }
 
 export interface RuntimeModelView {
-  readonly type?: "chat" | "asr";
+  readonly type?: "chat" | "asr" | "image";
   readonly contextWindow?: number;
   readonly maxTokens?: number;
   readonly input?: readonly ("text" | "image")[];
@@ -154,7 +154,7 @@ export interface RuntimeModelsDiscoverParams {
 }
 
 export interface RuntimeDiscoveredModelView {
-  readonly type?: "chat" | "asr";
+  readonly type?: "chat" | "asr" | "image";
   readonly id: string;
   readonly name?: string;
   readonly contextWindow?: number;
@@ -195,4 +195,19 @@ export interface RuntimeStatusResponse {
   readonly cwd: string;
   readonly provider: string | null;
   readonly model: string | null;
+}
+
+
+/** Saved-model-only read/probe; never saves suggested capabilities. */
+export interface RuntimeModelInspectionParams extends RuntimeSavedModelCheckParams {
+  readonly mode: "metadata" | "verify";
+}
+export interface RuntimeModelInspectionResponse {
+  model: string;
+  revision?: number;
+  checkedAt: string;
+  capabilities: Omit<RuntimeDiscoveredModelView, "id" | "type" | "name">;
+  sources: Partial<Record<"contextWindow" | "maxTokens" | "input" | "reasoningEfforts", string>>;
+  checks: { kind: "text" | "image" | "reasoning"; effort?: string; status: "verified" | "accepted" | "unknown"; detail: string }[];
+  notes: string[];
 }

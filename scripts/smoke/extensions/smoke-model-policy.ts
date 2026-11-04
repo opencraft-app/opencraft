@@ -81,6 +81,7 @@ try {
  }
  const member=await browser.newPage();await member.route('**/__opencraft_model_policy',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({canManage:false})}));await member.goto(server.resolvedUrls!.local[0]);await member.waitForSelector('body[data-ready="true"]');assert.equal(await member.getByText('模型使用限制',{exact:true}).count(),0);await member.close();
  await page.evaluate(()=>(window as any).proof.empty());
- await page.getByText('部分选项已被管理员禁用。',{exact:true}).waitFor();
- assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',screenshots:evidenceDirectory,verified:['real Settings route','admin save','fully restricted catalog reason','light/dark','wide/narrow']}));
+ await page.getByText('没有可用模型，请检查模型配置。',{exact:true}).waitFor();
+ assert.equal(await page.getByText('部分选项已被管理员禁用。',{exact:true}).count(),0);
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({status:'passed',screenshots:evidenceDirectory,verified:['real Settings route','admin save','empty catalog without policy notice','light/dark','wide/narrow']}));
 }finally{await browser?.close();await server.close();}

@@ -49,7 +49,7 @@ export function initializeHeadlessCodexHost(appHostServer, { timeoutMs = 10_000,
  * logical client; failed attempts back off, successful connections are monitored.
  */
 export function maintainHeadlessCodexHost(appHostServer, {
-  timeoutMs = 10_000, retryMs = 1_000, maxRetryMs = 30_000, pollMs = 30_000,
+  timeoutMs = 10_000, retryMs = 1_000, maxRetryMs = 30_000, pollMs = 30_000, checkExecution,
   report = state => console.info('[headless-codex-readiness]', JSON.stringify(state)),
 } = {}) {
   const controller = new AbortController();
@@ -63,15 +63,24 @@ export function maintainHeadlessCodexHost(appHostServer, {
     if (controller.signal.aborted) return;
     timer = setTimeout(callback, wait); timer.unref?.();
   };
-  const monitor = () => {
+  const monitor = async () => {
     if (controller.signal.aborted) return;
-    if (appHostServer.hostState('local-codex') === 'open') schedule(pollMs, monitor);
+    if (appHostServer.hostState('local-codex') === 'open') {
+      try {
+        await checkExecution?.(controller.signal);
+        if (!controller.signal.aborted) publish({state: 'ready', attempt: 0});
+      } catch {
+        if (!controller.signal.aborted) publish({state: 'unavailable', code: 'execution-environment-unavailable', attempt: 0});
+      }
+      schedule(pollMs, monitor);
+    }
     else void initialize();
   };
   const initialize = async () => {
     attempt++;
     try {
       await initializeHeadlessCodexHost(appHostServer, { timeoutMs, signal: controller.signal });
+      await checkExecution?.(controller.signal);
       if (controller.signal.aborted) return;
       attempt = 0; publish({ state: 'ready', attempt: 0 }); schedule(pollMs, monitor);
     } catch {

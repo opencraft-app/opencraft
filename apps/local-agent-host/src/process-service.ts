@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { spawn, type IPty } from "node-pty";
+import { spawn } from "node-pty";
+import { createSandbox, type Sandbox, type SandboxPool } from "@opencraft/sandbox";
 import { TERMINAL_RESOURCE_LIMITS, type ProcessContext, type ProcessOutput, type ProcessSnapshot } from "@opencraft/appserver-protocol";
 import { validateEnvironmentName } from '../../../scripts/account-environment.js';
 import type { ExecutionEnvironmentRuntime, EnvironmentExecutionScope } from '../../../scripts/execution-environment.js';
@@ -14,13 +15,13 @@ export interface PreparedProcessIdentity {
   env?: Record<string, string>;
 }
 
-export function prepareProcessIdentity(environment: ExecutionEnvironmentRuntime | undefined, scope: EnvironmentExecutionScope | undefined, method: string, raw: unknown): PreparedProcessIdentity {
+export function prepareProcessIdentity(environment: ExecutionEnvironmentRuntime | undefined, scope: EnvironmentExecutionScope | undefined, method: string, raw: unknown, baseEnvironment: Readonly<Record<string, string | undefined>> = process.env): PreparedProcessIdentity {
   if (environment && !scope) throw new Error("Environment execution identity required");
   const snapshot = scope && environment?.snapshot(scope);
   const identity: PreparedProcessIdentity = { owner: snapshot?.owner, quotaOwner: JSON.stringify([scope?.account ?? null, scope?.hostId ?? "local"]), scope };
   if (method !== "process/spawn") return identity;
   const p = object(raw ?? {}), env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(snapshot?.apply(process.env) ?? process.env)) if (value !== undefined) env[key] = value;
+  for (const [key, value] of Object.entries(snapshot?.apply(baseEnvironment) ?? baseEnvironment)) if (value !== undefined) env[key] = value;
   for (const [key, value] of Object.entries(p.env == null ? {} : object(p.env))) {
     if (snapshot) validateEnvironmentName(key);
     if (snapshot && Object.hasOwn(snapshot.overlay(), key)) throw new Error("Managed environment cannot be overridden");
@@ -33,12 +34,21 @@ export function prepareProcessIdentity(environment: ExecutionEnvironmentRuntime 
   return identity;
 }
 
+interface TerminalIO {
+  write(data: string): void | Promise<void>;
+  resize(cols: number, rows: number): void | Promise<void>;
+  kill(signal?: string): void | Promise<void>;
+  onData(listener: (data: string | Uint8Array) => void): void;
+  onExit(listener: (event: { exitCode: number }) => void): void;
+}
+
 interface Session {
   context: ProcessContext;
   quotaOwner: string;
   owner?: string;
   scope?: EnvironmentExecutionScope;
-  pty: IPty;
+  pty: TerminalIO;
+  sandbox?: Sandbox;
   killTimer?: ReturnType<typeof setTimeout>;
   phase: "running" | "exited";
   exitCode: number | null;
@@ -59,7 +69,9 @@ function size(value: unknown) {
 
 /** PTY core owned by the independent terminal owner, never by a client socket. */
 export class HostProcessService {
-  constructor(private readonly environment?: ExecutionEnvironmentRuntime) {}
+  constructor(private readonly environment?: ExecutionEnvironmentRuntime, private readonly sandboxPool?: SandboxPool, private readonly sandboxEnvironment: Readonly<Record<string, string>> = {}) {}
+  private readonly starting = new Map<string, { controller: AbortController; identity: PreparedProcessIdentity }>();
+  private readonly starts = new Set<Promise<unknown>>();
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: unknown) => void>();
   private closed = false;
@@ -72,7 +84,7 @@ export class HostProcessService {
   }
   dispatch(method: string, raw: unknown, scope?: EnvironmentExecutionScope): unknown {
     if (this.closed) throw new Error("Process service is closed");
-    return this.dispatchPrepared(method, raw, prepareProcessIdentity(this.environment, scope, method, raw));
+    return this.dispatchPrepared(method, raw, prepareProcessIdentity(this.environment, scope, method, raw, this.sandboxPool ? this.sandboxEnvironment : process.env));
   }
   /** Trusted local owner IPC only. Browser callers must use the Host admission path. */
   dispatchPrepared(method: string, raw: unknown, identity: PreparedProcessIdentity): unknown {
@@ -86,11 +98,11 @@ export class HostProcessService {
     if (typeof p.processHandle !== "string" || p.processHandle.length === 0 || p.processHandle.length > 256) throw new Error("Invalid process handle");
     const id = p.processHandle;
     if (method === "process/spawn") {
-      if (this.sessions.has(id)) throw new Error("Process handle already exists");
+      if (this.sessions.has(id) || this.starting.has(id)) throw new Error("Process handle already exists");
       // Quotas are checked by the PTY owner, independently of UI connections.
       const running = [...this.sessions.values()].filter(s => s.phase === "running");
-      if (running.length >= TERMINAL_RESOURCE_LIMITS.activePerHost
-        || running.filter(s => s.quotaOwner === quotaOwner).length >= TERMINAL_RESOURCE_LIMITS.activePerAccountHost)
+      if (running.length + this.starting.size >= TERMINAL_RESOURCE_LIMITS.activePerHost
+        || running.filter(s => s.quotaOwner === quotaOwner).length + [...this.starting.values()].filter(s => s.identity.quotaOwner === quotaOwner).length >= TERMINAL_RESOURCE_LIMITS.activePerAccountHost)
         throw new TerminalCapacityError();
       if (p.resourceOwnerId != null && (typeof p.resourceOwnerId !== "string" || !p.resourceOwnerId.length || p.resourceOwnerId.length > 512))
         throw new Error("Invalid terminal resource owner");
@@ -99,23 +111,82 @@ export class HostProcessService {
       if (p.cwd != null && typeof p.cwd !== "string") throw new Error("Invalid working directory");
       if (!identity.env) throw new Error("Missing prepared process environment");
       const env = identity.env;
+      if (this.sandboxPool) {
+        if (typeof p.cwd !== "string" || !p.cwd) throw new Error("Sandbox terminal requires a working directory in the selected environment");
+        const controller = new AbortController(); this.starting.set(id, { controller, identity });
+        const operation = this.spawnSandboxed(id, p, dimensions, env, controller, identity);
+        this.starts.add(operation);
+        void operation.finally(() => { this.starting.delete(id); this.starts.delete(operation); }).catch(() => {});
+        return operation;
+      }
       const pty = spawn(p.command[0] as string, p.command.slice(1) as string[], { ...dimensions, cwd: p.cwd as string ?? homedir(), env, name: "xterm-256color" });
+      return this.retain(id, pty, p, identity);
+
+    }
+    const session = this.sessions.get(id);
+    if (!session || session.owner !== owner) throw new Error("Process session not found");
+    if (method === "process/attach") {
+      if (!Number.isSafeInteger(p.afterSequence) || Number(p.afterSequence) < 0 || Number(p.afterSequence) > session.sequence) throw new Error("Invalid output cursor");
+      return this.snapshot(id, session, Number(p.afterSequence));
+    }
+    if (method === "process/kill") {
+      if (session.sandbox) return session.sandbox.close().then(() => ({}));
+      if (session.phase === "running") this.terminate(session);
+      return {};
+    }
+    if (session.phase !== "running") throw new Error("Process has exited");
+    if (method === "process/writeStdin") {
+      if (typeof p.deltaBase64 !== "string" || p.deltaBase64.length > TERMINAL_RESOURCE_LIMITS.inputBase64Bytes || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(p.deltaBase64)) throw new Error("Invalid stdin data");
+      const written = session.pty.write(Buffer.from(p.deltaBase64, "base64").toString("utf8"));
+      return written instanceof Promise ? written.then(() => ({})) : {};
+    }
+    if (method === "process/resizePty") {
+      const { cols, rows } = size(p.size); const resized = session.pty.resize(cols, rows); return resized instanceof Promise ? resized.then(() => ({})) : {};
+    }
+    throw new Error(`Unsupported process method ${method}`);
+  }
+  private async spawnSandboxed(id: string, p: Record<string, unknown>, dimensions: { cols: number; rows: number }, env: Record<string, string>, controller: AbortController, identity: PreparedProcessIdentity) {
+    const sandbox = await createSandbox(this.sandboxPool!, { owner: id, signal: controller.signal });
+    try {
+      if (this.closed) throw new Error("Process service is closed");
+      let listener: ((data: Uint8Array) => void) | undefined;
+      const buffered: Uint8Array[] = []; let bytes = 0;
+      const child = await sandbox.spawn({ command: p.command as string[], cwd: p.cwd as string, env, terminal: dimensions }, output => {
+        if (listener) listener(output.data);
+        else {
+          const data = output.data.slice(-TERMINAL_RESOURCE_LIMITS.outputBase64Bytes); buffered.push(data); bytes += data.byteLength;
+          while (bytes > TERMINAL_RESOURCE_LIMITS.outputBase64Bytes) bytes -= buffered.shift()!.byteLength;
+        }
+      });
+      if (child.kind !== "terminal") throw new Error("Sandbox backend did not provide a terminal");
+      const pty: TerminalIO = {
+        write: data => child.writeStdin(Buffer.from(data, "utf8")), resize: (cols, rows) => child.resize({ cols, rows }), kill: () => sandbox.close(),
+        onData(callback) { listener = callback; for (const data of buffered.splice(0)) callback(data); bytes = 0; },
+        onExit(callback) { void child.exited.then(exit => { callback({ exitCode: exit.code ?? -1 }); void sandbox.close().catch(() => {}); }, () => callback({ exitCode: -1 })); },
+      };
+      if (this.closed) throw new Error("Process service is closed");
+      if (this.environment && prepareProcessIdentity(this.environment, identity.scope, "process/list", {}).owner !== identity.owner) throw new Error("Terminal execution identity changed");
+      return this.retain(id, pty, p, identity, sandbox);
+    } catch (error) { await sandbox.close(); throw error; }
+  }
+  private retain(id: string, pty: TerminalIO, p: Record<string, unknown>, identity: PreparedProcessIdentity, sandbox?: Sandbox) {
       while (this.sessions.size >= TERMINAL_RESOURCE_LIMITS.retainedPerHost) {
         const exited = [...this.sessions].find(([, s]) => s.phase === "exited");
         if (!exited) { pty.kill(); throw new TerminalCapacityError(); }
         this.sessions.delete(exited[0]);
       }
+      const { scope, owner, quotaOwner } = identity;
       const context: ProcessContext = {
         resourceOwnerId: typeof p.resourceOwnerId === "string" ? p.resourceOwnerId : null,
         threadId: scope ? scope.threadId : (typeof p.threadId === "string" ? p.threadId : null),
         projectId: scope ? scope.projectId : (typeof p.projectId === "string" ? p.projectId : null),
-        cwd: typeof p.cwd === "string" ? p.cwd : homedir(), shell: p.command[0] as string,
+        cwd: typeof p.cwd === "string" ? p.cwd : homedir(), shell: (p.command as string[])[0]!,
       };
-      const session: Session = { context, quotaOwner, pty, scope, owner, phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
+      const session: Session = { context, quotaOwner, pty, scope, owner, sandbox, phase: "running", exitCode: null, sequence: 0, bytes: 0, output: [] };
       this.sessions.set(id, session);
       pty.onData(data => {
         // Individual chunks are bounded as well as the whole replay ring.
-        const bytes = Buffer.from(data);
+        const bytes = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
         for (let offset = 0; offset < bytes.length; offset += 16384) {
           const deltaBase64 = bytes.subarray(offset, offset + 16384).toString("base64");
           const chunk: ProcessOutput = { processHandle: id, sequence: ++session.sequence, stream: "stdout", deltaBase64 };
@@ -131,27 +202,6 @@ export class HostProcessService {
         this.emit("process/exited", { processHandle: id, exitCode });
       });
       return { processHandle: id };
-    }
-    const session = this.sessions.get(id);
-    if (!session || session.owner !== owner) throw new Error("Process session not found");
-    if (method === "process/attach") {
-      if (!Number.isSafeInteger(p.afterSequence) || Number(p.afterSequence) < 0 || Number(p.afterSequence) > session.sequence) throw new Error("Invalid output cursor");
-      return this.snapshot(id, session, Number(p.afterSequence));
-    }
-    if (method === "process/kill") {
-      if (session.phase === "running") this.terminate(session);
-      return {};
-    }
-    if (session.phase !== "running") throw new Error("Process has exited");
-    if (method === "process/writeStdin") {
-      if (typeof p.deltaBase64 !== "string" || p.deltaBase64.length > TERMINAL_RESOURCE_LIMITS.inputBase64Bytes || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(p.deltaBase64)) throw new Error("Invalid stdin data");
-      session.pty.write(Buffer.from(p.deltaBase64, "base64").toString("utf8"));
-      return {};
-    }
-    if (method === "process/resizePty") {
-      const { cols, rows } = size(p.size); session.pty.resize(cols, rows); return {};
-    }
-    throw new Error(`Unsupported process method ${method}`);
   }
   private snapshot(id: string, session: Session, after: number): ProcessSnapshot {
     return { context: { ...session.context }, processHandle: id, phase: session.phase, exitCode: session.exitCode,
@@ -170,7 +220,7 @@ export class HostProcessService {
   }
   async shutdown() {
     const sessions = [...this.sessions.values()];
-    this.close();
+    await this.close();
     const deadline = Date.now() + 3000;
     while (sessions.some(session => session.phase === "running")) {
       if (Date.now() > deadline) throw new Error("Terminal owner could not drain PTYs");
@@ -180,6 +230,13 @@ export class HostProcessService {
   close() {
     this.closed = true;
     this.listeners.clear();
+    for (const { controller } of this.starting.values()) controller.abort();
+    if (this.sandboxPool) return (async () => {
+      await Promise.allSettled([...this.starts]);
+      const results = await Promise.allSettled([...this.sessions.values()].map(s => s.sandbox?.close()));
+      this.sessions.clear();
+      if (results.some(r => r.status === "rejected")) throw new Error("Host terminal sandbox cleanup is unverified");
+    })();
     for (const s of this.sessions.values()) if (s.phase === "running") this.terminate(s);
     this.sessions.clear();
   }

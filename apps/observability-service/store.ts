@@ -1,4 +1,4 @@
-import { openManagedDatabase, createSchemaValidator } from '../../packages/sqlite-node/src/index.js';
+import { openManagedDatabase, } from '../../packages/sqlite-node/src/index.js';
 import { limits, sanitizeEvent, components } from '../../packages/observability-contract/index.mjs';
 export const observationSchemaV1 = `
 CREATE TABLE events(seq INTEGER PRIMARY KEY, event_id TEXT NOT NULL UNIQUE, at INTEGER NOT NULL, received INTEGER NOT NULL, kind TEXT NOT NULL, component TEXT NOT NULL, actor TEXT, body TEXT NOT NULL) STRICT;
@@ -52,8 +52,8 @@ export class ObserveStore {
   constructor(path: string, now: () => number = Date.now, databaseBytes?: number) {
     if (databaseBytes !== undefined && (!Number.isSafeInteger(databaseBytes) || databaseBytes < 4096)) throw new TypeError('Invalid Observe database capacity');
     this.now = now;
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', backup: {keep: 1},
-      validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4+observationSchemaV5+observationSchemaV6), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4},{version:5,name:'availability-event-index',sql:observationSchemaV5},{version:6,name:'connection-outage-rollup',sql:observationSchemaV6}] });
+    const managed = openManagedDatabase({ schemaId: "observability", path, legacyPolicy: 'reject', backup: {keep: 1},
+       migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4},{version:5,name:'availability-event-index',sql:observationSchemaV5},{version:6,name:'connection-outage-rollup',sql:observationSchemaV6}] });
     this.db = managed.database; this.outcome = managed.outcome;
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=50; PRAGMA journal_size_limit=33554432;');
     const pageSize = Number(this.db.prepare('PRAGMA page_size').get().page_size);
@@ -104,7 +104,7 @@ export class ObserveStore {
           if(actor&&event.actorKind==='human'&&event.originClass==='interactive')this.db.prepare('INSERT OR IGNORE INTO activity_hours VALUES(?,?)').run(Math.floor(event.at/3600000),actor);
           if(event.kind==='recovery'&&event.recoveryId)this.db.prepare(`INSERT INTO recovery_episodes VALUES(?,?,?,?) ON CONFLICT(recovery_id) DO UPDATE SET first_at=MIN(recovery_episodes.first_at,excluded.first_at),last_at=MAX(recovery_episodes.last_at,excluded.last_at),outcome=CASE WHEN recovery_episodes.outcome='ok' THEN 'ok' ELSE excluded.outcome END`).run(event.recoveryId,event.at,event.at,event.outcome??'unknown');
           if(!['availability','lifecycle'].includes(event.kind))this.db.prepare('INSERT INTO producers VALUES(?,?,?,?) ON CONFLICT(component,producer) DO UPDATE SET received=excluded.received,body=json_patch(producers.body,excluded.body)')
-            .run(event.component,event.producerId,now,body);
+            .run(event.component,event.producerId,now,event.kind === "resource" ? JSON.stringify({...event,resourceSnapshot:JSON.stringify(event)}) : body);
           const add = (name: string, dimension: string, value: number) => this.db.prepare('INSERT INTO metrics VALUES(?,?,?) ON CONFLICT(name,dimension) DO UPDATE SET value=metrics.value+excluded.value').run(name,dimension,value);
           if (event.kind === 'rpc' && event.method && event.outcome) add('rpc',JSON.stringify([event.method,event.outcome]),1);
           if(event.kind==='operation'&&event.operationType&&event.outcome&&!['started','progress'].includes(event.outcome))add('operation_outcome',JSON.stringify([event.operationType,event.outcome,event.originClass]),1);
@@ -195,6 +195,12 @@ export class ObserveStore {
   producers() {
     const latest=this.db.prepare('SELECT component,producer,received,body FROM producers WHERE component=? ORDER BY received DESC,producer DESC LIMIT 1');
     return components.flatMap(component=>{const row=latest.get(component);return row?[{...row,identity:JSON.parse(row.body as string)}]:[];});
+  }
+  resourceSamples() {
+    const since=this.now()-limits.freshnessMs;
+    const query=this.db.prepare("SELECT component,producer,json_extract(body,'$.resourceSnapshot') AS sample FROM producers WHERE component=? AND received>=? AND json_extract(json_extract(body,'$.resourceSnapshot'),'$.at')>=? ORDER BY received DESC LIMIT 32");
+    return components.flatMap(component=>query.all(component,since,since).map(row=>({component:row.component,producer:row.producer,sample:JSON.parse(String(row.sample))})))
+      .sort((a,b)=>b.sample.at-a.sample.at).slice(0,128);
   }
   activity(from: number, to: number) {
     const first=Math.ceil(from/3600000),last=Math.floor(to/3600000);

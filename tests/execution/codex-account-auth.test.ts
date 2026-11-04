@@ -332,3 +332,50 @@ test("duplicate legacy profiles recover the latest authorization for a missing a
   assert.equal(f.store.readCredential(f.store.listAccounts()[0]!.id).refreshToken, "synthetic-newest-refresh");
   await service.dispose();
 });
+
+test("failed managed refresh emits a safe diagnostic and preserves the original failure", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-refresh-failure-"));
+  const lines: unknown[][] = [];
+  const error = new Error("refresh_token_reused synthetic-private-token");
+  t.mock.method(console, "warn", (...args: unknown[]) => { lines.push(args); });
+  let closed = false;
+  try {
+    const refresh = createManagedCodexRefresh({ refreshRoot: join(root, "refresh"), createClient: async () => ({
+      request: async () => { throw error; }, subscribeNotification: () => () => {}, close: async () => { closed = true; },
+    }) });
+    await assert.rejects(refresh(
+      { id: "account-a", provider: "codex", label: "A", upstreamAccountId: "upstream-a", priority: 1, enabled: true, createdAt: 1 },
+      { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", idToken: null, expiresAt: 1 }, "expired",
+    ), failure => failure === error);
+    assert.equal(closed, true);
+    assert.equal(lines.length, 1);
+    const event = JSON.parse(String(lines[0]![1]));
+    assert.equal(event.stage, "oauth-refresh");
+    assert.equal(event.reason, "refresh-token-reused");
+    assert.equal(event.accountId, "account-a");
+    assert.doesNotMatch(JSON.stringify(lines), /synthetic-private-token|synthetic-access|synthetic-refresh/u);
+    assert.deepEqual(await readdir(join(root, "refresh")), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a successful maintenance RPC returning an expired unchanged credential emits an incomplete-refresh diagnostic", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-refresh-incomplete-"));
+  const lines: unknown[][] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => { lines.push(args); });
+  try {
+    const refresh = createManagedCodexRefresh({ refreshRoot: join(root, "refresh"), createClient: async () => ({
+      request: async <T>() => ({ account: { type: "chatgpt" }, requiresOpenaiAuth: true }) as T,
+      subscribeNotification: () => () => {}, close: async () => {},
+    }) });
+    const token = jwt({ exp: 1 });
+    await refresh({ id: "account-a", provider: "codex", label: "A", upstreamAccountId: "upstream-a", priority: 1, enabled: true, createdAt: 1 },
+      { accessToken: token, refreshToken: "synthetic-stale-refresh", idToken: null, expiresAt: 1000 }, "expired");
+    const event = JSON.parse(String(lines[0]![1]));
+    assert.equal(event.event, "credential-refresh-incomplete");
+    assert.equal(event.accessTokenChanged, false);
+    assert.equal(event.expiresAtAfter, 1000);
+    assert.equal(event.nativeAccountPresent, true);
+    assert.doesNotMatch(JSON.stringify(lines), /synthetic-stale-refresh|access_token/u);
+    assert.ok(!JSON.stringify(lines).includes(token));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

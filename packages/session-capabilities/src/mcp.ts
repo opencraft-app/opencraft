@@ -7,7 +7,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
-import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
+import { CapabilityError, SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
 import { threadCliProvider } from './thread-cli-provider.js';
 
 /** A stable signing key, never a model-visible global credential. Tokens bind a
@@ -269,10 +269,18 @@ export class SessionCapabilityMcp {
     });
     mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       try {
-        if (!authenticated.session) throw new Error("Session is not bound");
+        if (!authenticated.session) throw new CapabilityError('capability_not_authorized', 'authorization');
         const result = await this.capabilities.call(authenticated.session, request.params.name, request.params.arguments ?? {}, extra.signal);
         return { content: result.contentItems.map(item => ({ type: "text" as const, text: item.text })), isError: !result.success };
-      } catch { return { content: [{ type: "text", text: "Capability denied or failed; do not retry an uncertain external effect." }], isError: true }; }
+      } catch (cause) {
+        // Unknown provider failures remain uncertain. Only typed, allowlisted
+        // facts cross this boundary; raw errors can reflect bearer credentials.
+        const error = cause instanceof CapabilityError ? cause : new CapabilityError('capability_outcome_unknown', 'invocation', 'unknown');
+        const diagnostic = { code: error.code, phase: error.phase, outcome: error.outcome, requestId: randomUUID(),
+          ...(error.upstreamStatus !== undefined ? { upstreamStatus: error.upstreamStatus } : {}) };
+        console.error('[session-capabilities]', JSON.stringify({ event: 'tool-call-failed', ...diagnostic }));
+        return { content: [{ type: "text", text: JSON.stringify({ error: { ...diagnostic, message: error.message } }) }], isError: true };
+      }
     });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     this.calls.add(mcp);

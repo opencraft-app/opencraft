@@ -6,6 +6,9 @@ import {join} from 'node:path';
 import * as Y from 'yjs';
 import {ThreadNoteStore} from '../../plugins/thread-summary/src/note-store';
 import {ThreadNoteClient,encode,decode} from '../../plugins/thread-summary/src/note-client';
+import {ActorStore} from '../../packages/access-control/src/actors';
+import {parsePrincipal} from '../../packages/identity-core/src/index';
+import {ThreadAccessSession,ThreadAccessStore} from '../../packages/access-control/src/thread-access';
 
 async function fixture(t:any) {
   const dir=await mkdtemp(join(tmpdir(),'thread-notes-'));
@@ -56,6 +59,19 @@ test('invalid/oversized CRDT updates roll back without changing the prior note',
   const huge=new Y.Doc();huge.getText('markdown').insert(0,'x'.repeat(65537));assert.throws(()=>f.store.exchange('s','t',encode(Y.encodeStateAsUpdate(huge)),'AA=='));huge.destroy();
   const b=f.client();await b.client.sync();assert.equal(b.client.text.toString(),'keep');
 });
+
+test('notes use trusted lane identity and existing private thread access, including direct RPC envelopes',async t=>{
+  const f=await fixture(t),actors=new ActorStore(join(f.dir,'actors.sqlite')),policy=new ThreadAccessStore(join(f.dir,'access.sqlite'),actors);
+  const human=(subject:string)=>actors.resolveHuman(parsePrincipal({provider:'local',subject,displayName:subject,expiresAt:Date.now()+60000}));
+  const alice=human('alice'),bob=human('bob');policy.created('server','t',alice);policy.set('server','t','private',1,alice);
+  const sessions:ThreadAccessSession[]=[];t.after(()=>{for(const session of sessions)session.close();policy.close();actors.close();});
+  const request=async(context:typeof alice,params:any)=>{const frames:any[]=[];const session=new ThreadAccessSession(policy,()=> 'server',context,frame=>frames.push(JSON.parse(frame)),undefined,()=>{},f.store);sessions.push(session);assert.equal(await session.receive(JSON.stringify({id:7,__opencraftClient:'lane',method:'opencraft/thread-note/exchange',params})),true);return frames.at(-1);};
+  const valid={threadId:'t',update:'',vector:'AA=='};
+  assert.equal((await request(bob,valid)).error.code,-32004);
+  assert.equal((await request(alice,{...valid,serverId:'forged'})).error.code,-32602);
+  const accepted=await request(alice,valid);assert.equal(accepted.id,7);assert.equal(accepted.__opencraftClient,'lane');assert.equal(typeof accepted.result.update,'string');
+});
+
 
 test('out-of-order dependent edits and duplicate deletion updates converge without losing Unicode',async t=>{
   const f=await fixture(t),doc=new Y.Doc(),updates:Uint8Array[]=[];

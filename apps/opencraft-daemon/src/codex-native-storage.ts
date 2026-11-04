@@ -9,22 +9,22 @@ export class CodexNativeStorage {
   constructor(private readonly control: Pick<CodexCoreControlClient, "generationDirectory"> | null,
     private readonly legacyHome: () => string) {}
 
-  private directory(threadId?: string): Promise<CodexGenerationDirectory | null> {
-    return this.control?.generationDirectory(threadId, AbortSignal.timeout(5_000)) ?? Promise.resolve(null);
+  private directory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
+    return this.control?.generationDirectory(threadId, signal ? AbortSignal.any([signal,AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000)) ?? Promise.resolve(null);
   }
 
   private single(home: string, threadId?: string): NativeRolloutSource {
     if (!home) throw new Error("Native HOME is unavailable");
-    return { nativeHome: home, key: JSON.stringify(["single", home]), validate: async () => {
-      if (await this.directory(threadId) !== null || this.legacyHome() !== home) throw new Error("Native storage owner changed during read");
+    return { nativeHome: home, key: JSON.stringify(["single", home]), validate: async (signal) => {
+      if (await this.directory(threadId, signal) !== null || this.legacyHome() !== home) throw new Error("Native storage owner changed during read");
     } };
   }
 
   private source(directory: CodexGenerationDirectory, home: Home, threadId?: string): NativeRolloutSource {
     return { nativeHome: home.codexHome,
       key: JSON.stringify([directory.routingEpoch, home.generationId, home.incarnation, home.codexHome]),
-      validate: async () => {
-        const current = await this.directory(threadId), target = current?.homes.find(h => h.generationId === home.generationId);
+      validate: async (signal) => {
+        const current = await this.directory(threadId, signal), target = current?.homes.find(h => h.generationId === home.generationId);
         if (!current || current.routingEpoch !== directory.routingEpoch || !target
           || target.codexHome !== home.codexHome || target.incarnation !== home.incarnation
           || current.route && current.route.generationId !== home.generationId
@@ -40,8 +40,8 @@ export class CodexNativeStorage {
     return directory.homes.map(home => this.source(directory, home));
   }
 
-  async resolve(threadId: string, path: string, allowUnrouted = false): Promise<NativeRolloutSource> {
-    const directory = await this.directory(threadId);
+  async resolve(threadId: string, path: string, allowUnrouted = false, signal?: AbortSignal): Promise<NativeRolloutSource> {
+    const directory = await this.directory(threadId, signal);
     if (!directory) {
       const source = this.single(this.legacyHome(), threadId);
       await canonicalRolloutPath(path, source.nativeHome); return source;

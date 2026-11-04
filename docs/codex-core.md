@@ -571,3 +571,108 @@ source-exit, full retained/schema, storage/configuration/CLI checks still run
 before writing, and load verifies current sealed storage again. Repeating the
 command on an already sealed operation performs a fresh inspection. Existing
 legacy and empty-retained entry points retain their original reads.
+
+## 请求事实与紧凑交接存储
+
+拆分 Account Core 支持通过 `--account-handoff-sqlite` 显式迁入同一数据目录的
+`account-handoff.sqlite`。沿用 accounts writer 锁与 managed SQLite/Drizzle 迁移；
+只有 `account_request_facts` 与单行 `account_handoff_checkpoint` 两张领域表。
+请求表保存 Responses POST 的 may-have-sent 边界、可靠上游终态和处理完成事实，
+不保存正文或凭据；检查点保存四阶段、控制 revision、固定 launch 引用及 retained
+责任。其他领域继续沿原有 unknown 归责，不把通用 HTTP EOF 解释为业务成功。
+
+首次导入在一个 SQLite 事务内保留旧 `uncertain` 的 ID、顺序、内容和完整 SHA-256，
+将 `carriedUnknown` 转成对应历史摘要，不再复制列表。提交成功后才把旧 JSON 写成
+schemaVersion 2 的权威位置标记；导入中断可重试，旧二进制不能误用陈旧 JSON。
+后续启动自动识别 SQLite；恢复或代码回退必须理解当前格式并保留当前数据，不能
+重新启用只认识 v1 的二进制或恢复旧账户快照。现有安装不隐式迁移，受管控制器
+应先验证目标及恢复包的格式能力，再选择此启动参数。
+
+`GET /owner-handoff?summary=1` 省略完整历史、retained 内容及租约退出列表，只返回
+身份、数量、哈希和控制检查点；普通 GET 不再覆盖排空许可。显式 POST inspect
+签发许可，release 仍重新验证 owner/epoch、当前责任、活跃工作及存活操作者租约。
+可选 expectedRevision 约束控制写入；早于 fence 接受的请求回调仍按原 owner
+完成，不套用过期的控制 revision。
+
+完整核验通过 `GET /owner-handoff/history?count=…&sha256=…&after=…` 分页，响应
+最多32KiB，游标严格前进；历史变化返回冲突，调用方重新读取摘要。历史哈希沿用
+完整 JSON 数组的 SHA-256，并由追加式 hash 状态增量维护；新增未知只写一条事实，
+不重写全量历史。`accountCoreOwner` 的 `summary: true` 选项对读写响应启用紧凑模式，
+`history(summary)` 仅在显式请求时取全并验证完整哈希；原完整快照接口保留兼容。
+
+SQLite 模式在上游 fetch 前同步提交 may-have-sent。可靠的 Responses completed、
+failed/incomplete 终态在向下游转交该块前持久化；客户端传输失败不会覆盖已知终态。
+解析器逐步验证 JSON，只保留小型信封字段，不因输出超过1MiB而放弃终态识别。
+只收到半条记录、正文中的终态文本或畸形 JSON 都不能作为终态证明。崩溃重启将
+没有可靠终态的已发请求记为未知，不自动重发。
+
+受管预检使用实际目标进程生成的 launch 引用（bundle、固定 CLI、有效启动配置的
+摘要），fence 绑定 source/target 引用。冷启动与 resume 重验实际引用；成功提交后
+保存当前目标引用，普通崩溃恢复不能误启旧 source。此接口不代替受管安装、外部
+隔离门、内核锁或完整启动环境预演，也不意味着现有独立 Core 已由普通 Web 包升级。
+
+## Account handoff journal and bounded inspection
+
+The account owner keeps the existing `open → fenced → released → cold-ready → open`
+protocol. `--account-handoff-sqlite` explicitly migrates the legacy private JSON
+checkpoint into `account-handoff.sqlite`, under the existing accounts writer lock.
+The managed schema contains only `account_request_facts` and a singleton
+`account_handoff_checkpoint`. Request facts and historical unknowns are stored once;
+the checkpoint stores accepted history count/hash, retained responsibility and
+launch references. A new unknown updates its own row rather than rewriting history.
+
+Migration imports the complete ordered legacy list and acceptance prefix in one
+transaction, then writes a v2 authority marker to `account-handoff.json`. A failed
+import can retry from the unchanged source. Existing SQLite authority is always
+respected even if the startup flag is omitted. Legacy binaries reject the marker;
+recovery must use a compatible binary against current data, never restore an old
+JSON/database snapshot. The opt-in is a technical compatibility boundary: managed
+controllers must qualify cold recovery before enabling it on an existing deployment.
+The default v1 mode retains its existing full-list persistence/export contract.
+
+`GET /owner-handoff?summary=1` returns history count/hash, retained counts/hash and
+control identity/revision. It neither issues nor revokes a drain permit. Explicit
+`POST inspect` issues a permit; unrelated GETs and operator lease renewal cannot
+replace it. `GET /owner-handoff/history?count=…&sha256=…&after=…` returns at most
+32 KiB per page. Any appended unknown invalidates the old snapshot. Explicit
+recovery readers verify the concatenated list's full hash and count. The local
+adapter supports `{summary:true}`, `summary()` and `history(snapshot)`; its default
+full snapshot remains available to legacy controllers. Compact reads omit full
+retained state, lease-abort history and both historical arrays.
+
+SQLite cooperative fencing requires identical prepared and actual preflight
+launch references (bundle, configuration selector and fixed CLI digests). Current
+source launch must still match its installed checkpoint. A successor verifies its
+actual launch against the sealed source/target references, and cold readiness binds
+its incarnation. A committed open checkpoint keeps the chosen launch reference:
+a later ordinary crash recovery cannot silently restart a different old bundle or
+changed environment. Reference values contain hashes, not environment values.
+
+Responses POST dispatch is recorded synchronously before network invocation.
+An upstream terminal is committed before its bytes are yielded downstream. Handler
+settlement or process recovery classifies a dispatched request without a reliable
+terminal as unknown; HTTP delivery is never a business acknowledgement. Completed,
+failed and incomplete Responses events are recognized by incremental JSON validation
+inside complete SSE records, including large output, fragmented UTF-8 and CRLF.
+The observer retains bounded envelope state, never the complete output. The current
+attempt integration covers Responses; image/MCP legacy unknown responsibility is
+preserved without inferring missing historical outcomes. No request is replayed.
+
+首次从已封存的 v1 released/cold-ready 状态迁入 SQLite 时，候选在写入新权威和
+退役 JSON 前先执行原 readiness 检查。配置、固定 CLI、历史责任或当前存储不匹配时，
+保留完整旧格式状态，允许兼容源程序按原环境冷恢复；不能先改变格式再发现拒绝。
+
+## 账号失败诊断
+
+拆分 Core 的账号请求失败记录 `account-operation-failed`，包含准入是否开放、请求阶段、
+内部账号 ID、方法和耗时；凭据维护与后台用量维护分别记录 `credential-refresh-failed`
+和 `usage-refresh-failed`。这些事件覆盖原本仅返回通用错误或后台忽略的异常，保持原有响应与重试语义。
+诊断只输出固定错误分类、允许的系统错误码、可确认的用量 HTTP 状态和错误指纹，
+不记录原始 provider 消息、堆栈、请求参数、账号邮箱或令牌。`unclassified` 表示当前分类
+不能确定原因，不能据此认定账号失效；相同错误指纹可关联 Core 与后台维护事件。
+独立 Core 仍须经受管维护升级后才会运行新日志，网页更新不代表 Core 已更新。
+
+当维护 RPC 返回但落盘访问令牌仍已过期时，记录 `credential-refresh-incomplete`：
+包含令牌是否改变、前后到期时间、原生账户是否存在、是否要求认证，以及经过固定分类的
+原生 stderr 诊断。它不等于成功续期；后续用量 HTTP 拒绝会继续按既有语义报错。
+原生 stderr 本文不直接输出，仍只保留固定分类与指纹，不记录账号或凭据原文。

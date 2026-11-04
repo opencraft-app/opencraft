@@ -10,7 +10,7 @@ import { startControlServer } from "../../apps/codex-core/src/control-server.js"
 import { inspectRouterNative, routerDigest, routerNativeDigest } from "../../apps/codex-core/src/router-maintenance.js";
 import type { GenerationRecord } from "../../apps/codex-core/src/generation-registry.js";
 
-async function fixture() {
+async function fixture(unknownCount = 1) {
   const root=await mkdtemp(join(tmpdir(),'router-maintenance-native-')),socket=join(root,'native.sock'),endpoint=join(root,'core.sock');
   const work={core:0,oauth:0,callbacks:0,process:false,turn:false,goal:false,unexpected:false,changedIdentity:false,systemError:false,busyCommand:false,missingTurns:false,missingItems:false,lateTurn:false,readTurns:0,missingIds:[]as string[],changedReadError:false};const calls:string[]=[];
   const server=createServer(),wss=new WebSocketServer({server});
@@ -21,7 +21,7 @@ async function fixture() {
       m.method==='thread/read'?{thread:{id:m.params.threadId,status:{type:work.turn?'active':work.systemError?'systemError':'idle'},...(m.params.includeTurns?{turns:work.missingTurns?[]:[{id:'turn',status:work.lateTurn&&work.readTurns++>0?'inProgress':'failed',...(work.missingItems?{}:{items:[{id:'command',type:'commandExecution',status:work.busyCommand?'inProgress':'completed'}]})}]}:{})}}:{};
     ws.send(JSON.stringify({id:m.id,result}));if(work.unexpected&&m.method==='thread/loaded/list')ws.send(JSON.stringify({id:77,method:'item/tool/call',params:{threadId:'thread'}}));
   }));await new Promise<void>(r=>server.listen(socket,r));
-  const core=await startControlServer(endpoint,'synthetic',async()=>({status:200,value:{pid:2,handoff:{protocolVersion:1,topology:'split',phase:'open',persistence:'ready',owner:'core',epoch:4,uncertain:[{id:'keep-unknown',route:'/v1/responses'}]},proof:{coverage:'unknown',activeCount:null,counts:{oauth:work.oauth,proxy:work.core,refresh:0,requests:0,resetCredits:0,subscriptions:0}}}}));
+  const core=await startControlServer(endpoint,'synthetic',async()=>({status:200,value:{pid:2,handoff:{protocolVersion:1,topology:'split',phase:'open',persistence:'ready',owner:'core',epoch:4,uncertain:Array.from({length:unknownCount},(_,i)=>({id:i===0?'keep-unknown':`historical-unknown-${i.toString().padStart(12,'0')}`,route:'/v1/responses'}))},proof:{coverage:'unknown',activeCount:null,counts:{oauth:work.oauth,proxy:work.core,refresh:0,requests:0,resetCredits:0,subscriptions:0}}}}));
   const generation={id:'old',state:'active',incarnation:1,endpoint,executable:'/fixed-cli',bundle:'/fixed-app',node:'/fixed-node',cwd:root,runtimeDataDirectory:root} as GenerationRecord;
   const identity={ownerPid:3,nativePid:4,ownerStart:'1',nativeStart:'2',unit:'native.service',cliSha256:'fixed',cliVersion:'codex-cli 0.162.0'};
   const options={generations:[generation],routes:[{generationId:'old',threadId:'thread'},{generationId:'old',threadId:'ephemeral-old-binding'}],metadata:{'runtime:old':identity,'thread-retention:ephemeral-old-binding':'ephemeral'},unresolvedCreations:0,coreEndpoint:endpoint,token:'synthetic',failures:{version:1 as const,failures:[]},supervisor:{
@@ -107,4 +107,20 @@ test('archived negative evidence survives its timestamp while a new host proof s
   const recovery=await inspectRouterNative(f.options,true,undefined,f.policy,true);assert.deepEqual(recovery.hostColdUnavailable,f.policy);
   f.work.changedReadError=true;await assert.rejects(inspectRouterNative(f.options,false,{...f.host,policyArchived:true},f.policy));
  }finally{await f.close();}
+});
+
+test('maintenance reads a Core proof above 1 MiB without dropping historical unknown records', async () => {
+  const f = await fixture(24_000);
+  try {
+    const proof = await inspectRouterNative(f.options);
+    assert.equal(proof.core.historicalUnknown.length, 24_000);
+    assert.equal(proof.core.historicalUnknown[0].id, 'keep-unknown');
+    assert.equal(proof.core.historicalUnknown.at(-1).id, 'historical-unknown-000000023999');
+    assert(!f.calls.includes('thread/resume'));
+  } finally { await f.close(); }
+});
+test('maintenance still rejects a Core proof beyond its bounded 16 MiB budget', async () => {
+  const f = await fixture(260_000);
+  try { await assert.rejects(inspectRouterNative(f.options), /Router maintenance response too large/); }
+  finally { await f.close(); }
 });

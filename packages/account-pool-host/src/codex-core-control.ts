@@ -117,8 +117,8 @@ export class CodexCoreControlClient {
     });
   }
 
-  private async readHealth(signal: AbortSignal): Promise<CodexCoreHealth> {
-    const value = await this.request("GET", "/health", undefined, signal) as Partial<CodexCoreHealth> | null;
+  private async readHealth(signal: AbortSignal, path = "/health"): Promise<CodexCoreHealth> {
+    const value = await this.request("GET", path, undefined, signal) as Partial<CodexCoreHealth> | null;
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
@@ -147,8 +147,10 @@ export class CodexCoreControlClient {
     return value;
   }
 
-  async appServerHealth(): Promise<CodexAppServerHealth> {
-    const value = await this.health() as CodexAppServerHealth;
+  async appServerHealth(observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
+    // Native liveness is only for routing existing owners and history. It never
+    // attests execution readiness and must not be used by deployment health.
+    const value = (observation === "native" ? await this.readHealth(AbortSignal.timeout(5_000), "/native-health") : await this.health()) as CodexAppServerHealth;
     if (!isAbsolute(value.dataDirectory ?? "") || typeof value.proxyBaseUrl !== "string") {
       throw new Error("Incompatible Codex AppServer owner");
     }
@@ -187,7 +189,7 @@ export class CodexCoreControlClient {
       const body = payload === undefined ? undefined : JSON.stringify(payload);
       const req = request({ socketPath: this.endpoint, method, path,
         headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json" },
-        signal: AbortSignal.any([AbortSignal.timeout(path === "/health" || path === "/launch" ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
+        signal: AbortSignal.any([AbortSignal.timeout(path === "/health" || path === "/native-health" || path === "/launch" ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
       }, res => {
         let response = "";
         res.on("error", reject);

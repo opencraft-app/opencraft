@@ -31,7 +31,24 @@ try {
  const trigger=page.getByRole('button',{name:'Conversation actions',exact:true});await page.getByRole('button',{name:'Open preview panel',exact:true}).click();
  await page.getByRole('button',{name:'Close preview panel',exact:true}).click();
  await trigger.click();await page.getByRole('menuitem',{name:'Rename',exact:true}).click();await page.getByRole('dialog').waitFor();await page.keyboard.press('Escape');
- await page.getByRole('button',{name:'Show sidebar',exact:true}).click();await page.waitForTimeout(450);await page.getByRole('button',{name:width<640?'Close sidebar':'Hide sidebar',exact:true}).click();await page.waitForTimeout(450);
+ await page.getByRole('button',{name:'Show sidebar',exact:true}).click();
+ if(width<640){
+  const panel=page.locator('.app-shell-floating-left-panel');
+  await panel.waitFor();
+  const mobileOpacitySamples=await page.evaluate(async()=>{
+   const panel=document.querySelector<HTMLElement>('.app-shell-floating-left-panel');
+   if(!panel) throw new Error('mobile sidebar panel missing');
+   const samples:string[]=[];
+   for(let i=0;i<12;i++){
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    samples.push(getComputedStyle(panel).opacity);
+   }
+   return samples;
+  });
+  assert.ok(mobileOpacitySamples.every(value=>value==='1'),JSON.stringify({mobileOpacitySamples}));
+  assert.equal(await panel.evaluate(e=>getComputedStyle(e).willChange),'transform');
+ }
+ await page.waitForTimeout(450);await page.getByRole('button',{name:width<640?'Close sidebar':'Hide sidebar',exact:true}).click();await page.waitForTimeout(450);
  await page.locator('[data-scroll]').evaluate((e:HTMLElement)=>e.scrollTop=220);assert.ok(await page.locator('[data-scroll]').evaluate(e=>e.scrollTop)>200);
  await page.screenshot({path:output+'/'+width+'-'+theme+'.png'});
  if(width===390&&theme==='light'){

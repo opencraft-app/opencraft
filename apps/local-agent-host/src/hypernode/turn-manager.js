@@ -49,6 +49,10 @@ class TurnManagerService extends Service {
             visibility: "private",
             kind: "conversation",
         });
+        const startedAtMs = Date.now();
+        const startedAt = Math.floor(startedAtMs / 1_000);
+        thread.updatedAt = startedAt;
+        thread.recencyAt = startedAt;
         const turn = createTurn();
         const userItem = {
             id: uuidV7(),
@@ -61,7 +65,7 @@ class TurnManagerService extends Service {
             turn,
             userItem,
             itemLedger: [userItem],
-            startedAtMs: Date.now(),
+            startedAtMs,
         };
         // The first-start order is the protocol order.  Keep one append-only
         // ledger for live projection and persistence instead of reconstructing a
@@ -75,12 +79,17 @@ class TurnManagerService extends Service {
         this.turns.set(turn.id, record);
         thread.status = { type: "active", activeFlags: [] };
         (thread.turns ??= []).push(turn);
+        persistThreadState(this.ctx.threadManager, threadId);
         return record;
     }
     startAgent(threadId) {
         const thread = this.ctx.threadManager.find(threadId);
         if (!thread)
             throw new Error(`unknown thread: ${threadId}`);
+        const startedAtMs = Date.now();
+        const startedAt = Math.floor(startedAtMs / 1_000);
+        thread.updatedAt = startedAt;
+        thread.recencyAt = startedAt;
         const turn = createTurn();
         const agentItem = createAgentItem("final_answer");
         const record = {
@@ -89,7 +98,7 @@ class TurnManagerService extends Service {
             userItem: null,
             agentItem,
             itemLedger: [agentItem],
-            startedAtMs: Date.now(),
+            startedAtMs,
         };
         turn.items = record.itemLedger;
         this.turns.set(turn.id, record);

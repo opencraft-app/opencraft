@@ -1,0 +1,99 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "bb7394f2-a702-4dd5-8bcb-260b0e956afe",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "model_usage_audit": {
+      "name": "model_usage_audit",
+      "columns": {
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "before_rules": {
+          "name": "before_rules",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "after_rules": {
+          "name": "after_rules",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "model_usage_policy": {
+      "name": "model_usage_policy",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rules": {
+          "name": "rules",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "model_usage_policy_check_0": {
+          "name": "model_usage_policy_check_0",
+          "value": "singleton=1"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

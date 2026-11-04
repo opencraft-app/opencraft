@@ -1,0 +1,38 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "codex-generation-routing",
+      "checksum": "7475f6579835fe5d0cf471a6b31913b3b5f26725f31dbecef8910b95a14c273e"
+    },
+    {
+      "version": 2,
+      "name": "orchestration-creation-incarnation",
+      "checksum": "8e9a9d91dc73a06840ee47d3bbcbe298bf4c70cb2e81f721130546e8511dabc1"
+    }
+  ],
+  "tableOptions": {
+    "admission": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "creation_claims": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "generations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "routing_metadata": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "thread_routes": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "2e2a31f92ef2d229ade6f30196859f23889b98abc483047174bed306bc04350a",
+  "baselineSnapshotChecksum": "7e55954a03d9ce18d66dd4babd2b5de703b67d582a6ba664b74dd63531bd3641"
+}

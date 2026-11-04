@@ -88,7 +88,7 @@ export class LocalAgentSettingsService {
     return {
       baseURL: typeof profile.baseURL === "string" ? profile.baseURL : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultBaseURL ?? "" : "",
       displayName: typeof profile.displayName === "string" ? profile.displayName : provider.displayName,
-      api: profile.api === "openai-completions" || profile.api === "openai-responses" || profile.api === "hunyuan-asr" ? profile.api : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultApi : undefined,
+      api: profile.api === "openai-completions" || profile.api === "openai-responses" || profile.api === "hunyuan-asr" || profile.api === "hunyuan-image-v35" ? profile.api : !provider.configured && provider.configuration?.modelDeclarations ? provider.configuration.defaultApi : undefined,
       // DSH materializes an omitted optional modality array as []. The public
       // command uses omission for inherited capabilities and rejects explicit
       // empty declarations. Normalize the read projection, not the stored data.
@@ -119,13 +119,16 @@ export class LocalAgentSettingsService {
   }
 
   async probeModel(input: SaveRuntimeProviderInput, model: string): Promise<RuntimeModelProbeResponse> {
-    if (!input.api || input.api === "hunyuan-asr" || !input.baseURL.trim()) throw new Error("此连接不支持文本连通性检查");
+    if ((input.api !== "openai-completions" && input.api !== "openai-responses") || !input.baseURL.trim()) throw new Error("此连接不支持文本连通性检查");
     if (input.credential.kind === "replace" && !input.credential.value.trim()) throw new Error("Enter the test key before testing");
     if (input.credential.kind !== "replace" && input.credential.kind !== "none") throw new Error("Enter a test key explicitly. Saved credentials are not used for draft endpoint tests.");
     return this.requestHost(this.hostId, "runtime/models/probe", {
       baseURL: input.baseURL, api: input.api, model,
       ...(input.credential.kind === "replace" ? { apiKey: input.credential.value } : {}),
     });
+  }
+  async inspectModel(provider: string, model: string, expectedRevision: number, mode: "metadata" | "verify") {
+    return this.requestHost(this.hostId, "runtime/models/inspect", { provider, model, expectedRevision, mode });
   }
   async checkSavedModel(provider:string,model:string,expectedRevision:number):Promise<RuntimeModelProbeResponse>{
     return this.requestHost(this.hostId,"runtime/models/check",{provider,model,expectedRevision});
@@ -135,7 +138,7 @@ export class LocalAgentSettingsService {
     const namespace = this.namespace("agent-default-model");
     const selected = this.snapshot.models?.groups.find(group => group.id === provider)?.models.find(entry => entry.id === model);
     if (!selected || selected.enabled === false) throw new Error("Selected model is unavailable. Refresh the model catalog.");
-    if (selected.type === "asr") throw new Error("转写模型不能设为聊天默认");
+    if (selected.type && selected.type !== "chat") throw new Error("此模型不能设为聊天默认");
     if (reasoningEffort !== undefined && !selected.reasoning?.efforts.some(entry => entry.id === reasoningEffort)) {
       throw new Error(`Selected model does not support reasoning effort "${reasoningEffort}"`);
     }
@@ -145,6 +148,12 @@ export class LocalAgentSettingsService {
         ? { op: "unset", path: ["reasoningEffort"] }
         : { op: "set", path: ["reasoningEffort"], value: reasoningEffort },
     ] });
+    await this.refresh();
+  }
+
+  async requestImageDefault(provider: string, model: string, expectedRevision: number) {
+    await this.requestHost(this.hostId, "runtime/settings/mutate", {ns:"image-generation",expectedRevision,
+      ops:[{op:"set",path:["defaultModel"],value:{provider,model}}]});
     await this.refresh();
   }
 
@@ -176,7 +185,8 @@ export class LocalAgentSettingsService {
   async reapply():Promise<void>{await this.requestHost(this.hostId,"runtime/providers/reapply",{});await this.refresh();}
 
   async changeModel(provider: string, model: string, enabled?: boolean): Promise<void> {
-    const expectedRevision = this.namespace("llm-pi-ai").revision;
+    const image = this.snapshot.providers?.providers.find(p => p.provider === provider)?.configuration?.modelType === "image";
+    const expectedRevision = this.namespace(image ? "image-generation" : "llm-pi-ai").revision;
     if (enabled === undefined) await this.requestHost(this.hostId, "runtime/models/delete", { provider, model, expectedRevision });
     else await this.requestHost(this.hostId, "runtime/models/setEnabled", { provider, model, expectedRevision, enabled });
     await this.refresh();

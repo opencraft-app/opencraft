@@ -1,3 +1,4 @@
+import { validateInitialReadinessAttempt } from './initial-readiness-budget.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, readdir, readlink, symlink, rename, rm, writeFile } from 'node:fs/promises';
@@ -11,9 +12,11 @@ import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 import { browserRuntimeIdentity } from '../browser-runtime-identity.mjs';
 import { withGatewayUpdateIntent } from './gateway-update-intent.mjs';
-import { linuxProcessIdentity, sameProcess } from './runtime-equivalence.mjs';
+import { releaseMetadataIdentity, linuxProcessIdentity, sameProcess, readEquivalenceReceipt, writeEquivalenceReceipt } from './runtime-equivalence.mjs';
 
 const exec = promisify(execFile);
+// Only the verified original failed-target owner selects this cold-start budget.
+export const TARGET_RECOVERY_READINESS_TIMEOUT_MS = 1_800_000;
 const daemonPayloadFiles = ['gateway.mjs', 'daemon.cjs', 'dsh-capability-plugin.mjs'];
 
 // Legacy execution archives predate the explicit daemon/headless discriminator.
@@ -220,22 +223,56 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     try { await symlink(root, temporary); await rename(temporary, link); }
     finally { await rm(temporary, { force: true }); }
   }
+  // Releases are immutable. Share pair comparisons, including mismatches; an
+  // unavailable filesystem identity is not cached or accepted as ready.
+  const payloadComparisons = new Map();
+  const equivalencePath = `${link}.runtime-equivalence.json`;
+  async function compareRunningPayloads(root, runtime) {
+    // Roots are immutable and were fully checked by installation. Across an
+    // entry restart, bind the completed comparison to both release manifests
+    // and the still-running kernel process; a successor must prove itself.
+    let receipt;
+    const observeProcess = () => Promise.resolve().then(runtimeProcess).catch(() => null);
+    const before = await observeProcess();
+    if (before) {
+      const [selectedMetadata, runtimeMetadata] = await Promise.all([
+        releaseMetadataIdentity(root), releaseMetadataIdentity(runtime),
+      ]);
+      if (selectedMetadata && runtimeMetadata) {
+        receipt = { schemaVersion: 1, unit, nodeAbi: process.versions.modules,
+          selectedRoot: root, runtimeRoot: runtime, selectedMetadata, runtimeMetadata, process: before };
+        if (await readEquivalenceReceipt(equivalencePath, receipt)
+          && sameProcess(before, await observeProcess())) return true;
+      }
+    }
+    const identity = [...new Set([...await releaseIdentity(root), ...await releaseIdentity(runtime)])];
+    const [wanted, actual] = await Promise.all([computeExecutionHash(root, identity), computeExecutionHash(runtime, identity)]);
+    const equivalent = !!wanted && wanted === actual;
+    if (equivalent && receipt && sameProcess(before, await observeProcess()))
+      await writeEquivalenceReceipt(equivalencePath, receipt);
+    return equivalent;
+  }
   async function runningPayloadMatches(root, health) {
     if (profile !== 'headless') return true;
     const runtime = health?.runtimeReleaseRoot;
     if (typeof runtime !== 'string' || !isAbsolute(runtime)) return false;
     if (runtime === root) return true;
-    const identity = [...new Set([...await releaseIdentity(root), ...await releaseIdentity(runtime)])];
-    const [wanted, actual] = await Promise.all([computeExecutionHash(root, identity), computeExecutionHash(runtime, identity)]);
-    return !!wanted && wanted === actual;
+    const pair = JSON.stringify([root, runtime]);
+    if (!payloadComparisons.has(pair)) {
+      const comparison = compareRunningPayloads(root, runtime)
+        .catch(error => { payloadComparisons.delete(pair); throw error; });
+      payloadComparisons.set(pair, comparison);
+    }
+    return payloadComparisons.get(pair);
   }
-  async function ready(release, before, dshBefore = null, engineBefore = null) {
-    const deadline = Date.now() + timeout;
+  async function ready(release, before, dshBefore = null, engineBefore = null, deadline) {
+    const recoveryBound = deadline !== undefined;
+    deadline ??= Date.now() + timeout;
     let attempts = 0; let stage = 'health-unreachable'; let lastReason = stage;
     while (Date.now() < deadline) {
       try {
         attempts++; stage = 'health-unreachable';
-        const response = await fetch(url, { signal: AbortSignal.timeout(statusTimeoutMs) });
+        const response = await fetch(url, { signal: AbortSignal.timeout(recoveryBound ? Math.max(1, Math.min(statusTimeoutMs, deadline - Date.now())) : statusTimeoutMs) });
         stage = 'health-invalid';
         const health = await response.json();
         lastReason = !response.ok ? `health-http-${response.status}` : !health.ok ? 'dependency-unavailable'
@@ -261,6 +298,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
             if (current.pid !== engineBefore.pid || health.engineHost?.pid !== engineBefore.pid)
               throw new Error('Execution Host changed during execution update');
           }
+          if (recoveryBound && Date.now() >= deadline) { lastReason = 'readiness-deadline'; break; }
           return health;
         }
       } catch (error) {
@@ -305,6 +343,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       if (health.ok !== true) return result('dependency-unavailable', health);
       if (!response.ok) return result('health-http-error', health);
       if (profile === 'headless' && health.profile !== 'headless') return result('health-invalid', health);
+      if (!await runningPayloadMatches(resolve(link, '..', root), health)) return result('release-mismatch', health);
       // Do not authorize an observation across an execution pointer change.
       if (await readlink(link) !== root || health.version !== target.version || health.buildId !== target.opencraftWeb?.buildId)
         return result('release-mismatch', health);
@@ -342,7 +381,19 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       try { return [...new Set([...roots, resolve(link, '..', await readlink(link))])]; }
       catch { throw new Error('Execution release pointer is unreadable; retain release files'); }
     },
-    async apply(release) {
+    async apply(release, { recoverTarget = false, initialReadiness = null } = {}) {
+      // One absolute deadline also covers a possible pre-restart probe. It must
+      // never become a second long wait after restarting the same failed target.
+      if (recoverTarget && initialReadiness !== null) throw new Error('Conflicting execution readiness attempts');
+      if (initialReadiness !== null) validateInitialReadinessAttempt(initialReadiness, release);
+      const readinessDeadline = initialReadiness?.deadlineAt
+        ?? (recoverTarget === true ? Date.now() + TARGET_RECOVERY_READINESS_TIMEOUT_MS : undefined);
+      const checkDeadline = () => {
+        if (readinessDeadline !== undefined && Date.now() >= readinessDeadline)
+          throw Object.assign(new Error('Execution release failed readiness: readiness-deadline'),
+            { code: 'EXECUTION_READINESS_FAILED', reason: 'readiness-deadline' });
+      };
+      checkDeadline();
       await inspect(release);
       let oldRoot;
       try { oldRoot = resolve(link, '..', await readlink(link)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -352,7 +403,9 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       const dshBefore = await dshHealth();
       const engineBefore = await engineHealth();
       await validate(before);
+      checkDeadline();
       await prepareAccess(release);
+      checkDeadline();
       await pin([...(await pinnedRoots()), ...(oldRoot ? [oldRoot] : []), release.releaseRoot]);
       // A different backend payload needs a fresh process. A web-only release
       // may switch the pointer while the running gateway reports the current
@@ -364,19 +417,32 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       const previousRuntimeHash = oldRoot ? await computeExecutionHash(oldRoot, comparisonIdentity) : null;
       const runtimeHash = await computeExecutionHash(release.releaseRoot, comparisonIdentity);
       const runtimeChanged = previousRuntimeHash !== runtimeHash;
-      const restartGateway = () => withGatewayUpdateIntent(link, release, restart);
+      const restartGateway = async () => {
+        if (readinessDeadline !== undefined && Date.now() >= readinessDeadline)
+          throw Object.assign(new Error('Execution release failed readiness: readiness-deadline'),
+            { code: 'EXECUTION_READINESS_FAILED', reason: 'readiness-deadline' });
+        return withGatewayUpdateIntent(link, release, restart);
+      };
       // Startup also reconciles a pointer changed by an interrupted update.
+      checkDeadline();
       if (oldRoot !== release.releaseRoot) {
+        const comparisonIdentity = [...new Set([...(oldRoot ? await releaseIdentity(oldRoot) : []),
+          ...await releaseIdentity(release.releaseRoot)])];
+        const previousRuntimeHash = oldRoot ? await computeExecutionHash(oldRoot, comparisonIdentity) : null;
+        const runtimeHash = await computeExecutionHash(release.releaseRoot, comparisonIdentity);
+        const runtimeChanged = previousRuntimeHash !== runtimeHash;
         await point(release.releaseRoot);
         if (!runtimeChanged) {
-          try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
+          try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore,
+            readinessDeadline === undefined ? undefined : Math.min(Date.now() + timeout, readinessDeadline))); return; }
           catch { await restartGateway(); }
         } else await restartGateway();
       } else {
-        try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
+        try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore,
+            readinessDeadline === undefined ? undefined : Math.min(Date.now() + timeout, readinessDeadline))); return; }
         catch { await restartGateway(); }
       }
-      await retainRuntime(release, await ready(release, before, dshBefore, engineBefore), true);
+      await retainRuntime(release, await ready(release, before, dshBefore, engineBefore, readinessDeadline), true);
     },
   };
 }

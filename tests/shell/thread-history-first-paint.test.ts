@@ -135,10 +135,10 @@ test('history RPC keeps its opening operation through replacement and exports on
     dispose = installClientObservation({connectionGeneration:1,subscribeRequestLifecycle(fn:any){listener=fn;return ()=>{};}} as any);
     const observer = createThreadHistoryFirstPaintObserver();
     const first = observer.begin('view-first','cold',{hostId:'local',threadId:'private-thread'});
-    listener({type:'started',hostId:'local',id:'read-1',method:'thread/read',params:{threadId:'private-thread'},startedAtMs:123,queueWaitMs:2,historySource:'attention'});
+    listener({type:'started',hostId:'local',id:'read-1',method:'thread/read',params:{threadId:'private-thread'},startedAtMs:123,queueWaitMs:2,timeoutMs:10000,historySource:'attention'});
     observer.begin('view-second','cold',{hostId:'local',threadId:'private-thread'});
-    listener({type:'completed',hostId:'local',id:'read-1',method:'thread/read',durationMs:100,responseBytes:2048,decodeMs:1.5,result:{
-      thread:{id:'private-thread',content:'private-content'},__opencraftHistoryTiming:{pairId:'server-trace',coreMs:90,nativeRpcMs:75,queueMs:3,sourceMs:-1,evil:'private-content'}}});
+    listener({type:'completed',hostId:'local',id:'read-1',method:'thread/read',durationMs:100,endedAtMs:223,receivedAtMs:220,receiveToSettleMs:3,responseBytes:2048,decodeMs:1.5,result:{
+      thread:{id:'private-thread',content:'private-content'},__opencraftGatewayTiming:{gatewayPairId:'11111111-1111-4111-8111-111111111111',gatewayMs:95,storageQueueMs:7,evil:'private-content'},__opencraftHistoryTiming:{pairId:'server-trace',coreMs:90,nativeRpcMs:75,queueMs:3,sourceMs:-1,evil:'private-content'}}});
     observer.settle(first,'ok'); observer.abort();
     observeEvent({kind:"operation",operationType:"other",outcome:"failed"});
     for (const callback of visibility)callback();
@@ -150,6 +150,7 @@ test('history RPC keeps its opening operation through replacement and exports on
     assert.notEqual(rpc.operationId,starts[1].operationId);
     assert.equal(rpc.webSentAt,123);assert.equal(rpc.clientQueueMs,2);
     assert.equal(rpc.historyReadSource,'attention');assert.equal(rpc.bytes,2048);assert.equal(rpc.historyDecodeMs,1.5);
+    assert.equal(rpc.gatewayPairId,"11111111-1111-4111-8111-111111111111");assert.equal(rpc.gatewayMs,95);assert.equal(rpc.storageQueueMs,7);assert.equal(rpc.requestPending,1);assert.equal(rpc.clientBudgetMs,10000);assert.equal(rpc.clientWallMs,100);assert.equal(rpc.clientReceivedAt,220);assert.equal(rpc.clientReceiveToSettleMs,3);assert(rpc.hostId);
     assert.equal(rpc.historyCoreMs,90);assert.equal(rpc.historyNativeRpcMs,75);
     assert.equal(rpc.historySourceMs,undefined);
     assert(!JSON.stringify(captured).includes('private-'));

@@ -1,11 +1,13 @@
+import { currentProductDatabaseName } from './workbench-application-services';
+import { createLocalBrowserStorage } from '../browser/local-browser-records';
 import { ThreadSummaryPlugin } from "@opencraft/plugin-thread-summary";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
 import { RemoteBrowserStorage } from '../browser/remote-browser-storage';
 import { discoverRemoteBrowser, discoverRemoteBrowserForStartup, isOfflineShellStartup } from '../browser/remote-browser-capabilities';
-import { supportsH264MediaSource } from '../browser/h264-media-source';
+import { selectBrowserVideoDecoder } from '../browser/browser-video-decoder';
 import { RemoteBrowserSurfaceHost } from '../browser/remote-browser-surface-host';
 import type { ConversationPresentationProvider } from "./conversation-presentation";
-import { serverFetch, serverStorageKey, serverUrl } from "./server-context";
+import { serverStorageKey, serverUrl } from "./server-context";
 import { createWebWorkbenchApplicationSupervisor } from "./web-workbench-supervisor";
 import { createApplicationDisposer } from "./application-disposal";
 import { Context, type Plugin } from "@deepseek-ai/cordis";
@@ -117,9 +119,12 @@ export async function createWebWorkbenchApplication(
     platform: desktop ? "electron" : "web",
     hostProfileMode: options.hostProfileMode,
   });
-  const remoteBrowser = !desktop && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true'
-    && (typeof VideoDecoder !== 'undefined' || supportsH264MediaSource())
+  startupSignal?.throwIfAborted();
+  const remoteAvailable = !desktop && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true'
     && await discoverRemoteBrowserForStartup(startupSignal);
+  startupSignal?.throwIfAborted();
+  const remoteDecoder = remoteAvailable ? await selectBrowserVideoDecoder(startupSignal) : null;
+  const remoteBrowser = remoteDecoder !== null;
   const deferredBrowser = remoteBrowser && isOfflineShellStartup();
   const browserAdmission = new AbortController();
   const abortBrowserAdmission = () => browserAdmission.abort(startupSignal?.reason);
@@ -128,13 +133,19 @@ export async function createWebWorkbenchApplication(
   const remoteStorage = remoteBrowser && !options.browserMetadataStorage ? await RemoteBrowserStorage.create(startupSignal, deferredBrowser ? async () => {
     if (!await discoverRemoteBrowser(browserAdmission.signal)) throw new Error('Browser backend changed; reload OpenCraft');
   } : undefined) : null;
-  const browserStorage = options.browserMetadataStorage ?? remoteStorage ?? (desktop ? await createDesktopBrowserStorage() : null);
+  const browserStorage = options.browserMetadataStorage ?? remoteStorage ?? (desktop ? await createDesktopBrowserStorage(currentProductDatabaseName("opencraft-browser-records-v2")) : await createLocalBrowserStorage({namespace:currentProductDatabaseName("opencraft-browser-records-v2")}));
+  if (startupSignal?.aborted) { releaseBrowserAdmission(); remoteStorage?.dispose(); startupSignal.throwIfAborted(); }
   // Desktop account restoration is independent of local Host startup. The
   // local Host and its environment configuration must remain usable meanwhile.
   const cordis = new Context();
   const optionalFeatures = options.deferOptionalFeatures ? new OptionalFeatureStartup() : null;
   const conversationBindings = createConversationBindingStore({
     persistence: {
+      ...(browserStorage?.records ? {records:{
+        load:()=>browserStorage.records!.rows('bindings').map(row=>row.value as PersistedConversationBinding),
+        put:(binding:PersistedConversationBinding)=>browserStorage.records!.put('bindings',binding.scopeId,binding),
+        remove:(scopeId:string)=>browserStorage.records!.remove('bindings',scopeId),
+      }} : {}),
       load: () => loadConversationBindings(browserStorage ?? window.localStorage),
       save(bindings) {
         try {
@@ -157,7 +168,7 @@ export async function createWebWorkbenchApplication(
     return runtime.resources.host.fetchLoopback(targetUrl, init);
   });
   const browserSurfaces = desktop ? new ElectronBrowserSurfaceHost(browserStorage!)
-    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady, () => remoteStorage?.whenReady() ?? Promise.resolve()) : new WebIframeSurfaceHost();
+    : remoteDecoder ? new RemoteBrowserSurfaceHost(remoteDecoder, browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady, () => remoteStorage?.whenReady() ?? Promise.resolve()) : new WebIframeSurfaceHost();
   const releaseStorageErrors = remoteStorage?.onError(error => { if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error); });
   const browserPages = new WebBrowserPageRuntime(
     browserSurfaces,
@@ -177,7 +188,7 @@ export async function createWebWorkbenchApplication(
     releaseBrowserAdmission();
     browserPresentations.dispose();
     browserPages.dispose();
-    browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose();
+    browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose(); if(!remoteStorage)await browserStorage?.dispose?.();
     conversationBindings.dispose();
     await panelRuntime.dispose().catch(() => undefined);
     throw error;
@@ -320,7 +331,7 @@ export async function createWebWorkbenchApplication(
     hostProxy.dispose();
     browserPresentations.dispose();
     browserPages.dispose();
-    browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose();
+    browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose(); if(!remoteStorage)await browserStorage?.dispose?.();
     conversationBindings.dispose();
     releaseTerminalRecovery();
     await terminalSessions?.dispose().catch(() => undefined);
@@ -356,7 +367,7 @@ export async function createWebWorkbenchApplication(
       () => browserPresentations.dispose(),
       () => browserPages.dispose(),
       () => browserSurfaces.dispose(),
-      async () => { releaseStorageErrors?.(); try { await remoteStorage?.flush(); } finally { remoteStorage?.dispose(); } },
+      async () => { releaseStorageErrors?.(); await remoteStorage?.flushAndDispose(); if(!remoteStorage)await browserStorage?.dispose?.(); },
       () => supervisor.dispose(),
     ], "Failed to dispose Web Workbench application"),
   };

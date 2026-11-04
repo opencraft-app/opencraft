@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "model-usage-policy",
+      "checksum": "cef74bb357dbdcc281b967718f610b8baef9ef4eaf29cced0fb248c7f18e459b"
+    }
+  ],
+  "tableOptions": {
+    "model_usage_audit": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "model_usage_policy": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "1a4b9d5a1c55588e3641ab434f20e91e9c947f2bce25792d9ace6d7aca6c2dbd",
+  "baselineSnapshotChecksum": "7e6f8f5967794893816f5a7d4400957bf84765c1baff62aadbfa79b429b575cd"
+}

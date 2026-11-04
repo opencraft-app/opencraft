@@ -626,6 +626,35 @@ not configured through renderer RPCs and never owns the Core process. Product
 provider catalogs and protocol adaptation belong to product composition, not the
 shared Codex adapter or global native configuration.
 
+The optional custom Responses transport consumes the existing model-service
+catalog and credential resolver. Enabled `openai-responses` models have identities
+containing both the provider and model IDs. A loopback-authenticated gateway owns
+upstream protocol adaptation; the original Codex process continues to own tools,
+permissions and history. All configuration IO uses asynchronous repository ports.
+Gateway credentials are process-local; upstream credentials never enter native
+configuration. A cold resume refreshes the gateway endpoint through session
+overrides, without writing global provider settings.
+Declared reasoning levels also enable the native reasoning-request capability:
+unknown model metadata otherwise suppresses effort even when a turn selects it.
+The first declared level is the session default; explicit session/turn choices
+remain authoritative. Reasoning summaries default to disabled, and the gateway
+maps declared effort values before forwarding, rejecting undeclared levels.
+Endpoint acceptance alone does not prove distinct computation budgets per level.
+All client transports in one Headless composition share the same gateway endpoint.
+Closing one client must not stop another client's model requests. The optional
+composition `close` hook disposes the gateway after AppHost clients are closed.
+
+The first implementation admits new custom-model conversations and their own
+resumes/forks; cross-provider history migration is rejected explicitly.
+The source check compares configured connection IDs, even though all custom
+connections share one native provider definition.
+It supports caller function/custom tools, namespaces, incremental Responses events, and portable
+versioned plaintext summaries for remote compaction. Unknown encrypted summaries
+are rejected rather than silently discarded. Incomplete/empty summaries cannot
+replace history. Client cancellation aborts upstream inference; uncertain mutation
+outcomes remain unknown and are never automatically replayed by this adapter.
+Model-service window values are configured budgets, not inferred provider limits.
+
 ### Application schedule catalog
 
 The Scheduled tasks workbench entry projects the same admitted Host summaries
@@ -727,8 +756,8 @@ The provider subject is the identity key; login labels are audit data. Host SQLi
 preserves the original submission before queue admission, and records a Turn execution
 lease before sending a native start. Queue edits, dequeue operators and steer messages
 do not replace that identity. A steer records its own author without changing the Turn.
-Finished executions cannot lend their identity to later Turns; internal schedules, goals
-and anonymous starts have no employee authority. Historical queue records without a
+Finished executions cannot lend their identity to later Turns; internal schedules,
+anonymous starts and Goals without explicit native delegation have no employee authority. Historical queue records without a
 principal remain unknown instead of borrowing one from chat history.
 
 `ExecutionLeaseReader` borrows a read-only Host connection. Exact execution ID plus
@@ -752,6 +781,64 @@ returns expired; read failures return unknown. The native probes use only a
 latest-Turn history read, never resume or subscribe, and ignore unsolicited native
 interaction requests without responding to them.
 
+
+### Explicit Goal execution delegation
+
+A verified `thread/goal/set` activation captures the principal under a fresh,
+server-generated `__opencraftGoalAuthorization` nonce. Renderer-provided nonces
+are replaced. An authenticated native receipt must acknowledge the exact nonce;
+a matching native continuation proof is also an admission receipt when it arrives
+before the RPC response. A failed or legacy response cannot arm delegation.
+
+Native `create_goal` may emit `opencraft/goal/authorized` with the exact current
+Turn and original input identity. The gateway resolves that immutable submission,
+never a Thread's last sender. Historical reads and ordinary Goal accounting updates
+do not emit authorization or arm a cold Goal. Published grants are kept after
+revocation so old lifecycle events cannot revive their nonce.
+
+Each native `turn/started` continuation carries `__opencraftGoalExecution` with
+that nonce and a strictly increasing round. The gateway creates a distinct execution
+lease and records its grant/round relation. Other accounts, Threads, pending human
+admissions, closed Turns and old rounds cannot borrow it. Pause, clear, replacement,
+completion or disarming withdraw both delegation and the current delegated lease.
+A new activation requires a new verified grant. Ordinary queue/start/steer semantics
+and broker process-birth/incarnation checks remain in effect.
+
+`opencraft/goal-observer/initialize` is a server-owned, metadata-only native channel.
+It first negotiates `opencraft/goal-execution` through ordinary initialize; older
+Hosts never receive the private observer RPC and are rechecked with backoff.
+It observes Goal authorizations, lifecycle and delegated Turn boundaries without
+opening/resuming a Thread or acquiring a browser tool owner. The Headless gateway
+owns this connection independently of browser clients and retries after Host loss.
+It never presents identity principals or credentials to the engine or Renderer.
+The engine sends private `opencraft/goal-observer/authorize` and
+`opencraft/goal-observer/admit` requests and waits for the writer's exact receipt
+before completing a native create_goal authorization or launching a delegated
+round. Pi stops admitting new Goal rounds while all identity observers are absent;
+a connected socket alone is not an execution receipt. Source authorization and
+round admission failures disarm the Goal without running the model. Anonymous
+explicit Goals receive unowned leases and never borrow employee authority.
+Unobserved process births during gateway downtime are not retroactively authorized.
+
+Pi stores Goal intent, nonce and counter in `PiGoalDoc` at its native durable owner;
+forks start empty. It provides get/set/clear and native create/get/update tools.
+The catalog persists its recovery hint before activation returns. Each reserved
+round remains pending until an exact native submission receipt exists. On owner
+restart, a missing or failed receipt disarms the Goal instead of silently issuing
+a new round; proven running/completed submissions reconcile the same counter.
+Native input metadata retains the admitted Goal authorization. An autonomous
+round may update Goal status only while that authorization still matches, checked
+inside the Goal transaction; a late tool result cannot complete a replacement Goal.
+Armed Goals count as active work for owner handoff. It currently advertises
+`usageAccounting: false` and rejects token budgets rather than manufacturing usage. Native admission faults disarm the Goal for explicit
+resume without declaring it complete or marking it blocked after one attempt.
+
+The Codex adapter accepts the same trusted proof contract. **Stock Codex 0.166.0
+has neither the nonce receipt nor the native continuation source event.** Its Goal
+rounds remain without employee authority until a matching native implementation is
+installed. An active Goal, ordinary `turn/started`, a `rootTurnId` or prompt text
+cannot substitute for that proof. Website deployment alone does not update an
+independent native Core or execution Host.
 
 ### Independent Host execution observations
 
@@ -784,12 +871,22 @@ back to the bounded raw WebSocket Turn reader only for providers without an
 owner Turn observation. It never follows a successor Turn or accepts a changed
 original input.
 
+### Git attribution versus execution authority
+
+Git uses the immutable accepted principal, independently of the live lease
+resolution described above. `GitExecutionContextReader` reads the existing
+execution/submission rows by `OPENCRAFT_EXECUTION_ID` plus Thread ID. Suspension,
+completion or Gateway recovery does not change the original attribution.
+The broker does not instantiate native Turn inspectors or read transcript history.
+Admission of an operation is still separate from who originally started it;
+other platform tools keep their existing lease checks.
+
 ### Thread identity in native shells
 
 Pi supplies the explicit public session ID to each session's native execution
-environment. Environments may be reused for the same session and working
-directory because they contain only this diagnostic Thread ID; employee
-credentials are resolved for each actual tool process through the broker.
+environment. Scoped workers also carry `OPENCRAFT_EXECUTION_ID`; snapshot keys
+separate executions so a background handle keeps its original attribution.
+Employee credentials remain in the broker, never in that environment.
 
 DSH shell and terminal boundaries consume one read-only native-to-public
 resolver. Legacy DSH uses its existing generation/checkpoint owner. DSH ACP
@@ -802,8 +899,8 @@ upstream drift. A new ACP generation must explicitly mount the packaged
 pinned generations are not silently changed.
 
 `OPENCRAFT_THREAD_ID` is diagnostic, like native Codex's `CODEX_THREAD_ID`.
-Neither is credential authority. A persistent shell or background child keeps
-its original process birth; after that Turn ends it cannot acquire a later
+Neither alone identifies the person who submitted a particular execution.
+Older runtimes without an execution locator keep their original process birth; after that Turn ends it cannot acquire a later
 employee's lease. A fresh shell process in a later Turn is a separate origin.
 
 
@@ -868,8 +965,19 @@ provider. A thread bearer alone grants no employee authority. Pending inputs may
 list declarations; calls require an admitted active execution. Every outbound
 request and returned result rechecks employee admission, execution and credential
 revision. Revocation cancels in-flight transports; uncertain writes are not
-replayed. Upstream errors are generic and reflected secrets are redacted from
-catalogs and results. These are trusted same-UID Host boundaries, not a sandbox
+replayed. Invocation on a cold gateway restores missing declarations before
+looking up the tool again; this reads the catalog only and never retries a tool
+call. Cancellation and the original execution fence are rechecked after catalog
+recovery. A declaration, including one cached for an account/revision, never
+supplies execution authority.
+
+Capability failures expose allowlisted codes, phases, dispatch outcomes and a
+request ID shared with the service log. Upstream HTTP rejection status is retained
+without response bodies, headers, arguments or raw transport exceptions. Local
+rejection, catalog failure and connection failure before invocation report
+`not_dispatched`; a failure after invocation begins remains `unknown`, including
+revocation while a remote effect may be underway. Generic provider exceptions
+also remain unknown. Reflected secrets are redacted from catalogs and results. These are trusted same-UID Host boundaries, not a sandbox
 against malicious shell access to process memory.
 
 
@@ -878,7 +986,7 @@ against malicious shell access to process memory.
 The independent Pi/aggregation Host uses a persistent private owner fence before
 checking native Turns, tasks, tool calls, inbox, queues, shell records, schedules,
 recovery and downstream consumer leases. Paused queue items and future schedules
-remain work. Pi 1.3.0 has no separate goal service and supports approvalPolicy
+remain work. Pi 1.3.0 uses the native durable Goal owner described above and supports approvalPolicy
 never; native task/tool authority still includes waiting operations. Reads that
 cannot establish complete coverage remain unknown.
 
@@ -924,3 +1032,79 @@ until all directory sources are covered. Advanced native query consumers must
 continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.
+
+### Direct human CLI acceptance into Codex
+
+A directly authenticated human `opencraft/collaboration` queue send can freeze
+its verified execution identity through the trusted `ConversationInputAdmissionPort`.
+The port is synchronous, scoped to the receiving Codex Server, and supplied by
+that execution owner outside the RPC body. It writes the existing Codex
+`execution_submissions` row under `actor-input:<requestId>` before the Hub commits
+its message/request/idempotency transaction. The SSH provider supplies the verified
+provider subject; display sender labels are never resolved back into credentials.
+
+Native queue insertion consumes that same immutable row. The Hub stores the
+communication/request facts; it does not store a second runnable queue or a copy
+of the execution principal. Pump, delayed dequeue and recovery never recalculate
+identity from the current viewer, login binding or requester display name. An
+identical idempotency key does not invoke capture again. A trusted human context
+without an execution principal freezes unknown, rather than becoming an anonymous
+internal execution. Source/delegated messages, Session actors and steer do not
+acquire a new human execution through this port.
+
+There is no cross-database transaction. The ordering is deliberate: capture must
+succeed before Hub acceptance can commit. A capture failure rolls back the Hub
+transaction; a crash or later Hub failure can leave an inert execution snapshot
+with no committed request. It cannot create a queue entry or lease on its own,
+and the existing collaboration authorization checks deny dispatch without the
+matching committed request. A committed request therefore has its original
+snapshot before pump starts. A retry after an uncertain Hub result reconciles
+its existing key; it never modifies a committed snapshot. Old requests and old
+unowned/unknown rows are not backfilled.
+
+This path reuses the existing Host execution owner and schema. It does not change
+Server schema 5/6 or require a native Codex Core upgrade. The current implementation
+covers direct human CLI sends through the receiving Codex Server. Pi/DSH and
+other independent input owners retain their explicit internal-input behavior;
+this does not establish employee Git attribution for those paths. Git still
+separately checks current account admission, independently of attribution.
+
+
+## 48b与51最终组合：根创建和首条同一可信归属
+
+内部ConversationCommandContext明确包含submission与inputAdmission；前者保留原SSH ingress的
+Actor、resourceOwner和opaque executionPrincipal供root thread/start使用，后者由接收Codex
+owner同步提供，不能从wire body、环境或viewer推导。Headless仅转交该内部对象。
+create首次创建获得并持久保存threadId后，把同一inputAdmission交给sendConversation；
+首条沿51普通直接human queue的相同快照冻结契约，在Hub受理提交前写既有Codex
+execution_submissions。没有复制principal到Server账本，没有新增迁移或owner。
+root创建成功而快照/首条受理失败时保留已知ref及unknown/rejected事实；重复create/lookup
+只读对账，不重新capture、不重发、不补权、不删会话。agent/source/delegation/steer与旧历史
+继续沿51原边界；本批仅接收Codex同Server，Pi/DSH未获得员工执行归属。
+
+### Explicit known7 identity reader
+
+Join's identity reader can opt into exact Server5/6/7 read contracts. This does
+not relax the default strict writer contract; the independent reader candidate
+continues to write Server6. History, schema and checksums are validated within
+the read transaction before Actor/membership queries. Future8 and malformed7
+remain unsupported. Reader compatibility does not qualify a complete writer7
+recovery package or change execution ownership.
+
+
+### Generation directory read isolation
+
+A Codex directory page reads generation sources concurrently with a bounded
+whole-page read budget below the enclosing history RPC deadline. The active
+source receives priority; a slow retained source cannot prevent healthy sources
+from returning new metadata. Timed-out source replies cannot mutate the completed
+cursor view. A cursor keeps the same failed-source coverage until a new head read
+retries the sources.
+
+Unavailable sources produce explicit `catalog.state=error` and partial coverage.
+The history directory imports healthy rows while retaining cached rows and
+execution routes from slow sources; an empty partial page is not an authoritative
+empty catalog or deletion. Generation admission changes still expire the cursor.
+This metadata-read policy neither retries mutations nor stops retained execution
+owners. It does not claim that the registry's existing synchronous SQLite writes
+have been migrated off the router thread.

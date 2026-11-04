@@ -110,7 +110,7 @@ function createSshHttpIngress(options) {
         };
         let accepted;
         try {
-          accepted = (principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })).find(matches);
+          accepted = (options.isScopedUsername?.(context.username) ? [] : principals.get(context.username) ?? []).map(key => ({ key, dynamic: false })).find(matches);
           if (!accepted) accepted = (options.resolveAuthorizedKeys?.(context.username) ?? [])
             .map(value => ({ key: parsePublicKey(value), dynamic: true })).find(matches);
         } catch { context.reject(['publickey']); return; }

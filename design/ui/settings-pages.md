@@ -21,11 +21,8 @@ Settings routes use the shared controls in `@opencraft/extension-react`. A page 
 
 - Space only on the 4px scale: 0, 4, 8, 12, 16, 20, 24, 32, 40. That is `--spacing` (4px) times 0, 1, 2, 3, 4, 5, 6, 8, or 10.
 - Type uses the existing settings roles: `settingsTitle`, `settings-section-title`, `body`, `metadata`, and `control`.
+- In touch presentation, every button, switch, link, and input has a target of at least 44px by 44px, using the shared density preference rather than viewport width. A switch keeps its 36px by 20px painted track and centered 16px thumb inside that target; enlarging the hit area must not stretch the track.
 - Metadata text uses `--color-text-secondary`, not tertiary, so 12px copy stays above the contrast minimum.
-
-## Switch targets
-
-Settings switches keep their original 36px by 20px painted track and centered 16px thumb. The shared density preference expands the transparent button target to at least 44px by 44px in touch presentation, independent of viewport width. Enlarging a hit area must not stretch the visible track.
 
 ## Names that stay in the active language
 
@@ -69,3 +66,57 @@ input and hides the key editor; switching back requires an explicit credential
 choice. Save and cancel keep their existing roles. The shared Settings Shell owns
 scrolling and page gutters; narrow/touch presentation keeps the description and
 switch reachable without a second configuration page.
+
+## Settings as a peer sidebar destination
+
+Settings categories occupy their own sidebar list, alongside the separate
+conversation list and application catalog. The application catalog must not be
+prepended to Settings. Choosing Applications hides retained Settings context and
+suspends its bottom action portal; choosing Settings restores its categories.
+Touch settings shares `SidebarReturnToApp` with Applications in the bottom-left
+Shell action host. The persistent Header keeps the sidebar trigger and omits the
+redundant return arrow. Direct entry can open the drawer and return through the
+existing navigation transaction without relying on browser history; independent
+management dialogs retain their own close controls.
+
+The Settings footer entrance is list selection, not page navigation. It keeps the
+current main page visible in the split and publishes only the categories and bottom
+return action. Before a category is selected, no category claims to be the active
+page. Explicit category selection uses the normal Router transaction and dismisses
+the touch sidebar. Shortcut and direct-route entry remain route navigation.
+
+## Shared sidebar reading inset
+
+Applications and Settings category lists use `NavigationList inset="sidebar"`.
+The shared list owns `--padding-sidebar-content-inline`; app/settings wrappers
+must not add another horizontal gutter or a width-specific substitute. Touch
+Shell brand, conversation roots and bottom action edges consume that same token.
+Rows retain the shared navigation row padding, leading glyph slot and content gap.
+The list exposes `--offset-navigation-content-inline` from those current row
+metrics so Settings headings align with the leading glyph. Dialog/standalone
+navigation retains the default list inset. Check actual row, glyph and label
+coordinates across both destinations, plus changing the shared inset once.
+
+Sidebar rows reserve `--size-sidebar-navigation-leading-slot` for artwork of
+different semantic sizes; a shared grid keeps label starts independent of SVG
+width. Leading glyphs are start-aligned without a consumer-specific margin.
+
+## Model capability review
+
+A model action opens an inline capability section in the existing Model Services
+Detail; it does not create another Settings destination or scroll owner. The
+section uses shared Settings inputs/buttons for context/output limits, a primary
+metadata lookup and a separate optional inference verification action. Verification
+states its possible cost before activation. Source, suggested value, and whether an
+existing declaration will be retained are readable together. Unknown stays unknown;
+parameter acceptance is distinguished from actual image/text verification.
+
+Lookup results are a preview. Filling only compatible blank fields is explicit;
+manual values and negative declarations are retained. Length edits have their own
+save action. Responses arriving after a connection edit cannot replace that draft.
+On narrow/touch layouts, inputs and actions wrap within the Detail's existing
+insets; the metadata value and source wrap independently without horizontal scroll.
+
+## Image model services
+
+The existing provider creation form offers image generation when the Host declares it. An image provider uses the same Detail, credential form, model rows and menus, with an explicit full-endpoint label. A quiet notice explains that this default applies to non-subscription Codex image tools. Image defaults are separate from chat defaults; image rows do not show chat context/reasoning controls or issue implicit discovery/inference checks. Existing Settings page insets, scrolling and touch controls remain the owners.

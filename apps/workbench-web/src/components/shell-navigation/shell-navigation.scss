@@ -57,9 +57,9 @@
   padding: 4px 0;
   .shell-navigation__items--applications {
     justify-items: center;
-    gap: 2px;
+    gap: var(--spacing);
     > button {
-      @include controls.application-navigation-control;
+      @include controls.application-navigation-glyph;
       @include typography.role(metadata, primary);
       display: flex; align-items: center; justify-content: center; gap: 0;
       width: var(--size-application-navigation-hit-min); height: var(--size-application-navigation-hit-min); padding: 0;
@@ -228,8 +228,7 @@
   --sidebar-leading-slot-size: 28px;
   display: grid;
   gap: var(--menu-item-gap);
-  color: var(--color-text);
-  button {
+  button:not(.ui-button) {
     @include controls.navigation-control;
     min-height: var(--height-navigation-row);
     cursor: pointer;
@@ -245,7 +244,7 @@
 }
 .shell-navigation__items--applications {
   gap: var(--gap-application-navigation-items);
-  > button { @include controls.application-navigation-control; }
+  > button:not(.ui-button) { @include controls.application-navigation-control; }
 }
 @media (any-pointer: coarse), (hover: none) {
   .shell-navigation__dock-content { --size-application-navigation-hit-min: 44px; }
@@ -255,7 +254,7 @@
 }
 .shell-navigation__identity { display: flex; flex-direction: column; gap: 4px; }
 .shell-navigation__footer {
-  // Normal-flow controls; relative positioning is only the menu anchor.
+  // Normal-flow controls; relative positioning anchors the application drawer.
   position: relative;
   display: grid;
   width: 100%;
@@ -318,12 +317,11 @@
 .shell-sign-in-menu__status { padding: var(--gap-control-group); color: var(--color-text-secondary); }
 .shell-navigation__peek {
   @include menu.surface;
-  position: absolute;
+  // The presentation root owns paint; Radix owns trigger anchoring and collision.
   z-index: var(--layer-shell-navigation);
-  left: var(--padding-sidebar-entrances);
-  bottom: calc(100% - var(--padding-sidebar-entrances) + var(--gap-control-group));
-  width: min(280px, calc(100vw - 24px));
-  max-height: calc(100dvh - 88px);
+  width: min(280px, var(--radix-popover-content-available-width));
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
   box-sizing: border-box;
   background: var(--color-background-elevated-secondary-opaque);
 }

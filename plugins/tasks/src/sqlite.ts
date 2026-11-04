@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { tasksV1Migration, tasksV1Schema } from "./v1-schema";
 import { tasksArchiveMigration, tasksArchiveSchema } from "./archive-schema";
-import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type {
   TaskDetail,
   TasksSnapshot,
@@ -60,7 +60,7 @@ export class TasksSqliteStore {
   private readonly db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string, private readonly now: () => number = Date.now) {
-    const managed = openManagedDatabase({ path, legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + propertiesSchema + memberIdentitySchema + tasksV1Schema + tasksArchiveSchema), migrations: [...tasksMigrations, tasksV1Migration, tasksArchiveMigration] });
+    const managed = openManagedDatabase({ schemaId: "tasks", path, legacyPolicy: "reject",  migrations: [...tasksMigrations, tasksV1Migration, tasksArchiveMigration] });
     this.db = managed.database;
     this.outcome = managed.outcome;
     this.db.exec("PRAGMA foreign_keys=ON");

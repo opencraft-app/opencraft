@@ -553,3 +553,43 @@ test("V3 recovery index is demand driven, preserves unchanged reconnects and fen
     assert.deepEqual(source.getSnapshot().anchors.map(a => a.turnKey), ["fresh", "tail-3"]);
   } finally { release({ data: [], nextCursor: null }); source.dispose(); }
 });
+
+test("an explicit indexed tool target keeps its identity through hydration even without a user prompt",async()=>{
+ const tool={id:"tool",type:"commandExecution",command:"synthetic",aggregatedOutput:"needle"};
+ let view:ThreadView={...createEmptyThreadView("local","thread"),resumeState:"resumed",connectionGeneration:1,turns:[]};
+ let removeDuringProjection=false;
+ const source=createV3ConversationNavigationSource({threadId:"thread",port:{
+  getView:()=>view,subscribeView:()=>()=>{},
+  listTurns:async params=>({data:[{id:"tools-only",itemsView:params.itemsView,items:params.itemsView==="full"?[tool]:[]}],nextCursor:null}),
+  commitHydratedTurn(hydrated){view={...view,revision:view.revision+1,turns:[hydrated]};return{hostId:view.hostId,threadId:view.threadId,connectionGeneration:1,viewRevision:view.revision};},
+  projectionBarrier:{waitUntilProjected:async()=>{if(removeDuringProjection)view={...view,turns:[{id:"tools-only",items:[]}]};return 7;}},
+ }});
+ try {
+  await source.prepare();const anchor=source.getSnapshot().anchors[0]!;
+  const prepared=await source.prepareTarget(anchor.id,{itemId:"tool"});assert.equal(prepared?.itemId,"tool");assert.equal(prepared?.turnKey,"tools-only");assert.equal(prepared?.projectionRevision,7);
+  assert.equal(await source.prepareTarget(anchor.id,{itemId:"missing"}),null);
+  removeDuringProjection=true;assert.equal(await source.prepareTarget(anchor.id,{itemId:"tool"}),null);
+ }finally{source.dispose();}
+});
+
+test("read-only history authority admits navigation without execution Resume and wakes pending demand", async () => {
+  let ready = false, reads = 0;
+  const view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "needs_resume", historySource: "paginated", historyMode: "paginated" };
+  const listeners = new Set<() => void>();
+  const source = createV3ConversationNavigationSource({ threadId: "thread-one", port: {
+    getView: () => view,
+    historyReady: () => ready,
+    subscribeView(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    async listTurns() { reads++; return { data: [turn("older", "Prompt")], nextCursor: null }; },
+    projectionBarrier: { waitUntilProjected: async () => 1 },
+    commitHydratedTurn: () => ({ hostId: view.hostId, threadId: view.threadId, connectionGeneration: view.connectionGeneration, viewRevision: view.revision }),
+  } });
+  try {
+    await source.prepare(); assert.equal(reads, 0);
+    ready = true; for (const listener of listeners) listener();
+    await source.prepare();
+    assert.equal(reads, 1); assert.equal(source.getSnapshot().completeness, "complete");
+    assert.equal(view.resumeState, "needs_resume", "index reads cannot claim execution ownership");
+    ready = false; await source.prepare(); assert.equal(reads, 1);
+  } finally { source.dispose(); }
+});

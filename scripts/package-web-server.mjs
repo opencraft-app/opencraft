@@ -75,7 +75,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
   const unit = await readFile(join(repositoryRoot, 'packaging/web-server/opencraft-web.service'), 'utf8');
   await writeFile(join(packageRoot, 'opencraft-web.service'), unit.replace(`node_modules/${PUBLIC_PACKAGE_NAME}/`, `node_modules/${packageName}/`));
-  for (const entry of ['cli', 'worker', 'controlled-registry', 'prefetch']) {
+  for (const entry of ['cli', 'worker', 'resident', 'controlled-registry', 'prefetch']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/web-deployment/${entry}.mjs`)], outfile: join(packageRoot, `runtime/${entry}.mjs`),
       bundle: true, platform: 'node', format: 'esm', target: 'node22',
       external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
@@ -123,6 +123,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
       ['apps/opencraft-daemon/src/token-usage-query-worker.ts', 'token-usage-query-worker.mjs', 'esm'],
+      ['packages/app-host-server/src/conversation-history-storage.worker.mjs', 'conversation-history-worker.mjs', 'esm'],
       ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],

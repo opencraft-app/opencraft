@@ -24,6 +24,9 @@ export interface CodexAccountServiceOptions {
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly ownerHandoff?: {
     admissionOpen(): boolean;
+    onAttemptDispatch?(id: string, route: string): void;
+    onAttemptTerminal?(id: string, result: "completed" | "failed"): void;
+    onAttemptSettled?(id: string): void;
     onUncertain(route: string, diagnostic: AccountPoolUncertainDiagnostic): void | Promise<void>;
     retained?: CodexAccountRetainedState;
   };
@@ -91,7 +94,8 @@ export class CodexAccountService {
       await service.login.ready();
       if (options.ownerHandoff) service.validateCredentials(options.ownerHandoff.admissionOpen() === false);
       service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
-        admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
+        onAttemptDispatch: options.ownerHandoff?.onAttemptDispatch, onAttemptTerminal: options.ownerHandoff?.onAttemptTerminal,
+        onAttemptSettled: options.ownerHandoff?.onAttemptSettled, admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
       if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
       return service;
     } catch (error) { await service.close(); throw error; }

@@ -5,8 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import {
+  connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
+  ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
 } from "../../apps/workbench-web/src/components/conversation-recovery";
@@ -32,6 +34,19 @@ test("routine recovery has no error, retry button or diagnostic UI in cold and r
       assert.match(markup, /Update or reload to reconnect/);
       assert.doesNotMatch(markup, /<button|<details|<pre|Try again|Technical details/);
     }
+  } finally { runtime.dispose(); }
+});
+
+test("archived conversations render one read-only restore state instead of a retry transcript", () => {
+  const runtime = new LocaleRuntime([]);
+  try {
+    const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
+      children: createElement(ConversationUnavailableState, { reason: "archived", onRestore: () => undefined }) }));
+    assert.match(markup, /Conversation archived/);
+    assert.match(markup, /read-only until you restore it/);
+    assert.match(markup, /Restore conversation/);
+    assert.doesNotMatch(markup, /Continue/);
+    assert.match(markup, /data-reason="archived"/);
   } finally { runtime.dispose(); }
 });
 
@@ -88,4 +103,16 @@ test('console prints the full allowlisted clipboard snapshot with physical corre
  assert.equal(logConversationRecoveryDiagnostic(diagnostic,1234),expected);
  assert.deepEqual(values,[['[conversation-recovery] details\n'+expected]]);
  assert.match(expected,/attemptId: 11111111-1111-4111-8111-111111111111/);assert.doesNotMatch(expected,/secret/);
+});
+
+
+test("Host recovery stays pending independently of retained history or a Thread lease", () => {
+  for (const phase of ["connecting", "reconnecting"]) {
+    assert.equal(connectionRecoveryIsPending(phase), true);
+    assert.equal(conversationRecoveryIsPending("none"), false, "history can already be authoritative");
+    assert.equal(connectionRecoveryIsPending(phase, undefined, true), false);
+  }
+  for (const phase of ["idle", "ready", "disposed", "error"]) {
+    assert.equal(connectionRecoveryIsPending(phase), false);
+  }
 });

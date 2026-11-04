@@ -1,3 +1,4 @@
+import type { TokenUsageTelemetry } from "./token-usage-telemetry.js";
 import { nativeLiveAcceptedInputFact } from "./token-usage-native-facts.js";
 import { randomUUID } from "node:crypto";
 import { stat, realpath } from "node:fs/promises";
@@ -17,6 +18,28 @@ export function nativeTurnStartedAt(turnId: string, startedAt?: unknown): number
   return ms;
 }
 
+export interface UsageCollectorPort {
+  send(method:"initialize"|"notification"|"threadStarted"|"releaseEphemeral"|"schedule"|"missing"|"stop", ...args:unknown[]):void;
+  setEnabled(enabled:boolean):Promise<void>;
+  liveGapCount():number;
+}
+export interface UsageRuntimePort {
+  telemetry?:TokenUsageTelemetry;
+  request(method:string,params:Record<string,unknown>):Promise<unknown>;
+  submission?(threadId:string,inputId:string):UsageSubmission|null;
+  submissions?(threadId:string,inputIds:string[]):Promise<Array<UsageSubmission|null>>;
+  diagnostic(category:string):void;
+  derived?:{invalidate(threadId:string,path?:string):void};
+  source?(threadId:string,path:string):Promise<NativeRolloutSource>;
+  beforeBackground?():Promise<void>;
+  collector?:UsageCollectorPort;
+  writes?: {
+    record(attemptId:string,input:UsageSubmission):Promise<void>;
+    outcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null):Promise<string|null>;
+    admit(key:UsageTurnKey,inputId:string,startedAt:number|null,trusted:UsageSubmission|null):Promise<void>;
+    submission(input:UsageSubmission):Promise<void>;
+  };
+}
 type CounterWork={key:UsageTurnKey}&({kind:"start"}|{kind:"release"}|{kind:"usage";counts:UsageSource["counts"]}|{kind:"terminal";state:UsageExecutionState});
 /** Physical Host collector. There is no Renderer subscription or model request
  * here. Native metadata and bounded disk replay run after forwarding returns. */
@@ -29,6 +52,7 @@ export class CodexTokenUsageRuntime {
   private counterScheduled:ReturnType<typeof setImmediate>|null=null;
   /** Physical thread/start only; a fork/resume is never a zero baseline. */
   threadStarted(value:unknown):void {
+    if(this.port.collector){const thread=record(record(value).thread);this.port.collector.send("threadStarted",{thread:{id:thread.id,ephemeral:thread.ephemeral,path:thread.path,turns:Array.isArray(thread.turns)&&thread.turns.length===0?[]:null}});return;}
     const thread=record(record(value).thread),threadId=text(thread.id);
     if(!this.enabled()||!threadId||thread.ephemeral!==true||thread.path!=null||!Array.isArray(thread.turns)||thread.turns.length!==0)return;
     if(this.ephemeral.size>=2048){this.missing(threadId,"unreplayable");return;}
@@ -38,6 +62,7 @@ export class CodexTokenUsageRuntime {
   }
   /** Only an owned one-shot native job calls this after unsubscribe ACK. */
   releaseEphemeral(threadId:string):void {
+    if(this.port.collector){this.port.collector.send("releaseEphemeral",threadId);return;}
     if(this.port.derived){this.ephemeral.delete(threadId);return;}
     if(this.ephemeral.has(threadId))this.enqueueCounter({kind:"release",key:{threadId,turnId:""}});
   }
@@ -81,26 +106,33 @@ export class CodexTokenUsageRuntime {
   private scheduled: ReturnType<typeof setImmediate> | null = null;
   private draining = false;
   /** Includes faults which an unwritable store could not persist. */
-  liveGapCount(): number { return this.gaps.size; }
+  liveGapCount(): number { return this.port.collector?.liveGapCount()??this.gaps.size; }
   private enabled(): boolean {
     try { return this.ledger.coverage().enabled; }
     catch { try { this.port.diagnostic("storage-read"); } catch {} return false; }
   }
-  constructor(readonly ledger: OpenCraftTokenUsageLedger, private readonly port: {
-    readonly request: (method: string, params: Record<string, unknown>) => Promise<unknown>;
-    readonly submission?: (threadId: string, inputId: string) => UsageSubmission | null;
-    readonly diagnostic: (category: string) => void;
-    readonly derived?: { invalidate(threadId:string,path?:string):void };
-    readonly source?: (threadId: string, path: string) => Promise<NativeRolloutSource>;
-    readonly writes?: {
-      record(attemptId:string,input:UsageSubmission):Promise<void>;
-      outcome(attemptId:string,outcome:"accepted"|"rejected"|"unknown",turnId:string|null):Promise<string|null>;
-      admit(key:UsageTurnKey,inputId:string,startedAt:number|null,trusted:UsageSubmission|null):Promise<void>;
-      submission(input:UsageSubmission):Promise<void>;
-    };
-  }) {}
+  constructor(readonly ledger: OpenCraftTokenUsageLedger, private readonly port: UsageRuntimePort) {}
+  async setEnabled(enabled:boolean):Promise<void> {
+    if(this.port.collector)await this.port.collector.setEnabled(enabled);
+    else this.ledger.setEnabled(enabled);
+  }
+  /** Worker controls contain accounting metadata only. */
+  control(method:string,args:unknown[]):void {
+    if(method==="initialize")this.initialize(args[0]);
+    else if(method==="notification")this.notification(args[0] as string,args[1] as Record<string,unknown>);
+    else if(method==="threadStarted")this.threadStarted(args[0]);
+    else if(method==="releaseEphemeral")this.releaseEphemeral(args[0] as string);
+    else if(method==="schedule")this.schedule(args[0] as string);
+    else if(method==="missing")this.missing(args[0] as string,args[1] as Parameters<CodexTokenUsageRuntime["missing"]>[1]);
+    else if(method==="stop")this.close();
+  }
+  async settled():Promise<void> {
+    while(this.draining||this.restoring)await new Promise(resolve=>setTimeout(resolve,5));
+  }
+  private restoring=false;
 
   initialize(value: unknown): void {
+    if(this.port.collector){this.port.collector.send("initialize",{codexHome:text(record(value).codexHome)});return;}
     const home = text(record(value).codexHome);
     if (!home || this.abort.signal.aborted) return;
     const initialized = this.nativeHome !== null;
@@ -110,7 +142,8 @@ export class CodexTokenUsageRuntime {
     this.timer = setInterval(() => { this.scheduleProjection(); for (const thread of new Set([...this.active,...this.settling.keys()])) this.schedule(thread); this.retryGaps(); }, 2000);
     this.timer.unref();
     this.scheduleProjection();
-    void this.restore().catch(() => { if (!this.abort.signal.aborted) { try { this.port.diagnostic("recovery-read"); } catch {} } });
+    this.restoring=true;
+    void this.restore().finally(()=>{this.restoring=false;}).catch(() => { if (!this.abort.signal.aborted) { try { this.port.diagnostic("recovery-read"); } catch {} } });
   }
   private seedGaps(): void {
     try {
@@ -171,6 +204,14 @@ export class CodexTokenUsageRuntime {
     this.schedule(key.threadId);
   }
   notification(method: string, params: Record<string, unknown>): void {
+    if(this.port.collector){
+      // Never copy prompts/tool outputs across the accounting boundary.
+      if(!["turn/started","turn/completed","thread/tokenUsage/updated","rawResponse/completed","item/started","item/completed"].includes(method))return;
+      const turn=record(params.turn),item=record(params.item);
+      this.port.collector.send("notification",method,{threadId:params.threadId,turnId:params.turnId,
+        turn:{id:turn.id,status:turn.status},tokenUsage:params.tokenUsage,
+        item:{id:item.id,type:item.type,...(item.type==="userMessage"?{clientId:item.clientId}:{} )},inputId:params.inputId});return;
+    }
     const threadId = text(params.threadId);
     if (!threadId) return;
     if(this.ephemeral.has(threadId)&&!this.enabled()){if(this.port.derived)this.missing(threadId,"unreplayable");else this.counterMissing(threadId);return;}
@@ -198,6 +239,7 @@ export class CodexTokenUsageRuntime {
     if (["turn/started", "turn/completed", "thread/tokenUsage/updated", "rawResponse/completed"].includes(method)) this.schedule(threadId);
   }
   private missing(threadId: string, reason: "storage-write" | "queue-full" | "source-offline" | "source-replaced" | "invalid-source" | "unreplayable" | "oversized-line"): void {
+    if(this.port.collector){this.port.collector.send("missing",threadId,reason);return;}
     try { this.port.diagnostic(reason); } catch { /* failure reporting never changes execution */ }
     if (this.gaps.has(threadId) || this.gaps.size >= 256) return;
     const id = randomUUID(); this.gaps.set(threadId, id);
@@ -215,6 +257,7 @@ export class CodexTokenUsageRuntime {
     }
   }
   private schedule(threadId: string): void {
+    if(this.port.collector){this.port.collector.send("schedule",threadId);return;}
     if (this.abort.signal.aborted || this.ephemeral.has(threadId) || !this.nativeHome || !this.enabled()) return;
     if (this.pending.size >= 256 && !this.pending.has(threadId)) { this.missing(threadId, "queue-full"); return; }
     this.pending.add(threadId);
@@ -263,9 +306,11 @@ export class CodexTokenUsageRuntime {
     const signal = this.abort.signal;
     let sliceStarted=performance.now();
     const yieldIfNeeded=async()=>{if(performance.now()-sliceStarted<8)return;await new Promise<void>(resolve=>setImmediate(resolve));signal.throwIfAborted();sliceStarted=performance.now();};
-    if(this.port.submission){
+    await this.port.beforeBackground?.();
+    if(this.port.submission||this.port.submissions){
       const inputs=this.ledger.unresolvedInputIds(threadId,this.receiptAfter.get(threadId)??"");
-      for(const inputId of inputs){const trusted=this.port.submission(threadId,inputId);if(trusted)this.ledger.recoverSubmission(trusted);await yieldIfNeeded();}
+      const receipts=await this.port.submissions?.(threadId,inputs);
+      for(const [index,inputId] of inputs.entries()){const trusted=receipts?.[index]??this.port.submission?.(threadId,inputId);if(trusted)this.ledger.recoverSubmission(trusted);await yieldIfNeeded();}
       if(inputs.length===32){this.receiptAfter.set(threadId,inputs.at(-1)!);this.schedule(threadId);}else this.receiptAfter.delete(threadId);
     }
     const thread = record(record(await this.port.request("thread/read", {threadId,includeTurns:false})).thread);
@@ -310,11 +355,17 @@ export class CodexTokenUsageRuntime {
       identity = await readTurnIdentity(canonical, replayCursor) ?? undefined;
       if (identity) this.identities.set(threadId, identity);
     }
+    const trustedReceipts=new Map<string,UsageSubmission>();
     const replay = await replayRolloutUsage({ path: canonical, nativeHome:this.nativeHome!,source,threadId,ledger:this.ledger,cursor:replayCursor,maxFacts:32,excludedTurnIds:excluded,signal,
       identity,counts:!this.port.derived,
+      beforeAdmissions: this.port.submissions?async inputIds=>{
+        const receipts=await this.port.submissions!(threadId,inputIds);
+        for(const receipt of receipts)if(receipt)trustedReceipts.set(receipt.inputId,receipt);
+      }:undefined,
+      beforeCommit:()=>this.port.beforeBackground?.()??Promise.resolve(),
       onAdmission: fact => {
         if (!ensure(fact.turnId)) return;
-        const trusted = this.port.submission?.(threadId,fact.inputId);
+        const trusted = trustedReceipts.get(fact.inputId)??this.port.submission?.(threadId,fact.inputId);
         if (trusted) this.ledger.recoverSubmission(trusted);
         this.ledger.recordAdmission(fact,fact.inputId);
       },
@@ -356,6 +407,7 @@ export class CodexTokenUsageRuntime {
     this.port.derived?.invalidate(threadId,canonical);
   }
   close(): void {
+    if(this.port.collector){this.port.collector.send("stop");return;}
     this.abort.abort();
     if(this.projectionScheduled)clearImmediate(this.projectionScheduled);
     if(this.counterScheduled)clearImmediate(this.counterScheduled);

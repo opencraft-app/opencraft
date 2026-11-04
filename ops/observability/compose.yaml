@@ -36,6 +36,33 @@ services:
   grafana:
     image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     network_mode: host
+    # Container restarts bypass the systemd stop/clean/start path: remove only an
+    # ownerless socket. curl exit 7 proves ECONNREFUSED; other failures refuse to unlink.
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        socket=/run/opencraft-grafana/grafana.sock
+        if [ -e "$$socket" ] || [ -L "$$socket" ]; then
+          if [ ! -S "$$socket" ]; then
+            echo "refusing to remove non-socket $$socket" >&2
+            exit 1
+          fi
+          set +e
+          curl -sS --max-time 2 --unix-socket "$$socket" -o /dev/null http://localhost/api/health
+          probe=$$?
+          set -e
+          if [ "$$probe" -eq 0 ]; then
+            echo "active Grafana listener owns $$socket; refusing to unlink" >&2
+            exit 1
+          fi
+          if [ "$$probe" -ne 7 ]; then
+            echo "cannot prove Grafana socket is stale (curl exit $$probe); refusing to unlink" >&2
+            exit 1
+          fi
+          rm -f -- "$$socket"
+        fi
+        exec /run.sh
     environment:
       GF_SERVER_ROOT_URL: '${OPENCRAFT_OBSERVE_PUBLIC_ORIGIN:?public host origin required}/__opencraft_observe/grafana/'
     volumes: [./grafana.ini:/etc/grafana/grafana.ini:ro, ./provisioning:/etc/grafana/provisioning:ro, grafana:/var/lib/grafana, '${OPENCRAFT_OBSERVE_DIRECTORY:?private observation directory required}/grafana:/run/opencraft-grafana']

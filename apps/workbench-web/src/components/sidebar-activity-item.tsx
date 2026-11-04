@@ -1,3 +1,4 @@
+import { hasFullWidthOpeningPunctuation } from "@opencraft/design-system/typography";
 import type { ReactNode } from "react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
@@ -104,7 +105,7 @@ export function SidebarActivityItem({
       title={tooltip}
     >
       <span className="sidebar-activity-item__body">
-        <span className="sidebar-activity-item__title-line"><span className="sidebar-activity-item__title">{title}</span>
+        <span className="sidebar-activity-item__title-line"><span className="sidebar-activity-item__title" data-optical-leading-punctuation={hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
           {scheduleLabel ? <span className="sidebar-activity-item__schedule" role="img" aria-label={scheduleLabel} title={scheduleLabel}><Clock size={16} aria-hidden="true" /></span> : null}</span>
         {!titleOnly && !metadataBadge && (twoLine || project) ? <span className="sidebar-activity-item__metadata">
           {stateLabel}

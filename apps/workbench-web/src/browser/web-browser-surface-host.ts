@@ -13,9 +13,13 @@ import {
 import type { PresentationHostPort } from "./opencraft-presentation-host";
 import type { BrowserLocalMenuController } from './browser-local-menu';
 
+export type BrowserInputFailureKind = 'focus' | 'edit' | 'copy' | 'control';
+
 export interface BrowserSurfaceEvents {
   /** Authoritative logical retirement; transport/admission failures are not closure. */
   onSessionClosed?(): void;
+  /** Nonfatal input feedback must not replace page navigation state. */
+  onInputError?(kind: BrowserInputFailureKind): void;
   onNewWindow?(url: string, background: boolean): void;
   onNavigation?(state: { url: string; title: string; canGoBack: boolean; canGoForward: boolean; isLoading: boolean }): void;
   onLoaded(title: string | null): void;
@@ -26,12 +30,16 @@ export interface BrowserSurfaceEvents {
 export interface BrowserNewTabLabels { readonly title: string; readonly hint: string }
 
 export interface BrowserSurfaceHost {
+  /** Remote input is arbitrated by server leases, independently of resource use. */
+  readonly inputAuthority?: 'server';
   listResources?(): Promise<import('./desktop-browser-storage').RemoteBrowserCatalog>;
   closeResource?(lease: string): Promise<void>;
   readonly localMenu?: BrowserLocalMenuController;
   controlState?(id: BrowserPageId): 'unavailable' | 'viewing' | 'human' | 'agent' | 'elsewhere';
   onControlState?(listener: () => void): () => void;
   takeControl?(id: BrowserPageId): void;
+  /** Explicit device/size edit, separate from passive layout measurement. */
+  requestViewportControl?(id: BrowserPageId): void;
   releaseControl?(id: BrowserPageId): void;
   keyboardState?(id: BrowserPageId): 'unavailable' | 'idle' | 'ready';
   onKeyboardState?(listener: () => void): () => void;

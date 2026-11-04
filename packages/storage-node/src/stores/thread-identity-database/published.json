@@ -1,0 +1,18 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1793322242680,
+    "version": 0,
+    "sqlChecksum": "debe01a67d32f5202d69afa54b9caf6e69e201760fb95785e76d539a526b3486",
+    "snapshotChecksum": "274345e64e5f84d32b69f4b70f329170f18c8f246a341b1acba8369162eb5271",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_curvy_expediter",
+    "when": 1793325055973,
+    "version": 4,
+    "sqlChecksum": "5dca41adc8c607b015496581284077fbe7689a114dca2e26bdf14bf73755f621",
+    "snapshotChecksum": "6de72ad64d05e6bb97250f3699d297612b8d57afe5b65cd808c90c6b118227d8",
+    "compiledChecksum": "197dbc83ec9e8db0b0173e4d7dc6d4095f56e0548aa7c2f6ae173990d1422996"
+  }
+]

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkbenchDraftLocation, createWorkbenchThreadLocation } from "../../packages/workbench-runtime/src/index.ts";
+import { asRouteScopeId, createWorkbenchDraftLocation, createWorkbenchThreadLocation } from "../../packages/workbench-runtime/src/index.ts";
 import { createApplicationNavigation } from "../../apps/workbench-web/src/runtime/workbench-navigation.ts";
 import { createWorkbenchNavigationTransaction } from "../../apps/workbench-web/src/runtime/workbench-navigation-transaction.ts";
 
@@ -533,4 +533,45 @@ test("history paint stays pending after navigation commit, re-arms warm and abor
     nav.historyFirstPaint.settle(warm,"ok",{lengthBucket:'lt50',engine:'codex'});
     assert.equal(nav.historyFirstPaint.getSnapshot(),null);
   } finally { nav.dispose(); }
+});
+
+test("selecting a saved cold conversation View uses normal activation after bootstrap", async () => {
+  const { createNavigationRestorationSession } = await import("../fixtures/navigation-restoration-session");
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  const savedViewId = asRouteScopeId("saved-thread-b-view");
+  const session = createNavigationRestorationSession({ initialThread: a,
+    router: { restoreViewId: async () => savedViewId },
+  });
+  try {
+    assert.equal(await session.navigation.selectConversation(b), true);
+    assert.deepEqual(session.navigation.getSnapshot().location, b);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, savedViewId);
+    assert.deepEqual(session.coordinator.getSnapshot().location, b);
+    assert.equal(session.coordinator.getActiveThreadLease()?.threadId, "b");
+    assert.ok(session.views.get(savedViewId), "the saved editor identity must be retained");
+    assert.equal(await session.navigation.selectConversation(a), true);
+    assert.equal(await session.navigation.selectConversation(b), true);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, savedViewId);
+  } finally { await session.dispose(); }
+});
+
+test("saved View selection preserves the current route after connection failure and can retry", async () => {
+  const { createNavigationRestorationSession } = await import("../fixtures/navigation-restoration-session");
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  let fail = true;
+  const savedViewId = asRouteScopeId("retry-saved-view");
+  const session = createNavigationRestorationSession({ initialThread: a,
+    connect: async () => { if (fail) throw new Error("temporary connection loss"); },
+    router: { restoreViewId: async () => savedViewId },
+  });
+  try {
+    const initial = session.navigation.getSnapshot();
+    assert.equal(await session.navigation.selectConversation(b), false);
+    assert.equal(session.navigation.getSnapshot(), initial);
+    assert.equal(session.coordinator.getSnapshot().error?.message, "temporary connection loss");
+    fail = false;
+    assert.equal(await session.navigation.selectConversation(b), true);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, savedViewId);
+    assert.equal(session.coordinator.getActiveThreadLease()?.threadId, "b");
+  } finally { await session.dispose(); }
 });

@@ -3,6 +3,7 @@ import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutco
 import type {
   AppServerMethod,
   ThreadForkParams,
+  TurnStartParams,
 } from "@opencraft/appserver-protocol";
 import type {
   DynamicToolSpec,
@@ -27,6 +28,12 @@ import {
   type SubmitCompileDiagnostic,
   type SubmitCompilerOptions,
 } from "./compiler";
+
+// Native tool configuration may wait for a bounded idle-runtime retirement
+// before dispatch. This is still one submission, not an automatic retry.
+function requestTurnStart(client: Pick<AppServerClient, "request">, params: TurnStartParams, options?: AppServerClientRequestOptions) {
+  return client.request("turn/start", params, { ...options, timeoutMs: 120_000 });
+}
 
 export interface InteractionResponsePort {
   respond(key: ConversationKey, response: InteractionResponse): Promise<void>;
@@ -245,7 +252,7 @@ export function createAppServerConversationCommandPort(
         onAdmission?.();
         onCreationAccepted?.();
         threadId = started.thread.id;
-        const turn = await config.client.request("turn/start", {
+        const turn = await requestTurnStart(config.client, {
           threadId,
           clientUserMessageId: intent.clientMessageId,
           input: [...compiled.input],
@@ -266,7 +273,7 @@ export function createAppServerConversationCommandPort(
         onAdmission?.();
         onCreationAccepted?.();
         threadId = forked.thread.id;
-        const turn = await config.client.request("turn/start", {
+        const turn = await requestTurnStart(config.client, {
           threadId,
           clientUserMessageId: intent.clientMessageId,
           input: [...compiled.input],
@@ -280,7 +287,7 @@ export function createAppServerConversationCommandPort(
       }
       case "existing-thread": {
         threadId = intent.target.key.threadId;
-        const turn = await config.client.request("turn/start", {
+        const turn = await requestTurnStart(config.client, {
           threadId,
           clientUserMessageId: intent.clientMessageId,
           input: [...compiled.input],
@@ -438,7 +445,7 @@ export function createAppServerConversationCommandPort(
       assertConversationHost(key);
       const commandId = createCommandId();
       const clientMessageId = createClientMessageId();
-      const result = await config.client.request("turn/start", {
+      const result = await requestTurnStart(config.client, {
         threadId: key.threadId,
         input: [],
         clientUserMessageId: clientMessageId,

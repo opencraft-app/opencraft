@@ -1,3 +1,4 @@
+import { piGoalCapability } from "./goals.js";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
 import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
@@ -14,13 +15,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import { existsSync } from "node:fs";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { PiDurableSession, createPiModels, type PiSnapshot, type PiForkContext } from "./session.js";
 import { assertPiFields, compareThreads, fullAccessProfile, piModel, selection, thinking, workspace } from "./contract.js";
 import { compilePiInput } from "./input.js";
 import { piSkillCatalog, validatePiSkillInput } from "./skills.js";
 import { projectPiSnapshot, tokenUsage, textOf, type PiTurn } from "./projection.js";
-import type { ExecutionEngineClient as EngineClient, AgentOrchestrationPort } from "@opencraft/appserver-client";
+import type { ExecutionEngineClient as EngineClient, AgentOrchestrationPort, GoalExecutionAdmissionPort } from "@opencraft/appserver-client";
 export { piModel } from "./contract.js";
 
 type Value = Record<string, any>;
@@ -68,6 +70,8 @@ export class PiEngine {
   readonly threadPrefix = "pi_";
   readonly modelPrefix = "pi:";
   private readonly capabilities = Object.freeze({
+    "opencraft/thread-goal": piGoalCapability,
+    "opencraft/goal-execution": { version: 1 },
     "opencraft/read-history": { version: 1, initialTurnsPage: true },
     "opencraft/thread-lifecycle": { version: 1, fork: false, ephemeralFork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true, pin: true },
     "opencraft/host-capabilities": { version: 1 },
@@ -110,6 +114,14 @@ export class PiEngine {
   private readonly writes = new Map<string, Promise<void>>();
   private latestPinAt = 0;
   private readonly queueDrains = new Set<string>();
+  private readonly goalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private goalObservationReady = true;
+  private goalExecutionAdmission?: GoalExecutionAdmissionPort;
+  setGoalExecutionAdmission(port: GoalExecutionAdmissionPort): void { this.goalExecutionAdmission = port; }
+  setGoalExecutionObservation(available: boolean): void {
+    this.goalObservationReady = available;
+    if (available) for (const session of this.sessions.values()) this.scheduleGoal(session);
+  }
   private readonly queueOwners = new Map<string, EngineClient>();
   private readonly operations = new Map<string, Promise<unknown>>();
   private readonly historyReaders = new Map<EngineClient, Set<AbortController>>();
@@ -190,7 +202,17 @@ export class PiEngine {
     if (!this.admissionOpen()) return;
     for (const session of this.sessions.values()) {
       if (!session.pendingRecovery || session.archived) continue;
-      try { await this.refresh(session); if (!session.active) { session.needsResume = false; this.scheduleQueue(session); } }
+      try {
+        await this.refresh(session);
+        const native = session.native!, goal = await native.goal();
+        if (goal.pending && goal.authorizationId) {
+          const id = `${session.id}:turn:client:goal:${goal.authorizationId}:${goal.round}`;
+          const receipt = await native.execution(id);
+          if (receipt === "running" || receipt === "completed") await native.confirmGoalRound(goal.authorizationId, goal.round);
+          else await native.disarmGoal(goal.authorizationId);
+        }
+        if (!session.active) { session.needsResume = false; this.scheduleQueue(session); this.scheduleGoal(session); }
+      }
       catch { this.fail(session, "Pi session recovery failed"); }
     }
     this.recovery?.wake();
@@ -266,6 +288,22 @@ export class PiEngine {
           // shell follow-up can resume; never use a reconnecting browser owner.
           await this.options.sessionCapabilities?.refresh?.(session.id, { turnId: active.id, ...(typeof inputId === "string" ? { inputId } : {}) });
           return [...session.tools, ...this.hostTools(session)];
+        },
+        onGoal: async (state, originTurnId) => {
+          session.pendingRecovery = !!session.active || !!session.snapshot?.queue?.items.length
+            || state.goal?.status === "active" && state.authorizationId !== null;
+          await this.save(session);
+          if (originTurnId && state.authorizationId && this.goalExecutionAdmission) {
+            const admitted = await this.goalExecutionAdmission.authorize({ threadId: session.id, turnId: originTurnId, authorizationId: state.authorizationId,
+              ...(originTurnId.startsWith(`${session.id}:turn:client:`) ? { inputId: originTurnId.slice(`${session.id}:turn:client:`.length) } : {}) });
+            if (!admitted) throw new Error("Goal identity authorization was not acknowledged");
+          }
+          if (originTurnId && state.authorizationId)
+            this.notify("opencraft/goal/authorized", { threadId: session.id, turnId: originTurnId, authorizationId: state.authorizationId,
+              ...(originTurnId.startsWith(`${session.id}:turn:client:`) ? { inputId: originTurnId.slice(`${session.id}:turn:client:`.length) } : {}) });
+          if (state.goal) this.notify("thread/goal/updated", { threadId: session.id, turnId: originTurnId ?? null, goal: state.goal });
+          else this.notify("thread/goal/cleared", { threadId: session.id });
+          this.scheduleGoal(session);
         },
         onSnapshot: snapshot => this.accept(session, snapshot),
         onTool: async (request, signal) => {
@@ -357,12 +395,13 @@ export class PiEngine {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: finished.id, tokenUsage: tokenUsage(snapshot, contextWindow) });
       this.notify("turn/completed", { threadId: session.id, turn: finished });
       this.notify("thread/status/changed", { threadId: session.id, status: { type: "idle" } });
-      session.updatedAt = seconds(); session.pendingRecovery = !!snapshot.queue?.items.length;
+      session.updatedAt = seconds(); session.pendingRecovery = !!snapshot.queue?.items.length || snapshot.goal?.goal?.status === "active" && snapshot.goal.authorizationId !== null;
       void this.save(session).catch(() => this.notify("warning", { message: "Pi catalog metadata could not be saved" }));
     }
     if (!same(previousSnapshot?.queue, snapshot.queue) || !same(previousSnapshot?.inbox, snapshot.inbox))
       this.notify("thread/queue/changed", { threadId: session.id });
     this.scheduleQueue(session);
+    this.scheduleGoal(session);
     if (session.active) {
       this.notify("thread/tokenUsage/updated", { threadId: session.id, turnId: session.active.id,
         tokenUsage: tokenUsage(snapshot, contextWindow) });
@@ -711,6 +750,43 @@ export class PiEngine {
   request(method: string, params: Value, client: EngineClient): Promise<any> {
     return this.admit(() => this.acceptRequest(method, params, client), piHandoffReconciliation(method));
   }
+  /** Continuation is admitted by the native owner, independently of browser
+   * socket lifetime. No browser platform tool lease is inherited. */
+  private scheduleGoal(session: Session): void {
+    if (this.closed || !this.goalObservationReady || this.goalTimers.has(session.id) || !session.native || session.active || session.archived || session.ephemeral) return;
+    const timer = setTimeout(() => {
+      this.goalTimers.delete(session.id);
+      void this.admit(() => this.serialize(session.id, async () => {
+        if (this.closed || !this.goalObservationReady || !this.admissionOpen() || session.archived || session.active || !session.native) return;
+        const native = session.native, current = await native.goal();
+        if (current.goal?.status !== "active" || !current.authorizationId) return;
+        const reserved = await native.reserveGoal(current.authorizationId);
+        if (!reserved?.goal || !reserved.authorizationId) return;
+        const authorizationId = reserved.authorizationId, round = reserved.round;
+        const canAdmit = async () => {
+          const latest = await native.goal();
+          return this.goalObservationReady && this.admissionOpen() && latest.goal?.status === "active" && latest.authorizationId === authorizationId && latest.round === round;
+        };
+        const owner: EngineClient = { notify() {}, request: async () => { throw new Error("No browser tool owner"); } };
+        try {
+          if (this.goalExecutionAdmission && !await this.goalExecutionAdmission.admit({ threadId: session.id,
+            turnId: `${session.id}:turn:client:goal:${authorizationId}:${round}`, authorizationId, round }))
+            throw new Error("Goal execution lease was not acknowledged");
+          await this.handle("turn/start", { threadId: session.id,
+            clientUserMessageId: `goal:${authorizationId}:${round}`,
+            input: [{ type: "text", text: `Continue working toward the active goal: ${reserved.goal.objective}\nKeep working until achieved. Call update_goal only when complete, explicitly paused by the user, or blocked after three repeated blocked turns.` }],
+            __opencraftGoalExecution: { authorizationId, round } }, owner, canAdmit);
+          await native.confirmGoalRound(authorizationId, round);
+        } catch (error) {
+          // Unknown effects require explicit user resume, never another round
+          // with a new identity as a retry of the same admission.
+          await native.disarmGoal(authorizationId);
+          this.notify("warning", { threadId: session.id, message: "Goal continuation stopped; resume explicitly after checking the last turn." });
+        }
+      })).catch(() => this.notify("warning", { threadId: session.id, message: "Goal continuation admission unavailable" }));
+    }, 100);
+    timer.unref?.(); this.goalTimers.set(session.id, timer);
+  }
   private acceptRequest(method: string, params: Value, client: EngineClient): Promise<any> {
     if (["thread/read", "thread/turns/list", "thread/items/list"].includes(method)) {
       // Display hydration never owns the execution mutation lane. A slow
@@ -790,6 +866,25 @@ export class PiEngine {
     }
     if (method === "thread/unsubscribe" && !this.sessions.has(params.threadId)) return { status: "notLoaded" };
     const session = await this.session(params.threadId);
+    if (method.startsWith("thread/goal/")) {
+      if (session.ephemeral) throw new Error("Temporary Pi threads do not support Goals");
+      if (method === "thread/goal/get") {
+        if (!session.native && !existsSync(join(this.options.directory, `${session.id}.sqlite`))) return { goal: null };
+        const state = session.native ? await session.native.goal()
+          : (await readPiSnapshot(join(this.options.directory, `${session.id}.sqlite`), join(this.options.directory, "handoff-cache"))).goal;
+        return { goal: state?.goal ?? null };
+      }
+      const native = await this.native(session);
+      if (session.archived) throw new Error("Unarchive the Pi thread before changing its Goal");
+      if (method === "thread/goal/clear") { await native.clearGoal(); return { cleared: true }; }
+      if (method === "thread/goal/set") {
+        const authorizationId = typeof params.__opencraftGoalAuthorization === "string" ? params.__opencraftGoalAuthorization : undefined;
+        const state = await native.setGoal(params, authorizationId);
+        this.scheduleGoal(session);
+        return { goal: state.goal, ...(authorizationId && state.authorizationId === authorizationId ? { __opencraftGoalAuthorization: authorizationId } : {}) };
+      }
+      throw new Error("Unknown Pi Goal operation");
+    }
     if (method === SHARED_INTERACTIONS_READ) {
       // Older mixed-Host clients inherited the default engine's approval
       // capability. Pi owns no shared approvals; this read grants no reply port.
@@ -858,7 +953,9 @@ export class PiEngine {
     if (method === "thread/archive" || method === "thread/unarchive") {
       if (session.ephemeral) throw new Error("Temporary Pi threads cannot be archived");
       if (session.active) throw new Error("Stop the Pi turn before archiving");
-      session.archived = method === "thread/archive"; await this.save(session);
+      session.archived = method === "thread/archive";
+      if (session.archived) await session.native?.disarmGoal();
+      await this.save(session);
       if (session.archived) await this.transcriptCache.invalidate(session.id);
       if (session.archived) this.scheduleService?.suspend(session.id); return method === "thread/unarchive" ? { thread: this.thread(session) } : {};
     }
@@ -983,9 +1080,11 @@ export class PiEngine {
         }
         // A Host input does not replace the browser's separate tool lease.
         if (!canAdmit) this.attach(session, client);
-        this.notify("turn/started", { threadId: session.id, turn });
+        this.notify("turn/started", { threadId: session.id, turn,
+          ...(canAdmit && params.__opencraftGoalExecution ? { __opencraftGoalExecution: params.__opencraftGoalExecution } : {}) });
         await native.submit(content, { turnId, clientId, input: params.input, additionalContext: params.additionalContext ?? null,
-          createdAtMs, turnTrigger: params.turnTrigger ?? null }, turnId);
+          createdAtMs, turnTrigger: params.turnTrigger ?? null,
+          ...(canAdmit && params.__opencraftGoalExecution ? { goalExecution: params.__opencraftGoalExecution } : {}) }, turnId);
         await native.unpauseQueue();
         await this.refresh(session);
       } catch (error) { if (!(error instanceof ScheduleAdmissionDeferred)) this.fail(session, (error as Error).message); throw error; }
@@ -1011,7 +1110,7 @@ export class PiEngine {
     if (method === "turn/interrupt") {
       this.recovery?.handled(session.id);
       if (params.turnId && session.active?.id !== params.turnId) throw new Error("Pi turn identity changed");
-      const native = await this.native(session); await native.changeQueue("pause");
+      const native = await this.native(session); await native.disarmGoal(); await native.changeQueue("pause");
       await native.abort(); await this.refresh(session); return {};
     }
     throw new Error(`Pi does not support ${method}`);
@@ -1046,7 +1145,8 @@ export class PiEngine {
           + [...snapshot.tasks.values()].filter(task => task.state.status !== "terminal").length
           + snapshot.submissions.filter(row => ["queued", "placed"].includes(row.status)).length
           + (snapshot.shell?.records.filter(row => row.state === "running" || row.detached && !row.notified || !!row.monitorEvents?.length).length ?? 0)
-          + Number(!!session.active);
+          + Number(!!session.active)
+          + Number(snapshot.goal?.goal?.status === "active" && snapshot.goal.authorizationId !== null);
         activeCount += active;
         // Summaries are bound to native state without exposing history content.
         records.push({ id: session.id, active, entries: snapshot.entries.length, submissions: snapshot.submissions.length,
@@ -1060,7 +1160,7 @@ export class PiEngine {
       else activeCount += recovery.flights + recovery.unfinished;
     } catch { unknown = true; }
     return { coverage: unknown ? "unknown" : "complete", activeCount: unknown ? null : activeCount, workers, records,
-      capabilities: { goals: "unsupported-pi-1.3.0", approvals: "never", privateTools: "native-task-run-and-durable-call-custody", im: "host-input-admission" } };
+      capabilities: { goals: "native-durable-explicit-authorization", approvals: "never", privateTools: "native-task-run-and-durable-call-custody", im: "host-input-admission" } };
   }
   async resumeBackground() {
     if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
@@ -1076,6 +1176,8 @@ export class PiEngine {
   }
   async close() {
     this.closed = true;
+    for (const timer of this.goalTimers.values()) clearTimeout(timer);
+    this.goalTimers.clear();
     for (const readers of this.historyReaders.values()) for (const reader of readers) reader.abort(new Error("Pi engine is closed"));
     this.historyReaders.clear();
     await this.recovery?.close();

@@ -1,3 +1,5 @@
+import { SidebarReturnToApp } from "./sidebar-return-to-app";
+import { Button } from "@opencraft/design-system-web/button";
 import { NavigationList, NavigationGroup, NavigationItem } from "@opencraft/design-system-web/navigation";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import "../styles/settings-page.scss";
@@ -139,7 +141,10 @@ export function SettingsNavigation({
   showArchivedConversations = false,
 }: SettingsNavigationProps) {
   const intl = useIntl();
+  const showBack = presentation === "route";
   const dismissSidebar = useDismissSidebarAfterSelection();
+  const returnToApp = () => { onBack(); if (presentation === "sidebar") dismissSidebar?.(); };
+  const bottomReturn = presentation === "sidebar" ? <SidebarReturnToApp onReturn={onBack} /> : null;
   const onSectionChange = (nextSection: SettingsSection) => {
     navigateToSection(nextSection);
     // Only explicit category selection closes the drawer, including selecting
@@ -174,7 +179,8 @@ export function SettingsNavigation({
         className={`settings-page__navigation settings-page__navigation--management settings-page__navigation--${presentation}`}
         data-selection="chrome"
       >
-        <NavigationList label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}>
+        {bottomReturn}
+        <NavigationList inset={presentation === "sidebar" ? "sidebar" : undefined} label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}>
           {presentation === "route" ? (
             <>
               <NavigationItem type="button" className="settings-page__back" onClick={onBack}>
@@ -235,8 +241,9 @@ export function SettingsNavigation({
 
   return (
     <div className={`settings-page__navigation settings-page__navigation--${presentation}`} data-selection="chrome">
-      <NavigationList label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}>
-        {presentation === "route" ? <NavigationItem type="button" className="settings-page__back" onClick={onBack}>
+      {bottomReturn}
+        <NavigationList inset={presentation === "sidebar" ? "sidebar" : undefined} label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}>
+        {showBack ? <NavigationItem type="button" className="settings-page__back" onClick={returnToApp}>
           <ArrowLeft size={15} />
           <span><FormattedMessage id="settings.back" defaultMessage="Back to app" /></span>
         </NavigationItem> : null}

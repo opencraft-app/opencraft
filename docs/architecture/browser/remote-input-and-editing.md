@@ -109,8 +109,12 @@ uses a single-use native document/focus/selection capability; changed focus,
 type, document or native context cancels rather than retargets delayed input.
 Preedit, commit and cancellation follow Chromium's editor and website handlers.
 The client keeps the original editor id throughout a composition, coalesces
-preedit and queues terminal edits in order. Local blur, park, navigation,
-disconnect and disposal retire the transaction.
+preedit and queues terminal edits in order. An empty ongoing preedit is an explicit compose update, not an absent update;
+a synchronous terminal cancel still supersedes pending preedit. The worker maps
+empty preedit to cancellation of its owned native composition and keeps the
+returned context in the same target-bound transaction; it never reacquires or
+cancels another editor's composition. Local blur, park,
+navigation, disconnect and disposal retire the transaction.
 
 Physical keyboard keydown/keyup/character events remain available on non-editable
 pages, including arrows, Tab, Escape and shortcuts. Enter forwards the native
@@ -226,18 +230,164 @@ document or control boundaries. Multi-contact pinch remains latest-position
 input with per-dispatch native geometry; no local fling, zoom or wheel substitute
 is synthesized. Identical release geometry adds no stationary movement.
 
-The native adapter anchors relative viewer time to its own monotonic epoch once
-per gesture, preserving intervals across native ACK and transport jitter. It
-validates finite, ordered times, bounds future time to 1s and age to 25s, and
-validates the entire bounded history before native effects. Dense delivered samples need no historical dispatch. When coalescing would
-reset the pinned Chromium 40ms velocity history, only the newest genuine
-predecessor is injected before the latest position, at most one extra native
-ACK. Each injected sample still rechecks document identity;
-failed or retired gestures cancel without retrying a press. A real stationary
-pause remains present at touchEnd so Chromium can suppress inertia. Legacy
+The client adds capture-to-send age only after control and local queue waits;
+the native control queue adds its own elapsed wait. This bounded age dates the
+first down before a delayed grant rather than anchoring it at ACK time. Relative
+viewer time is never a trusted wall clock. The adapter uses the wall clock CDP
+actually translates, with a 2ms precision margin, and shifts a batch's offset
+backward when reduced transport delay would otherwise place it in the future.
+Native times never decrease; history which would precede the last native event
+is not replayed. Within an admitted tail its original source intervals remain
+intact. This causal adjustment cannot perfectly reconstruct variable network
+latency or guarantee identical inertia under every transport pattern.
+
+Finite ordered source times, bounded history and a maximum 25s capture age are
+validated before injection. Every rejection retires held native contacts,
+including geometry/sequence/time validation and the legacy mouse-touch path.
+Dense delivered motion adds no historical ACK. Across a source gap of at least
+40ms, at most the newest genuine predecessor is admitted, checked against the
+current document before each dispatch. Multi-finger history is never replayed;
+source contact edges and a real stationary release remain ordered. Legacy
 untimed senders keep their previous path. The isolated worker bundles the shared
 policy closure rather than relying on source workspace module resolution.
 
 A running persistent owner retains its immutable runtime while it has pages;
 input fixes activate in new owners after the last page is explicitly closed.
 Neither deploying the client nor opening another tab upgrades an old live owner.
+
+
+### Semantic keyboard editing commands
+
+The staging receiver forwards `historyUndo`, `historyRedo`, `deleteWordBackward`
+and `deleteWordForward` once, on either cancelable beforeinput or noncancelable
+input. These are native keyboard editing intents, not text replacement or a
+mirror of the editor's undo stack. The capability is explicitly negotiated as
+`nativeEditCommands`; retained older workers must not receive unsupported input.
+
+A command shares the ordered input queue and document/control fences, carries
+the observed editor id, retires owned composition, then rechecks visibility,
+document and focused frame before private CDP keyboard dispatch. A fixed worker
+allowlist maps semantics to Chromium edit commands. No arbitrary command, script,
+OS shortcut or editor contents crosses this boundary. Chromium's current focus,
+selection, keydown/beforeinput handlers and undo history remain authoritative,
+as for other keyboard input; this does not extend IME's single-use selection
+capability to a new atomic editor command API. Website handlers can change focus
+or reject a command during native dispatch. A dispatched command is never retried.
+
+Transport clock validation allows at most 25s discrepancy between the original
+mapping and current capture-age estimate before causal normalization. Unknown
+network delay is not a future native event: normalize the bounded mapping before
+injection, retain nondecreasing native time and the precision margin, and still
+retire invalid source times or clock reversal. A genuine long hold with matching
+source/arrival progression remains valid.
+
+The final normalized native timestamps, including retained history, also keep
+the 25s expiration bound (plus the 2ms precision margin). Capture age and
+transport skew cannot combine into a longer native-event lifetime.
+
+
+### Native offscreen cross-site coordinate routing
+
+Cross-site iframe input remains on Chromium's native hit-test and compositor
+transform path. The Electron OSR root must identify its root compositor
+FrameSinkId and delegate conversion into another view to that destination's
+`TransformPointToLocalCoordSpace`; returning false for all other views drops
+input even when the child compositor visibly renders. DOM-based iframe offsets
+and site-specific event injection are not substitutes.
+
+The owned fork's native regression uses a genuinely separate renderer process,
+trusted root mouse/touch input, a transformed iframe and child wheel scroll.
+Fixture-only DOM assertions verify child coordinates and native target-bound
+Chinese input. This does not remove the unknown-first-focus protocol fence or
+prove a physical mobile keyboard. Retained native owners keep their immutable
+runtime until their logical pages are explicitly closed.
+
+
+### Electron mouse and keyboard injection routes
+
+Native compositor coordinate support alone does not route Electron's ordinary
+`sendInputEvent` mouse API: the OSR adapter must call the input router, preserving
+its proxy and popup branches. This lets Chromium own hit testing and capture
+without adding a per-move JavaScript/CDP round trip.
+
+Keyboard injection uses Chromium's focused-widget delegate, including its
+crashed/external-focus rejection. Sending all keys to the root widget loses
+OOPIF key listeners and native editing shortcuts. Target-bound IME tokens and
+remote control/document generations still authorize their own operations;
+keyboard routing does not grant a new lease or replay rejected input.
+
+
+### Native editor observation cadence
+
+The native fork can notify changes in Chromium's TextInputManager through
+`native-text-input-state-changed`, explicitly enabled for the worker's own
+WebContents. Native notifications are coalesced onto the next UI task; no
+JavaScript runs inside the manager's observer iteration, and teardown cancels
+pending delivery. Only invalidation is signaled. The worker reads the existing
+observation metadata, deduplicates unchanged hints, and applies the same private
+controller routing and native capability checks.
+
+Notification-capable runtimes have no periodic editor poll. Compatibility
+runtimes poll while visible, stop while hidden, and read current state on
+reveal. This reduces observation latency and idle wakeups; it does not establish
+first-input causality, grant input authority, or bypass local mobile user-gesture
+requirements for opening a keyboard.
+
+## Native causal activation experiment
+
+Native fork18 provides a private experimental dispatch receipt for the actual
+mouse/key event or native touch-derived GestureTap. Blink records input ID,
+native timestamp, document/focus generation, node identity and input type in
+that dispatch task before ACK. The frame context query consumes that exact
+receipt once; a later editor cannot be captured as the original activation.
+The receipt itself grants no remote control or permission to edit.
+
+Activation fixes editor identity, not old text or selection. Website changes
+inside the same editor before the grant remain authoritative. After causal
+identity validation, the existing native single-use capability protects the
+current document/focus/composition/text/selection snapshot at write time. A
+pending native composition is not acquired by a new causal query. Activation
+state stores no field values and introduces no idle polling.
+
+This primitive remains an experiment until its native probe and complete
+artifact verification pass. It does not by itself enable unknown-first-input
+in the remote client. That still requires an activation/interaction-bound
+client transaction, controller-only routing, disposal/late-result fences and
+explicit fallback for retained runtimes without this capability. It also does
+not override physical iOS/WeChat user-gesture rules for keyboard popup.
+
+
+## Native focus binding in the remote client
+
+Fork19 advertises `nativeImeActivation` only with version2 focus identity and
+both read-only native focus queries. Mouse down/up and key down bind the editor
+from their native dispatch receipts; a single-contact touch release binds its
+native tap. Touch start keeps the previous focus. The existing ordered input
+queue places later IME transactions behind those edges without waiting for a
+future release or blocking that release behind an IME barrier.
+
+A local transaction snapshots its activation and opaque editor ID before any
+network wait. An unknown editor requires that activation's native proof. A
+scroll without tap may continue only its already-known exact native focus;
+later observations cannot authorize unknown input. Known-editor hints include
+native focus generation privately, so A→B→A invalidates an old ID. Observation
+queries are read-only and event-driven, with stale async replies discarded.
+Every begin still acquires a fresh single-use native edit context.
+
+A terminal native edit may synchronously focus another editor. Its dispatched
+result can bind future transactions with exact frame/focus/controller/document
+provenance; an ongoing preedit or old text is never redirected there. New pointer
+edges do not make an older accepted terminal transaction depend on the page's
+latest activation ID. The client defers keyboard trait changes during preedit.
+Hidden, replaced, disconnected, closed or control-lost states revoke bindings.
+Native18 and older runtimes keep the existing known-editor path. These changes
+do not bypass a mobile browser's trusted-gesture rules for showing its keyboard.
+
+
+A terminal native edit with `dispatched:true` and
+`target-changed-during-operation` acknowledges that the website handled that
+dispatch. It does not claim text was inserted: beforeinput may reject it or
+move focus, and the remote rendered result remains authoritative. Do not report
+a spurious edit failure merely because the website auto-advanced. Undispatched
+refusals and focus changes during ongoing preedit still fail; old text is never
+retried or redirected. Frame/document/controller lifetime checks remain intact.

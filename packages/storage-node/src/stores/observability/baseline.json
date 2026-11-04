@@ -1,0 +1,74 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "bounded-derived-observations",
+      "checksum": "a350819abfcd9d0511af84b48174f5d55d551e7d83b2e44c9ef6dec35319cdee"
+    },
+    {
+      "version": 2,
+      "name": "bounded-query-indexes-and-domain-rollups",
+      "checksum": "9dad56f9cbc4e3cdfc838592a2b0b0ec382845d7eb90d16f7d5c8666111a135f"
+    },
+    {
+      "version": 3,
+      "name": "execution-progress-and-queue-samples",
+      "checksum": "46e6bf17a81b90282e4756819de3c1ec2580697494db549ec36294b28bcb8aa7"
+    },
+    {
+      "version": 4,
+      "name": "latest-component-producer-index",
+      "checksum": "d5916bd30586f7e991b45520446fa818b5bfcdf1cf72d26a92db85e8d34aa681"
+    },
+    {
+      "version": 5,
+      "name": "availability-event-index",
+      "checksum": "d42f518a15ad51b84e6d04cd285e77589c2737a29fb480f987b6c9571c90b1e6"
+    },
+    {
+      "version": 6,
+      "name": "connection-outage-rollup",
+      "checksum": "19511476901256d874895e4f59bfc0323303062192aa3c255bd55d018e01db16"
+    }
+  ],
+  "tableOptions": {
+    "activity_hours": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "connection_outages": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "events": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "execution_progress": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "executions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "metrics": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "producers": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "queue_samples": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "recovery_episodes": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "09eb033dddfc28beaf889eec19f83b6862bb521e0ddd7bd9c26cd77e5106f3d3",
+  "baselineSnapshotChecksum": "fa548c645f713093554267b34970a383f442ef7aaf1775ac8a10727827ff05df"
+}

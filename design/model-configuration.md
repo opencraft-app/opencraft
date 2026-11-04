@@ -148,3 +148,9 @@ OpenAI 兼容聊天连接可显式选择“无需鉴权”。产品记录保存 
 服务器与本机模型设置贡献均声明固定 `targetHostId`、`modelConfiguration` 及显式 `modelReadiness` 能力。首用检测不按页面 ID 推断能力，不对 OAuth 账号页调用 provider 凭据协议。模型变更只取消/失效当前 Host 的 Composer 目录和 readiness，不改会话选择、全局默认或草稿。
 
 首用 readiness 对支持的 DSH/Pi 选择 ID 检查当前提供商与模型，不能因另一连接可用就放行未配置的当前选择；用户可以在原 Composer 中明确改选，检测不替用户更改模型。
+
+## 独立图像模型
+
+图像服务属于 Host 应用工具能力，与聊天模型、推理档位分别选择。模型服务统一呈现/编辑，image-generation.json 为其唯一配置文档，ModelCredentialRepository 持有凭据；不复制为 Codex 或 DSH 专用模型文件。独立 revision 避免旧文本引擎解码未知图像类型，Host 通过现有 settings/providers/models 命令投影管理目录。type=image 不能作为聊天默认或就绪证明。
+
+当前只由非订阅 CustomResponsesGateway 消费：受控本地 actor 模式允许固定原版 Codex 暴露原生 image_gen，图片端点按已接纳的 native turn 绑定独立生图选择；订阅模型仍走自己的账号池。生图服务与推理模型可来自不同供应商，思考档位不因生图而变更。不可用配置不触发跨服务替换。

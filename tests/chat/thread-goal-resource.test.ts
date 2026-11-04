@@ -191,3 +191,23 @@ test("hydrating or observing a completion never initiates a background clear", a
   assert.equal(f.resource.getSnapshot("two").completedGoal, null);
   f.resource.reset(); assert.equal(f.resource.getSnapshot("one").completedGoal, null);
 });
+
+test("a retired Goal write clears its local busy projection after replacement hydration", async () => {
+  const write = deferred<{ goal: ThreadGoal }>();
+  const resource = new ThreadGoalResource({
+    capability: () => ({ version: 1, read: true, write: true }),
+    get: async () => ({ goal: goal("new owner") }),
+    set: () => write.promise,
+    clear: async () => ({ cleared: true }),
+  });
+  const remove = resource.subscribe("one", () => {});
+  const mutation = resource.set("one", { objective: "old write" });
+  const rejected = assert.rejects(mutation, /connection changed/);
+  resource.reset();
+  await resource.refresh("one");
+  assert.equal(resource.getSnapshot("one").busy, true);
+  write.resolve({ goal: goal("old write") }); await rejected;
+  assert.equal(resource.getSnapshot("one").goal?.objective, "new owner");
+  assert.equal(resource.getSnapshot("one").busy, false);
+  remove();
+});

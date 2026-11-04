@@ -188,3 +188,77 @@ test('account switch/logout/disposal revoke late remote reads and stale local ac
  assert.equal(f.store.unread('host','thread'),true);f.store.acknowledge('a','host','thread','new');assert.equal(f.store.unread('host','thread'),true);
  account.setScope(null);assert.equal(f.store.getScope(),null);f.store.dispose();
 });
+
+function catchUpFixture() {
+  const calls: Array<{ host: string; id: string; signal: AbortSignal; finish(): void }> = [];
+  const clients = new Map<string, any>();
+  let scope = 'account-a', changed = () => {};
+  const accounts = { getSnapshot: () => ({ contribution: { getSnapshot: () => ({ readStateScope: scope }),
+    subscribe(listener: () => void) { changed = listener; return () => {}; } } }), subscribe: () => () => {} } as any;
+  const store = new BrowserThreadAttention({ get(host: string) {
+    if (!clients.has(host)) clients.set(host, { status: { state: 'open' }, connectionGeneration: 1,
+      request(_method: string, params: any, options: any) { return new Promise(resolve => {
+        calls.push({ host, id: params.threadId, signal: options.signal,
+          finish: () => resolve({ data: [{ id: `turn-${params.threadId}`, status: 'completed' }] }) });
+      }); } });
+    return clients.get(host);
+  } } as any, { subscribe: () => () => {} } as any, accounts, { getItem: () => null, setItem: () => {} }, 'bounded');
+  return { store, calls, clients, setScope(next: string) { scope = next; changed(); } };
+}
+const catchUpTick = () => new Promise<void>(resolve => setImmediate(resolve));
+async function drainCatchUps(calls: ReturnType<typeof catchUpFixture>['calls']) {
+  let completed = 0;
+  for (let i = 0; i < 100; i++) {
+    while (completed < calls.length) calls[completed++]!.finish();
+    await catchUpTick();
+    if (completed === calls.length) return;
+  }
+  assert.fail('catch-up did not drain');
+}
+
+test('repeated catalog and unread updates share three background reads across Hosts', async () => {
+  const f = catchUpFixture(), pending: Promise<void>[] = [];
+  try {
+    for (let update = 0; update < 6; update++) pending.push(f.store.catchUp({ ...profile, hostId: `host-${update % 2}` },
+      Array.from({ length: 10 }, (_, row) => ({ id: `thread-${update * 10 + row}`, updatedAt: 1 })), () => true));
+    assert.equal(f.calls.length, 3, 'concurrency is Application-owned, not three more reads per invocation');
+    for (let i = 0; i < 10; i++) {
+      const before = f.calls.length;
+      f.calls[i]!.finish(); await catchUpTick();
+      assert.ok(f.calls.length <= before + 1, 'one completed read releases at most one shared slot');
+    }
+    await drainCatchUps(f.calls); await Promise.all(pending);
+    assert.equal(f.calls.length, 60, 'all admitted metadata reads eventually finish');
+  } finally { f.store.dispose(); for (const call of f.calls) call.finish(); }
+});
+
+test('queued catch-up rechecks catalog admission and does not issue obsolete reads', async () => {
+  const f = catchUpFixture(); let valid = true;
+  try {
+    const first = f.store.catchUp(profile, Array.from({ length: 3 }, (_, i) => ({ id: `active-${i}`, updatedAt: 1 })), () => true);
+    const queued = f.store.catchUp(profile, Array.from({ length: 3 }, (_, i) => ({ id: `obsolete-${i}`, updatedAt: 1 })), () => valid);
+    valid = false;
+    assert.equal(f.calls.length, 3);
+    await drainCatchUps(f.calls); await Promise.all([first, queued]);
+    assert.equal(f.calls.length, 3, 'revoked queued demand cannot use a newly available slot');
+  } finally { f.store.dispose(); for (const call of f.calls) call.finish(); }
+});
+
+test('account replacement retires queued waits and old noncooperative reads cannot hold successor capacity', async () => {
+  const f = catchUpFixture();
+  try {
+    let retired = false;
+    const old = f.store.catchUp(profile, Array.from({ length: 12 }, (_, i) => ({ id: `old-${i}`, updatedAt: 1 })), () => true)
+      .then(() => { retired = true; });
+    const oldReplies = [...f.calls];
+    f.setScope('account-b'); await catchUpTick();
+    assert.equal(retired, true, 'retirement must settle even when the old provider ignores abort');
+    const fresh = f.store.catchUp(profile, Array.from({ length: 9 }, (_, i) => ({ id: `new-${i}`, updatedAt: 1 })), () => true);
+    assert.equal(f.calls.length, 6);
+    for (const call of oldReplies) call.finish(); await catchUpTick();
+    assert.equal(f.calls.length, 6, 'old completion must not release successor slots');
+    assert.equal(f.store.unread('host', 'old-0'), false);
+    await drainCatchUps(f.calls); await Promise.all([old, fresh]);
+    assert.equal(f.calls.filter(call => call.id.startsWith('old-')).length, 3);
+  } finally { f.store.dispose(); for (const call of f.calls) call.finish(); }
+});

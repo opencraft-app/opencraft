@@ -16,6 +16,7 @@ import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbe
 
 import {
   WebIframeSurfaceHost,
+  type BrowserInputFailureKind,
   type BrowserSurfaceEvents,
   type BrowserSurfaceHost,
 } from "./web-browser-surface-host";
@@ -126,9 +127,19 @@ function createSnapshot(input: {
 
 /** Logical Page owner. It has no panel, iframe, WebContents or viewport state. */
 export class WebBrowserPageRuntime {
+  private readonly inputErrorListeners = new Set<(pageId: BrowserPageId, kind: BrowserInputFailureKind) => void>();
+  onInputError(listener: (pageId: BrowserPageId, kind: BrowserInputFailureKind) => void): () => void {
+    this.inputErrorListeners.add(listener);
+    return () => { this.inputErrorListeners.delete(listener); };
+  }
   private readonly zoom = new Map<BrowserPageId, number>();
   bindStorage(pageId: BrowserPageId, storageId: string) { this.surfaces.bindStorageId?.(pageId, storageId); }
   storageId(pageId: BrowserPageId) { return this.surfaces.existingStorageId?.(pageId) ?? null; }
+  /** Only an explicit toolbar/resize edit requests remote human authority. */
+  requestViewportControl(pageId: BrowserPageId): void {
+    this.requireRecord(pageId);
+    this.surfaces.requestViewportControl?.(pageId);
+  }
   get supportsZoom() { return !!this.surfaces.setZoom; }
   getZoom(pageId:BrowserPageId) { return this.zoom.get(pageId)??100; }
   setZoom(pageId:BrowserPageId,percent:number) {
@@ -192,7 +203,7 @@ export class WebBrowserPageRuntime {
       snapshot: createSnapshot({ id, ownerId: input.ownerId, createdAt, history }),
       listeners: new Set(),
     });
-    this.persist();
+    this.persist(id);
     return id;
   }
 
@@ -253,7 +264,7 @@ export class WebBrowserPageRuntime {
     });
     this.publish(record, { isLoading: true, error: null });
     if (!this.load(record, url)) this.publish(record, { isLoading: false });
-    this.persist();
+    this.persist(record.id);
     return url;
   }
 
@@ -324,11 +335,12 @@ export class WebBrowserPageRuntime {
     this.pages.delete(pageId);
     this.navigationGenerations.delete(pageId);
     record.listeners.clear();
-    this.persist();
+    this.persist(record.id);
   }
 
   dispose(): void {
     this.sessionClosedHandler = null;
+    this.inputErrorListeners.clear();
     for (const record of this.pages.values()) record.listeners.clear();
     this.pages.clear();
     this.navigationGenerations.clear();
@@ -349,7 +361,7 @@ export class WebBrowserPageRuntime {
     const current = currentBrowserHistoryEntry(next);
     this.publish(record, { isLoading: current !== null, error: null });
     if (current !== null && !this.load(record, current.url)) this.publish(record, { isLoading: false });
-    this.persist();
+    this.persist(record.id);
   }
 
   private load(record: BrowserPageRecord, url: BrowserUrl, force = false): boolean {
@@ -420,7 +432,7 @@ export class WebBrowserPageRuntime {
             canGoForward: state.canGoForward, isLoading: state.isLoading },
         };
         this.notify(record);
-        this.persist();
+        this.persist(record.id);
       },
       onLoaded: (documentTitle) => {
         if (this.pages.get(record.id) !== record) return;
@@ -435,13 +447,19 @@ export class WebBrowserPageRuntime {
           navigation: { ...record.snapshot.navigation, isLoading: false },
         };
         this.notify(record);
-        this.persist();
+        this.persist(record.id);
+      },
+      onInputError: (kind) => {
+        if (this.pages.get(record.id) !== record) return;
+        for (const listener of this.inputErrorListeners) listener(record.id, kind);
       },
       onSessionClosed: () => {
         if (this.pages.get(record.id) !== record) return;
         this.sessionClosedHandler?.(record.id);
+        // Standalone page consumers have no Workbench tab owner.
         if (this.pages.get(record.id) === record) this.close(record.id);
       },
+
       onError: (message) => {
         if (this.pages.get(record.id) === record)
           this.publish(record, { isLoading: false, error: message });
@@ -476,7 +494,7 @@ export class WebBrowserPageRuntime {
           title: event.title || browserUrlTitle(url),
         };
         this.notify(record);
-        this.persist();
+        this.persist(record.id);
       } catch {
         // Internal/non-http child routes never weaken the Page URL policy.
       }
@@ -542,7 +560,16 @@ export class WebBrowserPageRuntime {
     for (const listener of record.listeners) listener();
   }
 
-  private persist(): void {
+  private persist(id: BrowserPageId): void {
+    if(this.storage?.records){
+      const record=this.pages.get(id);
+      try{
+        if(!record)this.storage.records.remove('pages',id);
+        else this.storage.records.put('pages',id,{id:record.id,ownerId:record.ownerId,hostId:record.hostId,createdAt:record.createdAt,
+          entries:record.history.entries.map(entry=>({url:entry.url,title:entry.title})),index:record.history.index});
+      }catch{}
+      return;
+    }
     const stored: StoredBrowserPage[] = [...this.pages.values()].map((record) => ({
       id: record.id,
       ownerId: record.ownerId,

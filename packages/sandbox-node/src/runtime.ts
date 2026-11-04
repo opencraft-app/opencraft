@@ -1,3 +1,4 @@
+import type { SandboxLifecycleEvent } from "./command.js";
 import { lstat, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { createSandboxPool, DEFAULT_SANDBOX_RESOURCES, SandboxFault, type SandboxBackend, type SandboxPool, type SandboxPoolPolicy } from "@opencraft/sandbox";
@@ -14,13 +15,43 @@ export interface SandboxRuntimeConfiguration {
   readonly pool: { readonly idPrefix: string; readonly capacity?: SandboxPoolPolicy["capacity"]; readonly defaults?: SandboxPoolPolicy["defaults"] };
   readonly environment: { readonly mode: "selected"; readonly names: readonly string[] } | { readonly mode: "local-inherit" };
 }
-export type SandboxBackendFactory = (options: unknown) => SandboxBackend | Promise<SandboxBackend>;
+export type SandboxBackendFactory = (options: unknown, lifecycle?: (event: SandboxLifecycleEvent) => void) => SandboxBackend | Promise<SandboxBackend>;
+
+interface SystemdExecutionOwnerResources {
+  readonly cpuMillis: number;
+  readonly memoryBytes: number;
+  readonly memoryHighBytes: number | null;
+  readonly tasksMax: number;
+  readonly fileDescriptorsPerProcess: number;
+}
+const positiveInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
+function explicitSystemdExecutionOwnerResources(value: unknown): SystemdExecutionOwnerResources {
+  const owner = record(value);
+  if (Object.keys(owner).some(key => !["cpuMillis", "memoryBytes", "memoryHighBytes", "tasksMax", "fileDescriptorsPerProcess"].includes(key))) throw invalid();
+  const { cpuMillis, memoryBytes, memoryHighBytes, tasksMax, fileDescriptorsPerProcess } = owner;
+  if (![cpuMillis, memoryBytes, tasksMax, fileDescriptorsPerProcess].every(positiveInteger)
+    || memoryHighBytes !== null && (!positiveInteger(memoryHighBytes) || !positiveInteger(memoryBytes) || memoryHighBytes > memoryBytes)) throw invalid();
+  return { cpuMillis, memoryBytes, memoryHighBytes, tasksMax, fileDescriptorsPerProcess } as SystemdExecutionOwnerResources;
+}
+
+function systemdExecutionOwnerResources(config: SandboxRuntimeConfiguration): SystemdExecutionOwnerResources {
+  const selected = parseSandboxRuntimeConfiguration(config), options = record(selected.backend.options);
+  const defaults = { ...DEFAULT_SANDBOX_RESOURCES, ...selected.pool.defaults };
+  if (options.executionOwner === undefined) return {
+    ...defaults,
+    memoryHighBytes: Math.floor(defaults.memoryBytes * 0.75),
+    tasksMax: Number(options.tasksMax ?? 4096),
+    fileDescriptorsPerProcess: Number(options.fileDescriptorsPerProcess ?? 65536),
+  };
+  return explicitSystemdExecutionOwnerResources(options.executionOwner);
+}
 
 /** The assembly selects a provider. Engine consumers only use SandboxPool. */
 export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>> = Object.freeze({
-  "linux-systemd": async raw => {
+  "linux-systemd": async (raw, lifecycle) => {
     const value = record(raw);
-    const accepted = ["scope", "uid", "gid", "inheritHostIdentity", "userNamespaceMapping", "parentSlice", "ownerUnit", "tasksMax", "poolTasksMax", "fileDescriptorsPerProcess"];
+    const accepted = ["scope", "uid", "gid", "inheritHostIdentity", "userNamespaceMapping", "parentSlice", "ownerUnit", "tasksMax", "poolTasksMax", "fileDescriptorsPerProcess", "executionOwner"];
     if (Object.keys(value).some(key => !accepted.includes(key)) || !["system", "user"].includes(String(value.scope))) throw invalid();
     const uid = value.uid === "current" ? process.getuid?.() : value.uid;
     const gid = value.gid === "current" ? process.getgid?.() : value.gid;
@@ -31,6 +62,7 @@ export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>
     if (value.inheritHostIdentity !== undefined && typeof value.inheritHostIdentity !== "boolean") throw invalid();
     if (value.userNamespaceMapping !== undefined && typeof value.userNamespaceMapping !== "boolean") throw invalid();
     if (value.parentSlice !== undefined && typeof value.parentSlice !== "string") throw invalid();
+    if (value.executionOwner !== undefined) explicitSystemdExecutionOwnerResources(value.executionOwner);
     let ownerUnit = value.ownerUnit;
     if (ownerUnit === "current") {
       const location = (await readFile("/proc/self/cgroup", "utf8")).trim().split("\n").find(line => line.startsWith("0::"))?.slice(3);
@@ -38,7 +70,8 @@ export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>
       if (!ownerUnit) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Execution owner service is unavailable");
     }
     if (ownerUnit !== undefined && typeof ownerUnit !== "string") throw invalid();
-    return systemdSandboxBackend({ ...value, uid, gid, ownerUnit } as unknown as SystemdSandboxOptions);
+    const { executionOwner: _executionOwner, ...backendOptions } = value;
+    return systemdSandboxBackend({ lifecycle, ...backendOptions, uid, gid, ownerUnit } as unknown as SystemdSandboxOptions);
   },
 });
 
@@ -68,10 +101,10 @@ export async function readSandboxRuntimeConfiguration(path: string): Promise<San
   } catch { throw invalid(); }
 }
 
-export async function configuredSandboxPool(config: SandboxRuntimeConfiguration, factories: Readonly<Record<string, SandboxBackendFactory>> = nodeSandboxBackends): Promise<SandboxPool> {
+export async function configuredSandboxPool(config: SandboxRuntimeConfiguration, factories: Readonly<Record<string, SandboxBackendFactory>> = nodeSandboxBackends, lifecycle?: (event: SandboxLifecycleEvent) => void): Promise<SandboxPool> {
   const selected = parseSandboxRuntimeConfiguration(config), factory = Object.hasOwn(factories, selected.backend.id) ? factories[selected.backend.id] : undefined;
   if (!factory) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Selected sandbox provider is not installed");
-  const backend = await factory(selected.backend.options);
+  const backend = await factory(selected.backend.options, lifecycle);
   return createSandboxPool({ id: selected.pool.idPrefix + "-" + randomUUID().replaceAll("-", "").slice(0, 10),
     capacity: selected.pool.capacity ?? DEFAULT_SANDBOX_RESOURCES, defaults: selected.pool.defaults }, backend);
 }
@@ -88,19 +121,17 @@ export function systemdExecutionOwnerProperties(config: SandboxRuntimeConfigurat
   const selected = parseSandboxRuntimeConfiguration(config);
   if (selected.backend.id !== "linux-systemd") return [];
   const options = record(selected.backend.options);
-  const resources = { ...DEFAULT_SANDBOX_RESOURCES, ...selected.pool.defaults };
+  const resources = systemdExecutionOwnerResources(selected);
   if (options.parentSlice !== undefined && (typeof options.parentSlice !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}\.slice$/u.test(options.parentSlice))) throw invalid();
-  const tasks = options.tasksMax ?? 4096, fds = options.fileDescriptorsPerProcess ?? 65536;
-  if (![resources.cpuMillis, resources.memoryBytes, tasks, fds].every(n => typeof n === "number" && Number.isSafeInteger(n) && n > 0)) throw invalid();
   return [...(options.parentSlice ? ["--slice=" + options.parentSlice] : []),
     "--property=CPUQuota=" + resources.cpuMillis / 10 + "%", "--property=MemoryMax=" + resources.memoryBytes,
-    "--property=MemoryHigh=" + Math.floor(resources.memoryBytes * 0.75), "--property=MemorySwapMax=0",
-    "--property=TasksMax=" + tasks, "--property=LimitNOFILE=" + fds, "--property=OOMPolicy=continue"];
+    ...(resources.memoryHighBytes === null ? [] : ["--property=MemoryHigh=" + resources.memoryHighBytes]), "--property=MemorySwapMax=0",
+    "--property=TasksMax=" + resources.tasksMax, "--property=LimitNOFILE=" + resources.fileDescriptorsPerProcess, "--property=OOMPolicy=continue"];
 }
 
 export async function verifySystemdExecutionOwner(config: SandboxRuntimeConfiguration): Promise<boolean> {
   if (config.backend.id !== "linux-systemd") return false;
-  const resources = { ...DEFAULT_SANDBOX_RESOURCES, ...config.pool.defaults };
+  const resources = systemdExecutionOwnerResources(config);
   const location = (await readFile("/proc/self/cgroup", "utf8")).trim().split("\n").find(line => line.startsWith("0::"))?.slice(3);
   const parts = location?.split("/"), service = parts?.findLastIndex(part => part.endsWith(".service"));
   const group = parts && service !== undefined && service > 0 ? parts.slice(0, service + 1).join("/") : undefined;
@@ -110,6 +141,6 @@ export async function verifySystemdExecutionOwner(config: SandboxRuntimeConfigur
   const options = record(config.backend.options);
   if (options.parentSlice && !group.includes("/" + options.parentSlice + "/")) throw invalid();
   if (!quota || !period || quota / period * 1000 > resources.cpuMillis || !(Number(memory) > 0 && Number(memory) <= resources.memoryBytes)
-    || !(Number(tasks) > 0 && Number(tasks) <= Number(options.tasksMax ?? 4096))) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Native execution owner is not resource bounded");
+    || !(Number(tasks) > 0 && Number(tasks) <= resources.tasksMax)) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Native execution owner is not resource bounded");
   return true;
 }

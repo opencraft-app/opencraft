@@ -1,0 +1,37 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "executions",
+      "checksum": "c2e96f33cf69a3cf3973457aa3af69f02f12e5d6ebea9787b1b0ff1641e093a2"
+    }
+  ],
+  "tableOptions": {
+    "hypernode_thread_execution_epochs": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "hypernode_thread_queue_state": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "hypernode_thread_queue_submissions": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "hypernode_turn_execution_attempts": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "opencraft_execution_inputs": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "opencraft_queue_inputs": {
+      "strict": false,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "71083794a41af77a1bbd6c63c57e6ae7e0ab25924ced47ce38bf25d634d4e9b1",
+  "baselineSnapshotChecksum": "698da8f3a1a79f5df9b4c828dd4191fca25df6aeeb336b5a71aacee6dc7808eb"
+}

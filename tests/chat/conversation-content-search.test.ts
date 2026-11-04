@@ -17,6 +17,13 @@ test("same thread IDs on different Servers survive; body results enrich title ma
   assert.equal(merged[1]?.connectionHostId, "b");
 });
 
+test("merging title matches preserves server body relevance before recency-only rows",()=>{
+ const old={id:"old",title:"Old",updatedAt:1,connectionHostId:"a",serverOrigin:{label:"A"}};
+ const recent={...old,id:"recent",updatedAt:100};
+ const title={...old,id:"title",updatedAt:200};
+ assert.deepEqual(mergeConversationSearchResults([title,recent],[old,recent]).map(r=>r.id),["old","recent","title"]);
+});
+
 test("native scans serialize and obsolete queued input never reaches the Server", async () => {
   const serialize = serializeContentSearch();
   const obsolete = new AbortController();
@@ -46,7 +53,7 @@ test("body search forwards cursors and readonly filters, extracts locators and f
   const signal = new AbortController().signal;
   const result = await source.search("正文", "older", signal);
   assert.equal(result.nextCursor, "next"); assert.equal(result.matches[0]?.snippet, "正文独有");
-  assert.deepEqual(calls[0], { method: "thread/search", params: { searchTerm: "正文", cursor: "older", limit: 30, archived: false, sortKey: "updated_at", sortDirection: "desc" }, options: { timeoutMs: 120_000 } });
+  assert.deepEqual(calls[0], { method: "thread/search", params: { searchTerm: "正文", cursor: "older", limit: 30, archived: false, sortDirection: "desc" }, options: { timeoutMs: 120_000 } });
   const target = await source.locate("正文", "old", signal);
   assert.equal(target?.itemId, "answer");
   assert.deepEqual(calls[1].options, { timeoutMs: 120_000 });

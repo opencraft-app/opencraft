@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
+import { IDBFactory, IDBKeyRange, IDBIndex } from "fake-indexeddb";
 import { ClientResources, REMOTE_RESOURCE_LIMIT, type ClientResourcePersistence, type ClientResourceDefinition,
   type ClientResourceKey } from "../../packages/document-storage/src/client-resources.ts";
 import { SqliteClientResources } from "../../packages/document-storage/src/client-resources-sqlite.ts";
@@ -154,4 +154,30 @@ test("fence rejection happens before a remote projection is published or a local
   await assert.rejects(localResource.commit("late", 0, revoked), /scope changed/);
   assert.equal(localResource.getSnapshot().value, null);
   await resources.close();
+});
+
+
+test("IndexedDB draft discovery preserves recency and isolation without loading document bodies", async () => {
+  const factory = new IDBFactory();
+  let storage = await openIndexedDbClientResources("draft-discovery", factory);
+  const rows: [ClientResourceKey, number][] = [
+    [{ ...key, id: "older" }, 0],
+    [{ ...key, id: "newer-b" }, 50],
+    [{ ...key, id: "newer-a" }, 50],
+    [{ ...key, id: "other-account", namespace: "another-account" }, 100],
+    [{ ...key, id: "other-resource", name: "composer-draft" }, 100],
+    [{ ...key, id: "remote", authority: "remote" }, 100],
+  ];
+  for (const [identity, savedAt] of rows) await storage.compareAndSet(identity, 0, record("large original ".repeat(20000), savedAt));
+  await storage.close();
+  storage = await openIndexedDbClientResources("draft-discovery", factory);
+  const openCursor = IDBIndex.prototype.openCursor;
+  let documentCursors = 0;
+  IDBIndex.prototype.openCursor = function (...args) { documentCursors++; return openCursor.apply(this, args); };
+  try {
+    assert.deepEqual((await storage.listLocalKeys(key.namespace, key.name)).map(row => row.id), ["newer-a", "newer-b", "older"]);
+    assert.deepEqual(await storage.listLocalKeys("missing", key.name), []);
+    assert.equal(documentCursors, 0, "navigation discovery must not clone every stored draft body");
+    assert.equal((await storage.read({ ...key, id: "older" }))?.value, "large original ".repeat(20000));
+  } finally { IDBIndex.prototype.openCursor = openCursor; await storage.close(); }
 });

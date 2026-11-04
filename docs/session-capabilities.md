@@ -53,7 +53,21 @@ from the native live response. No native process, account writer or global
 configuration is replaced. Unrelated MCP entries are inherited. Native
 unsubscribe does not mean its durable catalog row disappears. Active turns are
 never cancelled to refresh tools. Ephemeral inference threads cannot gain these
-capabilities.
+capabilities. Temporary starts and forks explicitly disable the owned MCP entry
+so a child cannot inherit a parent's execution credential. Once native creation
+confirms the temporary identity, input bypasses durable capability preparation;
+it does not unsubscribe or resume the in-memory thread. Durable sessions retain
+the same fail-closed preparation before submission.
+
+The managed native launch fixes `thread_unload_delay_secs=0`. The Host already
+owns the subscription release grace period; native must not add another idle
+retention delay after that explicit release. Native still requires the last
+subscription to leave and the execution to be idle. This preserves active turns
+and execution-bound credentials while allowing idle tool rotation to complete
+promptly. The setting is consumed at AppServer startup: changing a thread config,
+writing config at runtime or reloading MCP does not establish that an existing
+native owner adopted it. Verify the actual launch and owner generation separately
+from a Web update.
 
 The managed native launch fixes `thread_unload_delay_secs=0`. The Host already
 owns the subscription release grace period; native must not add another idle

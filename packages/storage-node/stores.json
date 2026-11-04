@@ -1,0 +1,172 @@
+[
+  {
+    "id": "employee-git-vault-store",
+    "owner": "scripts/employee-git-vault-store.ts",
+    "index": 0
+  },
+  {
+    "id": "tasks",
+    "owner": "plugins/tasks/src/sqlite.ts",
+    "index": 0
+  },
+  {
+    "id": "web-push-node",
+    "owner": "packages/web-push-node/src/store.ts",
+    "index": 0
+  },
+  {
+    "id": "note-store",
+    "owner": "plugins/thread-summary/src/note-store.ts",
+    "index": 0
+  },
+  {
+    "id": "generation-registry",
+    "owner": "apps/codex-core/src/generation-registry.ts",
+    "index": 0
+  },
+  {
+    "id": "workbench-storage-node",
+    "owner": "packages/workbench-storage-node/src/index.ts",
+    "index": 0
+  },
+  {
+    "id": "post-receipts",
+    "owner": "plugins/im/src/post-receipts.ts",
+    "index": 0
+  },
+  {
+    "id": "im",
+    "owner": "plugins/im/src/store.ts",
+    "index": 0
+  },
+  {
+    "id": "observability",
+    "owner": "apps/observability-service/store.ts",
+    "index": 0
+  },
+  {
+    "id": "dsh-session-routing",
+    "owner": "apps/local-agent-host/src/dsh-session-routing.ts",
+    "index": 0
+  },
+  {
+    "id": "ui-preferences-store",
+    "owner": "apps/workbench-electron/src/ui-preferences-store.ts",
+    "index": 0
+  },
+  {
+    "id": "connector-configuration-store",
+    "owner": "apps/workbench-electron/src/connector-configuration-store.ts",
+    "index": 0
+  },
+  {
+    "id": "dsh-execution-authority",
+    "owner": "apps/local-agent-host/src/dsh-execution-authority.ts",
+    "index": 0
+  },
+  {
+    "id": "host-schedules",
+    "owner": "packages/host-schedules/src/index.ts",
+    "index": 0
+  },
+  {
+    "id": "ssh-connection-store",
+    "owner": "apps/opencraft-daemon/src/ssh-connection-store.ts",
+    "index": 0
+  },
+  {
+    "id": "opencraft-message-attachments",
+    "owner": "apps/opencraft-daemon/src/opencraft-message-attachments.ts",
+    "index": 0
+  },
+  {
+    "id": "thread-catalog",
+    "owner": "apps/local-agent-host/src/thread-catalog.ts",
+    "index": 0
+  },
+  {
+    "id": "thread-identity-database",
+    "owner": "apps/opencraft-daemon/src/thread-identity-database.ts",
+    "index": 0
+  },
+  {
+    "id": "opencraft-host-state-database",
+    "owner": "apps/opencraft-daemon/src/opencraft-host-state-database.ts",
+    "index": 0
+  },
+  {
+    "id": "token-usage-cache",
+    "owner": "apps/opencraft-daemon/src/token-usage-derived.ts",
+    "index": 0
+  },
+  {
+    "id": "token-usage-retained",
+    "owner": "apps/opencraft-daemon/src/token-usage-derived.ts",
+    "index": 1
+  },
+  {
+    "id": "provisional-threads",
+    "owner": "apps/opencraft-daemon/src/provisional-threads.ts",
+    "index": 0
+  },
+  {
+    "id": "token-usage-state-database",
+    "owner": "apps/opencraft-daemon/src/token-usage-state-database.ts",
+    "index": 0
+  },
+  {
+    "id": "document-storage",
+    "owner": "packages/document-storage/src/sqlite.ts",
+    "index": 0
+  },
+  {
+    "id": "client-resources-sqlite",
+    "owner": "packages/document-storage/src/client-resources-sqlite.ts",
+    "index": 0
+  },
+  {
+    "id": "model-usage-policy",
+    "owner": "packages/model-usage-policy/src/index.ts",
+    "index": 0
+  },
+  {
+    "id": "transcript-read-cache",
+    "owner": "packages/native-history-node/src/transcript-cache-storage.ts",
+    "index": 0
+  },
+  {
+    "id": "mcp-apps",
+    "owner": "packages/mcp-apps/src/store.ts",
+    "index": 0
+  },
+  {
+    "id": "connector-host",
+    "owner": "packages/connector-host/src/store.ts",
+    "index": 0
+  },
+  {
+    "id": "thread-access",
+    "owner": "packages/access-control/src/thread-access.ts",
+    "index": 0
+  },
+  {
+    "id": "provider-retry",
+    "owner": "packages/host-recovery/src/provider-retry.ts",
+    "index": 0
+  },
+  {
+    "id": "account-pool-host",
+    "owner": "packages/account-pool-host/src/store.ts",
+    "index": 0
+  },
+  {
+    "id": "host-recovery",
+    "owner": "packages/host-recovery/src/index.ts",
+    "index": 0
+  },
+  {
+    "id": "account-handoff",
+    "owner": "apps/codex-core/src/account-handoff-store.ts",
+    "index": 0
+  }
+]

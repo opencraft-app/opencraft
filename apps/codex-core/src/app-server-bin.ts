@@ -13,10 +13,10 @@ function argument(name: string): string {
 }
 
 async function main() {
-  let shutdown: ((code: number) => Promise<void>) | undefined;
+  let shutdown: ((code: number, reason: "SIGTERM" | "SIGINT" | "native-failure") => Promise<void>) | undefined;
   const startup = new AbortController();
-  const stop = () => { startup.abort(); if (shutdown) void shutdown(0); };
-  process.once("SIGTERM", stop); process.once("SIGINT", stop);
+  const stop = (reason: "SIGTERM" | "SIGINT") => { startup.abort(); if (shutdown) void shutdown(0, reason); };
+  process.once("SIGTERM", () => stop("SIGTERM")); process.once("SIGINT", () => stop("SIGINT"));
   const configuration = await engineSandboxConfiguration();
   const ownFile = typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
   const packagedRunner = join(dirname(ownFile), "sandbox-command.mjs");
@@ -29,9 +29,9 @@ async function main() {
     runtimeDataDirectory: process.argv.includes("--runtime-data-directory") ? argument("--runtime-data-directory") : undefined,
     executable: argument("--codex-executable"),
     waitForCore: true, signal: startup.signal,
-    onFailure: error => { console.error(error.message); void shutdown?.(1); },
+    onFailure: error => { console.error(error.message); void shutdown?.(1, "native-failure"); },
   });
-  shutdown = async code => { await runtime.close(); process.exit(code); };
+  shutdown = async (code, reason) => { await runtime.close(reason); process.exit(code); };
   process.stdout.write(`${JSON.stringify({ type: "codex-app-server-ready", pid: process.pid })}\n`);
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

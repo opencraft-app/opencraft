@@ -8,6 +8,7 @@ export interface TurnPushOptions {
   current(binding: PushBinding): boolean;
   trustedOrigin(request: IncomingMessage): string | null;
   hosts: readonly string[];
+  canRead?: (actorId: string, hostId: string, threadId: string) => boolean;
   read(hostId: string, method: string, params: Record<string,unknown>): Promise<unknown>;
   send?: (device: PushDevice, payload: string, keys: {publicKey:string;privateKey:string}) => Promise<unknown>;
   now?: () => number;
@@ -127,6 +128,7 @@ export class TurnPushService {
       if (this.closed) break;
       if (!this.current(delivery.device)) { this.store.remove(delivery.device.id,delivery.device.actorId); continue; }
       try {
+        if (this.options.canRead?.(delivery.device.actorId,delivery.hostId,delivery.threadId) === false) { this.store.settled(delivery.id,'dead'); continue; }
         // Resolve only the exact delivery's Thread; never infer identity from the
         // active page or a recent Thread. A metadata failure must not hide its ID.
         let threadTitle = `#${delivery.threadId}`;
@@ -138,6 +140,7 @@ export class TurnPushService {
             if (label) threadTitle = Array.from(label.replace(/\s+/gu,' ').trim()).slice(0,80).join('');
           }
         } catch { /* Keep the exact Thread identity when metadata is unavailable. */ }
+        if (this.options.canRead?.(delivery.device.actorId,delivery.hostId,delivery.threadId) === false) { this.store.settled(delivery.id,'dead'); continue; }
         await this.send(delivery.device,this.payload(delivery.device,delivery.status,delivery.hostId,delivery.threadId,delivery.turnId,threadTitle));
         this.store.settled(delivery.id,'sent');
       } catch (error) {

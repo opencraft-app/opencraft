@@ -17,7 +17,7 @@ import {
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChartIcon as ChartNoAxesCombined, SunriseIcon as Sunrise, ColumnsIcon as Columns3, ListIcon as List, SlidersIcon as SlidersHorizontal, MessageIcon as MessageSquare, ArrowUpRightIcon as ArrowUpRight, PersonIcon as UserRound, ArrowLeftIcon as ArrowLeft, ArchiveIcon as Archive, RestoreArchiveIcon as ArchiveRestore } from "@opencraft/design-system-web/action-icons";
+import { ChartIcon as ChartNoAxesCombined, ColumnsIcon as Columns3, ListIcon as List, SlidersIcon as SlidersHorizontal, MessageIcon as MessageSquare, ArrowUpRightIcon as ArrowUpRight, PersonIcon as UserRound, ArrowLeftIcon as ArrowLeft, ArchiveIcon as Archive, RestoreArchiveIcon as ArchiveRestore } from "@opencraft/design-system-web/action-icons";
 import type { TrustedExtensionApiV1 } from "@opencraft/extension-runtime";
 import { ownMemberId } from "./own-member";
 import { MemberAvatar } from "./member-avatar";
@@ -31,6 +31,7 @@ import {
   type PlatformViewHost,
 } from "@opencraft/extension-react";
 import { legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
+import { useWorkBoardText } from "./work-board-messages";
 import { useIntl } from "@opencraft/i18n/react";
 import {
   TASKS,
@@ -56,13 +57,13 @@ import "./styles.scss";
 import { TaskDescriptionField } from "./description-field";
 import { KindBadge, useKindText } from "./task-kind";
 import { AIFollowUp, type FollowUpSelection } from "./ai-follow-up";
-import { MorningOverview } from "./morning-overview";
 import { parseFollowUpReport } from "./ai-follow-up-model";
 import { parseResearchHandoff } from "./research-handoff";
 const ConversationOverview = lazy(() => import("./conversation-overview").then(module => ({ default: module.ConversationOverview })));
 const words = {
   product_backlog: ["产品需求池", "Product backlog"],
   technical_backlog: ["技术需求池", "Technical backlog"],
+  growth_backlog: ["运营需求池", "Growth backlog"],
   morningOverview: ["晨会总览", "Morning overview"],
   aiFollowUp: ["AI 跟进", "AI follow-up"],
   morningShort: ["晨会", "Morning"],
@@ -247,8 +248,9 @@ const words = {
 } as const;
 function useText() {
   const intl = useIntl();
-  return (key: keyof typeof words) =>
-    words[key][intl.locale.startsWith("zh") ? 0 : 1];
+  return (key: keyof typeof words) => key === "growth_backlog"
+    ? intl.formatMessage({ id: "tasks.column.growthBacklog", defaultMessage: "Growth backlog" })
+    : words[key][intl.locale.startsWith("zh") ? 0 : 1];
 }
 function starterTemplate(kind: string, chinese: boolean) {
   if (chinese) {
@@ -1153,6 +1155,7 @@ export function createTasksView(
   const localSelections = new Map<string, string>();
   const aiOwnerSelections = new Map<string, string>();
   const aiViewSelections = new Map<string, FollowUpSelection>();
+  const aiScrollPositions = new Map<string, Map<string, number>>();
   let controller: TasksController | null = null;
   let archiveController: TasksArchiveController | null = null;
   const positions = new Map<string, number>();
@@ -1174,7 +1177,7 @@ export function createTasksView(
       for (const activity of activities.values()) activity.dispose();
       activities.clear();
       localSelections.clear();
-      aiOwnerSelections.clear(); aiViewSelections.clear();
+      aiOwnerSelections.clear(); aiViewSelections.clear(); aiScrollPositions.clear();
       remembered = { mode: "board", status: "todo", project: "", search: "", assignee: "", overdue: false, kind: "", aiResearch: "" };
     },
     { once: true },
@@ -1189,19 +1192,12 @@ export function createTasksView(
     useLayoutEffect(() => { const node = viewport.current; if (!node) return; const observer = new ResizeObserver(entries => setCompact(entries[0]!.contentRect.width <= 600)); observer.observe(node); return () => observer.disconnect(); }, []);
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [overviewOpen, setOverviewOpen] = useState(false);
-    const [morningOpen, setMorningOpen] = useState(false);
-    const wasMorning = useRef(false);
-    useEffect(() => {
-      if (morningOpen) viewport.current?.querySelector<HTMLButtonElement>("[data-morning-back]")?.focus();
-      else if (wasMorning.current) viewport.current?.querySelector<HTMLButtonElement>("[data-morning-entry]")?.focus();
-      wasMorning.current = morningOpen;
-    }, [morningOpen]);
     const viewLive = useRef(true);
     useEffect(() => {
       viewLive.current = true;
       return () => { viewLive.current = false; };
     }, []);
-    const t = useText(), kt = useKindText(),
+    const t = useText(), wb = useWorkBoardText(), kt = useKindText(),
       authority = ports.storageHostId;
     const model = useMemo(() => {
       if (!controller)
@@ -1214,7 +1210,7 @@ export function createTasksView(
         });
       return controller;
     }, []);
-    const morningPort = useMemo(() => ({ request: <M extends keyof import("@opencraft/appserver-protocol").TasksMethodMap>(method: M, params: import("@opencraft/appserver-protocol").TasksMethodMap[M]["params"]) => {
+    const followUpPort = useMemo(() => ({ request: <M extends keyof import("@opencraft/appserver-protocol").TasksMethodMap>(method: M, params: import("@opencraft/appserver-protocol").TasksMethodMap[M]["params"]) => {
       activationSignal.throwIfAborted();
       if (!authority) throw new Error("Missing task authority");
       return ports.request(authority, method, params);
@@ -1499,6 +1495,7 @@ export function createTasksView(
         && (!draft.kind || (task.kind ?? "unclassified") === draft.kind)
         && (!draft.aiResearch || (task.aiResearch ?? "unassessed") === draft.aiResearch),
     );
+    if (!aiScrollPositions.has(memberScope)) aiScrollPositions.set(memberScope, new Map());
     const archiveTask = async (item: TaskDetail) => {
       const saved = await model.mutate(TASKS.archive, { id: item.id, expectedRevision: item.revision });
       if (!saved || !viewLive.current) return;
@@ -1508,32 +1505,17 @@ export function createTasksView(
       }
       managementActions.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.focus();
     };
-    const cards = (tasks: readonly TaskDetail[]) =>
-      tasks.map((task) => (
-        <TaskCard
-          key={task.id}
-          task={task}
-          members={state.members}
-          pending={state.pending}
-          activity={activity}
-          onEdit={() => openEditor(task)}
-          onQuick={() => openEditor(task, task.status, true)}
-          onArchive={state.archive && !state.pending ? () => void archiveTask(task) : undefined}
-          onOpen={open}
-        />
-      ));
     return (
       <div ref={viewport} className="tasks-viewport">
         <section className="tasks">
-          <div className="tasks-overview" data-conversation-overview={overviewOpen && !managementOpen && !morningOpen}>
+          <div className="tasks-overview" data-conversation-overview={overviewOpen && !managementOpen}>
           <div className="tasks-page-heading">
             <div className="tasks-heading-title" ref={recycleHeading}>
-              {morningOpen ? <SettingsButton data-morning-back="" variant="ghost" className="tasks-icon-action" aria-label={t("cancel")} title={t("cancel")} onClick={() => setMorningOpen(false)}><ArrowLeft size={18} aria-hidden="true" /></SettingsButton> : managementOpen ? <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t("cancel")} title={t("cancel")} onClick={() => { setRecycleOpen(false); setArchiveOpen(false); }}><ArrowLeft size={18} aria-hidden="true" /></SettingsButton> : null}
-              <h2 className="tasks-title">{morningOpen ? t("morningOverview") : archiveOpen ? t("archivedTasks") : recycleOpen ? t("recycleBin") : t("tasks")}</h2>
+              {managementOpen ? <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t("cancel")} title={t("cancel")} onClick={() => { setRecycleOpen(false); setArchiveOpen(false); }}><ArrowLeft size={18} aria-hidden="true" /></SettingsButton> : null}
+              <h2 className="tasks-title">{archiveOpen ? t("archivedTasks") : recycleOpen ? t("recycleBin") : wb("title")}</h2>
             </div>
             <div className="tasks-heading-actions" ref={managementActions}>
-              {morningOpen ? <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t("refreshBoard")} title={t("refreshBoard")} aria-busy={refreshing} disabled={state.pending || refreshing || state.phase === "loading"} onClick={() => void refreshTasks()}><RefreshCw size={18} aria-hidden="true" /></SettingsButton> : managementOpen ? <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t(archiveOpen ? "refreshArchive" : "refreshRecycle")} title={t(archiveOpen ? "refreshArchive" : "refreshRecycle")} aria-busy={archiveOpen ? archiveState.loading : refreshing} disabled={state.pending || (archiveOpen ? archiveState.loading : refreshing)} onClick={() => void (archiveOpen ? archives.refresh() : refreshTasks())}><RefreshCw size={18} aria-hidden="true" /></SettingsButton> : <>
-                <SettingsButton data-morning-entry="" variant="quiet" aria-label={t("morningOverview")} onClick={() => setMorningOpen(true)}><Sunrise size={18} aria-hidden="true" /><span className="tasks-wide-only">{t("morningOverview")}</span><span className="tasks-compact-only">{t("morningShort")}</span></SettingsButton>
+              {managementOpen ? <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t(archiveOpen ? "refreshArchive" : "refreshRecycle")} title={t(archiveOpen ? "refreshArchive" : "refreshRecycle")} aria-busy={archiveOpen ? archiveState.loading : refreshing} disabled={state.pending || (archiveOpen ? archiveState.loading : refreshing)} onClick={() => void (archiveOpen ? archives.refresh() : refreshTasks())}><RefreshCw size={18} aria-hidden="true" /></SettingsButton> : <>
                 <SettingsButton className="tasks-create" variant="primary" aria-label={t("add")} disabled={state.phase !== "ready" || state.pending} onClick={() => openEditor()}><Plus size={18} aria-hidden="true" /><span className="tasks-wide-only">{t("add")}</span></SettingsButton>
                 <DropdownMenu.Root><DropdownMenu.Trigger asChild>
                   <SettingsButton variant="ghost" className="tasks-icon-action" aria-label={t("moreActions")} title={t("moreActions")}><MoreHorizontal size={18} aria-hidden="true" /></SettingsButton>
@@ -1545,23 +1527,22 @@ export function createTasksView(
               </>}
             </div>
           </div>
-          <header className={`tasks-toolbar${draft.mode === "ai" && !overviewOpen ? " tasks-toolbar--ai-follow-up" : ""}`} hidden={managementOpen || morningOpen}>
+          <header className={`tasks-toolbar${draft.mode !== "list" && !overviewOpen ? " tasks-toolbar--ai-follow-up" : ""}`} hidden={managementOpen}>
             <SegmentedControl
               className="tasks-view-switch"
               label={t("view")}
-              value={overviewOpen ? "overview" : draft.mode}
+              value={overviewOpen ? "overview" : draft.mode === "list" ? "list" : "board"}
               onValueChange={(mode) => {
                 setOverviewOpen(mode === "overview");
                 if (mode !== "overview") change({ mode: mode as ViewDraft["mode"] });
               }}
               options={[
-                { value: "board", label: <><Columns3 className="tasks-compact-only" size={18} aria-hidden="true" /><span className="tasks-view-label">{t("board")}</span></> },
+                { value: "board", label: <><Columns3 className="tasks-compact-only" size={18} aria-hidden="true" /><span className="tasks-view-label">{wb("boardView")}</span></> },
                 { value: "list", label: <><List className="tasks-compact-only" size={18} aria-hidden="true" /><span className="tasks-view-label">{t("list")}</span></> },
-                { value: "ai", label: <><MessageSquare className="tasks-compact-only" size={18} aria-hidden="true" /><span className="tasks-view-label">{t("aiFollowUp")}</span></> },
                 ...(ports.conversationOverview ? [{ value: "overview", label: <><ChartNoAxesCombined className="tasks-compact-only" size={18} aria-hidden="true" /><span className="tasks-view-label">{t("conversationOverview")}</span><small className="tasks-view-beta">Beta</small></> }] : []),
               ]}
             />
-            {draft.mode !== "ai" || overviewOpen ? <>
+            {draft.mode === "list" || overviewOpen ? <>
             <SettingsTextInput className="tasks-search" aria-label={t("searchTasks")} placeholder={t("searchTasks")} type="search" value={draft.search} onChange={e=>change({search:e.target.value})} />
             {state.properties ? <SettingsButton className="tasks-mine" variant="quiet" aria-label={t("myTasks")} title={t("myTasks")} aria-pressed={draft.assignee === "mine"} onClick={() => {
               change({ assignee: draft.assignee === "mine" ? "" : "mine" });
@@ -1573,7 +1554,7 @@ export function createTasksView(
             </SettingsButton>
             </> : null}
             <SettingsButton className="tasks-refresh tasks-icon-action" variant="ghost" aria-label={t("refreshBoard")} title={t("refreshBoard")} aria-busy={refreshing} disabled={state.pending || refreshing || state.phase === "loading"} onClick={() => void refreshTasks()}><RefreshCw size={18} aria-hidden="true" /></SettingsButton>
-            <div id={filterId} className="tasks-filters" hidden={!filtersOpen || (draft.mode === "ai" && !overviewOpen)} role="group" aria-label={t("filters")}>
+            <div id={filterId} className="tasks-filters" hidden={!filtersOpen || (draft.mode !== "list" && !overviewOpen)} role="group" aria-label={t("filters")}>
             {state.aiResearch ? <label>{t("aiResearch")}<SettingsSelect aria-label={t("aiResearch")} value={draft.aiResearch} onChange={event => change({ aiResearch: event.target.value })}><option value="">{t("allResearch")}</option>{TASK_AI_RESEARCH.map(mode => <option key={mode} value={mode}>{researchLabel(mode, t)}</option>)}</SettingsSelect></label> : null}
             {state.planning ? <label>{t("kind")}<SettingsSelect aria-label={t("kind")} value={draft.kind} onChange={event => change({ kind: event.target.value })}><option value="">{t("allKinds")}</option>{[...new Set([...TASK_KINDS, ...state.tasks.map(task => task.kind ?? "unclassified")])].map(kind => <option key={kind} value={kind}>{kt(kind)}</option>)}</SettingsSelect></label> : null}
             {state.properties ? <>
@@ -1614,7 +1595,7 @@ export function createTasksView(
 
             </div>
           </header>
-          {overviewOpen && !managementOpen && !morningOpen && ports.conversationOverview ? <Suspense fallback={<p role="status">{t("loadingConversations")}</p>}><ConversationOverview key={memberScope} port={ports.conversationOverview} host={host} /></Suspense> : null}
+          {overviewOpen && !managementOpen && ports.conversationOverview ? <Suspense fallback={<p role="status">{t("loadingConversations")}</p>}><ConversationOverview key={memberScope} port={ports.conversationOverview} host={host} /></Suspense> : null}
           {(ports.pendingConversationLinks?.() ?? []).map(link => (
             <SettingsNotice key={`${link.taskId}:${linkKey(link)}`} tone="error">
               {t("pendingLink")}{" "}
@@ -1622,14 +1603,13 @@ export function createTasksView(
               <SettingsButton variant="quiet" onClick={() => void ports.retryConversationLinks?.(link.taskId)}>{t("retryLink")}</SettingsButton>
             </SettingsNotice>
           ))}
-          {overviewOpen && !managementOpen && !morningOpen ? null : state.phase === "loading" ? <TasksLoading mode={draft.mode} selected={draft.status} /> : state.phase !== "ready" ? (
+          {overviewOpen && !managementOpen ? null : state.phase === "loading" ? <TasksLoading mode={draft.mode} selected={draft.status} /> : state.phase !== "ready" ? (
             <div className="tasks-load-error" role="status">
               <SettingsNotice>{t(state.phase === "unavailable" ? "unavailable" : "loadError")}</SettingsNotice>
               <SettingsButton disabled={refreshing} onClick={() => void refreshTasks()}>{t("retry")}</SettingsButton>
             </div>
           ) : <>
-          {morningOpen ? <MorningOverview /> : null}
-          {draft.mode === "ai" && !morningOpen && !managementOpen && !overviewOpen ? <AIFollowUp dwellSince={ports.followUpDwellSince} tasks={state.tasks} members={state.members} activity={state.activity} port={morningPort} myMemberId={myMemberId} selection={aiViewSelections.get(memberScope) ?? { scope: "all", search: "" }} onSelectionChange={value => { aiViewSelections.set(memberScope, value); refreshLocalSelection(epoch => epoch + 1); }} ownerFilter={aiOwnerSelections.get(memberScope) ?? ""} onOwnerFilterChange={value => { aiOwnerSelections.set(memberScope, value); refreshLocalSelection(epoch => epoch + 1); }} onOpenConversation={host.openConversation ? open : undefined} /> : null}
+          {draft.mode !== "list" && !managementOpen && !overviewOpen ? <AIFollowUp compact={compact} scrollPositions={aiScrollPositions.get(memberScope)} onOpenTask={item => openEditor(item)} pending={state.pending} dwellSince={ports.followUpDwellSince} tasks={state.tasks} members={state.members} activity={state.activity} port={followUpPort} myMemberId={myMemberId} selection={aiViewSelections.get(memberScope) ?? { scope: "all", search: "" }} onSelectionChange={value => { aiViewSelections.set(memberScope, value); refreshLocalSelection(epoch => epoch + 1); }} ownerFilter={aiOwnerSelections.get(memberScope) ?? ""} onOwnerFilterChange={value => { aiOwnerSelections.set(memberScope, value); refreshLocalSelection(epoch => epoch + 1); }} onOpenConversation={host.openConversation ? open : undefined} /> : null}
           {archiveOpen && state.archive ? <ArchivePanel model={archives} members={state.members} pending={state.pending} reportError={reportError} ports={ports} session={editorSession}
             activityFor={item => { let activity = activities.get(item.id); if (!activity) { activity = new TaskActivityController({ request: (method, params) => ports.request(authority!, method, params) }, item.id, () => {}); activities.set(item.id, activity); } return activity; }}
             onRead={id => ports.request(authority!, TASKS.read, { id })} onOpen={open} onRestore={async item => { const saved = await model.mutate(TASKS.unarchive, { id: item.id, expectedRevision: item.revision }); await archives.refresh(); return saved; }} /> : null}
@@ -1647,59 +1627,13 @@ export function createTasksView(
               </li>)}
             </ul>}
           </section>
-          <div className="tasks-active-view" hidden={managementOpen || morningOpen || draft.mode === "ai"}>
-          {draft.mode === "board" ? (
-            <SegmentedControl
-              className="tasks-statuses tasks-compact-only"
-              label={t("status")}
-              value={draft.status}
-              onValueChange={(status) =>
-                change({ status: status as BoardColumnId })
-              }
-              options={BOARD_COLUMNS.map((status) => ({
-                value: status,
-                label: `${t(status)} ${tasks.filter((task) => boardColumn(task) === status).length}`,
-              }))}
-            />
-          ) : null}
+          {draft.mode === "list" ? <div className="tasks-active-view" hidden={managementOpen || overviewOpen}>
           {(draft.search || draft.assignee || draft.project || draft.overdue || draft.kind || draft.aiResearch) ? <div className="tasks-filter-result" role="status"><span>{draft.assignee === "mine" && !myMemberId ? t("chooseMyMember") : tasks.length ? `${tasks.length} ${t("results")}` : t("noResults")}</span><SettingsButton variant="quiet" onClick={()=>change({search:"",assignee:"",project:"",overdue:false,kind:"",aiResearch:""})}>{t("clearFilters")}</SettingsButton></div> : null}
-          {hiddenCreated ? <div className="tasks-filter-result" role="status"><span>{t("hiddenCreated")}</span><SettingsButton variant="quiet" onClick={() => { change({ search: "", assignee: "", project: "", overdue: false, kind: "", aiResearch: "" }); setHiddenCreated(false); }}>{t("clearFilters")}</SettingsButton></div> : null}
-            {draft.mode === "board" ? (
-              <div className="tasks-columns">
-                {BOARD_COLUMNS.map((column) => {
-                  const items = tasks.filter((task) => boardColumn(task) === column);
-                  return (
-                    <Column
-                      key={column}
-                      column={column}
-                      tasks={items}
-                      selected={draft.status === column}
-                      positions={positions}
-                      pending={state.pending || state.phase !== "ready"}
-                      onAdd={() => { if (!editorSession.inlineDrafts.has(column)) editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); setInlineStatus(column); }}
-                      footer={inlineStatus === column ? <InlineCreate value={editorSession.inlineDrafts.get(column)!} busy={state.pending} inherited={!!draft.project || (!!draft.kind && columnCreateKind(column, draft.kind) === draft.kind)}
-                        onChange={title => { editorSession.inlineDrafts.set(column, { ...editorSession.inlineDrafts.get(column)!, title }); updateInline(epoch => epoch + 1); }}
-                        onClose={() => setInlineStatus(null)} onSave={async () => {
-                          const input = editorSession.inlineDrafts.get(column)!;
-                          let projectServerId: string | null = null, projectId: string | null = null;
-                          if (draft.project) [projectServerId, projectId] = JSON.parse(draft.project);
-                          const saved = await model.mutate(TASKS.create, { id: input.id, title: input.title.trim(), description: "", status: columnStatus(column), projectServerId, projectId, ...(state.planning ? { kind: columnCreateKind(column, draft.kind), acceptanceCriteria: "" } : {}) });
-                          if (saved) { editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); updateInline(epoch => epoch + 1); if (draft.search || draft.assignee || draft.overdue || (draft.kind && columnCreateKind(column, draft.kind) !== draft.kind)) setHiddenCreated(true); }
-                        }} /> : <SettingsButton variant="quiet" className="tasks-column__add" disabled={state.pending || state.phase !== "ready"} onClick={() => { if (!editorSession.inlineDrafts.has(column)) editorSession.inlineDrafts.set(column, { id: crypto.randomUUID(), title: "" }); setInlineStatus(column); }}><Plus size={15} />{t("inlineAdd")}</SettingsButton>}
-                    >
-                      {cards(items)}
-                    </Column>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="tasks-list">
-                  {tasks.map(task => <TaskRow key={task.id} task={task} members={state.members} pending={state.pending} activity={activity}
-                    onEdit={() => openEditor(task)} onMove={status => void move(task, status, null)} />)}
-                {!tasks.length ? <p>{t(draft.search || draft.assignee || draft.project || draft.overdue ? "noResults" : "empty")}</p> : null}
-              </div>
-            )}
+          <div className="tasks-list">
+            {tasks.map(task => <TaskRow key={task.id} task={task} members={state.members} pending={state.pending} activity={activity} onEdit={() => openEditor(task)} onMove={status => void move(task, status, null)} />)}
+            {!tasks.length ? <p>{t(draft.search || draft.assignee || draft.project || draft.overdue ? "noResults" : "empty")}</p> : null}
           </div>
+          </div> : null}
           </>}
           </div>
                 {edit && editing.presentation === "quick" && task ? <QuickEditor draft={edit} task={task} session={editorSession} planning={state.planning} supportedKinds={state.supportedKinds} properties={state.properties} members={state.members} busy={state.pending} compact={compact} anchor={opener.current} onSave={save} onStatus={changeStatus} /> : null}

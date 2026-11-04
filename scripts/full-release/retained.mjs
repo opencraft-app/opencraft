@@ -5,11 +5,15 @@ import { join } from 'node:path';
 import { parseManifest, parseStrictJson, verifyBytes, enforcePolicy, acceptManifest, sha256, HARD_LIMITS } from './contract.mjs';
 import { readReplayState, writeReplayState } from './archive.mjs';
 
-async function authenticateRetained(root, trust) {
+async function retainedManifest(root, trust) {
   const raw = await readFile(join(root, 'release/full-release.json'));
   const sig = parseStrictJson(await readFile(join(root, 'release/full-release.sig')), HARD_LIMITS.metadataBytes);
   verifyBytes(raw, sig, trust);
   const record = parseManifest(raw);
+  return { raw, sig, record };
+}
+
+async function verifyRetainedFiles(root, record) {
   for (const component of record.components) for (const [path, digest, size, mode] of component.fileList) {
     const absolute = join(root, path), info = await lstat(absolute);
     if (!info.isFile() || info.size !== size || (info.mode & 0o7777) !== parseInt(mode, 8)) throw new Error('Retained full release content changed');
@@ -17,27 +21,44 @@ async function authenticateRetained(root, trust) {
     for await (const chunk of createReadStream(absolute)) hash.update(chunk);
     if (hash.digest('hex') !== digest) throw new Error('Retained full release content changed');
   }
-  return { raw, sig, record };
 }
 
 // Only the administrator-selected persisted previous release can use this
 // exception. Current authenticated revocations still apply to the old payload.
 export async function verifyRetainedRelease(root, trust, state) {
-  const { raw, sig, record } = await authenticateRetained(root, trust);
+  const { raw, sig, record } = await retainedManifest(root, trust);
+  await verifyRetainedFiles(root, record);
   enforcePolicy(record, sig.keyId, trust, state, Date.now(), { retainedRollback: true });
   return { manifestSha256: sha256(raw), releaseId: record.release.releaseId,
     releaseSequence: record.release.releaseSequence, highestSequence: state.highestSequence || 0,
     authorization: 'administrator-retained-payload' };
 }
 
+// An original failed installation may continue only at the current watermark.
+// This is a new activation, so no retained-rollback policy exception applies.
+export async function verifyRecoveryTarget(root, trust, state) {
+  const { raw, sig, record } = await retainedManifest(root, trust);
+  const accepted = acceptManifest(raw, sig, trust, state);
+  if (record.release.releaseSequence !== state.highestSequence)
+    throw new Error('Recovery target is not the highest accepted release');
+  await verifyRetainedFiles(root, record);
+  return { manifestSha256: accepted.state.manifestSha256, releaseId: record.release.releaseId,
+    releaseSequence: record.release.releaseSequence, authorization: 'verified-installation' };
+}
+
 // The caller holds the deployment lock, before starting any worker/execution.
 // Official first installation and fixed-bootstrap maintenance use the same path.
 export async function initializeReplayState(root, trust, stateFile, activatedIdentity = null) {
   const state = await readReplayState(stateFile);
-  const { raw, sig, record } = await authenticateRetained(root, trust);
+  const { raw, sig, record } = await retainedManifest(root, trust);
   const digest = sha256(raw), sequence = record.release.releaseSequence;
   const identity = { manifestSha256: digest, releaseId: record.release.releaseId, releaseSequence: sequence, authorization: 'verified-installation' };
   if (activatedIdentity && Object.keys(identity).some(key => activatedIdentity[key] !== identity[key])) throw new Error('Installed full release activation identity changed');
+  // Installation already verified every byte before committing this activation.
+  // A normal restart reopens that committed identity, not another installation.
+  // Missing activation/watermark evidence still takes the full first-open path.
+  if (!activatedIdentity || !state.highestSequence || sequence > state.highestSequence)
+    await verifyRetainedFiles(root, record);
   if (!state.highestSequence || sequence > state.highestSequence) {
     const accepted = acceptManifest(raw, sig, trust, state);
     await writeReplayState(stateFile, accepted.state);

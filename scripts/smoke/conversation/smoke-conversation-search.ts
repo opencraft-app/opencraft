@@ -34,7 +34,7 @@ catalogReads.push(params.cursor);return params.cursor===null?{data:Array.from({l
 const completeCatalog=await readHostThreadCatalog({profile:fixtureProfile,currentProfile:()=>fixtureProfile,management:null,registry:{peekRuntime:()=>catalogRuntime,ensureConnected:async()=>catalogRuntime}});
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const threads=[{id:'same',title:'中文 Search alpha',updatedAt:3,connectionHostId:'a',serverOrigin:{serverId:'a',label:'Alpha server'}},{id:'offline',title:'Search unavailable',updatedAt:2,connectionHostId:'a',interactionAvailable:false,serverOrigin:{serverId:'a',label:'Alpha server'}},{id:'same',title:'Search beta',updatedAt:1,connectionHostId:'b',serverOrigin:{serverId:'b',label:'Beta server'}},...completeCatalog.data.map(t=>({...t,connectionHostId:'a',serverOrigin:{serverId:'a',label:'Alpha server'}}))].map(t=>({...t,project:'opencraft',status:'ready',connectionHostLabel:t.connectionHostId,serverRouteLocality:'local'}));
-function App(){const[open,setOpen]=useState(false);const[sidebar,setSidebar]=useState(true);const[other,setOther]=useState(false);window.fixture={setThemePreference};
+function App(){const[open,setOpen]=useState(false);const[sidebar,setSidebar]=useState(true);const[other,setOther]=useState(false);window.fixture={setThemePreference,setOpen};
 return <><AppShell navigation={{layout:'unified',actions:[{id:'shell.start',title:'Start',icon:'home',onInvoke:()=>{}},{id:'shell.search',title:'Search conversations (Ctrl+K)',icon:'search',onInvoke:()=>setOpen(true)}],onOpenSettings:()=>{},account:null}}
 layoutScope='test' sidebarOpen={sidebar} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<div className='app-shell-header'><AppShellNavigationControls brand={<ApplicationBrand branding={branding}/>} hostRole='persistent' sidebarOpen={sidebar} onToggleSidebar={()=>setSidebar(!sidebar)} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} onHome={()=>{}} actions={['sidebar-toggle']}/><button onClick={()=>setSidebar(!sidebar)}>Toggle sidebar</button></div>} floatingSidebarHeader={()=><AppShellNavigationControls brand={<ApplicationBrand branding={branding}/>} hostRole='transient' sidebarOpen onToggleSidebar={()=>setSidebar(false)} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} onHome={()=>{}} actions={[]}/>}
@@ -79,9 +79,22 @@ try {
     const page=await browser.newPage({viewport:{width:1280,height:800},reducedMotion:"reduce"});
     page.setDefaultTimeout(15000);page.on('pageerror',(e:Error)=>errors.push(e.message));
     await page.addInitScript(platform=>{Object.defineProperty(navigator,'platform',{value:platform});window.__name=value=>value;},platform);
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`, { timeout: 90000 });
     const trigger=page.locator('[data-action-id="shell.search"]');await trigger.waitFor();
     assert.equal(await page.locator('.sidebar-list-search').count(),0);
+    assert.equal(await page.evaluate(()=>performance.getEntriesByType('resource').some((entry:any)=>entry.name.includes('/conversation-search-dialog.tsx'))),false,'closed search leaves the dialog module unloaded');
+    let releaseDialog!:()=>void;
+    const heldDialog=new Promise<void>(resolve=>releaseDialog=resolve);
+    const requestedDialog=page.waitForRequest('**/conversation-search-dialog.tsx*');
+    await page.route('**/conversation-search-dialog.tsx*',async route=>{await heldDialog;await route.continue();});
+    await page.getByLabel('Composer draft').focus();
+    await page.keyboard.press(platform==='MacIntel'?'Meta+k':'Control+k');
+    await requestedDialog;await page.locator('.deferred-view').waitFor();
+    await page.keyboard.press('Escape');await page.locator('.deferred-view').waitFor({state:'hidden'});
+    const downloadedDialog=page.waitForResponse(response=>response.url().includes('/conversation-search-dialog.tsx'));
+    releaseDialog();await downloadedDialog;await page.unroute('**/conversation-search-dialog.tsx*');
+    assert.equal(await page.locator('.conversation-search').count(),0,'a late import cannot reopen cancelled search');
+    assert.equal(await page.getByLabel('Composer draft').evaluate(el=>document.activeElement===el),true);
     await trigger.click();const dialog=page.getByRole('dialog',{name:'Search conversations',exact:true});await dialog.waitFor();
     const input=dialog.getByRole('combobox');assert.equal(await input.evaluate(el=>document.activeElement===el),true);
     await assertComposingEscape(page,input,dialog,async()=>{await trigger.click();});
@@ -116,7 +129,7 @@ try {
     await page.keyboard.press(platform==='MacIntel'?'Meta+k':'Control+k');await dialog.waitFor();
     await page.waitForFunction(()=>document.querySelector('.conversation-search').getBoundingClientRect().x>0);
     await input.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    await page.mouse.click(2,2);await dialog.waitFor({state:'hidden'});await page.close();
+    await page.mouse.click(2,2);await dialog.waitFor({state:'hidden'});await page.close();console.log('PASS desktop search, cold Escape, composition and focus: '+platform);
   }
   for(const theme of ['light','dark']) {
     const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce',userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'});
@@ -125,7 +138,7 @@ try {
       window.fixtureViewport=new EventTarget();Object.assign(window.fixtureViewport,{width:390,height:844,offsetLeft:0,offsetTop:0,scale:1});
       Object.defineProperty(window,'visualViewport',{value:window.fixtureViewport,configurable:true});
     },theme);
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`, { timeout: 90000 });
     const persistentToggle=page.locator('[data-app-shell-sidebar-trigger][data-chrome-action-host-role="persistent"]');await persistentToggle.waitFor();await persistentToggle.click();
     const header=page.locator('[data-mobile-sidebar] .shell-sidebar__header');await header.waitFor();
     const mobileSearch=header.locator('[data-action-id="shell.search.header"]');await mobileSearch.waitFor();

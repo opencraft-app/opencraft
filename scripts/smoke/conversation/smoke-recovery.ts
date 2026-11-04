@@ -42,14 +42,14 @@ try {
  });
  sockets.on("connection",ws=>ws.on("message",async frame=>{
   const request=JSON.parse(frame.toString());if(request.id===undefined)return;
-  if(request.method === "thread/resume") {
+  if(request.method === "thread/read" && request.params?.includeTurns === false) {
     resumeRequests++;
     resumeParams.push(request.params);
     if(holdNextResume){holdNextResume=false;await new Promise<void>(resolve=>{releaseResume=resolve;});}
     if (failResumes > 0) { failResumes--; ws.send(JSON.stringify({id:request.id,error:{code:-32000,message:"synthetic history failure"}})); return; }
     if(dropNextResume){dropNextResume=false;return;}
   }
-  try { const result=request.method==="initialize"?{codexHome:"/tmp",platformFamily:"unix",platformOs:"linux",userAgent:"fixture",capabilities:{extensions:{"opencraft/resume-history":{version:1,mode:"paginated",initialTurnsPage:true,boundedRecovery:true}}}}:await adapter.dispatch(request.method,request.params);
+  try { const result=request.method==="initialize"?{codexHome:"/tmp",platformFamily:"unix",platformOs:"linux",userAgent:"fixture",capabilities:{extensions:{"opencraft/read-history":{version:1,initialTurnsPage:true,boundedRecovery:true},"opencraft/resume-history":{version:1,mode:"paginated",initialTurnsPage:true,boundedRecovery:true}}}}:await adapter.dispatch(request.method,request.params);
    ws.send(JSON.stringify({id:request.id,result}));
   }catch(error){ws.send(JSON.stringify({id:request.id,error:{code:-32000,message:String(error)}}));}
  }));

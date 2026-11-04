@@ -40,7 +40,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
     if (/^(docs|design|\.agents)\//.test(path) || /^[^/]+\.md$/i.test(path) || /(?:^|\/)(?:README|AGENTS)\.md$/i.test(path) || /^(LICENSE|NOTICE)(\.|$)/.test(path)) continue;
     if (/^(packaging\/web-server\/|scripts\/server-deployment\/)/.test(path)
       || /^(scripts\/(package-headless-linux\.mjs|install-headless-linux\.sh|headless-(codex-launcher|server-launcher)\.sh|smoke\/server\/smoke-headless-package\.mjs|headless-web-release\.mjs)|config\/build-matrix\.json)$/.test(path)
-      || /^tests\/server\/(headless-installer|server-deployment)\.test\.mjs$/.test(path)) {
+      || /^tests\/server\/(headless-installer|server-deployment|execution-runtime-recovery)\.test\.mjs$/.test(path)) {
       headlessTests = true;
       headlessPackage = true;
     }
@@ -52,6 +52,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
     } else if (/^(apps|packages|plugins)\/[^/]+\/package\.json$/.test(path)) audits.add('.');
     if (/^apps\/workbench-web\//.test(path)) {
       web();
+      if (/^apps\/workbench-web\/src\/browser\/.*\.(?:[cm]?js|jsx|[cm]?tsx?)$/.test(path)) headlessTests = true;
       if (!path.startsWith('apps/workbench-web/src/') || /\/web-updates[^/]*\./.test(path)) managedWeb = true;
       continue;
     }

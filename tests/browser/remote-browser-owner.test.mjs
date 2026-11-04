@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, writeFile, rm, stat, chmod, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readlink, readdir, cp, rm, stat, chmod, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -10,8 +10,9 @@ import { connect } from 'node:net';
 import { once, EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import WebSocket from 'ws';
-import { browserRuntimeIdentity } from '../../scripts/browser-runtime-identity.mjs';
-import { connectBrowserOwner, reuseBrowserOwner } from '../../scripts/remote-browser-owner.mjs';
+import { publishBrowserOwnerRuntime } from '../../scripts/browser-owner-runtime.mjs';
+import { browserRuntimeIdentity, browserRuntimeMatches } from '../../scripts/browser-runtime-identity.mjs';
+import { connectBrowserOwner, reuseBrowserOwner, prepareBrowserOwnerConnector } from '../../scripts/remote-browser-owner.mjs';
 import { RemoteBrowserService } from '../../scripts/remote-browser-service.mjs';
 const { createBrowserOwner } = createRequire(import.meta.url)('../../scripts/remote-browser/owner.cjs');
 
@@ -46,7 +47,7 @@ async function fixture(t) {
 test('a replacement Gateway adopts the same native document/form/scroll and retires old input control', async t => {
   const f = await fixture(t), first = f.service(); await first.start();
   const key = JSON.stringify(['synthetic-owner', 'browser-logical-tab']), id = createHash('sha256').update(key).digest('hex');
-  await first.commit(draft => { draft.pages.push({ id, key, ownerId: 'synthetic-owner', zoom: 100, lifecycle: 'open', runtime: { kind: 'starting', generation: 1 } }); });
+  await first.commit(store => { store.saveSession({ id, key, ownerId: 'synthetic-owner', zoom: 100, lifecycle: 'open', runtime: { kind: 'starting', generation: 1 } }); });
   first.pages.set(key, { id, key, ownerId: 'synthetic-owner', zoom: 100, live: true });
   await first.request(id, 'create'); await first.request(id, 'control', { token: 'old-human' });
   // Accepted old writes finish once before the owner permits a new attachment.
@@ -152,4 +153,201 @@ test('native-only runtime changes keep live owners but replace an empty stale ow
     await symlink(join(previous, 'electron/electron'), join(candidate, 'external'));
     await assert.rejects(browserRuntimeIdentity(candidate), /regular files/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('runtime identity follows immutable bytes and normalized executable semantics across a private install umask', async () => {
+  const root=await mkdtemp(join(tmpdir(),'browser-runtime-umask-'));
+  try {
+    const candidate=join(root,'candidate'),retained=join(root,'retained');
+    for(const directory of [candidate,retained]){
+      await mkdir(join(directory,'electron'),{recursive:true});
+      await writeFile(join(directory,'worker.cjs'),'same immutable worker');
+      await writeFile(join(directory,'electron/electron'),'same executable bytes');
+    }
+    await chmod(join(candidate,'electron/electron'),0o700);
+    await chmod(join(retained,'electron/electron'),0o755);
+    assert.equal(await browserRuntimeIdentity(candidate),await browserRuntimeIdentity(retained), 'owner mount normalization must not masquerade as a native update');
+    await chmod(join(retained,'electron/electron'),0o644);
+    assert.notEqual(await browserRuntimeIdentity(candidate),await browserRuntimeIdentity(retained), 'losing executable capability remains a real identity change');
+  } finally { await rm(root,{recursive:true,force:true}); }
+});
+
+
+test('candidate identity errors cannot authorize an attachment or an empty-owner upgrade', async () => {
+  const root=await mkdtemp(join(tmpdir(),'browser-runtime-admission-'));
+  try {
+    const missing=join(root,'missing'),valid=join(root,'valid');await mkdir(valid);await writeFile(join(valid,'worker.cjs'),'valid immutable bytes');
+    for(const inventory of [[],[{id:'retained-live-tab'}]]){
+      let stops=0,kills=0;const peer={inventory,kill(){kills++;}};
+      await assert.rejects(reuseBrowserOwner(peer,()=>browserRuntimeMatches(missing,valid),async()=>{stops++;}),/ENOENT/);
+      assert.equal(stops,0);assert.equal(kills,0);assert.notEqual(peer.runtimeCurrent,true);
+    }
+    await symlink(valid,join(root,'candidate-link'));
+    await assert.rejects(browserRuntimeMatches(root,valid),/regular files/);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('unidentified retained bytes keep live documents but allow verified candidates to replace an empty owner',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'browser-runtime-retained-'));
+  try{
+    const candidate=join(root,'candidate');await mkdir(candidate);await writeFile(join(candidate,'worker.cjs'),'candidate bytes');
+    for(const inventory of [[],[{id:'live'}]]){
+      let stops=0,kills=0;const peer={inventory,kill(){kills++;}};
+      const reused=await reuseBrowserOwner(peer,()=>browserRuntimeMatches(candidate,join(root,'unknown-retained')),async()=>{stops++;});
+      assert.equal(peer.runtimeCurrent,false);assert.equal(stops,inventory.length?0:1);assert.equal(kills,inventory.length?0:1);assert.equal(reused,inventory.length?peer:null);
+    }
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+
+test('prepared immutable candidates validate all entries and executable capability before returning an owner connector', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'browser-prepared-candidate-'));
+  try {
+    await assert.rejects(prepareBrowserOwnerConnector(root), { code: 'ENOENT' });
+    await mkdir(join(root, 'electron')); await writeFile(join(root, 'worker.cjs'), 'worker'); await writeFile(join(root, 'owner.cjs'), 'owner'); await writeFile(join(root, 'electron/electron'), 'native');
+    await assert.rejects(prepareBrowserOwnerConnector(root), { code: 'EACCES' });
+    await chmod(join(root, 'electron/electron'), 0o700);
+    assert.equal(typeof await prepareBrowserOwnerConnector(root), 'function');
+    await symlink(join(root, 'worker.cjs'), join(root, 'untrusted-link'));
+    await assert.rejects(prepareBrowserOwnerConnector(root), /regular files/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('failed orphan reconciliation releases the exclusive attachment and retries against the same native owner', async t => {
+  const f = await fixture(t), seed = f.service(); await seed.start();
+  await seed.request('synthetic-orphan', 'create'); seed.close(); await seed.persistence;
+  const service = f.service(), connect = service.ownerConnector; let failClose = true;
+  service.ownerConnector = async options => {
+    const peer = await connect(options), send = peer.send;
+    peer.send = (message, callback) => {
+      if (failClose && message.method === 'close') {
+        failClose = false; callback?.(null);
+        queueMicrotask(() => peer.emit('message', { type: 'result', id: message.id, error: { message: 'Synthetic orphan close failed', retryable: true } }));
+      } else send(message, callback);
+    };
+    return peer;
+  };
+  t.after(async () => { service.close(); await service.persistence; });
+  await assert.rejects(service.start(), /Synthetic orphan close failed/);
+  assert.equal(service.child, null);
+  await service.start(); assert.equal(service.child.workerPid, f.owner.child.pid);
+  assert.deepEqual(await service.request(undefined, 'inventory'), []);
+});
+
+test('failed adoption persistence detaches its peer and leaves native ownership available for retry', async t => {
+  const f = await fixture(t), service = f.service(), commit = service.commit.bind(service); let fail = true;
+  service.commit = reduce => { if (fail) { fail = false; return Promise.reject(Error('Synthetic adoption persistence failed')); } return commit(reduce); };
+  t.after(async () => { service.close(); await service.persistence; });
+  await assert.rejects(service.start(), /Synthetic adoption persistence failed/); assert.equal(service.child, null);
+  await service.start(); assert.equal(service.child.workerPid, f.owner.child.pid);
+});
+
+test('shutdown retains the logical writer until an in-progress owner attachment has detached', async t => {
+  const f = await fixture(t), first = f.service(), second = f.service(), connect = first.ownerConnector;
+  let enter, release; const entered = new Promise(resolve => { enter = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  first.ownerConnector = async options => { enter(); await gate; return connect(options); };
+  t.after(async () => { release(); first.close(); second.close(); await first.persistence; await second.persistence; });
+  const opening = first.start(); void opening.catch(() => {}); await entered;
+  first.close(); let released = false; void first.persistence.then(() => { released = true; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(released, false);
+  await assert.rejects(second.load(), error => error.code === 'BROWSER_UNAVAILABLE');
+  release(); await assert.rejects(opening, /Browser service closed/); await first.persistence;
+  await second.start(); assert.equal(second.child.workerPid, f.owner.child.pid);
+});
+
+test('adoption cannot report success after its transport retires during a pending commit', async t => {
+  const f = await fixture(t), service = f.service(), commit = service.commit.bind(service);
+  let enter, release, first = true; const entered = new Promise(resolve => { enter = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  service.commit = reduce => { if (first) { first = false; enter(); return gate.then(() => commit(reduce)); } return commit(reduce); };
+  t.after(async () => { release(); service.close(); await service.persistence; });
+  const opening = service.start(); void opening.catch(() => {}); await entered;
+  const peer = service.child; await peer.kill(); assert.equal(service.child, null);
+  release(); await assert.rejects(opening, /Browser owner disconnected/);
+  await service.start(); assert.equal(service.child.workerPid, f.owner.child.pid);
+});
+
+test('an adopted transport must finish draining before shutdown releases the logical writer', async t => {
+  const f = await fixture(t), first = f.service(), second = f.service(); await first.start();
+  const peer = first.child, kill = peer.kill; let release; const gate = new Promise(resolve => { release = resolve; });
+  peer.kill = () => Promise.all([kill(), gate]);
+  t.after(async () => { release(); first.close(); second.close(); await first.persistence; await second.persistence; });
+  first.close(); await peer.closed;
+  await assert.rejects(second.load(), error => error.code === 'BROWSER_UNAVAILABLE');
+  release(); await first.persistence; await second.start(); assert.equal(second.child.workerPid, f.owner.child.pid);
+});
+
+// Filesystem-backed payload races are independent of the manager protocol.
+// A mount can outlive its pathname; publishing must never remove retained bytes.
+async function publicationFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'browser-payload-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const data = join(root, 'data'), candidate = join(root, 'candidate');
+  await mkdir(join(candidate, 'electron'), { recursive: true });
+  await writeFile(join(candidate, 'worker.cjs'), 'candidate-worker');
+  await writeFile(join(candidate, 'electron/electron'), 'candidate-executable', { mode: 0o700 });
+  return { root, data, candidate, identity: await browserRuntimeIdentity(candidate) };
+}
+
+test('immutable publication preserves an existing retained payload and normalizes only the new copy', async t => {
+  const { data, candidate, identity } = await publicationFixture(t), old = join(data, 'owner-runtime');
+  await mkdir(old, { recursive: true }); await writeFile(join(old, 'retained'), 'unsaved-runtime');
+  const runtime = await publishBrowserOwnerRuntime(candidate, data, identity);
+  assert.equal(await readFile(join(old, 'retained'), 'utf8'), 'unsaved-runtime');
+  assert.equal(await browserRuntimeIdentity(runtime), identity);
+  assert.equal((await stat(join(runtime, 'electron/electron'))).mode & 0o777, 0o755);
+  assert.equal((await stat(join(candidate, 'electron/electron'))).mode & 0o777, 0o700);
+});
+
+test('concurrent publication of one identity converges without destructive replacement or staging leftovers', async t => {
+  const { data, candidate, identity } = await publicationFixture(t);
+  const paths = await Promise.all(Array.from({length: 8}, () => publishBrowserOwnerRuntime(candidate, data, identity)));
+  assert.equal(new Set(paths).size, 1); assert.equal(await browserRuntimeIdentity(paths[0]), identity);
+  assert.deepEqual(await readdir(join(data, 'owner-runtimes')), [identity]);
+  assert.equal(await readlink(join(data, 'owner-runtime')), paths[0]);
+  const before = await stat(paths[0]); await publishBrowserOwnerRuntime(candidate, data, identity);
+  const after = await stat(paths[0]); assert.equal(after.ino, before.ino);
+});
+
+test('different concurrent identities retain both payloads and a stable compatibility alias', async t => {
+  const { root, data, candidate, identity } = await publicationFixture(t), second = join(root, 'second');
+  await cp(candidate, second, { recursive: true }); await writeFile(join(second, 'worker.cjs'), 'other-worker');
+  const other = await browserRuntimeIdentity(second);
+  const [a,b] = await Promise.all([publishBrowserOwnerRuntime(candidate, data, identity), publishBrowserOwnerRuntime(second, data, other)]);
+  assert.notEqual(a,b); assert.equal(await browserRuntimeIdentity(a), identity); assert.equal(await browserRuntimeIdentity(b), other);
+  const alias = await readlink(join(data, 'owner-runtime')); assert.ok([a,b].includes(alias));
+  await publishBrowserOwnerRuntime(second, data, other); assert.equal(await readlink(join(data, 'owner-runtime')), alias);
+});
+
+test('a directory name is not proof of its content and a mismatched winner is preserved on rejection', async t => {
+  const { data, candidate, identity } = await publicationFixture(t), runtime = await publishBrowserOwnerRuntime(candidate, data, identity);
+  await writeFile(join(runtime, 'worker.cjs'), 'unexpected-retained-bytes');
+  await assert.rejects(publishBrowserOwnerRuntime(candidate, data, identity), /identity mismatch/);
+  assert.equal(await readFile(join(runtime, 'worker.cjs'), 'utf8'), 'unexpected-retained-bytes');
+  assert.deepEqual(await readdir(join(data, 'owner-runtimes')), [identity]);
+});
+
+test('candidate mutation after preparation fails before publication and cleans only its own staging copy', async t => {
+  const { data, candidate, identity } = await publicationFixture(t);
+  await writeFile(join(candidate, 'worker.cjs'), 'changed-after-identity');
+  await assert.rejects(publishBrowserOwnerRuntime(candidate, data, identity), /identity mismatch/);
+  assert.deepEqual(await readdir(join(data, 'owner-runtimes')), []);
+  await assert.rejects(stat(join(data, 'owner-runtime')), { code: 'ENOENT' });
+  assert.equal(await readFile(join(candidate, 'worker.cjs'), 'utf8'), 'changed-after-identity');
+});
+
+test('publication rejects invalid identity before creating a destination', async t => {
+  const { data, candidate } = await publicationFixture(t);
+  await assert.rejects(publishBrowserOwnerRuntime(candidate, data, '../escape'), /Invalid browser runtime identity/);
+  await assert.rejects(stat(data), { code: 'ENOENT' });
+});
+
+
+test('an identity directory cannot alias mutable candidate storage', async t => {
+  const { data, candidate, identity } = await publicationFixture(t);
+  await mkdir(join(data, 'owner-runtimes'), { recursive: true });
+  await symlink(candidate, join(data, 'owner-runtimes', identity));
+  await assert.rejects(publishBrowserOwnerRuntime(candidate, data, identity), /Invalid browser retained runtime directory/);
+  assert.equal(await readlink(join(data, 'owner-runtimes', identity)), candidate);
+  assert.equal(await readFile(join(candidate, 'worker.cjs'), 'utf8'), 'candidate-worker');
 });

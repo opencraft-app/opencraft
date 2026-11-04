@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "owned-app-definitions-and-releases",
+      "checksum": "cc1ee293eb0fdf8325c41bc2fa3949a5ef7e5e30b25badde671a5f753ccac53c"
+    }
+  ],
+  "tableOptions": {
+    "apps": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "releases": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "a60cbde0565fe56b5760b7d13b8fe29b92f944ad9aa212339cecd026ddbad55d",
+  "baselineSnapshotChecksum": "abb35f5447ce553bce86c9bd5254532955fdefdd9f0bb2ce5e686d0d9ce324e7"
+}

@@ -136,7 +136,7 @@ test("a late backend target cannot allocate a socket after the frontend incarnat
   assert.equal(f.connections.length, 1); assert.equal(f.runtime.getSnapshot().phase, "ready");
 });
 
-test("logical clients on one connection share identical initialize and thread/list reads", async () => {
+test("logical clients share initialization but retain independent directory read scopes", async () => {
   const backend = createServer();
   const backendSockets = new WebSocketServer({ server: backend });
   const calls = new Map<string, number>();
@@ -172,8 +172,11 @@ test("logical clients on one connection share identical initialize and thread/li
     assert.deepEqual(initialized.map(frame => frame.result.userAgent), ["singleflight-fixture", "singleflight-fixture"]);
     assert.equal(calls.get("initialize"), 1);
     const catalogs = await Promise.all(["a", "b"].map(clientId => send(clientId, clients[0]!, "list", "thread/list", { limit: 50 })));
-    assert.deepEqual(catalogs.map(frame => frame.result), [{ data: [], nextCursor: null, unavailableEngines: [] }, { data: [], nextCursor: null, unavailableEngines: [] }]);
-    assert.equal(calls.get("thread/list"), 1);
+    assert.deepEqual(catalogs.map(frame => frame.result.data), [[], []]);
+    assert.ok(catalogs.every(frame => frame.result.catalog.coverage === "complete"));
+    assert.equal(calls.get("thread/list"), 4, "two admitted scopes, each with active/archive reconciliation");
+    await send("a", clients[0]!, "next", "thread/list", { limit: 50 });
+    assert.equal(calls.get("thread/list"), 4, "warm paging only reads the projection");
   } finally {
     for (const socket of clients) socket.terminate();
     await host.close();
@@ -225,7 +228,7 @@ for (const method of ["initialize", "thread/list", "model/list"]) test(`closing 
     assert.ok(reply.result);
     assert.equal(calls, 2, "Each independently cancelable connection must own its backend read");
     assert.equal((await send(clients[1]!, "next", method)).error, undefined);
-    assert.equal(calls, 3, "Completed reads must leave no stale in-flight entry");
+    assert.equal(calls, 3, "Uninitialized compatibility reads leave no stale in-flight entry");
   } finally {
     gate.resolve();
     for (const socket of clients) socket.terminate();

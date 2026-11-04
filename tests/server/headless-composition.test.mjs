@@ -119,11 +119,17 @@ test('local machine ingress proves the socket source and preserves remote and Ac
   assert.equal((await loadLocalMachineAccess(path)).origin(good), null, 'a replacement key retires old proofs');
 
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
-  t.after(() => new Promise(resolve => backend.close(resolve)));
-  backend.on('connection', socket => socket.on('message', data => socket.send(data)));
-  const app = await startHeadlessServer({ ...f.options, localAccessFile: path, accessControl: true,
+  let app;
+  // The application owns a persistent Goal observer socket. Close consumers
+  // before waiting for their backend server to drain.
+  t.after(async () => { await app?.close(); await new Promise(resolve => backend.close(resolve)); });
+  backend.on('connection', socket => socket.on('message', data => {
+    const response = JSON.parse(data.toString()); delete response.method; delete response.params;
+    socket.send(JSON.stringify({ ...response, result: { userAgent: 'fixture', localProofEcho: true } }));
+  }));
+  app = await startHeadlessServer({ ...f.options, localAccessFile: path, accessControl: true,
     startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:' + backend.address().port, close: async () => {} }),
-  }); t.after(() => app.close());
+  });
   const current = await loadLocalMachineAccess(path);
   const proofFor = (url, method = 'GET') => { const parsed = new URL(app.url), req = { method, url, headers: { host: parsed.host },
     socket: { remoteAddress: '127.0.0.1', localAddress: '127.0.0.1', localPort: Number(parsed.port) } };
@@ -136,7 +142,8 @@ test('local machine ingress proves the socket source and preserves remote and Ac
   assert.equal((await fetch(app.url + '/__opencraft_access/admission', { headers: { ...probe, 'x-opencraft-relay-probe-method': 'POST', 'x-opencraft-relay-probe-path': '/assets/lazy.js' } })).status, 401);
   const socket = new WebSocket(app.url.replace('http:', 'ws:') + '/appserver', { headers: { ...proofFor('/appserver'), origin: app.url } });
   await once(socket, 'open');
-  const reply = once(socket, 'message'); socket.send('local-proof-echo'); assert.equal((await reply)[0].toString(), 'local-proof-echo');
+  const echo = JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'local-proof', version: '1' } } });
+  const reply = once(socket, 'message'); socket.send(echo); assert.equal(JSON.parse((await reply)[0].toString()).result.localProofEcho, true);
   socket.close(); await once(socket, 'close');
 });
 

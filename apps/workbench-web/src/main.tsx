@@ -81,6 +81,7 @@ function ApplicationBootstrap() {
 
   useEffect(() => {
     let disposed = false;
+    const startup = new AbortController();
     let application: WebWorkbenchApplication | null = null;
     let preferences: UiPreferencesRuntime | null = null;
     let disposeDensity: (() => void) | undefined;
@@ -110,7 +111,7 @@ function ApplicationBootstrap() {
           serverExtensions: serverWorkbenchExtensions,
           pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
-        });
+        }, startup.signal);
         application = created;
         if (disposed) {
           locale.dispose();
@@ -134,6 +135,7 @@ function ApplicationBootstrap() {
       });
     return () => {
       disposed = true;
+      startup.abort();
       mobileBinding?.dispose();
       locale?.dispose();
       disposeDensity?.();

@@ -99,6 +99,12 @@ export class ThreadOrchestrationLedger {
     return this.db.prepare("SELECT thread_id FROM opencraft_orchestration_runtime_views WHERE ? OR state IN ('starting','active','recovering','awaiting_interaction')")
       .all(includeTerminal?1:0).map(row => String(row.thread_id));
   }
+  /** Count projection excludes prompts, excerpts, session and execution metadata. */
+  countOwnership(threadId: string, serverId: string, actorId: string): 'owned' | 'other' | 'historical' {
+    const row = this.db.prepare(`SELECT server_id=? AS same_server,owner_actor_id=? AS owned
+      FROM opencraft_thread_relations WHERE thread_id=?`).get(serverId,actorId,threadId);
+    return !row || row.same_server !== 1 ? 'historical' : row.owned === 1 ? 'owned' : 'other';
+  }
   relation(threadId: string): ThreadRelation | null {
     const r = this.db.prepare('SELECT * FROM opencraft_thread_relations WHERE thread_id=?').get(threadId);
     return r ? {threadId:String(r.thread_id),serverId:String(r.server_id),driverKind:String(r.driver_kind),ownerActorId:String(r.owner_actor_id),

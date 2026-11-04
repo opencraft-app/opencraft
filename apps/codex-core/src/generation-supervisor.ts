@@ -10,6 +10,17 @@ import { generationArtifactDigest } from "./generation-artifact-digest.js";
 import type { GenerationRecord } from "./generation-registry.js";
 
 const execute = promisify(execFile);
+
+/** An adopted APP's program belongs to its independent unit, while its Native
+ * executable and HOME remain pinned by the generation definition. */
+export function externalGenerationAppBundle(launch: string, args: readonly string[]): string {
+  const match = /^\{\s*path=(.*?)\s*;\s*argv\[\]=(.*?)\s*;\s*ignore_errors=no\s*;.*\}$/su.exec(launch.trim());
+  if (!args[0]?.startsWith("/") || !args[1]?.startsWith("/") || launch.split("argv[]=").length !== 2
+    || !match || match[1] !== args[0] || match[2] !== args.join(" ")) {
+    throw Error("External generation unit launch differs from its running command");
+  }
+  return args[1];
+}
 export interface GenerationProcessIdentity {
   readonly ownerPid: number;
   readonly ownerStart: string;
@@ -76,11 +87,13 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     if (["enabled", "enabled-runtime"].includes(fileState)) await execute("systemctl", [...this.scope(), "disable", "--", unit]);
   }
   async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
-  private async health(g: GenerationRecord): Promise<CodexAppServerHealth> {
-    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
+  private async health(g: GenerationRecord, observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
+    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
   }
   async start(g: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth> {
-    try { return await this.health(g); } catch { /* Readiness below never signals an existing unit. */ }
+    // Existing ready/draining owners must remain routable for reads even when
+    // exec-server is lost. New/cold owners still require execution readiness.
+    try { return await this.health(g, ["ready", "active", "draining"].includes(g.state) ? "native" : "execution"); } catch { /* Readiness below never signals an existing unit. */ }
     const unit = this.unit(g);
     const status = await this.unitState(unit);
     if (!["active", "activating", "reloading"].includes(status.active)) {
@@ -180,7 +193,10 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     };
     const samePath = async (actual: string | undefined, expected: string) => !!actual && actual.startsWith("/") && await realpath(actual) === await realpath(expected);
     const digest = (path: string) => generationArtifactDigest.sha256(path);
-    if (h.pid !== identity.ownerPid || h.codexPid !== identity.nativePid || !await samePath(args[1], g.bundle)
+    const appBundle = g.externalUnit ? externalGenerationAppBundle((await execute("systemctl", [
+      ...this.scope(), "show", "--property=ExecStart", "--value", "--", g.externalUnit,
+    ])).stdout, args) : g.bundle;
+    if (h.pid !== identity.ownerPid || h.codexPid !== identity.nativePid || !await samePath(args[1], appBundle)
       || !await samePath(`/proc/${identity.ownerPid}/exe`, g.node)
       || await digest(`/proc/${identity.ownerPid}/exe`) !== await digest(g.node)) throw Error("Host APP program differs from its fixed definition");
     const runtimeDataDirectory = await realpath(g.runtimeDataDirectory), codexHome = await realpath(`${runtimeDataDirectory}/runtime`);
@@ -199,7 +215,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         || homes.length !== 1 || !await samePath(homes[0]!.slice("CODEX_HOME=".length), codexHome)) throw Error("Host Native parent, program or HOME differs from its fixed definition");
     }
     if (JSON.stringify(await this.identify(g, h)) !== JSON.stringify(identity)) throw Error("Host APP changed during program observation");
-    return { nodeSha256: await digest(g.node), bundleSha256: await digest(g.bundle), runtimeDataDirectory, codexHome };
+    return { nodeSha256: await digest(g.node), bundleSha256: await digest(appBundle), runtimeDataDirectory, codexHome };
   }
   async stop(g: GenerationRecord, identity: GenerationProcessIdentity): Promise<void> {
     const unit = this.unit(g);

@@ -75,6 +75,13 @@ export const workingShimmerMotion = {
   cycleMs: 1_500,
 } as const;
 
+/** Quiet connection/history placeholder: slower than active execution text. */
+export const recoveryPlaceholderShimmerMotion = {
+  firstSweepDelayMs: 800,
+  sweepDurationMs: 2_000,
+  cycleMs: 3_000,
+} as const;
+
 const sidebarListDefaultWidth = 275;
 const sidebarListMinimumWidth = 240;
 // 44px targets retain about 8px breathing room on either side.

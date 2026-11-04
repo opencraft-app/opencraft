@@ -1,5 +1,8 @@
+import { shellNavigationLabels } from "./navigation-labels";
 import { Button } from "@opencraft/design-system-web/button";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as Popover from "@radix-ui/react-popover";
+import { useWorkbenchPresentationRoot } from "../workbench-presentation-root";
 import { useIntl } from "@opencraft/i18n/react";
 import { NavigationIcon } from "./navigation-action";
 import { AccountSignInMenu } from "./account-sign-in-menu";
@@ -224,6 +227,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   onInvoke?: (action: () => void) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const presentationRoot = useWorkbenchPresentationRoot();
   const { projection, state, dispatch } = controller;
   const wasVisible = useRef(visible);
   useEffect(() => {
@@ -236,7 +240,9 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   const intl = useIntl();
   const accountLabel = shellAccountEntranceLabel(config.account, intl);
   const unified = config.layout === "unified";
-  const availableSurfaces = unified && mobile ? [] : surfaces.filter((surface) => surface === "applications" ? !unified : accountLabel !== null);
+  const mobileApplications = unified && mobile && config.applicationsInSidebar
+    ? config.actions.find(action => action.id === "shell.applications") : undefined;
+  const availableSurfaces = unified && mobile ? [] : surfaces.filter((surface) => surface === "applications" ? !unified && !config.applicationsInSidebar : accountLabel !== null);
   // Only the managed website exposes a release feed. Mount the update
   // entrance, and with it the query runtime it reads, only there; other
   // shells must stay runnable without a query provider.
@@ -247,12 +253,20 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   return <div ref={root} className={`shell-navigation__footer${unified ? " shell-navigation__footer--unified" : ""}`} aria-label="Application entrances">
     {unified ? <>
       {managedUpdateEntrance}
-      <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance" data-surface="settings"
+      {mobileApplications ? <Button size="navigation" variant="ghost" contentLayout="icon" surface="floating"
+        type="button" className="shell-navigation__entrance" data-surface="applications" data-action-id="shell.applications"
+        aria-label={shellNavigationLabels(mobileApplications, intl).full}
+        title={shellNavigationLabels(mobileApplications, intl).full}
+        aria-expanded={mobileApplications.expanded} aria-current={mobileApplications.active ? "page" : undefined}
+        onClick={() => onInvoke(mobileApplications.onInvoke)}>
+        <NavigationIcon name={mobileApplications.icon} selected={mobileApplications.active} />
+      </Button> : null}
+      <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} type="button" className="shell-navigation__entrance" data-surface="settings"
         aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         aria-current={config.settingsActive ? "page" : undefined} onClick={() => {
-          // Opening a destination retires the floating applications drawer.
-          // Its retained panel must not obscure the settings controls on phones.
+          // A sidebar-owned Settings action selects categories in place.
+          // Route-owned settings still retire the transient drawer.
           onInvoke(config.onOpenSettings);
         }}>
         <NavigationIcon name="settings" selected={config.settingsActive} />
@@ -262,12 +276,35 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
       const surfaceLabel = surface === "account" ? accountLabel! : intl.formatMessage(labels.applications);
       const directSignIn = surface === "account" && anonymousAccount;
       const applicationAction = surface === "applications" ? config.actions.find(action => action.id === "shell.applications") : undefined;
-      if (applicationAction) return <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
+      if (applicationAction) return <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} key={surface} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
         aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
         onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></Button>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
-        floating={mobile} visible={visible} container={root.current} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;
+        floating={mobile} visible={visible} container={presentationRoot} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;
+      if (surface === "account") return <Popover.Root key={surface} modal={false}
+        open={visible && projection.peek === surface}
+        onOpenChange={open => {
+          if (open && directSignIn) config.account?.onOpen();
+          else dispatch({ type: open ? "toggle" : "dismiss", surface, dockAvailable: projection.dockAvailable && projection.footerVisible });
+        }}>
+        <Popover.Trigger asChild>
+          <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"}
+            surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button"
+            className="shell-navigation__entrance" aria-label={surfaceLabel} title={surfaceLabel} data-surface={surface}>
+            <AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span>
+          </Button>
+        </Popover.Trigger>
+        <Popover.Portal container={presentationRoot}>
+          <Popover.Content className="shell-navigation__peek" aria-label={intl.formatMessage(labels.account)}
+            side="top" align="start" sideOffset={8} collisionPadding={12}>
+            <div className="shell-navigation__heading"><h2>{intl.formatMessage(labels.account)}</h2></div>
+            <NavigationContent compact={false} config={config} surface={surface} onInvoke={action => {
+              dispatch({ type: "dismiss", surface }); onInvoke(action);
+            }} />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>;
       return <Dialog.Root key={surface} modal={false}
       open={visible && projection.peek === surface}
       onOpenChange={open => {
@@ -284,15 +321,14 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
         else dispatch({ type: "dismiss", surface });
       }}>
       <Dialog.Trigger asChild>
-        <Button size="navigation" variant="ghost" contentLayout={mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" aria-label={surfaceLabel}
+        <Button size="navigation" variant="ghost" contentLayout={unified || mobile ? "icon" : "row"} surface={mobile ? "floating" : "integrated"} id={`${entranceId}-${surface}`} type="button" className="shell-navigation__entrance" aria-label={surfaceLabel}
           data-surface={surface}
           aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : directSignIn ? false : state.pinned[surface]}
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
           data-pinned={surface === "applications" && projection.primaryNavigation ? visible : directSignIn ? false : state.pinned[surface]}
           title={surface === "applications" && projection.primaryNavigation ? intl.formatMessage(labels.applications) : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? ` · ${intl.formatMessage({ id: "navigation.pinned", defaultMessage: "Pinned" })}` : ""}`}>
 
-          {surface === "applications" ? <NavigationIcon name="applications" selected={projection.docked.applications || projection.peek === "applications"} />
-            : <><AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
+          <NavigationIcon name="applications" selected={projection.docked.applications || projection.peek === "applications"} />
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal container={root.current}>

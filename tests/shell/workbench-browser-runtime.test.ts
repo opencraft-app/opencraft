@@ -138,3 +138,23 @@ test("browser restoration works without iterator helpers on Safari 16", () => {
     else delete iteratorPrototype.map;
   }
 });
+
+test("resource Thread index restores canonical ownership and preserves distinct old aliases", () => {
+  const values = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}};
+  const bindings=createConversationBindingStore({persistence:{load:()=>[
+    {scopeId:'draft-old',hostId:'host',threadId:'thread'},
+    {scopeId:'draft-other',hostId:'host',threadId:'thread'},
+  ]}});
+  assert.notEqual(bindings.resolve(asConversationScopeId('draft-other')),null);
+  const pages=new WebBrowserPageRuntime(undefined,null,()=>null,storage);
+  const panels={open:()=>({}),dispatch(){},ensureOwner(){},close(){}};
+  let coordinator=new BrowserWorkbenchCoordinator(pages,panels as never,bindings,storage);
+  const canonical='conversation:'+JSON.stringify(['host','thread']);
+  coordinator.open(canonical);coordinator.open('draft-old');
+  assert.equal(coordinator.getConversationTabs('host','thread').length,2);
+  assert.equal(coordinator.getConversationTabs('other','thread').length,0);
+  coordinator.dispose();coordinator=new BrowserWorkbenchCoordinator(pages,panels as never,bindings,storage);
+  assert.equal(coordinator.getConversationTabs('host','thread').length,2);
+  coordinator.dispose();pages.dispose();bindings.dispose();
+});

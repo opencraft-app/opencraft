@@ -326,7 +326,7 @@ test("an engine without shared approvals restores its old conversation and sends
   let peer!: InMemoryAppServerPeer;
   const calls: string[] = [], sent: string[] = [];
   let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
-  const transport = new MemoryTransport({
+  const createTransport = () => new MemoryTransport({
     connected(value) { peer = value; },
     receive(raw, reply) {
       const request = JSON.parse(raw); if (request.id === undefined) return;
@@ -359,7 +359,7 @@ test("an engine without shared approvals restores its old conversation and sends
       else send({});
     },
   });
-  const runtime = createAppServerWorkbenchRuntime({ hostId: "mixed-engine", transport, autoReconnect: false,
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "mixed-engine", createTransport, autoReconnect: false,
     requestTimeoutMs: 100, reconnectDelaysMs: [5], outbox: {
       read: () => rows, write: (_key, value) => { rows = structuredClone(value); }, subscribe: () => () => {},
     } });

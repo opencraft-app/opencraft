@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { CapabilityError, type CapabilityPhase } from './errors.js';
 import type { CapabilitySession, CapabilityTool, CapabilityResult, SessionCapabilityProvider } from './index.js';
 
 export interface McpCredential {
@@ -13,7 +14,7 @@ export interface AuthenticatedMcpOptions {
   resolve(session: CapabilitySession, invocation: boolean): McpCredential | null;
   readonly fetcher?: typeof fetch;
 }
-const denied = () => new Error('MCP authorization expired or service unavailable');
+const denied = () => new CapabilityError('capability_not_authorized', 'authorization');
 /** An identity/transport bridge, without provider-specific API implementations.
  * Authenticated clients are private to one operation. Never reuse upstream MCP
  * sessions across employees, credential revisions or execution incarnations. */
@@ -36,8 +37,10 @@ export class AuthenticatedMcpProvider implements SessionCapabilityProvider {
       .split(encodeURIComponent(credential.token)).join('[redacted]'));
   }
   private async use<T>(session: CapabilitySession, invocation: boolean, signal: AbortSignal,
-    run: (client: Client, credential: McpCredential) => Promise<T>): Promise<T> {
+    run: (client: Client, credential: McpCredential, dispatch: () => void) => Promise<T>): Promise<T> {
     const credential = this.credential(session, invocation), abort = new AbortController();
+    let phase: CapabilityPhase = invocation ? 'connection' : 'catalog', dispatched = false;
+    let revoked: CapabilityError | undefined, upstreamFailure: CapabilityError | undefined;
     const checked = () => {
       signal.throwIfAborted(); abort.signal.throwIfAborted();
       const current = this.credential(session, invocation);
@@ -49,7 +52,10 @@ export class AuthenticatedMcpProvider implements SessionCapabilityProvider {
     signal.addEventListener('abort', cancel, { once: true });
     // Revoke in-flight requests promptly on employee removal, unbinding or a
     // completed/replaced execution. No external write is automatically replayed.
-    const watcher = setInterval(() => { try { checked(); } catch { cancel(); } }, 100);
+    const watcher = setInterval(() => { try { checked(); } catch (error) {
+      if (error instanceof CapabilityError) revoked = error;
+      cancel();
+    } }, 100);
     watcher.unref();
     const timeout = setTimeout(cancel, 60_000); timeout.unref();
     const fetcher: typeof fetch = async (input, init) => {
@@ -60,36 +66,44 @@ export class AuthenticatedMcpProvider implements SessionCapabilityProvider {
       headers.set('Authorization', `Bearer ${credential.token}`);
       const response = await (this.options.fetcher ?? fetch)(input, { ...init, headers, redirect: 'error', signal: abort.signal });
       checked();
+      if (!response.ok && (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase() === 'POST')
+        upstreamFailure = new CapabilityError('capability_upstream_rejected', phase, dispatched ? 'unknown' : 'not_dispatched', response.status);
       return response;
     };
     try {
       checked();
       await client.connect(new StreamableHTTPClientTransport(new URL(this.options.endpoint), { fetch: fetcher }));
       checked();
-      const result = await run(client, credential);
+      const result = await run(client, credential, () => { checked(); phase = 'invocation'; dispatched = true; });
       checked(); return result;
-    } catch { throw denied(); }
+    } catch (cause) {
+      const error = revoked ?? upstreamFailure ?? cause;
+      const outcome = dispatched ? 'unknown' : 'not_dispatched';
+      if (error instanceof CapabilityError) throw new CapabilityError(error.code, error.phase, outcome, error.upstreamStatus);
+      throw new CapabilityError(signal.aborted || abort.signal.aborted ? 'capability_cancelled'
+        : dispatched ? 'capability_outcome_unknown' : invocation ? 'capability_upstream_unavailable' : 'capability_catalog_unavailable', phase, outcome);
+    }
     finally { clearInterval(watcher); clearTimeout(timeout); signal.removeEventListener('abort', cancel); await client.close().catch(() => undefined); }
   }
   tools(session: CapabilitySession): readonly CapabilityTool[] {
     try { return this.catalogs.get(this.key(this.credential(session, false))) ?? []; } catch { return []; }
   }
-  async refresh(session: CapabilitySession): Promise<void> {
+  async refresh(session: CapabilitySession, signal?: AbortSignal): Promise<void> {
     let credential: McpCredential;
     try { credential = this.credential(session, false); } catch { return; }
     const key = this.key(credential);
     if (this.catalogs.has(key)) return;
-    const tools = await this.use(session, false, AbortSignal.timeout(60_000), async (client, current) => {
+    const tools = await this.use(session, false, signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000), async (client, current) => {
       const tools: CapabilityTool[] = [], cursors = new Set<string>(); let cursor: string | undefined;
       do {
         const page = await client.listTools(cursor ? { cursor } : {});
         for (const tool of page.tools) {
           const name = this.options.prefix + tool.name;
-          if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/u.test(name) || tools.some(t => t.name === name)) throw denied();
+          if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/u.test(name) || tools.some(t => t.name === name)) throw new CapabilityError('capability_catalog_invalid', 'catalog');
           tools.push(this.sanitize({ name, description: tool.description ?? tool.name, inputSchema: tool.inputSchema, approval: 'preauthorized' }, current) as CapabilityTool);
         }
         cursor = page.nextCursor;
-        if (tools.length > 256 || cursor && cursors.has(cursor)) throw denied();
+        if (tools.length > 256 || cursor && cursors.has(cursor)) throw new CapabilityError('capability_catalog_invalid', 'catalog');
         if (cursor) cursors.add(cursor);
       } while (cursor);
       return tools;
@@ -98,10 +112,14 @@ export class AuthenticatedMcpProvider implements SessionCapabilityProvider {
     this.catalogs.set(key, tools);
   }
   async call(session: CapabilitySession, name: string, args: unknown, signal: AbortSignal): Promise<unknown> {
-    if (!this.tools(session).some(tool => tool.name === name) || !args || typeof args !== 'object' || Array.isArray(args)) throw denied();
-    return this.use(session, true, signal, async (client, credential) => this.sanitize(await client.callTool({
-      name: name.slice(this.options.prefix.length), arguments: args as Record<string, unknown>,
-    }, undefined, { signal, timeout: 60_000 }), credential));
+    if (!this.tools(session).some(tool => tool.name === name)) throw denied();
+    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new CapabilityError('capability_invalid_arguments', 'invocation');
+    return this.use(session, true, signal, async (client, credential, dispatch) => {
+      dispatch();
+      return this.sanitize(await client.callTool({
+        name: name.slice(this.options.prefix.length), arguments: args as Record<string, unknown>,
+      }, undefined, { signal, timeout: 60_000 }), credential);
+    });
   }
   formatResult(value: unknown): CapabilityResult {
     const result = value as { isError?: boolean; content?: unknown };

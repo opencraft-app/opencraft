@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "account-handoff-facts",
+      "checksum": "510a3556ac7d899c61fec4a6faa023952f57c7436490f28b7834d440b99d88d9"
+    }
+  ],
+  "tableOptions": {
+    "account_handoff_checkpoint": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "account_request_facts": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "510a3556ac7d899c61fec4a6faa023952f57c7436490f28b7834d440b99d88d9",
+  "baselineSnapshotChecksum": "fe7387fc7e6d6f5ad176d3df77eaf09e1bda9b01358eba729f4bb8af5e26747e"
+}

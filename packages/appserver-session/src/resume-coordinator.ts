@@ -2,11 +2,12 @@ import { elapsedClock, type ElapsedClock } from "@opencraft/appserver-client/clo
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AppServerClientError, AppServerRpcError, isRetryableAppServerRpcError, isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
-import { OPENCRAFT_RESUME_HISTORY_EXTENSION, buildResumeHistoryRequest, type AppServerThread, type ThreadHistoryCheckpoint, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_RESUME_HISTORY_EXTENSION, buildResumeHistoryRequest, type AppServerThread, type ThreadHistoryVersion, type ThreadHistoryCheckpoint, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { DerivedHistoryPorts, DerivedReadContext } from "./derived-history";
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
 import { hydrateReadTurnItems, readTurnsPage } from "./history-strategies";
+import { applyCommittedHistory, historyVersion, sameHistoryVersion, validHistoryUpdate, reconcileVersionedHistory } from "./committed-history";
 import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow, reconcileRecoveryWindow } from "./merge-turns";
 import type { ThreadExecutionProjection, ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
@@ -41,11 +42,11 @@ export interface ThreadResumeCoordinatorConfig {
   useTailHydration?: boolean;
   supportsPaginatedHistory?: boolean;
   pageSize?: number;
-  /** Per-RPC timeout and quiet-cut revalidation cap; zero disables these client budgets. */
+  /** Per-RPC timeout, quiet-cut cap and total derived-page/refresh budget; zero disables these client budgets. */
   requestTimeoutMs?: number;
   drainTailHistory?: boolean;
   frameScheduler?: ThreadViewFrameScheduler;
-  /** Elapsed clock for the bounded quiet-cut retry phase; RPC/provider budgets stay client-owned. */
+  /** Elapsed clock for quiet-cut and derived-history budgets; RPC/provider budgets stay client-owned. */
   readClock?: ElapsedClock;
 }
 
@@ -113,6 +114,11 @@ interface HistoryOperation<T = ThreadView> {
   cancel(): void;
   limitUntil(deadline: number, error: Error): void;
   onCancel?: () => void;
+  snapshotReceipt?: { view: ThreadView; version: ThreadHistoryVersion; liveItems: ReadonlySet<string> };
+}
+
+export function historyGapError(): AppServerRpcError {
+  return new AppServerRpcError({code:-32075,message:"Committed history requires a new baseline",data:{retryable:true}});
 }
 
 function historyAborted(): AppServerClientError {
@@ -158,6 +164,8 @@ export class ThreadResumeCoordinatorService extends Service {
   private executionNotificationRevision = 0;
   private readonly executionFieldRevisions = new Map<string, Map<keyof ThreadExecutionProjection, number>>();
   private readonly reads = new Map<string, HistoryOperation>();
+  private readonly liveHistoryItems = new Map<string, Set<string>>();
+  private readonly committedVersions = new Map<string, ThreadHistoryVersion>();
   private readonly readContexts = new Map<string, DerivedReadContext>();
   private readonly rejectedResumes = new Map<string, { generation: number; error: AppServerRpcError }>();
   private readonly historyContexts = new Map<string, ResumeHistoryContext>();
@@ -186,6 +194,42 @@ export class ThreadResumeCoordinatorService extends Service {
     const removeNotification = this.client.subscribeNotification((notification) => {
       const threadId = resolveThreadId(notification.params);
       if (threadId === null || !ctx.threadViews.has(threadId)) return;
+      if (notification.method === "opencraft/history/changed") {
+        const params=notification.params;
+        if (this.versionedHistory(threadId)) {
+          const version = isRecord(params) ? historyVersion(params.historyVersion) : undefined;
+          const update = isRecord(params) ? params.update : undefined;
+          const baseline = this.committedVersions.get(threadId);
+          if (version && baseline && version.revision <= baseline.revision) return;
+          if (ctx.threadViews.get(threadId)?.historySyncRequired) return;
+          if (!version || !validHistoryUpdate(update) || !sameHistoryVersion(version,historyVersion(update.version))
+            || !sameHistoryVersion(baseline,historyVersion(update.baseVersion))
+            || version.revision <= baseline!.revision) {
+            this.requireHistorySync(threadId); return;
+          }
+          const current = ctx.threadViews.get(threadId)!;
+          const turns = applyCommittedHistory(current.turns,update,this.liveHistoryItems.get(threadId));
+          // Compute before advancing the version: failed projection cannot
+          // acknowledge a durable range that was never installed.
+          this.committedVersions.set(threadId,version);
+          ctx.threadViews.update(threadId,view=>({...view,
+            thread:view.thread && update.metadata ? {...view.thread,...update.metadata}:view.thread,turns}));
+          return;
+        }
+        if(!isRecord(params) || !isRecord(params.update)) {
+          if(this.readContexts.has(threadId) || this.historyContexts.has(threadId)) void this.read(threadId).catch(()=>{});
+          return;
+        }
+        if (!isRecord(params.historyVersion) || !Number.isSafeInteger(params.historyVersion.revision)) return;
+        const revision=params.historyVersion.revision as number;
+        if(revision <= (this.committedVersions.get(threadId)?.revision ?? -1)) return;
+        this.committedVersions.set(threadId,{epoch:"",revision});
+        this.ctx.threadViews.update(threadId,current=>({...current,
+          thread:current.thread && isRecord(params.update) && isRecord(params.update.metadata) && params.update.metadata.id === threadId
+            ? {...current.thread,...params.update.metadata}:current.thread,
+          turns:applyCommittedHistory(current.turns,params.update,this.liveHistoryItems.get(threadId))}));
+        return;
+      }
       if (notification.method === "thread/history/preview") {
         const params = notification.params;
         if (!isRecord(params) || typeof params.token !== "string" || params.token !== this.previewTokens.get(threadId) || !Array.isArray(params.turns)) return;
@@ -195,6 +239,14 @@ export class ThreadResumeCoordinatorService extends Service {
           ...current, historySource: "message-window", turns: reconcileHistoryWindow(current.turns, turns),
         }));
         return;
+      }
+      const paramsForHistory=notification.params;
+      if(isRecord(paramsForHistory) && (TEXT_DELTA_METHODS.has(notification.method) || notification.method === "item/started")) {
+        const itemId=typeof paramsForHistory.itemId === "string" ? paramsForHistory.itemId
+          : isRecord(paramsForHistory.item) && typeof paramsForHistory.item.id === "string" ? paramsForHistory.item.id:null;
+        const turnId=typeof paramsForHistory.turnId === "string" ? paramsForHistory.turnId
+          : isRecord(paramsForHistory.turn) && typeof paramsForHistory.turn.id === "string" ? paramsForHistory.turn.id:null;
+        if(itemId && turnId) { let ids=this.liveHistoryItems.get(threadId); if(!ids)this.liveHistoryItems.set(threadId,ids=new Set()); ids.add(JSON.stringify([turnId,itemId])); }
       }
       const project = (current: ThreadView) => {
         const projected = ctx.threadNotificationProjectors.project(current, notification);
@@ -211,6 +263,7 @@ export class ThreadResumeCoordinatorService extends Service {
     }, { intercept: (notification, next) => ctx.resumeNotificationBuffer.interceptProjection(notification, next) });
     const removeStatus = this.client.subscribeStatus((status) => {
       if (status.state !== "closed" && status.state !== "failed") return;
+      this.committedVersions.clear(); this.liveHistoryItems.clear();
       for (const operation of [...this.inFlight.values(), ...this.reads.values(), ...this.activations.values()]) operation.cancel();
       for (const threadId of new Set([...this.readContexts.keys(), ...this.historyContexts.keys()])) this.retireHistoryContext(threadId);
       this.rejectedResumes.clear();
@@ -235,7 +288,7 @@ export class ThreadResumeCoordinatorService extends Service {
       this.activations.clear();
       this.activatedGenerations.clear();
       this.executionFieldRevisions.clear();
-      this.readContexts.clear();
+      this.readContexts.clear(); this.committedVersions.clear(); this.liveHistoryItems.clear();
       this.rejectedResumes.clear();
       this.historyContexts.clear();
       for (const operation of [...this.backgroundHistory.values(), ...this.olderPageRequests.values(), ...this.historyRefreshes.values(), ...[...this.itemDetailRequests.values()].flatMap(requests => [...requests])]) operation.cancel();
@@ -245,6 +298,15 @@ export class ThreadResumeCoordinatorService extends Service {
       this.itemDetailRequests.clear();
       this.previewTokens.clear();
     });
+  }
+
+  private versionedHistory(threadId: string): boolean {
+    const capability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions,threadId,"opencraft/read-history");
+    return capability?.version === 1 && capability.versionedUpdates === true;
+  }
+  private requireHistorySync(threadId: string): void {
+    if (this.ctx.threadViews.get(threadId)?.historySyncRequired) return;
+    this.ctx.threadViews.update(threadId,view=>({...view,historySyncRequired:true,historyError:historyGapError()}));
   }
 
   /** A fresh baseline revokes the previous source's derived readers even
@@ -264,6 +326,14 @@ export class ThreadResumeCoordinatorService extends Service {
     this.olderPageRequests.delete(threadId);
     this.historyRefreshes.delete(threadId);
     this.itemDetailRequests.delete(threadId);
+    // The source and operation slots are already revoked. Their cancellation
+    // hooks cannot own this paint, so retire it here before observers admit a
+    // successor. Clearing it after child abort could clear the new reader.
+    if (this.ctx.threadViews.get(threadId)?.turnsPagination.isLoadingOlder) {
+      this.ctx.threadViews.update(threadId, view => ({ ...view,
+        turnsPagination: { ...view.turnsPagination, isLoadingOlder: false },
+      }));
+    }
     for (const operation of retired) operation?.cancel();
   }
 
@@ -446,18 +516,27 @@ export class ThreadResumeCoordinatorService extends Service {
     if (this.disposed || options.signal?.aborted) return Promise.reject(historyAborted());
     const existing = this.baselineOperation(threadId);
     if (existing) return waitForHistory(existing.operation.promise, options.signal);
+    const deadline = this.readClock.now() + this.requestTimeoutMs;
     return this.startHistoryOperation(this.reads, threadId, options.signal, async operation => {
+      const limitRead = () => {
+        if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
+          new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
+      };
+      // Bounded providers return a demand-loaded segment. Bound the entire
+      // owner, including initial metadata and Item hydration. Legacy full-body
+      // readers retain their per-RPC progress budget until a quiet-cut reread.
+      const readCapability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions,threadId,"opencraft/read-history");
+      if (readCapability?.version === 1 && (readCapability.initialTurnsPage === true || readCapability.boundedRecovery === true)) limitRead();
+      operation.assertCurrent();
       this.retireHistoryContext(threadId);
       this.ctx.resumeNotificationBuffer.begin(threadId);
-      const deadline = this.readClock.now() + this.requestTimeoutMs;
       try {
         let view = await this.readOnce(threadId, options, operation);
         // History notifications and native snapshots lack a shared sequence: obtain a quiet
         // canonical cut, preserving admitted requests across rereads.
         operation.assertCurrent();
-        while (this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
-          if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
-            new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
+        while (!operation.snapshotReceipt && this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
+          limitRead();
           operation.assertCurrent();
           this.ctx.resumeNotificationBuffer.supersedeNotifications(threadId);
           view = await this.readOnce(threadId, { ...options, historyCheckpoint: null }, operation, true);
@@ -465,6 +544,7 @@ export class ThreadResumeCoordinatorService extends Service {
         }
         this.ctx.resumeNotificationBuffer.release(threadId);
         operation.assertCurrent();
+        if (this.ctx.threadViews.get(threadId)?.historySyncRequired) throw historyGapError();
         return this.ctx.threadViews.get(threadId) ?? view;
       } catch (error) {
         if (operation.current()) this.ctx.resumeNotificationBuffer.discard(threadId, error instanceof Error ? error : new Error(String(error)));
@@ -485,7 +565,20 @@ export class ThreadResumeCoordinatorService extends Service {
       ...(readCapability?.version === 1 ? { watch: true } : {}),
       ...(window ? { initialTurnsPage: { limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
-    }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open" });
+      ...(this.versionedHistory(threadId) && this.committedVersions.has(threadId) ? {historyBaseVersion:this.committedVersions.get(threadId)}:{}),
+    }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open",
+      receiveResult: value => {
+        if (!window || !this.versionedHistory(threadId)) return;
+        operation.assertCurrent();
+        const result = isRecord(value) ? value : {};
+        const version = historyVersion(result.historyVersion), page = isRecord(result.initialTurnsPage) ? result.initialTurnsPage : {};
+        if (!version) throw new AppServerClientError("PROTOCOL_ERROR","Versioned history omitted its snapshot version");
+        if (!Array.isArray(page.data) || page.data.some(turn=>!isRecord(turn) || turn.itemsView !== "full" || !Array.isArray(turn.items))) return;
+        this.ctx.resumeNotificationBuffer.captureSnapshot(threadId);
+        operation.assertCurrent();
+        operation.snapshotReceipt = {view:this.ctx.threadViews.get(threadId)!,version,liveItems:new Set(this.liveHistoryItems.get(threadId))};
+      },
+    });
     let result;
     try { result = await requestRead(supportsWindow); }
     catch (error) {
@@ -510,18 +603,37 @@ export class ThreadResumeCoordinatorService extends Service {
     operation.assertCurrent();
     if (this.disposed) throw new Error("Thread reader was disposed");
     const detailGeneration = ++historyDetailReadGeneration;
+    const receipt = operation.snapshotReceipt;
+    const durableVersion = historyVersion(result.historyVersion), previousVersion = this.committedVersions.get(threadId);
+    const update = result.historyUpdate;
+    const recovered = receipt && validHistoryUpdate(update) && sameHistoryVersion(historyVersion(update.baseVersion),previousVersion)
+      && sameHistoryVersion(historyVersion(update.version),durableVersion);
+    if (receipt && update !== undefined && !recovered) throw historyGapError();
+    if (receipt && previousVersion?.epoch === durableVersion?.epoch && !recovered) {
+      throw new AppServerClientError("PROTOCOL_ERROR","Versioned history omitted its recovery range");
+    }
+    const retained = recovered ? applyCommittedHistory(initial.turns,update) : [];
+    // A sparse repair does not demote an unchanged disclosed Item to a preview.
+    const incoming = recovered ? reconcileHistoryTurns(retained,turns.filter(turn=>!retained.some(old=>old.id===turn.id)),"latest") : turns;
+    const retainsCursor = recovered && turns.every(turn=>initial.turns.some(old=>old.id===turn.id));
+    if (!receipt) this.liveHistoryItems.delete(threadId);
+    if (durableVersion) this.committedVersions.set(threadId,durableVersion);
+    else if(isRecord(result) && isRecord(result.historyVersion) && Number.isSafeInteger(result.historyVersion.revision))
+      this.committedVersions.set(threadId,{epoch:"",revision:result.historyVersion.revision as number});
     this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
     return this.ctx.threadViews.update(threadId, current => ({
       ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
       resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
-      turns: tagHistoryDetails(recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
+      historySyncRequired: false,
+      turns: tagHistoryDetails(receipt ? reconcileVersionedHistory(current.turns,incoming,receipt.view.turns,receipt.liveItems,options.unresolvedTurnIds)
+        : recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
         ? reconcileHistoryTurns(current.turns, turns, "latest", { baselineTurns: initial.turns })
         : reconcileRecoveryWindow(current.turns, turns, initial.turns, options.unresolvedTurnIds), detailGeneration),
       historyMode: mode ?? "legacy",
       ...(recovery ? { historyCheckpoint: recovery.checkpoint } : { historyCheckpoint: undefined }),
       historySource: paginated ? "paginated" : "thread-read-fallback",
       tailHydrationComplete: recovery && recovery.mode !== "replace" ? initial.tailHydrationComplete : page?.nextCursor == null,
-      turnsPagination: recovery && recovery.mode !== "replace" ? initial.turnsPagination : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
+      turnsPagination: retainsCursor || recovery && recovery.mode !== "replace" ? {...initial.turnsPagination,isLoadingOlder:false} : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
         hasLoadedOldest: page?.nextCursor == null, isLoadingOlder: false },
       execution: this.executionFromRead(threadId, generation, metadata, current.execution),
       resumeError: null, historyError: null,
@@ -621,7 +733,11 @@ export class ThreadResumeCoordinatorService extends Service {
       if (predecessor && !predecessor.current()) { predecessor.cancel(); continue; }
       older = predecessor?.promise; break;
     }
+    const deadline = this.readClock.now() + this.requestTimeoutMs;
     return this.startHistoryOperation(this.historyRefreshes, threadId, signal, async operation => {
+      if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
+        new AppServerClientError("TIMEOUT", `History refresh timed out after ${this.requestTimeoutMs} ms; retry the read`));
+      operation.assertCurrent();
       await older?.catch(() => undefined);
       operation.assertCurrent();
       const module = await import("./derived-history");
@@ -682,7 +798,11 @@ export class ThreadResumeCoordinatorService extends Service {
       if (predecessor && !predecessor.current()) { predecessor.cancel(); continue; }
       refreshing = predecessor?.promise; break;
     }
+    const deadline = this.readClock.now() + this.requestTimeoutMs;
     return this.startHistoryOperation(this.olderPageRequests, threadId, signal, async operation => {
+      if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
+        new AppServerClientError("TIMEOUT", `Older history loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
+      operation.assertCurrent();
       await refreshing?.catch(() => false);
       operation.assertCurrent();
       const module = await import("./derived-history");

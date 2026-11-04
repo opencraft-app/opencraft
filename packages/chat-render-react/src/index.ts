@@ -15,3 +15,5 @@ export * from "./services/directive-registry-service";
 export * from "./services/document-compiler-service";
 export * from "./services/renderer-registry-service";
 export * from "./services/resource-policy-service";
+
+export * from "./use-media-source";

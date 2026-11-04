@@ -22,7 +22,7 @@ test('explicit close validates acknowledgement and retries after the logical map
   Object.defineProperty(globalThis, 'location', { configurable: true, value: { href: 'https://example.test/' } });
   const values = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
-  const host = new RemoteBrowserSurfaceHost(storage, 'proof');
+  const host = new RemoteBrowserSurfaceHost('mse', storage, 'proof');
   try {
     const id = 'page-owned' as BrowserPageId;
     host.bindStorageId(id, 'browser-12345678901234567890');

@@ -8,6 +8,7 @@ import { createProtocolIngress } from './protocol-ingress.mjs';
 import { installedUpgradeConfig } from './full-upgrade.mjs';
 import { createManagedWebServer } from './server.mjs';
 import { createExecutionDeployment } from '../server-deployment/execution.mjs';
+import { prepareResidentWorker } from './resident-worker.mjs';
 const rollbackCommand = process.env.OPENCRAFT_ROLLBACK_RECOVERY_COMMAND
   ? JSON.parse(process.env.OPENCRAFT_ROLLBACK_RECOVERY_COMMAND) : null;
 if (rollbackCommand && (!Array.isArray(rollbackCommand) || !rollbackCommand.length
@@ -24,11 +25,27 @@ const execution = executionLink ? createExecutionDeployment({
   engineDescriptor: process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR,
   engineUnit: process.env.OPENCRAFT_ENGINE_HOST_UNIT,
 }) : null;
+if (process.argv[2] === '--prepare-restart') {
+  if (process.argv.length !== 3 || !execution) throw new Error('Restart preparation requires configured managed execution');
+  // Run from the verified candidate while the old entry is still online.
+  // This observes the existing gateway; it never applies or restarts it.
+  const status = await execution.status();
+  if (!status.ready) throw new Error('Existing execution is not ready for entry restart');
+  console.log('[opencraft web] restart preparation complete');
+  process.exit(0);
+}
 const port = Number(process.env.OPENCRAFT_WEB_PORT || 10000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid Web port');
 const host = process.env.OPENCRAFT_WEB_HOST || '127.0.0.1';
 const webState = process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web');
+const residency = process.env.OPENCRAFT_RESIDENT_ENTRY_CHILD === '1' ? await prepareResidentWorker(async () => {
+  // A cold resident must retain the normal interrupted-install recovery path.
+  // Hot activation enforces readiness read-only after the authority handoff.
+  if (execution) await execution.status().catch(() => null);
+}) : null;
 const app = await createManagedWebServer({
+  administratorState: residency?.administratorState ?? null,
+  reconcileExecutionOnStartup: residency?.reconcileExecution !== false,
   upgradeConfigPath: await installedUpgradeConfig(webState),
   initialRelease: process.env.OPENCRAFT_WEB_RELEASE || resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   stateDirectory: process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web'),
@@ -55,7 +72,16 @@ const app = await createManagedWebServer({
 let ingress;
 let address;
 try {
-  if (process.env.OPENCRAFT_HEADLESS_SSH_TARGET) {
+  if (residency) {
+    // Initialize Node's normal HTTP parser deadlines on private ephemeral
+    // listeners. Only the resident owns the configured public/Relay ports.
+    await app.listen({ host: '127.0.0.1', port: 0, internalPort: 0 });
+    if (process.env.OPENCRAFT_HEADLESS_SSH_TARGET) {
+      if (!process.env.OPENCRAFT_HEADLESS_BACKEND_URL) throw new Error('SSH ingress requires a Headless backend');
+      ingress = createProtocolIngress({ httpServer: app.server, sshTarget: process.env.OPENCRAFT_HEADLESS_SSH_TARGET });
+    }
+    address = { port };
+  } else if (process.env.OPENCRAFT_HEADLESS_SSH_TARGET) {
     if (!process.env.OPENCRAFT_HEADLESS_BACKEND_URL) throw new Error('SSH ingress requires a Headless backend');
     const privateAddress = await app.listen({ host: '127.0.0.1', port: 0 });
     ingress = createProtocolIngress({ httpPort: privateAddress.port, httpServer: app.server, sshTarget: process.env.OPENCRAFT_HEADLESS_SSH_TARGET });
@@ -67,3 +93,4 @@ console.log(`[opencraft web] deployment administrator key file: ${app.adminKeyPa
 let stopping = false;
 const shutdown = async () => { if (stopping) return; stopping = true; await ingress?.close(); await app.close(); process.exit(0); };
 process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
+residency?.ready(app, ingress, async () => { await ingress?.close(); await app.close(); });

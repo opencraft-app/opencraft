@@ -8,7 +8,8 @@ interface SavedModelSource {
   credential(reference:string):Promise<string|undefined>;
 }
 /** Check one committed connection. Never accept a caller-controlled destination or secret. */
-export async function checkSavedModel(input:RuntimeSavedModelCheckParams,source:SavedModelSource,probe=probeRuntimeModel){
+export async function withSavedModel<Result>(input:RuntimeSavedModelCheckParams,source:SavedModelSource,
+  probe:(input:Parameters<typeof probeRuntimeModel>[0])=>Promise<Result>){
   if(!input||typeof input.provider!=='string'||typeof input.model!=='string'||!Number.isSafeInteger(input.expectedRevision)
     ||Object.keys(input).some(key=>!['provider','model','expectedRevision'].includes(key)))throw new Error('无效的连接检查请求');
   const snapshot=await source.read();
@@ -24,4 +25,8 @@ export async function checkSavedModel(input:RuntimeSavedModelCheckParams,source:
   const latest=await source.read();
   if(latest.revision!==snapshot.revision||!isDeepStrictEqual(latest.providers.find(p=>p.id===provider.id),provider))throw new Error('配置已更新，请刷新后重新检查');
   return probe({baseURL:provider.baseUrl,api,model:input.model,...(apiKey?{apiKey}:{})});
+}
+
+export function checkSavedModel(input:RuntimeSavedModelCheckParams,source:SavedModelSource,probe=probeRuntimeModel){
+  return withSavedModel(input,source,probe);
 }

@@ -1,3 +1,4 @@
+import { PiGoalDoc, validatePiGoal, type PiGoalState } from "./goals.js";
 import { piModel } from './contract.js';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 
@@ -30,6 +31,7 @@ export interface PiSnapshot {
   usage: UsageState;
   inbox: readonly Value[];
   queue?: PiQueueState;
+  goal?: PiGoalState;
   privateCalls?: PiPrivateCalls;
   shell?: { records: import("./shell.js").ShellRecord[]; paused: boolean };
 }
@@ -79,6 +81,7 @@ export class PiDurableSession {
     admissionOpen?(): boolean;
     admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
     prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
+    onGoal?(state: PiGoalState, originTurnId?: string): void | Promise<void>;
     onSnapshot(snapshot: PiSnapshot): Promise<void> | void; onTool(request: Value, signal: AbortSignal): Promise<unknown>; onExit(error: Error): void }) {}
   static async open(options: PiDurableSession["options"]) {
     const session = new PiDurableSession(options);
@@ -108,6 +111,26 @@ export class PiDurableSession {
         return _request;
       },
     })]}));
+    if (!this.options.ephemeral) registry.install(defineExtension({ name: "opencraft.goals", tools: [
+      defineTool({ name: "create_goal", description: "Create a persistent goal only when the user explicitly requests a goal. Work continues between turns until completed, paused or blocked. Pi does not support token budgets.",
+        parameters: { type: "object", properties: { objective: { type: "string" } }, required: ["objective"], additionalProperties: false } as any,
+        execute: async (args: any, api: any) => {
+          const origin = (await this.goalToolOrigin(api)).turnId;
+          const state = await this.goal();
+          if (state.goal && state.goal.status !== "complete") throw new Error("An unfinished goal already exists");
+          const next = await this.setGoal({ objective: args.objective, status: "active", create: true }, undefined, origin);
+          return { output: [{ type: "text" as const, text: JSON.stringify(next.goal) }] };
+        } }),
+      defineTool({ name: "get_goal", description: "Read the current goal without resuming or authorizing it.", parameters: { type: "object", properties: {}, additionalProperties: false } as any,
+        execute: async () => ({ output: [{ type: "text" as const, text: JSON.stringify((await this.goal()).goal) }] }) }),
+      defineTool({ name: "update_goal", description: "Mark the current goal complete only when achieved, paused only at the user's explicit request, or blocked after the same blocking condition repeats for at least three consecutive goal turns.",
+        parameters: { type: "object", properties: { status: { type: "string", enum: ["complete", "paused", "blocked"] } }, required: ["status"], additionalProperties: false } as any,
+        execute: async (args: any, api: any) => {
+          const origin = await this.goalToolOrigin(api);
+          if (!["complete", "paused", "blocked"].includes(args.status)) throw new Error("Invalid goal status");
+          return { output: [{ type: "text" as const, text: JSON.stringify((await this.setGoal({ status: args.status }, undefined, undefined, origin.authorizationId)).goal) }] };
+        } }),
+    ] }));
     // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
     registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
     registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
@@ -421,6 +444,74 @@ export class PiDurableSession {
     return values;
   }
   /** Reads one consistent native commit. Immutable entries and terminal tasks are cached. */
+  private goalToolOrigin(api: any): Promise<{ turnId: string; authorizationId?: string }> {
+    return this.root.commit(async tx => {
+      const live = await tx.doc(LiveDoc, this.root.id);
+      const owns = [...live.tools ?? [], ...live.nestedTools ?? []].some(slot => slot.taskId === api.taskId);
+      if (!owns || live.run?.inputs[0] === undefined) throw new Error("Goal tool execution expired");
+      const input = await this.storage.submission(live.run.inputs[0], context);
+      if (!input?.requestId) throw new Error("Goal origin unavailable");
+      const entry = input.entry === undefined ? undefined : await tx.entry(input.entry);
+      const authorizationId = (entry?.data as Value)?.goalExecution?.authorizationId;
+      return { turnId: input.requestId, ...(typeof authorizationId === "string" ? { authorizationId } : {}) };
+    }, context);
+  }
+  goal(): Promise<PiGoalState> {
+    return this.root.commit(async tx => JSON.parse(JSON.stringify(await tx.doc(PiGoalDoc, this.root.id))), context);
+  }
+  async setGoal(params: Value, authorizationId?: string, originTurnId?: string, expectedAuthorizationId?: string): Promise<PiGoalState> {
+    if (this.options.ephemeral) throw new Error("Temporary Pi threads do not support Goals");
+    const next = await this.root.commit(async tx => {
+      const doc = await tx.doc(PiGoalDoc, this.root.id);
+      validatePiGoal(params, doc.goal);
+      if (expectedAuthorizationId !== undefined && doc.authorizationId !== expectedAuthorizationId)
+        throw new Error("Goal authorization changed while this execution was active");
+      if (params.create && doc.goal && doc.goal.status !== "complete") throw new Error("An unfinished goal already exists");
+      const now = Math.floor(Date.now() / 1000), previous = doc.goal;
+      const status = params.status ?? previous?.status ?? "active";
+      doc.goal = { threadId: this.options.threadId, objective: params.objective ?? previous!.objective,
+        status, tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0,
+        createdAt: previous?.createdAt ?? now, updatedAt: now,
+        execution: { activation: status === "active" ? "armed" : "disarmed" } };
+      doc.authorizationId = status === "active" ? authorizationId ?? randomUUID() : null;
+      doc.round = 0; doc.pending = false;
+      return JSON.parse(JSON.stringify(doc)) as PiGoalState;
+    }, context);
+    try { await this.options.onGoal?.(next, originTurnId); }
+    catch (error) { if (next.authorizationId) await this.disarmGoal(next.authorizationId); throw error; }
+    return next;
+  }
+  async disarmGoal(authorizationId?: string): Promise<void> {
+    const next = await this.root.commit(async tx => {
+      const doc = await tx.doc(PiGoalDoc, this.root.id);
+      if (!doc.goal || authorizationId && doc.authorizationId !== authorizationId) return null;
+      doc.authorizationId = null;
+      doc.goal.execution = { activation: "disarmed" };
+      return JSON.parse(JSON.stringify(doc)) as PiGoalState;
+    }, context);
+    if (next) await this.options.onGoal?.(next);
+  }
+  async clearGoal(): Promise<void> {
+    await this.root.commit(async tx => Object.assign(await tx.doc(PiGoalDoc, this.root.id), { goal: null, authorizationId: null, round: 0, pending: false }), context);
+    await this.options.onGoal?.({ goal: null, authorizationId: null, round: 0 });
+  }
+  /** A native transaction reserves the counter. Unknown starts are never
+   * replayed under a new round; an explicit resume creates a new grant. */
+  reserveGoal(authorizationId: string): Promise<PiGoalState | null> {
+    return this.root.commit(async tx => {
+      const doc = await tx.doc(PiGoalDoc, this.root.id), live = await tx.doc(LiveDoc, this.root.id);
+      const queue = await tx.doc(PiQueueDoc, this.root.id), inbox = await tx.doc(InboxDoc, this.root.id);
+      if (doc.goal?.status !== "active" || doc.authorizationId !== authorizationId || doc.pending || live.run || queue.items.length || inbox.items.length) return null;
+      doc.round++; doc.pending = true;
+      return JSON.parse(JSON.stringify(doc)) as PiGoalState;
+    }, context);
+  }
+  async confirmGoalRound(authorizationId: string, round: number): Promise<void> {
+    await this.root.commit(async tx => {
+      const doc = await tx.doc(PiGoalDoc, this.root.id);
+      if (doc.authorizationId === authorizationId && doc.round === round) doc.pending = false;
+    }, context);
+  }
   snapshot(): Promise<PiSnapshot> {
     const read = this.reads.catch(() => {}).then(() => this.root.commit(async tx => {
       const tail = this.entries.at(-1)?.id;
@@ -457,7 +548,8 @@ export class PiDurableSession {
       }
       const shell = JSON.parse(JSON.stringify(await tx.doc(PiShellDoc, this.root.id))) as PiSnapshot["shell"];
       const privateCalls = JSON.parse(JSON.stringify(await tx.doc(PiPrivateCallsDoc, this.root.id))) as PiPrivateCalls;
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell, privateCalls };
+      const goal = JSON.parse(JSON.stringify(await tx.doc(PiGoalDoc, this.root.id))) as PiGoalState;
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell, privateCalls, goal };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);

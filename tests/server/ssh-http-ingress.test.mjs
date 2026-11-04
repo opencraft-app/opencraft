@@ -155,3 +155,114 @@ for (const direct of [false, true]) test(`same public port keeps ${direct ? 'dir
     await Promise.all([new Promise(resolve => staticHttp.close(resolve)), new Promise(resolve => backendHttp.close(resolve))]);
   }
 });
+
+for (const warm of [false,true]) test(`SSH initialize and collaboration receipts bypass a blocked history writer; native warm=${warm}`, {timeout:12000}, async t=>{
+  const {ConversationHistoryTransport}=await import('../../packages/app-host-server/src/conversation-history-transport.ts');
+  const hostKey=ssh2.utils.generateKeyPairSync('ed25519'),userKey=ssh2.utils.generateKeyPairSync('ed25519');
+  let release;const blocked=new Promise(resolve=>release=resolve),observed=[],listeners=new Set();
+  let discovery={userAgent:'fixture',capabilities:{extensions:{'opencraft/read-history':{exactResult:true,turnConfigurationObservation:true}}}},allowed=true;
+  const context={sender:{kind:'employee',loginName:'synthetic'},actorContext:{actorId:'synthetic',generation:1,credentialId:null,expiresAt:Date.now()+60000},
+    resourceOwner:{id:'synthetic',assertCurrent(){if(!allowed)throw Error('revoked');}}};
+  const engine={status:{state:'open'},async connect(){},async close(){},subscribeStatus(){return()=>{};},subscribeMessage(fn){listeners.add(fn);return()=>listeners.delete(fn);},
+    async send(frame){const request=JSON.parse(frame);if(request.id===undefined)return;
+      const result=request.method==='initialize'?discovery:{action:request.params.action,synthetic:true};
+      if(request.params?.revoke===true)allowed=false;
+      for(const fn of listeners)fn(JSON.stringify({id:request.id,result,__opencraftClient:request.__opencraftClient}));},
+    async sendWithContext(frame,proof){if(JSON.parse(frame).id!==undefined)assert.equal(proof.actorContext?.actorId,'synthetic');await this.send(frame);}};
+  const history={scope:'synthetic',subscribeCommitted(){return()=>{};},initialization(value){if(value)discovery=value;return discovery;},
+    async observe(_method,params){await blocked;observed.push(params.sequence);},async revision(){return 0;},async hasThreads(){return true;},
+    async importResult(method,params){assert.ok(method==='initialize'||method==='opencraft/collaboration'&&params.action==='read','control receipts never enter history imports');return true;}};
+  const transport=new ConversationHistoryTransport(engine,history);
+  const appHost=new AppHostServer({logicalClientRouting:true,physicalHostLifetime:'server',createTransport:()=>transport});
+  const http=createServer((_q,res)=>res.end('fixture'));const httpPort=await listen(http);
+  let scoped;
+  const ingress=createSshHttpIngress({hostKey:hostKey.private,authorizedKeys:{legacy:[hostKey.public]},httpPort,codexPort:1,
+    resolveAuthorizedKeys:username=>username==='synthetic'?[userKey.public]:[],
+    authorizeSession:()=>({submissionContext:context,isCurrent:()=>true}),
+    createNativeSession:async authorization=>scoped=await createSshNativeRpcGateway(appHost,authorization)});
+  const address=await ingress.listen({port:0});const client=new ssh2.Client();client.on('error',()=>{});
+  t.after(async()=>{release();client.destroy();await ingress.close();await scoped?.close();await appHost.close();await new Promise(resolve=>http.close(resolve));});
+  const ready=once(client,'ready');client.connect({host:'127.0.0.1',port:address.port,username:'synthetic',privateKey:userKey.private});await ready;
+  const stream=await new Promise((resolve,reject)=>client.exec('codex app-server proxy',(error,stream)=>error?reject(error):resolve(stream)));stream.on('error',()=>{});
+  const ws=new WebSocket('ws://127.0.0.1/rpc',{createConnection:()=>stream});ws.on('error',()=>{});await once(ws,'open');
+  const rpc=(id,method,params={})=>new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{ws.off('message',receive);reject(Error(`RPC ${id} blocked by unrelated history`));},2500);
+    const receive=raw=>{const packet=JSON.parse(raw.toString());if(packet.id===id){clearTimeout(timer);ws.off('message',receive);resolve(packet);}};
+    ws.on('message',receive);ws.send(JSON.stringify({id,method,params}));
+  });
+  assert.ok((await rpc(1,'initialize')).result);
+  if(warm)assert.ok((await rpc(2,'opencraft/collaboration',{action:'servers'})).result);
+  for(const fn of listeners)for(const sequence of [1,2])fn(JSON.stringify({method:'item/completed',params:{threadId:'synthetic',sequence}}));
+  const servers=await rpc(3,'opencraft/collaboration',{action:'servers'});
+  assert.ok(servers.result,JSON.stringify(servers.error));assert.equal(servers.result.action,'servers');
+  for(const action of ['lookup','send','exactResult','turnConfigurationObservation']){
+    const receipt=await rpc(action,'opencraft/collaboration',{action});assert.equal(receipt.result?.action,action);
+  }
+  const exactNative=await rpc('native-exact','opencraft/turn-result/read',{threadId:'synthetic',turnId:'target',output:false,cursor:null});assert.equal(exactNative.result?.synthetic,true);
+  const configurationNative=await rpc('native-configuration','opencraft/turn-configuration/read',{threadId:'synthetic',turnId:'target'});assert.equal(configurationNative.result?.synthetic,true);
+  let contentReturned=false;
+  const content=rpc(6,'opencraft/collaboration',{action:'read'}).then(result=>{contentReturned=true;return result;});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(contentReturned,false,'content reads keep the original history barrier');
+  const revoked=await rpc(5,'opencraft/collaboration',{action:'lookup',revoke:true});
+  assert.ok(revoked.error);assert.equal(revoked.result,undefined,'revoked authority cannot publish a successful receipt');
+  assert.deepEqual(observed,[],'control replies finish before blocked content writes');
+  release();await content;await transport.close();assert.deepEqual(observed,[1,2],'accepted content still drains in order');
+  ws.terminate();
+});
+
+test('exact read transport deadline preserves read-unavailable while authority rejection does not',async()=>{
+  const {ConversationHistoryTransport}=await import('../../packages/app-host-server/src/conversation-history-transport.ts');
+  const listeners=new Set(),frames=[];let discovery={capabilities:{extensions:{'opencraft/read-history':{exactResult:true,turnConfigurationObservation:true}}}};
+  const engine={status:{state:'open'},async connect(){},async close(){},subscribeStatus(){return()=>{};},subscribeMessage(fn){listeners.add(fn);return()=>listeners.delete(fn);},
+    async send(frame){const req=JSON.parse(frame);if(req.id===undefined)return;const result=req.method==='initialize'?discovery:{matched:true,complete:true};
+      const reply=()=>{for(const fn of listeners)fn(JSON.stringify({id:req.id,result,__opencraftClient:req.__opencraftClient}));};
+      if(req.method==='opencraft/turn-result/read')setTimeout(reply,80);else reply();},async sendWithContext(frame){await this.send(frame);}};
+  const history={scope:'deadline',subscribeCommitted(){return()=>{};},initialization(value){if(value)discovery=value;return discovery;},async hasThreads(){return false;}};
+  const transport=new ConversationHistoryTransport(engine,history,()=>{},15);transport.subscribeMessage(frame=>frames.push(JSON.parse(frame)));
+  try{
+    await transport.connect();
+    await transport.send(JSON.stringify({id:1,method:'initialize',params:{}}));
+    await transport.send(JSON.stringify({id:2,method:'opencraft/turn-result/read',params:{threadId:'thread',turnId:'turn',output:false,cursor:null}}));
+    assert.equal(frames.find(m=>m.id===2)?.error?.data?.code,'HISTORY_READ_UNAVAILABLE');
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert.equal(frames.filter(m=>m.id===2&&m.result).length,0,'late source reply cannot turn the deadline into public success');
+    await transport.sendWithContext(JSON.stringify({id:3,method:'opencraft/turn-result/read',params:{threadId:'thread',turnId:'turn',output:false,cursor:null}}),{sender:null,resourceOwner:{id:'denied',assertCurrent(){throw Error('synthetic authority denied');}}});
+    assert.ok(frames.find(m=>m.id===3)?.error,'authority rejection remains an error');
+    assert.notEqual(frames.find(m=>m.id===3)?.error?.data?.code,'HISTORY_READ_UNAVAILABLE','do not reclassify arbitrary authority/storage errors as a read timeout');
+  }finally{await transport.close();}
+});
+
+for (const stored of [false,true]) test(`exact read initialization deadline remains unavailable; cached discovery=${stored}`,async()=>{
+  const {ConversationHistoryTransport}=await import('../../packages/app-host-server/src/conversation-history-transport.ts');
+  const frames=[];let reads=0;
+  const discovery={capabilities:{extensions:{'opencraft/read-history':{exactResult:true,turnConfigurationObservation:true}}}};
+  const engine={status:{state:'open'},async connect(){},async close(){},subscribeStatus(){return()=>{};},subscribeMessage(){return()=>{};},
+    async send(frame){if(JSON.parse(frame).method==='opencraft/turn-result/read')reads++;},async sendWithContext(frame){await this.send(frame);}};
+  const history={scope:'init-deadline',subscribeCommitted(){return()=>{};},initialization(){return stored?discovery:null;},async hasThreads(){return false;}};
+  const transport=new ConversationHistoryTransport(engine,history,()=>{},15);transport.subscribeMessage(frame=>frames.push(JSON.parse(frame)));
+  try{
+    await transport.connect();await transport.send(JSON.stringify({id:1,method:'initialize',params:{}}));
+    if(stored) await transport.send(JSON.stringify({id:2,method:'opencraft/turn-result/read',params:{threadId:'thread',turnId:'turn',output:false,cursor:null}}));
+    assert.equal(frames.find(m=>m.id===(stored?2:1))?.error?.data?.code,'HISTORY_READ_UNAVAILABLE');
+    assert.equal(reads,0,'failed initialization cannot dispatch the target read or any input');
+  }finally{await transport.close();}
+});
+
+for(const method of ['opencraft/turn-configuration/read','opencraft/thread-context/read'])test(method+' deadline cancels only the owned history read and old Host is unsupported',async()=>{
+ const {ConversationHistoryTransport}=await import('../../packages/app-host-server/src/conversation-history-transport.ts');
+ const frames=[],listeners=new Set(),sent=[];let capable=true;
+ const discovery=()=>({capabilities:{extensions:{'opencraft/read-history':{turnConfigurationObservation:capable,contextUsage:capable}}}});
+ const engine={status:{state:'open'},async connect(){},async close(){},subscribeStatus(){return()=>{};},subscribeMessage(fn){listeners.add(fn);return()=>listeners.delete(fn);},
+  async send(frame){const request=JSON.parse(frame);sent.push(request);if(request.method==='initialize')for(const fn of listeners)fn(JSON.stringify({id:request.id,result:discovery(),__opencraftClient:request.__opencraftClient}));},async sendWithContext(frame){await this.send(frame);}};
+ const history={scope:'configuration-deadline',subscribeCommitted(){return()=>{};},initialization(){return discovery();},async hasThreads(){return false;}};
+ const transport=new ConversationHistoryTransport(engine,history,()=>{},15);transport.subscribeMessage(frame=>frames.push(JSON.parse(frame)));
+ try{
+  await transport.connect();await transport.send(JSON.stringify({id:1,method:'initialize',params:{}}));
+  await transport.send(JSON.stringify({id:2,method,params:{threadId:'thread',...(method==='opencraft/turn-configuration/read'?{turnId:'turn'}:{})}}));
+  assert.equal(frames.find(m=>m.id===2)?.error?.data?.code,'HISTORY_READ_UNAVAILABLE');
+  const read=sent.find(m=>m.method===method),cancel=sent.find(m=>m.method==='thread/history/cancel');
+  assert.equal(cancel?.params.historyReadId,read?.params.historyReadId);assert.equal(cancel?.params.threadId,'thread');assert.equal(sent.some(m=>['turn/start','thread/resume'].includes(m.method)),false);
+  capable=false;await transport.send(JSON.stringify({id:3,method,params:{threadId:'thread',...(method==='opencraft/turn-configuration/read'?{turnId:'turn'}:{})}}));assert.equal(frames.find(m=>m.id===3)?.error?.code,-32601);
+ }finally{await transport.close();}
+});

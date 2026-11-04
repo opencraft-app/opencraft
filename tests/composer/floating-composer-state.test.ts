@@ -28,16 +28,16 @@ const project = (
   });
 test('mobile browser starts on demand through loading and retains explicit reveal intent', () => {
   const state = new FloatingComposerState();
-  state.prepareMobileBrowser('a');
+  state.prepareMobilePanel('a');
   for (const readiness of ['loading', 'ready', 'unavailable'] as const) {
     const view = projectFloatingComposer(state.getSnapshot(), { floating: true, tabId: 'a', readiness, onDemand: true });
     assert.equal(view.interactive, false);
   }
   state.show('a', true);
   state.focus('a');
-  state.prepareMobileBrowser('a');
+  state.prepareMobilePanel('a');
   assert.equal(project(state).interactive, true);
-  state.prepareMobileBrowser('b');
+  state.prepareMobilePanel('b');
   assert.equal(project(state, 'b').interactive, false);
   assert.equal(project(state).interactive, true);
 });
@@ -189,4 +189,33 @@ test("route release and eviction settle pending presentation without erasing int
   assert.equal(oldest.getSnapshot().phase, "hidden");
   assert.equal(registry.get("active"), active);
   off();
+});
+
+
+test("touch focus changes preserve full Composer layout without changing explicit visibility", () => {
+  const state = new FloatingComposerState();
+  const view = (readiness: "ready" | "loading" | "unavailable") =>
+    projectFloatingComposer(state.getSnapshot(), {
+      floating: true, tabId: "a", readiness, onDemand: true, presentation: "touch",
+    });
+  state.prepareMobilePanel("a");
+  for (const readiness of ["loading", "ready", "unavailable"] as const) {
+    assert.equal(view(readiness).interactive, false);
+    state.show("a", true);
+    for (const focusedTab of ["a", null, "b", null]) {
+      state.focus(focusedTab);
+      assert.equal(view(readiness).density, "expanded");
+      assert.equal(view(readiness).interactive, true);
+    }
+    state.hide("a", true);
+    state.focus("a");
+    assert.equal(view(readiness).interactive, false, "focus cannot reopen a hidden panel");
+  }
+  state.toggle("a", true);
+  state.toggle("a", true);
+  state.focus("a");
+  assert.equal(view("ready").mounted, false, "focus cannot override global disable");
+  assert.equal(projectFloatingComposer(state.getSnapshot(), {
+    floating: false, tabId: "a", readiness: "ready", presentation: "touch",
+  }).density, "default");
 });

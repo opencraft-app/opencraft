@@ -1316,6 +1316,26 @@ test("work clocks survive completion membership replacement without reviving obs
   }
 });
 
+test("completion clocks provide the Turn duration when the live event omits it", async () => {
+  const harness = await createHarness({ useTailHydration: false });
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    await harness.emit("turn/started", {
+      threadId: "thread-one",
+      turn: { id: "clocked", status: "inProgress", startedAt: 10, items: [] },
+    });
+    await harness.emit("turn/completed", {
+      threadId: "thread-one",
+      turn: { id: "clocked", status: "completed", startedAt: 10, completedAt: 12, items: [] },
+    });
+    const turn = harness.runtime.views.get("thread-one")?.turns.find(candidate => candidate.id === "clocked");
+    assert.equal(turn?.turnStartedAtMs, 10_000);
+    assert.equal(turn?.durationMs, 2_000);
+  } finally {
+    await harness.close();
+  }
+});
+
 test("Resume failure rolls provisional ownership back and releases buffered notifications", async () => {
   const harness = await createHarness({ failResume: true, emitDuringResume: true });
   const delivered: string[] = [];

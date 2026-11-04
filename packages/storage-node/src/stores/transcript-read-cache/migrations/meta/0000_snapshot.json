@@ -1,0 +1,221 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "b4bbd240-8930-4a6f-9301-ff3b06f091e5",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "opencraft_cache_blobs": {
+      "name": "opencraft_cache_blobs",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_seq": {
+          "name": "turn_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "blob_sha256": {
+          "name": "blob_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "opencraft_cache_blobs_thread_id_turn_seq_blob_sha256_pk": {
+          "columns": [
+            "thread_id",
+            "turn_seq",
+            "blob_sha256"
+          ],
+          "name": "opencraft_cache_blobs_thread_id_turn_seq_blob_sha256_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "opencraft_cache_meta": {
+      "name": "opencraft_cache_meta",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "projection_schema_version": {
+          "name": "projection_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "native_watermark": {
+          "name": "native_watermark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_cursor": {
+          "name": "source_cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_identity": {
+          "name": "source_identity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_path": {
+          "name": "source_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total_turns": {
+          "name": "total_turns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at_ms": {
+          "name": "updated_at_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "opencraft_turn_offset_index": {
+      "name": "opencraft_turn_offset_index",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_seq": {
+          "name": "turn_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_offset": {
+          "name": "byte_offset",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_length": {
+          "name": "byte_length",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_sha256": {
+          "name": "content_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at_ms": {
+          "name": "updated_at_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "legacy_unique_opencraft_turn_offset_index_2": {
+          "name": "legacy_unique_opencraft_turn_offset_index_2",
+          "columns": [
+            "thread_id",
+            "turn_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "opencraft_turn_offset_index_thread_id_turn_seq_pk": {
+          "columns": [
+            "thread_id",
+            "turn_seq"
+          ],
+          "name": "opencraft_turn_offset_index_thread_id_turn_seq_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

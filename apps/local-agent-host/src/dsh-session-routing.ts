@@ -20,7 +20,7 @@ export class DshSessionRouting {
   private readonly db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "dsh-session-routing",
       path, migrations: [{ version: 1, name: "session-routing", sql: BASELINE }],
       legacyMigration: {
         accepts: (fingerprint, objects) =>

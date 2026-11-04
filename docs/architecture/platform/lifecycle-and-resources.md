@@ -232,9 +232,22 @@ presentation isolation, not an OS filesystem or browser-cookie security boundary
 
 ### Global conversation text search
 
-The global dialog keeps immediate title matching over the complete admitted metadata catalog and debounces ephemeral Codex `thread/search` queries per Server. Shared-native SSH admission forwards this stateless read and `thread/searchOccurrences`; no local transcript mirror, persistent index, resume, execution or history reconciliation is performed to search. Admission does not establish upstream feature support: native method-not-found and the known DSH unsupported-method response retain title-only operation. Other failures, disconnected Servers and remaining cursors stay visible instead of becoming empty complete results. Each Server scan is serialized; obsolete queued queries are skipped, and query, recipe, authorization and connection-incarnation changes fence results. Pages are loaded explicitly with cursor-cycle protection, deduplicated by Server route and Thread ID, and retain other Servers' results on failure.
+The global dialog keeps immediate title matching over the admitted metadata catalog and debounces `thread/search` per Server. Built-in platform history answers from a Server-owned FTS5 external-content index, with BM25 relevance (title weight 8, body weight 1); the browser preserves that order before appending title-only matches. Messages, titles and visible tool text are indexed in the same transaction as their committed facts. Han characters/pairs provide short Chinese query recall and literal normalized source verification rejects token-combination false positives. Binary attachments are excluded. The index is a disposable projection, not another transcript authority, and covers indexed saved facts only: an empty result never establishes native history completeness. Authorization filters candidates before public pagination; cursors bind query/filter/scope and committed index version, and stale cursors require a new search.
 
-Results render escaped message snippets. Selection resolves the first native visible occurrence, opens its conversation through the existing navigation transaction, and uses ConversationNavigationSource hydration/projection plus measured virtualized prompt positioning. User hits select their prompt; assistant hits open the containing turn at its prompt, retaining the surrounding context. Raw-history matches without a visible occurrence still open the conversation with an explicit positioning notice; failures to locate can be retried in the dialog. Native keyword scanning speed is not an indexed-search latency guarantee.
+Shared-native SSH admission still forwards stateless native `thread/search` and `thread/searchOccurrences`; it does not create a local transcript mirror or index. Admission does not establish upstream support: native method-not-found and the known DSH unsupported response retain title-only operation. Other failures, disconnected Servers and remaining cursors stay visible. Each Server query is serialized; obsolete queued queries are skipped, and query, authorization and connection-incarnation changes fence results. Pages are explicit and deduplicated by Server route and Thread ID.
+
+Platform `opencraft/history/sync` is a thread-scoped, authorized maintenance read, never resume or execution. It imports one full source history page with revision fencing and acknowledges only after durable commit; rejected/stale or failed writes return an error. `indexOnly` rebuilds a bounded batch from owned payloads. Operators may use a temporary external script with ID/cursor-only checkpoints to backfill saved and native history. Reaching native EOF across unstable pages remains partial evidence; maintenance does not upgrade it to a stable snapshot.
+
+Results render escaped message snippets. Selection resolves the first visible occurrence, opens its conversation through the existing navigation transaction, and uses ConversationNavigationSource hydration/projection plus measured virtualized prompt positioning. User hits select their prompt; assistant hits open the containing turn at its prompt, retaining the surrounding context. Raw-history matches without a visible occurrence still open the conversation with an explicit positioning notice; failures to locate can be retried in the dialog. Search can directly locate an older saved group outside the current connected source segment; its continuation stays an explicit gap and cannot join disconnected ranges. Native keyword scanning speed is not an indexed-search latency guarantee.
+
+Search snippets map only the matching Unicode span; they never allocate an offset
+array for an entire tool output. Ranked candidates carry document identities and
+metadata, with body hydration after visibility/source checks. ASCII words and emitted
+one/two-Han tokens already prove literal occurrence; longer Han combinations and
+punctuated phrases retain raw source verification. This bounds avoidable snippet
+memory without relaxing ACL, query binding or best-document-per-thread ranking. FTS candidate rowids lead the
+projection join so SQLite cannot move raw verification into a whole-scope body scan
+while freshly backfilled tables lack planner statistics.
 
 ## Startup resource ownership
 
@@ -406,3 +419,21 @@ overrides take precedence, including explicit null. Credentials, tool entries an
 permissions are not copied by this policy. Path forks retain native semantics.
 The Workbench adopts the fork response for durable and temporary children so
 read-only history hydration preserves the newly acknowledged execution choices.
+
+
+The physical Codex Host's usage writer also owns background collection, restart
+recovery, rollout parsing, gap repair and legacy projection batches in one
+Worker Thread. Foreground attempt/admission commits have a bounded queue and
+retain their ingress deadline; collection yields to that queue before collecting
+and before committing each bounded replay batch. Native metadata, trusted receipt
+lookups and generation-source validation cross an asynchronous port. Prompt and
+tool bodies never cross it. Receipt lookups finish before taking the write lock;
+source validation still precedes the atomic receipt/fact/cursor transaction.
+Shutdown aborts native acquisition, settles in-flight replay and acknowledges
+submitted foreground writes before terminating the worker. The authoritative gap
+store indexes both per-thread repair and open-gap recovery; a read-only miss
+never takes a writer transaction. These execution changes do not cache access
+rights or change coverage, identity, provenance or allocation semantics.
+Worker collection diagnostics transfer bounded counter deltas and at most 256
+latency samples per second to the Host, with a final flush at shutdown. Query
+metrics and the current request's diagnostic authorization remain Host-owned.

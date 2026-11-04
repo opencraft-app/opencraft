@@ -15,6 +15,9 @@ export class MachineIdentityTransport implements DuplexTransport {
   constructor(private readonly machine: RuntimeMachineIdentity | null, private readonly agent: "OpenCraft" | "Codex",
     private readonly create: () => Promise<DuplexTransport> | DuplexTransport) {}
 
+  watchConversation(threadId: string, clientId: string, current: () => boolean): () => void {
+    return this.inner?.watchConversation?.(threadId, clientId, current) ?? (() => {});
+  }
   get status() { return this.state; }
   async connect(signal?: AbortSignal) {
     if (signal?.aborted) throw signal.reason;

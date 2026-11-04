@@ -38,6 +38,17 @@ Set `serverSelection: true` on an authenticated relay whose approved authenticat
 origin is also an explicitly configured entry route. It is opt-in; existing
 per-origin deployments keep their behavior. A document visit to `/` lists only
 servers whose own `/__opencraft_access/session` admits the verified principal.
+A transport error, timeout, interrupted response or target 5xx is unresolved
+admission, rather than a membership denial. The authenticated chooser silently
+rechecks unresolved discovery for up to 30 seconds, 1.5 seconds after each response.
+A successful fresh check inserts only admitted targets without reloading the page
+or replacing retained links and their focus. Explicit 401/403 denials are not
+retried. Login redirects and identity changes do not import another principal's
+list. Recovery does not reuse cached grants, grant membership, update the saved
+choice or change an explicit chooser into automatic navigation. A root entry may
+continue to its original saved/default target once that target admits the user.
+No unavailable target names or routes are exposed by the recovery state.
+
 Static routes can set an optional `name` (up to 128 characters); discovered routes
 use their peer name or enrolled hostname. The explicit chooser is `/servers`; a selected Workbench runs at
 `/servers/<instanceId>/`. Static routes and discovered Hub routes use

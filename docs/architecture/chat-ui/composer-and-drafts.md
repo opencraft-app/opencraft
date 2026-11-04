@@ -196,6 +196,12 @@ The Conversation Runtime owns the outgoing message from local submit until an
 authoritative Composer input or UserMessage Item can actually render it. A Turn
 receipt or an empty authoritative Turn is not a visible-message acknowledgement:
 the optimistic item is projected into that Turn until its display owner exists.
+Before a direct `turn/start` receipt or an authoritative Turn exists, that
+optimistic item is a presentation-only handoff: it displays `Sending…` from its
+delivery state, but it is not an active Turn and cannot drive Thinking, Stop or
+other execution feedback. A concrete receipt with a Turn ID may activate the
+optimistic Turn while the authoritative timeline catches up. Failed and unknown
+delivery remain non-running message states and never manufacture execution.
 The client message ID is the stable display identity of the user block, its
 frame, and the React Turn row across optimistic, Turn.params, and server Item
 phases; the virtualizer's Turn locator and protocol Turn/Item IDs remain
@@ -911,10 +917,12 @@ ancestor scroll does not independently reject a click the browser accepted;
 pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
-leave a timer that starts recording over the editor later. The editor has no voice hold candidate: touch, repeated taps and
-long presses retain native text editing. Only the explicit microphone action
-starts dictation; completion and cancellation retain the existing transient input
-transaction and draft ownership.
+leave a timer that starts recording over the editor later. An already-focused
+editor retires its pending voice hold on touch pointer release/cancellation as
+well as native touch end/cancellation. Pointer release must disarm the candidate
+even when touchend delivery is interrupted. An active recording still finishes
+on native touchend so pointer cancellation caused by the intentional editor blur
+does not cancel a valid recording.
 
 
 ## New Draft creation after rejected Host admission
@@ -980,6 +988,17 @@ intent so the Web editor's direct failure transition and projected model
 selections retain it too. Editing content, submission settings, or execution
 placement creates a new identity. Retry state belongs to the owning Draft and is retired
 when acceptance settles, the Draft clears, or its controller is disposed.
+
+### Startup draft target lookup
+
+Browser startup decodes canonical editor-slot/semantic-target storage keys before
+reading draft bodies. Only matching new-thread slots and unrecognized legacy keys
+are read; the original document parser still validates recovered execution placement.
+Known unrelated targets do not deserialize their documents. This introduces no
+second index or writable cache. Legacy localStorage migration, authoritative deletion
+tombstones and account revocation remain effective, including revocation while a
+body read is pending. `smoke-draft-target-recovery.mjs` exercises these paths through
+real Chromium IndexedDB in desktop and touch contexts.
 
 ## Sent user-message quote continuity
 

@@ -1,5 +1,7 @@
+import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } from "../../conversation/search-target";
 import { HookIcon } from "@opencraft/design-system-web/action-icons";
 import { ConversationEntryMotionContext } from "../../conversation/entry-motion";
+import { ConversationContentBoundary } from "../../conversation/content-window";
 import { ThinkingLabel } from "../../thinking-label";
 import {
   deriveAgentActivityHeaderPresentation,
@@ -23,6 +25,7 @@ import { TimelineBlockView } from "@opencraft/timeline-render-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
+  memo,
   useContext,
   useId,
   useLayoutEffect,
@@ -84,6 +87,8 @@ function AgentActivityGroup({
     () => group.type === "group" ? deriveAgentActivityHeaderPresentation(group, registry, detailLevel) : null,
     [group, registry, version, detailLevel],
   );
+  useRevealSearchItem(blockItemIds(group.type === "group" ? group.blocks : [group.block]), () => onCollapsedChange(false));
+  const searchTarget = useContext(ConversationSearchTargetContext);
   const visibleBlocks = useMemo(
     () => (group.type === "group" ? group.blocks : [group.block]).filter((block) => isVisibleAgentActivityRow(block, registry, detailLevel)),
     [group, registry, version, detailLevel],
@@ -109,13 +114,56 @@ function AgentActivityGroup({
       >
         {() => visibleBlocks.length > 0 ? (
           <div className="thread-agent-activity__rows" data-scroll-owner="timeline" style={standalone ? { display: "contents" } : undefined}>
-            {visibleBlocks.map((block) => <GenericBlock block={block} key={block.id} onRetry={onRetry} />)}
+            {visibleBlocks.map((block, index) => visibleBlocks.length < 80
+              ? <div key={block.id} data-content-search-unit-keys={JSON.stringify(block.sourceItemIds)}><GenericBlock block={block} onRetry={onRetry} /></div>
+              : <ConversationContentBoundary id={`activity-block:${block.id}`} key={block.id}
+                  className="thread-activity-window-row" activity
+                  keepMounted={block.sourceItemIds.some(id => id === searchTarget?.itemId) || index === visibleBlocks.length - 1
+                    || (block.type !== "command-execution" && block.type !== "patch" && block.type !== "reasoning")}>
+                  {() => <div data-content-search-unit-keys={JSON.stringify(block.sourceItemIds)}><GenericBlock block={block} onRetry={onRetry} /></div>}
+                </ConversationContentBoundary>)}
           </div>
         ) : null}
       </AgentActivityGroupDisclosure>
     </div>
   );
 }
+
+function sameActivityUnit(a: AgentActivityContentUnit, b: AgentActivityContentUnit): boolean {
+  if (a === b) return true;
+  if (a.type !== b.type || a.id !== b.id) return false;
+  if (a.type === "reasoning" && b.type === "reasoning")
+    return a.block === b.block && a.presentation === b.presentation && a.active === b.active;
+  if (a.type === "standalone" && b.type === "standalone")
+    return a.block === b.block && a.groupOrigin === b.groupOrigin;
+  if (a.type === "worked-for" && b.type === "worked-for") return a.item === b.item;
+  if (a.type === "group" && b.type === "group") return a.blocks.length === b.blocks.length
+    && a.blocks.every((block, index) => block === b.blocks[index])
+    && a.lifecycle.inProgress === b.lifecycle.inProgress
+    && a.lifecycle.isLatestVisibleUnit === b.lifecycle.isLatestVisibleUnit
+    && a.lifecycle.isActivitySliceClosed === b.lifecycle.isActivitySliceClosed
+    && a.lifecycle.isExploring === b.lifecycle.isExploring;
+  return false;
+}
+
+/** Stable history does not replay renderer effects when the active tail changes.
+ * Renderer contexts and registry subscriptions still propagate independently. */
+const ActivityContentUnitView = memo(function ActivityContentUnitView({ unit, onRetry, collapsedById, onCollapsedChange }: {
+  readonly unit: AgentActivityContentUnit;
+  readonly onRetry?: () => void;
+  readonly collapsedById: Readonly<Record<string, boolean>>;
+  readonly onCollapsedChange: (id: string, collapsed: boolean) => void;
+}) {
+  return unit.type === "group" || (unit.type === "standalone" && unit.groupOrigin)
+    ? <AgentActivityGroup group={unit} onRetry={onRetry} collapsed={collapsedById[unit.id]}
+        onCollapsedChange={collapsed => onCollapsedChange(unit.id, collapsed)} />
+    : unit.type === "reasoning" ? <div data-content-search-unit-keys={JSON.stringify(unit.block.sourceItemIds)}><ReasoningBlock block={unit.block} presentation={unit.presentation}
+        active={unit.active} collapsed={collapsedById[unit.id] ?? true}
+        onCollapsedChange={collapsed => onCollapsedChange(unit.id, collapsed)} /></div>
+    : unit.type === "worked-for" ? <WorkStatusDivider item={unit.item} />
+    : <div data-content-search-unit-keys={JSON.stringify(unit.block.sourceItemIds)}><GenericBlock block={unit.block} onRetry={onRetry} /></div>;
+}, (a, b) => a.onRetry === b.onRetry && a.collapsedById === b.collapsedById
+  && a.onCollapsedChange === b.onCollapsedChange && sameActivityUnit(a.unit, b.unit));
 
 function AgentActivityContent({
   contentUnits,
@@ -134,22 +182,24 @@ function AgentActivityContent({
   return (
     <div className="thread-agent-activity__content" data-unit-count={contentUnits.length}>
       {contentUnits.map((contentUnit) => (
-        <div
+        <ConversationContentBoundary
           className="thread-agent-activity__unit"
-          ref={contentUnit === followUnit ? followContentRef : undefined}
+          followRef={contentUnit === followUnit ? followContentRef : undefined}
           key={contentUnit.id}
+          id={contentUnit.id}
+          activity={contentUnit.type === "reasoning" || contentUnit.type === "group"
+            || (contentUnit.type === "standalone"
+              && (contentUnit.block.type === "command-execution" || contentUnit.block.type === "patch"))}
+          keepMounted={contentUnits.length < 80 || contentUnit === followUnit
+            || innerCollapsedById[contentUnit.id] === false
+            || (contentUnit.type !== "reasoning" && contentUnit.type !== "group"
+              && (contentUnit.type !== "standalone"
+                || (contentUnit.block.type !== "command-execution" && contentUnit.block.type !== "patch"
+                  && contentUnit.block.type !== "text")))}
         >
-          {contentUnit.type === "group" || (contentUnit.type === "standalone" && contentUnit.groupOrigin)
-            ? <AgentActivityGroup group={contentUnit} onRetry={onRetry}
-                collapsed={innerCollapsedById[contentUnit.id]}
-                onCollapsedChange={collapsed => onInnerCollapsedChange(contentUnit.id, collapsed)} />
-            : contentUnit.type === "reasoning" ? <ReasoningBlock block={contentUnit.block}
-                presentation={contentUnit.presentation} active={contentUnit.active}
-                collapsed={innerCollapsedById[contentUnit.id] ?? true}
-                onCollapsedChange={collapsed => onInnerCollapsedChange(contentUnit.id, collapsed)} />
-            : contentUnit.type === "worked-for" ? <WorkStatusDivider item={contentUnit.item} />
-              : <GenericBlock block={contentUnit.block} onRetry={onRetry} />}
-        </div>
+          {() => <ActivityContentUnitView unit={contentUnit} onRetry={onRetry}
+            collapsedById={innerCollapsedById} onCollapsedChange={onInnerCollapsedChange} />}
+        </ConversationContentBoundary>
       ))}
     </div>
   );
@@ -175,6 +225,10 @@ function AgentActivity({
   // Explicit disclosure interaction may animate even while recovery is syncing.
   const userOpening = useRef(false);
   const animateEntry = allowEntryMotion || userOpening.current;
+  useRevealSearchItem(blockItemIds(unit.blocks), itemId => {
+    onCollapsedChange(false);
+    for (const content of unit.contentUnits) if (content.type !== "worked-for" && blockItemIds(content.type === "group" ? content.blocks : [content.block]).includes(itemId)) onInnerCollapsedChange(content.id, false);
+  });
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   const open = !layout.isCollapsed;
   const inlineSubagentActivity = unit.inlineSubagentActivity;

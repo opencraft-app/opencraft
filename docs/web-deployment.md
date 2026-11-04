@@ -224,7 +224,7 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 
 稳定入口的安装和回退共用 execution profile 解释：带完整 v1 执行元数据（protocolVersion、platform、arch、nodeAbi）且包含非空 gateway、daemon、DSH capability payload 的旧包，未声明 profile 且没有 Headless 网站或独立 DSH Host 标识时按历史 daemon 契约识别。没有 execution 元数据的纯网站包仍是独立网站；显式未知或无效 profile 不按 daemon 回退。网站独立更新只核验发行 profile，不额外要求执行平台/ABI 与网站主机一致；显式启用受管执行后，原有平台/ABI、原生 payload、活动任务、数据和切换检查继续由执行部署负责。真正不同 profile 的迁移仍须单独安排。本兼容逻辑属于固定启动器，网站热更新不会替换已安装的旧启动器；已有入口须经后续修复版的入口维护才能生效。
 
-默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
+默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。传统固定入口/更新器本身不在 worker 热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。传统 cli 入口维护仍重启服务、使入口连接重连。支持下述常驻接收器的部署可单独热替换入口处理代；执行网关替换仍会重连。配置独立 owner 时，Codex、DSH 与 Pi 的执行连续性分别依赖 Codex core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。Codex 显式拆分后账号 Core 可独立排空代理请求并重启，APP Server/CLI PID 保持，见 [三步升级与边界](codex-core.md#执行侧平滑升级三步方案)。未拆分 Core 仍会连带停止 native。执行宿主自身升级仍须自然排空。Codex 显式多代模式由独立 routing owner 原子切换新 Thread 默认代，旧会话固定原 HOME，旧 CLI 无任务/工具/Host 工作后自然退休；账号 Core 继续共享，见同页第 3 步。默认 combined/单 APP 部署仍兼容，不因 Web CI 自动改变拓扑。
 
 SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
 
@@ -320,6 +320,21 @@ The managed supervisor forwards all Headless API paths directly to their owner. 
 
 A verified worker readiness message also carries its bounded Headless route table. The supervisor uses that active release's table for HTTP and upgrades, so subsequent API additions follow managed upgrades without leaving an older bootstrap routing them through document admission. Legacy workers omit the table and keep the supervisor's bundled routes. Invalid advertised tables fail candidate readiness; static and updater handling remain with Web.
 
+The exact `/__opencraft_model_policy` endpoint is Headless-owned for both reads and writes. Managed Web forwards it directly, preserving authentication and the backend's administrator checks; it must not fall through to the static worker or consume a single-use identity assertion in document admission.
+
+During a backend listener replacement, the fixed entry keeps at most 128 new
+WebSocket upgrades pending for at most five seconds. It pauses client reading
+and retries a refused loopback TCP connection every 100 ms. Once TCP connects,
+the original headers and upgrade head are forwarded exactly once and normal
+bidirectional piping resumes. A backend reset, authorization response or error
+after connection is terminal for that attempt; business frames are never
+replayed. Client close and entry shutdown cancel the pending connection and
+release its worker lease. This removes an avoidable browser backoff gap; it does
+not preserve an established socket across gateway replacement or declare the
+backend healthy before its own readiness checks. HTTP mutations retain their
+existing behavior. This proxy belongs to the fixed entry: a managed Web release
+alone does not activate the change in an already running supervisor.
+
 ### Running execution files during Web updates
 
 An unchanged Headless gateway can outlive multiple Web release pointers. Its
@@ -352,6 +367,25 @@ Missing runtime identity is not proof of recovery. Immutable root comparisons
 are shared in memory; filesystem failures are retried, and uncertain runtime
 pins remain retained. Daemon health without a Headless pointer-derived identity
 keeps its legacy compatibility contract.
+
+On Linux, a completed equal-payload comparison can be reopened by a new entry
+process through a private `execution-current.runtime-equivalence.json` receipt.
+It binds the unit, Node ABI, both immutable release roots and their package,
+Web identity and full-release metadata bytes to the actual gateway PID,
+kernel boot ID and process start ticks. The process is observed again before
+accepting or recording the result. Missing, changed, unreadable or unsafe
+receipts fall back to the complete payload comparison; a successor or PID reuse
+cannot borrow its predecessor's result. Missing full-release metadata also
+disables this optimization. Receipt write failure does not alter readiness.
+Installation still verifies the complete signed target before activation. This
+is reuse of that immutable installation, not a recurring payload-tampering audit
+and not authorization to replay an interrupted update or start another writer.
+Before replacing the fixed entry, a supervisor can run the verified candidate's
+`runtime/cli.mjs --prepare-restart` with the same execution configuration while
+the old entry still serves users. This observes readiness and records any
+completed comparison without opening Web ports, applying a release, taking over
+a writer or restarting any service. The ordinary installation mutex still
+serializes the final entry switch; stale preparation falls back safely.
 
 
 The npm release source bounds metadata output separately from package inventories.
@@ -406,10 +440,16 @@ The authenticated sequence and manifest digest persist in `full-release-state.js
 under the existing deployment writer lock. Same-byte retries are accepted; lower
 sequences, same-sequence different content, expired/revoked releases, stale
 revocation watermarks and unsupported bootstrap/platform combinations fail before
-activation. First installation and fixed-bootstrap maintenance authenticate the
-installed signed payload and initialize the same watermark before starting workers.
+activation. First installation, or reopening without a committed activation and
+covering watermark, authenticates the installed payload before starting workers.
 The committed `current` pointer carries its authenticated manifest digest and
 release identity. That authorization survives replacement or failure of later jobs.
+Normal fixed-bootstrap restarts check the signed manifest against this committed
+identity and existing watermark without scanning the installed payload again.
+Complete archive and copied-target verification remains before installation;
+restarting an already activated immutable tree is not a new installation. Startup
+also avoids comparing an execution path with itself; actual runtime readiness and
+interrupted pointer reconciliation remain in force.
 Authenticated staging may advance the high-water mark without activating a payload;
 the last committed current remains restartable, and unsigned/lower replay is still
 rejected for new installations. Pointer commits are durable before accepting jobs.
@@ -551,6 +591,41 @@ roll back a healthy running version. Consumers without this capability retain
 the existing archive installation path. Deployments must promote the pinned
 bootstrap once using a verified complete package before selecting this path.
 
+## 常驻连接入口与处理代热替换
+
+Linux/Unix 的固定签名包新增 `runtime/resident.mjs`。部署侧以它替代同包
+`runtime/cli.mjs` 作为 Web unit 的 ExecStart，沿用原 Web/Relay/SSH/执行配置；
+首次从传统入口迁入需要一次独立监督器执行的服务重启，保留旧 unit 和固定包回退。
+这不会升级 Core、router 或执行 Host，也不会创建第二个 Gateway/SQLite writer。
+
+常驻父进程拥有公开及 Relay 内部监听，将 paused 原始 socket 句柄交给处理代，
+保留物理 peer/local 地址，鉴权和 HTTP/SSH 分流仍由处理代执行。候选准备时只读
+既有执行状态；热激活检查实际 current 与执行版本，禁止因此重启 Gateway。
+旧代无进行中的安装、检查、恢复或控制请求时才交出唯一 Web 写锁，新代 ready 后
+接收新连接。原 AppHost/raw WebSocket、SSH 和进行中的 HTTP 留在旧代自然排空；
+空闲 keep-alive 关闭，退役代不再接收新的控制写入。
+
+在与 Web 服务相同的用户及 `OPENCRAFT_WEB_STATE` 环境执行：
+
+```sh
+node /opt/verified-package/runtime/resident.mjs --status
+node /opt/verified-package/runtime/resident.mjs --reload /opt/next-verified-package/runtime/cli.mjs
+```
+
+候选必须来自正常固定 SHA、完整签名校验的受管包。私有控制 socket 为 0600；管理员
+会话仅经父子私有 IPC 移交，不写公开状态或日志。原有安装/部署互斥仍约束维护命令。
+以后只换处理代不要 `systemctl restart` 常驻父进程，否则原连接仍会丢失。
+父进程自身升级/崩溃不在此零断连范围；普通 Gateway 替换也仍需浏览器重连。
+
+未准入新连接最多排队 256 个、10 秒；达到上限或超时即关闭，不重放已发送业务。
+最多保留 2 个退役代，仍有长连接时拒绝继续换代，不偷偷强杀。候选准备失败继续
+使用原代；交出写权后失败先确认候选退出，按实际私有持久路径冷起已接受入口，
+退役代不重获写权。交权确认不明时先确认旧代退出，避免两个安装控制器。
+accepted 路径原子持久化，父进程重启沿用；路径丢失或不安全直接失败。
+
+隔离真实打包回归：`node --test tests/server/web-deployment-resident.test.mjs`，覆盖
+双通道、SSH/慢 HTTP、管理员会话、真实 socket 地址、忙拒绝、排队容量/超时、
+候选失败冷恢复、代数预算、唯一写锁、崩溃恢复及父进程重启。
 
 ### Verified recovery of an uncertain Web rollback
 
@@ -582,3 +657,55 @@ a regular application payload alone does not replace that handler or the agent.
 Execution readiness now uses the same per-request health budget as status
 observation and preserves a bounded last failure reason and observation count.
 Dependency errors and raw response bodies are never copied into that diagnostic.
+
+### Continue the original failed installation at its accepted target
+
+`POST /__opencraft_updates/recover-target` is a separate, administrator-only,
+same-origin JSON action. Its exact body is `{jobId, version, buildId,
+manifestSha256}`. It accepts no source, archive, directory or replacement target.
+The failed deployment job, its `recovery-required` child and the upgrade agent's
+original journal must all bind that identity. The child records `retainedRoot`
+when the original normal installation prepares the release; this must remain
+its own `releases/<jobId>/package` directory. Older receipts without this binding
+cannot use the new action.
+
+The Web writer reserves the operation before awaiting verification and holds
+the protected configuration's shared lifecycle lock throughout recovery. Other
+unresolved owner work, stop requests and maintenance markers still block it.
+The target's signature and every signed file are checked again with normal
+`acceptManifest`, including current revocations, expiry and replay policy. Its
+sequence must equal the highest accepted sequence with the same manifest digest.
+There is no retained-rollback exception and no watermark write or reduction.
+
+The existing execution inspection and activation transaction then starts the
+same target against current data. Success commits the original job and child,
+retains the original failed job/child identity and error under `failure`, and
+reconciles the original upgrade journal. Failed recovery retains the failed job
+and `recovery-required` child. Concurrent or repeated requests never start a
+second in-flight recovery; a completed job cannot be activated again. A terminal
+pointer without a durable child receipt remains uncertain. This does not repair
+an unavailable Web owner or grant a different target after the watermark advances.
+The readonly `recover-current` action keeps its existing meaning.
+
+The existing loopback maintenance client selects this action only with explicit
+`--target-manifest-sha256 <original-manifest>` in addition to its original
+`--job-id`, `--version` and `--build-id`. It reads the local administrator key
+without printing it. The fixed Web handler and upgrade agent must both actually
+be updated before a writer upgrade; placing new application files on disk alone
+does not enable this recovery action. Recovery eligibility applies only to the
+verified fixed combined source, target package and owner contracts.
+
+
+### 原目标大库恢复的等待预算
+
+`recover-target`在原job/child、签名、完整文件及最高水位校验通过后，才在内部选择固定1800000ms readiness预算；HTTP仍只接受原四项身份字段，不能选择timeout。普通install、readonly recover-current和回滚探测仍用原默认30秒。长预算是一次绝对期限，包含原指针探测及本次重启；探测仍最多30秒，不会在重启后重新计满30分钟。预算耗尽后保留原失败史及recovery-required，不自动循环启动。
+
+该路径保留迁移前同步VACUUM备份，不跳过备份、历史或schema校验。真实Main约13.7GB的迁移前备份超过普通30秒等待；30分钟是受控上限，约14分钟仅按失败尝试的吞吐估算，不是停机承诺。Main handler必须以新签名包受管热切；其准备/入口验包不写Web目标consumer水位，继续原job时仍必须接受原最高305及相同manifest，不用handler包序号代替其target。
+
+### Exact initial target readiness policy
+
+A root-owned `initial-target-readiness.json` in the existing Web state directory may extend the initial execution readiness budget to exactly 1800000ms. It contains only the verified version, build ID, manifest digest and release sequence. Normal signature acceptance and replay protection still authorize installation; the policy supplies no target path or activation permission. Missing records and nonmatching verified targets retain the ordinary 30-second budget. Invalid records fail explicitly.
+
+The CI owner derives these fields from its freshly signed, fully verified archive before handing the target to the installer, then reads the protected record back without changing the consumer watermark. A prepared archive remains ineligible for activation. While a migration waiting policy is active, source/head changes or unavailable storage-version observations defer the original request before either site handoff instead of selecting an old source or silently falling back to 30 seconds.
+
+Before activation, Web persists the selected reason, policy hash, original job identity and absolute deadline in its accepted job and child receipt; the existing journal validates that identity and retains it across reconciliation. The execution adapter shares this deadline across preflight, existing-pointer probing and restart. Reentry never renews it, and a late readiness response cannot promote an expired attempt. Timeout preserves failure/recovery state. A later explicit `recover-target` retains its existing separate bounded attempt and original failed-target authorization.

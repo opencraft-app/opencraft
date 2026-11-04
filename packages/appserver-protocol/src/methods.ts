@@ -1,4 +1,6 @@
+import type { ConversationTurnResult } from './collaboration';
 import type { ThreadNoteMethodMap } from "./thread-note";
+import type { ThreadAccessMethodMap } from "./thread-access";
 import type { SharedInteractionMethodMap } from "./shared-interactions";
 import type { TurnRecoveryMethodMap } from "./turn-recovery";
 import type { ConversationSchedulesMethodMap } from "./conversation-schedules";
@@ -182,6 +184,8 @@ export type ThreadResumeResponse = ThreadResumeHistoryResponse<AppServerTurn> & 
 };
 
 export interface ThreadReadParams {
+  /** Only with read-history sourceRead; includeTurns must be false. */
+  sourceRead?: true;
   threadId: string;
   includeTurns: boolean;
   /** Passive Host notifications; does not retain a native execution engine. */
@@ -190,10 +194,14 @@ export interface ThreadReadParams {
   initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
   historyReadId?: string;
   historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
+  /** Stored display baseline, independent of a native execution checkpoint. */
+  historyBaseVersion?: import("./resume-history").ThreadHistoryVersion;
 }
 
 export interface ThreadReadResponse {
   thread: AppServerThread;
+  historyVersion?: import("./resume-history").ThreadHistoryVersion;
+  historyUpdate?: import("./resume-history").ThreadHistoryUpdate;
   initialTurnsPage?: ThreadTurnsListResponse;
   historyRecovery?: import("./resume-history").ThreadHistoryRecovery;
 }
@@ -343,7 +351,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends ThreadNoteMethodMap, ThreadAccessMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
@@ -418,6 +426,10 @@ export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteracti
     params: RuntimeModelProbeParams;
     result: RuntimeModelProbeResponse;
   };
+  "runtime/models/inspect": {
+    params: import("./runtime-settings").RuntimeModelInspectionParams;
+    result: import("./runtime-settings").RuntimeModelInspectionResponse;
+  };
   "runtime/models/check": {
     params: import("./runtime-settings").RuntimeSavedModelCheckParams;
     result: import("./runtime-settings").RuntimeModelProbeResponse;
@@ -458,6 +470,15 @@ export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteracti
   "thread/searchOccurrences": {
     params: import("./generated/v2/ThreadSearchOccurrencesParams").ThreadSearchOccurrencesParams;
     result: import("./generated/v2/ThreadSearchOccurrencesResponse").ThreadSearchOccurrencesResponse;
+  };
+  "opencraft/thread-context/read": { params: { threadId: string }; result: import("./thread-observations").ThreadContextObservation };
+  "opencraft/turn-configuration/read": {
+    params: {threadId:string;turnId:string};
+    result: import("./collaboration").TurnConfigurationObservation;
+  };
+  "opencraft/turn-result/read": {
+    params: { threadId: string; turnId: string; output: boolean; cursor?: string | null };
+    result: ConversationTurnResult;
   };
   "thread/turns/list": {
     params: ThreadTurnsListRequest;
@@ -651,6 +672,8 @@ export type AppServerMethodResult<TMethod extends AppServerMethod> =
   AppServerMethodMap[TMethod]["result"];
 
 export interface AppServerNotification<TParams = unknown> {
+  /** Diagnostic producer stamp; no authority or business semantics. */
+  __opencraftNotification?: import("./request-trace").NotificationObservation;
   method: string;
   params: TParams;
 }

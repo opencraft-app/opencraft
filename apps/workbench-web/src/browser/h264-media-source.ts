@@ -28,15 +28,16 @@ function init(sps: Uint8Array, pps: Uint8Array, width: number, height: number) {
   return concat(box('ftyp',text('isom'),u32(512),text('isomiso6avc1mp41')),box('moov',mvhd,trak,box('mvex',full('trex',0,0,u32(1,1,3000,0,0)))));
 }
 function fragment(sequence: number, time: number, sample: Uint8Array, key: boolean) {
-  const make = (offset: number) => box('moof',full('mfhd',0,0,u32(sequence)),box('traf',full('tfhd',0,0x020000,u32(1)),full('tfdt',1,0,u32(0,time)),full('trun',0,0x000701,u32(1,offset,3000,sample.length,key ? 0x02000000 : 0x01010000))));
+  const make = (offset: number) => box('moof',full('mfhd',0,0,u32(sequence)),box('traf',full('tfhd',0,0x020000,u32(1)),full('tfdt',1,0,u32(Math.floor(time / 0x100000000),time)),full('trun',0,0x000701,u32(1,offset,3000,sample.length,key ? 0x02000000 : 0x01010000))));
   const moof = make(0); return concat(make(moof.length + 8),box('mdat',sample));
 }
 export function supportsH264MediaSource() {
   return typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E028"');
 }
-/** A one-shot presentation fence; cancellation also retires queued callbacks. */
+/** A one-shot opaque AVC frame fence; cancellation retires every queued notification. */
 export function onFirstVideoFrame(video: HTMLVideoElement, present: () => void): () => void {
   let retired = false, frame: number | null = null, raf: number | null = null;
+  let probe: CanvasRenderingContext2D | null = null;
   const events = ['loadeddata', 'seeked', 'playing'];
   const cancel = () => {
     if (retired) return;
@@ -45,24 +46,43 @@ export function onFirstVideoFrame(video: HTMLVideoElement, present: () => void):
     if (raf !== null) cancelAnimationFrame(raf);
     frame = raf = null;
     for (const event of events) video.removeEventListener(event, signal);
+    probe = null;
   };
-  const ready = () => { if (!retired && video.readyState >= 2) { cancel(); present(); } };
+  const ready = () => {
+    if (!retired && !video.seeking && video.readyState >= 2) { cancel(); present(); }
+  };
+  const readable = () => {
+    if (video.seeking || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return false;
+    try {
+      if (!probe) {
+        const canvas = video.ownerDocument.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        probe = canvas.getContext('2d', { willReadFrequently: true });
+      }
+      if (!probe) return false;
+      // The remote AVC stream is opaque. A no-op video draw must leave alpha0,
+      // so metadata alone cannot pass the first-frame fence.
+      probe.clearRect(0, 0, 1, 1);
+      probe.drawImage(video, 0, 0, 1, 1, 0, 0, 1, 1);
+      return probe.getImageData(0, 0, 1, 1).data[3] === 255;
+    } catch { return false; }
+  };
   const signal = () => {
     if (retired || raf !== null) return;
-    raf = requestAnimationFrame(() => { raf = null; if (!video.seeking) ready(); });
+    raf = requestAnimationFrame(() => { raf = null; if (!retired && readable()) ready(); });
   };
+  for (const event of events) video.addEventListener(event, signal);
   if (typeof video.requestVideoFrameCallback === 'function') {
     const awaitFrame = () => { frame = video.requestVideoFrameCallback(() => {
       frame = null; if (retired) return;
-      if (video.readyState >= 2) ready(); else awaitFrame();
+      if (!video.seeking && video.readyState >= 2) ready(); else awaitFrame();
     }); };
     awaitFrame();
-  } else {
-    for (const event of events) video.addEventListener(event, signal);
-    signal();
   }
+  signal();
   return cancel;
 }
+
 
 export class H264MediaSource {
   private source = new MediaSource();
@@ -74,6 +94,7 @@ export class H264MediaSource {
   private disposed = false;
   private url: string;
   private primed = false;
+  private caughtUpThrough = -Infinity;
   private lastKey = 0;
   private needsKey = false;
   constructor(private video: HTMLVideoElement, private width: number, private height: number, private recover: () => void, private requestKey: () => void) {
@@ -95,9 +116,12 @@ export class H264MediaSource {
     const target = Math.max(this.buffer.buffered.start(0), end - .025);
     // A waiting event also follows a seek. Repeating that same seek can keep
     // the native decoder in HAVE_METADATA forever, even with buffered data.
-    if (!this.video.seeking && Math.abs(this.video.currentTime - target) > .001
+    if (!this.video.seeking && end > this.caughtUpThrough + .001
+      && Math.abs(this.video.currentTime - target) > .001
       && (this.video.readyState < 3 || end - this.video.currentTime > .2 || !this.primed)) {
-      this.primed = true; this.video.currentTime = target;
+      // Playback itself advances currentTime before waiting at this same tail.
+      // Its drift is not a new frame: never rewind the same buffered end again.
+      this.primed = true; this.caughtUpThrough = end; this.video.currentTime = target;
     }
     void this.video.play().catch(() => {});
   }
@@ -118,7 +142,8 @@ export class H264MediaSource {
     if (this.disposed || packet.byteLength < 10) return;
     const data = new Uint8Array(packet), key = data[0] === 1, units = nals(data.subarray(9));
     for (const unit of units) { if ((unit[0]! & 31) === 7) this.sps = unit.slice(); if ((unit[0]! & 31) === 8) this.pps = unit.slice(); }
-    if (!this.sequence) { if (!key || !this.sps || !this.pps) return; this.queue.push(init(this.sps, this.pps, this.width, this.height)); }
+    let initialization = new Uint8Array();
+    if (!this.sequence) { if (!key || !this.sps || !this.pps) return; initialization = init(this.sps, this.pps, this.width, this.height); }
     const samples = units.filter(unit => ![7,8,9].includes(unit[0]! & 31));
     const sample = concat(...samples.flatMap(unit => [u32(unit.length), unit]));
     // A virtual contiguous 30Hz timeline avoids long empty media ranges when
@@ -126,7 +151,13 @@ export class H264MediaSource {
     const time = this.sequence / 30;
     if (key) { this.lastKey = time; this.needsKey = false; }
     if (time - this.lastKey >= 10 && !this.needsKey) { this.needsKey = true; this.requestKey(); }
-    this.queue.push(fragment(++this.sequence, (this.sequence - 1) * 3000, sample, key));
+    const mediaFragment = fragment(++this.sequence, (this.sequence - 1) * 3000, sample, key);
+    // WebKit can expose sourceopen/loadedmetadata after an init segment while
+    // leaving the first media sample undispatched (readyState=HAVE_METADATA).
+    // Keeping the initialization segment and its first keyframe in one append
+    // transaction avoids that half-open state. Chromium accepts the same
+    // contiguous ISO-BMFF append, and later frames retain one-fragment updates.
+    this.queue.push(initialization.length ? concat(initialization, mediaFragment) : mediaFragment);
     if (this.queue.length > 8) { this.recover(); return; }
     this.pump();
   }

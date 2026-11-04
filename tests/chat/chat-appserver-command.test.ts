@@ -1617,6 +1617,21 @@ test("routed mutation uncertainty survives RPC wrapping while preflight rejectio
   }
 });
 
+test("one turn submission retains its identity and allows bounded native tool preparation", async () => {
+  const h = await harness(), request = h.client.request.bind(h.client);
+  const attempts: Array<{ method: string; timeoutMs?: number }> = [];
+  h.client.request = (async (method: string, params: unknown, options: { timeoutMs?: number } | undefined) => {
+    attempts.push({ method, timeoutMs: options?.timeoutMs });
+    return request(method as any, params as any, options as any);
+  }) as typeof h.client.request;
+  try {
+    await commandPort(h).submit(intent({ type: "existing-thread", key: existingKey }));
+    const starts = attempts.filter(entry => entry.method === "turn/start");
+    assert.deepEqual(starts, [{ method: "turn/start", timeoutMs: 120_000 }]);
+    assert.equal(h.requests.filter(entry => entry.method === "turn/start").length, 1);
+  } finally { await h.close(); }
+});
+
 for (const target of ["existing-thread", "enqueue-follow-up"] as const)
   for (const code of ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"])
     test(`definitively rejected ${target} ${code} can transfer to the outbox`, async () => {

@@ -11,6 +11,100 @@ function result(threadId:string,tag:string) {
   initialTurnsPage:{data:[turn],nextCursor:null},turnsBackwardsCursor:null,itemsBackwardsCursor:null};
 }
 
+test("bounded initial hydration retires on deadline and recovers authority through its existing owner", { timeout: 5000 }, async () => {
+  let healthy = false, pages = 0;
+  const timers: ReturnType<typeof setTimeout>[] = [], methods: string[] = [];
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    methods.push(request.method);
+    const send = (value: unknown) => peer.send(encodeJsonRpcMessage({ id: request.id, result: value }));
+    if (request.method === "initialize") send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "initial-budget",
+      capabilities: { extensions: { "opencraft/read-history": { version: 1, boundedRecovery: true } } } });
+    else if (request.method === "thread/read") {
+      const page = result("a", "recovered");
+      send(healthy ? page : { ...page, initialTurnsPage: { data: [{ id: "hydrating", status: "completed", itemsView: "notLoaded", items: [] }], nextCursor: null } });
+    } else if (request.method === "thread/items/list") {
+      const index = ++pages;
+      timers.push(setTimeout(() => send({ data: [{ id: `body-${index}`, type: "agentMessage", text: "retired partial body" }],
+        nextCursor: index < 5 ? `items-${index}` : null }), 70));
+    } else send(request.method.endsWith("/list") ? { data: [], nextCursor: null } : {});
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "initial-budget", transport, autoReconnect: false,
+    requestTimeoutMs: 160, onRecoveryEvent() {} });
+  let stop: (() => void) | undefined;
+  try {
+    await runtime.connect(); const lease = await runtime.acquireThread("a"); lease.setRecoveryVisibility(true);
+    const failed = new Promise<void>(resolve => {
+      const observe = () => { if (lease.getSnapshot().error !== null) resolve(); };
+      stop = lease.subscribe(observe); observe();
+    });
+    await Promise.race([failed, new Promise((_, reject) => timers.push(setTimeout(() => reject(new Error("Initial history never retired")), 1000)))]);
+    assert.equal((lease.getSnapshot().error as { code?: string })?.code, "TIMEOUT");
+    assert.equal(lease.getSnapshot().authoritative, false);
+    assert.equal(runtime.getSnapshot().phase, "ready");
+    healthy = true; await lease.retryRestore();
+    assert.equal(lease.getSnapshot().authoritative, true);
+    assert.equal(lease.getSnapshot().error, null);
+    assert.equal(lease.getSnapshot().history.loading, false);
+    assert.match(JSON.stringify(lease.getSnapshot().timeline), /recovered/);
+    await new Promise(resolve => setTimeout(resolve, 90));
+    assert.doesNotMatch(JSON.stringify(lease.getSnapshot().timeline), /retired partial body/);
+    assert.equal(methods.filter(method => method === "initialize").length, 1);
+    assert.equal(methods.includes("thread/resume"), false); assert.equal(methods.includes("turn/start"), false);
+    lease.release();
+  } finally { stop?.(); timers.forEach(clearTimeout); await runtime.dispose(); }
+});
+
+test("older-page deadline spans Item RPCs and clears Workbench loading before a successful retry", { timeout: 5000 }, async () => {
+  let healthy = false, itemPages = 0;
+  const methods: string[] = [], timers: ReturnType<typeof setTimeout>[] = [];
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = parseJsonRpcMessage(frame); if (!isJsonRpcRequest(request)) return;
+    methods.push(request.method);
+    const send = (value: unknown) => peer.send(encodeJsonRpcMessage({ id: request.id, result: value }));
+    if (request.method === "initialize") send({ codexHome: "/fixture", platformFamily: "unix", platformOs: "linux", userAgent: "older-budget" });
+    else if (request.method === "thread/read") {
+      const page = result("a", "current"); send({ ...page, initialTurnsPage: { ...page.initialTurnsPage, nextCursor: "older" } });
+    } else if (request.method === "thread/turns/list") {
+      send({ data: healthy ? result("a", "older").initialTurnsPage.data
+        : [{ id: "turn-older", status: "completed", itemsView: "notLoaded", items: [] }], nextCursor: null });
+    } else if (request.method === "thread/items/list") {
+      const index = ++itemPages;
+      // Every RPC finishes well inside its own budget. The combined body
+      // hydration used to keep the user waiting beyond the page's deadline.
+      timers.push(setTimeout(() => send({ data: [{ id: `body-${index}`, type: "agentMessage", text: `body ${index}` }],
+        nextCursor: index < 4 ? `items-${index}` : null }), 70));
+    } else send(request.method.endsWith("/list") ? { data: [], nextCursor: null } : {});
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "older-budget", transport, autoReconnect: false,
+    requestTimeoutMs: 160, onRecoveryEvent() {} });
+  try {
+    await runtime.connect(); const lease = await runtime.acquireThread("a"); lease.setRecoveryVisibility(true);
+    for (let i = 0; i < 30 && !lease.getSnapshot().authoritative; i++) await flush();
+    assert.equal(lease.getSnapshot().authoritative, true);
+    const pending = lease.loadOlder();
+    assert.equal(lease.getSnapshot().history.loading, true);
+    await assert.rejects(pending, error => (error as { code?: string }).code === "TIMEOUT");
+    assert.equal(lease.getSnapshot().history.loading, false);
+    assert.ok(lease.getSnapshot().history.error);
+    assert.equal(lease.getSnapshot().history.hasOlder, true);
+    assert.match(JSON.stringify(lease.getSnapshot().timeline), /current/);
+    assert.equal(runtime.getSnapshot().phase, "ready");
+    healthy = true; await lease.loadOlder();
+    assert.equal(lease.getSnapshot().history.loading, false);
+    assert.equal(lease.getSnapshot().history.error, null);
+    assert.equal(lease.getSnapshot().history.hasOlder, false);
+    assert.match(JSON.stringify(lease.getSnapshot().timeline), /older/);
+    // A cancelled RPC may still return after retry; its body cannot overwrite
+    // the new full page or recreate a pending spinner.
+    await new Promise(resolve => setTimeout(resolve, 90));
+    assert.doesNotMatch(JSON.stringify(lease.getSnapshot().timeline), /body 3/);
+    assert.equal(lease.getSnapshot().history.loading, false);
+    assert.equal(methods.includes("thread/resume"), false); assert.equal(methods.includes("turn/start"), false);
+    lease.release();
+  } finally { timers.forEach(clearTimeout); await runtime.dispose(); }
+});
+
 test("logical Host reconnect reads a fresh baseline before a retired same-generation history reply",{timeout:5000},async()=>{
  let firstReply:(()=>void)|undefined,initializations=0,connects=0,closes=0;
  const reads=new Map<string,number>(),methods:string[]=[];

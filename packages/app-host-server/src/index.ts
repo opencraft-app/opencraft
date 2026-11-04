@@ -1,3 +1,5 @@
+import {rpcIngressObservation} from "./rpc-ingress-observation.js";
+import {parseRequestTrace,createNotificationObservation} from "@opencraft/appserver-protocol";
 import {
   APP_HOST_PROTOCOL_VERSION,
   APP_HOST_SEND_NOT_ADMITTED,
@@ -25,7 +27,7 @@ function isIndependentReadFrame(frame: unknown): boolean {
     const request = JSON.parse(frame);
     return request !== null && typeof request === "object"
       && (typeof request.id === "string" || typeof request.id === "number")
-      && ["model/list", "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/history/cancel"].includes(request.method);
+      && (request.method === "opencraft/collaboration" && ["context","commands","messageAttachments"].includes(request.params?.action) || ["model/list", "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/search", "thread/searchOccurrences", "opencraft/history/sync", "thread/history/cancel"].includes(request.method));
   } catch { return false; }
 }
 
@@ -37,6 +39,12 @@ export interface AppHostServerPort {
 }
 
 export interface AppHostServerOptions {
+  /** Trusted Hub access boundary, installed per logical lease before native forwarding. */
+  readonly createRpcAccessSession?: (hostId: string, context: TransportSubmissionContext, emit: (frame: string) => void) => {
+    receive(frame: string): boolean | Promise<boolean>;
+    project(frame: string): string | null;
+    close(): void;
+  };
   /** Bounds callers waiting on a physical barrier; never releases that barrier. */
   readonly lifecycleTimeoutMs?: number;
   readonly lifecycleClock?: { setTimeout(callback: () => void, delay: number): unknown; clearTimeout(handle: unknown): void };
@@ -170,7 +178,7 @@ export class AppHostServer {
     });
   }
 
-  accept(port: AppHostServerPort, connectionId: string, submissionContext: TransportSubmissionContext = { sender: null }): AppHostServerConnection {
+  accept(port: AppHostServerPort, connectionId: string, submissionContext: TransportSubmissionContext = { sender: null }, trustedService = false): AppHostServerConnection {
     if (this.closed) throw new Error("App Host Server is closed");
     const connection = new AppHostServerConnection(
       this,
@@ -179,6 +187,7 @@ export class AppHostServer {
       `connection:${++this.connectionSequence}`,
       Object.freeze({ ...submissionContext, ...(submissionContext.executionPrincipal ? { executionPrincipal: Object.freeze({ ...submissionContext.executionPrincipal }) } : {}), sender: submissionContext.sender ? Object.freeze({ ...submissionContext.sender }) : null }),
       (connection, message) => this.admitForwarding(connection, message),
+      trustedService ? undefined : this.options.createRpcAccessSession,
     );
     this.connections.add(connection);
     connection.start();
@@ -319,6 +328,14 @@ export class AppHostServer {
       const frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
       const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;
+      // Routing identity is owned by this server; never correlate access policy with a client-supplied stamp.
+      if (connection.hasRpcAccess) {
+        const accessPacket = JSON.parse(message.frame);
+        if (this.options.logicalClientRouting) delete accessPacket[LOGICAL_CLIENT_FIELD];
+        const ingress=rpcIngressObservation.getStore(),accessStarted=performance.now();
+        try { if (await connection.receiveRpc(message.hostId, message.leaseId, record.generation, JSON.stringify(accessPacket))) return undefined; }
+        finally {if(ingress)ingress.accessMs+=Math.max(0,performance.now()-accessStarted);}
+      }
       await this.forward(record, frame, connection.submissionContext, claim.forwarding.signal);
       return undefined;
     }
@@ -761,6 +778,7 @@ interface OwnedLease {
 }
 
 export class AppHostServerConnection {
+  private readonly accessSessions = new Map<string, {hostId: string; leaseId: string; generation: number; session: NonNullable<ReturnType<NonNullable<AppHostServerOptions['createRpcAccessSession']>>>}>();
   private readonly leases = new Map<string, OwnedLease>();
   private readonly logicalClients = new Map<string, HostLogicalClient>();
   private unsubscribePort: (() => void) | null = null;
@@ -780,6 +798,7 @@ export class AppHostServerConnection {
     readonly internalId: string,
     readonly submissionContext: TransportSubmissionContext = { sender: null },
     private readonly admitForwarding: (connection: AppHostServerConnection, message: RendererToAppHostMessage) => void = () => {},
+    private readonly createRpcAccessSession?: AppHostServerOptions['createRpcAccessSession'],
   ) {
     try {
       this.unsubscribePort = port.subscribe(value => {
@@ -813,8 +832,20 @@ export class AppHostServerConnection {
 
   private readonly receivePort = (value: unknown): void => {
     if (this.closed) return;
+    const received=performance.now(),wallAt=Date.now();
     const message = typeof value === "object" && value !== null && "type" in value && value.type === "host/send"
       ? { ...value } : value;
+    let ingress: import("./rpc-ingress-observation.js").RpcIngressObservation | undefined;
+    if(typeof message === "object" && message !== null && "type" in message && message.type === "host/send"
+      && isIndependentReadFrame((message as {frame?:unknown}).frame)) {
+      let trace;try {trace=parseRequestTrace(JSON.parse(String((message as {frame?:unknown}).frame)).__opencraftTrace);} catch { /* The normal admission path owns malformed input. */ }
+      ingress={started:received,wallAt,dequeued:received,accessMs:0,trace};
+    }
+    const receive=()=>{
+      if(!ingress)return this.receive(message);
+      ingress.dequeued=performance.now();
+      return rpcIngressObservation.run(ingress,()=>this.receive(message));
+    };
     // A reachability probe must never queue behind Host activation or sends.
     if (this.ready && !this.closed && typeof message === "object" && message !== null
       && "type" in message && message.type === "connection/probe"
@@ -828,14 +859,14 @@ export class AppHostServerConnection {
     // from starting. Writable frame ordering remains on the per-host queue.
     if (this.ready && !this.closed && typeof message === "object" && message !== null
       && "type" in message && (message.type === "host/connect" || message.type === "host/disconnect")) {
-      void this.receive(message);
+      void receive();
       return;
     }
     // hello establishes connection authority synchronously. Thereafter only
     // messages for the same Host require ordering; a slow Host must not
     // block another Host sharing this socket.
     if (typeof message === "object" && message !== null && "type" in message && message.type === "hello") {
-      void this.receive(message);
+      void receive();
       return;
     }
     if (!this.ready) return;
@@ -847,13 +878,13 @@ export class AppHostServerConnection {
       // an unrelated Turn's tool preparation. Cancellation must reach that same
       // independent lane. Writable frames retain their existing FIFO.
       if (isIndependentReadFrame((message as { frame?: unknown }).frame)) {
-        void this.receive(message);
+        void receive();
         return;
       }
     }
     const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
-      () => this.receive(message),
-      () => this.receive(message),
+      () => receive(),
+      () => receive(),
     );
     this.receiveOperations.set(hostId, operation);
     const clear = () => { if (this.receiveOperations.get(hostId) === operation) this.receiveOperations.delete(hostId); };
@@ -861,6 +892,32 @@ export class AppHostServerConnection {
   };
 
   get isClosed(): boolean { return this.closed; }
+  get hasRpcAccess(): boolean { return this.createRpcAccessSession !== undefined; }
+
+  private accessSession(hostId: string, leaseId: string, generation: number) {
+    if (!this.createRpcAccessSession) return undefined;
+    const key = hostScopedKey(hostId, leaseId), current = this.accessSessions.get(key);
+    if (current?.generation === generation) return current.session;
+    current?.session.close();
+    const session = this.createRpcAccessSession(hostId, this.submissionContext, frame => {
+      this.guardPublication(() => {
+        if (this.leases.get(key)?.generation === generation) {
+          let observed=frame;
+          try {const packet=JSON.parse(frame);
+            if(packet.id === undefined) {const stamp=createNotificationObservation(packet.method,packet.params,"access-policy",rpcIngressObservation.getStore()?.trace);
+              if(stamp) observed=JSON.stringify({...packet,__opencraftNotification:stamp});}
+          } catch { /* Observation cannot change policy output. */ }
+          this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame:observed});
+        }
+      });
+    });
+    this.accessSessions.set(key,{hostId,leaseId,generation,session});
+    return session;
+  }
+
+  async receiveRpc(hostId: string, leaseId: string, generation: number, frame: string): Promise<boolean> {
+    return await this.accessSession(hostId,leaseId,generation)?.receive(frame) ?? false;
+  }
 
   close(): void {
     if (this.retiring) return;
@@ -868,6 +925,8 @@ export class AppHostServerConnection {
     try {
       if (!this.closed) {
         this.closed = true;
+        for (const entry of this.accessSessions.values()) entry.session.close();
+        this.accessSessions.clear();
         this.earlyMessages.length = 0;
         this.server.removeConnection(this);
       }
@@ -880,6 +939,8 @@ export class AppHostServerConnection {
     this.retiring = true;
     try {
       this.closed = true;
+      for (const entry of this.accessSessions.values()) entry.session.close();
+      this.accessSessions.clear();
       this.earlyMessages.length = 0;
       this.leases.clear();
       this.logicalClients.clear();
@@ -907,7 +968,32 @@ export class AppHostServerConnection {
   }
 
   post(message: AppHostToRendererMessage): void {
-    if (!this.closed) this.port.postMessage(message);
+    this.guardPublication(() => {
+      if (message.type === 'host/frame' && this.createRpcAccessSession) {
+        const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
+        for (const lease of leases) {
+          if (this.closed) return;
+          const frame = this.accessSession(lease.hostId,lease.leaseId,lease.generation)!.project(message.frame);
+          // The access callback may synchronously revoke this connection/lease.
+          if (!this.closed && this.leases.get(hostScopedKey(lease.hostId,lease.leaseId))?.generation === lease.generation && frame !== null)
+            this.port.postMessage({...message,leaseId:lease.leaseId,frame});
+        }
+        return;
+      }
+      this.port.postMessage(message);
+    });
+  }
+
+  private guardPublication(deliver: () => void): void {
+    if (this.closed) return;
+    try { deliver(); }
+    catch {
+      // An expired proof or failed recipient is local to this connection. It
+      // must neither escape a native event callback nor stop peer fanout.
+      // Failed cleanup remains retained for the server's explicit retry.
+      this.server.trackConnectionCleanup(this, true);
+      try { this.close(); } catch { /* Server shutdown reports retained cleanup. */ }
+    }
   }
 
   rememberLease(hostId: string, leaseId: string, generation: number): void {
@@ -916,6 +1002,8 @@ export class AppHostServerConnection {
 
   forgetLease(hostId: string, leaseId: string, generation: number): void {
     const key = hostScopedKey(hostId, leaseId);
+    const access = this.accessSessions.get(key);
+    if (access?.generation === generation) { access.session.close(); this.accessSessions.delete(key); }
     if (this.leases.get(key)?.generation === generation) this.leases.delete(key);
   }
 

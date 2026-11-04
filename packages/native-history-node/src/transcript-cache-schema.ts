@@ -9,5 +9,3 @@ CREATE TABLE opencraft_cache_blobs(thread_id TEXT NOT NULL,turn_seq INTEGER NOT 
  blob_sha256 TEXT NOT NULL,byte_size INTEGER NOT NULL,PRIMARY KEY(thread_id,turn_seq,blob_sha256)) STRICT;
 `;
 export const TRANSCRIPT_CACHE_MIGRATIONS = [{ version: 1, name: "disposable-transcript-projection", sql: SQL }];
-
-export { SQL as TRANSCRIPT_CACHE_SQL };

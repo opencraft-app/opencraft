@@ -299,3 +299,33 @@ test('ACP cold explicit selection enforces model policy on its account-scoped na
   await until(() => engine.snapshot(thread.id).activeTurn === null || engine.executionObservation(thread.id).turn?.status !== 'inProgress');
   await engine.close();
 });
+
+test('Pi processes and DSH capability port carry per-execution locators without live Turn recovery', async t => {
+  const f = await fixture(t);
+  const { registerDshExecutionEnvironment } = await import('../../apps/local-agent-host/src/dsh-execution-environment.mjs');
+  let port: any;
+  registerDshExecutionEnvironment({provide(_name:string,value:unknown){port=value;},inject(_deps:unknown,setup:any){setup({shellEnv:{register(){}}});}}, (id:string)=>id.replace('native-',''), f.runtime);
+  for (const [id,user] of [['one','alice'],['two','bob']] as const) {
+    f.admit(id,user);
+    const expected = f.runtime.execution('opencraft-server',id).executionId;
+    assert.ok(expected);
+    const events: unknown[] = [];
+    const worker = new PiShellWorker({cwd:f.root,directory:join(f.root,'shell-'+id),threadId:id,
+      environment:f.runtime.snapshot(f.runtime.execution('opencraft-server',id)),onNotification(event){events.push(event);},onLost(){}});
+    t.after(()=>worker.stop());
+    const result = await worker.call({command:"printf '%s' \"$OPENCRAFT_EXECUTION_ID\"",mode:'dispatch',background:true});
+    let output = shellText(result); const sessionId=result.details?.sessionId;
+    await until(async()=>{if(output.includes(expected!)||JSON.stringify(events).includes(expected!))return true;output+=shellText(await worker.call({sessionId}));return output.includes(expected!)||JSON.stringify(events).includes(expected!);});
+    f.leases.suspend(id);
+    const variables=port.environment('native-'+id);
+    assert.equal(variables.OPENCRAFT_EXECUTION_ID,expected,'suspension affects authority, not original attribution');
+    const actual=await promisify(execFile)(process.execPath,['-e','process.stdout.write(process.env.OPENCRAFT_EXECUTION_ID)'],{cwd:f.root,env:{...process.env,...variables}});
+    assert.equal(actual.stdout,expected);
+  }
+});
+
+test('Codex Git locators do not force a native Thread environment reload on every execution',async t=>{
+  const f=await fixture(t);const scope={account:null,hostId:'local-codex',threadId:'thread',projectId:null};
+  const a=f.runtime.snapshot({...scope,executionId:'exec-A'}),b=f.runtime.snapshot({...scope,executionId:'exec-B'});
+  assert.equal(a.key,b.key);assert.equal(a.executionId,undefined);assert.equal(a.overlay().OPENCRAFT_EXECUTION_ID,'');
+});

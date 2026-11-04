@@ -1,0 +1,150 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "8af3d13e-f15f-4039-b649-8130e6aa96a6",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "thread_access": {
+      "name": "thread_access",
+      "columns": {
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "creator_actor_id": {
+          "name": "creator_actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "access_mode": {
+          "name": "access_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "thread_access_server_id_thread_id_pk": {
+          "columns": [
+            "server_id",
+            "thread_id"
+          ],
+          "name": "thread_access_server_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "thread_access_check_0": {
+          "name": "thread_access_check_0",
+          "value": "access_mode IN ('shared','private')"
+        },
+        "thread_access_check_1": {
+          "name": "thread_access_check_1",
+          "value": "revision>=1"
+        },
+        "thread_access_check_2": {
+          "name": "thread_access_check_2",
+          "value": "access_mode!='private' OR creator_actor_id IS NOT NULL"
+        }
+      }
+    },
+    "thread_access_audit": {
+      "name": "thread_access_audit",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "access_mode": {
+          "name": "access_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

@@ -364,3 +364,27 @@ test("unreadable preconditions emit no catalog operation and a later-page failur
     (error, output, stderr) => error ? reject(Object.assign(error, { stdout: output, stderr })) : resolve(output)));
   assert.match(stdout, /catalog observation policy passed/);
 });
+
+test("the enabled same-origin durable server reconnects its metadata catalog after reload", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: new URL("http://192.0.2.10/local/native?hostId=local-codex") } });
+  try {
+    const sameServer: HostConnectionProfile = { ...profile, hostKind: "durable", providerId: "opencraft.websocket",
+      providerConfig: { url: "ws://192.0.2.10/appserver" }, autoConnect: false };
+    assert.equal(canReadHostThreadCatalog(sameServer, undefined, null), true);
+    const h = harness(sameServer);
+    const page = await h.read();
+    assert.equal(page.data.length, 1, "metadata rows do not require a known creator or participants");
+    assert.deepEqual(h.calls, ["connect", "thread/list"], "only a logical catalog read is established; no Thread is resumed");
+    for (const changed of [
+      { ...sameServer, enabled: false }, { ...sameServer, includeInSidebar: false },
+      { ...sameServer, providerConfig: { url: "ws://another-server.invalid/appserver" } },
+      { ...sameServer, providerConfig: { url: "ws://user:password@192.0.2.10/appserver" } },
+      { ...sameServer, hostKind: "remote-ssh" as const },
+    ]) assert.equal(canReadHostThreadCatalog(changed, "idle", null), false);
+    for (const phase of ["reconnecting", "error", "disposed"]) assert.equal(canReadHostThreadCatalog(sameServer, phase, null), false);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "window", previous);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});

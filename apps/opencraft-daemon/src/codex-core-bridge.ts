@@ -9,7 +9,7 @@ import {
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
 } from "@opencraft/appserver-protocol";
-import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+import { ConversationWatchRegistry, type DuplexTransport, type TransportStatus } from "@opencraft/appserver-client/transport";
 
 type RpcRecord = Record<string, unknown>;
 interface Pending {
@@ -39,10 +39,15 @@ export class CodexCoreBridge implements DuplexTransport {
   private readonly disconnected = new Set<string>();
   private readonly threads = new Map<string, Set<string>>();
   private readonly readers = new Map<string, Set<string>>();
+  private readonly storedReaders = new ConversationWatchRegistry();
+  watchConversation(threadId: string, clientId: string, current: () => boolean): () => void {
+    const remove = this.storedReaders.add(threadId, clientId, current);
+    return () => { if (remove()) this.removeReader(threadId, clientId); };
+  }
   private readonly confirmedReaders = new Map<string, Set<string>>();
   private readonly confirmedThreads = new Set<string>();
   private canObserve(threadId: string, clientId: string): boolean {
-    return this.initialized.has(clientId) && (this.confirmedThreads.has(JSON.stringify([threadId, clientId])) || this.confirmedReaders.get(threadId)?.has(clientId) === true);
+    return this.initialized.has(clientId) && this.storedReaders.allows(threadId, clientId, this.confirmedThreads.has(JSON.stringify([threadId, clientId])) || this.confirmedReaders.get(threadId)?.has(clientId) === true);
   }
   private readonly revisions = new Map<string, number>();
   private readonly serverRequests = new Map<string, string>();
@@ -50,7 +55,7 @@ export class CodexCoreBridge implements DuplexTransport {
   private readonly sharedClients = new Set<string>();
   private readonly clientEpochs = new Map<string, number>();
   private readonly removeHuman = this.human.subscribe(threadId => {
-    for (const client of new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])) this.publishHuman(threadId, client);
+    for (const client of new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? []), ...this.storedReaders.clients(threadId)])) this.publishHuman(threadId, client);
   });
   private publishHuman(threadId: string, clientId: string): void {
     if (this.sharedClients.has(clientId) && this.canObserve(threadId, clientId)) this.emit({ method: SHARED_INTERACTIONS_CHANGED,
@@ -83,7 +88,8 @@ export class CodexCoreBridge implements DuplexTransport {
   private write(message: RpcRecord): void {
     this.connection.send(JSON.stringify(message));
   }
-  async send(frame: string): Promise<void> {
+  send(frame: string): Promise<void> { return this.sendWithContext(frame, {sender:null}); }
+  async sendWithContext(frame: string, context: import("@opencraft/appserver-client/transport").TransportSubmissionContext): Promise<void> {
     if (this.connection.status.state !== "open") throw new Error("Codex Engine is not connected");
     const message = record(JSON.parse(frame));
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
@@ -93,18 +99,25 @@ export class CodexCoreBridge implements DuplexTransport {
     const id = idOf(message.id);
     if (id !== null && (message.method === SHARED_INTERACTIONS_READ || message.method === SHARED_INTERACTIONS_RESPOND)) {
       const p = record(message.params), threadId = string(p.threadId);
-      const allowed = () => this.canObserve(threadId, clientId);
+      const scoped = context.interactionScope?.threadId === threadId && !!context.resourceOwner;
+      const allowed = () => this.initialized.has(clientId) && (scoped || this.canObserve(threadId, clientId));
       if (!allowed()) { this.emit({ id, error: { code: 403, message: "Conversation subscription required" } }, clientId); return; }
       const epoch = this.clientEpochs.get(clientId);
       try {
-        if (message.method === SHARED_INTERACTIONS_READ) { this.emit({ id, result: this.human.snapshot(threadId, true) }, clientId); return; }
-        if (!string(p.interactionId) || !string(p.submissionId) || !p.result || typeof p.result !== "object" || Array.isArray(p.result)) throw new Error("Invalid interaction response");
-        const disposition = await this.human.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), async (source, result) => {
+        context.resourceOwner?.assertCurrent();
+        if (message.method === SHARED_INTERACTIONS_READ) { this.emit({ id, result: this.human.snapshot(threadId, scoped ? context.interactionScope!.respond : true) }, clientId); return; }
+        if (scoped && !context.interactionScope!.respond) throw new InteractionFault({code:"READ_ONLY"}, "Read-only interaction scope");
+        if (!string(p.interactionId) || !string(p.submissionId) || (!p.response && (!p.result || typeof p.result !== "object" || Array.isArray(p.result)))) throw new Error("Invalid interaction response");
+        const write = async (source: InteractionSourceRequest, result: Record<string, unknown>) => {
           if (!allowed() || epoch !== this.clientEpochs.get(clientId)) throw new Error("Interaction subscription expired");
-          this.write({ id: source.id, result });
-        });
+          context.resourceOwner?.assertCurrent();
+          this.write({id:source.id,result});
+        };
+        const disposition = p.response !== undefined
+          ? await this.human.respondStructured(threadId, p as unknown as import("@opencraft/appserver-protocol").StructuredInteractionSubmission, write, () => context.resourceOwner?.assertCurrent())
+          : await this.human.respond(threadId, string(p.interactionId), string(p.submissionId), record(p.result), write);
         if (allowed() && epoch === this.clientEpochs.get(clientId)) this.emit({ id, result: { disposition, snapshot: this.human.snapshot(threadId, true) } }, clientId);
-      } catch (cause) { if (epoch === this.clientEpochs.get(clientId)) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000, message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId); }
+      } catch (cause) { if (epoch === this.clientEpochs.get(clientId)) this.emit({ id, error: { code: cause instanceof InteractionFault ? cause.rpcCode : -32000, ...(cause instanceof InteractionFault ? {data:cause.domainData} : {}), message: cause instanceof Error ? cause.message : "Interaction submission failed" } }, clientId); }
       return;
     }
     if (message.method === CODEX_MAINTENANCE_READ && id !== null) {
@@ -194,7 +207,7 @@ export class CodexCoreBridge implements DuplexTransport {
           if ("result" in message) {
             const result = record(message.result), capabilities = record(result.capabilities);
             this.initializeResult = { ...result, capabilities: { ...capabilities, extensions: {
-              ...record(capabilities.extensions), [SHARED_INTERACTIONS_EXTENSION]: { version: 1 }, "opencraft/read-history": { version: 1, initialTurnsPage: false }, [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+              ...record(capabilities.extensions), [SHARED_INTERACTIONS_EXTENSION]: { version: 1, structuredResponses: true }, "opencraft/read-history": { version: 1, initialTurnsPage: false }, [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
               ...(this.maintenance ? { [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY } : {}),
             } } };
             message = { ...message, result: this.initializeResult };
@@ -220,7 +233,7 @@ export class CodexCoreBridge implements DuplexTransport {
         if ("result" in message && !this.disconnected.has(pending.clientId)) {
           const threadId = string(pending.params.threadId);
           if (pending.method === "thread/resume" || pending.method === "turn/start") this.subscribe(threadId, pending.clientId, true);
-          else if (pending.method === "thread/read" && pending.params.watch === true) {
+          else if (pending.method === "thread/read" && pending.params.watch === true && this.readers.get(threadId)?.has(pending.clientId)) {
             const readers = this.confirmedReaders.get(threadId) ?? new Set<string>(); readers.add(pending.clientId); this.confirmedReaders.set(threadId, readers);
             this.publishHuman(threadId, pending.clientId);
           }
@@ -247,8 +260,8 @@ export class CodexCoreBridge implements DuplexTransport {
       const raw = idOf(record(message.params).requestId);
       if (raw !== null) this.human.resolveNative(raw, threadId);
     }
-    const targets = threadId ? [...new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? [])])] : [...this.initialized];
-    for (const target of targets) this.emit(message, target);
+    const targets = threadId ? [...new Set([...this.targets(threadId), ...(this.readers.get(threadId) ?? []), ...this.storedReaders.clients(threadId)])] : [...this.initialized];
+    for (const target of targets) if (!threadId || this.storedReaders.allows(threadId, target, true)) this.emit(message, target);
   }
   private targets(threadId: string): string[] { return [...(this.threads.get(threadId) ?? [])]; }
   private subscribe(threadId: string, clientId: string, confirmed = false): void {
@@ -268,11 +281,13 @@ export class CodexCoreBridge implements DuplexTransport {
     if (clients?.size === 0) this.threads.delete(threadId);
   }
   private removeReader(threadId: string, clientId: string): void {
+    this.storedReaders.remove(threadId, clientId);
     const confirmed = this.confirmedReaders.get(threadId); confirmed?.delete(clientId); if (confirmed?.size === 0) this.confirmedReaders.delete(threadId);
     const readers = this.readers.get(threadId); readers?.delete(clientId);
     if (readers?.size === 0) this.readers.delete(threadId);
   }
   private disconnect(clientId: string): void {
+    this.storedReaders.removeClient(clientId);
     this.disconnected.add(clientId); this.initialized.delete(clientId);
     this.sharedClients.delete(clientId); this.clientEpochs.delete(clientId); this.human.forgetClient(clientId);
     for (const threadId of this.readers.keys()) this.removeReader(threadId, clientId);
@@ -294,6 +309,7 @@ export class CodexCoreBridge implements DuplexTransport {
     this.catalogChanges.clear();
     this.connection.close();
     this.pending.clear(); this.waiters.length = 0; this.initialized.clear(); this.disconnected.clear();
+    this.storedReaders.clear();
     this.threads.clear(); this.readers.clear(); this.revisions.clear(); this.serverRequests.clear();
     this.human.clear(); this.removeHuman(); this.sharedClients.clear(); this.clientEpochs.clear(); this.confirmedReaders.clear(); this.confirmedThreads.clear();
   }

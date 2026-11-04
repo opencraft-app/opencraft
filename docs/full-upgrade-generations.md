@@ -283,3 +283,15 @@ refresh creation and zero-work evidence under the explicitly approved policy.
 Normal strict recovery does not acquire new exceptions through this input.
 
 An ordinary fence retires the old physical-owner maintenance seal, while an already approved negative policy remains in its verified responsibility archive. Later strict reads and 31b restarts may inherit that exact policy from the immutable archive, binding current Core/Native observations afresh. They cannot obtain a new exception from an unarchived input. This preserves normal restart compatibility without carrying an old Core process binding into a later handoff.
+
+### Independent APP authority during host recovery
+
+For an adopted generation with `externalUnit`, the resolved systemd unit owns
+the APP launch program. Host recovery verifies that exact command against the
+live owner process and binds the observed APP artifact digest into the Native
+proof. The generation continues to pin the Node executable, Native CLI, UID/GID,
+HOME, parent process and runtime selectors. A changed unit command, APP digest or
+physical owner invalidates the repeated proof. Router-managed generations still
+require their registered APP bundle.
+
+Host reboot recovery preserves the previous handoff configuration as historical evidence. Ordinary generation preparation/activation can change the live registry after resume. The recovery receipt binds a fresh configuration digest, rechecked during import, cold readiness and resume; it must not require that fresh digest to equal the historical handoff digest. All source identity, registry, Native proof and unknown-work checks remain required.

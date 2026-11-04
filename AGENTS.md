@@ -102,7 +102,9 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 - Desktop 路径必须消费 [Directory identity charter](docs/architecture/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根必须使用核心产品规范名称，旧产品目录只允许作为显式配置的幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
 - Hermes 的 Console 适配源码和生成工具属于下游产品，不是独立核心的安装或默认检查依赖。下游产品工作区持有机械生成层；不得直接编辑，须修改其前端真源后运行该产品的同步及只读漂移检查，连同 `UPSTREAM.json` 提交。详见 [历史与消费契约](docs/upstream-history.md)。
 - Server 六类核心数据由 `@opencraft/storage-node` 持有统一连接、Drizzle schema 和明文 SQL；新增迁移运行 `npm run generate:storage`，检查 `npm run check:storage` 和 `npm run test:sqlite-node`。领域 repository 借用 owner 连接；`server/legacy.ts` 中已发布旧库 SQL/name/hash 不可改写。Headless 与离线账号/权限管理工具走同一存储入口，不再写六个旧文件。
+- OpenCraft 自有独立 SQLite 同样采用 Drizzle：owner 清单在 `packages/storage-node/stores.json`，每库声明、基线及生成物在 `storage-node/src/stores/<id>/`。运行 `npm run generate:storage -- --store <id>`，统一 `check:storage` / `test:sqlite-node`。旧链冻结，生成增量接在该库已发布版本之后；采用工具本身不产生迁移、不合库、不改变进程或文件路径。Server 默认入口保持不变。原生引擎私有库、IndexedDB 与六类退休导入源不纳入这份独立库清单。下游私有库保留各自schema/生成清单，经 `resolveMigrationContract` 接同一执行器，不把私有表塞入核心清单。
 - SQLite 表结构变更只在该库 owner 的 migrations 列表追加连续 version N+1；不得改写已发布迁移的 SQL 原文、名称或版本。生命周期与恢复契约见 [sqlite-lifecycle](docs/sqlite-lifecycle.md)。
+- 生成新SQLite迁移并审查SQL后，运行 `npm run freeze:storage -- --store <id>`（Server默认不带store），随迁移提交只追加的published.json；check:storage拒绝尚未冻结条目，generate/compile/freeze均拒绝改写冻结历史及编译SQL。已知无账本旧库先到冻结旧目标再执行新增迁移，转换与增量同事务，未知结构及明确reject策略不放宽。
 - OpenCraft 自有 SQLite 的新增运行时 `CREATE TABLE` / `ALTER TABLE` 只由迁移执行；业务初始化与恢复不得另建表或按列探测补结构。测试 fixture 与下述保留的上游镜像不作为升级 authority。
 - 所有 OpenCraft 自有 SQLite 库必须经 `openManagedDatabase` 打开并暴露 outcome；owner 负责独占生命周期、关闭和处置摘要，不得吞掉迁移失败后继续宣称 ready。
 - 改表必须有从上一版本结构升级并保留业务数据的测试，以及已记录 checksum 不一致时拒绝打开的测试；空库测试不能替代升级测试。
@@ -117,6 +119,8 @@ OpenCraft 所有自有客户端及内置插件的用户界面遵循[全项目国
 OpenCraft 界面图标禁止使用 Lucide，包括 `lucide-react`、其他平台适配包及直接搬用其 SVG 路径。新增、替换与维护图标统一使用项目共享自绘组件（Web 为 `@opencraft/design-system-web/action-icons`，Native 为 `@opencraft/design-system-native/action-icons`，通用图形几何由 `@opencraft/design-system/action-artwork` 持有），缺少语义时在共享图标 owner 补齐，业务插件不另造一份。此要求覆盖此前允许 Lucide 的决定；既有残留应明确记录并迁移，不能以规则更新宣称已经全仓清除。
 
 ## UI 与设计系统
+
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 
 - 搜索/筛选及输入/提交组合先明确实际容器容量、关联分组与溢出优先级，遵循[集合工具栏约束](design/ui/collections.md#responsive-toolbars-and-related-controls)；共享布局复用现有 owner，验收保留触控、可读性及工作连续性。
 

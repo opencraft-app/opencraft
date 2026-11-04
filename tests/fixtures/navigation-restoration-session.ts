@@ -4,15 +4,15 @@ import {
   createConversationScopeRegistry, createConversationViewRegistry,
   createConversationActivationCoordinator, type WorkbenchLocation,
 } from "../../packages/workbench-runtime/src/index";
-import { createRouteScopeId, type ApplicationRouterOptions } from "../../apps/workbench-web/src/runtime/workbench-navigation";
-import { createWorkbenchNavigationTransaction } from "../../apps/workbench-web/src/runtime/workbench-navigation-transaction";
+import { createRouteScopeId } from "../../apps/workbench-web/src/runtime/workbench-navigation";
+import { createWorkbenchNavigationTransaction, type WorkbenchNavigationTransactionOptions } from "../../apps/workbench-web/src/runtime/workbench-navigation-transaction";
 import { createWorkbenchEntryResolver } from "../../apps/workbench-web/src/runtime/workbench-location-restoration";
 
 /** Actual route/resource owners; only physical Host readiness is substituted. */
 export function createNavigationRestorationSession(options: {
   initialThread?: WorkbenchLocation;
   connect?: () => Promise<void>;
-  router?: ApplicationRouterOptions;
+  router?: WorkbenchNavigationTransactionOptions;
 } = {}) {
   let connectCalls = 0;
   const runtime = {

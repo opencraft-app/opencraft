@@ -1,3 +1,4 @@
+import { Button } from '@opencraft/design-system-web/button';
 import { useCallback, useSyncExternalStore } from 'react';
 import { PointerIcon, PointerOffIcon } from '@opencraft/design-system-web/action-icons';
 import { useIntl } from '@opencraft/i18n/react';
@@ -19,9 +20,11 @@ export function BrowserControlButton({ surfaces, pageId, showLabel = false }: { 
     : state === 'elsewhere'
       ? intl.formatMessage({ id: 'browser.control.takeoverHint', defaultMessage: 'Another client or Agent is controlling this page. Take control' })
       : intl.formatMessage({ id: 'browser.control.viewingHint', defaultMessage: 'Viewing shared page. Take input control' });
-  return <button type="button" className="browser-toolbar-button"
+  const Control = showLabel ? Button : 'button';
+  return <Control type="button" className={showLabel ? undefined : "browser-toolbar-button"}
+    {...(showLabel ? { variant: 'secondary' as const, contentLayout: 'row' as const } : {})}
     aria-label={label} title={hint} onClick={() => own ? surfaces?.releaseControl?.(pageId) : surfaces?.takeControl?.(pageId)}>
-    {own ? <PointerOffIcon size={15} /> : <PointerIcon size={15} />}
+    {own ? <PointerOffIcon size={showLabel ? undefined : 15} /> : <PointerIcon size={showLabel ? undefined : 15} />}
     {showLabel ? <span>{label}</span> : null}
-  </button>;
+  </Control>;
 }

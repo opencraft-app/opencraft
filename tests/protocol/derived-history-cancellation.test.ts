@@ -6,7 +6,9 @@ import { MemoryTransport } from "@opencraft/appserver-transport-memory";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
-async function fixture(kind: "older" | "refresh" | "background") {
+async function fixture(kind: "older" | "refresh" | "background", budget = false) {
+  let now = 0, timerId = 0;
+  const timers = new Map<number, { at: number; run(): void }>();
   let reads = 0, entered = false, finish!: () => void, fail!: (error: Error) => void;
   const held = new Promise<void>((done, reject) => { finish = done; fail = reject; });
   const transport = new MemoryTransport({ receive(frame, peer) {
@@ -21,7 +23,13 @@ async function fixture(kind: "older" | "refresh" | "background") {
   } });
   const client = new JsonRpcAppServerClient({ hostId: "derived-history", transport });
   await client.connect({ clientInfo: { name: "derived-history", version: "1" }, capabilities: {} });
-  const session = await createCordisThreadSessionRuntime({ client, historyModeHint: "message-window", drainTailHistory: kind === "background" });
+  const session = await createCordisThreadSessionRuntime({ client, historyModeHint: "message-window", drainTailHistory: kind === "background",
+    ...(budget ? { requestTimeoutMs: 1000, readClock: {
+      now: () => now,
+      setTimeout(run: () => void, delay: number) { const id = ++timerId; timers.set(id, { at: now + delay, run }); return id; },
+      clearTimeout(id: unknown) { timers.delete(id as number); },
+    } } : {}),
+  });
   const loads = new Map<string, number>(), olderLoads = new Map<string, number>();
   const history: HydratedThreadHistory = { source: "message-window", turns: [], complete: false, olderCursor: "older", itemsPaginationByTurnId: {} };
   session.historyStrategies.register({ name: "fork", priority: 1000, matches: () => true,
@@ -32,13 +40,57 @@ async function fixture(kind: "older" | "refresh" | "background") {
     },
     async loadOlder(context) {
       const count = (olderLoads.get(context.threadId) ?? 0) + 1; olderLoads.set(context.threadId, count);
-      if (context.threadId === "a" && count === 1) { entered = true; await held; }
+      if (context.threadId === "a" && count === 1 && kind === "older") { entered = true; await held; }
       return { ...history, complete: true, olderCursor: null };
     },
   });
   await session.resume.resume({ threadId: "a" });
-  return { session, client, finish, fail, entered: () => entered, async close() { finish(); await session.dispose(); await client.close(); } };
+  return { session, client, finish, fail, entered: () => entered,
+    advance(value: number, callbacks: boolean) {
+      now = value;
+      if (callbacks) for (const [id, timer] of [...timers]) if (timers.has(id) && timer.at <= now) { timers.delete(id); timer.run(); }
+    },
+    async close() { finish(); await session.dispose(); await client.close(); } };
 }
+
+for (const kind of ["older", "refresh"] as const) for (const probe of [false, true]) {
+  test(`${kind} total budget releases a held strategy (${probe ? "overdue admission" : "timer"})`, async () => {
+    const f = await fixture(kind, true); let settled = false, failure: unknown;
+    try {
+      const call = () => kind === "older" ? f.session.resume.loadOlder("a") : f.session.resume.refreshHistory("a");
+      const pending = call().then(() => { settled = true; }, error => { settled = true; failure = error; });
+      for (let i = 0; i < 12 && !f.entered(); i++) await flush(); assert.equal(f.entered(), true);
+      f.advance(1001, !probe);
+      const next = probe ? call() : undefined;
+      for (let i = 0; i < 5; i++) await flush();
+      assert.equal(settled, true, "derived history must settle without a strategy reply at its total deadline");
+      if (kind === "older") assert.equal((failure as { code?: string })?.code, "TIMEOUT");
+      assert.equal(f.session.views.get("a")?.turnsPagination.isLoadingOlder, false);
+      assert.equal(f.session.views.get("a")?.resumeState, "resumed");
+      await pending; await (next ?? call());
+      const before = JSON.stringify(f.session.views.get("a"));
+      f.finish(); for (let i = 0; i < 5; i++) await flush();
+      assert.equal(JSON.stringify(f.session.views.get("a")), before, "late retired replies cannot change the successor");
+    } finally { await f.close(); }
+  });
+}
+
+test("older total budget includes time queued behind a held refresh", async () => {
+  const f = await fixture("refresh", true); let olderSettled = false, failure: unknown;
+  try {
+    const refresh = f.session.resume.refreshHistory("a");
+    for (let i = 0; i < 12 && !f.entered(); i++) await flush(); assert.equal(f.entered(), true);
+    f.advance(400, false);
+    const older = f.session.resume.loadOlder("a").then(() => { olderSettled = true; }, error => { olderSettled = true; failure = error; });
+    f.advance(1401, true);
+    for (let i = 0; i < 5; i++) await flush();
+    assert.equal(olderSettled, true, "queueing must consume the same total older-page budget");
+    assert.equal((failure as { code?: string })?.code, "TIMEOUT");
+    await older; await refresh;
+    await f.session.resume.loadOlder("a");
+    assert.equal(f.session.views.get("a")?.turnsPagination.hasLoadedOldest, true);
+  } finally { await f.close(); }
+});
 
 for (const kind of ["older", "refresh", "background"] as const) for (const revoke of ["baseline", "release", "dispose", "needs-resume", "presentation"] as const) {
   test(`${kind} local wait settles on ${revoke} while its old strategy remains held`, { timeout: 3000 }, async () => {
@@ -55,6 +107,8 @@ for (const kind of ["older", "refresh", "background"] as const) for (const revok
       for (let i = 0; i < 5; i++) await flush();
       assert.equal(settled, true, "revocation must settle the local caller before the retired strategy completes");
       await observed;
+      if (revoke !== "release" && revoke !== "dispose") assert.equal(f.session.views.get("a")?.turnsPagination.isLoadingOlder, false,
+        "retiring the source must clear loading paint even while the old reply remains held");
       if (revoke === "presentation") {
         assert.equal(f.session.views.get("a")?.resumeState, "resumed", "optional cancellation retains baseline authority");
         assert.equal(f.session.views.get("a")?.historyError, null);

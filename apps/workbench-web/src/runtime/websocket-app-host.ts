@@ -454,12 +454,15 @@ export function connectWebSocketAppHost(
     /** Revalidate private admission through its existing owner before opening a socket. */
     readonly beforeConnect?: () => Promise<void>;
   } = {},
-): { createTransport(hostId: string): DuplexTransport; close(): void } {
+): { createTransport(hostId: string): DuplexTransport; subscribeRecoveryHint(listener: () => void): () => void; close(): void } {
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
   let disposed = false;
   let closing = false;
   let recoveryDetached = false;
   const transports = new Set<RenewableAppHostTransport>();
+  // Host demand survives disposal of a failed Client transport generation.
+  const routeListeners = new Set<() => void>();
+  const hasRecoveryDemand = () => transports.size > 0 || routeListeners.size > 0;
   const events = options.recoveryEvents ?? browserRecoveryEvents;
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   let recoveryTicket = 0;
@@ -469,7 +472,7 @@ export function connectWebSocketAppHost(
     recoveryTimer = null;
   };
   const scheduleRecoveryCheck = () => {
-    if (disposed || recoveryTimer !== null || transports.size === 0 || !events.isVisible()) return;
+    if (disposed || recoveryTimer !== null || !hasRecoveryDemand() || !events.isVisible()) return;
     // Mobile routes can recover without an online/visibility event. This is a
     // shared physical-route observation, never a second Host retry scheduler.
     const ticket = ++recoveryTicket;
@@ -483,11 +486,15 @@ export function connectWebSocketAppHost(
     if (disposed) return;
     // A backgrounded page cannot spend its foreground probe deadline.
     if (!events.isVisible()) { stopRecoveryTimer(); current?.port.cancelProbe(); return; }
-    if (transports.size === 0) return;
+    if (!hasRecoveryDemand()) return;
     current?.port.probeReachability();
     // Arm before notifying consumers: synchronous disposal must cancel this
     // owner's timer, and a subscriber cannot create duplicate periodic work.
     scheduleRecoveryCheck();
+    for (const listener of [...routeListeners]) {
+      if (disposed) break;
+      if (routeListeners.has(listener)) listener();
+    }
     for (const transport of [...transports]) {
       if (disposed) break;
       if (transports.has(transport)) transport.notifyRecoveryHint();
@@ -505,6 +512,15 @@ export function connectWebSocketAppHost(
     return true;
   };
   return {
+    subscribeRecoveryHint(listener) {
+      if (disposed) return () => undefined;
+      routeListeners.add(listener);
+      scheduleRecoveryCheck();
+      return () => {
+        routeListeners.delete(listener);
+        if (!hasRecoveryDemand()) stopRecoveryTimer();
+      };
+    },
     createTransport(hostId) {
       if (disposed) throw new Error("App Host connection is closed");
       const transport = new RenewableAppHostTransport(() => {
@@ -527,7 +543,7 @@ export function connectWebSocketAppHost(
             () => events.isVisible(),
             () => events.diagnosticContext?.() ?? {},
           );
-          try { current = { port, client: new MessagePortAppHostClient(port, id) }; }
+          try { current = { port, client: new MessagePortAppHostClient(port, id, { releaseTimeoutMs: 5_000 }) }; }
           catch (error) { port.close(); throw error; }
         }
         const leaseOwner = current;
@@ -544,7 +560,7 @@ export function connectWebSocketAppHost(
         };
       }, () => {
         transports.delete(transport);
-        if (transports.size === 0) stopRecoveryTimer();
+        if (!hasRecoveryDemand()) stopRecoveryTimer();
       }, options.beforeConnect);
       transports.add(transport);
       scheduleRecoveryCheck();
@@ -552,6 +568,7 @@ export function connectWebSocketAppHost(
     },
     close() {
       disposed = true;
+      routeListeners.clear();
       stopRecoveryTimer();
       if (closing) return;
       closing = true;

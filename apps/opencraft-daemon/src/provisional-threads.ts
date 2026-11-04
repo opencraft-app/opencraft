@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openManagedDatabase, } from "@opencraft/sqlite-node";
 
 type RecordValue = Record<string, unknown>;
 export type ThreadCreationPhase = "created" | "attempted" | "accepted" | "persisted";
@@ -14,9 +14,9 @@ const environmentOwnerMigration = 'ALTER TABLE thread_creations ADD COLUMN envir
 export class ProvisionalThreads {
   private readonly managed;
   constructor(directory: string) {
-    this.managed = openManagedDatabase({ path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
+    this.managed = openManagedDatabase({ schemaId: "provisional-threads", path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
       migrations: [{ version: 1, name: "thread-creation-lifecycle", sql: schemaV1 },
-        { version: 2, name: "creation-environment-owner", sql: environmentOwnerMigration }], validateSchema: createSchemaValidator(schemaV1 + environmentOwnerMigration) });
+        { version: 2, name: "creation-environment-owner", sql: environmentOwnerMigration }] });
   }
   get outcome() { return this.managed.outcome; }
   created(threadId: string, result: RecordValue, environmentOwner?: string): void {
@@ -38,7 +38,7 @@ export class ProvisionalThreads {
       .run(inputId, turnId, threadId);
   }
   persisted(threadId: string): void {
-    this.managed.database.prepare("UPDATE thread_creations SET phase='persisted' WHERE thread_id=?").run(threadId);
+    this.managed.database.prepare("UPDATE thread_creations SET phase='persisted' WHERE thread_id=? AND phase<>'persisted'").run(threadId);
   }
   close() { this.managed.database.close(); }
 }

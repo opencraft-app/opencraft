@@ -45,3 +45,13 @@ test("only committed sources, deduplication and reconciliation update collection
   assert.equal((await service.read(params,()=>({actorId:"A",administrator:false}))).diagnostics,undefined);
  }finally{service?.close();state.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('worker telemetry batches merge once, retain totals beyond sample bounds and preserve query diagnostics',()=>{
+ const worker=new TokenUsageTelemetry(),host=new TokenUsageTelemetry();host.latency('query',3,true);
+ for(let i=0;i<1000;i++){worker.source('inserted');worker.latency('write',i,i!==999);}
+ const batch=worker.takeBatch()!;assert.equal(batch.writes.length,256);assert.equal(worker.takeBatch(),null);
+ host.mergeBatch(batch);const snapshot=host.snapshot();assert.equal(snapshot.counts.collected,1000);assert.equal(snapshot.counts.writeFailures,1);
+ assert.equal(snapshot.writeLatency.count,1000);assert.equal(snapshot.writeLatency.samples,256);assert.equal(snapshot.writeLatency.maxMs,999);
+ assert.equal(snapshot.queryLatency.count,1);assert.ok(snapshot.lastSourceSuccessAt);
+ worker.latency('write',2,true);host.mergeBatch(worker.takeBatch()!);assert.equal(host.snapshot().writeLatency.count,1001);assert.equal(host.snapshot().counts.collected,1000);
+});

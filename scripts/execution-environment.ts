@@ -8,7 +8,7 @@ import { AccountEnvironment, EnvironmentError, validateEnvironmentName } from '.
 
 export const EXECUTION_ENVIRONMENT_FIELD = '__opencraftEnvironment';
 export interface EnvironmentExecutionScope {
-  readonly account: string | null; readonly hostId: string; readonly threadId: string | null; readonly projectId: string | null;
+  readonly executionId?: string; readonly account: string | null; readonly hostId: string; readonly threadId: string | null; readonly projectId: string | null;
 }
 const PLATFORM = 'platform:environment';
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -20,10 +20,12 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 export class ExecutionEnvironmentSnapshot {
   readonly owner: string;
   readonly key: string;
+  readonly executionId: string | undefined;
   private readonly values: Readonly<Record<string, string>>;
   constructor(scope: EnvironmentExecutionScope, values: Record<string, string>) {
     this.owner = digest([scope.account, scope.hostId, scope.projectId]);
-    this.key = digest([this.owner, values]);
+    this.executionId = scope.executionId;
+    this.key = digest([this.owner, this.executionId, values]);
     this.values = Object.freeze({ ...values });
     for (const property of ['values', 'key']) Object.defineProperty(this, property, { enumerable: false });
   }
@@ -34,9 +36,10 @@ export class ExecutionEnvironmentSnapshot {
       if (base[name] !== undefined) throw new EnvironmentError('reserved');
       Object.defineProperty(result, name, { value, enumerable: true, configurable: true, writable: true });
     }
+    result.OPENCRAFT_EXECUTION_ID = this.executionId ?? '';
     return result;
   }
-  overlay(): Record<string, string> { return { ...this.values }; }
+  overlay(): Record<string, string> { return { ...this.values, OPENCRAFT_EXECUTION_ID: this.executionId ?? '' }; }
   redact(value: string): string {
     for (const secret of [...new Set(Object.values(this.values))].filter(Boolean).sort((a, b) => b.length - a.length)) value = value.replaceAll(secret, '[REDACTED]');
     return value;
@@ -131,7 +134,7 @@ export class ExecutionEnvironmentRuntime {
   /** Durable original execution provenance, also used for scheduler/recovery
    * launches. A reconnecting browser never replaces its principal. */
   execution(hostId: string, threadId: string, inputId?: string, projectId?: string | null, turnId?: string): EnvironmentExecutionScope {
-    let account: string | null = null;
+    let account: string | null = null, executionId: string | undefined;
     const codex = hostId === 'local-codex';
     const root = codex ? join(this.directory, 'codex') : join(this.directory, 'thread-identities', 'opencraft-server');
     const primary = join(root, codex ? 'opencraft-host-state.sqlite' : 'thread-identity.sqlite');
@@ -140,16 +143,17 @@ export class ExecutionEnvironmentRuntime {
       const db = new DatabaseSync(path, { readOnly: true });
       try {
         db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');
-        const row = db.prepare(`SELECT s.principal_json,s.ownership,s.admission,l.state FROM execution_leases l
+        const row = db.prepare(`SELECT s.principal_json,s.ownership,s.admission,l.state,l.execution_id FROM execution_leases l
           JOIN execution_submissions s ON s.thread_id=l.thread_id AND s.input_id=l.input_id
           WHERE l.thread_id=? ${inputId ? 'AND l.input_id=?' : turnId ? 'AND l.turn_id=?' : ''} ORDER BY l.generation DESC LIMIT 1`).get(...(inputId || turnId ? [threadId, inputId ?? turnId!] : [threadId]));
+        if (row && row.state !== 'rejected' && (row.admission === 'accepted' || inputId && row.admission === 'pending') && text(row.execution_id)) executionId = row.execution_id;
         if (row?.ownership === 'human' && (row.admission === 'accepted' || inputId && row.admission === 'pending') && ['active', 'pending'].includes(String(row.state))) {
           const principal = JSON.parse(String(row.principal_json));
           if (text(principal?.provider) && text(principal?.subject)) account = `${principal.provider}:${principal.subject}`;
         }
       } finally { db.close(); }
     }
-    return Object.freeze({ account, hostId, threadId, projectId: projectId ?? this.project(hostId, threadId) });
+    return Object.freeze({ account, hostId, threadId, ...(executionId ? { executionId } : {}), projectId: projectId ?? this.project(hostId, threadId) });
   }
   redact(value: unknown): unknown {
     if (typeof value === 'string') {
@@ -164,7 +168,10 @@ export class ExecutionEnvironmentRuntime {
     const variables = scope.account ? this.environment.launchEnvironment(scope.account, {
       projectId: scope.projectId === null ? null : environmentProjectId(scope.hostId, scope.projectId),
     }, {}) : {};
-    const snapshot = new ExecutionEnvironmentSnapshot(scope, variables as Record<string, string>);
+    // Codex's existing Thread locator is sufficient for the Git wrapper. Do not
+    // reload a native Thread every Turn merely to change a Git locator.
+    const processScope = scope.hostId === 'local-codex' ? { ...scope, executionId: undefined } : scope;
+    const snapshot = new ExecutionEnvironmentSnapshot(processScope, variables as Record<string, string>);
     for (const reference of this.snapshots) if (!reference.deref()) this.snapshots.delete(reference);
     this.snapshots.add(new WeakRef(snapshot));
     return snapshot;

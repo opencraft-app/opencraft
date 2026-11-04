@@ -79,6 +79,8 @@ export interface ThreadGuardianApprovalReview {
 }
 
 export interface ThreadView {
+  /** A durable version gap revokes display authority without execution Resume. */
+  readonly historySyncRequired?: boolean;
   readonly interactionRecovery?: "recovering" | "unavailable";
   readonly hostId: string;
   readonly threadId: string;

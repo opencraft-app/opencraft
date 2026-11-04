@@ -1,7 +1,8 @@
 import { createServer, request as httpRequest } from 'node:http';
 import { mkdir, chmod, lstat, unlink, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import {createResourceSampler} from './resource-sampler.mjs';
+import { randomUUID, createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { ObserveStore } from './store.ts';
 import { createEventQueue } from '../../packages/observability-contract/queue.mjs';
@@ -21,14 +22,16 @@ export function json(response, status, body) {
 }
 
 export async function startObserve({ directory, deploymentId, prometheus = 'http://127.0.0.1:23302', metricsHost = '127.0.0.1', metricsPort = 23305,
-  collector = 'http://127.0.0.1:23304/v1/logs', grafanaBasePath, databaseBytes, sourceRevision = process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION??null, buildId = process.env.OPENCRAFT_OBSERVE_BUILD_ID??null, now = Date.now } = {}) {
+  collector = 'http://127.0.0.1:23304/v1/logs', grafanaBasePath, databaseBytes, sourceRevision = process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION??null, buildId = process.env.OPENCRAFT_OBSERVE_BUILD_ID??null, resourceSampling, now = Date.now } = {}) {
   if (databaseBytes !== undefined && (!Number.isSafeInteger(databaseBytes) || databaseBytes < 4096)) throw fault('invalid_configuration');
   const grafanaPath=observationGrafanaBasePath(grafanaBasePath);
   if (!directory?.startsWith('/') || !/^[a-zA-Z0-9_.-]{1,80}$/u.test(deploymentId??'')) throw fault('invalid_configuration');
   for (const address of [prometheus,collector]) {const url=new URL(address);if(url.hostname!=='127.0.0.1'||url.protocol!=='http:'||url.username||url.password)throw fault('invalid_backend');}
+  const sampleResources=resourceSampling?createResourceSampler(resourceSampling):undefined;
   await mkdir(directory,{recursive:true,mode:0o700});await chmod(directory,0o700);
   const store = new ObserveStore(resolve(directory,'observe.sqlite'),now,databaseBytes);
   const producerId = randomUUID();
+
   const essential=['web','gateway','core'];
   let active = 0, exportDropped=0, exporting=false;
   const exportQueue=createEventQueue();
@@ -110,13 +113,48 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
   }
   function metrics() {
     const nowMs=now(), lines=['# TYPE opencraft_telemetry_losses_total counter',`opencraft_telemetry_losses_total ${store.dropped+store.rejected+exportDropped}`];
-    for(const component of ['web','gateway','core','codex','dsh','pi','observe']) {
+    for(const component of ['web','gateway','core','relay','codex','dsh','pi','observe']) {
       const p=store.producers().filter(p=>p.component===component).sort((a,b)=>b.received-a.received)[0];
       if(p){lines.push(`opencraft_producer_age_seconds{component="${component}"} ${Math.max(0,nowMs-p.received)/1000}`,
         `opencraft_component_identity_known{component="${component}"} ${p.identity.sourceRevision?1:0}`);
-        if(p.identity.cpuSeconds!==undefined)lines.push(`opencraft_process_cpu_seconds_total{component="${component}"} ${p.identity.cpuSeconds}`);
-        if(p.identity.heapBytes!==undefined)lines.push(`opencraft_process_heap_bytes{component="${component}"} ${p.identity.heapBytes}`);
-        if(p.identity.rssBytes!==undefined)lines.push(`opencraft_process_rss_bytes{component="${component}"} ${p.identity.rssBytes}`);}
+}
+    }
+    lines.push('# TYPE opencraft_process_cpu_seconds_total counter');
+    const resourceTargets=new Set();
+    for(const {component,producer,sample} of store.resourceSamples()) {
+      if(sample.resourceScope === 'host'||sample.resourceScope === 'cgroup') {
+        if(component!=='observe'||sample.producerMode!=='native'||sample.observedBy!=='self')continue;
+        const key=sample.resourceScope+':'+sample.resourceTarget;if(resourceTargets.has(key))continue;resourceTargets.add(key);
+        const label=`scope="${sample.resourceScope}",target="${sample.resourceTarget}"`;
+        lines.push(`opencraft_resource_sample_age_seconds{${label}} ${Math.max(0,nowMs-sample.at)/1000}`);
+        lines.push(`opencraft_resource_partial{${label}} ${sample.resourceCoverage==='partial'?1:0}`);
+        for(const [field,name] of Object.entries({resourceCpuCores:'cpu_cores',resourceCpuBusyPercent:'cpu_busy_percent',resourceIoWaitPercent:'iowait_percent',resourceCpuPressurePercent:'cpu_pressure_percent',resourceIoPressurePercent:'io_pressure_percent',resourceCpuThrottledMs:'cpu_throttled_milliseconds',resourceReadBytes:'read_bytes',resourceWriteBytes:'write_bytes',resourceMemoryBytes:'memory_bytes',resourceMemoryAvailableBytes:'memory_available_bytes',resourceMembers:'members',resourceNewMembers:'new_members',resourceSampleMs:'sample_milliseconds'}))if(sample[field]!==undefined)lines.push(`opencraft_resource_${name}{${label}} ${sample[field]}`);
+        continue;
+      }
+      if(!['native','health_projection'].includes(sample.producerMode))continue;
+      const process=createHash('sha256').update(String(producer)).digest('hex').slice(0,16);
+      const mode=sample.producerMode==='native'&&sample.observedBy==='self'?'native':'projection';
+      const label=`component="${component}",process="${process}",mode="${mode}"`;
+      lines.push(`opencraft_process_sample_age_seconds{${label}} ${Math.max(0,nowMs-sample.at)/1000}`);
+      if(mode==='native'&&sample.cpuSeconds!==undefined)lines.push(`opencraft_process_cpu_seconds_total{${label}} ${sample.cpuSeconds}`);
+      if(mode==='projection'&&sample.cpuSeconds!==undefined)lines.push(`opencraft_process_observed_cpu_seconds{${label}} ${sample.cpuSeconds}`);
+      if(sample.heapBytes!==undefined)lines.push(`opencraft_process_heap_bytes{${label}} ${sample.heapBytes}`);
+      if(sample.rssBytes!==undefined)lines.push(`opencraft_process_rss_bytes{${label}} ${sample.rssBytes}`);
+    }
+    const relay=store.producers().find(p=>p.component==='relay');
+    if(relay?.identity.relayCapturedAt!==undefined){
+      const sample=relay.identity,age=Math.max(0,nowMs-sample.relayCapturedAt);
+      lines.push(`opencraft_relay_sample_age_seconds ${age/1000}`);
+      // A heartbeat cannot refresh an old capacity sample. Missing/stale is never exported as zero.
+      if(age<=limits.freshnessMs&&nowMs-relay.received<=limits.freshnessMs){
+        for(const [metric,key] of Object.entries({active_streams:'relayActiveStreams',pending_streams:'relayPendingStreams',control_connections:'relayControlConnections',max_instance_slots:'relayMaxInstanceSlots',peak_slots:'relayPeakSlots',peak_instance_slots:'relayPeakInstanceSlots',instance_limit:'relayInstanceLimit',global_limit:'relayGlobalLimit'})){
+          lines.push(`# TYPE opencraft_relay_${metric} gauge`,`opencraft_relay_${metric} ${sample[key]}`);
+        }
+        lines.push('# TYPE opencraft_relay_capacity_rejections_total counter',
+          `opencraft_relay_capacity_rejections_total{scope="instance"} ${sample.relayRejectedInstance}`,
+          `opencraft_relay_capacity_rejections_total{scope="global"} ${sample.relayRejectedGlobal}`,
+          '# TYPE opencraft_relay_open_timeouts_total counter',`opencraft_relay_open_timeouts_total ${sample.relayOpenTimeouts}`);
+      }
     }
     const labels=row=>`site="${row.site}",host="${row.hostId}",engine="${row.engine}"`;
     for(const row of store.availability()) {
@@ -195,8 +233,16 @@ export async function startObserve({ directory, deploymentId, prometheus = 'http
   const exporter=createServer((req,res)=>{if(req.method!=='GET'||!['/metrics','/health'].includes(req.url)){json(res,404,{error:{code:'missing'}});return;}if(req.url==='/health'){json(res,200,{ready:true,ok:availabilityStatus().status==='ok',...coverage(),collection:coverage(),...availabilityStatus(),sourceRevision,buildId});return;}try{res.writeHead(200,{'content-type':'text/plain; version=0.0.4'});res.end(metrics());}catch{json(res,503,{error:{code:'storage_unavailable'}});}});
   await new Promise((yes,no)=>{exporter.once('error',no);exporter.listen(metricsPort,metricsHost,yes);});
   function heartbeat(){store.ingest([{schemaVersion,kind:'resource',component:'observe',producerId,eventId:randomUUID(),at:now(),rssBytes:process.memoryUsage().rss,cpuSeconds:(process.cpuUsage().user+process.cpuUsage().system)/1e6,sourceRevision,buildId,observedBy:'self',identitySource:'self',producerMode:'native',originClass:'operator'}]);}
-  heartbeat();void checkBackends();const timer=setInterval(()=>{void checkBackends();try{heartbeat();store.prune();}catch{store.dropped++;}},30000);timer.unref();
-  return {socketPath,metricsAddress:exporter.address(),store,query,snapshot,close:async()=>{clearInterval(timer);clearInterval(exportTimer);await Promise.all([new Promise(r=>api.close(r)),new Promise(r=>exporter.close(r))]);store.close();await unlink(socketPath).catch(()=>{});}};
+  let resourceBusy=false;
+  async function captureResources(){
+    if(!sampleResources||resourceBusy)return;resourceBusy=true;
+    try{for(const fields of await sampleResources()) {
+      const event={schemaVersion,kind:'resource',component:'observe',producerId:createHash('sha256').update(producerId+fields.resourceScope+fields.resourceTarget).digest('hex').slice(0,32),eventId:randomUUID(),at:now(),sourceRevision,buildId,observedBy:'self',identitySource:'self',producerMode:'native',originClass:'operator',...fields};
+      store.ingest([event]);if(!exportQueue.emit(event))exportDropped++;
+    }}catch{/* Optional observation cannot fail business readiness. */}finally{resourceBusy=false;}
+  }
+  heartbeat();void captureResources();void checkBackends();const timer=setInterval(()=>{void checkBackends();try{heartbeat();void captureResources();store.prune();}catch{store.dropped++;}},30000);timer.unref();
+  return {socketPath,metricsAddress:exporter.address(),store,query,snapshot,close:async()=>{clearInterval(timer);clearInterval(exportTimer);while(resourceBusy)await new Promise(r=>setTimeout(r,5));await Promise.all([new Promise(r=>api.close(r)),new Promise(r=>exporter.close(r))]);store.close();await unlink(socketPath).catch(()=>{});}};
 }
 import { sanitizeEvent as sanitizeForExport } from '../../packages/observability-contract/index.mjs';
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){

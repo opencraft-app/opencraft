@@ -109,7 +109,7 @@ for (const kind of ["core", "router"] as const) {
       }
       const lease = await claim(process.pid); await f.fence(lease);
       const observation = { coverage: "complete" as const, activeCount: 0, historicalCount: 0, counts: {} };
-      const proof = f.owner instanceof AccountCoreOwner ? f.owner.inspect(observation) : f.owner.inspect(f.input(), observation);
+      const proof = f.owner instanceof AccountCoreOwner ? f.owner.issueDrainPermit(observation) : f.owner.inspect(f.input(), observation);
       const durable = await f.durable();
       f.owner.renewOperatorLease(f.input(lease));
       assert.deepEqual(await f.durable(), durable, "renewal does not change cold data or the persisted fence");

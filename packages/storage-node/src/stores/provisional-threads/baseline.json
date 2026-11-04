@@ -1,0 +1,22 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "thread-creation-lifecycle",
+      "checksum": "a54eb528520ac934e2356eb303020f7369dc93a432f819e462f8d367dd2d99f8"
+    },
+    {
+      "version": 2,
+      "name": "creation-environment-owner",
+      "checksum": "bedae82d9fe833746c3594a596e038d3abd52c598c3a916da4062c85edc9350a"
+    }
+  ],
+  "tableOptions": {
+    "thread_creations": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "3c0de7177603772a139896efc169479c98c1155114c37283c640602f1ea4222b",
+  "baselineSnapshotChecksum": "d6d5eaf9dff8a7682bd7f554e1ad6577b52e1b8e9f71a0e5b397d7030cdfa5fb"
+}

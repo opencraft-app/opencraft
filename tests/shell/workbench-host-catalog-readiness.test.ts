@@ -34,6 +34,10 @@ class Registry {
     this.runtimes.set(hostId, runtime);
     for (const listener of this.listeners) listener();
   }
+  detach(hostId: string) {
+    this.runtimes.delete(hostId);
+    for (const listener of this.listeners) listener();
+  }
 }
 
 test("Host phase transitions update interaction availability without streaming repaint", () => {
@@ -42,6 +46,8 @@ test("Host phase transitions update interaction availability without streaming r
   const unsubscribe = subscribeHostCatalogReadiness(registry, ["hermes"], (hostId) => ready.push(hostId));
   const runtime = new Runtime();
   registry.attach("hermes", runtime);
+  assert.deepEqual(ready, ["hermes"], "a newly registered runtime updates availability");
+  ready.length = 0;
 
   runtime.setPhase("connecting");
   runtime.setPhase("error");
@@ -70,5 +76,26 @@ test("an already-ready runtime does not spuriously reload its catalog", () => {
   const ready: string[] = [];
   const unsubscribe = subscribeHostCatalogReadiness(registry, ["hermes"], (hostId) => ready.push(hostId));
   assert.deepEqual(ready, []);
+  unsubscribe();
+});
+
+test("a replacement that is already ready revalidates a disabled cached catalog", () => {
+  const registry = new Registry();
+  const previous = new Runtime();
+  previous.setPhase("reconnecting");
+  registry.attach("pi", previous);
+  const changes: string[] = [];
+  const unsubscribe = subscribeHostCatalogReadiness(registry, ["pi"], hostId => changes.push(hostId));
+  const replacement = new Runtime();
+  replacement.setPhase("ready");
+  registry.attach("pi", replacement);
+  assert.deepEqual(changes, ["pi"], "replacement must wake the catalog without another phase event");
+  previous.setPhase("ready");
+  replacement.setPhase("ready");
+  assert.deepEqual(changes, ["pi"], "detached runtimes and ordinary streaming must remain quiet");
+  registry.detach("pi");
+  assert.deepEqual(changes, ["pi", "pi"], "removal must revoke cached-row interaction");
+  replacement.setPhase("error");
+  assert.deepEqual(changes, ["pi", "pi"]);
   unsubscribe();
 });

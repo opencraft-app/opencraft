@@ -38,6 +38,24 @@ const operationMappings = [
   }
 ];
 
+const cacheMappings = {
+  cold: '冷启动 (cold)',
+  warm: '热启动 (warm)'
+};
+
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const renameByRegex = (regex, renamePattern) => ({ id: 'renameByRegex', options: { regex: `/${regex}/`, renamePattern } });
+const operationLegendTransforms = Object.entries(operationMappings[0].options)
+  .map(([value, { text }]) => renameByRegex(`^${escapeRegex(value)} `, `${text} `));
+const cacheLegendTransforms = Object.entries(cacheMappings)
+  .map(([value, text]) => renameByRegex(`\\[${escapeRegex(value)}\\]`, `[${text}]`));
+const outcomeLegendTransforms = Object.entries(outcomeMappings[0].options)
+  .map(([value, { text }]) => renameByRegex(` - ${escapeRegex(value)} \\(`, ` - ${text} (`));
+const bracketOutcomeLegendTransforms = Object.entries(outcomeMappings[0].options)
+  .map(([value, { text }]) => renameByRegex(`\\[${escapeRegex(value)}\\]`, `[${text}]`));
+const stateOutcomeLegendTransforms = Object.entries(outcomeMappings[0].options)
+  .map(([value, { text }]) => renameByRegex(`: ${escapeRegex(value)}$`, `: ${text}`));
+
 const componentMappings = [
   {
     type: 'value',
@@ -45,6 +63,7 @@ const componentMappings = [
       web: { text: 'Web 前台 (web)' },
       gateway: { text: '网关守护 (gateway)' },
       core: { text: '核心内核 (core)' },
+      relay: { text: '中继 (relay)' },
       codex: { text: 'Codex 引擎 (codex)' },
       dsh: { text: 'DSH 引擎 (dsh)' },
       pi: { text: 'Pi 引擎 (pi)' },
@@ -57,8 +76,6 @@ const componentMappings = [
   }
 ];
 
-const renameByRegex = (regex, renamePattern) => ({ id: 'renameByRegex', options: { regex: `/${regex}/`, renamePattern } });
-const cacheLegendTransforms = [renameByRegex('\\[cold\\]', '[冷打开]'), renameByRegex('\\[warm\\]', '[热打开]')];
 
 export async function generate(directory = dirname(fileURLToPath(import.meta.url))) {
   const root = resolve(directory, 'provisioning');
@@ -82,6 +99,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           key: 'operations.latency',
           legendFormat: '{{operation}} [{{cache}}] ({{engine}})',
           mappings: operationMappings,
+          transformations: [...operationLegendTransforms, ...cacheLegendTransforms],
           description: 'operations.latency; histogram_approximation; ' + queryDefinitionRevision + '。前台关键交互操作（如打开会话、页面导航等）端到端 P95 耗时估算值。无样本不代表服务健康；直方图分位数由 5 分钟滑动窗口桶估算。'
         },
         {
@@ -104,6 +122,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           key: 'operations.outcomes',
           legendFormat: '{{operation}} - {{outcome}} ({{origin}})',
           mappings: outcomeMappings,
+          transformations: [...operationLegendTransforms, ...outcomeLegendTransforms],
           description: 'operations.outcomes; histogram_approximation; ' + queryDefinitionRevision + '。前台交互操作的成功/失败/超时状态统计（按交互来源 origin 划分）。无样本不代表服务健康；增量由 5 分钟滑动窗口估算。'
         },
         {
@@ -128,6 +147,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           key: 'dependencies.summary',
           legendFormat: '{{method}} [{{outcome}}]',
           mappings: outcomeMappings,
+          transformations: bracketOutcomeLegendTransforms,
           description: 'dependencies.summary; histogram_approximation; ' + queryDefinitionRevision + '。Web 前端与网关、网关与后端各 RPC 方法的调用频次与执行结果。覆盖 thread/*, turn/*, tasks/*, fs/* 等完整方法名分类。'
         },
         {
@@ -144,6 +164,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           key: 'execution.progress',
           legendFormat: '执行状态: {{outcome}}',
           mappings: outcomeMappings,
+          transformations: stateOutcomeLegendTransforms,
           description: 'execution.progress; exact_domain_aggregation; ' + queryDefinitionRevision + '。Agent 任务执行轮次在 started/progress/ok/failed/aborted 等生命周期状态上的精确分布。非终态保持 started，无偏差低报。'
         },
         {
@@ -179,10 +200,158 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
             title: '进程 CPU 占用核数（采样估算）',
             description: 'process_cpu; resource_sample; ' + queryDefinitionRevision + '。各服务进程在采样周期内消耗的 CPU 核数速率估算。',
             datasource: { type: 'prometheus', uid: 'opencraft-prometheus' },
-            targets: [{ refId: 'A', expr: 'rate(opencraft_process_cpu_seconds_total[5m])', legendFormat: '{{component}} CPU 核数', range: true }],
+            targets: [{ refId: 'A', expr: 'sum by(component) (rate(opencraft_process_cpu_seconds_total{mode="native"}[5m]))', legendFormat: '{{component}} CPU 核数', range: true }],
             fieldConfig: { defaults: { unit: 'none', mappings: componentMappings }, overrides: [] }
           }
-        }
+        },
+{
+  "custom": {
+    "id": 91,
+    "type": "timeseries",
+    "title": "宿主 CPU 与 IO 等待",
+    "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+    "datasource": {
+      "type": "prometheus",
+      "uid": "opencraft-prometheus"
+    },
+    "targets": [
+      {
+        "refId": "A",
+        "expr": "opencraft_resource_cpu_busy_percent{scope=\"host\"}",
+        "legendFormat": "CPU 忙碌",
+        "range": true
+      },
+      {
+        "refId": "B",
+        "expr": "opencraft_resource_iowait_percent{scope=\"host\"}",
+        "legendFormat": "IO 等待",
+        "range": true
+      }
+    ],
+    "fieldConfig": {
+      "defaults": {
+        "unit": "percent"
+      },
+      "overrides": []
+    }
+  }
+},
+{
+  "custom": {
+    "id": 92,
+    "type": "timeseries",
+    "title": "服务 CPU 使用核数",
+    "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+    "datasource": {
+      "type": "prometheus",
+      "uid": "opencraft-prometheus"
+    },
+    "targets": [
+      {
+        "refId": "A",
+        "expr": "opencraft_resource_cpu_cores{scope=\"cgroup\"}",
+        "legendFormat": "{{target}}",
+        "range": true
+      }
+    ],
+    "fieldConfig": {
+      "defaults": {
+        "unit": "none"
+      },
+      "overrides": []
+    }
+  }
+},
+{
+  "custom": {
+    "id": 93,
+    "type": "timeseries",
+    "title": "CPU 与 IO 压力（some avg10）",
+    "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+    "datasource": {
+      "type": "prometheus",
+      "uid": "opencraft-prometheus"
+    },
+    "targets": [
+      {
+        "refId": "A",
+        "expr": "opencraft_resource_cpu_pressure_percent",
+        "legendFormat": "{{scope}}/{{target}} CPU",
+        "range": true
+      },
+      {
+        "refId": "B",
+        "expr": "opencraft_resource_io_pressure_percent",
+        "legendFormat": "{{scope}}/{{target}} IO",
+        "range": true
+      }
+    ],
+    "fieldConfig": {
+      "defaults": {
+        "unit": "percent"
+      },
+      "overrides": []
+    }
+  }
+},
+{
+  "custom": {
+    "id": 94,
+    "type": "timeseries",
+    "title": "服务磁盘读写速率",
+    "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+    "datasource": {
+      "type": "prometheus",
+      "uid": "opencraft-prometheus"
+    },
+    "targets": [
+      {
+        "refId": "A",
+        "expr": "opencraft_resource_read_bytes / on(scope,target) (opencraft_resource_sample_milliseconds / 1000)",
+        "legendFormat": "{{target}} 读",
+        "range": true
+      },
+      {
+        "refId": "B",
+        "expr": "opencraft_resource_write_bytes / on(scope,target) (opencraft_resource_sample_milliseconds / 1000)",
+        "legendFormat": "{{target}} 写",
+        "range": true
+      }
+    ],
+    "fieldConfig": {
+      "defaults": {
+        "unit": "Bps"
+      },
+      "overrides": []
+    }
+  }
+},
+{
+  "custom": {
+    "id": 95,
+    "type": "timeseries",
+    "title": "资源采样年龄",
+    "description": "只读采样；窗口delta，成员替换/缺失为部分覆盖，缺失不是零。",
+    "datasource": {
+      "type": "prometheus",
+      "uid": "opencraft-prometheus"
+    },
+    "targets": [
+      {
+        "refId": "A",
+        "expr": "opencraft_resource_sample_age_seconds",
+        "legendFormat": "{{scope}}/{{target}}",
+        "range": true
+      }
+    ],
+    "fieldConfig": {
+      "defaults": {
+        "unit": "s"
+      },
+      "overrides": []
+    }
+  }
+}
       ]
     },
     {
@@ -206,6 +375,17 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           mappings: componentMappings,
           description: 'data.coverage; resource_sample; ' + queryDefinitionRevision + '。各组件在客户端队列、传输或服务端由于溢出或反压丢弃的遥测事件计数。'
         }
+      ]
+    },
+    {
+      title: '中继连接与容量',
+      panels: [
+        { key: 'relay.connections', legendFormat: '{{__name__}}', description: '中继 owner 内部活动数据流、等待建立的预留槽位与控制连接；不含 Hub peer-link。每10秒采样，超过90秒不显示占用。' },
+        { key: 'relay.capacity', legendFormat: '{{capacity}}', description: '总占用和4096全局上限；最忙实例占用与512单实例上限。占用包含活动与预留。' },
+        { key: 'relay.peaks', legendFormat: '{{__name__}}', description: '在申请槽位时捕获的进程生命周期高水位，包含两次采样之间的短峰值；重启归零。' },
+        { key: 'relay.rejections', legendFormat: '{{scope}}', description: '只统计达到单实例/全局容量上限的拒绝；离线、认证失败和停机不计入。' },
+        { key: 'relay.timeouts', legendFormat: '建连超时', description: '已预留但10秒内未建立数据通道的请求；不含客户端取消。' },
+        { key: 'relay.freshness', legendFormat: '距今秒数', description: '缺失表示未接入，超过90秒为过期；缺失/过期不能解释为零连接或健康。' }
       ]
     },
     {
@@ -283,6 +463,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
             legendFormat: cfg.legendFormat,
             range: true
           }],
+          ...(cfg.transformations ? { transformations: cfg.transformations } : {}),
           fieldConfig: {
             defaults: {
               unit: d.unit === 'seconds' ? 's' : d.unit === 'bytes' ? 'bytes' : d.unit==='timestamp'?'dateTimeFromNow':d.unit==='ratio'?'percentunit':'short',

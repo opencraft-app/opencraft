@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "thread-access",
+      "checksum": "11661c71a7d44e085e8ecffab86655174a2e7a1eb86b2bf8c791172ab8cb07d5"
+    }
+  ],
+  "tableOptions": {
+    "thread_access": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "thread_access_audit": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "0d50eb228e21e6bb6402062ffcf54bd3de6c064d3ef41cc0a05f29b9ed438064",
+  "baselineSnapshotChecksum": "2b9715e9fe6c893ded96ca67da1867c962fbec2acd746beb03d2a682783b28c6"
+}

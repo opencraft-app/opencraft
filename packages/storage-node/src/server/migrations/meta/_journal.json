@@ -15,6 +15,41 @@
       "when": 1793310385672,
       "tag": "0001_execution_capability_bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793382536462,
+      "tag": "0002_complex_nocturne",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793405458040,
+      "tag": "0003_conscious_deathbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793410877267,
+      "tag": "0004_supreme_siren",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793597320124,
+      "tag": "0005_mushy_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793628615643,
+      "tag": "0006_serious_stellaris",
+      "breakpoints": true
     }
   ]
 }

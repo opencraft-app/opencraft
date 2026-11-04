@@ -526,7 +526,15 @@ export function createWorkbenchWebConfig(
             // styles together when another lazy management page shares a Modal,
             // so the common typography sheet is emitted once at startup.
             { name: "workbench-feedback-styles", test: /\/components\/(?:async-notices|conversation-rename-dialog)\.scss$/, includeDependenciesRecursively: false },
+            // These small shared primitives are needed by entry controls and
+            // deferred management pages. Keep one request instead of splitting
+            // every new consumer set into its own tiny startup chunk.
+            { name: "management-shared", test: id => /\/(?:apps\/workbench-web\/src\/components\/(?:modal\/(?:index|modal-controller|modal-host|confirmation-modal-surface|announcement-dialog|announcement-modal-projection|announcement-lab|announcement-media-url|management-settings-content)\.tsx?|connectors\/connector-icon\.tsx)|packages\/connector-core\/src\/(?:index|catalog)\.ts)$/.test(id) || /\/apps\/workbench-web\/src\/assets\/announcement-lab\.svg\?/.test(id), includeDependenciesRecursively: false },
             { name: "workbench-context", test: /\/runtime\/(?:appserver-runtime-context\.tsx|workbench-application-services\.ts)$/, includeDependenciesRecursively: false },
+            // Mandatory popup/focus primitives share one stable startup chunk.
+            // Only group this workspace's mandatory popup owner. Product plugins
+            // and optional controls keep their independent dependency graphs.
+            { name: "overlay-runtime", test: id => id.startsWith(`${workspaceNodeModules}/`) && /^(?:@radix-ui\/(?:primitive|react-(?:alert-dialog|arrow|collection|compose-refs|context|context-menu|dialog|direction|dismissable-layer|dropdown-menu|focus-guards|focus-scope|id|menu|popover|popper|portal|presence|primitive|roving-focus|slot|tooltip|use-callback-ref|use-controllable-state|use-effect-event|use-is-hydrated|use-layout-effect|use-size|visually-hidden))|@floating-ui\/(?:core|dom|react-dom|utils)|get-nonce|react-remove-scroll|react-remove-scroll-bar|react-style-singleton|use-callback-ref|use-sidecar)\//.test(id.slice(workspaceNodeModules.length + 1)), includeDependenciesRecursively: false },
             { name: "vendor", test: /\/node_modules\//, entriesAware: true, includeDependenciesRecursively: false },
             // Keep the demand-loaded math renderer out of small shared protocol
             // chunks. Their CSS otherwise becomes part of every startup closure.
