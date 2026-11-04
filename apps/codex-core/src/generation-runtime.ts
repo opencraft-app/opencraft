@@ -459,6 +459,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return values;
   }
   async close(): Promise<void> {
+    this.owner.dispose();
     this.closed = true; clearInterval(this.monitor); await this.monitoring; await Promise.allSettled(this.starting.values());
     for (const { peer } of this.probes.values()) peer.close();
     this.probes.clear(); this.registry.close();

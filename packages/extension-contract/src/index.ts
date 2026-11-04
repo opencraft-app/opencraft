@@ -223,6 +223,8 @@ export interface SettingsPageContribution {
   readonly targetHostId?: string;
   /** Model-menu configuration destination for targetHostId; the extension owns the page. */
   readonly modelConfiguration?: boolean;
+  /** Supports runtime provider/model/credential readiness queries for this Host. */
+  readonly modelReadiness?: boolean;
   readonly id: string;
   readonly title: string;
   /** Optional localized copy; title remains the fallback for older consumers. */

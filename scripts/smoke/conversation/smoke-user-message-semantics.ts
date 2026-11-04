@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { createServer } from "vite";
 
 // Run with an installed Playwright module and Chrome/Chromium binary; use
 // OPENCRAFT_PLAYWRIGHT_MODULE and OPENCRAFT_CHROMIUM_EXECUTABLE when external.
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const output = process.env.OPENCRAFT_SMOKE_OUTPUT_DIR ?? "/tmp";
+await mkdir(output, { recursive: true });
 const vite = await createServer({
   configFile: false,
   root: process.cwd(),
@@ -37,7 +40,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce", hasTouch: width === 390, isMobile: width === 390 });
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript({ content: `Object.defineProperty(navigator, "clipboard", { value: { async writeText(text) { document.documentElement.dataset.copied = text; } } });` });
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/${theme === "dark" ? "?dark" : ""}`);
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/${theme === "dark" ? "?dark" : ""}`, { waitUntil: "domcontentloaded" });
     const example = (id: string) => page.locator(`[data-case="${id}"]`);
     await example("goal").locator("[data-status-kind=goal]").waitFor();
     await example("goal").locator("[data-user-message-bubble]").getByText("Ship the release", { exact: true }).waitFor();
@@ -88,16 +91,24 @@ try {
     await example("context").getByRole("button", { name: "/review", exact: true }).click();
     await page.waitForFunction(() => document.documentElement.dataset.opened === "file:///skills/review/SKILL.md");
     assert.equal(await example("failed").locator("[data-status-kind=failed]").count(), 1);
-    assert.equal(await example("sending").locator("[data-status-kind]").count(), 0);
-    assert.match(await example("steer-pending").innerText(), /Waiting for the current step to finish/);
-    assert.match(await example("steer-accepted").innerText(), /Added to the current response/);
-    assert.match(await example("steer-cancelled").innerText(), /Cancelled/);
-    for (const state of ["pending", "accepted", "cancelled"]) {
-      const row = example(`steer-${state}`).locator(`[data-status-kind="steer-${state}"]`);
-      assert.equal(await row.count(), 1);
-      assert.ok(await row.isVisible());
-      const rect=await row.boundingBox(); await page.screenshot({path:`/tmp/opencraft-user-message-steer-${width}-${theme}.png`,fullPage:true});
-      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= width, JSON.stringify({width,theme,state,rect}));
+    for (const id of ["sending", "steer-pending", "steer-accepted", "steer-cancelled", "steer-declined"]) {
+      assert.equal(await example(id).locator(".thread-user-message__status-row").count(), 0, id);
+    }
+    const first = example("first-submission");
+    const firstSender = first.locator(".thread-user-message__sender");
+    const firstBubble = first.locator("[data-user-message-bubble]");
+    assert.equal(await firstSender.innerText(), "alice", "sender is present before creation finishes");
+    assert.equal(await first.locator(".thread-user-message__status-row").count(), 0);
+    await first.scrollIntoViewIfNeeded();
+    const firstGeometry = [await firstSender.boundingBox(), await firstBubble.boundingBox()];
+    await first.screenshot({ path: `${output}/first-message-${width}-${theme}-pending.png` });
+    for (const [method, phase] of [["handoff", "handoff"], ["acknowledge", "confirmed"]]) {
+      await page.evaluate(method => (window as any).firstSubmissionFixture[method](), method);
+      await page.waitForFunction(phase => document.querySelector('[data-case="first-submission"]')?.getAttribute("data-phase") === phase, phase);
+      assert.equal(await firstSender.innerText(), "alice", "account changes do not rewrite the sender");
+      assert.deepEqual([await firstSender.boundingBox(), await firstBubble.boundingBox()], firstGeometry,
+        `first-message geometry remains stable through ${phase}`);
+      await first.screenshot({ path: `${output}/first-message-${width}-${theme}-${phase}.png` });
     }
     assert.match(await example("comment").innerText(), /1 comment/);
     assert.equal(await example("audio").locator("audio").count(), 1);
@@ -108,7 +119,7 @@ try {
     const senderBox = await example("goal").locator(".thread-user-message__sender").boundingBox();
     const bubbleBox = await example("goal").locator("[data-user-message-bubble]").boundingBox();
     assert.ok(senderBox && bubbleBox && senderBox.y + senderBox.height <= bubbleBox.y);
-    await page.screenshot({ path: `/tmp/opencraft-user-message-semantics-${width}-${theme}.png`, fullPage: true });
+    await page.screenshot({ path: `${output}/opencraft-user-message-semantics-${width}-${theme}.png`, fullPage: true });
     await page.close();
   }
   assert.deepEqual(errors, []);

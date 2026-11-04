@@ -16,6 +16,41 @@ import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-ho
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
 
+for (const outcome of ["ready", "failed", "disconnected"] as const) test(`reopening during execution tool preparation waits for its existing owner (${outcome})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-resume-preflight-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer");
+    const threadId = "fixture-thread-1", internals = adapter as any;
+    internals.sessionMcpRetirements.set(threadId, { model: "preserved" });
+    const preparation = gate.then(() => {
+      internals.sessionMcpRefreshes.delete(threadId);
+      if (outcome === "failed") throw new Error("synthetic preparation failure");
+      internals.sessionMcpRetirements.delete(threadId);
+    });
+    void preparation.catch(() => {});
+    internals.sessionMcpRefreshes.set(threadId, preparation);
+    const reopening = adapter.send(JSON.stringify({ id: "reopen", method: "thread/resume", params: { threadId, excludeTurns: true }, [LOGICAL_CLIENT_FIELD]: "viewer" }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(frames.some(frame => frame.id === "reopen"), false, "no premature reconfiguration error");
+    if (outcome === "disconnected") await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "viewer" }));
+    release(); await reopening;
+    if (outcome === "disconnected") assert.equal(frames.some(frame => frame.id === "reopen"), false);
+    else {
+      const reply = await waitFor(frames, frame => frame.id === "reopen");
+      if (outcome === "ready") assert.equal(reply.error, undefined);
+      else assert.equal((reply.error as any).data.submissionOutcome, "rejected");
+    }
+    await initializeClient(adapter, frames, "inspector");
+    await adapter.send(JSON.stringify({ id: "counts-reopen", method: "test/readMethodCounts", params: {}, [LOGICAL_CLIENT_FIELD]: "inspector" }));
+    const counts = (await waitFor(frames, frame => frame.id === "counts-reopen")).result as any;
+    assert.equal(counts["thread/resume"] ?? 0, outcome === "ready" ? 1 : 0);
+    assert.equal(counts["turn/start"] ?? 0, 0);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
   const existing = frames.find(predicate);
   if (existing) return Promise.resolve(existing);
@@ -32,7 +67,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"], createSessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["createSessionMcp"], diagnostic?: (event: Record<string, unknown>) => void, resourceMetadata?: ConstructorParameters<typeof CodexEngineAdapter>[0]["historyResourceMetadata"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -42,16 +77,98 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     fetch: async () => Response.json({ ok: true }),
     spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("../fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env: { ...env, ...(autoTitles ? { OPENCRAFT_TEST_AUTO_TITLES: "1" } : {}), ...(nativeQueueSteerVersion ? { OPENCRAFT_TEST_NATIVE_QUEUE_STEER: String(nativeQueueSteerVersion) } : {}), ...(steerResponse ? { OPENCRAFT_TEST_STEER_RESPONSE: steerResponse } : {}) }, stdio: ["pipe", "pipe", "pipe"] }),
     createMaintenanceClient: async () => { throw new Error("not used"); },
-    logDiagnostic: () => undefined,
+    logDiagnostic: event => diagnostic?.(event),
     nativeSubscriptionGraceMs,
     tokenUsage,
     sessionMcp,
     createSessionMcp,
+    historyResourceMetadata: resourceMetadata,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   return adapter;
 }
+
+test("aborted Item hydration includes the active page phase in the terminal diagnostic", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined, event => diagnostics.push(event));
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should reach lazy Item hydration before cancellation");
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.equal(typeof stage?.pageMs, "number", "the terminal event must flush the still-active page timer");
+    assert.ok(Number(stage?.pageMs) > 0);
+  } finally {
+    await adapter.send(JSON.stringify({ id: "unpause-items", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("slow cancellation freezes phase timing before resource metadata completes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-history-abort-slow-stage-")), frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
+  let enterResources!: () => void, releaseResources!: () => void;
+  const resourcesEntered = new Promise<void>(resolve => { enterResources = resolve; });
+  const resourcesGate = new Promise<void>(resolve => { releaseResources = resolve; });
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, undefined, undefined,
+    event => diagnostics.push(event), async () => {
+      enterResources(); await resourcesGate;
+      const empty = { someAvg10: null, someAvg60: null, someAvg300: null, fullAvg10: null, fullAvg60: null, fullAvg300: null };
+      return { status: "unavailable", loadAvg1m: null, loadAvg5m: null, loadAvg15m: null, cpuPsi: empty, ioPsi: empty, memoryPsi: empty };
+    });
+  const request = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "reader");
+    const threadId = ((await request("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    await request("seed-history", "test/setHistory", { threadId, legacyItems: true, turns: [{ id: "history-turn", status: "completed", items: [{ id: "history-item", type: "userMessage", content: [{ type: "text", text: "synthetic" }] }] }] });
+    await request("pause-items", "test/pauseItemReads", { paused: true });
+    await adapter.send(JSON.stringify({ id: "read", method: "thread/read", params: { threadId, historyReadId: "read", initialTurnsPage: { limit: 1 } }, [LOGICAL_CLIENT_FIELD]: "reader" }));
+    let itemReads = 0;
+    for (let i = 0; i < 100; i++) {
+      const counts = (await request(`item-counts-${i}`, "test/readMethodCounts", { threadId })).result as Record<string, number>;
+      itemReads = counts["thread/items/list"] ?? 0;
+      if (itemReads > 0) break;
+    }
+    assert.ok(itemReads > 0, "the read should enter Item hydration before the slow cancellation");
+    await new Promise(resolve => setTimeout(resolve, 5_100));
+    await request("cancel", "thread/history/cancel", { threadId, historyReadId: "read" });
+    await resourcesEntered;
+    await request("unpause-items", "test/pauseItemReads", { paused: false });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    releaseResources();
+    for (let i = 0; i < 100 && !diagnostics.some(event => event.event === "history-read-stages"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const stage = diagnostics.find(event => event.event === "history-read-stages");
+    assert.equal(stage?.outcome, "aborted");
+    assert.ok(Number(stage?.pageMs) > 0);
+    assert.ok(Number(stage?.coreMs) > 5_000);
+    assert.ok(Number(stage?.pageMs) <= Number(stage?.coreMs) + 50, `pageMs ${stage?.pageMs} must not be recounted after coreMs ${stage?.coreMs} is finalized`);
+  } finally {
+    releaseResources();
+    await adapter.send(JSON.stringify({ id: "unpause-items-cleanup", method: "test/pauseItemReads", params: { paused: false }, [LOGICAL_CLIENT_FIELD]: "reader" })).catch(() => {});
+    await adapter.close(); await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("a stop during the final asynchronous tool preparation prevents the automatic native send", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-final-recovery-admission-"));
@@ -1776,4 +1893,203 @@ test("a disconnected creator cannot leak its pending MCP reservation or send a l
     const counts = await waitFor(frames, frame => frame.id === "retired-counts");
     assert.equal((counts.result as any)["thread/start"] ?? 0, 0);
   } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const method of ["thread/start", "thread/fork"] as const) test(`temporary ${method} sends consecutive turns without durable session tools`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-side-chat-tools-")), frames: Array<Record<string, unknown>> = [];
+  let preparations = 0, reservations = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => { preparations++; throw new Error("durable provider must not run for temporary chats"); },
+    async () => { reservations++; throw new Error("temporary creation must not reserve durable tools"); });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const created = await rpc("temporary", method, { threadId: "parent", cwd: root, ephemeral: true, testNoServerRequest: true });
+    assert.equal(created.error, undefined);
+    const threadId = (created.result as any).thread.id;
+    for (let index = 0; index < 2; index++) {
+      const reply = await rpc(`send-${index}`, "turn/start", { threadId, clientUserMessageId: `side-${index}`, input: [{ type: "text", text: "question" }] });
+      assert.equal(reply.error, undefined); assert.ok((reply.result as any).turn.id);
+      await rpc(`complete-${index}`, "test/completeTurn", { threadId });
+    }
+    assert.equal(preparations, 0); assert.equal(reservations, 0);
+    const counts = (await rpc("counts", "test/readMethodCounts", {})).result as any;
+    assert.equal(counts["turn/start"], 2);
+    // Fork reads the parent's choices; the temporary child must never resume
+    // from disk or retire its runtime to refresh durable tools.
+    assert.equal(counts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    assert.equal(counts["thread/unsubscribe"] ?? 0, 0);
+    const childCounts = (await rpc("child-counts", "test/readMethodCounts", { threadId })).result as any;
+    assert.equal(childCounts["turn/start"], 2);
+    assert.equal(childCounts["thread/resume"] ?? 0, 0);
+    assert.equal(childCounts["thread/unsubscribe"] ?? 0, 0);
+    const parentCounts = (await rpc("parent-counts", "test/readMethodCounts", { threadId: "parent" })).result as any;
+    assert.equal(parentCounts["thread/resume"] ?? 0, method === "thread/fork" ? 1 : 0);
+    const rejected = await rpc("durable-send", "turn/start", { threadId: "durable", input: [{ type: "text", text: "question" }] });
+    assert.equal((rejected.error as any).data.code, "SESSION_TOOLS_UNAVAILABLE"); assert.equal(preparations, 1);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("busy session tools report the actual state and correlate the rejected input without native dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-busy-tools-diagnostics-"));
+  const frames: Array<Record<string, unknown>> = [], diagnostics: Array<Record<string, unknown>> = [];
+  let configuration: Record<string, unknown> | null = null;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined,
+    async () => configuration, undefined, event => diagnostics.push(event));
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    assert.equal((await rpc("first", "turn/start", { threadId, clientUserMessageId: "first", input: [] })).error, undefined);
+    configuration = { url: "http://fixture/mcp", http_headers: { Authorization: "Bearer fixture-secret" } };
+    const rejected = (await rpc("second", "turn/start", { threadId, clientUserMessageId: "second", input: [] })).error as any;
+    assert.match(rejected.message, /previous turn is still active/);
+    assert.equal(rejected.data.stage, "check-idle");
+    assert.equal(rejected.data.reason, "thread-busy");
+    assert.equal(rejected.data.nativeStatus, "active");
+    assert.equal(rejected.data.submissionOutcome, "rejected");
+    const event = diagnostics.find(event => event.diagnosticId === rejected.data.diagnosticId)!;
+    assert.equal(event.event, "session-mcp-preparation-failed");
+    assert.equal(event.threadId, threadId); assert.equal(event.inputId, "second");
+    assert.match(rejected.message, new RegExp(rejected.data.diagnosticId));
+    const accepted = (await rpc("inputs", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(accepted.data.length, 1);
+    assert.equal(JSON.stringify({ rejected, diagnostics }).includes("fixture-secret"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const [method, stage] of [["thread/read", "read-thread"], ["thread/unsubscribe", "unsubscribe"],
+  ["thread/resume", "apply-tools"], ["thread/settings/update", "restore-settings"]] as const)
+  test(`session tools preserve a safe native failure at ${stage}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-tools-native-diagnostics-"));
+    const diagnostics: Array<Record<string, unknown>> = [];
+    const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+      async () => ({ url: "http://fixture/mcp" }), undefined, event => diagnostics.push(event));
+    const internals = adapter as any;
+    let unloaded = false;
+    internals.requestPhysical = async (called: string, params: any) => {
+      if (called === method && (method !== "thread/resume" || params.config))
+        throw Object.assign(new Error("Bearer fixture-secret /private/path"), { code: -32005 });
+      if (called === "thread/read") return { thread: { status: { type: unloaded ? "notLoaded" : "idle" } } };
+      if (called === "thread/unsubscribe") { unloaded = true; return {}; }
+      return { model: "fixture-model" };
+    };
+    try {
+      let failure: unknown;
+      try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+      assert.ok(failure);
+      const error = internals.sessionMcpFailure(failure);
+      assert.equal(error.data.stage, stage); assert.equal(error.data.reason, "native-rpc-failed");
+      assert.equal(error.data.nativeCode, -32005); assert.equal(error.data.submissionOutcome, "rejected");
+      assert.equal(diagnostics[0]!.diagnosticId, error.data.diagnosticId);
+      assert.equal(JSON.stringify({ error, diagnostics }).includes("fixture-secret"), false);
+      assert.equal(JSON.stringify({ error, diagnostics }).includes("/private/path"), false);
+    } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+for (const state of ["not-found", "archived", "recovering"] as const)
+  test(`session tool diagnostic wrapping preserves ${state} classification`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-tools-classification-"));
+    const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+      async () => ({ url: "http://fixture/mcp" }));
+    const internals = adapter as any;
+    let retired = false;
+    internals.requestPhysical = async (method: string) => {
+      if (method === "thread/read") {
+        if (state !== "recovering") throw Object.assign(new Error(state === "archived"
+          ? "Thread fixture is archived /private/path" : "no rollout found for thread id fixture /private/path"), { code: -32600 });
+        return { thread: { status: { type: retired ? "active" : "idle" } } };
+      }
+      if (method === "thread/unsubscribe") retired = true;
+      return {};
+    };
+    try {
+      let failure: unknown;
+      try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+      assert.ok(failure);
+      const error = internals.sessionMcpFailure(failure);
+      assert.equal(error.data.code, state === "archived" ? "THREAD_ARCHIVED" : state === "not-found" ? "THREAD_NOT_FOUND" : "SESSION_TOOLS_RECOVERING");
+      assert.equal(error.data.retryable, state === "recovering");
+      assert.equal(error.data.reason, state === "recovering" ? "reconfiguration-pending" : `thread-${state}`);
+      assert.equal(error.data.submissionOutcome, "rejected");
+      assert.equal(JSON.stringify(error).includes("/private/path"), false);
+    } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+for (const transient of [true, false]) test(`queued tool-preflight rejection retains known custody (transient=${transient})`, { timeout: 10_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-tools-retry-")), frames: Array<Record<string, unknown>> = [];
+  let preparations = 0;
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => {
+    if (++preparations === 1 || !transient) throw new Error(transient ? "Codex AppServer closed" : "synthetic permanent configuration failure");
+    return null;
+  });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "same-input", input: [{ type: "text", text: "看看" }] })).result as any;
+    const id = queued.queuedSubmission.id;
+    await waitFor(frames, f => f.method === "thread/queue/changed" &&
+      (f.params as any).threadId === threadId && (adapter as any).queueStore().find(threadId, id)?.pausedReason ===
+      (transient ? "session-tools-recovering" : "session-tools-unavailable"));
+    assert.equal((adapter as any).queueStore().find(threadId, id).state, "queued");
+    assert.equal(((await rpc("before", "test/readAcceptedInputs", {})).result as any).data.length, 0);
+    if (transient) {
+      await waitFor(frames, f => f.method === "turn/started");
+      const inputs = ((await rpc("after", "test/readAcceptedInputs", {})).result as any).data;
+      assert.equal(inputs.length, 1); assert.equal(inputs[0].params.clientUserMessageId, "same-input");
+      assert.ok(preparations >= 2);
+    } else {
+      assert.equal((adapter as any).queuePreparationRetries.size, 0);
+      await (adapter as any).maintainQueue(threadId);
+      assert.equal(preparations, 1);
+    }
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("queue admission during native recovery proves it did not persist or dispatch input", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-admission-recovery-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    (adapter as any).assertDurableQueueThread = async () => { throw new Error("Codex AppServer is not initialized"); };
+    await adapter.send(JSON.stringify({ id: "enqueue", method: "thread/queue/add", params: {
+      threadId: "fixture", clientUserMessageId: "same-input", input: [{ type: "text", text: "看看" }],
+    }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    const reply = await waitFor(frames, f => f.id === "enqueue");
+    assert.deepEqual((reply.error as any).data, { code: "QUEUE_NOT_READY", submissionOutcome: "rejected", retryable: true });
+    assert.deepEqual((adapter as any).queueStore().list("fixture"), []);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("a queued native send with a lost acknowledgement remains unknown and never schedules a retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-queue-unknown-no-replay-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sends = 0;
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
+    const request = (adapter as any).requestPhysical.bind(adapter);
+    (adapter as any).requestPhysical = async (method: string, ...args: any[]) => {
+      if (method === "turn/start") { sends++; throw new Error("Native acknowledgement was lost"); }
+      return request(method, ...args);
+    };
+    const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "uncertain", input: [{ type: "text", text: "one" }] })).result as any;
+    await waitFor(frames, f => f.method === "thread/queue/changed" &&
+      (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
+    assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

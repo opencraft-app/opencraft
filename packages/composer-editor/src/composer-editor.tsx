@@ -1480,6 +1480,11 @@ export const OpenCraftComposer = forwardRef<
           // can focus the replacement EditorView without reviving this one.
           requestAnimationFrame(() => {
             if (disabledRef.current) return;
+            const activeElement = view.dom.ownerDocument.activeElement;
+            // A local action may have opened another input surface. Submission
+            // cleanup must not steal the focus that surface has already taken.
+            if (activeElement !== null && activeElement !== view.dom.ownerDocument.body
+              && !stackRef.current?.contains(activeElement)) return;
             controller.focus();
           });
         }

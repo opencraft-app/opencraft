@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
+import { constants, existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 // Explicit official-installation adapter. This is not an HTTP installation API.
 import { readFile, mkdir, chmod, chown, cp, lstat, realpath, symlink, rename } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
@@ -9,8 +9,22 @@ import { rootOwned } from './service-config.mjs';
 import { invariant, atomicJson, atomicBytes, command, acquireLock } from './durable.mjs';
 import { request } from './ipc.mjs';
 
-const names = ['agent', 'helper', 'watchdog', 'control'];
+const names = ['agent', 'helper', 'watchdog', 'control', 'parent'];
 const safePath = path => typeof path === 'string' && /^\/[A-Za-z0-9/._-]+$/.test(path) && !path.split('/').includes('..');
+// Product composition is opt-in, immutable package content, and runs under the
+// same inherited deployment lock. Adapters retain immutable recipes for active parents.
+export async function provisionProductParent({ profile, previousConfig, root, record, fd }, run = command) {
+  if (!profile.parentProvisioner) return false;
+  const relative = profile.parentProvisioner;
+  invariant(typeof relative === 'string' && /^runtime\/[A-Za-z0-9/._-]+\.py$/.test(relative) && !relative.split('/').includes('..'), 'invalid-parent-provisioner');
+  const script = join(root, relative), entry = record.components.flatMap(c => c.fileList).find(row => row[0] === relative);
+  await rootOwned(script);
+  const bytes = await readFile(script);
+  invariant(entry && entry[1] === sha256(bytes) && entry[2] === bytes.length, 'unsigned-parent-provisioner');
+  invariant(Number.isSafeInteger(fd) && fd >= 3, 'parent-lock-required');
+  await run('/usr/bin/env', ['OPENCRAFT_HELD_LOCK_FD=3', '/usr/bin/python3', script, record.release.source.revision], { fd, timeout: 180000 });
+  return true;
+}
 export async function install(options) {
   invariant(process.getuid() === 0, 'root-installation-required');
   for (const key of ['releaseRoot', 'webState', 'trustFile', 'profilePath', 'deployLock', 'node']) invariant(safePath(options[key]), 'invalid-install-path');
@@ -19,13 +33,17 @@ export async function install(options) {
   await rootOwned(root); await rootOwned(node); await rootOwned(options.trustFile); await rootOwned(options.profilePath);
   // Caller may already hold the deployment lock (CI). This flag is not exposed
   // through IPC and requires root plus an inherited live kernel-locked fd.
-  let unlock;
+  let unlock; let delegatedFd = options.lockFd;
   if (options.lockFd !== undefined) {
     const fd = Number(options.lockFd);
     invariant(Number.isSafeInteger(fd) && fd >= 3 && (await realpath('/proc/self/fd/' + fd)) === await realpath(options.deployLock), 'invalid-lock-delegation');
     const info = await readFile('/proc/self/fdinfo/' + fd, 'utf8');
     invariant(/lock:\s+\d+: FLOCK\s+ADVISORY\s+WRITE/.test(info), 'unlocked-delegation');
-  } else unlock = await acquireLock(options.deployLock);
+  } else {
+    const {open}=await import('node:fs/promises'); const held=await open(options.deployLock,constants.O_RDWR|constants.O_CREAT|constants.O_NOFOLLOW,0o600);
+    try { invariant((await held.stat()).isFile(),'lock-file-required'); await command('/usr/bin/flock',['-n','3'],{fd:held.fd}); } catch(error) { await held.close(); throw error; }
+    delegatedFd=held.fd; unlock=()=>held.close();
+  }
   try {
     // The existing official updater owns acceptance and all pointers. Reverify
     // against an explicitly provisioned root trust file, never package keys.
@@ -86,9 +104,14 @@ export async function install(options) {
       config.ciRequest = options.ciRequest; config.ciObserve = options.ciObserve;
     }
     const configPath = join(configDir, 'config.json');
+    config.configPath = configPath; config.parentEntry = join(directory, 'upgrade-parent.mjs');
     let previousConfig;
     try { previousConfig = JSON.parse(await readFile(configPath, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (previousConfig) invariant(['mode', 'stateRoot', 'controlStateRoot', 'runtimeRoot', 'artifactRoot', 'deployLock', 'webState', 'serviceUser', 'node'].every(k => previousConfig[k] === config[k]), 'explicit-bootstrap-migration-required');
+    if (previousConfig?.fullRecipePath) {
+      await rootOwned(previousConfig.fullRecipePath); config.fullRecipePath = previousConfig.fullRecipePath; config.fullCiBeforeParent = previousConfig.fullCiBeforeParent === true;
+    }
+    for (const key of ['fullLocalBeforeParent','localRequest','localObserve','fullTopology']) if (previousConfig?.[key] !== undefined) config[key] = previousConfig[key];
     if (previousConfig?.generationRecipePath) {
       invariant(safePath(previousConfig.generationRecipePath), 'invalid-generation-recipe-path');
       await rootOwned(previousConfig.generationRecipePath);
@@ -119,6 +142,8 @@ export async function install(options) {
     }
     await command('/usr/bin/systemctl', ['daemon-reload']);
     await command('/usr/bin/systemctl', ['enable', '--now', ...['watchdog', 'helper', 'agent'].map(r => 'opencraft-upgrade-' + r + '.service')]);
+    const profile = parseStrictJson(await readFile(options.profilePath));
+    await provisionProductParent({profile, previousConfig, root, record: accepted.record, fd: delegatedFd});
     return { artifactId, firstInstallation: first, protocol: 1, manifestSha256: proof.manifestSha256, roles: names.slice(0, 3) };
   } finally { await unlock?.(); }
 }

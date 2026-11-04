@@ -1,6 +1,6 @@
 # Web 安装与一键更新
 
-公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。Node.js 22 或更新版本和 npm 是运行前提。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
+公共 npm 包 `@opencraft-app/opencraft` 包含网站、Web 服务和更新器。公开的 0.1.17 包要求 Node.js 24.x 和 npm；安装其他精确版本时按该包的 `engines` 核对，带执行端的包还须匹配平台、架构和 Node ABI。源码模板的最低版本不代表已发布包的支持范围。默认包只包含网站；执行服务独立部署，通过 WebSocket 地址接入。带执行端 payload 的服务器包可在明确配置受管执行服务后同时升级网站、执行网关、daemon 和 DSH capability adapter；DSH 引擎、Codex core 与 CLI 仍独立维护。
 
 直接从源码打包并替换已有服务器网站，见[本地替换指引](web-local-deployment.md)；该流程使用本地包，不需要先发布 npm。
 
@@ -38,9 +38,12 @@ node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/
 ```sh
 OPENCRAFT_APPSERVER_URL=ws://127.0.0.1:9989/rpc \
 OPENCRAFT_WEB_STATE="$PWD/opencraft-web-state" \
-npx --registry=https://registry.npmjs.org/ \
-  "@opencraft-app/opencraft@${OPENCRAFT_RELEASE_VERSION:?设置精确安装版本}"
+npm exec --registry=https://registry.npmjs.org/ \
+  --package="@opencraft-app/opencraft@${OPENCRAFT_RELEASE_VERSION:?设置精确安装版本}" \
+  -- opencraft-web
 ```
+
+`opencraft-web` 是网站入口；源码中的 `opencraft` 命令已用于会话 CLI。不要依赖裸包名的默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../README.md#quick-start)，部署时仍固定经验证的精确版本，不复用旧版本号。
 
 长期运行时固定安装启动包，避免每次服务启动重新解析 `latest`：
 

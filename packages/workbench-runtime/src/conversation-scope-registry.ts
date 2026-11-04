@@ -1,4 +1,5 @@
 import { asHostId } from "@opencraft/chat-core";
+import type { MessageSender } from "@opencraft/appserver-protocol";
 import type {
   ComposerExecutionTarget,
   ComposerTarget,
@@ -34,6 +35,8 @@ export interface NewThreadDraftSnapshot {
   readonly receipt: SubmissionReceipt | null;
   /** Immutable first-Turn command owned by this Scope from the submit gesture onward. */
   readonly submission: SubmitIntent | null;
+  /** Submit-time display metadata, kept outside the command payload. */
+  readonly submissionSender?: MessageSender | null;
   readonly createdAt: number;
 }
 
@@ -55,6 +58,7 @@ export interface ConversationScopeRegistryConfig {
   readonly initialDraft?: OpenNewThreadDraftOptions | null;
   readonly createDraftId?: () => string;
   readonly now?: () => number;
+  readonly getSubmissionSender?: () => MessageSender | null;
   /** Empty, editable Draft metadata is bounded separately from retained input. */
   readonly maxRetainedDrafts?: number;
   /** Read the Application input owner; this probe acquires no execution lease. */
@@ -150,6 +154,7 @@ export function createConversationScopeRegistry(
       error: null,
       receipt: null,
       submission: null,
+      submissionSender: null,
       createdAt: now(),
     });
   };
@@ -253,12 +258,16 @@ export function createConversationScopeRegistry(
       ) {
         throw new Error(`Submission does not belong to Draft ${draftId}`);
       }
+      const sender = current.submission?.clientMessageId === submission.clientMessageId
+        ? current.submissionSender
+        : config.getSubmissionSender?.();
       const next = Object.freeze({
         ...current,
         phase: "submitting" as const,
         error: null,
         receipt: null,
         submission,
+        submissionSender: sender == null ? null : Object.freeze({ ...sender }),
       });
       drafts.set(draftId, next);
       publish();

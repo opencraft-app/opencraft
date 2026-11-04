@@ -1,3 +1,5 @@
+import { operatorLeaseClaim } from "../../scripts/full-upgrade/operator-lease.mjs";
+const operatorLease = await operatorLeaseClaim(30000);
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -78,7 +80,7 @@ test("retention requires exact owner, Host, epoch, incarnation and an open route
     const req = f.request("old", true);
     for (const change of [{ expectedOwner: "stale" }, { expectedHost: "stale" }, { expectedEpoch: 0 }, { expectedIncarnation: 0 }, { retained: "true" }, { executable: "/other" }]) assert.throws(() => f.runtime.setRetention({ ...req, ...change }));
     assert.equal(f.runtime.registry.metadata("retention:old"), null);
-    const handoff = f.runtime.owner.snapshot(); f.runtime.owner.fence({ operationId: "retain-fenced", fence: "retention-test", expectedOwner: handoff.owner, expectedEpoch: handoff.epoch });
+    const handoff = f.runtime.owner.snapshot(); f.runtime.owner.fence({ operatorLease, operationId: "retain-fenced", fence: "retention-test", expectedOwner: handoff.owner, expectedEpoch: handoff.epoch });
     assert.throws(() => f.runtime.setRetention(req));
   } finally { await f.close(); }
 });

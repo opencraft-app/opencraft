@@ -1,8 +1,9 @@
 import type { DuplexTransport, TransportSubmissionContext } from '../packages/appserver-client/src/transport.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type EnvironmentExecutionScope } from './execution-environment.js';
-import { HostProcessService } from '../apps/local-agent-host/src/process-service.js';
-const terminals = new WeakMap<ExecutionEnvironmentRuntime, HostProcessService>();
+import { TerminalCapacityError } from '../apps/local-agent-host/src/process-service.js';
+import { DurableHostProcessService } from '../apps/local-agent-host/src/durable-process-service.js';
+const terminals = new WeakMap<ExecutionEnvironmentRuntime, DurableHostProcessService>();
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 const key = (v: Record<string, any>) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] ?? '', v.id]);
 
@@ -11,15 +12,16 @@ const key = (v: Record<string, any>) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] 
 export class ExecutionEnvironmentTransport implements DuplexTransport {
   private readonly listeners = new Set<(frame: string) => void>();
   private readonly watched = new Map<string, { clientId: unknown; context: TransportSubmissionContext }>();
-  private readonly processes: HostProcessService;
+  private readonly processes: DurableHostProcessService;
   private readonly unsubscribeProcesses: () => void;
   private readonly pending = new Map<string, { method: string; projectId: string | null; threadId?: string }>();
   constructor(private readonly inner: DuplexTransport, private readonly runtime: ExecutionEnvironmentRuntime, private readonly hostId: string) {
     let service = terminals.get(runtime);
-    if (!service) { service = new HostProcessService(runtime); terminals.set(runtime, service); runtime.onClose(() => service!.close()); }
+    if (!service) { service = new DurableHostProcessService(runtime.directory, runtime); terminals.set(runtime, service); runtime.onClose(() => service!.close()); }
     this.processes = service;
     this.unsubscribeProcesses = service.subscribe((method, params) => {
       const watcher = this.watched.get(object(params).processHandle);
+      if (method === 'process/exited') this.watched.delete(object(params).processHandle);
       if (!watcher || watcher.context.executionPrincipal && (!Number.isFinite(watcher.context.validUntil) || watcher.context.validUntil! <= Date.now())) return;
       try { watcher.context.resourceOwner?.assertCurrent(); } catch { return; }
       for (const listener of this.listeners) listener(JSON.stringify({ jsonrpc: '2.0', method, params, [LOGICAL_CLIENT_FIELD]: watcher.clientId }));
@@ -27,7 +29,7 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
   }
   get status() { return this.inner.status; }
   connect(signal?: AbortSignal) { return this.inner.connect(signal); }
-  close() { this.pending.clear(); this.unsubscribeProcesses(); this.listeners.clear(); return this.inner.close(); }
+  close() { this.pending.clear(); this.watched.clear(); this.unsubscribeProcesses(); this.listeners.clear(); return this.inner.close(); }
   subscribeStatus(listener: Parameters<DuplexTransport['subscribeStatus']>[0]) { return this.inner.subscribeStatus(listener); }
   captureMessageScope() { return this.inner.captureMessageScope?.() ?? (() => this.inner.status.state === 'open'); }
   subscribeRecoveryHint(listener: () => void) { return this.inner.subscribeRecoveryHint?.(listener) ?? (() => {}); }
@@ -57,10 +59,12 @@ export class ExecutionEnvironmentTransport implements DuplexTransport {
       let response;
       try {
         const scope = this.runtime.scope(context, this.hostId, params);
-        const result = this.processes.dispatch(value.method, params, scope);
-        if (typeof params.processHandle === 'string') this.watched.set(params.processHandle, { clientId: value[LOGICAL_CLIENT_FIELD], context });
+        const result = await this.processes.dispatch(value.method, params, scope, () => { this.runtime.scope(context, this.hostId, params); }, () => {
+          if (typeof params.processHandle === 'string' && value.method !== 'process/kill') this.watched.set(params.processHandle, { clientId: value[LOGICAL_CLIENT_FIELD], context });
+        });
+        context.resourceOwner?.assertCurrent();
         response = { ...value, method: undefined, params: undefined, result };
-      } catch { response = { ...value, method: undefined, params: undefined, error: { code: -32602, message: 'Terminal unavailable for this account or project' } }; }
+      } catch (error) { response = { ...value, method: undefined, params: undefined, error: { code: error instanceof TerminalCapacityError ? -32029 : -32602, message: error instanceof TerminalCapacityError ? error.message : 'Terminal unavailable for this account or project' } }; }
       for (const listener of this.listeners) listener(JSON.stringify(response));
       return;
     }

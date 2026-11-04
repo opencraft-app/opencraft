@@ -12,7 +12,7 @@ import { BaseCodeBlockRenderer } from "./renderers/code/code-block";
 import { createImageRenderer } from "./renderers/media/image-renderer";
 import { proseNodeKinds, ProseRenderer } from "./renderers/prose/prose-renderer";
 import { createFileCitationRenderer, createInlineMarkdownFileRenderer, createLinkRenderer, createMediaFileRenderer, createReferenceRenderer, mediaFilePath } from "./renderers/resource-link/resource-link";
-import { createVisualizationRenderer } from "./renderers/visualization/visualization";
+import { createVisualizationRenderer } from "./renderers/visualization/lazy";
 import { TableRenderer } from "./renderers/table/table-renderer";
 import { ChatEnhancementService } from "./services/chat-enhancement-service";
 

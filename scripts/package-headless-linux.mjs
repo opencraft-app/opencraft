@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
+import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -41,9 +43,12 @@ export function headlessWebHostDefinitions() {
 }
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
+  await buildTranscriptCacheRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
+  await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
     // Product-local packages resolve first; this is a trusted build fallback.

@@ -31,6 +31,9 @@ export function createCodexAccountPoolLaunch(input: {
   return {
     auth: { type: "chatgptAuthTokens", accessToken, chatgptAccountId: "opencraft-account-pool" },
     args: [
+      // Host owns subscription grace. After its explicit idle unsubscribe,
+      // native must release the runtime before per-execution tools can change.
+      "-c", "thread_unload_delay_secs=0",
       "-c", `chatgpt_base_url=${JSON.stringify(loopbackBaseUrl(input.baseUrl))}`,
       "-c", `openai_base_url=${JSON.stringify(baseUrl)}`,
       "-c", 'model_provider="opencraft-account-pool"',

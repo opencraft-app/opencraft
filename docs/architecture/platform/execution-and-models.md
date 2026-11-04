@@ -450,6 +450,20 @@ An operator may bind an account to an existing OAuth `auth.json` owned by anothe
 
 Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
 
+An ordinary open account Core validates Host authentication and local credential
+records before serving, but does not require an external credential owner to be
+available at process startup. A temporarily absent mount or external auth file
+must not prevent control, login or account-management service from starting.
+Inference still rereads the external credential and fails closed for that account;
+when its owner restores the file, selection can recover without restarting Core.
+Frozen handoff successors retain strict external credential and sealed-storage
+validation before they can attest readiness or resume admission. Before sealing,
+the source validates external auth mode, token format and registered account
+identity against the very bytes included in the storage hash. Invalid external
+credentials therefore reject release while the source can still abort its fence;
+they are never sealed into a state that only a failing successor can open. Neither path
+copies a credential, edits the reference, clears unknown work or replays a request.
+
 The service must have read access to the source in its real mount namespace; do not assume root access, copy credentials, relax permissions globally or share the whole `CODEX_HOME`. Reference files use the existing private account-secret directory and file permissions. Removing the account removes its local reference, never the external source. Older readers do not understand references: remove the newly registered external account before rolling back to one, preserving all conversation and source data.
 
 ### Codex subscription windows and extra credits
@@ -639,6 +653,38 @@ Older source binaries do not gain this endpoint merely by installing a new Web
 package: callers must check source capability before using the protocol.
 
 
+#### Device-login interruptions during necessary migrations
+
+A maintenance controller may cancel an active device login through the original
+owner's existing `deviceLogin/cancel` API, with new and accepted external ingress
+still closed. It sends at most one cancel per session and reconciles a lost reply
+with read-only polls. A caller-owned deadline bounds settlement. If a terminal
+receipt cannot be proved in time, the caller restores the original owner under
+the same deployment locks; it does not clear active counts or force release.
+The original login error receipt is carried unchanged with the other retained
+state. Natural success racing cancellation stays a success, not an interruption.
+
+A separate, account-owner-only presentation annotation may identify an observed
+`Login cancelled.` error as `maintenance-interrupted`. Its standard location is
+`device-login-maintenance/<session UUID>.json` under the account data directory.
+Version 1 records kind `device-login-maintenance`, the exact session ID, source
+owner/epoch/operation/fence, `cancelAttempted: true`, `terminal: true`, disposition
+`maintenance-interrupted`, the original result and its SHA-256 of canonical JSON
+(sorted object keys, no whitespace). It contains no credentials or device code.
+The same directory may hold unconfirmed cancel intents to prevent POST replay
+across maintenance operations; these do not assert a terminal result or add a
+display reason. This metadata is outside the original sealed account-storage hash and does not
+replace, rewrite or authorize a retained receipt. The reader accepts only a
+private owner file and an exact matching original error; absent, malformed or
+ambiguous metadata leaves the original error unchanged.
+
+The account poll response may add `reason: "maintenance-interrupted"`; existing
+clients can continue displaying `message`. The account Settings service displays
+“登录被维护中断，请重新登录” for this reason. Manual cancellation is unchanged. The
+projection never starts another login or repeats a cancellation. Cold successors
+and same-source rollback retain the original account result as their authority.
+
+
 Responses completion recognition uses complete protocol records on successful
 `/v1/responses` bodies, independently of the provider's Content-Type header.
 Some compatible providers omit or mislabel MIME while returning valid SSE.
@@ -646,3 +692,34 @@ Waiting for HTTP EOF in that case misclassifies a client's normal close after
 `response.completed` as uncertain. The bounded parser preserves incomplete
 records and actual disconnect/read failures as unknown; non-SSE bodies continue
 unchanged to EOF. Historical unknown is never retroactively cleared.
+
+### Session tool preparation diagnostics
+
+Tool-preparation errors expose a bounded `error.data.stage`, `reason`, `nativeCode`
+and opaque `diagnosticId`. The displayed error includes the same stage/reason and
+reference ID as the `session-mcp-preparation-failed` Host diagnostic, which also
+identifies the Thread and input when available. Busy Threads report that the
+previous Turn is still active. Only controlled local failure reasons and known
+native status values are exposed; raw native exception text, credentials, MCP
+configuration and environment values are omitted. These diagnostics preserve
+missing/archived classification, recovery retryability and rejected-input semantics;
+they do not authorize automatic replay.
+
+### Recovering definitely unsent session inputs
+
+Tool preparation marks only controlled transient reasons (busy Thread, retired or
+closed connection, preparation timeout and retirement pending) as retryable. The
+response must also prove `submissionOutcome = rejected`. Existing text inputs
+may transfer to the durable client outbox with the original command/message ID;
+that owner enqueues them when the connection is ready instead of issuing another
+`turn/start`. Queue admission while the native connection is unavailable returns
+`QUEUE_NOT_READY` before persistence and dispatch. Creation and exact-Turn steering
+keep their existing semantics. Permanent tool/permission/environment faults and
+unknown execution outcomes do not enter automatic replay.
+
+A Host queue claim whose tool preparation raises `RecoveryNotSubmitted` returns
+to `queued`, not `unknown`. Transient preparation waits receive a scoped retry
+wakeup; permanent preparation errors pause for explicit correction. A new queued
+preparation may finish abandoned retirement after the previous owner exits,
+without an observation `thread/resume` reviving the old runtime. Lost native send
+acknowledgements remain `unknown` and never schedule a resend.

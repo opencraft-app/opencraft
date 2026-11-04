@@ -65,6 +65,7 @@ import { MembershipStore, InstanceAccess } from '../packages/access-control/src/
 import { ActorStore } from '../packages/access-control/src/actors.ts';
 import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
 import { Collaboration, CollaborationError, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
+import { OrchestrationRuntimeWorker } from '../packages/access-control/src/orchestration-runtime-store.ts';
 import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
 import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
 import { THREAD_ORCHESTRATION_TOOLS } from '../packages/appserver-protocol/src/collaboration.ts';
@@ -265,7 +266,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
   const serverStorage = await openServerDatabase(dataDirectory);
-  const releaseLock = () => serverStorage.close();
+  const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
+  try { await orchestrationStorage.start(); } catch (error) { await orchestrationStorage.close().catch(()=>{}); await serverStorage.close(); throw error; }
+  const releaseLock = async () => { await orchestrationStorage.close(); await serverStorage.close(); };
   let agent;
   let dshAgent;
   let releasePiOwner;
@@ -332,6 +335,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await settle([() => threadOrchestration?.stop()]);
       await settle([() => appHostServer?.close()]);
       await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close()]);
+      await settle([() => orchestrationStorage.close()]);
       await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => capabilityMcp?.close()]);
       if (releasePiOwner) await settle([() => releasePiOwner()]);
       await settle([() => executionRecovery?.close(), () => agentIdentity?.close()]);
@@ -454,12 +458,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         }};
       }});
     actorCollaboration = new Collaboration(serverStorage, actorStore,
-      conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
+      conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage);
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
     actorCollaboration.start();
     threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
-    }));
+    }), Date.now, orchestrationStorage);
     threadOrchestration.start();
     if (options.localDesktop === true) {
       const observer = createNativeObserver();

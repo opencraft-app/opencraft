@@ -7,7 +7,7 @@ import { parseWebDeploymentConfig, resolveWebDeploymentConfig, resolveLegacyWebs
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
 import { PlatformViewRendererRegistry } from "@opencraft/extension-react";
 import { createHeadlessServerExtension } from "@opencraft/plugin-builtin-agents";
-import { createHyperNodeExtension } from "@opencraft/plugin-hypernode";
+import { createHyperNodeExtension, createHyperNodeProfile } from "@opencraft/plugin-hypernode";
 import {
   HOST_PROFILE_CONTRIBUTION_CHANNEL,
   HostConnectionProviderRegistry,
@@ -229,6 +229,23 @@ test("HyperNode owns both its transport provider and ephemeral Host profile", as
   await providers.close();
 });
 
+test("provider-only HyperNode activation preserves saved-recipe support without creating a target", async () => {
+  const providers = new HostConnectionProviderRegistry();
+  const profiles = new HostProfileContributionRegistry();
+  const extensions = new ExtensionSupervisor({ platform: "web", internalContributions: {
+    hostConnectionProvider: createHostConnectionProviderContributionAdapter(providers),
+    [HOST_PROFILE_CONTRIBUTION_CHANNEL]: profiles.createAdapter(),
+  } });
+  await extensions.activate(createHyperNodeExtension({ url: "wss://node.example/appserver", includeDefaultProfile: false }));
+  assert.deepEqual(providers.getSnapshot().providers.map(({ id }) => id), ["opencraft.hypernode"]);
+  assert.deepEqual(profiles.list(), []);
+  const lease = providers.acquire("opencraft.hypernode", "web");
+  assert.deepEqual(lease.provider.validate({ url: "wss://saved.example/rpc" }, { platform: "web", hostId: "saved", profileRevision: 1 }), { url: "wss://saved.example/rpc" });
+  lease.release();
+  await extensions.dispose();
+  await providers.close();
+});
+
 test("headless server inherits the packaged Linux browse root instead of claiming a Mac folder", async () => {
   const providers = new HostConnectionProviderRegistry();
   const profiles = new HostProfileContributionRegistry();
@@ -414,13 +431,21 @@ test("explicit build configuration wins without merging runtime Hosts", () => {
   });
   assert.equal(resolveWebDeploymentConfig(deploymentRuntime, { hosts: " " }).hosts, JSON.stringify(deploymentRuntime.hosts));
 });
-test("static and Vite deployments retain existing defaults and explicit flags", () => {
+test("unconfigured Web has no implicit Host; explicit endpoints and deployment flags remain authoritative", () => {
   assert.equal(parseWebDeploymentConfig(null), null);
-  assert.deepEqual(resolveWebDeploymentConfig(null, {}), { hosts: undefined, builtinAgents: false, hypernode: true });
+  assert.equal(resolveWebDeploymentConfig(null, { appServerUrl: "ws://localhost/rpc" }).hypernode, true);
+  assert.deepEqual(resolveWebDeploymentConfig(null, {}), { hosts: undefined, builtinAgents: false, hypernode: false });
   assert.deepEqual(resolveWebDeploymentConfig(null, { builtinAgents: "enabled", hypernode: "disabled" }), {
     hosts: undefined, builtinAgents: true, hypernode: false,
   });
   assert.equal(resolveWebDeploymentConfig({ ...deploymentRuntime, hosts: [] }, {}).hosts, undefined);
+});
+test("legacy implicit Host selection is retained without overriding explicit deployment choices", () => {
+  assert.equal(resolveWebDeploymentConfig(null, {}, "hypernode").hypernode, true);
+  assert.equal(resolveWebDeploymentConfig(null, {}, "other").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(null, { hypernode: "disabled" }, "hypernode").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(null, { hosts: '[{"hostId":"local"}]' }, "hypernode").hypernode, false);
+  assert.equal(resolveWebDeploymentConfig(deploymentRuntime, {}, "hypernode").hypernode, false);
 });
 test("present but malformed runtime data fails instead of silently losing Hosts", () => {
   for (const raw of ['bad', 'null', '[]', '{}', '{"hosts":[],"builtinAgents":"true","hypernode":false}']) {
@@ -487,4 +512,19 @@ test("a saved same-instance relay endpoint is refreshed without resetting Host p
     if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
     else Reflect.deleteProperty(globalThis, "document");
   }
+});
+
+test("legacy default fallback never shadows a saved recipe or persists a phantom profile", async () => {
+  const fallback = createHyperNodeProfile({ url: "wss://legacy.example/rpc" });
+  const name = `legacy-fallback-${Date.now()}`;
+  let store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name, fallback });
+  assert.equal(store.getSnapshot().profiles[0]?.hostId, "hypernode");
+  store.close();
+  store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name });
+  assert.equal(store.getSnapshot().profiles.length, 0);
+  await store.put({ ...fallback, providerConfig: { url: "wss://saved.example/rpc" } });
+  store.close();
+  store = await IndexedDbHostConnectionProfileStore.open({ factory: indexedDB, databaseName: name, fallback });
+  assert.deepEqual(store.getSnapshot().profiles[0]?.providerConfig, { url: "wss://saved.example/rpc" });
+  store.close();
 });

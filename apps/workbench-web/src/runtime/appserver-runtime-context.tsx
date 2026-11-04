@@ -982,6 +982,7 @@ export function useProjectCatalog(): ProjectCatalogSnapshot {
 
 export interface ComposerCatalogSnapshot {
   readonly personalDefaultsPending: boolean;
+  readonly modelsReady: boolean;
   readonly models: readonly Model[];
   readonly displayModels: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
@@ -1126,6 +1127,7 @@ export function useComposerCatalog(
 
   return {
     personalDefaultsPending: personalDefaults.isPending,
+    modelsReady: currentModels !== undefined,
     models: currentModels ?? [],
     displayModels: currentModels ?? cachedComposerModelMetadata(queryClient, snapshot.hostId, runtime.resources.composerCatalog),
     permissionProfiles: permissionProfileData,

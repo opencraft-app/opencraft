@@ -1051,6 +1051,7 @@
   "chat.steer.declined": "未追加",
   "chat.queue.pausedAfterStop": "已停止，排队消息已保留，可随时继续。",
   "chat.queue.pausedAfterFailure": "消息未发送，点击继续可重试。",
+  "chat.queue.toolsRecovering": "等待会话工具恢复 · 将自动继续",
   "localAccount.title": "账号与成员",
   "localAccount.description": "登录此服务器并管理实例成员。",
   "localAccount.identity": "Human 身份",
@@ -1138,5 +1139,14 @@
   "chat.visualization.navigationBlocked": "此视图不允许跳转页面",
   "chat.visualization.unavailable": "暂时无法显示内嵌视图",
   "chat.visualization.openFile": "打开文件",
-  "chat.visualization.loading": "正在加载视图…"
+  "chat.visualization.loading": "正在加载视图…",
+  "welcome.local.start": "在源码目录同时启动本机执行端与 Web，然后打开命令输出的地址。",
+  "welcome.nextStep": "下一步",
+  "welcome.models.required": "请在 {host} 配置可用模型，或选择已配置好的模型。",
+  "welcome.models.failed": "无法从 {host} 加载模型，请重试。",
+  "welcome.connection.failed": "无法连接到 {host}，请检查连接或重试。",
+  "welcome.retry": "重试",
+  "welcome.connection.settings": "连接设置",
+  "modelServices.noAuth.title": "无需鉴权",
+  "modelServices.noAuth.description": "仅用于不需要 API Key 的接口；不会发送已保存或环境中的密钥。"
 }

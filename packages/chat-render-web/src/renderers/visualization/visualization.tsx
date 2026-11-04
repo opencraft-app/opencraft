@@ -17,8 +17,7 @@ const aliases: Record<string, string> = {
   green: "--color-status-success", red: "--color-text-danger", purple: "--color-text-accent", yellow: "--color-text-warning",
 };
 
-export function createVisualizationRenderer(resources: ChatResourcePolicyService) {
-  return function Visualization({ node, context }: ChatNodeRendererProps) {
+export function Visualization({ node, context, resources }: ChatNodeRendererProps & { resources: ChatResourcePolicyService }) {
     const intl = useIntl();
     const root = useRef<HTMLElement>(null);
     const frame = useRef<HTMLIFrameElement>(null);
@@ -88,5 +87,4 @@ export function createVisualizationRenderer(resources: ChatResourcePolicyService
         allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
         style={{ height }} onLoad={() => { if (++loads.current > 1) setNavigated(true); else updateTheme(); }} /> : <div role="status">{intl.formatMessage({ id: "chat.visualization.loading", defaultMessage: "Loading visualization…" })}</div>}
     </section>;
-  };
 }

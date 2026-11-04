@@ -42,3 +42,7 @@ Pods/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Checked-in third-party package build output (see vendor/deepmerge/README.md)
+!vendor/deepmerge/dist/
+!vendor/deepmerge/dist/**

@@ -31,9 +31,9 @@ export function PendingConversationPage({
       `Pending Conversation ${conversation.scopeId} has no immutable first Turn`,
     );
   }
-  // Project only the immutable submitted input. The current account is not
-  // evidence of this message's author, and rendering must never fetch identity.
-  const message = submittedMessageDisplay(submission);
+  // Use the submit-time sender; rendering must never infer authorship from
+  // the currently selected account or fetch identity.
+  const message = submittedMessageDisplay(submission, conversation.submissionSender);
 
   const content = <div className="pending-conversation-content" data-conversation-scope-id={conversation.scopeId}
     data-pending-conversation-phase={conversation.phase}>

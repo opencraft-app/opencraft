@@ -40,11 +40,12 @@ export async function startIndependentAcpHost(options) {
   let provider, host, server, closed;
   const environmentRuntimes = new Set();
   try {
-    new ModelPolicyStore(join(dirname(dataDirectory), "model-usage-policy.sqlite")).close();
+    const modelPolicyPath = options.modelPolicyPath ?? join(options.machineIdentityDirectory ?? dirname(dataDirectory), "model-usage-policy.sqlite");
+    new ModelPolicyStore(modelPolicyPath).close();
     const identityDirectory = options.machineIdentityDirectory ?? dataDirectory;
     const machine = await readDaemonMachineIdentity(identityDirectory, options.machineName);
     const capabilities = new RemoteSessionCapabilities(options.sessionCapabilitiesDirectory ?? identityDirectory, `server:${machine.machineId}:${id}`);
-    provider = new AcpGenerationHost({ modelPolicyPath: join(dirname(dataDirectory), "model-usage-policy.sqlite"), id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
+    provider = new AcpGenerationHost({ modelPolicyPath, id, dataDirectory, initialGeneration, inspectOsWork: inspectAcpCgroup,
       runtimeIdentity: runtime.entrySha256, readConfig: async (path, generationId) => {
       const config = await readPrivateJson(path);
       config.executionEnvironment = ExecutionEnvironmentRuntime.open(identityDirectory);

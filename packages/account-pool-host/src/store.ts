@@ -383,6 +383,17 @@ export class AccountPoolStore {
     return this.readSecret(id);
   }
 
+  /** Local credential records must be valid even while an external owner is unavailable. */
+  validateCredential(id: string, requireExternal = true): void {
+    const account = this.getAccount(id);
+    let value: unknown;
+    try { value = JSON.parse(readFileSync(this.secretPath(id), "utf8")); }
+    catch { throw new Error("Account credentials are unavailable"); }
+    const reference = parseCodexAuthFileReference(value);
+    if (!reference) parseSecret(value);
+    else if (requireExternal) readCodexAuthFile(reference, account.upstreamAccountId);
+  }
+
   setEnabled(id: string, enabled: boolean): void {
     const result = this.database.prepare("UPDATE pool_accounts SET enabled=? WHERE id=?").run(Number(enabled), accountId(id));
     if (Number(result.changes) !== 1) throw new Error("Account not found");

@@ -36,7 +36,7 @@ export class ModelServicesController {
     const revision = this.revision(provider);
     if (!draft || (!draft.dirty && draft.revision !== revision)) {
       const config = this.service.providerConfiguration(provider);
-      const sameConnection = draft && config.baseURL === draft.config.baseURL && config.api === draft.config.api && config.credentialRef === draft.config.credentialRef;
+      const sameConnection = draft && config.baseURL === draft.config.baseURL && config.api === draft.config.api && config.authentication === draft.config.authentication && config.credentialRef === draft.config.credentialRef;
       draft = { config, revision, dirty: false, modelsTouched: false, connectionExpanded: draft?.connectionExpanded, key: sameConnection ? draft!.key : "", credentialSet: sameConnection ? draft!.credentialSet : null, testModel: draft?.testModel ?? "", probe: null };
       this.drafts.set(provider.provider, draft);
     }
@@ -52,7 +52,8 @@ export class ModelServicesController {
   }
   edit(provider: RuntimeProviderView, patch: Partial<RuntimeProviderConfiguration>, key?: string) {
     const draft = this.draft(provider);
-    if (patch.baseURL !== undefined && patch.baseURL !== draft.config.baseURL) draft.key = "";
+    if ((patch.baseURL !== undefined && patch.baseURL !== draft.config.baseURL)
+      || Object.hasOwn(patch, "authentication")) draft.key = "";
     draft.config = { ...draft.config, ...patch };
     if (patch.models !== undefined) draft.modelsTouched = true;
     if (key !== undefined) draft.key = key;
@@ -63,7 +64,9 @@ export class ModelServicesController {
   discard(provider: RuntimeProviderView) { this.cancelSave(provider); this.drafts.delete(provider.provider); this.error = null; this.message = null; this.notify(); }
   private input(provider: RuntimeProviderView): SaveRuntimeProviderInput {
     const draft = this.draft(provider);
-    return { baseURL: draft.config.baseURL, credential: draft.key ? { kind: "replace", value: draft.key } : { kind: "keep" },
+    return { baseURL: draft.config.baseURL, credential: draft.config.authentication === "none" ? { kind: "unauthenticated" }
+      : draft.key ? { kind: "replace", value: draft.key }
+      : this.service.providerConfiguration(provider).authentication === "none" ? { kind: "none" } : { kind: "keep" },
       ...(provider.configuration?.canToggle && !provider.configured ? { enabled: false } : {}),
       ...(provider.configuration?.modelDeclarations ? { displayName: draft.config.displayName, ...(draft.modelsTouched ? { models: draft.config.models } : {}), ...(draft.config.api ? { api: draft.config.api } : {}) } : {}) };
   }

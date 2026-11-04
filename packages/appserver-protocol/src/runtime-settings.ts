@@ -64,7 +64,7 @@ export interface RuntimeProviderView {
   readonly configured?: boolean;
   readonly enabled?: boolean;
   readonly declared?: boolean;
-  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeProviderProtocol[]; readonly modelType?: "chat" | "asr"; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean;
+  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeProviderProtocol[]; readonly modelType?: "chat" | "asr"; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean; readonly canUseWithoutAuthentication?: boolean;
     readonly defaultBaseURL?: string; readonly defaultApi?: RuntimeProviderProtocol; readonly defaultCredentialRef?: string };
 }
 
@@ -91,7 +91,9 @@ export interface RuntimeProviderApplyParams {
   readonly credential: { readonly kind: "keep"; readonly allowEndpointChange?: boolean }
     | { readonly kind: "replace"; readonly value: string }
     | { readonly kind: "reference"; readonly ref: string }
-    | { readonly kind: "none" };
+    | { readonly kind: "none" }
+    /** Explicitly unauthenticated OpenAI-compatible endpoint; never ambient auth. */
+    | { readonly kind: "unauthenticated" };
 }
 
 export interface RuntimeProviderApplyResponse {

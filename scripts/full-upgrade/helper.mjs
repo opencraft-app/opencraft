@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { runParent, parentRecipe, listParentJobs, stopParent, parentRecoverySocket } from './parent.mjs';
 import { Journal } from './journal.mjs';
 import { serve, request } from './ipc.mjs';
 import { PROTOCOL, readConfig, socketPath, entryIdentity } from './service-config.mjs';
@@ -32,9 +33,30 @@ export async function startHelper(config, entry = process.argv[1]) {
     }
   }
   const server = await serve(socketPath(config, 'helper'), async input => {
-    invariant(input && Object.keys(input).every(k => ['action', 'operationId', 'role', 'artifactId'].includes(k)), 'invalid-helper-request');
+    invariant(input && Object.keys(input).every(k => ['action', 'operationId', 'role', 'artifactId', 'planDigest'].includes(k)), 'invalid-helper-request');
     if (input.action === 'status') return { ...PROTOCOL, role: 'helper', identity, pid: process.pid, bootId, jobs: await journal.list() };
+    if (input.action === 'full-status') return { jobs: await listParentJobs(config) };
     invariant(identifier(input.operationId), 'invalid-operation');
+    if (input.action === 'full-stop') return stopParent(config, input.operationId);
+    if (input.action === 'full-inspect') return runParent(config, { operationId: input.operationId, inspect: true });
+    if (['full-start', 'full-recover'].includes(input.action)) {
+      await parentRecipe(config);
+      invariant(typeof config.parentEntry === 'string' && config.parentEntry.startsWith('/'), 'fixed-parent-unavailable');
+      let unit = 'opencraft-full-upgrade-' + input.operationId + '.service';
+      const prior = (await listParentJobs(config)).find(j => j.operationId === input.operationId);
+      if (input.action === 'full-start' && prior && ['completed', 'active-draining', 'rolled-back', 'deferred'].includes(prior.state)) return prior;
+      if (input.action === 'full-recover') {
+        try { return await request(parentRecoverySocket(config, input.operationId), { action: 'recover', operationId: input.operationId }, 120000); }
+        catch { /* A dead supervisor requires the explicit retained operation. */ }
+      }
+      let active = false;
+      try { active = (await command('/usr/bin/systemctl', ['show', unit, '-p', 'ActiveState', '--value'])).trim() === 'active'; } catch {}
+      if (!active && input.action === 'full-recover') unit = unit.replace('.service', '-recover-' + Date.now() + '.service');
+      if (!active) await command('/usr/bin/systemd-run', ['--unit=' + unit, '--property=Type=exec', '--property=KillMode=process',
+        config.node, config.parentEntry, '--config', config.configPath ?? '/etc/opencraft-upgrade/config.json',
+        input.action === 'full-recover' ? 'recover' : 'apply', input.operationId, ...(input.planDigest ? [input.planDigest] : [])]);
+      return { operationId: input.operationId, state: 'queued', scope: 'full-parent' };
+    }
     if (input.action === 'handoff') {
       invariant(['agent', 'helper'].includes(input.role) && /^[a-f0-9]{64}$/.test(input.artifactId), 'invalid-handoff');
       return request(socketPath(config, 'watchdog'), input, 120000);
@@ -54,7 +76,7 @@ export async function startHelper(config, entry = process.argv[1]) {
     step.receipt = { outcome: 'applied', evidenceId: input.operationId, epoch: 0, fence: input.operationId };
     job.state = 'completed'; job.revision++; await journal.save(job);
     return job;
-  }, 0o660);
+  }, 0o660, { concurrentActions: ['status', 'full-status', 'full-stop', 'full-recover'] });
   return { server, journal, identity };
 }
 export async function main(args = process.argv.slice(2)) {

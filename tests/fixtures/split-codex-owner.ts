@@ -7,6 +7,14 @@ import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 const options = JSON.parse(await readFile(process.argv[3]!, "utf8"));
 if (process.argv[2] === "maintenance-inspect") {
   console.log(JSON.stringify(await new AccountCoreOwner(options).inspectMaintenance()));
+} else if (process.argv[2] === "maintenance-preview-exported") {
+  console.log(JSON.stringify(await new AccountCoreOwner(options).inspectExportedMaintenance(process.argv[4]!)));
+} else if (process.argv[2] === "maintenance-seal-exported") {
+  const { sealExportedAccountMaintenance } = await import("../../apps/codex-core/src/account-owner.js");
+  console.log(JSON.stringify(await sealExportedAccountMaintenance(options, process.argv[4]!)));
+} else if (process.argv[2] === "maintenance-seal-fenced") {
+  const { sealFencedAccountMaintenance } = await import("../../apps/codex-core/src/account-owner.js");
+  console.log(JSON.stringify(await sealFencedAccountMaintenance(options, process.argv[4]!)));
 } else if (process.argv[2] === "maintenance-seal") {
   console.log(JSON.stringify(await sealLegacyAccountMaintenance(options, process.argv[4]!)));
 } else {

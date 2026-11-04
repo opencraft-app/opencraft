@@ -382,6 +382,15 @@ export function createAppServerConversationCommandPort(
       let creationAccepted = false;
       try { return await execute(intent, options, () => { admitted = true; }, () => { creationAccepted = true; }); }
       catch (cause) {
+        if ((intent.target.type === "existing-thread" || intent.target.type === "enqueue-follow-up")
+          && cause instanceof AppServerRpcError) {
+          const data = cause.data as { code?: unknown; submissionOutcome?: unknown; retryable?: unknown } | null;
+          // A structured rejection proves the original input never reached the
+          // engine. Only the existing outbox may transfer it to the Host queue.
+          if (data?.submissionOutcome === "rejected" && data.retryable === true
+            && ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"].includes(String(data.code)))
+            throw new SubmissionNotDispatchedError(1_000);
+        }
         if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") {
           if (creationAccepted) throw new SubmissionOutcomeUnknownError({ cause });
           throw new SubmissionNotDispatchedError();

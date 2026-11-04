@@ -181,6 +181,9 @@ function validateSettingsPage(owner: ExtensionActivationIdentity, value: Setting
   if (value.modelConfiguration !== undefined && typeof value.modelConfiguration !== "boolean") {
     throw new RangeError(`Settings page ${value.id} has an invalid model configuration declaration`);
   }
+  if (value.modelReadiness !== undefined && (typeof value.modelReadiness !== "boolean" || (value.modelReadiness && value.modelConfiguration !== true))) {
+    throw new Error("Invalid model configuration readiness declaration");
+  }
   if (value.modelConfiguration === true && value.targetHostId === undefined) {
     throw new RangeError(`Settings page ${value.id} model configuration requires a target Host`);
   }

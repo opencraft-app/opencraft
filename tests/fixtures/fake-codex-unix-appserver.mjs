@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
+import { mkdirSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const endpoint = process.argv[2];
 const server = createServer();
@@ -22,7 +24,7 @@ sockets.on("connection", socket => {
     if (method === "initialize") { send({ id, result: { serverInfo: { name: "fake", version: "1" } } }); return; }
     if (method === "thread/start") {
       const thread = { id: `${process.env.FAKE_CODEX_THREAD_PREFIX ?? "thread"}-${++sequence}`, createdAt: 1, updatedAt: 1, cwd: params.cwd ?? "/synthetic", historyMode: "legacy", status: { type: "idle" }, turns: [] };
-      if (process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED) thread.path = `/synthetic-unmaterialized/${thread.id}.jsonl`;
+      if (process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED) thread.path = join(process.cwd(), "native-fixture-rollouts", `${thread.id}.jsonl`);
       threads.set(thread.id, thread); subscribed.add(thread.id);
       send({ id, result: { thread } }); return;
     }
@@ -35,6 +37,11 @@ sockets.on("connection", socket => {
     if (method === "fixture/releaseReads") { for (const reply of heldReads.splice(0)) reply(); send({ id, result: {} }); return; }
     if (method === "fixture/releaseTurns") { for (const reply of heldTurns.splice(0)) reply(); send({ id, result: {} }); return; }
     if (method === "thread/read" && params.includeTurns === true && process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED && !threads.get(params.threadId)?.turns.length) {
+      // Stock 0.162 writes its own session_meta before reporting unsupported
+      // list_turns. Keep this fixture at the observed native boundary.
+      const thread = threads.get(params.threadId);
+      mkdirSync(dirname(thread.path), { recursive: true });
+      if (!existsSync(thread.path)) writeFileSync(thread.path, JSON.stringify({ type: "session_meta", payload: { id: thread.id } }) + "\n");
       send({ id, error: { code: -32601, message: "list_turns is not supported yet" } }); return;
     }
     if (method === "thread/read") { const wait = holdNextRead; holdNextRead = 0; const reply = () => { if (wait) pendingReads--; send({ id, result: { thread: threads.get(params.threadId) } }); }; if (wait === -1) { pendingReads++; heldReads.push(reply); } else if (wait) { pendingReads++; setTimeout(reply, wait); } else reply(); return; }
@@ -51,6 +58,8 @@ sockets.on("connection", socket => {
     if (method === "turn/start") {
       const thread = threads.get(params.threadId);
       const turn = { id: `turn-${++sequence}`, status: "inProgress", items: [{ id: `user-${sequence}`, type: "userMessage", content: params.input, clientId: params.clientUserMessageId }] };
+      if (thread.path && existsSync(thread.path)) appendFileSync(thread.path,
+        JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: params.input } }) + "\n");
       thread.turns.push(turn); thread.status = { type: "active", activeFlags: [] };
       const reply = () => send({ id, result: { turn } });
       const wait = holdNextTurn; holdNextTurn = false;

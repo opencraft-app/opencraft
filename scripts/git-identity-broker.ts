@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { GitBrokerOwner } from './git-broker-owner.js';
 import { readFile } from 'node:fs/promises';
 import { EmployeeGitVaultStore, type GitVaultCredential } from './employee-git-vault-store.js';
 import { createMemoryGitSigner, createMemoryGitAuthenticator } from './git-identity-signer.js';
@@ -9,7 +10,7 @@ export type GitExecutionIdentity = { status: 'active'; account: string; executio
 export interface GitBrokerOptions {
   store: EmployeeGitVaultStore; hosts: readonly string[]; runtimeDirectory: string;
   resolve(peer: GitPeer, threadId: string): Promise<GitExecutionIdentity>;
-  ttlMs?: number;
+  ttlMs?: number; ownerStateFile?: string;
   httpsCredentialHosts?: readonly string[];
 }
 interface Session {
@@ -18,6 +19,7 @@ interface Session {
   credential: GitVaultCredential; expires: number;
   authenticator: Awaited<ReturnType<typeof createMemoryGitAuthenticator>> | null;
   signer: Awaited<ReturnType<typeof createMemoryGitSigner>> | null;
+  finish: (uncertain?: boolean) => void;
 }
 export async function readGitProcess(pid: number) {
   if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('unavailable');
@@ -37,15 +39,31 @@ async function sameProcessTree(peer: GitPeer, session: Session): Promise<boolean
 /** Single-command capabilities carry no private key and cannot switch to another employee. */
 export class GitIdentityBroker {
   private readonly sessions = new Map<string, Session>();
+  readonly owner: GitBrokerOwner;
   private readonly timer: ReturnType<typeof setInterval>;
   constructor(private readonly options: GitBrokerOptions) {
+    this.owner = new GitBrokerOwner(options.ownerStateFile);
     this.timer = setInterval(() => { void this.reap(); }, 5_000); this.timer.unref();
   }
   async request(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
+    const request = input && typeof input === 'object' ? input as Record<string, any> : {};
+    if (request.op === 'owner-handoff') {
+      if (peer.uid !== 0 || process.getuid?.() !== 0) return { status: 'denied' };
+      try { return { status: 'ready', handoff: this.owner.control(request, this.sessions.size, peer.pid), commandSessions: this.sessions.size }; }
+      catch { return { status: 'conflict' }; }
+    }
+    let finish: (() => void) | undefined;
+    if (['open', 'credential'].includes(String(request.op))) {
+      try { finish = this.owner.begin(String(request.op), request.op === 'credential'); }
+      catch { return { status: 'unavailable', reason: 'broker-unavailable' }; }
+    }
+    try { return await this.handleRequest(peer, input); } finally { finish?.(); }
+  }
+  private async handleRequest(peer: GitPeer, input: unknown): Promise<Record<string, unknown>> {
     try {
       if (peer.uid !== process.getuid?.() || !input || typeof input !== 'object' || Array.isArray(input)) return { status: 'unavailable' };
       const request = input as Record<string, unknown>;
-      if (request.op === 'health') return { status: 'ready', commandSessions: this.sessions.size };
+      if (request.op === 'health') return { status: this.owner.admits() ? 'ready' : 'maintenance', commandSessions: this.sessions.size };
       if (request.op === 'open') {
         if (typeof request.threadId !== 'string' || !request.threadId || request.threadId.length > 512
           || typeof request.host !== 'string' || !this.options.hosts.includes(request.host)) return { status: 'unavailable' };
@@ -65,12 +83,12 @@ export class GitIdentityBroker {
           return current.status === 'active' && current.account === identity.account && current.executionId === identity.executionId
             && this.options.store.read(identity.account, request.host as string).revision === record.revision;
         };
-        const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
+        const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('sign', true)) : null;
         const authenticator = request.operation === 'push' && credential.sshAuth
-          ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize) : null;
+          ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('ssh-auth', true)) : null;
         const id = randomUUID();
         this.sessions.set(id, { peer, startTicks: start.startTicks, account: identity.account, host: request.host,
-          threadId, executionId: identity.executionId, revision: record.revision, credential, signer, authenticator, expires: performance.now() + (this.options.ttlMs ?? 300_000) });
+          threadId, executionId: identity.executionId, revision: record.revision, credential, signer, authenticator, finish: this.owner.begin('command-session', true), expires: performance.now() + (this.options.ttlMs ?? 300_000) });
         return { status: 'configured', sessionId: id, identity: credential.identity,
           ...(authenticator ? { sshAuth: { socket: authenticator.path, publicKey: credential.sshAuth!.publicKey } } : {}),
           ...(signer ? { signing: { socket: signer.path, publicKey: credential.signing!.publicKey } } : {}) };
@@ -90,15 +108,15 @@ export class GitIdentityBroker {
       return { status: 'configured', username: session.credential.identity.username, password: session.credential.token };
     } catch { return { status: 'unavailable' }; }
   }
-  async close(): Promise<void> { clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id))); }
-  private async remove(id: string): Promise<void> {
-    const session = this.sessions.get(id); this.sessions.delete(id); await session?.signer?.close(); await session?.authenticator?.close();
+  async close(): Promise<void> { this.owner.close(); clearInterval(this.timer); await Promise.all([...this.sessions.keys()].map(id => this.remove(id, true))); }
+  private async remove(id: string, uncertain = false): Promise<void> {
+    const session = this.sessions.get(id); await session?.signer?.close(); await session?.authenticator?.close(); session?.finish(uncertain); this.sessions.delete(id);
   }
   private async reap(): Promise<void> {
     for (const [id, session] of this.sessions) {
       try { if (session.expires > performance.now() && (await readGitProcess(session.peer.pid)).startTicks === session.startTicks) continue; }
       catch { /* The command owner exited. */ }
-      await this.remove(id);
+      await this.remove(id, true);
     }
   }
 }

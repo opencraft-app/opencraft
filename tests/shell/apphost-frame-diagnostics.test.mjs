@@ -130,3 +130,51 @@ test("incompatible hello receives a permanent fatal before close without accepti
   }
   assert.equal(accepted, 0);
 });
+
+test("probe diagnostics separate ingress, response preparation, and local write without request values", async t => {
+  const { logs, url } = await fixture(t, { appHostServer: { accept(port) {
+    port.subscribe(message => {
+      if (message.type === "connection/probe") setTimeout(() => port.postMessage({
+        type: "response", requestId: message.requestId, ok: true, result: null,
+      }), 35);
+    });
+    port.postMessage({ type: "ready", protocolVersion: APP_HOST_PROTOCOL_VERSION });
+    return { close() {} };
+  } } });
+  const socket = new WebSocket(`${url}/apphost?attempt=client-1760500000000-probe`);
+  await once(socket, "open");
+  const ready = once(socket, "message"); socket.send(JSON.stringify(hello)); await ready;
+  const response = once(socket, "message");
+  socket.send(JSON.stringify({ type: "connection/probe", requestId: "probe-secret" }));
+  assert.equal(JSON.parse(String((await response)[0])).requestId, "probe-secret");
+  const events = logs.filter(event => event.event.startsWith("probe-"));
+  assert.deepEqual(events.map(event => event.event), ["probe-received", "probe-response", "probe-written"]);
+  assert.ok(events[1].responseMs >= 25);
+  assert.ok(events[2].elapsedMs >= events[1].responseMs);
+  for (const event of events) {
+    assert.equal(event.attemptId, "client-1760500000000-probe");
+    assert.equal(event.probeSequence, 1);
+    assert.equal(event.readyState, WebSocket.OPEN);
+    assert.equal(typeof event.bufferedBytes, "number");
+    assert.equal(typeof event.eventAtMs, "number");
+  }
+  assert.equal(events[2].ok, true);
+  assert.doesNotMatch(JSON.stringify(events), /secret/);
+  const closed = once(socket, "close"); socket.close(); await closed;
+});
+
+test("unanswered probes are reported on close with bounded observations during floods", async t => {
+  const { logs, url } = await fixture(t);
+  const socket = new WebSocket(`${url}/apphost?attempt=client-1760500000000-bounded`);
+  await once(socket, "open");
+  const ready = once(socket, "message"); socket.send(JSON.stringify(hello)); await ready;
+  for (let i = 0; i < 100; i++) socket.send(JSON.stringify({ type: "connection/probe", requestId: `secret-${i}` }));
+  const closed = once(socket, "close"); socket.close(); await closed;
+  // close is delivered to the client before server-side cleanup may finish.
+  await new Promise(resolve => setImmediate(resolve));
+  const events = logs.filter(event => event.event.startsWith("probe-"));
+  assert.deepEqual(events.map(event => event.event), ["probe-received", "probe-abandoned"]);
+  assert.equal(events[1].probeSequence, 1);
+  assert.ok(events[1].elapsedMs >= 0);
+  assert.doesNotMatch(JSON.stringify(events), /secret/);
+});

@@ -8,6 +8,10 @@ export const providerLifecycleEdits = [
   ["const profile = z.object({\n\tapiKeyEnv:", "const profile = z.object({\n\tenabled: z.boolean().default(true),\n\tapiKeyEnv:"],
   ['\t\tif (source.baseURL !== void 0 && source.baseURL.length === 0)', '\t\tif (source.enabled === false) continue;\n\t\tif (source.baseURL !== void 0 && source.baseURL.length === 0)'],
   ['\t\tconst entries = directoryEntries(profiles());', '\t\tconst entries = directoryEntries(new Map(Object.entries(current().providers ?? {}).map(([id, value]) => [id, { displayName: value.displayName ?? id }])));'],
+  ['\theaders: z.dict(z.string()),', '\tauthentication: z.union(["none"]),\n\theaders: z.dict(z.string()),'],
+  ['namesCredential: apiKeyEnv !== void 0', 'namesCredential: source.authentication === "none" || apiKeyEnv !== void 0'],
+  ['const resolveApiKey = async (provider, profile) => {', 'const resolveApiKey = async (provider, profile) => {\n\t\t// Adapter-only SDK precondition, never a stored or transmitted credential.\n\t\tif (profile.authentication === "none") return "opencraft-no-auth";'],
+  ['headers: requestHeaders(profile.headers)', 'headers: profile.authentication === "none" ? { ...requestHeaders(profile.headers), authorization: null, "x-api-key": null, "api-key": null } : requestHeaders(profile.headers)'],
 ];
 export const nativeProviderLifecycleEdits = [
   ['const Config = z.object({\n\tapiKeyEnv:', 'const Config = z.object({\n\tenabled: z.boolean().default(true),\n\tapiKeyEnv:'],

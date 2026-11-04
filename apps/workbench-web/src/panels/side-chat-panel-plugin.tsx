@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { projectComposerModelChoices, type AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { composerCapabilitiesOptions } from "../runtime/composer-capabilities-query";
@@ -9,13 +9,25 @@ import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
 import { Conversation } from "../components/conversation";
 import { useAppearanceTheme } from "../appearance-theme";
 
-export function SideChatContent({ session, service, runtime }: { session: SideChatSession; service: SideChatService; runtime: AppServerWorkbenchRuntime }) {
+export function SideChatContent({ session, service, runtime, active = true }: { session: SideChatSession; service: SideChatService; runtime: AppServerWorkbenchRuntime; active?: boolean }) {
   const catalog = useQuery(composerCapabilitiesOptions(session.key.hostId, session.key.threadId, runtime.resources.composerCatalog));
   const displayModels = projectComposerModelChoices(catalog.data?.metadataReader === runtime.resources.composerCatalog ? catalog.data.models : []);
   const theme = useAppearanceTheme().resolvedTheme;
   const snapshot = useSyncExternalStore(session.lease.subscribe, session.lease.getSnapshot, session.lease.getSnapshot);
   const [error, setError] = useState<string | null>(null);
-  return <div className="side-chat-panel">
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!active) return;
+    // The pending fork has no editor. Transfer input only after its active
+    // panel and Composer have mounted; cancelling the frame retires old owners.
+    const frame = requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel?.isConnected || panel.closest("[inert], [hidden]") || panel.getClientRects().length === 0) return;
+      session.composer.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active, session.composer]);
+  return <div ref={panelRef} className="side-chat-panel">
     <p className="side-chat-panel__notice">Side chat · temporary</p>
     {snapshot.error ? <p role="alert">{snapshot.error.message}</p> : null}
     <Conversation scrollPolicy="natural" timeline={snapshot.timeline}
@@ -52,10 +64,10 @@ export function SideChatContent({ session, service, runtime }: { session: SideCh
 }
 
 export function createSideChatPanelPlugin(service: SideChatService, bindings: ConversationBindingStore, resolveRuntime: (hostId: string) => AppServerWorkbenchRuntime | null) {
-  function SideChatPanel({ tab }: PanelRendererProps) {
+  function SideChatPanel({ tab, active }: PanelRendererProps) {
     const session = tab.resource ? service.get(tab.resource) : null;
     const runtime = session ? resolveRuntime(session.key.hostId) : null;
-    return session && runtime ? <SideChatContent key={session.id} session={session} service={service} runtime={runtime} />
+    return session && runtime ? <SideChatContent key={session.id} session={session} service={service} runtime={runtime} active={active} />
       : <div className="right-panel-empty" role="status">{tab.title}</div>;
   }
   return Object.assign(function SideChatPanelPlugin(ctx: Context) {

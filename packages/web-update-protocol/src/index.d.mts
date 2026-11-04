@@ -34,7 +34,7 @@ export function parseWebReleaseMetadata(value: unknown): { schemaVersion: 1; wor
 export type UpgradeState = 'queued' | 'checking' | 'downloading' | 'prepared' | 'switching' | 'active-draining' | 'completed' | 'deferred' | 'failed' | 'rolling-back' | 'rolled-back' | 'recovery-required' | 'blocked';
 export interface FullUpgradePlan {
   readonly planId: string | null; readonly planDigest: string | null;
-  readonly status: 'blocked'; readonly executable: false;
+  readonly status: 'blocked' | 'prepared'; readonly executable: boolean;
   readonly releaseId: string | null; readonly sourceRevision: string | null;
   readonly channel: string | null; readonly manifestSha256: string | null;
   readonly downloadBytes: number | null;
@@ -49,7 +49,7 @@ export interface FullUpgradeJob {
   readonly components: readonly { componentId: string; state: UpgradeState; childJobId: string | null; affectedCount: number | null; healthy: boolean | null }[];
 }
 export interface FullUpgradeStatus {
-  readonly schemaVersion: 1; readonly fullStackExecutable: false;
+  readonly schemaVersion: 1; readonly fullStackExecutable: boolean;
   readonly unavailable?: boolean; readonly plan: FullUpgradePlan | null; readonly jobs: readonly FullUpgradeJob[];
 }
 export function parseFullUpgradeStatus(value: unknown): FullUpgradeStatus;

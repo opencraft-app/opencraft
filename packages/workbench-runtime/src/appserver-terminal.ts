@@ -18,6 +18,7 @@ export interface AppServerTerminalSnapshot {
   readonly error: Error | null;
 }
 export interface OpenAppServerTerminalOptions {
+  readonly resourceOwnerId?: string;
   readonly threadId?: string | null;
   readonly projectId?: string | null;
   readonly command: readonly string[];
@@ -38,8 +39,8 @@ export interface AppServerTerminalSession {
 }
 export interface AppServerTerminalResourcePort {
   open(options: OpenAppServerTerminalOptions): AppServerTerminalSession;
-  attach(processId: string): AppServerTerminalSession;
-  list(): Promise<{ processes: Array<Omit<ProcessSnapshot, "output">> }>;
+  attach(processId: string, scope?: { threadId?: string | null; projectId?: string | null }): AppServerTerminalSession;
+  list(scope?: { threadId?: string | null; projectId?: string | null }): Promise<{ processes: Array<Omit<ProcessSnapshot, "output">> }>;
 }
 interface Session {
   scope: { threadId?: string | null; projectId?: string | null };
@@ -81,7 +82,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
       }
     })];
   }
-  list() { return this.client.request("process/list", {}); }
+  list(scope: { threadId?: string | null; projectId?: string | null } = {}) { return this.client.request("process/list", scope); }
   /** Called after AppServer initialize, not merely after the transport opens. */
   async reconnect() {
     await Promise.allSettled([...this.sessions].filter(([, s]) => s.snapshot.phase === "disconnected").map(([id, s]) => {
@@ -99,7 +100,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     session.ready = this.client.request("process/spawn", {
       processHandle: id, command: [...options.command], tty: true, size,
       streamStdoutStderr: true, outputBytesCap: null, timeoutMs: null,
-      ...({ threadId: options.threadId, projectId: options.projectId }), cwd: options.cwd, env: options.env === undefined ? undefined : { ...options.env },
+      ...({ resourceOwnerId: options.resourceOwnerId, threadId: options.threadId, projectId: options.projectId }), cwd: options.cwd, env: options.env === undefined ? undefined : { ...options.env },
     }).then(() => {
       if (generation === this.client.connectionGeneration && session.snapshot.phase === "starting") this.update(session, { phase: "running" });
     }).catch(cause => {
@@ -109,9 +110,10 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     void session.ready.catch(() => undefined);
     return this.handle(id, session);
   }
-  attach(id: string): AppServerTerminalSession {
+  attach(id: string, scope: { threadId?: string | null; projectId?: string | null } = {}): AppServerTerminalSession {
     if (this.sessions.has(id)) throw new Error("Process already attached to this controller");
     const session = this.create(id);
+    session.scope = scope;
     session.ready = this.sync(id, session);
     void session.ready.catch(() => undefined);
     return this.handle(id, session);

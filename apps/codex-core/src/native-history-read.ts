@@ -37,13 +37,16 @@ export async function readNativeHistoryFailures(path: string) {
 }
 
 /** Read the same binding twice only for an explicitly retained failure; any difference fails closed. */
-export async function readNativeHistory(peer: GenerationPeer, generationId: string, ids: readonly string[], expected: readonly NativeHistoryFailure[]) {
-  if (expected.some(row => row.generationId !== generationId || !ids.includes(row.threadId))) throw Error("Historical failure binding changed");
+export async function readNativeHistory(peer: GenerationPeer, generationId: string, ids: readonly string[], expected: readonly NativeHistoryFailure[], unavailable: readonly NativeHistoryFailure[] = []) {
+  const retainedRows = [...expected, ...unavailable];
+  if (retainedRows.some(row => row.generationId !== generationId || !ids.includes(row.threadId))
+    || new Set(retainedRows.map(row => row.threadId)).size !== retainedRows.length) throw Error("Historical failure binding changed");
   const loaded = rpcRecord(await peer.call("thread/loaded/list", {}));
   if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw Error("Native subscriptions unavailable");
   const failures: NativeHistoryFailure[] = [];
+  const coldUnavailable: NativeHistoryFailure[] = [];
   for (const id of ids) {
-    const retained = expected.find(row => row.threadId === id);
+    const retained = retainedRows.find(row => row.threadId === id);
     if (retained && loaded.data.includes(id)) throw Error("Historical failure is now loaded");
     if (!retained) {
       const result = rpcRecord(await peer.call("thread/read", { threadId: id, includeTurns: false }));
@@ -60,7 +63,7 @@ export async function readNativeHistory(peer: GenerationPeer, generationId: stri
       }
       if (!rejected) throw Error("Historical failure became readable");
     }
-    failures.push(structuredClone(retained));
+    (unavailable.some(row => row.threadId === id) ? coldUnavailable : failures).push(structuredClone(retained));
   }
-  return { historicalCount: ids.length, failures };
+  return { historicalCount: ids.length, failures, ...(unavailable.length ? { coldUnavailable } : {}) };
 }

@@ -1616,3 +1616,42 @@ test("routed mutation uncertainty survives RPC wrapping while preflight rejectio
     } finally { await h.close(); }
   }
 });
+
+for (const target of ["existing-thread", "enqueue-follow-up"] as const)
+  for (const code of ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"])
+    test(`definitively rejected ${target} ${code} can transfer to the outbox`, async () => {
+      const h = await harness();
+      const cause = new AppServerRpcError({ code: -32000, message: "synthetic preparation failure",
+        data: { code, submissionOutcome: "rejected", retryable: true } });
+      h.client.request = (async () => { throw cause; }) as typeof h.client.request;
+      try {
+        await assert.rejects(commandPort(h).submit(intent({ type: target, key: existingKey })),
+          error => error instanceof SubmissionNotDispatchedError);
+        assert.equal(h.requests.length, 0);
+      } finally { await h.close(); }
+    });
+
+for (const data of [
+  { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "unknown", retryable: true },
+  { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "rejected", retryable: false },
+  { code: "UNRELATED", submissionOutcome: "rejected", retryable: true },
+]) test(`outbox recovery requires the exact tool rejection proof ${JSON.stringify(data)}`, async () => {
+  const h = await harness();
+  const cause = new AppServerRpcError({ code: -32000, message: "synthetic failure", data });
+  h.client.request = (async () => { throw cause; }) as typeof h.client.request;
+  try {
+    await assert.rejects(commandPort(h).submit(intent({ type: "existing-thread", key: existingKey })),
+      error => data.submissionOutcome === "unknown" ? error instanceof SubmissionOutcomeUnknownError : error === cause);
+  } finally { await h.close(); }
+});
+
+test("steering never becomes a queued retry after a tool rejection", async () => {
+  const h = await harness();
+  const cause = new AppServerRpcError({ code: -32000, message: "synthetic failure",
+    data: { code: "SESSION_TOOLS_UNAVAILABLE", submissionOutcome: "rejected", retryable: true } });
+  h.client.request = (async () => { throw cause; }) as typeof h.client.request;
+  try {
+    await assert.rejects(commandPort(h).submit(intent({ type: "steer-active-turn", key: existingKey, turnId: asTurnId("exact-turn") })),
+      error => error === cause);
+  } finally { await h.close(); }
+});
