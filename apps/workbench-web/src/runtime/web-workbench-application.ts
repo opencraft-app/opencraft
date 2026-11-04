@@ -157,7 +157,7 @@ export async function createWebWorkbenchApplication(
     return runtime.resources.host.fetchLoopback(targetUrl, init);
   });
   const browserSurfaces = desktop ? new ElectronBrowserSurfaceHost(browserStorage!)
-    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady) : new WebIframeSurfaceHost();
+    : remoteBrowser ? new RemoteBrowserSurfaceHost(browserStorage ?? undefined, remoteStorage ? 'opencraft.remote-browser-storage.v1' : undefined, () => !remoteStorage || remoteStorage.isReady, () => remoteStorage?.whenReady() ?? Promise.resolve()) : new WebIframeSurfaceHost();
   const releaseStorageErrors = remoteStorage?.onError(error => { if (browserSurfaces instanceof RemoteBrowserSurfaceHost) browserSurfaces.fail(error); });
   const browserPages = new WebBrowserPageRuntime(
     browserSurfaces,

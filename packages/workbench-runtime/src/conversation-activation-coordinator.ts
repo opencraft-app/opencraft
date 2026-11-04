@@ -87,7 +87,7 @@ export function createConversationActivationCoordinator<
     }
     const existing = bindings.findScope(location.key);
     const scopeId = existing ?? canonicalThreadScopeId(location.key);
-    bindings.register(scopeId, location.key.hostId);
+    bindings.register(scopeId, location.key.hostId, {persistent: existing!==null && scopeId!==canonicalThreadScopeId(location.key)});
     if (existing === null) bindings.bind(scopeId, location.key);
     leases.ensure(scopeId, location.key.hostId, { type: "existing-thread", key: location.key });
     return scopeId;

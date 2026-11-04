@@ -49,7 +49,7 @@ window.poc={storage,surfaces,pages,presentations,tool,context,tab,page,async use
 `;
 await build({ stdin: { contents: source, resolveDir: root, sourcefile: 'remote-browser-fixture.ts', loader: 'ts' }, outfile: join(web, 'smoke.js'), bundle: true, format: 'iife', platform: 'browser', target: 'chrome130' });
 await writeFile(join(web, 'index.html'), '<!doctype html><style>html,body{margin:0}#root{position:fixed;inset:0}.web-browser-surface{position:absolute}</style><div id="root"></div><script src="/smoke.js"></script>');
-await writeFile(join(web, 'demo.html'), '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote browser proof</title><style>input,button{font-size:24px}body{font:24px sans-serif;margin:30px}pre{white-space:pre-wrap;overflow-wrap:anywhere}#result{margin-top:20px}</style><label>Name <input aria-label="Name" id="name"></label><button onclick="document.querySelector(\'#result\').textContent=\'Hello \'+document.querySelector(\'#name\').value">Submit</button><input type="password" aria-label="Password" value="never-export-this"><div id="result">Ready</div><div id="geometry"></div><script>const update=()=>document.querySelector("#geometry").textContent="Viewport "+innerWidth+"x"+innerHeight+" DPR "+devicePixelRatio;addEventListener("resize",update);update()</script><pre id="device"></pre><button style="position:fixed;left:10px;top:180px" ontouchstart="this.textContent=\'Touched\'">Untouched</button><script>function reportDevice(){let ua=navigator.userAgent;let profile=ua.includes("iPhone")?"iphone":ua.includes("iPad")?"ipad":ua.includes("Android")?(ua.includes("Mobile")?"android-phone":"android-tablet"):"desktop";const target=document.querySelector("#device"),text="Device "+profile+" "+innerWidth+"x"+innerHeight+" DPR"+devicePixelRatio+" touch"+navigator.maxTouchPoints+" coarse:"+matchMedia("(pointer:coarse)").matches+" orientation:"+screen.orientation.type+" hint:"+navigator.userAgentData?.mobile;if(target.textContent!==text)target.textContent=text}addEventListener("resize",reportDevice);setInterval(reportDevice,100);reportDevice()</script>' );
+await writeFile(join(web, 'demo.html'), '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote browser proof</title><style>input,button{font-size:24px}body{font:24px sans-serif;margin:30px}pre{white-space:pre-wrap;overflow-wrap:anywhere}#result{margin-top:20px}</style><label>Name <input aria-label="Name" id="name"></label><button onclick="document.querySelector(\'#result\').textContent=\'Hello \'+document.querySelector(\'#name\').value">Submit</button><input type="password" aria-label="Password" value="never-export-this"><div id="result">Ready</div><div id="geometry"></div><script>const update=()=>document.querySelector("#geometry").textContent="Viewport "+innerWidth+"x"+innerHeight+" DPR "+devicePixelRatio;addEventListener("resize",update);update()</script><pre id="device"></pre><div id="input-kind">Pointer none</div><script>document.addEventListener("pointerdown",event=>{document.querySelector("#input-kind").textContent="Pointer "+event.pointerType})</script><button style="position:fixed;left:10px;top:180px" ontouchstart="this.textContent=\'Touched\'">Untouched</button><script>function reportDevice(){let ua=navigator.userAgent;let profile=ua.includes("iPhone")?"iphone":ua.includes("iPad")?"ipad":ua.includes("Android")?(ua.includes("Mobile")?"android-phone":"android-tablet"):"desktop";const target=document.querySelector("#device"),text="Device "+profile+" "+innerWidth+"x"+innerHeight+" DPR"+devicePixelRatio+" touch"+navigator.maxTouchPoints+" coarse:"+matchMedia("(pointer:coarse)").matches+" orientation:"+screen.orientation.type+" hint:"+navigator.userAgentData?.mobile;if(target.textContent!==text)target.textContent=text}addEventListener("resize",reportDevice);setInterval(reportDevice,100);reportDevice()</script>' );
 await writeFile(join(web, 'version.json'), '{}');
 const gateway = await createWorkbenchWebServer({ root: web, loopbackOnly: true, remoteBrowserService: service });
 const address = await gateway.listen({ host: '127.0.0.1', port: 0 });
@@ -67,11 +67,11 @@ try {
     const config=await freshCall('open',{lease:crypto.randomUUID(),viewport:{width:430,height:932,deviceProfile:'iphone'}});
     assert.equal(config.deviceProfile,'iphone');assert.equal(config.dpr,1);
     await freshCall('navigate',{url:origin+'/demo.html'});
-    await freshCall('automation',{method:'wait',input:{text:'Device iphone 430x932 DPR1 touch1 coarse:true',timeoutMs:5000}});
+    await freshCall('automation',{method:'wait',input:{text:'Device iphone 430x932 DPR1 touch10 coarse:true',timeoutMs:5000}});
     await freshCall('close');
   } finally {fresh.terminate();for(const request of pendingFresh.values())clearTimeout(request.timer);}
   browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, headless: true, args: process.getuid?.() === 0 ? ['--no-sandbox'] : [] });
-  const view = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+  const view = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2, hasTouch: true });
   if (process.env.OPENCRAFT_TEST_MSE === '1') await view.addInitScript(() => { delete (window as any).VideoDecoder; });
   const errors: string[] = []; view.on('pageerror', error => errors.push(error.message));
   await view.goto(origin);
@@ -155,19 +155,29 @@ try {
     await view.waitForFunction(({width,height}) => {const v=document.querySelector('video');const c=document.querySelector('canvas')!;return c.width===width&&c.height===height&&(!v||(v.videoWidth===width&&v.videoHeight===height&&v.readyState>=2));},{width:Math.round(width/2)*2,height:Math.round(height/2)*2});
     await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Hello Resized',timeout_ms:5000}));
   };
-  await device('iphone-15-pro-max',430,932,'Device iphone 430x932 DPR1 touch1 coarse:true orientation:portrait-primary hint:true');
+  await device('iphone-15-pro-max',430,932,'Device iphone 430x932 DPR1 touch10 coarse:true orientation:portrait-primary hint:true');
   const touchCanvas = await view.locator('canvas').boundingBox();
   assert(touchCanvas); const scale = touchCanvas.width / 430;
-  await view.mouse.click(touchCanvas.x+30*scale,touchCanvas.y+200*scale);
+  const touchPoint = { x: touchCanvas.x + 30 * scale, y: touchCanvas.y + 200 * scale };
+  // A mobile target does not convert an explicit physical mouse into touch.
+  await view.mouse.click(touchPoint.x, touchPoint.y);
+  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Pointer mouse',timeout_ms:5000}));
+  const mouseInspection = await view.evaluate(async () => (window as any).poc.use({action:'inspect'}));
+  assert(mouseInspection.elements.some((element: any) => element.name === 'Untouched'), 'explicit mouse must not synthesize touchstart');
+  // Exercise the viewer's real pointerType=touch path through the same canvas,
+  // authenticated controller and native dispatcher, rather than a DOM event.
+  await view.touchscreen.tap(touchPoint.x, touchPoint.y);
+  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Pointer touch',timeout_ms:5000}));
   await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Touched',timeout_ms:5000}));
-  await device('iphone-15-pro-max',932,430,'Device iphone 932x430 DPR1 touch1 coarse:true orientation:landscape-primary');
-  await device('responsive',480,860,'Device iphone 480x860 DPR1 touch1 coarse:true','iphone');
-  await device('pixel-8',412,916,'Device android-phone 412x916 DPR1 touch1 coarse:true');
+  await view.screenshot({ path: join(temporary, 'input-kinds.png') });
+  await device('iphone-15-pro-max',932,430,'Device iphone 932x430 DPR1 touch10 coarse:true orientation:landscape-primary');
+  await device('responsive',480,860,'Device iphone 480x860 DPR1 touch10 coarse:true','iphone');
+  await device('pixel-8',412,916,'Device android-phone 412x916 DPR1 touch10 coarse:true');
   await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'hint:true',timeout_ms:5000}));
-  await device('ipad-air',820,1180,'Device ipad 820x1180 DPR1 touch1 coarse:true');
+  await device('ipad-air',820,1180,'Device ipad 820x1180 DPR1 touch10 coarse:true');
   await device('laptop',1024,768,'Device desktop 1024x768 DPR1 touch0 coarse:false');
   await view.evaluate(() => (window as any).poc.showMode({type:'responsive'}));
-  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Device desktop 1280x720 DPR1 touch0 coarse:false',timeout_ms:10000}));
+  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Device desktop 1280x720 DPR1 touch10 coarse:true',timeout_ms:10000}));
   await view.screenshot({ path: join(temporary, 'remote-tab.png') });
   await view.waitForTimeout(350); const before = frames; await view.waitForTimeout(1200); const staticFrames = frames - before;
   assert.equal(staticFrames, 0, 'unchanged page must not send video keepalive frames');
@@ -181,12 +191,12 @@ try {
   // A new viewer has no measured layout yet. It must preserve the remote
   // mobile configuration rather than send its 720p desktop fallback on open.
   await view.evaluate(() => (window as any).poc.showMode({type:'device',presetId:'iphone-15-pro-max',width:430,height:932}));
-  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Device iphone 430x932 DPR1 touch1 coarse:true',timeout_ms:10000}));
+  await view.evaluate(async () => (window as any).poc.use({action:'wait',text:'Device iphone 430x932 DPR1 touch10 coarse:true',timeout_ms:10000}));
   await view.evaluate(async () => { await (window as any).poc.detach(); localStorage.clear(); });
   await view.reload(); await view.waitForFunction(() => (window as any).poc);
   await view.evaluate(async () => {const p=(window as any).poc;await p.surfaces.waitUntilReady(p.page);});
   const recoveredViewport = [...service.pages.values()][0].viewport;
   assert.deepEqual(recoveredViewport, {width:430,height:932,deviceProfile:'iphone'});
   await view.evaluate(async () => (window as any).poc.use({ action: 'close' }));
-  console.log(JSON.stringify({ ok: true, origin, evidence: temporary, codec: 'H264', software: true, staticFrames, frames, streamBytes, decoder: process.env.OPENCRAFT_TEST_MSE ? 'MSE' : 'WebCodecs', sandbox: 'dynamic-user', checks: ['fresh-mobile-before-navigation','cross-origin-denied','real-dynamic-tool-host','sensitive-fill-blocked','context-redacted','thread-scope-denied','H264-decoded','human-canvas-input','screenshot','server-metadata-with-empty-client-storage','application-detach-preserves-tab','reattach-without-navigation','disconnected-over-60-seconds','browser-process-restart-restores-url-config','restart-does-not-claim-heap-restore','unmeasured-viewer-preserves-remote-mobile-viewport','park-preserves-dom','visible-frame-matches-target','responsive-portrait-and-wide','DPR1-on-DPR2-viewer','resize-preserves-dom','held-drag-final-size','resized-input','mobile-ua-metrics-touch','mobile-mouse-touch-event','rotate-preserves-profile','custom-resize-preserves-profile','android-client-hints','tablet-profile','desktop-restoration','static-zero-frames','explicit-close'], errors }));
+  console.log(JSON.stringify({ ok: true, origin, evidence: temporary, codec: 'H264', software: true, staticFrames, frames, streamBytes, decoder: process.env.OPENCRAFT_TEST_MSE ? 'MSE' : 'WebCodecs', sandbox: 'dynamic-user', checks: ['fresh-mobile-before-navigation','cross-origin-denied','real-dynamic-tool-host','sensitive-fill-blocked','context-redacted','thread-scope-denied','H264-decoded','human-canvas-input','screenshot','server-metadata-with-empty-client-storage','application-detach-preserves-tab','reattach-without-navigation','disconnected-over-60-seconds','browser-process-restart-restores-url-config','restart-does-not-claim-heap-restore','unmeasured-viewer-preserves-remote-mobile-viewport','park-preserves-dom','visible-frame-matches-target','responsive-portrait-and-wide','DPR1-on-DPR2-viewer','resize-preserves-dom','held-drag-final-size','resized-input','mobile-ua-metrics-touch','mobile-explicit-mouse','mobile-real-touch','rotate-preserves-profile','custom-resize-preserves-profile','android-client-hints','tablet-profile','desktop-preset-restoration','responsive-hybrid-restoration','static-zero-frames','explicit-close'], errors }));
 } finally { await browser?.close(); service.close(); await gateway.close(); }
