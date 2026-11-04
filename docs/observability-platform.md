@@ -463,7 +463,7 @@ pageResumeAgoMs（距观察到恢复的时间）、pageHiddenForMs（当前未�
 ### Background refresh completion logs
 
 A cached foreground read and the background job it schedules have different
-latency meanings. Native read timing keeps the existing `caller` and `traceRole`
+latency meanings. Native read timing carries optional `caller` and `traceRole`
 fields. Slow (at least 1000ms) or unsuccessful `background-refresh` completions
 also emit a compact `[opencraft background-refresh]` log with
 `workClass: background`, method, outcome, duration and available causal links.
@@ -479,5 +479,5 @@ roots are background; unclassified dependencies remain unknown. Summary groups
 retain component, kind, stage and traceRole so a whole background scan is never
 merged with its native/storage children or with foreground RPC latency. Causal
 trace links remain available for attribution; adjacency in time is insufficient.
-No new persisted field or Observe schema migration is required. This log/query
+No storage schema migration is required. Observe must retain these optional event fields; installations already accepting them need no observer update. Older consumers that drop the metadata can only classify those dependencies as unknown. This log/query
 classification does not change refresh scheduling, cursor recovery or timeouts.

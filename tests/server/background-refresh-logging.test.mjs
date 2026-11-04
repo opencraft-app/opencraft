@@ -47,3 +47,15 @@ test('ingress wires the label once and logging failure does not reject telemetry
   spy.mock.mockImplementation(() => { throw new Error('log unavailable'); });
   assert.equal(ingress.readTiming(background), true, 'original telemetry admission survives logger failure');
 });
+
+test('optional native work metadata and causal links survive event sanitization', async () => {
+  const { sanitizeEvent } = await import('../../packages/observability-contract/index.mjs');
+  const input = { ...background, schemaVersion: 1, producerId: 'fixture', eventId: 'fixture', at: 100 };
+  const saved = sanitizeEvent(input, 100);
+  assert.equal(rpcWorkClass(saved), 'background');
+  assert.equal(saved.linkedTraceId, input.linkedTraceId);
+  assert.equal(saved.directoryPages, 9);
+  for (const stage of ['history', 'storage']) assert.equal(rpcWorkClass(sanitizeEvent({ ...input, stage, traceRole: stage === 'history' ? 'native-rpc' : 'storage-work' }, 100)), 'background');
+  for (const change of [{ caller: 'private' }, { traceId: 'invalid' }, { linkedSpanId: undefined }, { gatewayPairId: 'invalid' }])
+    assert.equal(sanitizeEvent({ ...input, ...change }, 100), null);
+});
