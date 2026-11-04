@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection, createServer, type Socket } from "node:net";
 import { chmod, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { SandboxCreationFault, SandboxFault, type SandboxBackend, type SandboxEnvironment, type SandboxExit, type SandboxIdentity, type SandboxOutput, type SandboxPoolPolicy, type SandboxProcess, type SandboxResources } from "@opencraft/sandbox";
 
 type Frame = Record<string, unknown> & { type: string; lease?: string };
@@ -108,16 +108,29 @@ export async function handsUnixSandboxBackend(options: HandsUnixBackendOptions):
 }
 
 export interface HandsExecutionOwnerOptions { endpoint: string; tokenFile: string; executable: string; workspace: string; resources: SandboxResources; verifyCgroup?: boolean }
+export async function verifyHandsCgroup(resources: SandboxResources, root = "/sys/fs/cgroup") {
+  let cpu: string, memory: string, tasks: string;
+  try {
+    [cpu, memory, tasks] = await Promise.all(["cpu.max", "memory.max", "pids.max"].map(name => readFile(join(root, name), "utf8")));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const [quota, period, memoryLimit, taskLimit] = await Promise.all([
+      readFile(join(root, "cpu,cpuacct/cpu.cfs_quota_us"), "utf8"),
+      readFile(join(root, "cpu,cpuacct/cpu.cfs_period_us"), "utf8"),
+      readFile(join(root, "memory/memory.limit_in_bytes"), "utf8"),
+      readFile(join(root, "pids/pids.max"), "utf8"),
+    ]);
+    cpu = `${quota.trim()} ${period.trim()}`; memory = memoryLimit; tasks = taskLimit;
+  }
+  const [quota, period] = cpu.trim().split(/\s+/u).map(Number);
+  if (!quota || quota < 0 || !period || Math.abs(quota / period * 1000 - resources.cpuMillis) > 1
+    || Number(memory.trim()) !== resources.memoryBytes || Number(tasks.trim()) !== 4096)
+    throw Error("Hands cgroup does not enforce the declared execution budget");
+}
 export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptions) {
   if (![options.endpoint, options.tokenFile, options.executable, options.workspace].every(isAbsolute)) throw Error("Invalid Hands owner configuration");
   const [workspace, executable] = await Promise.all([realpath(options.workspace), realpath(options.executable)]);
-  if (options.verifyCgroup) {
-    const [cpu, memory, tasks] = await Promise.all(["cpu.max", "memory.max", "pids.max"].map(name => readFile("/sys/fs/cgroup/" + name, "utf8")));
-    const [quota, period] = cpu.trim().split(/\s+/u).map(Number);
-    if (!quota || !period || Math.abs(quota / period * 1000 - options.resources.cpuMillis) > 1
-      || Number(memory.trim()) !== options.resources.memoryBytes || Number(tasks.trim()) !== 4096)
-      throw Error("Hands cgroup does not enforce the declared execution budget");
-  }
+  if (options.verifyCgroup) await verifyHandsCgroup(options.resources);
   let token: string;
   try { token = await privateToken(options.tokenFile); }
   catch {

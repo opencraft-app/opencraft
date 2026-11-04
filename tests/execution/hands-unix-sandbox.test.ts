@@ -4,7 +4,30 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSandboxPool } from "../../packages/sandbox/src/index.js";
-import { handsUnixSandboxBackend, startHandsExecutionOwner } from "../../packages/sandbox-node/src/hands-unix.js";
+import { handsUnixSandboxBackend, startHandsExecutionOwner, verifyHandsCgroup } from "../../packages/sandbox-node/src/hands-unix.js";
+
+test("Hands validates equivalent cgroup v2 and v1 resource controllers", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-hands-cgroup-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
+  await Promise.all([
+    writeFile(join(root, "cpu.max"), "400000 100000\n"),
+    writeFile(join(root, "memory.max"), `${resources.memoryBytes}\n`),
+    writeFile(join(root, "pids.max"), "4096\n"),
+  ]);
+  await verifyHandsCgroup(resources, root);
+  await Promise.all(["cpu.max", "memory.max", "pids.max"].map(path => rm(join(root, path))));
+  await Promise.all(["cpu,cpuacct", "memory", "pids"].map(path => mkdir(join(root, path))));
+  await Promise.all([
+    writeFile(join(root, "cpu,cpuacct/cpu.cfs_quota_us"), "400000\n"),
+    writeFile(join(root, "cpu,cpuacct/cpu.cfs_period_us"), "100000\n"),
+    writeFile(join(root, "memory/memory.limit_in_bytes"), `${resources.memoryBytes}\n`),
+    writeFile(join(root, "pids/pids.max"), "4096\n"),
+  ]);
+  await verifyHandsCgroup(resources, root);
+  await writeFile(join(root, "pids/pids.max"), "max\n");
+  await assert.rejects(verifyHandsCgroup(resources, root), /does not enforce/);
+});
 
 test("Hands Unix owner runs only the pinned Codex exec-server and fences its lease", async t => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-hands-unix-"));
