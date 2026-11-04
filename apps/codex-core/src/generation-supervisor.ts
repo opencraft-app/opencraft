@@ -1,3 +1,5 @@
+import { engineSandboxConfiguration } from "@opencraft/sandbox-node/engine";
+import { readSandboxRuntimeConfiguration, systemdExecutionOwnerProperties } from "@opencraft/sandbox-node/runtime";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile, readlink, stat, readdir, realpath } from "node:fs/promises";
@@ -95,7 +97,9 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         && (sameUser || publicEnvironment.has(name))).map(name => `--setenv=${name}`);
       const temporary = `${g.runtimeDataDirectory}/tmp`; generationDirectory(temporary, identity.uid, identity.gid);
       // NAME without '=value' copies the private process environment; no secret is an argv value.
-      await execute("systemd-run", [...this.scope(), "--quiet", "--collect", "--no-block", "--service-type=exec", `--unit=${unit}`,
+      const sandboxConfig = await engineSandboxConfiguration();
+      const sandboxProperties = sandboxConfig ? systemdExecutionOwnerProperties(await readSandboxRuntimeConfiguration(sandboxConfig)) : [];
+      await execute("systemd-run", [...this.scope(), ...sandboxProperties, "--quiet", "--collect", "--no-block", "--service-type=exec", `--unit=${unit}`,
         "--property=PrivateTmp=yes", "--property=Restart=on-failure", "--property=RestartSec=3", "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity",
         "--property=UMask=0077", `--uid=${identity.uid}`, `--gid=${identity.gid}`, `--working-directory=${g.cwd}`,
         ...(validation ? [`--property=BindPaths=${validation.homeCopy}:${g.runtimeDataDirectory}/runtime`] : []), ...environment, `--setenv=TMPDIR=${temporary}`, "--", g.node, g.bundle,

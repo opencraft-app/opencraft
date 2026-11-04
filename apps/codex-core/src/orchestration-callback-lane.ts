@@ -9,6 +9,8 @@ const object = (value: unknown): Record<string, unknown> => value !== null && ty
 const tools = new Set(['thread_spawn','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
 const idKey = (id: unknown) => JSON.stringify(id);
 const send = (socket: WebSocket | null, value: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
+interface ExecutionPreparation { cancelled: boolean }
+export type NativeRequestPolicy = (method: unknown, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
 interface Callback { message: Record<string, unknown>; answered: boolean; human?: boolean; timer?: ReturnType<typeof setTimeout> }
 interface Mutation { fingerprint: string; reply?: Record<string, unknown>; clients: {socket: WebSocket; id: unknown}[] }
 
@@ -29,7 +31,7 @@ class CallbackLane {
   private readonly mutations = new Map<string,Mutation>();
   private readonly turnDelegations = new Map<string,string>();
   private readonly threadDelegations = new Map<string,string>();
-  constructor(target: string, private readonly incarnation:string, private readonly disconnectWindowMs: number, private readonly replay: boolean, private readonly retired: () => void) {
+  constructor(target: string, private readonly incarnation:string, private readonly disconnectWindowMs: number, private readonly replay: boolean, private readonly retired: () => void, private readonly requestPolicy?: NativeRequestPolicy, private readonly preparations = new Map<string, Set<ExecutionPreparation>>()) {
     this.upstream = new WebSocket(`ws+unix://${target}:/`,{handshakeTimeout:5000});
     this.opened = new Promise((resolve,reject) => { this.upstream.once('open',resolve);this.upstream.once('error',reject);this.upstream.once('close',()=>reject(new Error('Native callback owner closed'))); });
     void this.opened.catch(()=>this.close());
@@ -111,6 +113,8 @@ class CallbackLane {
     const message=object(JSON.parse(frame));await this.opened;
     if (this.closed || this.client!==socket) return;
     const method=message.method,params=object(message.params);
+    const executionThread = typeof params.threadId === 'string' ? params.threadId : '';
+    if (this.requestPolicy && method === 'turn/interrupt') for (const preparation of this.preparations.get(executionThread) ?? []) preparation.cancelled = true;
     if (method==='initialize' && this.initializeReply) { send(socket,{id:message.id,...this.initializeReply});return; }
     if (method==='initialized') {
       if (!this.initialized) {this.initialized=true;send(this.upstream,message);}
@@ -158,9 +162,31 @@ class CallbackLane {
       if (this.mutations.size>=1024) throw new Error('Unacknowledged orchestration receipt limit');
       this.mutations.set(operation,{fingerprint,clients:[{socket,id:message.id}]});
     }
+    let executionParams = nativeParams;
+    const preparation = this.requestPolicy && method === 'turn/start' ? {cancelled: false} : undefined;
+    if (preparation) {
+      if (!this.preparations.has(executionThread)) this.preparations.set(executionThread, new Set());
+      this.preparations.get(executionThread)!.add(preparation);
+    }
+    try { executionParams = await this.requestPolicy?.(method, nativeParams) ?? nativeParams; }
+    catch {
+      if (operation) this.mutations.delete(operation);
+      send(socket, {id: message.id, error: {code: -32084, message: 'Execution environment unavailable'}}); return;
+    }
+    finally {
+      if (preparation) {
+        const pending = this.preparations.get(executionThread);pending?.delete(preparation);
+        if (!pending?.size) this.preparations.delete(executionThread);
+      }
+    }
+    if (preparation?.cancelled) {
+      if (operation) this.mutations.delete(operation);
+      send(socket, {id: message.id, error: {code: -32800, message: 'Execution interrupted'}}); return;
+    }
+    if (this.closed || this.client !== socket) { if (operation) this.mutations.delete(operation); return; }
     const id=`callback-lane:${this.incarnation}:${++this.sequence}`;
     this.pending.set(id,{socket,id:message.id,initialize:method==='initialize',operation,method:typeof method==='string'?method:undefined,threadId:typeof params.threadId==='string'?params.threadId:undefined,delegationId:typeof delegationId==='string'?delegationId:null});
-    send(this.upstream,{...message,id,params:nativeParams});
+    send(this.upstream,{...message,id,params:executionParams});
   }
   private bindDelegation(threadId:string,turnId:string,delegationId:string|null):void {
     if(!turnId)return;const key=JSON.stringify([threadId,turnId]);
@@ -189,16 +215,17 @@ class CallbackLane {
 
 /** Private UDS facade. A stable lane query opts a gateway into reconnect/replay;
  * unmarked native clients keep the previous connection-scoped lifetime. */
-export async function startOrchestrationCallbackRelay(endpoint: string,target: string,options: {disconnectWindowMs?:number}={}) {
+export async function startOrchestrationCallbackRelay(endpoint: string,target: string,options: {disconnectWindowMs?:number;requestPolicy?:NativeRequestPolicy}={}) {
   await removeStaleSocket(endpoint);
   const incarnation=randomUUID(),lanes=new Map<string,CallbackLane>(),server=createServer(),websockets=new WebSocketServer({server,maxPayload:32*1024*1024});
+  const preparations = new Map<string, Set<ExecutionPreparation>>();
   websockets.on('connection',(socket,request)=>{
     const laneId=new URL(request.url??'/','http://local.invalid').searchParams.get('opencraftLane');
     if (laneId!==null && !/^[a-zA-Z0-9:_-]{1,256}$/u.test(laneId)) {socket.close(1008);return;}
     const key=laneId??randomUUID();let lane=lanes.get(key);
     if (!lane) {
       if (lanes.size>=32) {socket.close(1013);return;}
-      lane=new CallbackLane(target,incarnation,options.disconnectWindowMs??15_000,laneId!==null,()=>lanes.delete(key));lanes.set(key,lane);
+      lane=new CallbackLane(target,incarnation,options.disconnectWindowMs??15_000,laneId!==null,()=>lanes.delete(key),options.requestPolicy,preparations);lanes.set(key,lane);
     }
     lane.attach(socket);
     if (laneId===null) socket.once('close',()=>lane?.close());

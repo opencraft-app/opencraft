@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import nodeTest from 'node:test';
-import { createGitOriginResolver, readCodexGitNatives } from '../../scripts/git-identity-origin';
+import { createGitOriginResolver, hasGitNativeRoot, readCodexGitNatives } from '../../scripts/git-identity-origin';
 import { readGitProcess } from '../../scripts/git-identity-broker';
 const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
@@ -119,4 +119,8 @@ test('registry npm transport resolves its native child while retaining generatio
   db.prepare('UPDATE routing_metadata SET value=?').run(JSON.stringify(metadata));
   process.kill(nativePid); await new Promise(resolve=>setTimeout(resolve,50));
   assert.deepEqual(await readCodexGitNatives(db),[], 'missing native must not authorize npm transport as a tool root');
+});
+
+test('engine selection refuses an unregistered peer before any credential lookup', async () => {
+  assert.equal(await hasGitNativeRoot({pid: process.pid, uid: process.getuid!()}, []), false);
 });

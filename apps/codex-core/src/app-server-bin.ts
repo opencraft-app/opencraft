@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { engineSandboxConfiguration } from "@opencraft/sandbox-node/engine";
 import { readFile } from "node:fs/promises";
 import { startCodexAppServer } from "./app-server.js";
 
@@ -13,7 +17,12 @@ async function main() {
   const startup = new AbortController();
   const stop = () => { startup.abort(); if (shutdown) void shutdown(0); };
   process.once("SIGTERM", stop); process.once("SIGINT", stop);
+  const configuration = await engineSandboxConfiguration();
+  const ownFile = typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
+  const packagedRunner = join(dirname(ownFile), "sandbox-command.mjs");
+  const runner = existsSync(packagedRunner) ? packagedRunner : join(dirname(ownFile), "../../../scripts/server-deployment/sandbox-command.mjs");
   const runtime = await startCodexAppServer({
+    executionSandbox: configuration ? { configuration, runner } : undefined,
     endpoint: argument("--endpoint"), coreEndpoint: argument("--core-endpoint"),
     authToken: (await readFile(argument("--token-file"), "utf8")).trim(),
     dataDirectory: argument("--data-directory"), runtimeDirectory: argument("--runtime-directory"),

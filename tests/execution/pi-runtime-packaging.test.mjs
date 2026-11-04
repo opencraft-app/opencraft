@@ -14,7 +14,7 @@ test('packaged Pi dependencies resolve in isolation and keep all symlinks inside
   t.after(() => rm(directory, { recursive: true, force: true }));
   const versions = await copyAllServerRuntime(join(directory, 'node_modules'));
   for (const name of ['@earendil-works/pi-coding-agent','@earendil-works/pi-durable','@earendil-works/pi-ai','@earendil-works/chord']) assert.equal(versions[name], '1.3.0');
-  assert.equal(versions['pi-interactive-shell'], '0.17.1');
+  assert.equal(versions['pi-interactive-shell'], '0.18.0');
   async function inspect(path) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const file = join(path, entry.name);
@@ -36,7 +36,7 @@ test('packaged interactive shell runs a real PTY and exits without source checko
   const directory = await mkdtemp(join(tmpdir(), 'pi-shell-packaged-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const versions = await copyAllServerRuntime(join(directory, 'node_modules'));
-  assert.equal(versions['pi-interactive-shell'], '0.17.1');
+  assert.equal(versions['pi-interactive-shell'], '0.18.0');
   assert.equal(versions['@earendil-works/pi-tui'], '1.3.0');
   await buildPiShellRuntime(join(directory, 'execution'));
   await build({ entryPoints: ['plugins/pi-engine/src/shell.ts'], outfile: join(directory, 'execution/client.mjs'), bundle: true, platform: 'node', format: 'esm', external: ['@earendil-works/*'] });

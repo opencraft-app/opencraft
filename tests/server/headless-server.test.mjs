@@ -10,6 +10,7 @@ import WebSocket, { WebSocketServer } from "ws";
 
 import { AppHostServer } from "../../packages/app-host-server/src/index.ts";
 import { parseHeadlessArguments, startHeadlessServer } from "../../scripts/headless-server.mjs";
+import { applyExecutionProfile } from "../../scripts/server-deployment/headless-gateway-application.mjs";
 import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../../scripts/package-headless-linux.mjs";
 import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
 
@@ -65,6 +66,20 @@ test("headless machine name supports operator configuration and CLI override", (
   assert.equal(parseHeadlessArguments([], { OPENCRAFT_MACHINE_NAME: "join服务器" }).machineName, "join服务器");
   assert.equal(parseHeadlessArguments(["--machine-name", "other"], { OPENCRAFT_MACHINE_NAME: "join服务器" }).machineName, "other");
   assert.throws(() => parseHeadlessArguments(["--machine-name"]), /requires a name/);
+});
+
+test("headless release profiles select Pi by default and reject undeclared engines", () => {
+  const manifest = { opencraftExecution: { engines: ["pi"], defaultEngine: "pi" } };
+  assert.deepEqual(applyExecutionProfile(["--data-dir", "/tmp/pi"], manifest), ["--data-dir", "/tmp/pi", "--engines", "pi", "--default-engine", "pi"]);
+  assert.deepEqual(applyExecutionProfile(["--engines", "pi", "--data-dir", "/tmp/pi"], manifest), ["--engines", "pi", "--data-dir", "/tmp/pi"]);
+  assert.throws(() => applyExecutionProfile(["--engines", "dsh", "--data-dir", "/tmp/pi"], manifest), /outside the release profile/);
+  assert.throws(() => applyExecutionProfile(["--engines", "pi", "--engines", "dsh"], manifest), /Duplicate/);
+  assert.throws(() => applyExecutionProfile([], { opencraftExecution: { engines: [] } }), /Invalid release execution profile/);
+  const options = parseHeadlessArguments(applyExecutionProfile(["--data-dir", "/tmp/pi"], manifest), {});
+  assert.deepEqual(options.engines, ["pi"]);
+  assert.equal(options.defaultEngine, "pi");
+  assert.deepEqual(applyExecutionProfile(["--data-dir", "/tmp/both"], { opencraftExecution: { engines: ["pi", "dsh"], defaultEngine: "dsh" } }), ["--data-dir", "/tmp/both", "--engines", "pi,dsh", "--default-engine", "dsh"]);
+  assert.deepEqual(applyExecutionProfile(["--data-dir", "/tmp/default"], {}), ["--data-dir", "/tmp/default"]);
 });
 
 test("headless command accepts a private data root and rejects unsupported flags", () => {

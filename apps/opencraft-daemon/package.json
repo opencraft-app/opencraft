@@ -19,7 +19,7 @@
     "@opencraft/appserver-transport-websocket": "0.1.0",
     "@opencraft/daemon-ipc": "0.1.0",
     "@opencraft/local-agent-host": "0.1.0",
-    "ws": "^8.22.0",
+    "ws": "^8.22.1",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/host-schedules": "0.1.0",
     "@opencraft/host-recovery": "0.1.0",

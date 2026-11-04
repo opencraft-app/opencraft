@@ -78,6 +78,15 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 - Android 内测包为 `dev.opencraft.workbench`，使用开发签名；正式包为 `app.opencraft.workbench`，必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
 - 本地 APK/IPA 打包、备案资料和临时局域网下载不等于 GitOps 发布。交接时分别报告源码 checkout、包名、签名证书摘要、APK 文件摘要、安装验证和下载进程状态；私钥与密码不得进入仓库、日志或下载目录。
 
+## 执行沙盒与资源所有权
+
+- 新增或修改引擎的命令、子进程、PTY、后台 worker 与取消路径时，先读 [CreateSandbox 契约](docs/execution-sandbox.md)；共享原语归 `packages/sandbox`，Node/provider 适配归 `packages/sandbox-node`，分别遵循其局部 `AGENTS.md`。
+- 执行入口消费 `createSandboxPool()` / `createSandbox()`；部署装配显式选择后端。Linux 本机只是可选后端，不能按操作系统隐式选择或把 Node PID、ChildProcess、PTY、systemd/cgroup 暴露为跨后端 contract。后续远程后端必须实现真实资源、工作目录与生命周期映射；不能仅登记名称便宣称 E2B 已接通。
+- 默认每环境请求 4 vCPU / 8 GiB。CPU/内存有效约束须由 provider 验证；Linux 默认每环境4096 tasks（含线程）、每进程65536 FD，FD 不是环境总量。每引擎的环境生命周期以正式契约为准，不假定一个 Thread 等于一个沙盒。
+- Codex 官方 exec-server、DSH subprocess/PTY（含 ACP DSH）和 Pi shell worker 的实际执行路径复用该原语。不得新增绕过已选沙盒的裸执行路径；选中后端缺失、配置无效或创建失败时拒绝执行，不能静默回退本机。未配置的既有 Host 不得宣称已隔离。
+- Host/执行 owner 持有池、准入预算与清理。取消、所有者退出和关闭必须清理整组后代，确认销毁后才归还预算；未知创建结果与清理失败不得当作未创建或自动重放。保留引擎原有权限、Actor/lease 与 Git 来源校验。
+- 多控制器共享的本机总上限、SSH/Core 优先级与宿主余量属于部署策略；不能把单进程池当全机预算，也不能靠提升优先级替代限制任务总量。验收读取实际内核 cgroup/rlimit，并验证派生继承、PTY、取消与旧会话续接；测试通过不能替代已部署组件的生效证据。
+
 ## 代码与 Contract
 
 ### 网络主线程不得阻塞

@@ -17,7 +17,7 @@
     "@opencraft/i18n": "0.1.0",
     "@opencraft/workbench-panels-react": "0.1.0",
     "react": "19.3.1",
-    "yjs": "13.6.27",
+    "yjs": "13.6.33",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/chat-render-web": "0.1.0"
   },

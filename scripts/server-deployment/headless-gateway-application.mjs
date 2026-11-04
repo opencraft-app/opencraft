@@ -36,6 +36,30 @@ function required(name) {
   if (!value) throw new Error(`Missing ${name}`);
   return value;
 }
+
+/** Apply a signed package's engine profile without allowing a deployment config
+ * to activate an engine that the package did not declare. An explicit subset
+ * remains useful for operators; an omitted selection receives the profile's
+ * default so a Pi-only package cannot fall back to the legacy DSH default. */
+export function applyExecutionProfile(argv, manifest) {
+  const profile = manifest?.opencraftExecution?.engines;
+  if (profile === undefined) return [...argv];
+  if (!Array.isArray(profile) || profile.length === 0 || new Set(profile).size !== profile.length
+    || profile.some(engine => !['pi', 'dsh'].includes(engine))) throw new Error('Invalid release execution profile');
+  for (const flag of ['--engines', '--default-engine']) {
+    if (argv.filter(value => value === flag).length > 1) throw new Error('Duplicate Headless execution selection');
+  }
+  const selectionIndex = argv.indexOf('--engines');
+  const selected = selectionIndex >= 0 ? (argv[selectionIndex + 1] ?? '').split(',').filter(Boolean) : profile;
+  if (!selected.length || selected.some(engine => !profile.includes(engine))) throw new Error('Headless configuration requests an engine outside the release profile');
+  const result = [...argv];
+  if (selectionIndex < 0) {
+    result.push('--engines', profile.join(','));
+    if (typeof manifest?.opencraftExecution?.defaultEngine === 'string' && !argv.includes('--default-engine'))
+      result.push('--default-engine', manifest.opencraftExecution.defaultEngine);
+  }
+  return result;
+}
 export async function runHeadlessGateway({ parseArguments = parseHeadlessArguments, startServer = startHeadlessServer } = {}) {
   const releaseRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const manifest = JSON.parse(await readFile(join(releaseRoot, 'package.json'), 'utf8'));
@@ -49,7 +73,7 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => key !== 'argv')
     || !Array.isArray(config.argv) || !config.argv.every(value => typeof value === 'string')) throw new Error('Invalid Headless configuration');
-  const options = parseArguments(config.argv);
+  const options = parseArguments(applyExecutionProfile(config.argv, manifest));
   if (options.help) throw new Error('Headless configuration cannot request help');
   if (options.port < 1) throw new Error('Managed Headless requires a fixed loopback port');
   const tokenPath = required('OPENCRAFT_DAEMON_TOKEN_FILE');

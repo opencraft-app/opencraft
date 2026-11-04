@@ -1,3 +1,5 @@
+import { sandboxMessage } from "@opencraft/sandbox-node/command";
+import { createInterface } from "node:readline";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createEventBus, ModelRuntime, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -16,7 +18,8 @@ const extension = await loadExtensionFromFactory(extensionFactory, cwd, createEv
 const models = await ModelRuntime.create({ allowModelNetwork: false, authPath: join(directory, "auth.json"), modelsPath: join(directory, "models.json") });
 const runner = new ExtensionRunner([extension], runtime, cwd, SessionManager.inMemory(cwd), new ModelRegistry(models));
 let activeTools: string[] = ["interactive_shell"];
-const send = (message: unknown) => { if (process.connected) process.send?.(message); };
+const stdio = process.argv.includes("--stdio");
+const send = (message: unknown) => { if (stdio) process.stdout.write(sandboxMessage(message)); else if (process.connected) process.send?.(message); };
 runner.onError(() => send({ type: "fault", error: "Pi shell extension lifecycle failed" }));
 const unsupported = () => { throw new Error("This CLI operation is not available in a headless Pi session"); };
 runner.bindCore({
@@ -41,12 +44,13 @@ async function shutdown() {
   try { await runner.emit({ type: "session_shutdown", reason: "exit" }); }
   finally {
     // The upstream extension retains history timers. This isolated owner has no other work to keep alive.
-    if (process.connected) process.send?.({ type: "closed" }, () => process.exit(0));
+    if (stdio) process.stdout.write(JSON.stringify({ type: "closed" }) + "\n", () => process.exit(0));
+    else if (process.connected) process.send?.({ type: "closed" }, () => process.exit(0));
     else process.exit(0);
   }
 }
 let line = Promise.resolve();
-process.on("message", (message: any) => {
+const receive = (message: any) => {
   if (message?.type === "close") { void shutdown(); return; }
   if (message?.type !== "call" || closing) return;
   line = line.then(async () => {
@@ -56,7 +60,14 @@ process.on("message", (message: any) => {
       send({ type: "result", id: message.id, result });
     } catch { send({ type: "result", id: message.id, result: { isError: true, content: [{ type: "text", text: "Pi interactive shell operation failed" }] } }); }
   }).catch(() => send({ type: "fault", error: "Pi shell request failed" }));
-});
+};
+if (stdio) {
+  let bytes = 0;
+  process.stdin.on("data", chunk => { bytes += chunk.length; if (bytes > 1024 * 1024) void shutdown(); });
+  const lines = createInterface({ input: process.stdin });
+  lines.on("line", text => { bytes = 0; try { receive(JSON.parse(text)); } catch { void shutdown(); } });
+  lines.on("close", () => { void shutdown(); });
+} else process.on("message", receive);
 process.on("disconnect", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });
 process.on("SIGINT", () => { void shutdown(); });
