@@ -60,6 +60,17 @@ test("sending is a transport state, not a visible user-message status", () => {
   assert.equal(deriveUserMessageWebLayout(message({ message: "Hello", deliveryStatus: "unknown" })).hasStatus, true);
 });
 
+test("steer lifecycle does not create a footer for attachment-only messages", () => {
+  for (const steeringStatus of ["pending", "accepted", "cancelled", "declined"] as const) {
+    const layout = deriveUserMessageWebLayout(message({
+      messageKind: "steering", steeringStatus, deliveryStatus: "sent",
+      content: [{ type: "local-image", source: "/fixture.png", detail: null }],
+    }));
+    assert.equal(layout.hasStatus, false);
+    assert.equal(layout.showBody, false);
+  }
+});
+
 test("only user bubbles lift code-block size containment while code remains scrollable", () => {
   const bubbleStyles = readFileSync(new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
   const sharedCodeStyles = readFileSync(new URL("../../packages/chat-render-web/src/renderers/code/code-block.scss", import.meta.url), "utf8");

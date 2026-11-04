@@ -928,11 +928,12 @@ export function createWebWorkbenchCommands(input: {
     async submitNewThread(intent) {
       if (intent.target.type !== "new-thread") throw new Error("Expected a New Thread intent");
       const displayScope = input.displayContinuity.getScope();
+      const sender = input.scopes.getDraft(intent.target.draftId)?.submissionSender;
       const receipt = await input.registry.getRuntime(intent.target.execution.hostId).createThread(intent);
       if (displayScope === input.displayContinuity.getScope()) {
         // Presentation failure must not turn an irreversible receipt into a
         // failed submission and replay thread/start on retry.
-        try { input.displayContinuity.retainSubmission(intent, receipt); }
+        try { input.displayContinuity.retainSubmission(intent, receipt, sender); }
         catch { console.warn("[conversation-display] Could not retain first submission"); }
       }
       // Link recovery must never turn an irreversible thread receipt into a
